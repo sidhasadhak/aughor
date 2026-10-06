@@ -311,8 +311,9 @@ def get_connection_org(conn_id: str) -> str | None:
     return row["org_id"] if row else None
 
 
+from aughor.db.home import rehome as _rehome  # noqa: E402 — IN-4: the data home, once migrated
 _SETTINGS_PATH = Path(os.environ.get("AUGHOR_CONNECTION_SETTINGS")
-                      or (Path(__file__).parent.parent.parent / "data" / "connection_settings.json"))
+                      or _rehome(Path(__file__).parent.parent.parent / "data" / "connection_settings.json"))
 
 
 def _load_settings() -> dict:

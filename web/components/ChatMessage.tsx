@@ -80,6 +80,17 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { Textarea } from "@/components/ui/textarea";
 
 // Format a wall-clock duration for the "Completed in …" line.
+/** Open one built-in agent's page in Agent Ops — where its per-run budget is raised. The
+ *  page shell follows the address on popstate, and the workspace reads `?agent=` once. */
+function openAgentPage(agentId: string) {
+  const u = new URL(window.location.href);
+  u.searchParams.set("tab", "agentic-ops");
+  u.searchParams.set("layer", "agents");
+  u.searchParams.set("agent", agentId);
+  window.history.pushState(null, "", u);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 function formatElapsed(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   const s = ms / 1000;
@@ -1747,7 +1758,10 @@ export function ChatMessage({
                 ? "The fix is in Settings → Inference."
                 : null,
           ].filter(Boolean).join(" ") || undefined}
-          doors={turn.errorDetail?.retryable && onRetry
+          doors={turn.errorDetail?.recovery === "raise_budget" && turn.errorDetail.agentId
+            ? [{ label: "Raise the budget", primary: true,
+                 onClick: () => openAgentPage(turn.errorDetail!.agentId!) }]
+            : turn.errorDetail?.retryable && onRetry
             ? [{ label: "Retry", onClick: () => onRetry(turn.question), primary: true }]
             : undefined}
         />

@@ -149,8 +149,11 @@ export function KnowledgeSourcesSection() {
 
       {sources.map(s => {
         const pages = pagesOf(s);
+        const skippedCount = s.status?.skipped_count ?? 0;
+        const skipped = s.status?.pages_skipped ?? [];
         return (
-          <div key={s.id} className="flex items-center gap-3 rounded border border-zinc-800 bg-zinc-800/40 px-3 py-2">
+          <div key={s.id} className="rounded border border-zinc-800 bg-zinc-800/40 px-3 py-2">
+          <div className="flex items-center gap-3">
             <span className="aug-fs-xs font-mono px-1.5 py-0.5 rounded border border-violet-500/30 bg-violet-500/10 text-violet-400">
               {s.conn_type === "confluence" ? "Confluence" : "Notion"}
             </span>
@@ -158,7 +161,8 @@ export function KnowledgeSourcesSection() {
               <p className="aug-fs-sm text-zinc-200 truncate">{s.name}</p>
               <p className="aug-fs-xs text-zinc-500 font-mono mt-0.5">
                 {s.error ? s.error
-                  : <>last sync {timeAgo(s.status?.last_sync)}{pages != null && <> · {pages} pages indexed</>}</>}
+                  : <>last sync {timeAgo(s.status?.last_sync)}{pages != null && <> · {pages} pages indexed</>}
+                      {skippedCount > 0 && <> · {skippedCount} not indexed</>}</>}
               </p>
             </div>
             <Button variant="ghost" size="xs" disabled={syncing === s.id}
@@ -166,6 +170,27 @@ export function KnowledgeSourcesSection() {
                     className="h-auto px-2 py-1 aug-fs-xs font-normal border border-zinc-700 text-zinc-300">
               {syncing === s.id ? "Syncing…" : "Sync now"}
             </Button>
+          </div>
+          {/* The pages the last sync left out, each with why — a short page used to vanish
+              with nothing on this row to say it had existed. */}
+          {!s.error && skippedCount > 0 && (
+            <details className="mt-1.5">
+              <summary className="aug-fs-xs text-zinc-400 cursor-pointer">
+                {skippedCount} {skippedCount === 1 ? "page was" : "pages were"} not indexed
+              </summary>
+              <ul className="mt-1 space-y-0.5">
+                {skipped.map((p, i) => (
+                  <li key={`${p.url}:${i}`} className="aug-fs-xs text-zinc-500">
+                    {p.url ? <a href={p.url} target="_blank" rel="noreferrer" className="text-zinc-300 hover:underline">{p.title}</a>
+                      : <span className="text-zinc-300">{p.title}</span>} — {p.reason}
+                  </li>
+                ))}
+                {skippedCount > skipped.length && (
+                  <li className="aug-fs-xs text-zinc-500">…and {skippedCount - skipped.length} more, not listed.</li>
+                )}
+              </ul>
+            </details>
+          )}
           </div>
         );
       })}

@@ -395,3 +395,15 @@ def test_the_notice_survives_truncation():
     assert truncated is True
     assert omitted == {"image": 1}
     assert "not carried" in text, "the omission notice was truncated away"
+
+
+def test_an_embedded_text_resource_and_a_link_are_carried_not_dropped():
+    """Both hold text a step can read, and both were counted as dropped with the images.
+    A binary resource beside them still is."""
+    res = SimpleNamespace(type="resource", resource=SimpleNamespace(uri="file:///notes.md", text="Q3 is up"))
+    link = SimpleNamespace(type="resource_link", uri="https://x.test/report.pdf", name="report")
+    blob = SimpleNamespace(type="resource", resource=SimpleNamespace(uri="file:///a.png", blob="AAAA"))
+    text, _, omitted = door._text_of(_blocks(_text_block("see"), res, link, blob))
+    assert "[resource file:///notes.md]\nQ3 is up" in text
+    assert "[linked resource: report — https://x.test/report.pdf]" in text
+    assert omitted == {"resource": 1}

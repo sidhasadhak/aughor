@@ -10,7 +10,7 @@ import { RangePicker } from "@/components/agentops/RangePicker";
 import { Button } from "@/components/ui/button";
 import { useTimeRange } from "@/components/agentops/useTimeRange";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
-import { getConnections, getDepartureSummary, getNeedsHuman, type Connection } from "@/lib/api";
+import { BUILT_IN_AGENT_KIND, getConnections, getDepartureSummary, getNeedsHuman, type Connection } from "@/lib/api";
 import { askSpotlight } from "@/lib/commandRegistry";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
@@ -142,6 +142,17 @@ export function AgenticOpsWorkspace({
   // Activity layer's runs mode; an agent opened from Fleet lands in Agents.
   const [traceFocus, setTraceFocus] = useState<{ traceId?: string; investigationId?: string } | null>(null);
   const [agentFocus, setAgentFocus] = useState<{ id: string; kind: "charter" | "persona" } | null>(null);
+  // `?agent=<built-in agent id>` opens one built-in agent's page on arrival — the chat's budget
+  // refusal links to the Responder's this way. Read once, then dropped from the address,
+  // so a later visit to Agents opens the roster rather than the same agent again.
+  useEffect(() => {
+    const u = new URL(window.location.href);
+    const id = u.searchParams.get("agent");
+    if (!id) return;
+    setAgentFocus({ id, kind: BUILT_IN_AGENT_KIND });
+    u.searchParams.delete("agent");
+    window.history.replaceState(window.history.state, "", u);
+  }, []);
   // AO-4 — "Open automation" carries its id from every layer; the Automations layer
   // opens that one on arrival rather than the list it is somewhere in.
   const [automationFocus, setAutomationFocus] = useState<string | null>(null);

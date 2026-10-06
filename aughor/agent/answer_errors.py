@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 RETRY = "retry"                  # the same request may simply work
 SWITCH_MODEL = "switch_model"    # this binding is spent/throttled; another may answer
 FIX_CONFIG = "fix_config"        # a human must change a setting first
+RAISE_BUDGET = "raise_budget"    # the run's own per-run budget stopped it; raise it
 NONE = ""                        # nothing the user can do from here
 
 #: reason → (retryable, recovery, hint). The reasons are R2's provider classes plus the
@@ -69,7 +70,7 @@ _POLICY: dict[str, tuple[bool, str, str]] = {
     # generic one: it sends the user looking in the wrong place.
     "not_found":        (False, NONE,         "That connection or run no longer exists."),
     "invalid_state":    (False, NONE,         "That run is not in a state where this is possible."),
-    "budget_exceeded":  (False, NONE,         "The run hit its configured budget and stopped. Raise the budget to go further."),
+    "budget_exceeded":  (False, RAISE_BUDGET, "The run hit its per-run budget and stopped. Raise the budget on the agent's page in Agent Ops to go further."),
     "run_timeout":      (True,  RETRY,        "The run exceeded its time limit."),
     "stalled":          (True,  RETRY,        "The run stopped making progress."),
     "cancelled":        (False, NONE,         "The run was cancelled."),
@@ -111,7 +112,7 @@ def classify(exc: BaseException) -> str:
 
 
 def error_event(exc: Optional[BaseException] = None, *, message: str = "",
-                reason: str = "") -> dict[str, Any]:
+                reason: str = "", agent_id: str = "") -> dict[str, Any]:
     """The one payload shape for an ``error`` SSE frame.
 
     ``message`` is what the site already produced, never replaced — only unwrapped by
@@ -122,6 +123,8 @@ def error_event(exc: Optional[BaseException] = None, *, message: str = "",
     * ``recovery`` — the one action a user can take (:data:`RETRY`, :data:`SWITCH_MODEL`,
       :data:`FIX_CONFIG`, or none)
     * ``hint`` — that action in a sentence
+    * ``agent_id`` — only when given: the agent whose budget or setting the recovery is
+      about, so the door can open that agent's page
 
     Never raises. An error frame is the last thing a failed turn emits; a helper that can
     fail *here* converts a legible failure into a hung spinner, which is the one outcome
@@ -131,8 +134,11 @@ def error_event(exc: Optional[BaseException] = None, *, message: str = "",
         code = reason or (classify(exc) if exc is not None else "unknown")
         retryable, recovery, hint = _POLICY.get(code, _POLICY["unknown"])
         text = legible(message) or _safe_str(exc) or "Something went wrong."
-        return {"message": text, "reason": code, "retryable": retryable,
-                "recovery": recovery, "hint": hint}
+        ev = {"message": text, "reason": code, "retryable": retryable,
+              "recovery": recovery, "hint": hint}
+        if agent_id:
+            ev["agent_id"] = agent_id
+        return ev
     except Exception:
         logger.debug("answer_errors: falling back to a bare message", exc_info=True)
         # `message` only — never `_safe_str(exc)` again. The reason we are HERE may be

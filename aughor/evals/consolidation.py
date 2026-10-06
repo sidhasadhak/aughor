@@ -33,7 +33,10 @@ from aughor.ontology.context_graph_build import MAX_RECEIPT_FINDINGS as CAP
 from aughor.ontology.finding_consolidation import consolidate
 
 #: Suite name — looked up by name so creating the suite is idempotent across runs.
-SUITE_NAME = "context graph — finding consolidation (N3)"
+SUITE_KEY = "graph_consolidation"
+SUITE_NAME = "Context graph — consolidating findings keeps every one checkable"
+#: Titles this suite carried before it had a key — `ensure_suite` adopts a row under one.
+FORMER_NAMES: tuple[str, ...] = ("context graph — finding consolidation (N3)",)
 
 #: The flag this suite is evidence for.
 #: The flag this suite once gated on. HARDWIRED 2026-08-02 — kept as the name the
@@ -309,18 +312,16 @@ def consolidation_target() -> Callable[[EvalCase], EvalObservation]:
 
 
 def ensure_suite() -> str:
-    """Create the suite (idempotent by name) with one case per scenario; return its id."""
+    """Create the suite (idempotent by key) with one case per scenario; return its id."""
     from aughor.evals import store
 
-    existing = next((s for s in store.list_suites(200) if s["name"] == SUITE_NAME), None)
-    if existing is None:
-        existing = store.create_suite(
-            SUITE_NAME,
-            description=("Wave N3 — `graph.consolidate` claims the artifact carries more "
-                         "distinct, still-verifiable knowledge in the same node budget, "
-                         "losslessly. Each case asserts one invariant of that claim over a "
-                         "synthetic corpus: no warehouse, no LLM, no dependence on data/."),
-            target="consolidation")
+    existing, _ = store.ensure_suite(
+        SUITE_KEY, SUITE_NAME, formerly=FORMER_NAMES,
+        description=("Wave N3 — `graph.consolidate` claims the artifact carries more "
+                     "distinct, still-verifiable knowledge in the same node budget, "
+                     "losslessly. Each case asserts one invariant of that claim over a "
+                     "synthetic corpus: no warehouse, no LLM, no dependence on data/."),
+        target="consolidation")
     suite_id = existing["id"]
 
     have = {(c.get("expected") or {}).get("scenario") for c in store.list_cases(suite_id)}

@@ -35,7 +35,10 @@ from aughor.evals.equivalence import Comparison, DeterministicEquivalenceEvaluat
 from aughor.evals.evaluator import EvalCase, EvalObservation
 
 #: Suite name — looked up by name so creating the suite is idempotent across runs.
-SUITE_NAME = "flag strategy batch B — the data-gated and invocation-gated queue"
+SUITE_KEY = "flag_batch_b"
+SUITE_NAME = "Flag graduations B — flags that act only when data or a call asks"
+#: Titles this suite carried before it had a key — `ensure_suite` adopts a row under one.
+FORMER_NAMES: tuple[str, ...] = ("flag strategy batch B — the data-gated and invocation-gated queue",)
 
 #: The flags this suite is evidence for (each minted its own graduation decision).
 FLAGS = (
@@ -481,26 +484,24 @@ def receipt_target() -> Callable[[EvalCase], EvalObservation]:
 
 
 def ensure_suite() -> str:
-    """Create the suite (idempotent by name) with one case per scenario; return its id."""
+    """Create the suite (idempotent by key) with one case per scenario; return its id."""
     from aughor.evals import store
 
-    existing = next((s for s in store.list_suites(200) if s["name"] == SUITE_NAME), None)
-    if existing is None:
-        existing = store.create_suite(
-            SUITE_NAME,
-            description=("Flag strategy batch B — the data-gated and invocation-gated queue "
-                         "graduates on structural claims: governance allows everything until "
-                         "a human tags/caps something; RBAC passes through without policies; "
-                         "kinetic surfaces carry only human-declared actions and edits; "
-                         "lifecycle journals additively and freezes nothing unasked; "
-                         "automations probe only user-created source conditions and grant "
-                         "nothing unminted; the brief block is empty until a Briefing "
-                         "rendered; resolved-rebuild is never less correct than the TTL it "
-                         "replaces; the AG-UI and cross-source-join routes do nothing until "
-                         "explicitly called. Plus the REC-U10 byte-equality that lets "
-                         "semantic.contract_live flip. Hermetic: no LLM, no warehouse, no "
-                         "writes; synthetic probe connections throughout."),
-            target="flag_batch_b_receipt")
+    existing, _ = store.ensure_suite(
+        SUITE_KEY, SUITE_NAME, formerly=FORMER_NAMES,
+        description=("Flag strategy batch B — the data-gated and invocation-gated queue "
+                     "graduates on structural claims: governance allows everything until "
+                     "a human tags/caps something; RBAC passes through without policies; "
+                     "kinetic surfaces carry only human-declared actions and edits; "
+                     "lifecycle journals additively and freezes nothing unasked; "
+                     "automations probe only user-created source conditions and grant "
+                     "nothing unminted; the brief block is empty until a Briefing "
+                     "rendered; resolved-rebuild is never less correct than the TTL it "
+                     "replaces; the AG-UI and cross-source-join routes do nothing until "
+                     "explicitly called. Plus the REC-U10 byte-equality that lets "
+                     "semantic.contract_live flip. Hermetic: no LLM, no warehouse, no "
+                     "writes; synthetic probe connections throughout."),
+        target="flag_batch_b_receipt")
     suite_id = existing["id"]
 
     have = {(c.get("expected") or {}).get("scenario") for c in store.list_cases(suite_id)}

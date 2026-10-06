@@ -61,7 +61,9 @@ def _root() -> Path:
     lands in the developer's real `data/`. That has cost this codebase real data
     three times; the fix each time was this function shape.
     """
-    return Path(os.environ.get("AUGHOR_DOCUMENTS_DIR") or "data/documents")
+    # The default follows a migrated data home (IN-4) once `migrate-state` has run.
+    from aughor.db.home import rehome
+    return Path(os.environ.get("AUGHOR_DOCUMENTS_DIR") or rehome(Path("data/documents")))
 
 
 def _safe(segment: str) -> str:

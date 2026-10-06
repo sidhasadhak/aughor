@@ -23,7 +23,10 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-_DATA_DIR = Path(__file__).parent.parent.parent / "data"
+# IN-4: the data home once `migrate-state` has run, the checkout until then. A module constant
+# like its siblings — resolved at import, which a deployment does after the marker is written.
+from aughor.db.home import rehome as _rehome  # noqa: E402
+_DATA_DIR = _rehome(Path(__file__).parent.parent.parent / "data")
 
 
 # ── Data classes ──────────────────────────────────────────────────────────────

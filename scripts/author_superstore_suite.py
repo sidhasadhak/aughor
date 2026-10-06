@@ -155,17 +155,15 @@ def main() -> int:
         print("⛔ reference SQL problems — nothing written:\n" + "\n".join(bad))
         return 1
 
-    existing = [s for s in store.list_suites(limit=200) if s.get("name") == SUITE_NAME]
-    if existing:
-        suite_id = existing[0]["id"]
+    suite, created = store.ensure_suite("superstore_accuracy", SUITE_NAME, description=SUITE_DESC,
+                                        target="reference", connection_id=CONN)
+    suite_id = suite["id"]
+    if created:
+        print(f"created suite {suite_id}")
+    else:
         for c in store.list_cases(suite_id, limit=1000):
             store.delete_case(c["id"])
         print(f"reusing suite {suite_id} (cases cleared)")
-    else:
-        suite = store.create_suite(SUITE_NAME, description=SUITE_DESC,
-                                   target="reference", connection_id=CONN)
-        suite_id = suite["id"]
-        print(f"created suite {suite_id}")
 
     n = store.add_cases(suite_id, [
         {"question": q, "artifact": ref,

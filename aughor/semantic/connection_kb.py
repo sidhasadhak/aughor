@@ -25,7 +25,10 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
-_DATA_DIR = Path(__file__).parent.parent.parent / "data"
+# IN-4: the data home once `migrate-state` has run, the checkout until then. A module constant
+# like its siblings — resolved at import, which a deployment does after the marker is written.
+from aughor.db.home import rehome as _rehome  # noqa: E402
+_DATA_DIR = _rehome(Path(__file__).parent.parent.parent / "data")
 _COLLECTION = "aughor_connection_kb"
 _MIN_SCORE   = 0.55   # lower than general KB — these are domain-specific so cast wider
 _TOP_K       = 4

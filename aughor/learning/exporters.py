@@ -377,13 +377,15 @@ def publish_golden_to_evals(node: dict, *, suite_name: Optional[str] = None) -> 
         return None
     from aughor.evals import store as evals_store
 
-    name = suite_name or f"{node['name']}-v{node['version']}"
-    for existing in evals_store.list_suites(limit=500):
-        if existing.get("name") == name:
-            return existing["id"]          # idempotent: same version, same suite
-    suite = evals_store.create_suite(
-        name, description=(f"MI-3 golden set — dataset {node['name']} v{node['version']}, "
-                           f"{node['row_count']} held-out examples. Never trained on."))
+    # Found by KEY — one suite per dataset version; the title is a person's to read.
+    key = f"golden:{node['name']}:v{node['version']}"
+    name = suite_name or f"Golden set — {node['name'].replace('-', ' ')}, version {node['version']}"
+    suite, created = evals_store.ensure_suite(
+        key, name, formerly=(f"{node['name']}-v{node['version']}",),
+        description=(f"MI-3 golden set — dataset {node['name']} v{node['version']}, "
+                     f"{node['row_count']} held-out examples. Never trained on."))
+    if not created:
+        return suite["id"]                 # idempotent: same version, same suite
     evals_store.add_cases(suite["id"], [
         {"question": r.get("prompt", ""), "expected": {"sql": r.get("completion", "")},
          "tags": ["golden", "mi-3", node["name"]]}

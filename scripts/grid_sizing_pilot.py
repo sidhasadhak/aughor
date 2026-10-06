@@ -24,7 +24,8 @@ import time
 PILOT_CASES = int(os.environ.get("PILOT_CASES", "8"))
 WIDE_SUITE = os.environ.get("SUITE", "9c1e13e458ff")
 FLAG = os.environ.get("FLAG", "explore.route_wide")
-PILOT_SUITE_NAME = f"grid sizing pilot — {FLAG} ({PILOT_CASES} cases)"
+PILOT_SUITE_KEY = f"grid_sizing_pilot:{FLAG}:{PILOT_CASES}"
+PILOT_SUITE_NAME = f"Grid sizing pilot — {FLAG} ({PILOT_CASES} cases)"
 #: CWD (or `GRID_OUT_DIR`), never beside the script — a run artifact written into `scripts/`
 #: shows up as untracked source and invites being committed.
 OUT = (pathlib.Path(os.environ.get("GRID_OUT_DIR") or ".")
@@ -57,14 +58,13 @@ from aughor.evals.targets import ask_target  # noqa: E402
 
 def pilot_suite() -> str:
     """A small suite carved from the wide corpus — same questions, fewer of them."""
-    existing = next((s for s in store.list_suites(200) if s["name"] == PILOT_SUITE_NAME), None)
-    if existing is None:
-        existing = store.create_suite(
-            PILOT_SUITE_NAME,
-            description=("Sizing pilot for the L3 grid: the first N cases of the 102-case "
-                         "consistency corpus, run through both closed_loop cells to measure "
-                         "per-case latency and requests-per-case before committing hours."),
-            target="reference", connection_id="workspace")
+    existing, _ = store.ensure_suite(
+        PILOT_SUITE_KEY, PILOT_SUITE_NAME,
+        formerly=(f"grid sizing pilot — {FLAG} ({PILOT_CASES} cases)",),
+        description=("Sizing pilot for the L3 grid: the first N cases of the 102-case "
+                     "consistency corpus, run through both closed_loop cells to measure "
+                     "per-case latency and requests-per-case before committing hours."),
+        target="reference", connection_id="workspace")
     sid = existing["id"]
     if not store.list_cases(sid):
         wide = store.list_cases(WIDE_SUITE, limit=500)[:PILOT_CASES]

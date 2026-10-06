@@ -39,7 +39,10 @@ from aughor.evals.equivalence import Comparison, DeterministicEquivalenceEvaluat
 from aughor.evals.evaluator import EvalCase, EvalObservation
 
 #: Suite name — looked up by name so creating the suite is idempotent across runs.
-SUITE_NAME = "session log — observationally free on the answer path (CR0)"
+SUITE_KEY = "session_log"
+SUITE_NAME = "Session log — recording changes no answer"
+#: Titles this suite carried before it had a key — `ensure_suite` adopts a row under one.
+FORMER_NAMES: tuple[str, ...] = ("session log — observationally free on the answer path (CR0)",)
 
 #: The flag this suite is evidence for.
 
@@ -380,20 +383,18 @@ def receipt_target() -> Callable[[EvalCase], EvalObservation]:
 
 
 def ensure_suite() -> str:
-    """Create the suite (idempotent by name) with one case per scenario; return its id."""
+    """Create the suite (idempotent by key) with one case per scenario; return its id."""
     from aughor.evals import store
 
-    existing = next((s for s in store.list_suites(200) if s["name"] == SUITE_NAME), None)
-    if existing is None:
-        existing = store.create_suite(
-            SUITE_NAME,
-            description=("Wave CR0 — `obs.session_log` claims to be observationally free: "
-                         "byte-identical answer frames on vs off, fail-open writes, content "
-                         "capture independently off, retention that actually bounds the "
-                         "table, and a per-event write under E1's 5 ms p95 bar. Each case "
-                         "asserts one invariant hermetically: no warehouse, no LLM, temp "
-                         "ledgers only."),
-            target="session_log_receipt")
+    existing, _ = store.ensure_suite(
+        SUITE_KEY, SUITE_NAME, formerly=FORMER_NAMES,
+        description=("Wave CR0 — `obs.session_log` claims to be observationally free: "
+                     "byte-identical answer frames on vs off, fail-open writes, content "
+                     "capture independently off, retention that actually bounds the "
+                     "table, and a per-event write under E1's 5 ms p95 bar. Each case "
+                     "asserts one invariant hermetically: no warehouse, no LLM, temp "
+                     "ledgers only."),
+        target="session_log_receipt")
     suite_id = existing["id"]
 
     have = {(c.get("expected") or {}).get("scenario") for c in store.list_cases(suite_id)}

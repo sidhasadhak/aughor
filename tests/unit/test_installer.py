@@ -798,3 +798,18 @@ def test_the_industries_option_is_not_handed_to_aughor_up(two_industries, monkey
     assert installer.main(["--industries", "retail", "--no-browser", "--industries=all"]) == 0
     assert handed["args"] == ["--no-browser"]
 
+
+
+def test_the_installer_finds_the_choice_in_a_migrated_data_home(tmp_path, monkeypatch):
+    """IN-4: once `migrate-state` has written its marker the API reads the choice from the home,
+    so the installer must write it there — its stdlib mirror of `aughor.db.home` says the same."""
+    from aughor.packs import industry_choice
+
+    monkeypatch.delenv("AUGHOR_INDUSTRIES_FILE", raising=False)
+    monkeypatch.delenv("AUGHOR_STATE_DIR", raising=False)
+    monkeypatch.setenv("AUGHOR_HOME", str(tmp_path / "home"))
+    assert installer.industries_file(tmp_path) == tmp_path / "data" / "industries.json"
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / ".aughor-home").write_text("migrated")
+    assert installer.industries_file(tmp_path) == industry_choice.choice_path() \
+        == tmp_path / "home" / "state" / "industries.json"

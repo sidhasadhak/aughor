@@ -30,15 +30,16 @@ logger = logging.getLogger(__name__)
 # Both paths honour an env override so the test suite can redirect them to a temp
 # dir (the same hermeticity contract as every AUGHOR_*_DB store — without it the
 # suite created/opened files in the developer's live data/).
+from aughor.db.home import rehome as _rehome  # noqa: E402 — IN-4: the data home, once migrated
 SAMPLES_PATH = Path(
     os.environ.get("AUGHOR_SAMPLES_DB")
-    or Path(__file__).parent.parent.parent / "data" / "samples.duckdb"
+    or _rehome(Path(__file__).parent.parent.parent / "data" / "samples.duckdb")
 )
 SAMPLES_ID   = "samples"
 # The builtin "Fixture DB (demo)" connection (registry.BUILTIN_ID) points here.
 FIXTURE_PATH = Path(
     os.environ.get("AUGHOR_FIXTURE_DB")
-    or Path(__file__).parent.parent.parent / "data" / "aughor.duckdb"
+    or _rehome(Path(__file__).parent.parent.parent / "data" / "aughor.duckdb")
 )
 
 

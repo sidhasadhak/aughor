@@ -125,8 +125,10 @@ _FAUX_MODELS: dict[str, dict[Role, str]] = {
 # encrypted keys (every other data/ store already has exactly this env seam; this
 # one was the last store tests inherited from the developer's machine). Read at
 # import like its siblings: conftest sets it above any app import.
+# The default follows a migrated data home (IN-4) once `migrate-state` has run; the checkout until then.
+from aughor.db.home import rehome as _rehome  # noqa: E402
 _CONFIG_PATH = Path(os.getenv("AUGHOR_LLM_CONFIG_PATH", "").strip()
-                    or Path(__file__).parent.parent.parent / "data" / "llm_config.json")
+                    or _rehome(Path(__file__).parent.parent.parent / "data" / "llm_config.json"))
 
 
 def config_path() -> Path:

@@ -44,7 +44,7 @@ import {
   getLlmConfig, getPacks, listAgentAlertRules, listAgentGoldens, listAgentRevisions,
   listAgentTemplates, listDocuments, listUserAgents, patchAgent, patchUserAgent,
   restoreAgentRevision, setAgentGuardrails,
-  type AgentAlertRule, type AgentDeleteReceipt,
+  type AgentAlertRule, type AgentDeleteReceipt, type AgentGovernance,
   type AgentEvalResult, type AgentGolden, type AgentGuardrails, type AgentKnob, type AgentLearning, type AgentObservability,
   type AgentRevision, type AgentRosterEntry, type AgentTemplate, type Connection,
   type DocumentEntry, type LlmConfig, type PackSummary, type UserAgent,
@@ -1674,6 +1674,9 @@ function CharterDetail({ charter, workspaceId, onBack, onChanged, onError, range
           <AgentModelPin pinned={gov.model ?? null} busy={busy}
             onPin={(model, allowPaid) =>
               patch(allowPaid ? { model, allow_paid: true } : { model })} />
+          {/* The Responder's budget is what stops a chat answer; its refusal links here, so
+              the budget is raised on this page rather than through the API alone. */}
+          <AgentBudget gov={gov} busy={busy} onSet={patch} />
           {(charter.knobs ?? []).length > 0 && (
             <AgentLimits knobs={charter.knobs ?? []} limits={gov.limits ?? {}} busy={busy}
               onSet={(id, value) => patch({ limits: { [id]: value } })} />
@@ -1693,6 +1696,55 @@ function CharterDetail({ charter, workspaceId, onBack, onChanged, onError, range
     </div>
     </div>
     </div>
+  );
+}
+
+
+/** The per-run budget — tokens and seconds — that cancels a run past it. Empty reads as
+ *  the role default; a saved number replaces it for this scope. */
+function AgentBudget({ gov, busy, onSet }: {
+  gov: AgentGovernance; busy: boolean;
+  onSet: (body: { token_budget?: number; time_budget_s?: number }) => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <span className="aug-label">Budget per run</span>
+      <BudgetRow label="Tokens" unit="tokens" value={gov.token_budget} busy={busy}
+        onSave={n => onSet({ token_budget: n })} />
+      <BudgetRow label="Time" unit="seconds" value={gov.time_budget_s} busy={busy}
+        onSave={n => onSet({ time_budget_s: n })} />
+      <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+        A run that goes past either number is stopped and says so. Raising it lets the next
+        run go further; a run already stopped is not resumed.
+      </div>
+    </div>
+  );
+}
+
+function BudgetRow({ label, unit, value, busy, onSave }: {
+  label: string; unit: string; value: number | null; busy: boolean; onSave: (n: number) => void;
+}) {
+  const [draft, setDraft] = useState(value == null ? "" : String(value));
+  useEffect(() => { setDraft(value == null ? "" : String(value)); }, [value]);
+  const n = Number(draft.trim());
+  const valid = draft.trim() !== "" && Number.isInteger(n) && n > 0;
+  const dirty = valid && n !== value;
+  return (
+    <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ width: 110, color: "var(--t3)", flexShrink: 0 }}>{label}</span>
+      <Input type="number" value={draft} disabled={busy} min={1} step={1} inputMode="numeric"
+        aria-label={`${label} budget per run`} placeholder="role default"
+        className="aug-fs-xs"
+        style={{ padding: "3px 6px", width: 120, fontVariantNumeric: "tabular-nums" }}
+        onChange={e => setDraft(e.target.value)} />
+      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{unit}</span>
+      {dirty && (
+        <Button size="xs" variant="secondary" disabled={busy} onClick={() => onSave(n)}>Save</Button>
+      )}
+      {draft.trim() !== "" && !valid && (
+        <span className="aug-fs-xs" style={{ color: "var(--amb5)" }}>a whole number above 0</span>
+      )}
+    </label>
   );
 }
 

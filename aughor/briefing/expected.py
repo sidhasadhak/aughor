@@ -64,8 +64,7 @@ def expected_next(conn_id: str, spec: R.RangeSpec, *, profile: Any = None, works
     label = R._span(target.start, target.end)
     out = {"target": {"start": R._d(target.start), "last_day": last_day, "label": label, "settles_on": settles_on},
            "why": "", "items": []}
-    governed = [m for m in list_metrics(connection_id=conn_id) if m.status == "approved" and m.connection == conn_id]
-    approved = governed[:R.MAX_METRICS]
+    approved = R.governed_metrics(conn_id)[:R.MAX_METRICS]
     fresh = [m for m in approved if C.latest(_key(conn_id, m.name, last_day)) is None]
     measured: dict[str, tuple[list, str]] = {}
     if fresh:

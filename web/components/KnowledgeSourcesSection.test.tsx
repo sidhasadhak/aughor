@@ -100,3 +100,16 @@ it("says the sources could not be read when the load fails — not 'None yet'", 
   expect(screen.queryByText(/None yet/)).toBeNull();
   expect(screen.queryByText("Team wiki")).toBeNull();
 });
+
+it("names the pages the last sync did not index, with why", async () => {
+  api.getKnowledgeSources.mockResolvedValue({ ...payload, sources: [{ ...payload.sources[0],
+    status: { last_sync: "2026-09-06T10:00:00Z", pages_indexed: 41, skipped_count: 2,
+      pages_skipped: [{ title: "Owner", url: "https://n.test/owner",
+                        reason: "too short to index — 18 characters, under the minimum chunk length of 50" }] } }] });
+  render(<KnowledgeSourcesSection />);
+  expect(await screen.findByText(/2 not indexed/)).toBeInTheDocument();
+  expect(screen.getByText("2 pages were not indexed")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Owner" })).toHaveAttribute("href", "https://n.test/owner");
+  expect(screen.getByText(/under the minimum chunk length of 50/)).toBeInTheDocument();
+  expect(screen.getByText(/and 1 more, not listed/)).toBeInTheDocument();
+});

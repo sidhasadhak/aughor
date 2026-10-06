@@ -746,8 +746,13 @@ class Ledger:
     @classmethod
     def default(cls) -> "Ledger":
         """The process-wide ledger. ``AUGHOR_SYSTEM_DB`` overrides the path
-        (tests point it at a tmp dir so runs stay hermetic)."""
-        path = str(Path(os.environ.get("AUGHOR_SYSTEM_DB", _DEFAULT_DB)))
+        (tests point it at a tmp dir so runs stay hermetic).
+
+        Through ``resolve_db_path`` like every other store, so a migrated data home (IN-4)
+        reaches it: this read the env and the checkout default directly, which would have
+        left the platform's main store behind in the checkout after `migrate-state`."""
+        from aughor.db.sqlite_util import resolve_db_path
+        path = str(resolve_db_path("AUGHOR_SYSTEM_DB", _DEFAULT_DB))
         with cls._instances_lock:
             inst = cls._instances.get(path)
             if inst is None:

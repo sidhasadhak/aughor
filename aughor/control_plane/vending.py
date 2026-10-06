@@ -31,7 +31,10 @@ logger = logging.getLogger(__name__)
 # plane resolves the physical path here.
 # AUGHOR_UPLOAD_DIR overrides for read-only deployments (serverless stages uploads
 # under /tmp until the Blob tier lands); unset → the historical location.
-STORAGE_ROOT = Path(os.environ.get("AUGHOR_UPLOAD_DIR") or "data/uploads")
+# The default follows a migrated data home (IN-4) once `migrate-state` has run; the checkout's
+# data/ until then. Inline, so the store-hermeticity guard still reads the env var and its default.
+from aughor.db.home import rehome as _rehome  # noqa: E402
+STORAGE_ROOT = Path(os.environ.get("AUGHOR_UPLOAD_DIR") or _rehome(Path("data/uploads")))
 
 
 @dataclass(frozen=True)

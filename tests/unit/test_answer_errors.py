@@ -60,7 +60,7 @@ def test_every_reason_carries_a_policy():
         assert reason in AE._POLICY, reason
         retryable, recovery, hint = AE._POLICY[reason]
         assert isinstance(retryable, bool) and hint
-        assert recovery in (AE.RETRY, AE.SWITCH_MODEL, AE.FIX_CONFIG, AE.NONE)
+        assert recovery in (AE.RETRY, AE.SWITCH_MODEL, AE.FIX_CONFIG, AE.RAISE_BUDGET, AE.NONE)
 
 
 # ── the retryable contract, in both directions ────────────────────────────────
@@ -245,3 +245,11 @@ def test_a_failed_ask_ends_in_one_typed_error_frame(monkeypatch):
     assert e["reason"] == "not_found"
     assert e["retryable"] is False                          # never offer a retry that cannot work
     assert e["hint"]
+
+
+def test_a_budget_stop_names_the_agent_whose_budget_to_raise():
+    """The chat's budget refusal used to name the agents PATCH route — an API call, not a
+    place. It now carries the recovery and the agent, and the chat opens that agent's page."""
+    ev = AE.error_event(message="x", reason="budget_exceeded", agent_id="investigator")
+    assert ev["recovery"] == AE.RAISE_BUDGET and ev["agent_id"] == "investigator"
+    assert "agent_id" not in AE.error_event(message="x", reason="budget_exceeded")

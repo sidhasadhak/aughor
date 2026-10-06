@@ -21,8 +21,8 @@ _REGISTRY_PATH = Path(__file__).parent.parent.parent / "data" / "documents.json"
 def _registry_path() -> Path:
     """Registry file; ``AUGHOR_DOCUMENTS_REGISTRY`` overrides (test hermeticity —
     the suite must never mutate the live data/documents.json)."""
-    env = os.environ.get("AUGHOR_DOCUMENTS_REGISTRY")
-    return Path(env) if env else _REGISTRY_PATH
+    from aughor.db.home import rehome          # IN-4: the data home, once migrated
+    return Path(os.environ.get("AUGHOR_DOCUMENTS_REGISTRY") or rehome(_REGISTRY_PATH))
 
 
 def _load_registry() -> list[dict]:
@@ -243,7 +243,10 @@ def index_text(
         settings=settings,
     )
     if not chunks:
-        return {"doc_id": doc_id, "chunk_count": 0}
+        # The floor that cut it rides along, so a caller can say why without importing it.
+        from aughor.knowledge.documents import DEFAULT_CHUNK_SETTINGS
+        return {"doc_id": doc_id, "chunk_count": 0,
+                "min_chars": (settings or DEFAULT_CHUNK_SETTINGS).min_chars}
 
     _ensure_collection()
     _upsert_chunks(chunks)

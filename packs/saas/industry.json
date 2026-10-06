@@ -140,5 +140,20 @@
       "sane_range": "ratio 0..1 (never > 1); opt-in free-trial B2B SaaS often 0.15–0.25, freemium B2C typically low single-digit percent.",
       "needs_concepts": ["trials / free signups with start date", "paid subscriptions with start date", "a key linking signup→paid account", "a fixed signup cohort"]
     }
+  ],
+  "reading_order": [
+    {"metric": "Recurring Revenue", "aliases": ["ARR", "MRR", "annual recurring revenue", "monthly recurring revenue"], "kind": "sales"},
+    {"metric": "Bookings", "aliases": ["new bookings"], "kind": "sales"},
+    {"metric": "Customers", "aliases": ["accounts", "logos", "active accounts"], "kind": "volume"},
+    {"metric": "Average Revenue per Account", "aliases": ["ARPA", "ARPU", "average revenue per user"], "kind": "rate"},
+    {"metric": "Net Revenue Retention", "aliases": ["NRR", "NDR", "net dollar retention"], "kind": "rate"},
+    {"metric": "Trial-to-Paid Conversion", "aliases": ["trial conversion", "activation rate", "free to paid"], "kind": "rate"},
+    {"metric": "Lifetime Value", "aliases": ["LTV", "CLV"], "kind": "rate"},
+    {"metric": "Gross Margin", "aliases": [], "kind": "margin"},
+    {"metric": "Revenue Churn", "aliases": ["gross revenue churn", "gross MRR churn", "revenue churn rate"], "kind": "cost"},
+    {"metric": "Customer Churn", "aliases": ["logo churn", "churn rate", "account churn"], "kind": "cost"},
+    {"metric": "Customer Acquisition Cost", "aliases": ["CAC", "blended CAC"], "kind": "cost"},
+    {"metric": "CAC Payback", "aliases": ["payback period"], "kind": "cost"},
+    {"metric": "Operating Income", "aliases": ["net income", "net profit", "EBITDA"], "kind": "profit"}
   ]
 }
