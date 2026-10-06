@@ -91,6 +91,9 @@ interface ChatBody {
    *  host tab; absent from every other caller). Forwarded verbatim; the backend
    *  caps and sanitizes it. */
   surface?: string;
+  /** "Ask this briefing" — the range Briefing on screen, by its period key only. The
+   *  backend reads that Briefing from its own cache. */
+  brief_period?: string;
   /** SP-15 — the OBJECT the question was summoned from (a held row's "Ask Spotlight"),
    *  structurally: kind + id, never parsed out of the prose. Forwarded verbatim; the
    *  backend opens the turn on that object's live state. */
@@ -261,6 +264,7 @@ function upstreamRequest(body: ChatBody): { url: string; payload: Record<string,
       mode: body.request_mode ?? null,
       purpose: body.purpose ?? "",
       surface: body.surface ?? "",
+      brief_period: body.brief_period ?? "",
       focus: body.focus ?? null,
     },
   };

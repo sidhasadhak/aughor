@@ -46,13 +46,43 @@ def _noop_emit(frame_type: str, payload: dict) -> None:
     return None
 
 
-def _connection(connection_id: str):
-    from aughor.db.connection import open_connection_for
-    return open_connection_for(connection_id)
+def _connection(connection_id: str, *, canvas_id: Optional[str] = None,
+                schema_scope: Optional[str] = None):
+    """The connection a turn's tools read, pinned to the turn's scope.
+
+    A canvas pins its own schema; otherwise ``schema_scope`` does — the same precedence
+    the quick body's ``resolve_execution_scope`` applies. Unscoped, a multi-dataset
+    connection hands the model every dataset it holds: "Ask this briefing" on
+    `workspace` / `uber_ncr` answered from `luxexperience` and `data_co` (2026-10-06,
+    trace f6c0d51e), because these tools opened the bare connection while the quick body
+    beside them honoured the scope."""
+    if not canvas_id and not schema_scope:
+        from aughor.db.connection import open_connection_for
+        return open_connection_for(connection_id)
+    from aughor.canvas.scope import resolve_execution_scope
+    return resolve_execution_scope(connection_id, canvas_id, schema_scope=schema_scope).open()
+
+
+def _visible_schema(connection_id: str, *, canvas_id: Optional[str] = None,
+                    schema_scope: Optional[str] = None) -> str:
+    """The schema text a turn may see: the scoped connection's own, narrowed to a canvas's
+    table list when it has one (a table-list scope carries no schema name, so the pin alone
+    constrains nothing — the quick body filters the same way)."""
+    schema = _connection(connection_id, canvas_id=canvas_id, schema_scope=schema_scope).get_schema()
+    if canvas_id:
+        from aughor.canvas.scope import resolve_execution_scope
+        scope = resolve_execution_scope(connection_id, canvas_id, schema_scope=schema_scope)
+        if scope.tables and not scope.is_full_schema:
+            from aughor.tools.schema import get_schema_for_tables
+            narrowed = get_schema_for_tables(schema, list(scope.tables))
+            if narrowed and narrowed.strip():
+                schema = narrowed
+    return schema
 
 
 def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
-            user_question: str = "", canvas_id: Optional[str] = None) -> dict:
+            user_question: str = "", canvas_id: Optional[str] = None,
+            schema_scope: Optional[str] = None) -> dict:
     """Execute one query through the guard battery and report what the guards did.
 
     Returns the rows AND the receipts together, because a number without the guard
@@ -76,7 +106,7 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
     if not sql:
         return {"error": "no sql supplied"}
 
-    conn = _connection(connection_id)
+    conn = _connection(connection_id, canvas_id=canvas_id, schema_scope=schema_scope)
     # The model framed this statement; the declared filters of the metrics the question
     # targets go on it before it runs. `user_question` when this door was handed one,
     # else the question the turn bound.
@@ -243,7 +273,7 @@ def _receipt_dict(receipt: Any) -> dict:
 
 def answer_question(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
                     session_id: str = "", canvas_id: Optional[str] = None,
-                    user_question: str = "") -> dict:
+                    user_question: str = "", schema_scope: Optional[str] = None) -> dict:
     """Run the WHOLE quick-answer pipeline for one natural-language question.
 
     This is Wave 5's point: the tool calls the same ``answer_core`` the `/ask` fast
@@ -281,7 +311,7 @@ def answer_question(connection_id: str, args: dict, *, emit: Optional[Emit] = No
         return {"error": "no question supplied"}
 
     result = answer_core(question, connection_id, [], emit=emit or _noop_emit,
-                         session_id=session_id, canvas_id=canvas_id,
+                         session_id=session_id, canvas_id=canvas_id, schema_scope=schema_scope,
                          persist_question=user_question or question)
     out = {
         "outcome": result.outcome,
@@ -312,7 +342,8 @@ def answer_question(connection_id: str, args: dict, *, emit: Optional[Emit] = No
 
 
 def deep_analysis(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
-                  session_id: str = "", canvas_id: Optional[str] = None) -> dict:
+                  session_id: str = "", canvas_id: Optional[str] = None,
+                  schema_scope: Optional[str] = None) -> dict:
     """Run the deep analysis as the ANALYST LOOP, inline (CA-3).
 
     The conversation reaching for depth — and since CA-3 the depth IS a conversation:
@@ -355,7 +386,7 @@ def deep_analysis(connection_id: str, args: dict, *, emit: Optional[Emit] = None
 
     result = run_analyst(
         connection_id, question,
-        session_id=session_id, canvas_id=canvas_id,
+        session_id=session_id, canvas_id=canvas_id, schema_scope=schema_scope,
         emit=emit, purpose="converse_deep",
     )
     out: dict = {
@@ -376,13 +407,22 @@ def deep_analysis(connection_id: str, args: dict, *, emit: Optional[Emit] = None
     return out
 
 
-def list_tables(connection_id: str, args: dict) -> dict:
-    """The schema as a manifest — progressive disclosure, per the plan's Layer 3 table."""
-    conn = _connection(connection_id)
-    return {"schema": conn.get_schema()}
+def list_tables(connection_id: str, args: dict, *, canvas_id: Optional[str] = None,
+                schema_scope: Optional[str] = None) -> dict:
+    """The schema as a manifest — progressive disclosure, per the plan's Layer 3 table.
+
+    Only the turn's scope: a table the turn may not query is not listed, and the manifest
+    says which scope it is, so "this dataset has no city column" is a statement about the
+    scope rather than a hunt through every other dataset on the connection."""
+    out: dict = {"schema": _visible_schema(connection_id, canvas_id=canvas_id,
+                                           schema_scope=schema_scope)}
+    if schema_scope and not canvas_id:
+        out["scope"] = f"schema {schema_scope} only — the tables this conversation may query"
+    return out
 
 
-def describe_table(connection_id: str, args: dict) -> dict:
+def describe_table(connection_id: str, args: dict, *, canvas_id: Optional[str] = None,
+                   schema_scope: Optional[str] = None) -> dict:
     """One table's columns. Kept separate from `list_tables` so the manifest stays cheap
     and detail is paid for only when the model asks.
 
@@ -395,7 +435,7 @@ def describe_table(connection_id: str, args: dict) -> dict:
     if not name:
         return {"error": "no table supplied"}
 
-    schema = _connection(connection_id).get_schema()
+    schema = _visible_schema(connection_id, canvas_id=canvas_id, schema_scope=schema_scope)
     tables = parse_schema_tables(schema)
     bare = name.rsplit(".", 1)[-1].lower()
     for table, columns in tables.items():
@@ -434,7 +474,8 @@ _QUESTION_PARAMS = {
 
 def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
                    session_id: str = "", canvas_id: Optional[str] = None,
-                   user_question: str = "", agent: Any = None) -> list[ToolSpec]:
+                   user_question: str = "", agent: Any = None,
+                   schema_scope: Optional[str] = None) -> list[ToolSpec]:
     """The tool set for one connection.
 
     Bound to the connection by closure rather than taking it as a model-supplied
@@ -479,7 +520,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
             parameters=_QUESTION_PARAMS,
             run=lambda a: answer_question(connection_id, a, emit=emit,
                                           session_id=session_id, canvas_id=canvas_id,
-                                          user_question=user_question),
+                                          user_question=user_question, schema_scope=schema_scope),
         ),
         ToolSpec(
             name="run_sql",
@@ -493,7 +534,8 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
             ),
             parameters=_SQL_PARAMS,
             run=lambda a: run_sql(connection_id, a, emit=emit,
-                                  user_question=user_question, canvas_id=canvas_id),
+                                  user_question=user_question, canvas_id=canvas_id,
+                                  schema_scope=schema_scope),
         ),
         ToolSpec(
             name="list_tables",
@@ -502,7 +544,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
                 "SQL against a warehouse you have not inspected in this conversation."
             ),
             parameters={"type": "object", "properties": {}},
-            run=lambda a: list_tables(connection_id, a),
+            run=lambda a: list_tables(connection_id, a, canvas_id=canvas_id, schema_scope=schema_scope),
         ),
         ToolSpec(
             name="describe_table",
@@ -511,7 +553,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
                 "column names, types and sample values."
             ),
             parameters=_TABLE_PARAMS,
-            run=lambda a: describe_table(connection_id, a),
+            run=lambda a: describe_table(connection_id, a, canvas_id=canvas_id, schema_scope=schema_scope),
         ),
         ToolSpec(
             name="deep_analysis",
@@ -528,7 +570,8 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
             ),
             parameters=_QUESTION_PARAMS,
             run=lambda a: deep_analysis(connection_id, a, emit=emit,
-                                        session_id=session_id, canvas_id=canvas_id),
+                                        session_id=session_id, canvas_id=canvas_id,
+                                        schema_scope=schema_scope),
         ),
     ] + action_tools(connection_id, agent=agent) + platform_tools(connection_id, session_id=session_id) + spotlight_roster(
         connection_id, session_id=session_id, emit=emit) + present_tools(emit=emit) + delegation_tools(
@@ -711,7 +754,7 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
              provider=None, max_steps: Optional[int] = None,
              on_step=None, tool_emit: Optional[Emit] = None,
              session_id: str = "", canvas_id: Optional[str] = None, agent: Any = None,
-             trace_id: str = ""):
+             trace_id: str = "", schema_scope: Optional[str] = None):
     """Answer one question as a conversation rather than a compiled query spec.
 
     The whole body in one place: state-not-instructions prompt, the connection's tools,
@@ -733,7 +776,8 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
         converse_system_prompt(connection_id, extra_context, question=question, agent=agent),
         question,
         converse_tools(connection_id, emit=tool_emit, session_id=session_id,
-                       canvas_id=canvas_id, user_question=question, agent=agent),
+                       canvas_id=canvas_id, user_question=question, agent=agent,
+                       schema_scope=schema_scope),
         max_steps=max_steps,
         on_step=on_step,
         conn_id=connection_id or "",

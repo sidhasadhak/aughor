@@ -40,13 +40,21 @@ import { Input } from "@/components/ui/input";
 
 export const BRIEF_ASK_PANEL_WIDTH = 420;
 
+/** The `surface` this panel sends — `BRIEFING_SURFACE` in `aughor/knowledge/brief_context.py`. */
+export const BRIEFING_SURFACE = "briefing";
+
 export function BriefAskPanel({
-  connectionId, schema, canvasId, onClose, onOpenInAsk,
+  connectionId, schema, canvasId, periodKey, periodCovers, onClose, onOpenInAsk,
 }: {
   connectionId: string;
   /** The briefing's schema — pins the answer to the same data the brief is about. */
   schema?: string;
   canvasId?: string;
+  /** The range Briefing on screen, by its period key. The server reads that Briefing from
+   *  its own cache — the key is all that is sent. */
+  periodKey?: string;
+  /** What that period covers ("August 2026"), shown so the reader can see the scope. */
+  periodCovers?: string;
   onClose: () => void;
   /** Escalate to the full Ask surface (where deep analysis lives). */
   onOpenInAsk: (q: string) => void;
@@ -57,9 +65,14 @@ export function BriefAskPanel({
     sessionId,
     // depth:"quick" is the whole contract. `mode` stays "auto" so the unified /ask
     // door is used (and still emits its route receipt); the explicit depth wins
-    // inside the router.
-    body: { depth: "quick", schema: schema ?? null, canvas_id: canvasId ?? null },
+    // inside the router. `surface` says the question came from the Briefing, which is
+    // what grounds it in the brief on screen; `brief_period` names which one.
+    body: {
+      depth: "quick", schema: schema ?? null, canvas_id: canvasId ?? null,
+      surface: BRIEFING_SURFACE, brief_period: periodKey ?? "",
+    },
   });
+  const scopeText = [schema, periodCovers].filter(Boolean).join(" · ");
   const streaming = status === "submitted" || status === "streaming";
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -100,7 +113,10 @@ export function BriefAskPanel({
         borderBottom: "1px solid var(--b1)", flex: "0 0 auto",
       }}>
         <span className="aug-label">Ask this briefing</span>
-        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>quick answers</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}
+          title="Answers read only this schema's tables, and the Briefing for this period">
+          {scopeText || "quick answers"}
+        </span>
         <Button variant="ghost" size="xs" onClick={onClose} title="Close" aria-label="Close"
           style={{ marginLeft: "auto", color: "var(--t3)", fontSize: 15, lineHeight: 1, height: "auto", padding: 2, cursor: "pointer" }}>
           ×
@@ -111,7 +127,8 @@ export function BriefAskPanel({
         {turns.length === 0 ? (
           <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.6 }}>
             Ask a follow-up about this briefing — it already knows the verdict, the findings
-            behind it, and which schema they came from.
+            behind it, the period it covers and how each Key Metric is measured. Answers read
+            only {schema ? <strong style={{ color: "var(--t2)" }}>{schema}</strong> : "this connection"}.
             <div style={{ marginTop: 10, color: "var(--t3)" }}>
               For a full deep analysis, use <strong style={{ color: "var(--t3)" }}>Open in Ask</strong> on an answer.
             </div>

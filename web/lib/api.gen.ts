@@ -15283,6 +15283,11 @@ export interface components {
              * @default true
              */
             allow_clarify: boolean;
+            /**
+             * Brief Period
+             * @default
+             */
+            brief_period: string;
             /** Canvas Id */
             canvas_id?: string | null;
             /**
