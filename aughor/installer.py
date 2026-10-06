@@ -447,11 +447,35 @@ class Industry:
     pack: str      # its folder: "food-delivery"
 
 
+def _migrated_state_dir() -> Optional[Path]:
+    """The data home's state directory once `aughor migrate-state` has written its marker, else None.
+
+    A mirror of `aughor.db.home` (`home()`, `in_use()`, `state_home()`), because this module imports
+    nothing of aughor; `tests/unit/test_installer.py` holds the two equal."""
+    override = os.environ.get("AUGHOR_HOME")
+    if override:
+        home = Path(override).expanduser()
+    elif sys.platform == "win32" and os.environ.get("LOCALAPPDATA"):
+        home = Path(os.environ["LOCALAPPDATA"]) / "aughor"
+    else:
+        home = Path.home() / ".aughor"
+    try:
+        return home / "state" if (home / ".aughor-home").is_file() else None
+    except OSError:
+        return None
+
+
 def industries_file(root: Path) -> Path:
     """Where the API reads the choice: AUGHOR_INDUSTRIES_FILE, else industries.json in the state directory
-    (AUGHOR_STATE_DIR, else data/) — relative paths from the checkout, the folder the API runs in."""
+    (AUGHOR_STATE_DIR, else the migrated data home, else data/) — relative paths from the checkout, the
+    folder the API runs in."""
     override = os.environ.get("AUGHOR_INDUSTRIES_FILE")
-    path = Path(override) if override else Path(os.environ.get("AUGHOR_STATE_DIR") or "data") / INDUSTRIES_FILE
+    if override:
+        path = Path(override)
+    elif os.environ.get("AUGHOR_STATE_DIR"):
+        path = Path(os.environ["AUGHOR_STATE_DIR"]) / INDUSTRIES_FILE
+    else:
+        path = (_migrated_state_dir() or Path("data")) / INDUSTRIES_FILE
     return path if path.is_absolute() else root / path
 
 

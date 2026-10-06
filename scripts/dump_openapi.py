@@ -128,6 +128,10 @@ def _isolate_stores() -> None:
                      # MI-3's snapshot bytes — the directory half of the same store.
                      "AUGHOR_DATASETS_DIR"):
         os.environ.setdefault(_dir_env, tmp)
+    # IN-4 — the data home. A deployment that has run `migrate-state` keeps its marker in
+    # ~/.aughor, and the marker moves the default of every generated store this list does not
+    # name — into the LIVE home. A home with no marker in it keeps every default where it was.
+    os.environ.setdefault("AUGHOR_HOME", os.path.join(tmp, "aughor-home"))
     # A DIRECTORY too, and one that takes an EXCLUSIVE lock in local mode — so an unpinned
     # default here does not merely dirty `data/`, it contends with a running API.
     os.environ.setdefault("AUGHOR_QDRANT_PATH", os.path.join(tmp, "qdrant"))

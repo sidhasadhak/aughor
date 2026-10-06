@@ -16,6 +16,11 @@ from pydantic import BaseModel, Field
 
 _DEFAULT_PATH = Path(__file__).parent.parent.parent / "data" / "recommendation_outcomes.json"
 
+
+def _default_path() -> Path:
+    from aughor.db.home import rehome          # IN-4: the data home, once migrated
+    return rehome(_DEFAULT_PATH)
+
 RecStatus = Literal["accepted", "rejected", "implemented", "verified", "dismissed"]
 
 
@@ -68,7 +73,7 @@ from aughor.util.time import now_iso_z as _now
 # ── Persistence ───────────────────────────────────────────────────────────────
 
 def _load_raw(path: Path | None = None) -> list[dict]:
-    p = path or _DEFAULT_PATH
+    p = path or _default_path()
     if not p.exists():
         return []
     with open(p) as f:
@@ -77,7 +82,7 @@ def _load_raw(path: Path | None = None) -> list[dict]:
 
 
 def _save_raw(outcomes: list[dict], path: Path | None = None) -> None:
-    p = path or _DEFAULT_PATH
+    p = path or _default_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w") as f:
         json.dump(outcomes, f, indent=2)

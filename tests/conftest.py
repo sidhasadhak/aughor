@@ -225,6 +225,13 @@ for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR
                  "AUGHOR_AUTOMATIONS_DIR"):
     os.environ[_dir_env] = _test_stores_dir                    # assigned, not setdefault
 
+# IN-4 — the DATA HOME. Once this machine's deployment runs `aughor migrate-state`, its marker
+# lives in ~/.aughor and moves the DEFAULT of every generated store — including the stores this
+# file does not name, which until then resolved into the worktree's own data/. Without this
+# pin a test of an unlisted store would write the LIVE home rather than a scratch checkout.
+# A home with no marker in it is "not in use", so every default stays the checkout's.
+os.environ["AUGHOR_HOME"] = os.path.join(_test_stores_dir, "aughor-home")   # assigned, not setdefault
+
 # R11 — the per-column config store is a YAML file tree (data/ontology_column_config/)
 # written by the intelligence build when `ontology.column_config` is on; isolate it so
 # the suite never mutates the live tree (born hermetic, unlike the older data/ stores).

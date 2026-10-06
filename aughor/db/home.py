@@ -105,6 +105,30 @@ def rehome(default: Path) -> Path:
     return state_home().joinpath(*tail)
 
 
+def follow_checkout_file(path: str | Path) -> Path:
+    """A file a connection names inside THIS checkout's ``data/`` — where it lives once the home is
+    in use, and unchanged otherwise.
+
+    A connection's address is stored the way it was given, so one made against the checkout's own
+    ``data/`` (a demo DuckDB, a warehouse a person dropped there) still names the checkout after the
+    move. Only a path inside this checkout's ``data/`` — absolute, or relative as ``data/…`` — follows,
+    and only to a copy that EXISTS in the home: a DuckDB file in any other folder that happens to be
+    called ``data`` is somebody's own file and is never redirected, and a missing copy must never
+    turn a working connection into a missing file."""
+    p = Path(path)
+    if not in_use():
+        return p
+    checkout_data = Path(__file__).resolve().parents[2] / "data"
+    try:
+        rel = p.relative_to("data") if not p.is_absolute() else p.resolve().relative_to(checkout_data)
+    except ValueError:
+        return p
+    if not rel.parts or rel.parts[0] in AUTHORED_ENTRIES:
+        return p
+    moved = state_home().joinpath(*rel.parts)
+    return moved if moved.exists() else p
+
+
 def default_home() -> Path:
     """The per-user home for this platform, ignoring any override.
 

@@ -27,7 +27,12 @@ from aughor.util.json_store import KeyedJsonStore
 
 _CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "ontology_cache.json"
 _MAX_ENTRIES = 20
-_store = KeyedJsonStore(_CACHE_PATH, max_entries=_MAX_ENTRIES)
+def _cache_path() -> Path:
+    from aughor.db.home import rehome          # IN-4: the data home, once migrated
+    return rehome(_CACHE_PATH)
+
+
+_store = KeyedJsonStore(_cache_path(), max_entries=_MAX_ENTRIES)
 
 
 # ── Internal I/O (kept as thin delegators — override-writes read+mutate+save) ──

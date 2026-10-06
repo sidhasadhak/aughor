@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 from typing import Optional
 
-_OVERRIDES_FILE = Path(__file__).parent.parent.parent / "data" / "type_overrides.json"
+from aughor.db.home import rehome as _rehome  # noqa: E402 — IN-4: the data home, once migrated
+_OVERRIDES_FILE = _rehome(Path(__file__).parent.parent.parent / "data" / "type_overrides.json")
 
 
 def _load() -> dict:
