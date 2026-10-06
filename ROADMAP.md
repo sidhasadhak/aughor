@@ -11632,6 +11632,28 @@ items carry no action or prediction of their own, and a Briefing is not signed a
 *(2026-10-05, later: the items of this paragraph that waited on a decision were all decided and built, or closed,
 under §6 item 42 — and "no action of their own" was wrong when written: cited items have carried one since CB-7.)*
 
+### 3.54 · Home — the one page where a person and Aughor trade (DRAFTED 2026-10-06 at the user's *"lets write this down and push a branch"*; NOT decided — §6 item 45; `docs/HOME_STUDY_2026-10-06.md`)
+
+> **The fact it answers.** Five of Home's six blocks copy or link to a page that exists: the Get Started cards are
+> rail rows, the four stat tiles are Catalog, Ontology, Intelligence and Activity, the health scorecard is the Health
+> page's own component, and the recent-activity table is Agent runs. The 2027 study folded Home into Now (its §U);
+> the rail was kept (§4.10), so Home stays without a job of its own.
+
+**The proposal.** Every other page reports to the person; Home becomes the one page where the two trade. It has four
+parts, none of which lists a store:
+1 · **Ask, with memory** — before anything runs, what is already on record for the question, matched exactly
+(`db/history.find_prior_answers`, which today feeds only the model's prompt);
+2 · **A question for you** — one a day that only a person can answer, kept as `said` by them and checked against the
+data;
+3 · **Worth another look** — one conclusion a day nobody acted on, with decide · check again · not worth it, each an
+existing door;
+4 · **Between you and Aughor** — what the person told it and how it held up, read from
+`GET /principals/{principal}/record`.
+
+The copies leave; the first-run steps and the ask box stay. The doors each part uses, the live figures behind it (an
+empty Record; 11 distinct questions in the last 50 analyses, one asked 13 times) and the build order are in the
+study. Not built.
+
 ---
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
@@ -13698,6 +13720,16 @@ the browser** · **measure the premise before building.**
     found blind to a `<button` whose attributes start on the next line — it counted 9 while 105 stood; it sees them
     now, 72 moved onto the shared Button, `Segmented` and `TabStrip`, and the 33 that remain are raw on purpose, each
     named in `PENDING.md`.
+
+45. ⏳ **OPEN 2026-10-06 — what Home is for** (§3.54, `docs/HOME_STUDY_2026-10-06.md`; proposed in chat 2026-10-05
+    on the user's *"make sure that it has distinct value and doesnt just copy stuff from other pages/tabs"*, written
+    down 2026-10-06). Waiting on the user:
+    (a) whether Home takes the four parts and drops the blocks that copy other pages;
+    (b) Part 2's ranking rule — which question it asks on a given day;
+    (c) Part 2's wording — composed by code from records, since no model authors a fact;
+    (d) Part 3's meaning of "acted on" — cited by a decision, dismissed, promoted, or any of them.
+    If adopted, the proposed order is Parts 1 and 3, then 4, then 2 once (b) and (c) are settled.
+    Also recorded in the study, not here: two Brain map redesigns were shown 2026-10-05 and not taken.
 
 ---
 
