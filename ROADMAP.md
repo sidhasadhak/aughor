@@ -11659,7 +11659,8 @@ The copies leave. The study also carries the live figures behind it:
 - an empty Record;
 - one question asked 13 times;
 - 12 answers to one July question giving four revenue figures in three days;
-- two daily runs putting 26 Sep revenue at $5,762.95 and $17,316.12.
+- two daily runs putting 26 Sep revenue at $5,762.95 and $17,316.12, under two definitions, neither of them the
+  governed one.
 
 It also has each section's doors, what it costs (analyses record an organisation, not a person) and the build order.
 Not built.

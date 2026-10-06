@@ -62,13 +62,22 @@ Why the figures differed is not traced, and three causes can each move a figure:
 fixes landed; theLook restates recent days; and a model writes new SQL on every run. These counts were read from the
 headline text of the stored answers.
 
-**The daily runs disagree about the same day (2026-10-07).** The scheduled daily run (`automations/temporal.py`)
-runs at 09:00 UTC, observing with an 8-day lag that was set by hand for theLook on 2026-09-08.
-- Its 4 Oct run read 26 Sep revenue as $5,762.95, from 90 orders.
-- Its 5 Oct run measured its −15.0% against 26 Sep at $17,316.12. Its own label says −$2,591.94 on $14,724.18.
+**The daily runs disagree about the same day, because they measured different things (traced 2026-10-07).** The
+scheduled daily run (`automations/temporal.py`) runs at 09:00 UTC, observing with an 8-day lag that was set by hand
+for theLook on 2026-09-08.
+- Its 4 Oct run read 26 Sep revenue as $5,762.95, counting only items marked Complete (90 orders).
+- Its 5 Oct run read the same day as $17,316.12, over items not Cancelled or Returned (244 orders) — Net
+  merchandise revenue's filter.
+- The governed Revenue (`status <> 'Cancelled'`) was used by neither run.
 
-Nothing records that the earlier figure was restated; `/record/corrections` counts 0 restatements. The cause is not
-traced; it is flagged as a separate task.
+Over those five runs, the headline series switched definition three times. The model authored the definition each
+time, because the canonical pin cannot match the label "Revenue" (it reduces to no distinctive tokens), and the
+declared-filter guard exempts a condition that excludes both Cancelled and Returned. The 4 Oct report then blamed
+the difference on "the source has restated historical data". That was not the cause, and nothing booked either
+figure on the Record.
+
+Separately, the source does move. Under the same governed definition, 24 Sep went from $15,929.96 (8 days old) to
+$19,057.53 (9 days old).
 
 **Analyses record an organisation, not a person.** `GET /investigations/{id}` carries `org_id`, `agent_id` and
 `session_id`, and `check_owner` checks the organisation. Nothing today says which questions belong to a given
@@ -94,8 +103,8 @@ Wednesday 7 October · since your last visit on 3 Oct
 │ Revenue fell 15.0% on 27 September, to $14,724.                          │
 │ Already looked into by the daily run on 5 Oct: more orders (270), smaller│
 │ ones — average order value down 23.2% to $54.53.                         │
-│ ⚠ Check the comparison: this run measured 26 Sep at $17,316; the 4 Oct   │
-│   run had put the same day at $5,763.                                    │
+│ ⚠ Check the comparison: 26 Sep was $17,316 here (not Cancelled or       │
+│   Returned) and $5,763 on 4 Oct (Complete only) — neither is Revenue.    │
 └──────────────────────────────────────────────────────────────────────────┘
 ┌ A question for you ────────────────┐ ┌ Worth another look ───────────────┐
 │ August revenue rose 13.2% … Did    │ │ Email drives the most unique user │
@@ -138,8 +147,10 @@ earlier run.
     once there is one.
   - "Numbers you follow" needs a person (§3.8). Until then, it means the connection's daily runs.
 - **The warning is new code.** For each run, take the figure it used for its comparison day, and compare it with the
-  figure an earlier run measured for that same day. This is code with no model, and nothing does it today. On
-  theLook it fires on its very first case (§2).
+  figure an earlier run measured for that same day. Compare the definition each run used (its pinned formula and
+  filter) as well as the figure. Then the warning can say which happened: the source moved, or the platform measured
+  something else. On theLook the 26 Sep case is the second kind (§2). This is code with no model, and nothing does
+  it today.
 - **Not this:** the Briefing's lead, which is connection-wide and narrated (Now repeats it in one line). This one is
   filtered to the person and arrives already analysed.
 
