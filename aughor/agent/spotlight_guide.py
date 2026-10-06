@@ -273,7 +273,8 @@ def _guide_connect_data() -> dict:
 
 def _guide_appearance() -> dict:
     steps = [
-        "Say the preference — theme dark, light or system; density; or your default "
+        "Say the preference — theme dark, light or system; the look (accent, grey, radius, "
+        "scaling); or your default "
         "connection — and it is applied to your stored profile immediately, no "
         "approval and no page visit.",
         "The preference is stored to your user, not to one browser: every surface "
@@ -288,7 +289,7 @@ def _guide_appearance() -> dict:
     }
     if g is None:
         summary = (f"Appearance is one stored preference away — say the theme or "
-                   f"density you want and it applies to your profile immediately. "
+                   f"look (accent, grey, radius, scaling) you want and it applies to your profile immediately. "
                    f"Your current preferences could not be read just now; "
                    f"{_UNAVAILABLE}.")
     else:
@@ -296,7 +297,7 @@ def _guide_appearance() -> dict:
         current = (", ".join(f"{k} = {v}" for k, v in sorted(prefs.items()))
                    or "none set — every surface uses its default")
         summary = (f"Your stored preferences: {current}. Say the theme (dark, light, "
-                   f"system), density or default connection you want and I will set "
+                   f"system), look (accent, grey, radius, scaling) or default connection you want and I will set "
                    f"it immediately — it follows your user, and this screen picks it "
                    f"up from its next load.")
     return {"topic": "appearance", "steps": steps, "grounding": g,
@@ -403,7 +404,7 @@ _GUIDE_PARAMS = {
     "properties": {"topic": {
         "type": "string",
         "description": "What to walk through: create_agent, create_automation, "
-                       "connect_data, appearance (theme, density, defaults), or "
+                       "connect_data, appearance (theme, look, defaults), or "
                        "limits (spend caps: per-run budgets, autoseed tables, "
                        "profile-schema chars). Plain words like 'agent', 'dark "
                        "mode' or 'cap' resolve too.",
@@ -424,7 +425,7 @@ def spotlight_guide_tools(connection_id: str, *, session_id: str = "") -> list[T
                 "HOW to do something on this platform, step by step, grounded in "
                 "THIS deployment's live state and ending in an offered next action. "
                 "Topics: creating an agent, creating or scheduling an automation, "
-                "connecting data, appearance (theme, density, defaults), limits "
+                "connecting data, appearance (theme, look, defaults), limits "
                 "(capping what an agent may spend — budgets, autoseed tables, the "
                 "profile prompt). Use it for "
                 "'how do I / how should I…' questions about USING the product; for "

@@ -31,7 +31,10 @@ import { ProposalCard } from "@/components/ProposalCard";
 import { bindingRefs } from "@/lib/automationFlow";
 import { approverName } from "@/lib/auth";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { TabStrip } from "@/components/ui/tab-strip";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 
@@ -42,8 +45,12 @@ type View = "list" | "runs" | "inbox" | "canvas";
 const OUTCOME_COLOR: Record<string, string> = {
   fired:     "var(--grn3)",
   not_fired: "var(--t3)",
-  gated:     "var(--chart-threshold-warn, #f59e0b)",
+  gated:     "var(--amb3)",
   error:     "var(--red3)",
+};
+/** The same outcomes as a badge: the hue names the state (INSTRUMENT.md §2). */
+const OUTCOME_BADGE: Record<string, "green" | "secondary" | "amber" | "destructive"> = {
+  fired: "green", not_fired: "secondary", gated: "amber", error: "destructive",
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -313,32 +320,14 @@ export function AutomationsPanel({ connId, focusId }: Props) {
     return { total: automations.length, enabled, paused };
   }, [automations]);
 
-  const TABS: View[] = ["list", "runs", "inbox"];
   const pendingCount = proposals.filter(p => p.status === "pending").length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-0)", color: "var(--t1)" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px 0", borderBottom: "1px solid var(--bg-3)" }}>
-        <div style={{ display: "flex", gap: 2 }}>
-          {TABS.map(v => (
-            <Button
-              key={v} variant="ghost"
-              onClick={() => setView(v)}
-              className="h-auto"
-              style={{
-                padding: "6px 14px", fontSize: 12, borderRadius: 0, fontWeight: 500,
-                background: view === v ? "var(--blue3)" : "transparent",
-                color: view === v ? "#fff" : "var(--t3)",
-                borderBottom: view === v ? "2px solid var(--blue3)" : "2px solid transparent",
-              }}>
-              {v === "list" ? "Automations" :
-               v === "runs" ? "Runs" :
-               <>Inbox {pendingCount > 0 && <span style={{ marginLeft: 4, background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 5px", fontSize: 11 }}>{pendingCount}</span>}</>}
-            </Button>
-          ))}
-        </div>
-        <div style={{ flex: 1 }} />
+      {/* Header: the views as a tab strip, the list's toolbar at its end. */}
+      <TabStrip label="Automation views" value={view} onChange={setView} style={{ padding: "12px 20px 0", flexShrink: 0 }}
+        tabs={[{ id: "list", label: "Automations" }, { id: "runs", label: "Runs" }, { id: "inbox", label: "Inbox", badge: pendingCount }]}
+        trailing={<>
         {view === "list" && (
           <>
             {/* DS-15 — the other way in. Creation by PROPOSAL: describe the outcome, the
@@ -381,7 +370,7 @@ export function AutomationsPanel({ connId, focusId }: Props) {
             </Button>
           </>
         )}
-      </div>
+        </>} />
 
       {banner && (
         <div style={{
@@ -596,19 +585,11 @@ function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns,
       padding: "12px 16px", opacity: a.enabled ? 1 : 0.6,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <Button variant="ghost" onClick={onToggle} title={a.enabled ? "Disable" : "Enable"} className="h-auto p-0" style={{
-          width: 34, height: 18, borderRadius: 10, border: "none", cursor: "pointer", flexShrink: 0,
-          background: a.enabled ? "var(--blue3)" : "var(--bg-3)", position: "relative",
-        }}>
-          <span style={{
-            position: "absolute", top: 2, left: a.enabled ? 18 : 2, width: 14, height: 14,
-            borderRadius: "50%", background: "#fff", transition: "left .12s",
-          }} />
-        </Button>
+        <Switch checked={a.enabled} onChange={onToggle} title={a.enabled ? "Disable" : "Enable"} aria-label={a.enabled ? "Disable" : "Enable"} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</span>
-            {muted && <span style={{ background: "var(--chart-threshold-warn, #f59e0b)", color: "#fff", borderRadius: 8, padding: "1px 6px", fontSize: 11 }}>muted</span>}
+            {muted && <Badge variant="amber">muted</Badge>}
             {a.last_status && <span style={{ color: OUTCOME_COLOR[a.last_status] || "var(--t3)", fontSize: 11 }}>● {a.last_status}</span>}
           </div>
           <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
@@ -691,11 +672,7 @@ function RunsView({ automations, runsFor, runs, onPick }: {
     <div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
         {automations.map(a => (
-          <Button key={a.id} variant="ghost" className="h-auto" onClick={() => onPick(a)} style={{
-            fontSize: 11, padding: "4px 10px",
-            background: runsFor?.id === a.id ? "var(--blue3)" : "var(--bg-2)",
-            color: runsFor?.id === a.id ? "#fff" : "var(--t2)",
-          }}>{a.name}</Button>
+          <Button key={a.id} size="xs" variant={runsFor?.id === a.id ? "default" : "outline"} static onClick={() => onPick(a)}>{a.name}</Button>
         ))}
       </div>
       {!runsFor && <div style={{ color: "var(--t3)", fontSize: 13 }}>Pick an automation to see its tick history.</div>}
@@ -724,10 +701,7 @@ function RunsView({ automations, runsFor, runs, onPick }: {
         ) : (() => { const r = row.run; return (
           <div key={r.id} style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: 6, padding: "10px 14px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{
-                fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 4, textTransform: "uppercase",
-                background: OUTCOME_COLOR[r.outcome] || "var(--t3)", color: "#fff",
-              }}>{r.outcome.replace("_", " ")}</span>
+              <Badge variant={OUTCOME_BADGE[r.outcome] ?? "secondary"} style={{ textTransform: "uppercase" }}>{r.outcome.replace("_", " ")}</Badge>
               <span style={{ fontSize: 12, color: "var(--t2)" }}>{r.reason}</span>
               <div style={{ flex: 1 }} />
               <span style={{ fontSize: 11, color: "var(--t3)" }}>{relTime(r.started_at)} · {r.duration_ms}ms</span>

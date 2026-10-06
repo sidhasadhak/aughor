@@ -18,7 +18,12 @@ import {
   getMonitorProof,
 } from "@/lib/api";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Segmented } from "@/components/ui/segmented";
+import { Switch } from "@/components/ui/switch";
+import { TabStrip } from "@/components/ui/tab-strip";
+import { RadioCards } from "@radix-ui/themes";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { takeMonitorDraft } from "@/lib/query/monitorDraft";
 import { Loading } from "@/components/ui/states";
@@ -50,8 +55,12 @@ const CRON_PRESETS = [
 
 const SEVERITY_COLOR: Record<string, string> = {
   critical: "var(--red3)",
-  warning:  "var(--chart-threshold-warn, #f59e0b)",
+  warning:  "var(--amb3)",
   info:     "var(--blue3)",
+};
+/** The same severities as a badge: the hue names the state (INSTRUMENT.md §2). */
+const SEVERITY_BADGE: Record<string, "destructive" | "amber" | "default"> = {
+  critical: "destructive", warning: "amber", info: "default",
 };
 
 // ── Blank form state ──────────────────────────────────────────────────────────
@@ -244,45 +253,19 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-0)", color: "var(--t1)" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px 0", borderBottom: "1px solid var(--bg-3)" }}>
-        <div style={{ display: "flex", gap: 2 }}>
-          {(["list", "alerts", ...(view === "form" ? ["form"] : [])] as const).map(v => (
-            <Button
-              variant="ghost"
-              key={v}
-              onClick={() => view !== "form" && setView(v as View)}
-              className="h-auto p-0"
-              style={{
-                padding: "6px 14px",
-                background: view === v ? "var(--blue3)" : "transparent",
-                color: view === v ? "#fff" : "var(--t3)",
-                border: "none",
-                borderRadius: "4px 4px 0 0",
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: 500,
-                position: "relative",
-              }}
-            >
-              {v === "list"   ? "Monitors" :
-               v === "alerts" ? <>Alerts {unackedCount > 0 && <span style={{ marginLeft: 4, background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 5px", fontSize: 11 }}>{unackedCount}</span>}</> :
-               "Configure"}
-            </Button>
-          ))}
-        </div>
-        <div style={{ flex: 1 }} />
-        {view === "list" && (
-          <Button variant="ghost" className="h-auto" onClick={openCreate} style={{ fontSize: 12, padding: "5px 12px" }}>
-            + New monitor
-          </Button>
-        )}
-        {view === "form" && (
-          <Button variant="ghost" onClick={() => setView("list")} className="h-auto p-0 font-normal" style={{ background: "none", border: "none", color: "var(--t3)", cursor: "pointer", fontSize: 12 }}>
-            ← Back
-          </Button>
-        )}
-      </div>
+      {/* Header: the views as a tab strip — the form, while it is open, is a tab of its own that the
+          others do not leave — and the row's one door at its end. */}
+      <TabStrip label="Monitor views" value={view} onChange={v => { if (view !== "form") setView(v); }}
+        style={{ padding: "12px 20px 0", flexShrink: 0 }}
+        tabs={[
+          { id: "list" as View, label: "Monitors" },
+          { id: "alerts" as View, label: "Alerts", badge: unackedCount },
+          ...(view === "form" ? [{ id: "form" as View, label: "Configure" }] : []),
+        ]}
+        trailing={<>
+          {view === "list" && <Button variant="ghost" size="xs" onClick={openCreate}>+ New monitor</Button>}
+          {view === "form" && <Button variant="ghost" size="xs" onClick={() => setView("list")}>← Back</Button>}
+        </>} />
 
       {/* Body */}
       <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
@@ -377,24 +360,7 @@ function MonitorCard({
       padding: "12px 16px",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        {/* Toggle */}
-        <Button
-          variant="ghost"
-          onClick={onToggle}
-          title={monitor.enabled ? "Disable" : "Enable"}
-          className="h-auto p-0"
-          style={{
-            width: 32, height: 18, borderRadius: 9,
-            background: monitor.enabled ? "var(--blue3)" : "var(--bg-3)",
-            border: "none", cursor: "pointer", position: "relative", flexShrink: 0,
-          }}
-        >
-          <span style={{
-            position: "absolute", top: 3, left: monitor.enabled ? 16 : 3,
-            width: 12, height: 12, borderRadius: "50%",
-            background: "#fff", transition: "left .15s",
-          }} />
-        </Button>
+        <Switch checked={monitor.enabled} onChange={onToggle} title={monitor.enabled ? "Disable" : "Enable"} aria-label={monitor.enabled ? "Disable" : "Enable"} />
 
         {/* Name + type */}
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -402,9 +368,7 @@ function MonitorCard({
             <span style={{ fontWeight: 600, fontSize: 13, color: "var(--t1)" }}>{monitor.name}</span>
             <TypeBadge type={monitor.alert_on} />
             {unacked > 0 && (
-              <span style={{ background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 6px", fontSize: 11 }}>
-                {unacked} alert{unacked > 1 ? "s" : ""}
-              </span>
+              <Badge variant="destructive">{unacked} alert{unacked > 1 ? "s" : ""}</Badge>
             )}
           </div>
           <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
@@ -526,13 +490,9 @@ function AlertRow({ alert, onAck }: { alert: MonitorAlert; onAck: () => void }) 
       borderRadius: 6, padding: "10px 14px",
       opacity: alert.acknowledged ? 0.6 : 1,
     }}>
-      <span style={{
-        fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
-        background: SEVERITY_COLOR[alert.severity] ?? "var(--bg-3)", color: "#fff",
-        textTransform: "uppercase", flexShrink: 0, marginTop: 1,
-      }}>
+      <Badge variant={SEVERITY_BADGE[alert.severity] ?? "secondary"} style={{ textTransform: "uppercase", flexShrink: 0, marginTop: 1 }}>
         {alert.severity}
-      </span>
+      </Badge>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: "var(--t1)" }}>{alert.monitor_name}</div>
         <div style={{ fontSize: 12, color: "var(--t2)", marginTop: 2 }}>{alert.message}</div>
@@ -601,15 +561,8 @@ function MonitorForm({
 
       {/* Metric source */}
       <Field label="Metric">
-        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-          {(["catalog", "sql"] as const).map(s => (
-            <Button variant="ghost" key={s} onClick={() => setMetricSource(s)}
-              className="h-auto p-0 font-normal"
-              style={{ ...segBtn, background: metricSource === s ? "var(--blue3)" : "var(--bg-2)", color: metricSource === s ? "#fff" : "var(--t2)" }}>
-              {s === "catalog" ? "From catalog" : "Custom SQL"}
-            </Button>
-          ))}
-        </div>
+        <Segmented label="Metric source" value={metricSource} onChange={setMetricSource} style={{ marginBottom: 8, alignSelf: "flex-start" }}
+          options={[{ value: "catalog", label: "From catalog" }, { value: "sql", label: "Custom SQL" }]} />
         {metricSource === "catalog" ? (
           <SelectField value={form.metric_name ?? ""} onChange={e => setField("metric_name", e.target.value as any)} style={{ width: "100%" }}>
             <option value="">Select a metric…</option>
@@ -629,21 +582,16 @@ function MonitorForm({
 
       {/* Alert type */}
       <Field label="Alert condition">
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        {/* A choice with a sentence under each option: Themes' radio cards. */}
+        <RadioCards.Root size="1" columns="2" gap="2" aria-label="Alert condition" value={alertOn}
+          onValueChange={v => setField("alert_on", v as AlertOn)}>
           {ALERT_TYPES.map(at => (
-            <Button variant="ghost" key={at.value} onClick={() => setField("alert_on", at.value)}
-              className="h-auto p-0 font-normal whitespace-normal"
-              style={{
-                ...segBtn,
-                background: alertOn === at.value ? "var(--vio3, #6366f1)" : "var(--bg-2)",
-                color: alertOn === at.value ? "#fff" : "var(--t2)",
-                flexDirection: "column", alignItems: "flex-start", padding: "8px 10px", gap: 2,
-              }}>
+            <RadioCards.Item key={at.value} value={at.value} style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
               <span style={{ fontWeight: 600, fontSize: 12 }}>{at.label}</span>
-              <span style={{ fontSize: 11, opacity: 0.75, textAlign: "left" }}>{at.desc}</span>
-            </Button>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)", textAlign: "left" }}>{at.desc}</span>
+            </RadioCards.Item>
           ))}
-        </div>
+        </RadioCards.Root>
       </Field>
 
       {/* Conditional fields */}
@@ -662,15 +610,8 @@ function MonitorForm({
             </Field>
           </div>
           <Field label="Direction">
-            <div style={{ display: "flex", gap: 6 }}>
-              {(["below", "above"] as const).map(d => (
-                <Button variant="ghost" key={d} onClick={() => setField("threshold_direction", d)}
-                  className="h-auto p-0 font-normal whitespace-normal"
-                  style={{ ...segBtn, background: form.threshold_direction === d ? "var(--blue3)" : "var(--bg-2)", color: form.threshold_direction === d ? "#fff" : "var(--t2)" }}>
-                  {d === "below" ? "Alert when below (e.g. revenue)" : "Alert when above (e.g. error rate)"}
-                </Button>
-              ))}
-            </div>
+            <Segmented label="Direction" value={form.threshold_direction ?? ""} onChange={d => setField("threshold_direction", d)} style={{ alignSelf: "flex-start" }}
+              options={[{ value: "below", label: "Alert when below (e.g. revenue)" }, { value: "above", label: "Alert when above (e.g. error rate)" }]} />
           </Field>
         </>
       )}
@@ -738,21 +679,10 @@ function MonitorForm({
 
       {/* Schedule */}
       <Field label="Schedule">
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-          {CRON_PRESETS.map(p => (
-            <Button variant="ghost" key={p.label} onClick={() => onCronPreset(p.cron)}
-              className="h-auto p-0 font-normal"
-              style={{
-                ...segBtn,
-                background: (!isCustomCron && cronPreset === p.cron && p.label !== "Custom") || (isCustomCron && p.label === "Custom")
-                  ? "var(--blue3)" : "var(--bg-2)",
-                color: (!isCustomCron && cronPreset === p.cron && p.label !== "Custom") || (isCustomCron && p.label === "Custom")
-                  ? "#fff" : "var(--t2)",
-              }}>
-              {p.label}
-            </Button>
-          ))}
-        </div>
+        <Segmented label="Schedule" style={{ marginBottom: 8, alignSelf: "flex-start" }}
+          value={isCustomCron ? "Custom" : (CRON_PRESETS.find(p => p.cron === cronPreset && p.label !== "Custom")?.label ?? "")}
+          onChange={label => onCronPreset(CRON_PRESETS.find(p => p.label === label)?.cron ?? "")}
+          options={CRON_PRESETS.map(p => ({ value: p.label, label: p.label }))} />
         {isCustomCron && (
           <Input value={form.check_cron ?? ""}
             onChange={e => onCustomCronChange(e.target.value)}
@@ -779,15 +709,8 @@ function MonitorForm({
 
       {/* Notification */}
       <Field label="Notification">
-        <div style={{ display: "flex", gap: 6 }}>
-          {(["in_app", "slack", "email"] as const).map(ch => (
-            <Button variant="ghost" key={ch} onClick={() => setField("notification_channel", ch as any)}
-              className="h-auto p-0 font-normal"
-              style={{ ...segBtn, background: form.notification_channel === ch ? "var(--blue3)" : "var(--bg-2)", color: form.notification_channel === ch ? "#fff" : "var(--t2)" }}>
-              {ch === "in_app" ? "In-app" : ch.charAt(0).toUpperCase() + ch.slice(1)}
-            </Button>
-          ))}
-        </div>
+        <Segmented label="Notification" value={form.notification_channel ?? ""} onChange={ch => setField("notification_channel", ch as MonitorDef["notification_channel"])} style={{ alignSelf: "flex-start" }}
+          options={[{ value: "in_app", label: "In-app" }, { value: "slack", label: "Slack" }, { value: "email", label: "Email" }]} />
       </Field>
 
       {/* Error */}
@@ -816,13 +739,13 @@ function Field({ label, children, style }: { label: string; children: React.Reac
 }
 
 function TypeBadge({ type }: { type: AlertOn }) {
-  const colors: Record<AlertOn, string> = {
-    threshold_cross: "var(--blue3)",
-    anomaly:         "var(--vio3, #6366f1)",
-    trend_reversal:  "var(--chart-threshold-warn, #f59e0b)",
-    segment_drift:   "var(--blue2)",
-    data_freshness:  "var(--red3)",
-    any_change:      "var(--t3)",
+  const tones: Record<AlertOn, "default" | "violet" | "amber" | "cyan" | "destructive" | "secondary"> = {
+    threshold_cross: "default",
+    anomaly:         "violet",
+    trend_reversal:  "amber",
+    segment_drift:   "cyan",
+    data_freshness:  "destructive",
+    any_change:      "secondary",
   };
   const labels: Record<AlertOn, string> = {
     threshold_cross: "Threshold",
@@ -832,11 +755,7 @@ function TypeBadge({ type }: { type: AlertOn }) {
     data_freshness:  "Freshness",
     any_change:      "Any change",
   };
-  return (
-    <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: colors[type] + "22", color: colors[type], border: `1px solid ${colors[type]}44` }}>
-      {labels[type]}
-    </span>
-  );
+  return <Badge variant={tones[type]}>{labels[type]}</Badge>;
 }
 
 function EmptyState({ onAdd }: { onAdd: () => void }) {
@@ -871,7 +790,3 @@ const ghostBtn: React.CSSProperties = {
   fontSize: 11, padding: "3px 9px",
 };
 
-const segBtn: React.CSSProperties = {
-  border: "none", borderRadius: 4, cursor: "pointer",
-  fontSize: 12, padding: "5px 10px", display: "flex", alignItems: "center",
-};

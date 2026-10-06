@@ -125,7 +125,6 @@ LOOK_SCALINGS = ("90%", "95%", "100%", "105%", "110%")
 
 ALLOWED_KEYS: dict[str, tuple] = {
     "theme": (_one_of("dark", "light", "system"), "UI theme"),
-    "density": (_one_of("comfortable", "compact"), "layout density"),
     "accent": (_one_of(*LOOK_ACCENTS), "accent colour: buttons, links, selection"),
     "grey": (_one_of(*LOOK_GREYS), "the grey surfaces, lines and text are drawn in"),
     "radius": (_one_of(*LOOK_RADII), "how round corners are"),

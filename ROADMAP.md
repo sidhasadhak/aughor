@@ -13661,7 +13661,7 @@ the browser** · **measure the premise before building.**
     Kept as it was: the table also stays on the Briefing — the ask was to make it the Cockpit's default, and the
     Briefing's narrative cites its figures.
 
-44. 🚧 **The web is on Radix Themes — direction 2026-10-05, phase 1 of three built 2026-10-06**
+44. ✅ **The web is on Radix Themes — direction 2026-10-05, the three phases built 2026-10-06**
     (the user, after a side by side of Radix Colors alone: *"with their components the overall UI would look much
     more effortless and easy to manipulate in the future… their other colour schemes… look much more standard than
     what we currently have… I'll let you figure out how"*). This reverses an earlier position — the web was Base UI
@@ -13687,8 +13687,16 @@ the browser** · **measure the premise before building.**
     with a Radix equivalent — built, #570. 2 · the page vocabulary — the tab strips and segmented controls, the 124
     native selects, the 26 hand-rolled tables, 257 text inputs, 44 text areas and 20 callouts are Themes' own
     (#571); the five product-vocabulary components, the checkboxes and radios and 89 raw buttons followed
-    (`claude/radix-themes-phase-2b`, 2026-10-06) — phase 2 is built. 3 · retire what that replaces, Base UI
-    included. The open lines are in `PENDING.md`.
+    (`claude/radix-themes-phase-2b`, 2026-10-06) — phase 2 is built. 3 · retire what that replaces
+    (`claude/radix-themes-phase-3`, 2026-10-06): Base UI, `class-variance-authority` and the shadcn config are out of
+    the web (the two chat collapsibles are Radix Primitives', which Themes already carried); 36 `aug-` classes no
+    source read and the shadcn variable bridge are gone; and the leftovers closed with it — the skin and look are
+    set by a boot script before the first paint; Density is retired and Scaling is the one knob for size (the
+    reading size is `14px × --scaling`, so 90% is what compact was); the cockpits' strip is a tab strip with a
+    heading; and the last white-on-a-hand-painted-fill is gone (two headers are tab strips, three pills are
+    switches, the rest badges, segmented controls, radio cards and the shared Button). One line stays open in
+    `PENDING.md`: the raw-button ratchet was blind to a `<button` whose attributes start on the next line, and sees
+    its honest 105 now — 96 to move as phase 2b moved the others.
 
 ---
 

@@ -677,21 +677,14 @@ export function InferencePanel() {
 
       {/* Actions */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2 }}>
-        <button
+        <Button variant="default" size="sm"
           onClick={save}
           disabled={saving || (paidBindings.length > 0 && !paidAck)}
           title={paidBindings.length > 0 && !paidAck
             ? "A paid model is bound — tick the acknowledgment above to save"
-            : undefined}
-          style={{
-            padding: "7px 16px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
-            background: "var(--blue4)", color: "#fff", border: "none",
-            cursor: saving || (paidBindings.length > 0 && !paidAck) ? "default" : "pointer",
-            opacity: saving || (paidBindings.length > 0 && !paidAck) ? 0.6 : 1,
-          }}
-        >
+            : undefined}>
           {saving ? "Saving…" : "Save"}
-        </button>
+        </Button>
         <button
           onClick={test}
           disabled={testing}

@@ -181,11 +181,11 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
   const fan = (data.fan ?? null) as { count: number; executed: number; skipped: number } | null;
   const accent = data.guarded ? "var(--chart-3)"
     : data.not_taken ? "var(--chart-4)"
-    : status ? (STATUS_COLOR[status] || "var(--t3)") : "var(--border)";
+    : status ? (STATUS_COLOR[status] || "var(--t3)") : "var(--b1)";
   return (
     <div style={{
       minWidth: 190, maxWidth: 210, borderRadius: 8, padding: "8px 10px",
-      border: "1px solid var(--border)", borderLeft: `3px solid ${accent}`,
+      border: "1px solid var(--b1)", borderLeft: `3px solid ${accent}`,
       background: "var(--bg-2)",
     }}>
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
@@ -273,7 +273,7 @@ function TriggerNode({ data }: { data: Record<string, unknown> }) {
   return (
     <div style={{
       minWidth: 170, maxWidth: 210, borderRadius: 8, padding: "8px 10px",
-      border: "1px dashed var(--border)", background: "var(--bg-2)",
+      border: "1px dashed var(--b1)", background: "var(--bg-2)",
     }}>
       <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>when</div>
       <div className="aug-fs-sm" style={{ fontWeight: 600, marginTop: 1 }}>
@@ -1717,7 +1717,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
         )}
         {mode === "execution" && runsOpen && !preview && graph && (
           <div style={{ width: 132, flexShrink: 0, overflowY: "auto",
-                        border: "1px solid var(--border)", borderRadius: 8, padding: 4 }}>
+                        border: "1px solid var(--b1)", borderRadius: 8, padding: 4 }}>
             <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "2px 4px 4px" }}>
               runs
             </div>
@@ -1777,7 +1777,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
                  { x: e.clientX, y: e.clientY }));
              }}
              style={{ flex: 1, minWidth: 0, minHeight: 220, position: "relative",
-                      border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                      border: "1px solid var(--b1)", borderRadius: 8, overflow: "hidden" }}>
           {/* §3.8b — the handlers the nodes call, provided ONCE for the whole canvas.
               In `data` they were N closures rebuilt on every memo run, so `memo` on the
               node could never hit; here they are one stable object. */}
@@ -1915,7 +1915,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
               nodesConnectable={false}
               proOptions={{ hideAttribution: true }}
             >
-              <Background gap={16} color="var(--border)" />
+              <Background gap={16} color="var(--b1)" />
               <Controls showInteractive={false} />
               {execution!.nodes.length >= MINIMAP_FROM && (
                 <MiniMap pannable zoomable position="bottom-right"

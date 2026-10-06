@@ -435,9 +435,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         {error && <p style={{ fontSize: 12, color: "var(--red4)" }}>{error}</p>}
 
         <div style={{ display: "flex", gap: 10 }}>
-          <Button variant="ghost" type="button" onClick={commit} disabled={committing}
-            className="h-auto p-0"
-            style={{ fontSize: 13, fontWeight: 600, padding: "9px 20px", borderRadius: 6, cursor: committing ? "not-allowed" : "pointer", background: "var(--blue3)", color: "#fff", border: "none", opacity: committing ? 0.6 : 1 }}>
+          <Button variant="default" size="sm" type="button" onClick={commit} disabled={committing}>
             {committing ? "Importing…" : conflict ? "Replace table" : "Add table"}
           </Button>
           {queue.length > 0 && (
@@ -813,9 +811,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
             {error && <p style={{ fontSize: 12, color: "var(--red4)" }}>{error}</p>}
 
             <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-              <Button variant="ghost" type="submit" disabled={saving}
-                className="h-auto p-0"
-                style={{ fontSize: 13, fontWeight: 600, padding: "9px 20px", borderRadius: 6, cursor: saving ? "not-allowed" : "pointer", background: "var(--blue3)", color: "#fff", border: "none", opacity: saving ? 0.6 : 1 }}>
+              <Button variant="default" size="sm" type="submit" disabled={saving}>
                 {saving ? (phase || "Connecting…") : "Create connection"}
               </Button>
               <Button variant="ghost" type="button" onClick={() => setPicked(null)}

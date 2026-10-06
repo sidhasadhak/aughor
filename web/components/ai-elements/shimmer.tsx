@@ -5,38 +5,29 @@
  * The Elements component API on OUR substrate: this file mirrors the surface of
  * Vercel AI Elements' `Shimmer` (a text label whose gradient sweeps while
  * something streams) but is written against the repo's design tokens and CSS —
- * NEVER `npx ai-elements add` (stock Elements is Radix-flavoured and fails the
- * css-var/token/raw-element gates; web/ is `base-nova` on @base-ui/react).
+ * NEVER `npx ai-elements add` (stock Elements carries its own styling and fails
+ * the css-var/token/raw-element gates).
  *
  * CSS only — the sweep is `.aug-shimmer-text` (globals.css), the same
- * `aug-shimmer` keyframes the skeleton blocks use. No framer-motion.
+ * `aug-shimmer` keyframes the skeleton blocks use. No framer-motion. A plain
+ * `<span>`: nothing here needs a library (Base UI left the web 2026-10-06).
  */
-import { mergeProps } from "@base-ui/react/merge-props";
-import { useRender } from "@base-ui/react/use-render";
-
 import { cn } from "@/lib/utils";
 
 export function Shimmer({
   className,
   active = true,
-  render,
+  style,
   ...props
-}: useRender.ComponentProps<"span"> & {
+}: React.ComponentProps<"span"> & {
   /** Sweep only while true — a finished label settles into plain muted text. */
   active?: boolean;
 }) {
-  return useRender({
-    defaultTagName: "span",
-    props: mergeProps<"span">(
-      {
-        className: cn(
-          active ? "aug-shimmer-text" : undefined,
-          className,
-        ),
-        style: active ? undefined : { color: "var(--t3)" },
-      },
-      props,
-    ),
-    render,
-  });
+  return (
+    <span
+      className={cn(active ? "aug-shimmer-text" : undefined, className)}
+      style={active ? style : { color: "var(--t3)", ...style }}
+      {...props}
+    />
+  );
 }

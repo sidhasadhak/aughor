@@ -247,21 +247,10 @@ function BudgetEditor({ connId }: { connId: string }) {
           />
         </label>
       ))}
-      <Button variant="ghost" size="xs"
+      <Button variant="default" size="xs"
         onClick={handleSave}
         disabled={saving}
-        style={{
-          alignSelf: "flex-start",
-          marginTop: 4,
-          background: "var(--blue3, #3b82f6)",
-          color: "#fff",
-          border: "none",
-          borderRadius: 4,
-          padding: "5px 14px",
-          fontSize: 12,
-          cursor: "pointer",
-          opacity: saving ? 0.6 : 1,
-        }}
+        style={{ alignSelf: "flex-start", marginTop: 4 }}
       >
         {saved ? "Saved" : saving ? "Saving…" : "Save budget"}
       </Button>

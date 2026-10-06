@@ -21,9 +21,14 @@ const ROOTS = ["components", "app"];
 const EXTS = [".tsx", ".ts"];
 
 // One-way ratchet. LOWER this as raw <button>s become <Button>; never raise it.
-const BASELINE = 9;
+// 105 is not a rise: until 2026-10-06 the pattern was `<button[ >]`, blind to a <button whose
+// first attribute sits on the next line, and the 9 it counted were the single-line ones. The
+// measurement widened; the count is of what was always there (PENDING.md, item 44's lines).
+const BASELINE = 105;
 
-const RAW_BUTTON = /<button[ >]/g;
+// `\s`, not a space: a <button whose first attribute sits on the next line is a raw button too
+// (three such went uncounted until 2026-10-06).
+const RAW_BUTTON = /<button[\s>]/g;
 
 function* walk(dir) {
   for (const name of readdirSync(dir)) {

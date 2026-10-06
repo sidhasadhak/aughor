@@ -1329,7 +1329,7 @@ function FieldDiff({ field, before, after }: {
         </div>
         <div className="aug-fs-xs"
              style={{ flex: 1, minWidth: 0, color: "var(--t2)",
-                      background: "var(--bg-1)", border: "1px solid var(--border)",
+                      background: "var(--bg-1)", border: "1px solid var(--b1)",
                       borderRadius: "var(--r-chip)", padding: "4px 6px",
                       whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
           {valueText(field, after)}

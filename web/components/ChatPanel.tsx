@@ -275,7 +275,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               style={{
                 width: 32, height: 32,
                 background: input.trim() ? "var(--blue-solid)" : "var(--bg-3)",
-                color: input.trim() ? "#fff" : "var(--t3)",
+                color: input.trim() ? "var(--on-primary)" : "var(--t3)",
               }}
             >
               <Icon name="send" size={16} stroke={2.2} />

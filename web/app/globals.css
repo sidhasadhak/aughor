@@ -8,8 +8,8 @@
 @import "../styles/sql-tokens.css";
 
 /* ── Instrument · the component layer ────────────────────────────────────────
-   The import order above is load-bearing: styles/tokens.css holds the Tailwind and
-   shadcn bridges plus pre-theme values; aughor-v2/theme/tokens-v2.css is the active
+   The import order above is load-bearing: styles/tokens.css holds the Tailwind
+   palette bridge plus pre-theme values; aughor-v2/theme/tokens-v2.css is the active
    Instrument token set and wins. Keep every @import bare and contiguous — Tailwind v4
    silently drops an @import with a comment above or beside it, so comments live here.
 
@@ -52,31 +52,6 @@
   --text-2xl:  22px;
   --text-2xl--line-height: 1;
 
-  /* ── shadcn semantic-variable bridge ──────────────────────────────────────
-     The aliases live in styles/tokens.css and point at the theme's primitives;
-     exposing them here makes bg-background, border-border, text-muted-foreground,
-     ring-ring, bg-primary… resolve. `--primary` is the interactive fill
-     (--blue-solid), never the chart blue. */
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-
   /* Radius scale for harvested shadcn code (rounded-sm/md utilities and the
      min(var(--radius-md),…) clamps in components/ui) — seated on 3 / 4 / 6.
      rounded-lg/xl stay banned by lint:tokens; use rounded-[var(--r3)]. */
@@ -100,7 +75,9 @@
 html, body {
   height: 100%;
   font-family: var(--font-ui);
-  font-size: 14px;   /* the reading size (2026-09-25); chrome stays 13 */
+  /* The reading size (2026-09-25); chrome stays 13. It follows the Theme's scaling — the one
+     knob for size since 2026-10-06 (90% reads as the old compact density did). */
+  font-size: calc(14px * var(--scaling));
   background: var(--bg-0);
   color: var(--t1);
   line-height: 1.5;
@@ -112,7 +89,7 @@ html, body {
 /* Selected text: Radix's own rule — a tint of the accent, the text's colour left alone. */
 
 button { font-family: var(--font-ui); cursor: pointer; }
-/* Raw <button>s get the chrome-stripping reset. The base-ui <Button> (data-slot="button")
+/* Raw <button>s get the chrome-stripping reset. The shared <Button> (data-slot="button")
    is EXEMPT so its variants render. :where() drops the reset to zero specificity, so an
    .aug-* class on a raw button (a nav item, a tab, a segment) wins without a second class.
    The tabs primitive's trigger (data-slot="tabs-trigger") is exempt for the same reason as
@@ -309,7 +286,6 @@ a:hover { color: var(--blue4); }
    word about the furniture. The button keeps its aria-label and its tooltip. */
 .aug-nav-head .aug-nav-label { display: none; }
 .aug-nav-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; padding: 8px 0 10px; border-top: 1px solid var(--b1); }
-.aug-nav-kbd { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
 
 /* Collapsed — the toggle at the rail's foot, or ⌘\ (lib/navCollapse.ts): a column of icons. The state
    is an attribute on <html>, set before the first paint, so the rail never renders open and snaps shut.
@@ -353,8 +329,6 @@ a:hover { color: var(--blue4); }
   color: var(--t2);
 }
 
-/* The theme toggle in the topbar: a small segmented pair. */
-
 /* A group header's count: amber when something inside is waiting on a human, neutral when it is
    only a count. It resets the header's tracking and case — a figure is never letter-spaced. */
 .aug-nav-group-badge {
@@ -384,14 +358,13 @@ a:hover { color: var(--blue4); }
   border-bottom: 1px solid var(--b1);
 }
 .aug-content-title { font-size: 15px; font-weight: 600; color: var(--t1); white-space: nowrap; }
-.aug-content-meta { font-size: 12px; color: var(--t3); white-space: nowrap; }
 
 /* ── Selection — tabs underline, segmented fills; never both in one header ── */
 /* Tabs and segmented controls are Radix Themes' own since 2026-10-06 (components/ui/tab-strip.tsx,
    components/ui/segmented.tsx). */
 
 /* ── Badge — 11px mono rectangles at 3px, tint 1 · border 2 · text 4 ─────── */
-.aug-badge,
+
 .aug-tag {
   display: inline-flex;
   align-items: center;
@@ -407,13 +380,13 @@ a:hover { color: var(--blue4); }
   white-space: nowrap;
   color: var(--t2);
 }
-.aug-badge-blue,   .aug-tag-blue   { background: var(--blue1); border-color: var(--blue2); color: var(--blue4); }
-.aug-badge-green,  .aug-tag-green  { background: var(--grn1);  border-color: var(--grn2);  color: var(--grn4); }
-.aug-badge-amber,  .aug-tag-amber  { background: var(--amb1);  border-color: var(--amb2);  color: var(--amb4); }
-.aug-badge-red,    .aug-tag-red    { background: var(--red1);  border-color: var(--red2);  color: var(--red4); }
-.aug-badge-violet, .aug-tag-violet { background: var(--vio1);  border-color: var(--vio2);  color: var(--vio4); }
-.aug-badge-cyan,   .aug-tag-cyan   { background: var(--cyn1);  border-color: var(--cyn2);  color: var(--cyn4); }
-.aug-badge-neutral, .aug-tag-gray  { background: var(--bg-3);  border-color: var(--b2);    color: var(--t2); }
+   .aug-tag-blue   { background: var(--blue1); border-color: var(--blue2); color: var(--blue4); }
+  .aug-tag-green  { background: var(--grn1);  border-color: var(--grn2);  color: var(--grn4); }
+  .aug-tag-amber  { background: var(--amb1);  border-color: var(--amb2);  color: var(--amb4); }
+    .aug-tag-red    { background: var(--red1);  border-color: var(--red2);  color: var(--red4); }
+ .aug-tag-violet { background: var(--vio1);  border-color: var(--vio2);  color: var(--vio4); }
+
+ .aug-tag-gray  { background: var(--bg-3);  border-color: var(--b2);    color: var(--t2); }
 
 /* ── Buttons — height 26 (small 22), radius 3, label 12/600 ────────────────
    One primary per view. A press steps the background and the label holds still — except on
@@ -445,12 +418,7 @@ a:hover { color: var(--blue4); }
   background: color-mix(in srgb, var(--primary) 86%, black);
   border-color: color-mix(in srgb, var(--primary) 86%, black);
 }
-.aug-btn-ghost { background: transparent; border-color: var(--b2); color: var(--t2); }
-.aug-btn-ghost:hover { background: var(--bg-3); border-color: var(--b3); color: var(--t1); }
-.aug-btn-ghost:active { background: var(--bg-4); border-color: var(--b3); color: var(--t1); }
-.aug-btn-minimal { background: transparent; border-color: transparent; color: var(--blue3); }
-.aug-btn-minimal:hover { background: transparent; border-color: transparent; color: var(--blue4); }
-.aug-btn-minimal:active { background: var(--bg-3); border-color: transparent; color: var(--blue4); }
+
 .aug-btn-sm { height: 22px; padding: 0 8px; font-size: 11px; }
 .aug-btn:disabled, .aug-btn[aria-disabled="true"] {
   background: var(--bg-1);
@@ -461,7 +429,7 @@ a:hover { color: var(--blue4); }
   pointer-events: none;
 }
 .aug-btn-primary:disabled, .aug-btn-primary[aria-disabled="true"] { background: var(--bg-4); border-color: var(--b2); opacity: .55; }
-.aug-btn-ghost:disabled, .aug-btn-minimal:disabled { background: transparent; }
+
 .aug-btn[aria-busy="true"] { opacity: .8; }
 .aug-btn[aria-busy="true"]::before { content: "◐"; font-family: var(--font-mono); font-weight: 400; }
 
@@ -526,18 +494,13 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 
 /* ── Status dot — 7px, the only round chrome ─────────────────────────────── */
 .aug-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--t4); }
-.aug-dot-live, .aug-dot-grn        { background: var(--grn3); }
-.aug-dot-waiting, .aug-dot-amb     { background: var(--amb3); }
-.aug-dot-failed, .aug-dot-red      { background: var(--red3); }
-.aug-dot-analysing                 { background: var(--vio3); }
-.aug-dot-blue                      { background: var(--blue3); }
-.aug-dot-idle, .aug-dot-gray       { background: var(--t4); }
-.aug-dot-live, .aug-dot-analysing  { animation: aug-pulse 1.05s var(--ease-inout) infinite; }
+.aug-dot-live{ background: var(--grn3); }
+
+.aug-dot-idle{ background: var(--t4); }
+.aug-dot-live{ animation: aug-pulse 1.05s var(--ease-inout) infinite; }
 
 /* ── Progress — a 3px rule, never a ring; the figure is printed beside it ─── */
-.aug-progress,
-.aug-progress-track { height: 3px; background: var(--bg-4); border-radius: var(--r1); overflow: hidden; }
-.aug-progress-fill { height: 100%; background: var(--blue3); transition: width var(--dur-3) var(--ease-out); }
+.aug-progress{ height: 3px; background: var(--bg-4); border-radius: var(--r1); overflow: hidden; }
 
 /* ── Overlay — the only three things allowed to float ────────────────────── */
 .aug-popover,
@@ -557,11 +520,8 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
   box-shadow: var(--shadow-md);
   color: var(--t1);
 }
-.aug-scrim { background: var(--scrim); }
 
 /* ── Separator — --b1 between blocks, --b0 between rows ──────────────────── */
-.aug-separator, .aug-divh { height: 1px; background: var(--b1); }
-.aug-separator-row { height: 1px; background: var(--b0); }
 
 /* ── Utilities ───────────────────────────────────────────────────────────── */
 .aug-mono { font-family: var(--font-mono); }
@@ -585,7 +545,6 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-empty-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
 .aug-empty-inline { max-width: none; gap: 8px; padding: 12px 0; color: var(--t3); }
 
-
 /* ── Four universal states · error, partial — and the refusal ────────────────
    Error: three sentences in order — what failed, what it means, what to do — carrying the run
    id and the exact object so it pastes into a ticket; Retry is never the only door offered.
@@ -601,7 +560,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
   color: inherit;   /* the callout's own hue: red for an error or a refusal, amber for a partial */
 }
 .aug-state-meta { margin-left: auto; font-size: 12px; color: var(--t3); white-space: nowrap; }
-.aug-state-claim { font-size: 14px; line-height: 1.6; color: var(--t1); }
+.aug-state-claim { font-size: calc(14px * var(--scaling)); line-height: 1.6; color: var(--t1); }
 .aug-state-what { font-size: 12px; line-height: 1.6; color: var(--t1); }
 .aug-state-detail { font-size: 12px; line-height: 1.6; color: var(--t2); }
 .aug-state-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
@@ -800,12 +759,8 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 
 /* The compact numeric table — drawn first for the artefact Briefing; the Profile layer's tables read it. */
 .aug-moves-wrap { overflow-x: auto; }
-.aug-moves thead th { position: static; padding: 0 8px 0 0; background: transparent; }
-.aug-moves tbody td { padding: 0 8px 0 0; }
-.aug-moves thead th:last-child, .aug-moves tbody td:last-child { padding-right: 0; }
-.aug-moves .num { font-size: 11px; }
-.aug-moves-good { color: var(--grn4); }
 
+.aug-moves-good { color: var(--grn4); }
 
 /* ── The claim ledger (Aughor Intelligence · 05 Evidence) ─────────────────────────────────────
    A claim is a row, not a card; the selected claim opens in the inspector beside the ledger. */
@@ -943,8 +898,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-actions-form-title { margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--t1); }
 .aug-actions-proposals, .aug-approvals { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .aug-actions-proposal { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--b1); border-radius: var(--r2); }
-.aug-approval { display: flex; flex-direction: column; gap: 5px; padding-bottom: 10px; border-bottom: 1px solid var(--b0); }
-.aug-approval:last-child { padding-bottom: 0; border-bottom: 0; }
+
 .aug-approval-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .aug-approval-head > .aug-brief-meta { margin-left: auto; }
 .aug-approval-kind { font-size: 12px; font-weight: 600; color: var(--amb4); }
@@ -1056,19 +1010,6 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
    controls sit left, spaced wider, on the page. */
 .aug-context-bar { gap: 16px; }
 
-/* ── Density · compact (Settings › Appearance, per user) — the reading size steps down one
-   and every row tightens; chrome, colour and layout stay the same. Comfortable is the sheet's
-   base values, so it declares nothing here. */
-:root[data-density="compact"] body { font-size: 13px; }
-:root[data-density="compact"] .aug-text-ui,
-:root[data-density="compact"] .aug-text-prose,
-:root[data-density="compact"] .aug-text-h3,
-:root[data-density="compact"] .aug-fs-ui,
-:root[data-density="compact"] .aug-state-claim { font-size: 13px; }
-:root[data-density="compact"] .aug-nav-item { height: 24px; }
-:root[data-density="compact"] .aug-rail-row { padding: 5px 0; }
-:root[data-density="compact"] .aug-toolbar { height: 32px; }
-
 /* ── Semantic Layer › metric editor: fields left, governance right (2026-09-25) ──────────
    The governance report sat above a 36rem form and pushed the first field a screen down
    while the right half of the row stayed empty. The report now has its own column and
@@ -1106,10 +1047,8 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-option[data-chosen="true"] { border-color: var(--accent); background: var(--bg-sel); }
 .aug-form-grid { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px 16px; align-items: center; max-width: 720px; }
 .aug-form-grid > label { color: var(--t2); }
-.aug-brief-lines { display: grid; gap: 6px; padding: 10px 0 12px; border-bottom: 1px solid var(--b0); margin-bottom: 12px; }
-.aug-brief-line { display: flex; gap: 14px; align-items: baseline; }
+
 .aug-brief-line > .aug-label { flex: 0 0 132px; }
-.aug-brief-line-item { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; padding: 2px 0; }
 
 /* ── The inspector · a cited record read beside the page that cites it. It sits over the page's
    own right-hand column, inside the workspace, so the rail and the tabs never move. Each thing it
@@ -1146,7 +1085,6 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-beside-box[data-chosen] { border-color: var(--accent); background: var(--bg-sel); }
 .aug-beside-link { height: auto; white-space: normal; justify-content: stretch; justify-items: start; font-weight: 400; cursor: pointer; }
 .aug-beside-link:hover { border-color: var(--b3); background: var(--bg-hover); }
-
 
 /* ── Radix Themes underneath (ROADMAP §6 item 44) ───────────────────────────────────────────
    <html> is the Theme's element (app/theme-root.tsx). It keeps OUR typography: the browser's

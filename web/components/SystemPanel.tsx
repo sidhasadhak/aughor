@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { getDevStats, resetDevStats, getEvalGraduations, getSystemFlags, setSystemFlag, type DevStats, type EvalGraduation, type SystemFlag } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Loading, ReadFailed } from "@/components/ui/states";
 import { PacksManager } from "@/components/PacksManager";
 import { subscribeKernelEvents } from "@/lib/events";
@@ -520,18 +521,9 @@ function FlagRow({ name, f, chip, busy, onToggle }: {
  * transport's declared rate budget allows"; AUGHOR_LLM_RPM still overrides in both
  * directions), so there is no user-facing switch to render. */
 
-/** The pill switch used by the Feature flags list. */
+/** The switch used by the Feature flags list. */
 function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      role="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)}
-      className="shrink-0 mt-0.5 rounded-[var(--r-pill)] transition-colors disabled:opacity-50"
-      style={{ width: 36, height: 20, padding: 2, background: checked ? "var(--grn2)" : "var(--bg-3)", border: "1px solid var(--b1)" }}
-    >
-      <span style={{ display: "block", width: 14, height: 14, borderRadius: "9999px", background: "#fff",
-        transform: checked ? "translateX(16px)" : "translateX(0)", transition: "transform .15s" }} />
-    </button>
-  );
+  return <Switch checked={checked} disabled={disabled} onChange={e => onChange(e.target.checked)} className="shrink-0 mt-0.5" />;
 }
 
 

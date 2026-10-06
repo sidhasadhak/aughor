@@ -74,6 +74,8 @@ const MEASURED = {
 } as unknown as BriefingRangeBlock;
 
 const show = () => render(<BriefingCockpits connectionId="thelook" schema="thelook" />);
+/** The strip's tabs by name — a Themes tab carries its label twice (one copy hidden), so read the visible one. */
+const stripTabs = () => screen.getAllByRole("tab").map(t => t.querySelector(".rt-TabsTriggerInner")?.textContent);
 
 beforeEach(() => {
   for (const f of Object.values(api)) f.mockReset();
@@ -108,7 +110,7 @@ describe("a person's cockpits", () => {
   it("lists them in a strip and draws the one the person left off on, each card it places run as written", async () => {
     show();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
-    expect(screen.getAllByTestId("cockpit-strip-item").map(b => b.textContent)).toEqual(["Returns", "Pricing"]);
+    expect(stripTabs()).toEqual(["Metrics", "Returns", "Pricing"]);
     expect(api.getCockpit).toHaveBeenCalledWith("thelook", "returns-1", null);
     // Only the cards the spec places are run — the pinned card it does not place is not.
     expect(api.runDashboardCard.mock.calls.map(c => c[0]).sort()).toEqual(["c7f3a001", "c91b2002"]);
@@ -191,7 +193,7 @@ describe("a retired cockpit", () => {
     api.restoreCockpit.mockResolvedValue({ status: "kept", kept: true, version: 5, artifact_id: "a5", sentences: [] });
     show();
     const retired = await screen.findByTestId("cockpit-retired");
-    expect(screen.getAllByTestId("cockpit-strip-item").map(b => b.textContent)).toEqual(["Returns"]);
+    expect(stripTabs()).toEqual(["Metrics", "Returns"]);
     expect(retired).toHaveTextContent("Retired:Pricing");
     fireEvent.click(within(retired).getByRole("button", { name: "Bring back" }));
     await waitFor(() => expect(api.restoreCockpit).toHaveBeenCalledWith("thelook", "pricing-1", 3));
@@ -316,7 +318,7 @@ describe("the metrics, the cockpit a person opens on", () => {
   it("is first in the strip and open when nothing was chosen; no cockpit of the person's is read", async () => {
     api.getSystemFlags.mockResolvedValue({ "briefing.ranges": { value: true } });
     show();
-    const metrics = await screen.findByTestId("cockpit-strip-metrics");
+    const metrics = await screen.findByRole("tab", { name: "Metrics" });
     expect(metrics).toHaveAttribute("aria-selected", "true");
     // measured for the latest month, as a cockpit is read — and the Briefing's own table shows it
     await waitFor(() => expect(api.measureRange).toHaveBeenCalledWith("thelook", { preset: "last_month" }, "thelook"));
@@ -328,7 +330,7 @@ describe("the metrics, the cockpit a person opens on", () => {
     expect(screen.getByTestId("cockpit-range")).toHaveTextContent("August 2026 · final");
     expect(api.getCockpit).not.toHaveBeenCalled();
     // the person's own cockpits are still there, one click away, and that choice is remembered
-    fireEvent.click(screen.getByText("Returns"));
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Returns" }));   // a Radix tab opens on mouseDown
     await waitFor(() => expect(api.getCockpit).toHaveBeenCalledWith("thelook", "returns-1", { preset: "last_month" }));
     expect(localStorage.getItem("aughor:cockpit:thelook")).toBe("returns-1");
   });
