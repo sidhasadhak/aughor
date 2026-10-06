@@ -122,5 +122,20 @@
       "sane_range": "hours per aircraft per day, 0..24 (physically capped at 24); industry-typical 8–14 (LCCs/narrowbodies higher, long-haul widebodies can exceed via long sectors). Any value > 24 is impossible.",
       "needs_concepts": ["block hours per leg", "aircraft (tail) identifier", "operating days / dates", "active fleet count"]
     }
+  ],
+  "reading_order": [
+    {"metric": "Passenger Revenue", "aliases": ["revenue", "total revenue"], "kind": "sales"},
+    {"metric": "Passengers", "aliases": ["passengers carried", "pax"], "kind": "volume"},
+    {"metric": "Flights", "aliases": ["departures"], "kind": "volume"},
+    {"metric": "RPK / ASK", "aliases": ["RPK", "RPM", "ASK", "ASM"], "kind": "volume"},
+    {"metric": "Load Factor", "aliases": ["passenger load factor", "seat occupancy"], "kind": "rate"},
+    {"metric": "Yield", "aliases": ["passenger yield", "revenue per RPK"], "kind": "rate"},
+    {"metric": "RASM", "aliases": ["unit revenue", "PRASM"], "kind": "rate"},
+    {"metric": "Ancillary Revenue per Passenger", "aliases": ["ancillary per pax"], "kind": "rate"},
+    {"metric": "CASM", "aliases": ["unit cost"], "kind": "cost"},
+    {"metric": "Cancellation Rate", "aliases": ["cancel rate"], "kind": "cost"},
+    {"metric": "On-Time Performance", "aliases": ["OTP", "on-time arrival rate", "punctuality", "completion factor"], "kind": "operations"},
+    {"metric": "Aircraft Utilization", "aliases": ["fleet utilization", "block hours"], "kind": "operations"},
+    {"metric": "Operating Profit", "aliases": ["net income", "operating margin"], "kind": "profit"}
   ]
 }

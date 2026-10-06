@@ -121,5 +121,19 @@
       "sane_range": "ratio 0..1 (strong supply chains 0.9–0.98; >1 impossible).",
       "needs_concepts": ["orders/jobs with due date and quantity", "actual delivery/completion date and quantity"]
     }
+  ],
+  "reading_order": [
+    {"metric": "Revenue", "aliases": ["net sales"], "kind": "sales"},
+    {"metric": "Throughput", "aliases": ["output", "units produced"], "kind": "volume"},
+    {"metric": "Overall Equipment Effectiveness", "aliases": ["OEE"], "kind": "rate"},
+    {"metric": "First Pass Yield", "aliases": ["FPY", "quality rate"], "kind": "rate"},
+    {"metric": "Capacity Utilization", "aliases": ["plant utilization"], "kind": "rate"},
+    {"metric": "OTIF", "aliases": ["on time in full", "schedule adherence"], "kind": "rate"},
+    {"metric": "Gross Margin", "aliases": [], "kind": "margin"},
+    {"metric": "Scrap Rate", "aliases": ["defect rate", "reject rate", "PPM"], "kind": "cost"},
+    {"metric": "Cost per Unit", "aliases": ["unit cost"], "kind": "cost"},
+    {"metric": "Cycle Time", "aliases": ["takt time"], "kind": "operations"},
+    {"metric": "Unplanned Downtime", "aliases": ["downtime", "MTBF", "MTTR"], "kind": "operations"},
+    {"metric": "Net Profit", "aliases": ["operating profit"], "kind": "profit"}
   ]
 }
