@@ -37,11 +37,7 @@ export function UpgradeModal() {
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) close(); }}>
-      <DialogContent
-        showCloseButton={false}
-        className="sm:max-w-[380px] gap-4 p-6"
-        style={{ background: "var(--bg-3)", border: "1px solid var(--b2)" }}
-      >
+      <DialogContent showCloseButton={false} maxWidth="380px" className="gap-4">
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
           <div style={{
             width: 36, height: 36, borderRadius: "var(--r2)", background: "var(--blue1)",

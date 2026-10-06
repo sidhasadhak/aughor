@@ -1,60 +1,22 @@
-"use client"
+import type * as React from "react"
+import { Tooltip as ThemesTooltip } from "@radix-ui/themes"
 
-import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
-
-import { cn } from "@/lib/utils"
-
-/** No delay default here: a tooltip waits Base UI's own 600ms, so a cursor crossing a toolbar does
- *  not flash every tooltip it passes — and once one is showing, its neighbours open at once. */
-function TooltipProvider(props: TooltipPrimitive.Provider.Props) {
-  return <TooltipPrimitive.Provider data-slot="tooltip-provider" {...props} />
-}
-
-function Tooltip({ ...props }: TooltipPrimitive.Root.Props) {
-  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
-}
-
-function TooltipTrigger({ ...props }: TooltipPrimitive.Trigger.Props) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
-}
-
-/** A tooltip is one of the three things allowed to float: --bg-3, a --b2 hairline,
- *  radius 4, --shadow-sm. No arrow — the hairline already separates it. */
-function TooltipContent({
-  className,
-  side = "top",
-  sideOffset = 4,
-  align = "center",
-  alignOffset = 0,
+/**
+ * A tooltip, on Radix Themes: what it says is `content`, and its one child is what it names.
+ *
+ *   <Tooltip content="Copy the link"><Button …/></Tooltip>
+ *
+ * `disabled` draws the child alone — a labelled row needs no tooltip until its label is hidden.
+ * The Theme's root waits 200ms before the first tooltip and opens a neighbour at once; a caller
+ * a cursor merely crosses (the rail) asks for longer with `delayDuration`.
+ */
+function Tooltip({
+  disabled,
   children,
   ...props
-}: TooltipPrimitive.Popup.Props &
-  Pick<
-    TooltipPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset"
-  >) {
-  return (
-    <TooltipPrimitive.Portal>
-      <TooltipPrimitive.Positioner
-        align={align}
-        alignOffset={alignOffset}
-        side={side}
-        sideOffset={sideOffset}
-        className="isolate z-50"
-      >
-        <TooltipPrimitive.Popup
-          data-slot="tooltip-content"
-          className={cn(
-            "z-50 inline-flex w-fit max-w-xs origin-(--transform-origin) items-center gap-1.5 rounded-[var(--r2)] border border-[var(--b2)] bg-[var(--bg-3)] px-[9px] py-[7px] text-xs text-[var(--t1)] shadow-[var(--shadow-sm)] data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 data-instant:data-open:animate-none data-instant:data-closed:animate-none",
-            className
-          )}
-          {...props}
-        >
-          {children}
-        </TooltipPrimitive.Popup>
-      </TooltipPrimitive.Positioner>
-    </TooltipPrimitive.Portal>
-  )
+}: React.ComponentProps<typeof ThemesTooltip> & { disabled?: boolean }) {
+  if (disabled || !props.content) return <>{children}</>
+  return <ThemesTooltip {...props}>{children}</ThemesTooltip>
 }
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
+export { Tooltip }

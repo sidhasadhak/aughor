@@ -12,8 +12,10 @@ import { ThreadsRail } from "@/components/ThreadsRail";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { AuthControl } from "@/components/AuthControl";
 import { applyDensity, applyTheme } from "@/lib/themeSwitch";
+import { cleanLook, getLook, setLook } from "@/lib/look";
+import { LookPanel } from "@/components/LookPanel";
 import { useNavCollapsed } from "@/components/shell/useNavCollapsed";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip } from "@/components/ui/tooltip";
 import { installAuthFetch } from "@/lib/auth";
 import { installWorkspaceHeader, setActiveWorkspace } from "@/lib/workspace";
 import { InferencePanel } from "@/components/InferencePanel";
@@ -403,7 +405,7 @@ function Sidebar({
     return null;
   };
   // Collapsed (the toggle at the head, or ⌘\), the rail is a column of icons: every row keeps its
-  // aria-label, and a hover names it — Base UI waits 600ms for the first label, then opens neighbours at once.
+  // aria-label, and a hover names it — after 600ms for the first label, then its neighbours at once.
   const [collapsed, toggleCollapsed] = useNavCollapsed();
   const navRow = (key: string, row: {
     icon: string; label: string; name: string; tip: string;
@@ -412,26 +414,22 @@ function Sidebar({
     // labelled row's is — that one only needs one once the rail is collapsed.
     alwaysTip?: boolean;
   }) => (
-    <Tooltip key={key} disabled={!collapsed && !row.alwaysTip}>
-      <TooltipTrigger
-        render={
-          <button
-            className={`aug-nav-item${row.active ? " active" : ""}`}
-            onClick={row.onClick}
-            // WP-11 a11y (§1.7-7): the visible <span> label wasn't computing an accessible name,
-            // so every nav button read as anonymous. An explicit aria-label guarantees the name
-            // (and now the badge's count); aria-current marks the active destination.
-            aria-label={row.name}
-            aria-current={row.active ? "page" : undefined}
-            aria-expanded={row.expanded}
-          />
-        }
+    <Tooltip key={key} content={row.tip} side="right" sideOffset={10} delayDuration={600}
+      disabled={!collapsed && !row.alwaysTip}>
+      <button
+        className={`aug-nav-item${row.active ? " active" : ""}`}
+        onClick={row.onClick}
+        // WP-11 a11y (§1.7-7): the visible <span> label wasn't computing an accessible name,
+        // so every nav button read as anonymous. An explicit aria-label guarantees the name
+        // (and now the badge's count); aria-current marks the active destination.
+        aria-label={row.name}
+        aria-current={row.active ? "page" : undefined}
+        aria-expanded={row.expanded}
       >
         <NavIcon name={row.icon} size={14} />
         <span className="aug-nav-label">{row.label}</span>
         {row.trailing}
-      </TooltipTrigger>
-      <TooltipContent side="right" sideOffset={10}>{row.tip}</TooltipContent>
+      </button>
     </Tooltip>
   );
   const renderItem = (item: { id: string; icon: string; label: string }) => {
@@ -452,7 +450,6 @@ function Sidebar({
   // Four groups, each ruled off in --b0, then Settings pinned to the bottom. The active
   // item is the only coloured thing in the rail: a 2px --blue3 bar on --bg-sel.
   return (
-    <TooltipProvider>
     <nav className="aug-sidebar">
       {/* The rail's own control sits at its top, as an icon. It is the one row whose
           meaning is the rail itself, so a word for it is a word about the furniture —
@@ -505,7 +502,6 @@ function Sidebar({
         )}
       </div>
     </nav>
-    </TooltipProvider>
   );
 }
 
@@ -899,7 +895,7 @@ function SettingsScreen({ theme, setTheme, density, setDensity, workspaceId, wor
     { id: "compact",     label: "Compact",     desc: "13 px text, 26 px rows — more on screen" },
   ];
   const modes: Array<{ id: Theme; icon: string; label: string; desc: string }> = [
-    { id: "dark",  icon: "moon", label: "Dark",  desc: "Navy backgrounds, light text" },
+    { id: "dark",  icon: "moon", label: "Dark",  desc: "Dark backgrounds, light text" },
     { id: "light", icon: "sun",  label: "Light", desc: "White backgrounds, dark text" },
   ];
 
@@ -986,6 +982,9 @@ function SettingsScreen({ theme, setTheme, density, setDensity, workspaceId, wor
                   )}
                 </Button>
               ))}
+            </div>
+            <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--b0)" }}>
+              <LookPanel />
             </div>
           </div>
         )}
@@ -1731,6 +1730,9 @@ export default function Home() {
             applyDensity(storedDensity);
             if (typeof window !== "undefined") localStorage.setItem(DENSITY_KEY, storedDensity);
           }
+          // The look — accent, grey, corners, scaling — rides the same two homes: whatever the
+          // person's store holds wins over this browser's copy; a knob it does not hold stays.
+          setLook(cleanLook(preferences, getLook()));
         })
         // An unreachable store leaves the cached theme standing — cosmetic, never blocking.
         .catch(() => {});

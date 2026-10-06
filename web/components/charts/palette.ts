@@ -56,16 +56,18 @@ export const CHART_DEEMPH: Record<ChartMode, string> = {
   dark: "#4E5A6A",
 };
 
-/** The surface charts render on — the validator's contrast reference. Mirrors --bg-2:
- *  in dark a card one step above the page (--bg-1), in light the page itself (--bg-0). */
+/** The surface charts render on — the validator's contrast reference. Mirrors --bg-2, which is
+ *  Radix's solid panel at the product's default grey: gray 2 in dark, white in light. A person
+ *  who picks another grey moves the live surface by a shade; the palette is validated here. */
 export const CHART_SURFACE: Record<ChartMode, string> = {
   light: "#FFFFFF",
-  dark: "#212121",
+  dark: "#191919",
 };
 
 /** Sign-diverging pair (change metrics: positive/negative). Sign is a good/bad meaning,
  *  not a series identity, so it wears the intent hues that carry those meanings: green
- *  for passed, red for adverse. Mirrors --grn3 / --chart-threshold-crit (= --red3). */
+ *  for passed, red for adverse — the chart palette's own green and red (--chart-2 and
+ *  --chart-threshold-crit = --chart-6), which are data and do not follow the Theme. */
 export const CHART_SIGN: Record<ChartMode, { pos: string; neg: string }> = {
   light: { pos: "#1E7B45", neg: "#C50F1F" },
   dark: { pos: "#3CAA60", neg: "#E65B77" },
@@ -97,7 +99,7 @@ export function resolveDeemph(mode?: ChartMode): string {
 export function resolveSign(mode?: ChartMode): { pos: string; neg: string } {
   const m = mode ?? activeMode();
   return {
-    pos: cssVar("--grn3") || CHART_SIGN[m].pos,
+    pos: cssVar("--chart-2") || CHART_SIGN[m].pos,
     neg: cssVar("--chart-threshold-crit") || CHART_SIGN[m].neg,
   };
 }

@@ -20,6 +20,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { validate } from "./validate_palette.mjs";
+import { radixNames, radixValueAt } from "./radix-tokens.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const css = readFileSync(join(root, "aughor-v2/theme/tokens-v2.css"), "utf8");
@@ -42,15 +43,28 @@ function declared(block, name) {
   const m = block.match(new RegExp(`(?:^|[\\s;{])--${name}:\\s*([^;]+);`, "m"));
   return m ? m[1].trim() : null;
 }
+// Since 2026-10-06 a surface is a NAME for a Radix step (`--bg-2: var(--color-panel-solid)`),
+// so an alias may leave this sheet. It is followed into Radix Themes' own stylesheet, at the
+// product's default grey — the chart's six colours stay literals here, and are never Radix's.
+const KEYWORD_HEX = { white: "#FFFFFF", black: "#000000" };
+function asHex(value, name) {
+  const v = KEYWORD_HEX[value.toLowerCase()] ?? value;
+  const short = v.match(/^#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/);
+  const hex = short ? `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}` : v;
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) throw new Error(`--${name} is neither a hex nor a var() alias: ${value}`);
+  return hex.toUpperCase();
+}
 function cssVarIn(mode, name, seen = new Set()) {
   if (seen.has(name)) throw new Error(`--${name} is a cyclic alias`);
   seen.add(name);
   const value = declared(blocks[mode], name) ?? (mode === "light" ? declared(blocks.dark, name) : null);
-  if (!value) throw new Error(`--${name} not found (${mode})`);
+  if (!value) {
+    if (radixNames().has(`--${name}`)) return asHex(radixValueAt(`--${name}`, mode), name);
+    throw new Error(`--${name} not found (${mode})`);
+  }
   const alias = value.match(/^var\(\s*--([a-zA-Z0-9-]+)\s*\)$/);
   if (alias) return cssVarIn(mode, alias[1], seen);
-  if (!/^#[0-9a-fA-F]{6}$/.test(value)) throw new Error(`--${name} is neither a hex nor a var() alias: ${value}`);
-  return value.toUpperCase();
+  return asHex(value, name);
 }
 const fromCss = (mode) => ({
   series: [1, 2, 3, 4, 5, 6].map((k) => cssVarIn(mode, `chart-${k}`)),

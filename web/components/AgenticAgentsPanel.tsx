@@ -226,7 +226,7 @@ function AgentIndex({ personas, charters, workspaceName, loaded, range, onOpen, 
         <ReadFailed what="the roster's run figures" error={foldError}
           onRetry={() => setFoldTick(t => t + 1)} style={{ marginBottom: 8 }} />
       )}
-      <Table className="aug-dt" style={{ maxWidth: 1280 }}>
+      <Table style={{ maxWidth: 1280 }}>
         <TableHeader>
           <TableRow>
             <TableHead>Agent</TableHead>

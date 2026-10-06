@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BriefingCockpits } from "@/components/cockpit/BriefingCockpits";

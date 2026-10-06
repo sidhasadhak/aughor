@@ -13661,6 +13661,33 @@ the browser** · **measure the premise before building.**
     Kept as it was: the table also stays on the Briefing — the ask was to make it the Cockpit's default, and the
     Briefing's narrative cites its figures.
 
+44. 🚧 **The web is on Radix Themes — direction 2026-10-05, phase 1 of three built 2026-10-06**
+    (the user, after a side by side of Radix Colors alone: *"with their components the overall UI would look much
+    more effortless and easy to manipulate in the future… their other colour schemes… look much more standard than
+    what we currently have… I'll let you figure out how"*). This reverses an earlier position — the web was Base UI
+    and one Radix-based package was refused for it (§3.50) — and it is the user's to reverse. My first answer argued
+    for taking only the grey scale; that was overruled.
+    **Decided 2026-10-06, asked with options:** start phase 1 · accent **indigo, both skins** (the light skin's Excel
+    green is gone; white on a filled button now reads at about 5:1, which closes the contrast item) · grey **gray** ·
+    corners **large** · scaling **100%** · **Radix's own density** (24px controls, 36px rows, no size overrides) · the
+    antd result grid **stays, re-skinned from the Theme**.
+    **How it is built** (`claude/radix-themes-phase-1`): (a) the Theme's root is `<html>` itself — `<Theme asChild>`
+    — so its variables are declared where the tokens are and everything follows a person's look: the page, the
+    body's own background, a portal. The trial's wrapper inside `<body>` left all three on the default. (b) Every
+    Instrument token is declared once, as a NAME for a Radix step chosen by the role Radix gives it; the 222 files
+    that read tokens and the 426 `aug-` rules follow without being touched. The chart palette stays a literal: a
+    chart's colours are data. (c) The gates read Radix's own stylesheet, not a list — a misspelt step is still an
+    orphan. (d) Script that needs a colour reads it as sRGB: on a wide-gamut screen a Radix step is
+    `color(display-p3 …)`, which Ant Design's parser makes black of. (e) The shared components keep their call sites
+    and are Themes' own underneath. (f) Radix gives a pop-up no z-index, so the page is one layer and a dialog, menu
+    or tooltip sits above it by coming after it.
+    **A person's look** — accent, grey, corners, scaling — is chosen in Settings ▸ Appearance and kept as the skin
+    is: in the browser and in their settings.
+    **The phases:** 1 · the foundation, the gates, the grid, the appearance panel and the twelve shared components
+    with a Radix equivalent — built. 2 · the page vocabulary: tab strips and range pickers, native selects, chips,
+    callouts, cards, the 25 hand-rolled tables, and the five product-vocabulary components (states, empty state,
+    toast, trust, mini stat). 3 · retire what that replaces, Base UI included. The open lines are in `PENDING.md`.
+
 ---
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)

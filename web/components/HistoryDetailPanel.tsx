@@ -311,7 +311,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
           {/* Report */}
           {reportRaw && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <Separator className="bg-zinc-800" />
+              <Separator />
 
               {reportType === "investigate" && (
                 <InvestigationReportView report={reportRaw as unknown as AnswerReport} onShowSource={setSourcePanel} />

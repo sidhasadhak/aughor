@@ -32,6 +32,9 @@ export function applyTheme(theme: string, doc: Document = document): void {
   style.textContent = "*,*::before,*::after{transition:none!important}";
   doc.head.appendChild(style);
   root.setAttribute("data-theme", theme);
+  // Radix keys its colour scales on a class, so the same switch sets it.
+  root.classList.toggle("light", theme === "light");
+  root.classList.toggle("dark", theme !== "light");
   void doc.body?.offsetHeight;   // read for its side effect: styles flush while transitions are off
   const raf = doc.defaultView?.requestAnimationFrame?.bind(doc.defaultView);
   if (raf) raf(() => raf(() => style.remove()));

@@ -1,4 +1,6 @@
+@layer theme, base, radix, components, utilities;
 @import "tailwindcss";
+@import "@radix-ui/themes/styles.css" layer(radix);
 @import "tw-animate-css";
 @import "../styles/tokens.css";
 @import "../aughor-v2/theme/tokens-v2.css";
@@ -107,7 +109,7 @@ html, body {
 
 #__next, body > div:first-child { height: 100%; }
 
-::selection { background: var(--blue-solid); color: #fff; }
+/* Selected text: Radix's own rule — a tint of the accent, the text's colour left alone. */
 
 button { font-family: var(--font-ui); cursor: pointer; }
 /* Raw <button>s get the chrome-stripping reset. The base-ui <Button> (data-slot="button")
@@ -1187,9 +1189,10 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 [data-theme="light"] .aug-dt tbody td { border-right: 1px solid var(--b0); }
 [data-theme="light"] .aug-dt thead th:last-child,
 [data-theme="light"] .aug-dt tbody td:last-child { border-right: none; }
-/* 2 · Light's selection is its own green: the active segment is the green tint with green
-       text (dark keeps the pressed fill), and the rail's active item reads in green over the
-       same tint. The active tab's underline and the rail's bar read --accent in both skins. */
+/* 2 · Light's selection is a tint of the accent (Excel green until 2026-10-06; the accent a
+       person chose since): the active segment is the tint with accent text (dark keeps the
+       pressed fill), and the rail's active item reads in the accent over the same tint. The
+       active tab's underline and the rail's bar read --accent in both skins. */
 [data-theme="light"] .aug-seg-item[aria-selected="true"],
 [data-theme="light"] .aug-seg-item[aria-pressed="true"],
 [data-theme="light"] .aug-seg-item.active { background: var(--bg-sel); color: var(--accent-text); }
@@ -1376,3 +1379,36 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-beside-box[data-chosen] { border-color: var(--accent); background: var(--bg-sel); }
 .aug-beside-link { height: auto; white-space: normal; justify-content: stretch; justify-items: start; font-weight: 400; cursor: pointer; }
 .aug-beside-link:hover { border-color: var(--b3); background: var(--bg-hover); }
+
+
+/* ── Radix Themes underneath (ROADMAP §6 item 44) ───────────────────────────────────────────
+   <html> is the Theme's element (app/theme-root.tsx). It keeps OUR typography: the browser's
+   16px at the root (so a rem is what it was, whatever the panel's scaling says), Inter, and the
+   figure face for code. Themes' components size themselves from its own scale. A Theme nested
+   under it — a dialog's or a menu's content, portalled into <body> — reads as the page does. */
+.radix-themes {
+  --default-font-family: var(--font-sans);
+  --code-font-family: var(--font-mono);
+  --cursor-button: pointer;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+/* The page, as one layer under everything Radix portals into <body> (app/layout.tsx). */
+.aug-root { isolation: isolate; display: flex; flex-direction: column; flex: 1 1 0%; min-height: 100%; }
+/* A Themes ghost button bleeds into its neighbours by design (negative margins, to line its
+   label up with text). In a toolbar or a table cell that eats the gap, so ours sit still. */
+.rt-BaseButton:where(.rt-variant-ghost) { margin: 0; }
+/* A table's rows: Themes draws the table, the page says which row is hovered and which is open.
+   Both the record ledger and the shared table (components/ui/table.tsx) are Themes' size-1 table. */
+:is([data-ledger], [data-slot="table"]) .rt-TableRow:where(:hover) { background-color: var(--gray-a3); }
+:is([data-ledger], [data-slot="table"]) .rt-TableRow:is([aria-selected="true"], [data-state="selected"]) { background-color: var(--accent-a4); }
+:is([data-ledger], [data-slot="table"]) :is(.rt-TableCell, .rt-TableColumnHeaderCell).num { text-align: right; font-variant-numeric: tabular-nums; }
+/* A header row is not a row to pick. */
+:is([data-ledger], [data-slot="table"]) .rt-TableHeader .rt-TableRow:hover { background-color: transparent; }
+/* Columns are sized and their cells are short: a date or a chip broken over two lines doubles the
+   row for nothing. In a ledger the first column is the statement, and it alone wraps. */
+[data-ledger] .rt-TableCell:not(:first-child), [data-ledger] .rt-TableColumnHeaderCell,
+[data-slot="table"] :is(.rt-TableCell, .rt-TableColumnHeaderCell) { white-space: nowrap; }
+/* A table whose columns are sized (layout="fixed") keeps a cell inside its column. */
+[data-slot="table"] .rt-TableRootTable:where(.rt-r-tl-fixed) :is(.rt-TableCell, .rt-TableColumnHeaderCell) { overflow: hidden; text-overflow: ellipsis; }

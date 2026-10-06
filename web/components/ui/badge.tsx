@@ -1,55 +1,29 @@
-import { mergeProps } from "@base-ui/react/merge-props"
-import { useRender } from "@base-ui/react/use-render"
-import { cva, type VariantProps } from "class-variance-authority"
+import type * as React from "react"
+import { Badge as ThemesBadge } from "@radix-ui/themes"
 
-import { cn } from "@/lib/utils"
+/** A badge, on Radix Themes: its `surface` look — tint, border and text of
+ *  one hue — is the look ours always had. A hue appears only when a reader can name the state
+ *  it means (INSTRUMENT.md §2). */
+type Variant = "default" | "secondary" | "destructive" | "green" | "amber" | "violet" | "cyan" | "outline" | "ghost" | "link"
 
-/** A badge is an 11px mono rectangle at 3px — tint 1, border 2, text 4 of its hue. Seven
- *  hues: the six intent hues and neutral. A hue appears only when a reader can name the
- *  state it means (INSTRUMENT.md §2). */
-const badgeVariants = cva(
-  "group/badge inline-flex w-fit shrink-0 items-center justify-center gap-[5px] overflow-hidden rounded-[var(--r1)] border px-[7px] py-[2px] font-mono text-xs font-normal leading-[1.45] whitespace-nowrap [&>svg]:pointer-events-none [&>svg]:size-3!",
-  {
-    variants: {
-      variant: {
-        default: "border-[var(--blue2)] bg-[var(--blue1)] text-[var(--blue4)]",
-        secondary: "border-[var(--b2)] bg-[var(--bg-3)] text-[var(--t2)]",
-        destructive: "border-[var(--red2)] bg-[var(--red1)] text-[var(--red4)]",
-        green: "border-[var(--grn2)] bg-[var(--grn1)] text-[var(--grn4)]",
-        amber: "border-[var(--amb2)] bg-[var(--amb1)] text-[var(--amb4)]",
-        violet: "border-[var(--vio2)] bg-[var(--vio1)] text-[var(--vio4)]",
-        cyan: "border-[var(--cyn2)] bg-[var(--cyn1)] text-[var(--cyn4)]",
-        outline: "border-[var(--b2)] bg-transparent text-[var(--t2)]",
-        ghost: "border-transparent bg-transparent text-[var(--t2)]",
-        link: "border-transparent bg-transparent text-[var(--blue3)] hover:text-[var(--blue4)]",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-    },
-  }
-)
-
-function Badge({
-  className,
-  variant = "default",
-  render,
-  ...props
-}: useRender.ComponentProps<"span"> & VariantProps<typeof badgeVariants>) {
-  return useRender({
-    defaultTagName: "span",
-    props: mergeProps<"span">(
-      {
-        className: cn(badgeVariants({ variant }), className),
-      },
-      props
-    ),
-    render,
-    state: {
-      slot: "badge",
-      variant,
-    },
-  })
+const LOOK: Record<Variant, { variant: "surface" | "outline" | "soft"; color?: "gray" | "red" | "green" | "amber" | "violet" | "cyan" }> = {
+  default: { variant: "surface" },
+  secondary: { variant: "surface", color: "gray" },
+  destructive: { variant: "surface", color: "red" },
+  green: { variant: "surface", color: "green" },
+  amber: { variant: "surface", color: "amber" },
+  violet: { variant: "surface", color: "violet" },
+  cyan: { variant: "surface", color: "cyan" },
+  outline: { variant: "outline", color: "gray" },
+  ghost: { variant: "soft", color: "gray" },
+  link: { variant: "soft" },
 }
 
-export { Badge, badgeVariants }
+function Badge({ variant = "default", color: _color, ...props }: Omit<React.ComponentProps<"span">, "color"> & {
+  variant?: Variant | null
+  color?: string
+}) {
+  return <ThemesBadge data-slot="badge" size="1" {...LOOK[variant ?? "default"]} {...props} />
+}
+
+export { Badge }

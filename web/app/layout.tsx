@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/toast";
 import { Providers } from "./providers";
+import { ThemeRoot } from "./theme-root";
 import { NAV_COLLAPSE_BOOT } from "@/lib/navCollapse";
 import "./globals.css";
 
@@ -61,22 +62,28 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
-      // NAV_COLLAPSE_BOOT sets data-nav on <html> before React hydrates (an attribute React does not
-      // render), so a collapsed rail is drawn collapsed from the first paint, with no hydration warning.
-      suppressHydrationWarning
-    >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: NAV_COLLAPSE_BOOT }} />
-      </head>
-      <body className="min-h-full flex flex-col">
-        <Providers>
-          {children}
-          <Toaster />
-        </Providers>
-      </body>
-    </html>
+    // The Theme's root is <html> itself (see theme-root.tsx): it adds `radix-themes`, the skin's
+    // class and the look's attributes to the element below.
+    <ThemeRoot>
+      <html
+        lang="en"
+        className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
+        // NAV_COLLAPSE_BOOT sets data-nav on <html> before React hydrates (an attribute React does not
+        // render), so a collapsed rail is drawn collapsed from the first paint, with no hydration warning.
+        suppressHydrationWarning
+      >
+        <head>
+          <script dangerouslySetInnerHTML={{ __html: NAV_COLLAPSE_BOOT }} />
+        </head>
+        <body className="min-h-full flex flex-col">
+          <Providers>
+            {/* The page is one layer: a Radix dialog, menu or tooltip is portalled into <body>
+                after it and so sits above it, whatever z-index the rail or the topbar carry. */}
+            <div className="aug-root">{children}</div>
+            <Toaster />
+          </Providers>
+        </body>
+      </html>
+    </ThemeRoot>
   );
 }

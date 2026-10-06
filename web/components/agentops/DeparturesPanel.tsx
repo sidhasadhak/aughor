@@ -149,12 +149,12 @@ export function DeparturesPanel({ onOpenAutomation, onOpenTrace }: Doors = {}) {
         <div style={{ flex: 1, overflow: "auto", padding: "0 16px 16px" }}>
           {/* Fixed layout: a long reason truncates in its own column instead of pushing the
               Review door off the right edge (measured: 1,233px of table in 1,160px). */}
-          <Table className="aug-dt" style={{ tableLayout: "fixed" }}>
+          <Table layout="fixed">
             <TableHeader>
               <TableRow>
                 <TableHead style={{ width: 132 }}>When</TableHead>
                 <TableHead style={{ width: "30%" }}>What, and where to</TableHead>
-                <TableHead style={{ width: 172 }}>State</TableHead>
+                <TableHead style={{ width: 236 }}>State</TableHead>
                 <TableHead>Why</TableHead>
                 <TableHead style={{ width: 84 }} />
               </TableRow>

@@ -72,7 +72,6 @@ import { subscribeKernelEvents } from "@/lib/events";
 import { useOpenInQuery } from "@/lib/openInQuery";
 import { Pending } from "@/components/ui/motion";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
-import { BriefingRecordLines } from "@/components/brief/BriefingRecordLines";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { PeriodMeasures, PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
 import { RangeControl, RangeFigures, RangeMeasures, RangeMeasuresExpected, RangeSections, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
@@ -822,36 +821,6 @@ function ScopeChips({ domains, total, active, onChange }: {
 // guards any that already exist or slip through. Investigate/Evidence stay enabled so
 // the user can still inspect *why* there's no data.
 const _NO_DATA_RE = /(returned no data|no data (found|available|to report|for)|0 \w+ (were |was )?found|null values for all|no rows (returned|found|matched)|query (failed|errored)|no matching (rows|records|data)|empty result set)/i;
-
-/** How the explorer's phase should READ to a person, given whether work survived it.
- *
- * The stored phase is untouched — `failed` stays `failed` in the record, because
- * `canvas_needs_resume`, `is_unfinished` and the boot recovery all key on it. This decides
- * only the WORD and the colour on screen.
- *
- * **Why "failed" was the wrong word here.** A run that ends without completing is recorded
- * as `failed` whatever the cause, and the engine's own most common reason is *"cancelled
- * (budget exceeded or stopped) — progress saved"*. Rendering that in red as FAILED
- * overstates what the engine actually recorded, and it did real damage: a deployment with
- * 54 findings and a grounded briefing read as broken, and the reasonable response was to
- * throw the lot away and start again.
- *
- * **What is NOT softened.** A run that ended with nothing behind it still reads `failed`,
- * in red, because there is nothing to keep and it genuinely wants attention. The split is
- * the one already in the data — did this connection end up with work or not — so no
- * judgement is being invented to make a number look better.
- */
-export function explorerPhaseLabel(
-  phase: string | undefined, hasWork: boolean,
-): { text: string; tone: "good" | "warn" | "bad" | "busy" } {
-  if (phase === "complete") return { text: "complete", tone: "good" };
-  if (phase !== "failed") return { text: phase ?? "unknown", tone: "busy" };
-  return hasWork
-    // Accurate and not alarming: the run stopped short, the work stands.
-    ? { text: "incomplete", tone: "warn" }
-    : { text: "failed", tone: "bad" };
-}
-
 
 /** BR-9 — what a part of the page that is NOT measured for the selected range must say, in
  *  the same type as its number: "all history, not 17–23 August" once the range Briefing is on
@@ -3000,48 +2969,12 @@ export function BriefingPanel({
           feedback now go through the shared <Toaster/> (toast.*), mounted in the root layout. */}
       <EvidenceDrawer insight={evidenceInsight} domain={evidenceDomain} connectionId={connectionId} onClose={() => setEvidenceInsight(null)} />
 
-      {/* ── Explorer control bar ── demoted to a thin machinery strip: it explains where the
-          brief comes from, but it isn't content. Single hairline row, mono --t4. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, padding: "9px 2px", borderBottom: "1px solid var(--b0)" }}>
-        <span className="aug-label" style={{ color: "var(--t3)" }}>
-          Explorer
-        </span>
-        {explorerStatus ? (
-          <>
-            <span className="aug-fs-xs" style={{
-              color: explorerStatus.paused ? "var(--amb4)" : {
-                good: "var(--grn4)", warn: "var(--amb4)",
-                bad: "var(--red4)", busy: "var(--blue4)",
-              }[explorerPhaseLabel(explorerStatus.phase, hasFindings).tone],
-              fontWeight: 500,
-            }}>
-              {explorerPhaseLabel(explorerStatus.phase, hasFindings).text}
-              {explorerStatus.paused && " (paused)"}
-            </span>
-            {/* A terminal phase with work behind it must say BOTH. "failed" alone is what
-                sent a reader to "I may have to start afresh" while 54 findings and a
-                grounded briefing sat on the same screen — the phase is the verdict of the
-                LAST run, not of the body of work, and those come apart exactly when a run
-                fails on top of a successful one.
-
-                No count: the scope bar above already carries it, and the status's own
-                figure counts something slightly different, so a second number here would
-                invite the reader to reconcile two things that were never the same. */}
-            {explorerStatus.phase === "failed" && hasFindings && (
-              <span className="aug-fs-xs" title="The last run stopped short; earlier findings are kept"
-                style={{ color: "var(--t3)", flex: "1 1 0", minWidth: 0, overflow: "hidden",
-                         textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {explorerStatus.continues_at
-                  ? `· the last run stopped on its time limit; it continues by itself after ${formatDateTime(explorerStatus.continues_at)}`
-                  : "· the last run stopped short; earlier findings are kept"}
-              </span>
-            )}
-            {/* No run counters here: queries_executed is the CURRENT run's number while
-                insights_found is lifetime, so "1q · 22 findings" read as broken history —
-                and either way it is machinery, not business content. */}
-          </>
-        ) : (
-          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>unknown</span>
+      {/* ── One row: the range, which scopes the whole page, and at its right the controls that
+          run the explorer. The run's phase is not said here (2026-10-06, the user: it is machinery;
+          Agent runs has it). What a control is doing, and an action that was refused, still are. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+        {rangesOn && !canvasId && (
+          <RangeControl value={range} onChange={setRange} disabled={narrativeLoading} />
         )}
         {explorerError && (
           <GuardChip verdict="refused" title={explorerError}>
@@ -3123,20 +3056,7 @@ export function BriefingPanel({
         </div>
       </div>
 
-      {/* Arc BR-3 — the range scopes the whole page, so it gets its own row: in the explorer's
-          control bar it squeezed the run status out of sight at 1440px (2026-09-26). */}
-      {rangesOn && !canvasId && (
-        <div style={{ paddingBottom: 4 }}>
-          <RangeControl value={range} onChange={setRange} disabled={narrativeLoading} />
-        </div>
-      )}
-
       {showSchedule && <BriefSchedule connId={connectionId} />}
-
-      {/* The Record's lines, read first (the 2027 study §V, screen 3): each active mission's
-          objective against its baseline, the inquiries waiting on days to settle, and the
-          predictions in play. A canvas is a set of tables, not the connection a mission is on. */}
-      {!canvasId && connectionId && <BriefingRecordLines connectionId={connectionId} />}
 
       {isEmpty ? (
         <BriefingEmpty

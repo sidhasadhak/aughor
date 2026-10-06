@@ -1,21 +1,15 @@
-import * as React from "react"
-import { Input as InputPrimitive } from "@base-ui/react/input"
+import type * as React from "react"
+import { TextField } from "@radix-ui/themes"
 
-import { cn } from "@/lib/utils"
-
-/** A field: height 28, radius 4, --bg-3 fill, --b2 border that steps to --b3 on hover.
- *  Focus is the global 2px ring; an error is a --red2 border (aria-invalid). */
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+/** A field, on Radix Themes: its size-1 text field, 24px. `className` and
+ *  `style` land on the field's box, as a width always has; everything else is the input's. */
+function Input({ className, style, size: _size, color: _color, defaultValue, value, ...props }:
+  Omit<React.ComponentProps<"input">, "size" | "color"> & { size?: number; color?: string }) {
   return (
-    <InputPrimitive
-      type={type}
-      data-slot="input"
-      className={cn(
-        "h-7 w-full min-w-0 rounded-[var(--r2)] border border-[var(--b2)] bg-[var(--bg-3)] px-[9px] text-sm text-[var(--t1)] transition-colors duration-[var(--dur-1)] file:inline-flex file:h-5 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-[var(--t1)] placeholder:text-[var(--t3)] hover:border-[var(--b3)] disabled:pointer-events-none disabled:cursor-not-allowed disabled:border-[var(--b1)] disabled:bg-[var(--bg-1)] disabled:text-[var(--t3)] disabled:opacity-60 aria-invalid:border-[var(--red2)]",
-        className
-      )}
-      {...props}
-    />
+    <TextField.Root data-slot="input" size="1" className={className} style={style}
+      {...(value !== undefined ? { value: value as string | number } : {})}
+      {...(defaultValue !== undefined ? { defaultValue: defaultValue as string | number } : {})}
+      {...(props as Record<string, unknown>)} />
   )
 }
 

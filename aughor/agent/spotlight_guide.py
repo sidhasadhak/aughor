@@ -367,6 +367,8 @@ _GUIDE_ALIASES = {
     "theme": "appearance", "dark mode": "appearance", "light mode": "appearance",
     "density": "appearance", "preferences": "appearance",
     "preference": "appearance", "look": "appearance",
+    "accent": "appearance", "accent colour": "appearance", "radius": "appearance",
+    "scaling": "appearance",
     "limit": "limits", "cap": "limits", "caps": "limits", "budget": "limits",
     "budgets": "limits", "token budget": "limits", "spend": "limits",
     "spending": "limits", "cost": "limits", "costs": "limits", "tokens": "limits",

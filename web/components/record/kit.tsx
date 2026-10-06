@@ -8,6 +8,7 @@
  * Nothing here paints before it knows what it is showing: a read in flight says what is being
  * read, a read that failed says so with Retry, and an empty ledger says what would fill it.
  */
+import { Table } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
@@ -195,44 +196,43 @@ export function Ledger<T>({ name, columns, rows, rowKey, onOpen, empty, selected
   empty: React.ReactNode;
   selected?: string;
 }) {
-  const ref = useRef<HTMLTableElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
   if (rows.length === 0) return <Absent>{empty}</Absent>;
   return (
     <div>
-      <div style={{ overflowX: "auto" }}>
-        <table className="aug-dt" ref={ref}>
-          <thead>
-            {/* The first column is what the row IS; it keeps room to be read whatever the others hold. */}
-            <tr>{columns.map((c, i) => (
-              <th key={c.head} className={c.num ? "num" : undefined}
-                style={{ width: c.width, minWidth: i === 0 && c.width === undefined ? 320 : undefined }}>{c.head}</th>
-            ))}</tr>
-          </thead>
-          <tbody>
-            {rows.map(row => {
-              const key = rowKey(row);
-              return (
-                <tr key={key} aria-selected={selected === key || undefined}
-                  onClick={onOpen ? () => onOpen(row) : undefined}
-                  style={onOpen ? { cursor: "pointer" } : undefined}>
-                  {columns.map((c, i) => (
-                    <td key={c.head} className={c.num ? "num" : undefined}>
-                      {i === 0 && onOpen
-                        ? <Button variant="link" size="xs" className="aug-ledger-open"
-                            onClick={e => { e.stopPropagation(); onOpen(row); }}>{c.cell(row)}</Button>
-                        : c.cell(row)}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {/* On Radix Themes: its size-1 table. The first column is what the row IS. */}
+      <Table.Root ref={ref} size="1" variant="ghost" data-ledger={name}>
+        <Table.Header>
+          <Table.Row>{columns.map((c, i) => (
+            <Table.ColumnHeaderCell key={c.head} className={c.num ? "num" : undefined}
+              style={{ width: c.width, minWidth: i === 0 && c.width === undefined ? 320 : undefined }}>{c.head}</Table.ColumnHeaderCell>
+          ))}</Table.Row>
+        </Table.Header>
+        <Table.Body>
+          {rows.map(row => {
+            const key = rowKey(row);
+            return (
+              <Table.Row key={key} align="center" aria-selected={selected === key || undefined}
+                onClick={onOpen ? () => onOpen(row) : undefined}
+                style={onOpen ? { cursor: "pointer" } : undefined}>
+                {columns.map((c, i) => (
+                  <Table.Cell key={c.head} className={c.num ? "num" : undefined}>
+                    {i === 0 && onOpen
+                      ? <Button variant="link" size="xs" className="aug-ledger-open"
+                          onClick={e => { e.stopPropagation(); onOpen(row); }}>{c.cell(row)}</Button>
+                      : c.cell(row)}
+                  </Table.Cell>
+                ))}
+              </Table.Row>
+            );
+          })}
+        </Table.Body>
+      </Table.Root>
       <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 4 }}>
         <TableActions name={name} read={() => {
-          if (!ref.current) return null;
-          const t = tableFromElement(ref.current);
+          const table = ref.current?.querySelector("table");
+          if (!table) return null;
+          const t = tableFromElement(table);
           const facts = columns.map((c, i) => (c.control ? -1 : i)).filter(i => i >= 0);
           return facts.length === columns.length
             ? t : { columns: facts.map(i => t.columns[i]), rows: t.rows.map(r => facts.map(i => r[i])) };

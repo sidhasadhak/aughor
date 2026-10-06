@@ -115,7 +115,7 @@ export function DeployMenu({ automationId, onChanged }: DeployMenuProps) {
           if (!next) { setIssued(null); setError(""); }
         }}
       >
-        <DialogContent style={{ maxWidth: 620 }}>
+        <DialogContent maxWidth="620px">
           <DialogHeader>
             <DialogTitle>Deploy</DialogTitle>
             <DialogDescription>

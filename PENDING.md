@@ -460,6 +460,40 @@ sits inside it — the place is named on its line.**
 
 ---
 
+## The web on Radix Themes (ROADMAP §6 item 44)
+
+Decided by the user 2026-10-05; the defaults and phase 1's go-ahead 2026-10-06 (indigo · gray · large corners · 100% ·
+Radix's own density · the antd result grid stays, re-skinned). Branch `claude/radix-themes-phase-1`, from main.
+
+**Phase 1 — the foundation**
+
+- [x] The Theme's root on `<html>`, so every token follows a person's look everywhere — the page, the body, a portal.
+- [x] Every colour and radius token declared once, as a Radix step. The chart palette stays a literal per skin: data.
+- [x] `lint:vars` and `lint:palette` read Radix's own stylesheet (no list kept by hand); four mutants killed.
+- [x] One reader for script that needs a real colour (the result grid, charts, chart export) — sRGB on a wide-gamut screen too — and one fallback table tied to Radix's stylesheet by a test, in place of the four hand-kept mirrors.
+- [x] The result grid (antd) re-skinned from the Theme: it follows skin, accent, grey and radius.
+- [x] Settings ▸ Appearance: accent, grey, corners, scaling — kept per person, in the browser and in their settings.
+- [x] Shared components on Themes: button, badge, text field, text area, select, dialog, tooltip, tabs, table, card, separator, progress, and the record ledger. The unused scroll area removed.
+- [x] Radix's pop-ups sit above the rail and topbar: the page is one layer.
+- [ ] The look before the page hydrates: a person with their own look sees the default for a frame on load, as a light-skin reader sees dark. One boot script would set both.
+- [ ] Two knobs for one thing: Density (comfortable / compact, ours) and Scaling (Radix's). To be made one.
+
+**Phase 2 — the page vocabulary** (not started)
+
+- [ ] The five product-vocabulary components still drawn by `aug-` classes: states, empty state, toast, the trust chips and cites, the mini stat. They read tokens, so they follow the look already; their shapes are ours.
+- [ ] `aug-tabs` and `aug-seg` (every workspace's tab strip and range picker) onto Themes' tabs and segmented control. The light skin still draws its tab strip as boxed sheet tabs, from the Excel skin.
+- [ ] The native `<select>`s (the connection picker and others) onto the select.
+- [ ] Chips, callouts and cards drawn by hand, and the 25 hand-rolled tables, onto Themes' own.
+- [ ] 55 raw `<button>`s (the ratchet's baseline).
+- [ ] A filled control's label as `--on-primary`: a bright accent (sky, mint, lime, yellow, amber) carries a dark label in Radix, and our own filled chips still say white.
+
+**Phase 3 — retire what that replaces** (not started)
+
+- [ ] Base UI out of the product: three chat parts still import it (`ai-elements/shimmer`, `chain-of-thought`, `task`).
+- [ ] The `aug-` rules and Tailwind bridges nothing reads any more; `class-variance-authority` if nothing uses it.
+
+---
+
 ## Unmerged branches (2026-09-23)
 
 - [~] `claude/dark-theme-lift` — the dark-theme contrast lift the user approved live, PLUS the law-8 amendment (no receipts on Slack messages), the quoted-rows guard fix (a product name "6B" read as billions) and the killed-run drain fix; not pushed; identical uncommitted copies sit in the main checkout. *Three of them merged 2026-10-04 · #566, cherry-picked: the law-8 amendment, the quoted-rows guard fix and the killed-run drain fix. Open: the contrast lift itself — it conflicts with the newer design tokens in four files, and porting it is the user's design call.* *2026-10-05: the dark skin's greys moved to neutral charcoal at the user's word (ROADMAP §6 item 41, on `claude/platform-2027-doors`) — a different ground from the one this branch lifted; whether anything of it is still wanted is the user's to say.*
