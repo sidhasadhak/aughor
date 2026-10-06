@@ -478,13 +478,15 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
 - [ ] The look before the page hydrates: a person with their own look sees the default for a frame on load, as a light-skin reader sees dark. One boot script would set both.
 - [ ] Two knobs for one thing: Density (comfortable / compact, ours) and Scaling (Radix's). To be made one.
 
-**Phase 2 — the page vocabulary** (not started)
+**Phase 2 — the page vocabulary** (branch `claude/radix-themes-phase-2`, 2026-10-06)
 
+- [x] Every tab strip (the workspaces' layers, the roster's views, Settings, the Profile) and every segmented control (16 groups) on Themes' tabs and segmented control; the light skin's boxed sheet tabs gone with the old rules.
+- [x] The 124 native `<select>`s on Themes' select, by changing the tag (`SelectField`, written like the native one).
+- [x] The 26 hand-rolled tables on the shared table; the dense-table rules, the light skin's gridlines and their compact-density overrides retired.
+- [x] 257 raw text inputs on the Themes text field; 44 text areas on its text area; the Semantic Layer's own field helper inside.
+- [x] The 20 callouts on Themes' callout.
 - [ ] The five product-vocabulary components still drawn by `aug-` classes: states, empty state, toast, the trust chips and cites, the mini stat. They read tokens, so they follow the look already; their shapes are ours.
-- [ ] `aug-tabs` and `aug-seg` (every workspace's tab strip and range picker) onto Themes' tabs and segmented control. The light skin still draws its tab strip as boxed sheet tabs, from the Excel skin.
-- [ ] The native `<select>`s (the connection picker and others) onto the select.
-- [ ] Chips, callouts and cards drawn by hand, and the 25 hand-rolled tables, onto Themes' own.
-- [ ] 55 raw `<button>`s (the ratchet's baseline).
+- [ ] Checkboxes and radios (native), 53 raw `<button>`s (the ratchet's baseline), the cockpits' strip.
 - [ ] A filled control's label as `--on-primary`: a bright accent (sky, mint, lime, yellow, amber) carries a dark label in Radix, and our own filled chips still say white.
 
 **Phase 3 — retire what that replaces** (not started)
