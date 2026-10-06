@@ -715,7 +715,7 @@ function HomeScreen({
         <div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
             <div className="aug-label">Recent Activity</div>
-            <button onClick={() => onNavigate("recents")} style={{ fontSize: 11, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer" }}>View all →</button>
+            <Button variant="ghost" size="xs" onClick={() => onNavigate("recents")} style={{ fontSize: 11, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer" }}>View all →</Button>
           </div>
           {recentInvs.length === 0 ? (
             <div style={{ padding: "28px 0", textAlign: "center" }}>
@@ -1068,9 +1068,9 @@ function AddConnectionForm({
       <div style={{ width: "100%", maxWidth: 460, background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: 24, display: "flex", flexDirection: "column", gap: 16, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Add Connection</span>
-          <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
+          <Button variant="ghost" size="xs" onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
             <NavIcon name="close" size={14} />
-          </button>
+          </Button>
         </div>
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {/* Name */}
@@ -1090,7 +1090,7 @@ function AddConnectionForm({
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5 }}>
               {grouped.map(group => (
                 group.items.map(ct => (
-                  <button
+                  <Button variant="ghost" size="xs"
                     key={ct.type}
                     type="button"
                     onClick={() => handleTypeChange(ct.type)}
@@ -1105,7 +1105,7 @@ function AddConnectionForm({
                   >
                     <div style={{ fontWeight: 500 }}>{ct.label}</div>
                     <div style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".04em", marginTop: 2 }}>{ct.category}</div>
-                  </button>
+                  </Button>
                 ))
               ))}
             </div>
@@ -1213,7 +1213,7 @@ function DeleteConnModal({
         />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <Button onClick={onCancel} variant="ghost" size="sm">Cancel</Button>
-          <button
+          <Button variant="ghost" size="xs"
             onClick={handleConfirm}
             disabled={text !== conn.name || loading}
             style={{
@@ -1225,7 +1225,7 @@ function DeleteConnModal({
             }}
           >
             {loading ? "Removing…" : "Remove"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -2294,7 +2294,7 @@ export default function Home() {
                           {activeCanvas.scopes[0].tables.length} tables
                         </span>
                       )}
-                      <button
+                      <Button variant="ghost" size="xs"
                         onClick={() => setActiveCanvas(null)}
                         title="Clear canvas"
                         style={{
@@ -2304,7 +2304,7 @@ export default function Home() {
                         }}
                       >
                         <NavIcon name="close" size={11} />
-                      </button>
+                      </Button>
                     </>
                   ) : selectedConn ? (
                     <span className="aug-tag aug-tag-gray">
@@ -2593,9 +2593,9 @@ export default function Home() {
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", borderBottom: "1px solid var(--b1)", height: 44, flexShrink: 0 }}>
               <span style={{ fontSize: 13, fontWeight: 500, color: "var(--t1)" }}>History</span>
-              <button onClick={() => setShowHistory(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
+              <Button variant="ghost" size="xs" onClick={() => setShowHistory(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
                 <NavIcon name="close" size={13} />
-              </button>
+              </Button>
             </div>
             <HistoryPanel
               selectedId={selectedHistoryInvId ?? selectedChatSessionId}

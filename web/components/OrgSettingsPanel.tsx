@@ -30,6 +30,7 @@ import { OrgPrioritiesSection } from "@/components/OrgPrioritiesSection";
 import { Loading } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const EMPTY: OrgSettings = {
   company_name: "", website: "", hq_location: "", industry: "",
@@ -155,8 +156,7 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
       checkbox carries its state on `checked`. */
   const BoolField = (k: keyof OrgSettings, label: string, hint: string) => (
     <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
-      <input
-        type="checkbox"
+      <Checkbox
         checked={!!s[k]}
         onChange={(e) => { setSaved(false); setS((prev) => ({ ...prev, [k]: e.target.checked })); }}
         style={{ marginTop: 2, cursor: "pointer" }}

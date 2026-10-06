@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import type { Connection, Workspace } from "@/lib/api";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /** One spacing system for the whole popover. Every row — a workspace, the section
  *  header, the divider, the footer — shares this horizontal inset, so the icons, the
@@ -191,7 +192,7 @@ export function WorkspaceSwitcher({
                       display: "flex", alignItems: "center", gap: 9, padding: ROW_PAD,
                       borderRadius: "var(--r2)", cursor: "pointer", color: "var(--t1)",
                     }}>
-                      <input type="checkbox" checked={draft.includes(c.id)}
+                      <Checkbox checked={draft.includes(c.id)}
                         disabled={busy} onChange={() => toggleDraft(c.id)} />
                       <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
                     </label>

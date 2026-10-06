@@ -133,15 +133,15 @@
   --popover:              var(--bg-3);
   --popover-foreground:   var(--t1);
   --primary:              var(--blue3);
-  --primary-foreground:   #fff;
+  --primary-foreground: var(--on-primary);
   --secondary:            var(--bg-3);
   --secondary-foreground: var(--t1);
   --muted:                var(--bg-2);
   --muted-foreground:     var(--t2);
   --accent:               var(--blue3);
-  --accent-foreground:    #fff;
+  --accent-foreground: var(--on-primary);
   --destructive:          var(--red3);
-  --destructive-foreground: #fff;
+  --destructive-foreground: var(--on-primary);
   --border:               var(--b1);
   --input:                var(--b2);
   --ring:                 var(--blue3);
@@ -151,7 +151,7 @@
   --sidebar:              var(--bg-1);
   --sidebar-foreground:   var(--t1);
   --sidebar-primary:      var(--blue3);
-  --sidebar-primary-foreground: #fff;
+  --sidebar-primary-foreground: var(--on-primary);
   --sidebar-accent:       var(--bg-sel);
   --sidebar-accent-foreground:  var(--blue5);
   --sidebar-border:       var(--b1);

@@ -21,6 +21,7 @@ import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { acceptProposal, getProposalById, rejectProposal, type StagedProposal } from "@/lib/api";
 import { formatCount, relTime, zonedTimeWords } from "@/lib/format";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /** "2026-09-16T09:00:00Z" → "Tue, 16 Sep 2026 09:00 UTC" — the clock is always named. */
 export function utcWords(iso: string): string {
@@ -548,13 +549,13 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
             onClick={reject}>Reject</Button>
           {p.kind === "declared_action" && (
             <label className="aug-text-xs flex items-center gap-1.5 cursor-pointer" style={{ color: "var(--t3)" }}>
-              <input type="checkbox" checked={mint} onChange={e => setMint(e.target.checked)} />
+              <Checkbox checked={mint} onChange={e => setMint(e.target.checked)} />
               also allow this target unattended
             </label>
           )}
           {p.kind === "outbound_send" && (
             <label className="aug-text-xs flex items-center gap-1.5 cursor-pointer" style={{ color: "var(--t3)" }}>
-              <input type="checkbox" checked={mint} onChange={e => setMint(e.target.checked)} />
+              <Checkbox checked={mint} onChange={e => setMint(e.target.checked)} />
               always allow this chain to post here
             </label>
           )}

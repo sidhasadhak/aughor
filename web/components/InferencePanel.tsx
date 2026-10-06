@@ -14,6 +14,7 @@ import { BACKEND_LABEL } from "@/lib/llmMeta";
 import { Loading } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const ROLE_LABEL: Record<string, string> = {
   coder: "Coder — SQL & reasoning",
@@ -551,8 +552,7 @@ export function InferencePanel() {
             </span>
             {boundModels.map(m => (
               <label key={m} style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={jsonPins.includes(m)}
                   onChange={e => setJsonPins(prev =>
                     e.target.checked ? Array.from(new Set([...prev, m])) : prev.filter(x => x !== m))}
@@ -576,7 +576,7 @@ export function InferencePanel() {
               default here, and every paid call bills your OpenRouter credit.
             </span>
             <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
-              <input type="checkbox" checked={paidAck}
+              <Checkbox checked={paidAck}
                 onChange={e => setPaidAck(e.target.checked)} />
               <span>Bind {paidBindings.length === 1 ? "it" : "them"} anyway — I accept the charges</span>
             </label>

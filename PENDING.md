@@ -485,9 +485,11 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
 - [x] The 26 hand-rolled tables on the shared table; the dense-table rules, the light skin's gridlines and their compact-density overrides retired.
 - [x] 257 raw text inputs on the Themes text field; 44 text areas on its text area; the Semantic Layer's own field helper inside.
 - [x] The 20 callouts on Themes' callout.
-- [ ] The five product-vocabulary components still drawn by `aug-` classes: states, empty state, toast, the trust chips and cites, the mini stat. They read tokens, so they follow the look already; their shapes are ours.
-- [ ] Checkboxes and radios (native), 53 raw `<button>`s (the ratchet's baseline), the cockpits' strip.
-- [ ] A filled control's label as `--on-primary`: a bright accent (sky, mint, lime, yellow, amber) carries a dark label in Radix, and our own filled chips still say white.
+- [x] The five product-vocabulary components (states, empty state, toast, trust, mini stat) stand on Themes pieces — callouts, spinner, badges, progress, card — with their names and props; the rules they wore retired. The empty state keeps its own shape (a layout, not a control).
+- [x] Checkboxes (27) and radios (3) on Themes' own, by tag; 89 raw `<button>`s on the shared Button — nine stay raw on purpose (the rail's rows, the home tiles, the ⌘K field, the theme cards, a filter chip, two menu rows); the ratchet's baseline is 9.
+- [x] A filled control's label reads `--on-primary` in the shadcn bridge and the old primary button rule.
+- [ ] The cockpits' strip (Metrics · your cockpits · new) keeps its own buttons: a tab strip with a label in the middle and a door at the end has no Themes shape yet.
+- [ ] 25 places in script still paint white text on a hand-painted fill (`color: "#fff"`); each is its own fill, not the accent, so `--on-primary` does not apply.
 
 **Phase 3 — retire what that replaces** (not started)
 

@@ -18,6 +18,8 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
+import { Callout as ThemesCallout } from "@radix-ui/themes";
+
 import { Button } from "@/components/ui/button";
 
 export type ToastKind = "success" | "error" | "info" | "warning";
@@ -108,11 +110,11 @@ function useTabHidden(): boolean {
 // ── presentation ──────────────────────────────────────────────────────────────
 // The glyphs are the guard vocabulary — ✓ passed, ◈ warned, ✕ refused — so a toast and a
 // guard chip say the same thing the same way.
-const KIND: Record<ToastKind, { glyph: string; color: string }> = {
-  success: { glyph: "✓", color: "var(--grn4)" },
-  error: { glyph: "✕", color: "var(--red4)" },
-  warning: { glyph: "◈", color: "var(--amb4)" },
-  info: { glyph: "●", color: "var(--blue4)" },
+const KIND: Record<ToastKind, { glyph: string; color: "green" | "red" | "amber" | "indigo" }> = {
+  success: { glyph: "✓", color: "green" },
+  error: { glyph: "✕", color: "red" },
+  warning: { glyph: "◈", color: "amber" },
+  info: { glyph: "●", color: "indigo" },
 };
 
 function ToastRow({ t, tabHidden }: { t: ToastData; tabHidden: boolean }) {
@@ -129,20 +131,23 @@ function ToastRow({ t, tabHidden }: { t: ToastData; tabHidden: boolean }) {
   const k = KIND[t.kind];
 
   return (
-    <div
-      className={`aug-toast aug-toast-${t.kind} aug-anim-up`}
+    <ThemesCallout.Root
+      size="1" variant="surface" color={k.color}
+      className="aug-anim-up"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       style={{
         pointerEvents: "auto",
         width: 340,
         maxWidth: "calc(100vw - 32px)",
+        display: "flex", alignItems: "flex-start", gap: 9,
+        background: "var(--color-panel-solid)", boxShadow: "var(--shadow-md)",
       }}
     >
       <span
         aria-hidden
         className="aug-fs-xs"
-        style={{ color: k.color, lineHeight: "18px", fontFamily: "var(--font-mono)", flex: "0 0 auto" }}
+        style={{ lineHeight: "18px", fontFamily: "var(--font-mono)", flex: "0 0 auto" }}
       >
         {k.glyph}
       </span>
@@ -166,7 +171,7 @@ function ToastRow({ t, tabHidden }: { t: ToastData; tabHidden: boolean }) {
       >
         ✕
       </Button>
-    </div>
+    </ThemesCallout.Root>
   );
 }
 

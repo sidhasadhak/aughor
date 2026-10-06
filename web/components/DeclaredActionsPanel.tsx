@@ -33,6 +33,7 @@ import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 
 async function apiFetch(path: string, opts?: RequestInit) {
   const res = await fetch(`${getApiBase()}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -199,7 +200,7 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
             </SelectField>
           )}
           <label className="aug-fs-xs" style={{ color: "var(--t3)", display: "flex", alignItems: "center", gap: 4, marginBottom: 6, whiteSpace: "nowrap" }}>
-            <input type="checkbox" checked={p.required}
+            <Checkbox checked={p.required}
               onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, required: e.target.checked } : x))} />
             required
           </label>

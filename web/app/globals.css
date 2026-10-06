@@ -439,7 +439,7 @@ a:hover { color: var(--blue4); }
   transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
 }
 .aug-btn:hover, .aug-btn:active { background: var(--bg-4); border-color: var(--b3); }
-.aug-btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.aug-btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .aug-btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
 .aug-btn-primary:active {
   background: color-mix(in srgb, var(--primary) 86%, black);
@@ -549,21 +549,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
   color: var(--t1);
 }
 .aug-tooltip { padding: 7px 9px; font-size: 11px; line-height: 1.45; }
-.aug-toast {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  padding: 9px 11px;
-  background: var(--bg-1);
-  border: 1px solid var(--b1);
-  border-left: 3px solid var(--b3);
-  border-radius: var(--r3);
-  box-shadow: var(--shadow-md);
-}
-.aug-toast-success { border-left-color: var(--grn3); }
-.aug-toast-error   { border-left-color: var(--red3); }
-.aug-toast-warning { border-left-color: var(--amb3); }
-.aug-toast-info    { border-left-color: var(--blue3); }
+/* A toast is a Themes callout since 2026-10-06 (components/ui/toast.tsx). */
 .aug-dialog {
   background: var(--bg-1);
   border: 1px solid var(--b2);
@@ -606,52 +592,19 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
    Partial: Aughor's most important state. A real answer with a named hole, the hole stated in
    the same breath as the figure. Refusal: the proudest state — confident, specific, and
    offering the nearest answerable question; never an apology, never a dead end. */
-.aug-error,
-.aug-partial,
-.aug-refusal {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--red2);
-  border-left: 3px solid var(--red3);
-  border-radius: var(--r2);
-  background: var(--red1);
-}
-.aug-refusal { gap: 7px; }
-.aug-partial { border-color: var(--amb2); border-left-color: var(--amb3); background: var(--amb1); }
+/* The boxed states are Themes callouts since 2026-10-06 (components/ui/states.tsx); the type inside is still theirs. */
+.aug-state { gap: 6px; }
 .aug-state-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .aug-state-kind {
   font-size: 12px;
   font-weight: 600;
-  color: var(--red4);
+  color: inherit;   /* the callout's own hue: red for an error or a refusal, amber for a partial */
 }
-.aug-partial .aug-state-kind { color: var(--amb4); }
 .aug-state-meta { margin-left: auto; font-size: 12px; color: var(--t3); white-space: nowrap; }
-.aug-partial .aug-state-meta { color: var(--amb4); }
 .aug-state-claim { font-size: 14px; line-height: 1.6; color: var(--t1); }
 .aug-state-what { font-size: 12px; line-height: 1.6; color: var(--t1); }
 .aug-state-detail { font-size: 12px; line-height: 1.6; color: var(--t2); }
 .aug-state-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
-.aug-state-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border-radius: var(--r1);
-  border: 1px solid var(--b2);
-  background: transparent;
-  font-family: var(--font-ui);
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--t2);
-  cursor: pointer;
-  transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
-}
-.aug-state-action:hover { background: var(--bg-3); border-color: var(--b3); color: var(--t1); }
-.aug-error .aug-state-action-primary { border-color: var(--red2); color: var(--red4); }
-.aug-refusal .aug-state-action-primary { color: var(--blue4); }
-.aug-partial .aug-state-action-primary { border-color: var(--amb2); color: var(--amb4); }
 .aug-state-ticket { font-size: 11px; line-height: 1.6; color: var(--t3); }
 .aug-state-ticket-id { font-family: var(--font-mono); color: var(--t2); }
 
@@ -670,47 +623,11 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 
 /* Guard verdict: three outcomes only — passed ✓, warned ◈, refused ✕. A 1px border and no fill,
    so it reads as an instrument reading rather than a badge. */
-.aug-guard {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 7px;
-  border-radius: var(--r1);
-  border: 1px solid var(--b2);
-  background: transparent;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.45;
-  white-space: nowrap;
-  color: var(--t2);
-}
-.aug-guard-passed  { border-color: var(--grn2); color: var(--grn4); }
-.aug-guard-warned  { border-color: var(--amb2); color: var(--amb4); }
-.aug-guard-refused { border-color: var(--red2); color: var(--red4); }
+/* A guard chip and a receipt link are Themes badges since 2026-10-06 (components/ui/trust.tsx). */
 
 /* Receipt chain: query → guard → guard → figure, one horizontal run drawn identically wherever
    it appears. A broken link is a red segment with the chain intact — never a missing chain. */
 .aug-receipt-chain { display: inline-flex; flex-wrap: wrap; align-items: center; row-gap: 4px; }
-.aug-receipt-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: var(--r1);
-  border: 1px solid var(--b3);
-  background: transparent;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.45;
-  white-space: nowrap;
-  color: var(--t1);
-}
-button.aug-receipt-link { cursor: pointer; }
-button.aug-receipt-link:hover { background: var(--bg-3); }
-.aug-receipt-query  { border-color: var(--blue2); color: var(--blue4); }
-.aug-receipt-passed { border-color: var(--grn2); color: var(--grn4); }
-.aug-receipt-warned { border-color: var(--amb2); color: var(--amb4); }
-.aug-receipt-broken { border-color: var(--red2); color: var(--red4); }
 .aug-receipt-arrow { padding: 0 5px; font-family: var(--font-mono); font-size: 11px; color: var(--b3); }
 
 /* Confidence: a computed number, never a mood. The rule fills left to right and the figure is
@@ -718,11 +635,8 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
    0.5 amber, below 0.5 red — and below 0.5 Aughor does not lead with it. */
 .aug-confidence { display: inline-flex; align-items: center; gap: 9px; }
 .aug-confidence-value { min-width: 30px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.aug-confidence-bar { width: 78px; height: 3px; flex: none; overflow: hidden; border-radius: var(--r1); background: var(--bg-4); }
-.aug-confidence-fill { height: 100%; transition: width var(--dur-3) var(--ease-out); }
 .aug-confidence-note { font-size: 11px; color: var(--t2); }
 .aug-confidence-high .aug-confidence-value { color: var(--grn3); }
-.aug-confidence-high .aug-confidence-fill  { background: var(--grn3); }
 .aug-confidence-mid  .aug-confidence-value { color: var(--amb3); }
 .aug-confidence-mid  .aug-confidence-fill  { background: var(--amb3); }
 .aug-confidence-low  .aug-confidence-value { color: var(--red3); }

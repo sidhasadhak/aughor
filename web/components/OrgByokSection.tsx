@@ -18,6 +18,7 @@ import { clearOrgLLM, getOrgLLM, updateOrgLLM, type OrgLLMConfig } from "@/lib/a
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const BACKENDS = ["", "openrouter", "anthropic", "gemini", "groq", "together", "ollama", "lmstudio"];
 const KEYED = new Set(["openrouter", "anthropic", "gemini", "groq", "together"]);
@@ -141,8 +142,7 @@ export function OrgByokSection() {
       </div>
       {backend === "openrouter" && (
         <label style={{ ...hintStyle, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-          <input
-            type="checkbox"
+          <Checkbox
             checked={allowPaid}
             onChange={(e) => setAllowPaid(e.target.checked)}
           />

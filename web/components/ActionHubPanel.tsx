@@ -7,6 +7,7 @@ import { getApiBase } from "@/lib/config";
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Trigger {
@@ -224,24 +225,8 @@ export function ActionHubPanel() {
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* Toolbar — the view switch (left) and the one action (right) */}
       <div className="aug-toolbar">
-        <div style={{ display: "flex", gap: 4 }}>
-          {(["triggers", "logs"] as const).map(v => (
-            <button key={v} onClick={() => setView(v)} style={{
-              padding: "3px 10px", borderRadius: "var(--r2)", fontSize: 11, cursor: "pointer",
-              background: view === v ? "var(--bg-sel)" : "transparent",
-              border: `1px solid ${view === v ? "var(--blue2)" : "var(--b1)"}`,
-              color: view === v ? "var(--blue5)" : "var(--t3)",
-            }}>
-              {v.charAt(0).toUpperCase() + v.slice(1)}
-              {v === "triggers" && triggers.length > 0 && (
-                <span style={{ marginLeft: 5, fontSize: 11, color: "var(--t3)" }}>{triggers.length}</span>
-              )}
-              {v === "logs" && logs.length > 0 && (
-                <span style={{ marginLeft: 5, fontSize: 11, color: "var(--t3)" }}>{logs.length}</span>
-              )}
-            </button>
-          ))}
-        </div>
+        <Segmented label="View" value={view} onChange={setView}
+          options={[{ value: "triggers", label: `Triggers${triggers.length > 0 ? ` ${triggers.length}` : ""}` }, { value: "logs", label: `Logs${logs.length > 0 ? ` ${logs.length}` : ""}` }]} />
         {view === "triggers" && !showForm && (
           <Button
             onClick={() => { setEditing(undefined); setShowForm(true); }}

@@ -21,6 +21,7 @@ import { formatCount } from "@/lib/format";
 import { NULL_GLYPH, distinctFromRows, pickedPhrase, type DistinctValue } from "@/lib/query/cellMenu";
 import type { Cell } from "@/lib/query/resultFilter";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /** What a live read of the table answers. `source` names the table. DE-5d: `error` is the route's typed
  *  refusal, in the engine's words — the table was asked and could not be read, which is not "no values". */
@@ -133,7 +134,7 @@ export function ColumnValuePicker({
           return (
             <label key={k} style={{ display: "flex", alignItems: "center", gap: 7, padding: "2px 6px",
               cursor: "pointer", color: v.value === null ? "var(--t3)" : "var(--t2)" }}>
-              <input type="checkbox" checked={picked.has(k)} onChange={() => toggle(v.value)} />
+              <Checkbox checked={picked.has(k)} onChange={() => toggle(v.value)} />
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                 fontFamily: "var(--font-code, monospace)" }}>{v.value === null ? NULL_GLYPH : String(v.value)}</span>
               {v.count > 0 && (

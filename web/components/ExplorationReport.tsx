@@ -10,6 +10,7 @@ import { soleSqlOfSteps } from "@/lib/verdictSql";
 import { FixItForm } from "@/components/FixItForm";
 import { QuestionFrame } from "@/components/QuestionFrame";
 import type { OntologyFrame } from "@/lib/types";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   report: ExplorationReportType;
@@ -108,12 +109,12 @@ function SubQuestionCard({
           {/* SQL — the only collapsed detail */}
           {(hasData || answer.error) && answer.sql && (
             <div>
-              <button
+              <Button variant="ghost" size="xs"
                 onClick={() => setSqlOpen(o => !o)}
-                className="aug-fs-xs text-zinc-500 hover:text-zinc-400 transition flex items-center gap-1"
+                className="aug-fs-xs transition flex items-center gap-1"
               >
                 <span className="inline-block w-2">{sqlOpen ? "▼" : "▶"}</span> SQL
-              </button>
+              </Button>
               {sqlOpen && (
                 <pre className="mt-1.5 aug-fs-sm text-zinc-400 rounded border border-zinc-800 p-2.5 overflow-x-auto whitespace-pre-wrap font-code leading-relaxed" style={{ background: "var(--bg-0)" }}>
                   {answer.sql}
@@ -228,12 +229,12 @@ function FindingVerdict({ headline, connectionId, investigationId, sqlSource }: 
   return (
     <div className="border-t border-zinc-800/60 pt-4 flex items-center gap-2 flex-wrap">
       <span className="aug-fs-xs text-zinc-500 mr-1">Was this finding right?</span>
-      <button disabled={busy} onClick={() => send("accept")}
-        className={`${btn} border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10`}>Accept</button>
-      <button disabled={busy} onClick={() => setFixIt("correct")}
-        className={`${btn} border-amber-500/40 text-amber-300 hover:bg-amber-500/10`}>Partly</button>
-      <button disabled={busy} onClick={() => setFixIt("reject")}
-        className={`${btn} border-rose-500/40 text-rose-300 hover:bg-rose-500/10`}>Reject</button>
+      <Button variant="ghost" size="xs" disabled={busy} onClick={() => send("accept")}
+        className={`${btn} border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10`}>Accept</Button>
+      <Button variant="ghost" size="xs" disabled={busy} onClick={() => setFixIt("correct")}
+        className={`${btn} border-amber-500/40 text-amber-300 hover:bg-amber-500/10`}>Partly</Button>
+      <Button variant="ghost" size="xs" disabled={busy} onClick={() => setFixIt("reject")}
+        className={`${btn} border-rose-500/40 text-rose-300 hover:bg-rose-500/10`}>Reject</Button>
       {fixIt && (
         <div className="w-full">
           <FixItForm busy={busy}

@@ -63,6 +63,7 @@ import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const MONO: React.CSSProperties = { fontFamily: "var(--font-mono)" };
 const RULE = "1px solid var(--b1)";
@@ -474,7 +475,7 @@ function DeclareRule({ detail, connectionId, schema, onChanged }: {
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>scopes</span>
           {detail.metrics.map((m) => (
             <label key={m.id} className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--t2)" }}>
-              <input type="checkbox" checked={scopes.includes(m.id)}
+              <Checkbox checked={scopes.includes(m.id)}
                 onChange={(e) => setScopes((all) => (e.target.checked ? [...all, m.id] : all.filter((s) => s !== m.id)))} />
               {m.display_name || m.id}
             </label>
@@ -1410,7 +1411,7 @@ function DeclareBinding({ detail, busy, onDeclare, sources }: {
           </Button>
           {reads === "table" && !sources && (
             <label className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, color: "var(--t2)" }}>
-              <input type="checkbox" checked={absorb} aria-label="Absorb its type as a part"
+              <Checkbox checked={absorb} aria-label="Absorb its type as a part"
                 onChange={(e) => setAbsorb(e.target.checked)} />
               Fold that table&rsquo;s own type into {detail.display_name} as a part — hidden from the map, listed here
             </label>

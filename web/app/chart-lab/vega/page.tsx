@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import { VegaChart } from "@/components/charts/vega/VegaChart";
 import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
 import { resolveTier3Spec } from "@/components/charts/vega/tier3";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const MONTHS = ["2024-01", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06", "2024-07", "2024-08"];
 const REGIONS = ["North", "South", "East", "West"];
@@ -163,7 +164,7 @@ export default function VegaCompareLab() {
         Ordered by how often each type actually occurs in the ledger. Flip the app theme to check both.
       </p>
       <label className="aug-fs-ui" style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center", marginBottom: "1.5rem", cursor: "pointer" }}>
-        <input type="checkbox" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} />
+        <Checkbox checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} />
         value labels
       </label>
       {cases.map((c) => <Comparison key={c.hint} c={c} showLabels={showLabels} />)}

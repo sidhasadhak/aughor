@@ -45,6 +45,7 @@ import { McpServersSection } from "@/components/McpServersSection";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Callout } from "@/components/ui/callout";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "7px 10px", borderRadius: "var(--r3)",
@@ -460,7 +461,7 @@ export function IntegrationsPanel() {
                                   posts it in the thread. The bot reads the same row; a flip reconciles it. */}
                               <label className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center",
                                 gap: 6, color: "var(--t2)", cursor: "pointer" }}>
-                                <input type="checkbox" checked={botDraft.rehearse}
+                                <Checkbox checked={botDraft.rehearse}
                                   onChange={e => setBotDraft(d => ({ ...d, rehearse: e.target.checked }))} />
                                 Rehearse — a mention is answered in the asker&apos;s DM first (their ✅ posts it in
                                 the thread), and every automation post as this bot waits for a person&apos;s click

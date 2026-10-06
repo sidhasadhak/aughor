@@ -52,7 +52,7 @@ function TabBar({
   return (
     <div className="flex border-b border-[var(--b1)] shrink-0">
       {tabs.map((t) => (
-        <button
+        <Button variant="ghost" size="xs"
           key={t.id}
           onClick={() => onChange(t.id)}
           className={`px-4 py-2.5 aug-fs-sm font-medium transition-colors border-b-2 -mb-px ${
@@ -62,7 +62,7 @@ function TabBar({
           }`}
         >
           {t.label}
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -200,9 +200,9 @@ function TableDetail({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--b1)] shrink-0">
         <div className="flex items-center gap-2">
-          <button onClick={onClose} className="text-[var(--t3)] hover:text-[var(--t1)] transition">
+          <Button variant="ghost" size="xs" onClick={onClose} className="text-[var(--t3)] hover:text-[var(--t1)]">
             <span className="rotate-180 inline-block"><Icon name="chevr" size={16} label="Back" /></span>
-          </button>
+          </Button>
           <span className="aug-fs-sm font-semibold text-[var(--t1)] font-mono">{table.name}</span>
           <span className="aug-fs-xs text-[var(--t3)]">
             {table.columns.length} cols · {formatCount(Number(table.row_count))} rows
@@ -348,21 +348,21 @@ function DataTab({
             {saving && <span className="text-[var(--t3)]"> · saving…</span>}
           </p>
           <div className="flex items-center gap-2 shrink-0">
-            <button
+            <Button variant="ghost" size="xs"
               onClick={() => setAll(true)}
               disabled={isAll || saving}
-              className="aug-fs-xs text-[var(--t3)] hover:text-[var(--t1)] disabled:opacity-40 transition"
+              className="aug-fs-xs text-[var(--t3)] hover:text-[var(--t1)] disabled:opacity-40"
             >
               Include all
-            </button>
+            </Button>
             <span className="text-[var(--b2)]">·</span>
-            <button
+            <Button variant="ghost" size="xs"
               onClick={() => setAll(false)}
               disabled={includedCount === 0 || saving}
-              className="aug-fs-xs text-[var(--t3)] hover:text-[var(--t1)] disabled:opacity-40 transition"
+              className="aug-fs-xs text-[var(--t3)] hover:text-[var(--t1)] disabled:opacity-40"
             >
               Clear
-            </button>
+            </Button>
           </div>
         </div>
         <Input
@@ -392,7 +392,7 @@ function DataTab({
             className="w-full flex items-center px-3 py-2.5 aug-fs-sm border-b border-[var(--b0)] hover:bg-[var(--bg-hover)] transition group"
           >
             {/* Membership checkbox */}
-            <button
+            <Button variant="ghost" size="xs"
               onClick={() => toggle(t.name)}
               disabled={saving}
               title={on ? "Remove from canvas" : "Add to canvas"}
@@ -409,7 +409,7 @@ function DataTab({
                   <span style={{ color: "#0b1220", display: "inline-flex" }}><Icon name="check" size={11} stroke={2.4} /></span>
                 )}
               </span>
-            </button>
+            </Button>
             {/* Open detail */}
             <button onClick={() => setSelected(t)} className="flex-1 flex items-center min-w-0 text-left">
               <span className="text-[var(--t3)] shrink-0 mr-2"><Icon name="table" size={16} label="Table" /></span>
@@ -419,9 +419,9 @@ function DataTab({
             <span className="w-20 text-right text-[var(--t3)] shrink-0 font-mono">
               {compactNumber(Number(t.row_count), 1)}
             </span>
-            <button onClick={() => setSelected(t)} className="text-[var(--t3)] group-hover:text-[var(--t2)] transition ml-1 shrink-0">
+            <Button variant="ghost" size="xs" onClick={() => setSelected(t)} className="text-[var(--t3)] group-hover:text-[var(--t2)] transition ml-1 shrink-0">
               <Icon name="chevr" size={16} />
-            </button>
+            </Button>
           </div>
           );
         })}
@@ -598,9 +598,9 @@ export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate, o
             <span className="aug-fs-sm font-semibold text-[var(--t1)]">Configure</span>
             <span className="aug-fs-xs text-[var(--t3)] truncate max-w-[180px]">{canvas.name}</span>
           </div>
-          <button onClick={onClose} className="text-[var(--t3)] hover:text-[var(--t1)] transition">
+          <Button variant="ghost" size="xs" onClick={onClose} className="text-[var(--t3)] hover:text-[var(--t1)]">
             <Icon name="close" size={16} label="Close" />
-          </button>
+          </Button>
         </div>
 
         {/* Top-level tabs */}
@@ -625,13 +625,13 @@ export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate, o
                 canvas had its own set, which it never did.
               </p>
               {onOpenDocuments && (
-                <button
+                <Button variant="ghost" size="xs"
                   type="button"
                   onClick={onOpenDocuments}
-                  className="mt-3 aug-fs-xs px-2 py-1 rounded border border-zinc-600 text-zinc-300 hover:bg-zinc-800"
+                  className="mt-3 aug-fs-xs px-2 py-1 rounded border border-zinc-600 hover:bg-zinc-800"
                 >
                   Open Documents
-                </button>
+                </Button>
               )}
             </div>
           )}

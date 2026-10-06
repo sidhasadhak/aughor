@@ -47,6 +47,7 @@ import { RelatedRowsPicker } from "@/components/query/RelatedRowsPicker";
 import { NULL_GLYPH } from "@/lib/query/cellMenu";
 import type { RelatedJoin, RelatedJoinsAnswer, TypedColumn } from "@/lib/api";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /** The glyph for a real SQL NULL. Distinct from "" on purpose — defined beside the cell helpers (DE-5b),
  *  so the menu and the picker share it without importing the grid. */
@@ -384,7 +385,7 @@ export function ResultsGrid({
             {view.columns.map((name, i) => (
               <label key={i} style={{ display: "flex", alignItems: "center", gap: 7,
                 padding: "3px 6px", cursor: "pointer", color: "var(--t2)" }}>
-                <input type="checkbox" checked={!hidden.has(String(i))}
+                <Checkbox checked={!hidden.has(String(i))}
                   onChange={() => setHidden(prev => {
                     const next = new Set(prev);
                     // Never hide the last one: a grid with no columns is not a view.
