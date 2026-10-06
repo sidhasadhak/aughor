@@ -31,6 +31,7 @@ import { Icon } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
@@ -1771,7 +1772,7 @@ export function QueryBuilder({
             );
           })()}
           <label className="flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" checked={useCache} onChange={e=>setUseCache(e.target.checked)} className="w-3 h-3 accent-violet-500" />
+            <Checkbox checked={useCache} onChange={e=>setUseCache(e.target.checked)} />
             <span className="aug-fs-xs text-zinc-500">Cache</span>
           </label>
           <Button variant="ghost" onClick={triggerRun} disabled={running||!sql.trim()}
@@ -2190,7 +2191,7 @@ export function QueryBuilder({
                   <div>
                     <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Labels</p>
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={showDataLabels} onChange={e=>setShowDataLabels(e.target.checked)} className="w-3.5 h-3.5 accent-blue-500" />
+                      <Checkbox checked={showDataLabels} onChange={e=>setShowDataLabels(e.target.checked)} />
                       <span className="aug-fs-sm text-zinc-300">Show data labels on the chart</span>
                     </label>
                   </div>

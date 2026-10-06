@@ -59,6 +59,7 @@ import { TabStrip } from "@/components/ui/tab-strip";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Selection =
   | { kind: "charter"; id: string }
@@ -1190,7 +1191,7 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
             {documents.map(d => (
               <label key={d.doc_id} style={{ display: "flex", alignItems: "center", gap: 8,
                 fontSize: 12, color: "var(--t2)", cursor: "pointer" }}>
-                <input type="checkbox" checked={form.doc_ids.includes(d.doc_id)}
+                <Checkbox checked={form.doc_ids.includes(d.doc_id)}
                   onChange={() => toggleIn("doc_ids", d.doc_id)} />
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis",
                   whiteSpace: "nowrap" }}>{d.title || d.filename}</span>
@@ -1208,7 +1209,7 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
             {packs.map(p => (
               <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 8,
                 fontSize: 12, color: "var(--t2)", cursor: "pointer" }}>
-                <input type="checkbox" checked={form.pack_ids.includes(p.id)}
+                <Checkbox checked={form.pack_ids.includes(p.id)}
                   onChange={() => toggleIn("pack_ids", p.id)} />
                 <span>{p.name || p.id}</span>
               </label>
@@ -1249,7 +1250,7 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
                 <label key={id} className="aug-fs-sm"
                   style={{ display: "flex", alignItems: "center", gap: 8,
                   color: "var(--t2)", cursor: "pointer" }}>
-                  <input type="checkbox" checked={form.tool_grants.includes(id)}
+                  <Checkbox checked={form.tool_grants.includes(id)}
                     onChange={() => toggleIn("tool_grants", id)} />
                   <span style={{ fontFamily: "var(--font-mono)" }}>{id}</span>
                   {roster[id]?.title ? (

@@ -15,6 +15,7 @@ import { clearAgentPolicy, getAgentPolicy, getMyAccess, updateAgentPolicy, type 
 import { formatTimestamp } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Radio } from "@/components/ui/checkbox";
 
 type Level = "read" | "run" | "act";
 
@@ -134,7 +135,7 @@ export function AgentPolicySection() {
       <div role="radiogroup" aria-label="Agent level" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {LEVELS.map(l => (
           <label key={l.key} className="aug-fs-sm" style={{ display: "flex", alignItems: "flex-start", gap: 8, color: "var(--t2)", cursor: canManage ? "pointer" : "default" }}>
-            <input type="radio" name="agent-level" value={l.key} checked={level === l.key}
+            <Radio name="agent-level" value={l.key} checked={level === l.key}
               disabled={!canManage || saving} onChange={() => setLevel(l.key)} />
             <span><strong>{l.label}</strong> — {l.hint}</span>
           </label>

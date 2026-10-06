@@ -107,7 +107,7 @@ function CanvasCard({ row, onSelect, onDelete }: { row: CanvasRow; onSelect: () 
           </div>
         </div>
         {onDelete && !canvas.is_legacy && (
-          <button
+          <Button variant="ghost" size="xs"
             onClick={e => { e.stopPropagation(); onDelete(); }}
             title="Delete Data Canvas"
             className="aug-canvas-card-delete"
@@ -117,7 +117,7 @@ function CanvasCard({ row, onSelect, onDelete }: { row: CanvasRow; onSelect: () 
             onMouseLeave={e => { e.currentTarget.style.color = "var(--t3)"; }}
           >
             <Icon name={TRASH_ICON} size={13} />
-          </button>
+          </Button>
         )}
       </div>
 
@@ -337,7 +337,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
       width: 40,
       render: (_, { canvas }) =>
         canvas.is_legacy ? null : (
-          <button
+          <Button variant="ghost" size="xs"
             onClick={e => { e.stopPropagation(); setPendingDelete(canvas); }}
             title="Delete Data Canvas"
             style={{
@@ -351,7 +351,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             onMouseLeave={e => { e.currentTarget.style.color = "var(--t3)"; }}
           >
             <Icon name={TRASH_ICON} size={13} />
-          </button>
+          </Button>
         ),
     },
   ];
@@ -381,10 +381,10 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             }}
           />
           {search && (
-            <button onClick={() => setSearch("")}
+            <Button variant="ghost" size="xs" onClick={() => setSearch("")}
               style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 0 }}>
               ✕
-            </button>
+            </Button>
           )}
         </div>
         <Button
@@ -442,7 +442,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             </div>
             {/* Sort control */}
             <div style={{ position: "relative" }}>
-            <button
+            <Button variant="ghost" size="xs"
               onClick={() => setSortOpen(v => !v)}
               onBlur={() => setTimeout(() => setSortOpen(false), 120)}
               style={{
@@ -458,7 +458,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
               <span style={{ color: "var(--t3)" }}>Sort:</span>
               {SORT_LABELS[sort]}
               <Icon name={CHEVD_ICON} size={12} color="var(--t3)" />
-            </button>
+            </Button>
             {sortOpen && (
               <div style={{
                 position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30,
@@ -467,7 +467,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
                 borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)",
               }}>
                 {(["activity", "modified", "name", "tables"] as const).map(opt => (
-                  <button
+                  <Button variant="ghost" size="xs"
                     key={opt}
                     onMouseDown={() => { setSort(opt); setSortOpen(false); }}
                     style={{
@@ -484,7 +484,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
                       ? <Icon name="check" size={12} color="var(--blue4)" />
                       : <span style={{ width: 12 }} />}
                     {SORT_LABELS[opt]}
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
@@ -595,14 +595,14 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Button onClick={() => setPendingDelete(null)} variant="ghost" size="sm">Cancel</Button>
-              <button onClick={handleDelete} disabled={deleting} style={{
+              <Button variant="ghost" size="xs" onClick={handleDelete} disabled={deleting} style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "5px 12px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
                 background: "var(--red1)", border: "1px solid var(--red2)", color: "var(--red4)",
                 cursor: deleting ? "not-allowed" : "pointer", opacity: deleting ? 0.5 : 1,
               }}>
                 {deleting ? "Deleting…" : "Delete"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

@@ -82,14 +82,14 @@ it("an existing pin comes back ticked", async () => {
   api.getLlmConfig.mockResolvedValue(config({ json_mode: { ollama: [MODEL] } }));
   render(<InferencePanel />);
   const box = await screen.findByRole("checkbox");
-  await waitFor(() => expect((box as HTMLInputElement).checked).toBe(true));
+  await waitFor(() => expect(box).toHaveAttribute("aria-checked", "true"));
 });
 
 it("unticking a saved pin sends an empty list, which is how it is cleared", async () => {
   api.getLlmConfig.mockResolvedValue(config({ json_mode: { ollama: [MODEL] } }));
   render(<InferencePanel />);
   const box = await screen.findByRole("checkbox");
-  await waitFor(() => expect((box as HTMLInputElement).checked).toBe(true));
+  await waitFor(() => expect(box).toHaveAttribute("aria-checked", "true"));
   fireEvent.click(box);
   fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
 

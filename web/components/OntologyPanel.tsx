@@ -107,9 +107,9 @@ function OntologySettings({
     <div className="w-72 shrink-0 border-l border-zinc-700/70 flex flex-col bg-zinc-900 overflow-hidden">
       <div className="px-4 pt-4 pb-3 border-b border-zinc-700/60 flex items-center justify-between">
         <p className="text-xs font-semibold text-zinc-200">Ontology Settings</p>
-        <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition">
+        <Button variant="ghost" size="xs" onClick={onClose}>
           <Icon name="close" size={16} label="Close" />
-        </button>
+        </Button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
@@ -124,7 +124,7 @@ function OntologySettings({
           </p>
           <div className="grid grid-cols-2 gap-1.5">
             {REFRESH_OPTIONS.map(opt => (
-              <button
+              <Button variant="ghost" size="xs"
                 key={String(opt.value)}
                 onClick={() => saveRefresh(opt.value)}
                 disabled={saving}
@@ -132,11 +132,11 @@ function OntologySettings({
                   "py-2 aug-fs-xs rounded-[var(--r3)] border transition font-medium",
                   currentHours === opt.value
                     ? "bg-violet-500/15 border-violet-500/40 text-violet-300"
-                    : "bg-zinc-800/60 border-zinc-700/50 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200",
+                    : "bg-zinc-800/60 border-zinc-700/50 hover:border-zinc-500",
                 )}
               >
                 {opt.label}
-              </button>
+              </Button>
             ))}
           </div>
           {currentHours && (
@@ -163,18 +163,18 @@ function OntologySettings({
           <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
             Manual rebuild
           </p>
-          <button
+          <Button variant="ghost" size="xs"
             onClick={handleRebuild}
             disabled={rebuilding}
             className={cn(
-              "w-full py-2 aug-fs-xs rounded-[var(--r3)] border transition",
+              "w-full py-2 aug-fs-xs rounded-[var(--r3)] border",
               rebuilding
-                ? "border-zinc-700 text-zinc-500 cursor-not-allowed"
+                ? "border-zinc-700 cursor-not-allowed"
                 : "border-violet-500/30 text-violet-400 hover:bg-violet-500/10 hover:border-violet-400/50",
             )}
           >
             {rebuilding ? "Rebuilding…" : "Rebuild ontology now"}
-          </button>
+          </Button>
           {rebuildMsg && (
             <p className={cn(
               "aug-fs-xs mt-2",
@@ -249,9 +249,9 @@ function DuplicatesDrawer({ connId, schema, onClose, onMerged }: {
     <div className="w-[340px] shrink-0 border-l border-zinc-700/70 bg-zinc-900/40 flex flex-col overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-zinc-700/70">
         <p className="text-xs font-semibold text-zinc-300">Possible duplicate entities</p>
-        <button onClick={onClose} className="ml-auto text-zinc-500 hover:text-zinc-300 transition">
+        <Button variant="ghost" size="xs" onClick={onClose} className="ml-auto">
           <Icon name="close" size={16} label="Close" />
-        </button>
+        </Button>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
         {loading && <p className="aug-fs-xs text-zinc-500">Scanning for duplicates…</p>}
@@ -285,10 +285,10 @@ function DuplicatesDrawer({ connId, schema, onClose, onMerged }: {
               <span className="aug-fs-xs text-zinc-500">Merge all into (the others become its parts):</span>
               <div className="flex flex-wrap gap-1">
                 {c.entities.map(e => (
-                  <button key={e.id} onClick={() => doMerge(c, e.id)} disabled={merging !== null}
+                  <Button variant="ghost" size="xs" key={e.id} onClick={() => doMerge(c, e.id)} disabled={merging !== null}
                     className="aug-fs-xs px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40">
                     {merging === e.id ? "Merging…" : e.display_name}
-                  </button>
+                  </Button>
                 ))}
               </div>
             <div className="flex items-center gap-1 pt-1">
@@ -480,9 +480,9 @@ function SkillsDrawer({ connId, schema, onClose }: { connId: string; schema?: st
     <div className="w-[340px] shrink-0 border-l border-zinc-700/70 bg-zinc-900/40 flex flex-col overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-zinc-700/70">
         <p className="text-xs font-semibold text-zinc-300">Learned skills</p>
-        <button onClick={onClose} className="ml-auto text-zinc-500 hover:text-zinc-300 transition">
+        <Button variant="ghost" size="xs" onClick={onClose} className="ml-auto">
           <Icon name="close" size={16} label="Close" />
-        </button>
+        </Button>
       </div>
       {autonomy && (
         <div className="px-3 py-2 border-b border-zinc-800/70 aug-fs-xs text-zinc-500">
@@ -518,14 +518,14 @@ function SkillsDrawer({ connId, schema, onClose }: { connId: string; schema?: st
               </div>
             )}
             <div className="flex gap-1 pt-0.5">
-              <button onClick={() => doUse(sk.id)} disabled={busy !== null}
+              <Button variant="ghost" size="xs" onClick={() => doUse(sk.id)} disabled={busy !== null}
                 className="aug-fs-xs px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40">
                 {busy === sk.id ? "…" : "Use"}
-              </button>
-              <button onClick={() => doDelete(sk.id)} disabled={busy !== null}
-                className="aug-fs-xs px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-red-300 hover:border-red-500/40 transition disabled:opacity-40">
+              </Button>
+              <Button variant="ghost" size="xs" onClick={() => doDelete(sk.id)} disabled={busy !== null}
+                className="aug-fs-xs px-2 py-0.5 rounded border border-zinc-700 hover:text-red-300 hover:border-red-500/40 transition disabled:opacity-40">
                 Delete
-              </button>
+              </Button>
             </div>
           </div>
         ))}
@@ -608,29 +608,29 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
       {/* Org ⟷ Domain ⟷ Connection view toggle. ON-8 — Domain is the organisation's ontology: types declared on any
           connection, and the links between them, read by key where they cross two. */}
       <div className="flex shrink-0 items-center rounded-md border border-zinc-700 overflow-hidden aug-fs-xs">
-        <button
+        <Button variant="ghost" size="xs"
           onClick={() => { setOrgMode(true); setDomainMode(false); }}
           className={cn(
-            "px-2.5 py-1 transition",
-            orgMode ? "bg-violet-500/15 text-violet-300" : "text-zinc-400 hover:text-zinc-200",
+            "px-2.5 py-1",
+            orgMode ? "bg-violet-500/15 text-violet-300" : "",
           )}
-        >Org</button>
-        <button
+        >Org</Button>
+        <Button variant="ghost" size="xs"
           onClick={() => { setDomainMode(true); setOrgMode(false); }}
           className={cn(
             "px-2.5 py-1 transition border-l border-zinc-700",
-            domainMode ? "bg-violet-500/15 text-violet-300" : "text-zinc-400 hover:text-zinc-200",
+            domainMode ? "bg-violet-500/15 text-violet-300" : "",
           )}
           title="The organisation's ontology — types declared on any connection, and the links between them"
           data-testid="ontology-domain-toggle"
-        >Domain</button>
-        <button
+        >Domain</Button>
+        <Button variant="ghost" size="xs"
           onClick={() => { setOrgMode(false); setDomainMode(false); }}
           className={cn(
             "px-2.5 py-1 transition border-l border-zinc-700",
-            !orgMode && !domainMode ? "bg-violet-500/15 text-violet-300" : "text-zinc-400 hover:text-zinc-200",
+            !orgMode && !domainMode ? "bg-violet-500/15 text-violet-300" : "",
           )}
-        >Connection</button>
+        >Connection</Button>
       </div>
 
       {!orgMode && !domainMode && graph && (
@@ -648,18 +648,18 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
             {countNoun(Object.keys(graph.entities).length, "entity", "entities")}
             {" · "}{countNoun(Object.keys(graph.relationships).length, "relationship")}
           </span>
-          <button
+          <Button variant="ghost" size="xs"
             onClick={() => { setShowDuplicates(v => !v); setShowSettings(false); setShowSkills(false); setShowProposals(false); }}
             className={cn(
-              "aug-fs-xs px-2 py-0.5 rounded border transition",
+              "aug-fs-xs px-2 py-0.5 rounded border",
               showDuplicates
                 ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
-                : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500",
+                : "border-zinc-700 hover:border-zinc-500",
             )}
             title="Find near-duplicate entities to merge"
           >
             Find duplicates
-          </button>
+          </Button>
           <Button
             variant="outline" size="xs"
             onClick={() => { setShowOverrides(v => !v); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); setShowProposals(false); }}
@@ -688,28 +688,28 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
           >
             Proposals
           </Button>
-          <button
+          <Button variant="ghost" size="xs"
             onClick={() => { setShowSkills(v => !v); setShowSettings(false); setShowDuplicates(false); setShowProposals(false); }}
             className={cn(
-              "aug-fs-xs px-2 py-0.5 rounded border transition",
+              "aug-fs-xs px-2 py-0.5 rounded border",
               showSkills
                 ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
-                : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500",
+                : "border-zinc-700 hover:border-zinc-500",
             )}
             title="Learned skills crystallized from deep analyses"
           >
             Learned skills
-          </button>
-          <button
+          </Button>
+          <Button variant="ghost" size="xs"
             onClick={() => { setShowSettings(v => !v); setShowDuplicates(false); setShowSkills(false); setShowProposals(false); }}
             className={cn(
-              "text-zinc-500 hover:text-zinc-300 transition ml-1",
+              " transition ml-1",
               showSettings && "text-violet-400",
             )}
             title="Ontology settings"
           >
             <Icon name="settings" size={16} label="Settings" />
-          </button>
+          </Button>
         </div>
       )}
     </div>

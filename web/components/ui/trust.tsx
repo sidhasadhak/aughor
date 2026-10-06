@@ -15,7 +15,11 @@
  */
 import React from "react";
 
+import { Badge as ThemesBadge, Progress } from "@radix-ui/themes";
+
 import { Button } from "@/components/ui/button";
+
+const VERDICT_COLOR: Record<GuardVerdict, "green" | "amber" | "red"> = { passed: "green", warned: "amber", refused: "red" };
 
 export type GuardVerdict = "passed" | "warned" | "refused";
 
@@ -29,11 +33,12 @@ export function GuardChip({ verdict, children, title, className = "" }: {
   className?: string;
 }) {
   return (
-    <span className={`aug-guard aug-guard-${verdict} ${className}`} title={title}>
+    <ThemesBadge data-slot="guard" size="1" variant="outline" color={VERDICT_COLOR[verdict]} className={className} title={title}
+      style={{ fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
       <span aria-hidden>{MARK[verdict]}</span>
       {children}
       <span className="sr-only">{` — ${verdict}`}</span>
-    </span>
+    </ThemesBadge>
   );
 }
 
@@ -42,12 +47,10 @@ export type ReceiptLink =
   | { kind: "guard"; label: string; verdict: GuardVerdict; title?: string }
   | { kind: "figure"; label: string; title?: string };
 
-function linkClass(l: ReceiptLink): string {
-  if (l.kind === "query") return "aug-receipt-query";
-  if (l.kind === "guard") {
-    return l.verdict === "passed" ? "aug-receipt-passed" : l.verdict === "warned" ? "aug-receipt-warned" : "aug-receipt-broken";
-  }
-  return "";
+function linkColor(l: ReceiptLink): "indigo" | "green" | "amber" | "red" | "gray" {
+  if (l.kind === "query") return "indigo";
+  if (l.kind === "guard") return VERDICT_COLOR[l.verdict];
+  return "gray";
 }
 
 /** The shape of Aughor's whole claim, drawn identically wherever it appears. */
@@ -56,12 +59,12 @@ export function ReceiptChain({ links, className = "" }: { links: ReceiptLink[]; 
     <span className={`aug-receipt-chain ${className}`} role="list" aria-label="Receipt chain">
       {links.map((l, i) => {
         const text = l.kind === "guard" ? `${l.label} ${MARK[l.verdict]}` : l.label;
-        const cls = `aug-receipt-link ${linkClass(l)}`;
+        const mono = { fontFamily: "var(--font-mono)", whiteSpace: "nowrap" as const };
         return (
           <span key={`${l.kind}:${l.label}:${i}`} role="listitem" style={{ display: "inline-flex", alignItems: "center" }}>
             {l.kind === "query" && l.onOpen
-              ? <Button variant="ghost" size="xs" className={`${cls} font-normal`} title={l.title} onClick={l.onOpen}>{text}</Button>
-              : <span className={cls} title={l.title}>{text}</span>}
+              ? <Button variant="outline" size="xs" title={l.title} onClick={l.onOpen} style={mono}>{text}</Button>
+              : <ThemesBadge size="1" variant="outline" color={linkColor(l)} title={l.title} style={mono}>{text}</ThemesBadge>}
             {i < links.length - 1 && <span aria-hidden className="aug-receipt-arrow">→</span>}
           </span>
         );
@@ -75,6 +78,7 @@ export function ReceiptChain({ links, className = "" }: { links: ReceiptLink[]; 
 export function confidenceTier(value: number): "high" | "mid" | "low" {
   return value >= 0.86 ? "high" : value >= 0.5 ? "mid" : "low";
 }
+const TIER_COLOR = { high: "green", mid: "amber", low: "red" } as const;
 
 export function Confidence({ value, note, title, className = "" }: {
   /** 0–1. A computed number, never a mood. */
@@ -87,9 +91,7 @@ export function Confidence({ value, note, title, className = "" }: {
   return (
     <span className={`aug-confidence aug-confidence-${confidenceTier(v)} ${className}`} title={title}>
       <span className="aug-confidence-value">{v.toFixed(2)}</span>
-      <span className="aug-confidence-bar" aria-hidden>
-        <span className="aug-confidence-fill" style={{ display: "block", width: `${v * 100}%` }} />
-      </span>
+      <Progress size="1" value={v * 100} color={TIER_COLOR[confidenceTier(v)]} aria-hidden style={{ width: 78, flex: "none" }} />
       {note != null && <span className="aug-confidence-note">{note}</span>}
     </span>
   );

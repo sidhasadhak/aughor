@@ -347,7 +347,7 @@ function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: (
             className="text-xs bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-zinc-200 w-36 outline-none focus:border-zinc-500"
           />
           {actions.map(a => (
-            <button
+            <Button variant="ghost" size="xs"
               key={a}
               disabled={!!busy}
               onClick={() => run(a)}
@@ -357,16 +357,16 @@ function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: (
                 : "border-amber-500/40 text-amber-400 hover:bg-amber-500/10"}`}
             >
               {busy === a ? "…" : a}
-            </button>
+            </Button>
           ))}
         </div>
       )}
       {err && <div className="aug-fs-xs text-red-400 mt-1.5">{err}</div>}
       {audit.length > 0 && (
         <div className="mt-2">
-          <button onClick={() => setShowAudit(s => !s)} className="aug-fs-xs text-zinc-400 hover:text-zinc-200">
+          <Button variant="ghost" size="xs" onClick={() => setShowAudit(s => !s)} className="aug-fs-xs">
             {showAudit ? "▾" : "▸"} audit trail ({audit.length})
-          </button>
+          </Button>
           {showAudit && (
             <div className="mt-1 flex flex-col gap-0.5">
               {audit.map((a, i) => (

@@ -27,6 +27,7 @@ import {
   type KnowledgeStatus,
 } from "@/lib/api";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /** Until the server answers, accept only what needs no converter. The list used to be
  *  a hard-coded five and stayed five while the parser grew to twenty — a capability
@@ -644,16 +645,14 @@ export function DocumentUploader() {
                 <p className="aug-fs-xs text-zinc-300 font-medium">Text pre-processing rules</p>
                 <p className="aug-fs-xs text-zinc-600 mb-2">Applied before chunking and embedding.</p>
                 <label className="flex items-center gap-2 aug-fs-xs text-zinc-400 mb-1">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={settings.collapse_whitespace ?? true}
                     onChange={e => setSettings(prev => ({ ...prev, collapse_whitespace: e.target.checked }))}
                   />
                   Replace consecutive spaces, newlines and tabs
                 </label>
                 <label className="flex items-center gap-2 aug-fs-xs text-zinc-400">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={settings.strip_urls_emails ?? false}
                     onChange={e => setSettings(prev => ({ ...prev, strip_urls_emails: e.target.checked }))}
                   />
@@ -663,8 +662,7 @@ export function DocumentUploader() {
                   Off by default: a policy that cites a source loses the citation.
                 </p>
                 <label className="flex items-center gap-2 aug-fs-xs text-zinc-400">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={settings.suppress_numeric_runs ?? true}
                     onChange={e => setSettings(prev => ({ ...prev, suppress_numeric_runs: e.target.checked }))}
                   />

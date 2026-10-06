@@ -53,6 +53,7 @@ import { compactNumber, formatCost, formatCount, pct, relTime } from "@/lib/form
 import { Loading, ReadFailed } from "@/components/ui/states";
 import { Term } from "@/components/agentops/Term";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Density = "calm" | "noc";
 type JobFilter = "active" | "all" | "succeeded" | "failed";
@@ -478,7 +479,7 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
             })}
             <label style={{ display: "inline-flex", alignItems: "center", gap: 6,
                             marginLeft: "auto", color: "var(--t2)", fontSize: 12, cursor: "pointer" }}>
-              <input type="checkbox" checked={showRunners}
+              <Checkbox checked={showRunners}
                 onChange={e => setShowRunners(e.target.checked)} />
               include background <Term id="runner">runners</Term>
             </label>

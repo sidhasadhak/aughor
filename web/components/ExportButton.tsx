@@ -10,6 +10,8 @@
 import { useEffect, useRef, useState } from "react";
 import { downloadInvestigationExport } from "@/lib/api";
 import { Icon } from "@/components/ui/icon";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
 
 export function ExportButton({ invId }: { invId: string }) {
   const [open, setOpen] = useState(false);
@@ -42,7 +44,7 @@ export function ExportButton({ invId }: { invId: string }) {
 
   return (
     <div ref={ref} style={{ position: "relative" }}>
-      <button
+      <Button variant="ghost" size="xs"
         onClick={() => setOpen(v => !v)}
         title="Download this analysis as PDF or PowerPoint"
         style={{
@@ -57,7 +59,7 @@ export function ExportButton({ invId }: { invId: string }) {
         <Icon name="download" size={13} />
         Export
         <span style={{ fontSize: 11, opacity: 0.6 }}>▾</span>
-      </button>
+      </Button>
 
       {open && (
         <div style={{
@@ -85,7 +87,7 @@ export function ExportButton({ invId }: { invId: string }) {
             marginTop: 4, borderTop: "1px solid var(--b1)", fontSize: 11,
             color: "var(--t3)", cursor: "pointer",
           }}>
-            <input type="checkbox" checked={narrate} onChange={e => setNarrate(e.target.checked)} />
+            <Checkbox checked={narrate} onChange={e => setNarrate(e.target.checked)} />
             Add AI executive summary
           </label>
         </div>

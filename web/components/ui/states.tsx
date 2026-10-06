@@ -15,7 +15,10 @@
  */
 import React from "react";
 
+import { Spinner } from "@radix-ui/themes";
+
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 
 export interface StateDoor {
   label: string;
@@ -30,8 +33,7 @@ function Doors({ doors }: { doors?: StateDoor[] }) {
   return (
     <div className="aug-state-actions">
       {doors.map(d => (
-        <Button key={d.label} variant="ghost" size="xs" title={d.title} onClick={d.onClick}
-          className={`aug-state-action${d.primary ? " aug-state-action-primary" : ""}`}>
+        <Button key={d.label} variant={d.primary ? "secondary" : "outline"} size="xs" title={d.title} onClick={d.onClick}>
           {d.label}
         </Button>
       ))}
@@ -65,7 +67,8 @@ export function Loading({ what, inline = false, className = "", style }: {
   const Tag = inline ? "span" : "div";
   return (
     <Tag role="status" aria-live="polite" className={`aug-fs-sm ${className}`.trim()}
-      style={{ color: "var(--t3)", ...style }}>
+      style={{ color: "var(--t3)", display: inline ? "inline-flex" : "flex", alignItems: "center", gap: 8, ...style }}>
+      <Spinner size="1" />
       {what ? `Loading ${what}…` : "Loading…"}
     </Tag>
   );
@@ -116,7 +119,7 @@ export function ErrorState({ kind = "Failed", meta, what, means, doors, runId, o
 }) {
   const ticket = [runId, object].filter(Boolean).join(" · ");
   return (
-    <div role="alert" className={`aug-error ${className}`} style={style}>
+    <Callout tone="red" role="alert" className={`aug-state ${className}`} style={style}>
       <Head kind={kind} meta={meta} />
       <div className="aug-state-what">{what}</div>
       {means != null && <div className="aug-state-detail">{means}</div>}
@@ -124,7 +127,7 @@ export function ErrorState({ kind = "Failed", meta, what, means, doors, runId, o
       {ticket && (
         <div className="aug-state-ticket">ref <span className="aug-state-ticket-id">{ticket}</span></div>
       )}
-    </div>
+    </Callout>
   );
 }
 
@@ -157,12 +160,12 @@ export function PartialState({ kind = "Partial", meta, claim, detail, bars, door
 }) {
   return (
     <div className={className} style={{ display: "flex", flexDirection: "column", gap: 10, ...style }}>
-      <div className="aug-partial">
+      <Callout tone="amber" className="aug-state">
         <Head kind={kind} meta={meta} />
         <div className="aug-state-claim">{claim}</div>
         {detail != null && <div className="aug-state-detail">{detail}</div>}
         <Doors doors={doors} />
-      </div>
+      </Callout>
       {bars?.length ? (
         <div className="aug-partial-bars">
           {bars.map(b => (
@@ -200,11 +203,11 @@ export function Refusal({ kind = "Refused", meta, claim, detail, doors, classNam
 }) {
   const safe = doors?.map(d => (/unguarded/i.test(d.label) ? { ...d, primary: false } : d));
   return (
-    <div className={`aug-refusal ${className}`} style={style}>
+    <Callout tone="red" className={`aug-state ${className}`} style={style}>
       <Head kind={kind} meta={meta} />
       <div className="aug-state-claim">{claim}</div>
       {detail != null && <div className="aug-state-detail">{detail}</div>}
       <Doors doors={safe} />
-    </div>
+    </Callout>
   );
 }

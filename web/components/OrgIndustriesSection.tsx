@@ -15,6 +15,7 @@
 import { useEffect, useState } from "react";
 import { getIndustryChoice, updateIndustryChoice, type IndustryChoice } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Checkbox, Radio } from "@/components/ui/checkbox";
 
 // Sizes come from the aug-fs-* classes (the design-token gate holds raw font sizes where they are).
 const hintStyle: React.CSSProperties = { color: "var(--t3)", marginTop: 6 };
@@ -76,11 +77,11 @@ export function OrgIndustriesSection() {
       <div className="aug-label" style={{ marginBottom: 10 }}>Industries</div>
       <div role="radiogroup" aria-label="Industries" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <label className="aug-fs-sm" style={optionStyle}>
-          <input type="radio" name="industries" checked={every} onChange={() => pick(true)} style={{ cursor: "pointer" }} />
+          <Radio name="industries" checked={every} onChange={() => pick(true)} style={{ cursor: "pointer" }} />
           Every industry
         </label>
         <label className="aug-fs-sm" style={optionStyle}>
-          <input type="radio" name="industries" checked={!every} onChange={() => pick(false)} style={{ cursor: "pointer" }} />
+          <Radio name="industries" checked={!every} onChange={() => pick(false)} style={{ cursor: "pointer" }} />
           Only these
         </label>
       </div>
@@ -88,8 +89,7 @@ export function OrgIndustriesSection() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 10, paddingLeft: 22 }}>
           {choice.shipped.map((industry) => (
             <label key={industry.id} className="aug-fs-sm" style={optionStyle} title={industry.description || undefined}>
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={kept.includes(industry.id)}
                 onChange={(e) => toggle(industry.id, e.target.checked)}
                 style={{ cursor: "pointer" }}

@@ -6,6 +6,7 @@ import { PartsMessage } from "@/components/chat/PartsMessage";
 import type { SourcePanelData } from "@/components/ChatMessage";
 import { projectThread, newSessionId } from "@/lib/chatTurn";
 import { useAughorChat } from "@/lib/useAughorChat";
+import { Button } from "@/components/ui/button";
 
 export interface ThreadRunOpts {
   connectionId: string;
@@ -118,19 +119,19 @@ export function InlineInvestigationThread({
         </span>
         <span style={{ display: "inline-flex", gap: 10 }}>
           {streaming && (
-            <button className="aug-label" onClick={() => stop()} style={_linkBtn} title="Stop this investigation">
+            <Button variant="ghost" size="xs" className="aug-label" onClick={() => stop()} style={_linkBtn} title="Stop this investigation">
               Stop
-            </button>
+            </Button>
           )}
           {onOpenInAsk && (
-            <button className="aug-label" onClick={() => onOpenInAsk(question)} style={_linkBtn} title="Open in the Ask workspace">
+            <Button variant="ghost" size="xs" className="aug-label" onClick={() => onOpenInAsk(question)} style={_linkBtn} title="Open in the Ask workspace">
               Open in Ask ↗
-            </button>
+            </Button>
           )}
           {onClose && (
-            <button className="aug-label" onClick={onClose} style={_linkBtn} title="Collapse">
+            <Button variant="ghost" size="xs" className="aug-label" onClick={onClose} style={_linkBtn} title="Collapse">
               Close
-            </button>
+            </Button>
           )}
         </span>
       </div>

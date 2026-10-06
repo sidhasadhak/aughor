@@ -25,6 +25,8 @@ import { subscribeKernelEvents } from "@/lib/events";
 import { formatCount } from "@/lib/format";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
+import { Button } from "@/components/ui/button";
 
 // ── Phase metadata ────────────────────────────────────────────────────────────
 
@@ -193,24 +195,24 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
           {status.tables_total > 0 && `${status.tables_total} tables · ${status.joins_total} joins`}
         </span>
         {isRunning && (
-          <button onClick={onStop} disabled={stopping}
+          <Button variant="ghost" size="xs" onClick={onStop} disabled={stopping}
             className="flex items-center gap-1 aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
             style={{ background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)" }}>
             <span className="w-2 h-2 rounded-sm inline-block" style={{ background: "var(--red4)" }} />
             {stopping ? "stopping…" : "Stop"}
-          </button>
+          </Button>
         )}
         {isStopped && !isRunning && (<>
-          <button onClick={onResume} disabled={resuming || restarting}
+          <Button variant="ghost" size="xs" onClick={onResume} disabled={resuming || restarting}
             className="aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
             style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
             {resuming ? "resuming…" : "Resume"}
-          </button>
-          <button onClick={onRestart} disabled={resuming || restarting}
+          </Button>
+          <Button variant="ghost" size="xs" onClick={onRestart} disabled={resuming || restarting}
             className="aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
             style={{ background: "var(--amb1)", color: "var(--amb4)", border: "0.5px solid var(--amb2)" }}>
             {restarting ? "restarting…" : "Restart"}
-          </button>
+          </Button>
         </>)}
       </div>
     </div>
@@ -244,10 +246,10 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
   }
 
   if (!open) return (
-    <button onClick={() => setOpen(true)} className="aug-fs-xs px-2.5 py-1 rounded mt-2"
+    <Button variant="ghost" size="xs" onClick={() => setOpen(true)} className="aug-fs-xs px-2.5 py-1 rounded mt-2"
       style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
       ↺ Retry with fix
-    </button>
+    </Button>
   );
 
   return (
@@ -259,13 +261,13 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
           placeholder="e.g. use click_ts instead of click_id…"
           className="flex-1 aug-fs-xs rounded px-2.5 py-1.5 focus:outline-none"
           style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t2)" }} />
-        <button onClick={handleRetry} disabled={loading}
+        <Button variant="ghost" size="xs" onClick={handleRetry} disabled={loading}
           className="aug-fs-xs px-3 py-1.5 rounded disabled:opacity-40 shrink-0"
           style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
           {loading ? "fixing…" : "Run fix"}
-        </button>
-        <button onClick={() => { setOpen(false); setResult(null); }}
-          className="aug-fs-xs px-2 py-1.5 rounded" style={{ color: "var(--t3)" }}>✕</button>
+        </Button>
+        <Button variant="ghost" size="xs" onClick={() => { setOpen(false); setResult(null); }}
+          className="aug-fs-xs px-2 py-1.5 rounded" style={{ color: "var(--t3)" }}>✕</Button>
       </div>
       {result && (
         <div className="space-y-2 pt-1">
@@ -291,11 +293,11 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
               </div>
               {/* Save the successful fix as a finding (through the Phase-8 guards) */}
               {!saved ? (
-                <button onClick={handleSave} disabled={saving}
+                <Button variant="ghost" size="xs" onClick={handleSave} disabled={saving}
                   className="aug-fs-xs px-3 py-1.5 rounded disabled:opacity-40"
                   style={{ background: "var(--grn1)", color: "var(--grn4)", border: "0.5px solid var(--grn2)" }}>
                   {saving ? "saving…" : "Save as finding"}
-                </button>
+                </Button>
               ) : (
                 <SaveFeedback saved={saved} />
               )}
@@ -533,22 +535,7 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
 // ── Segmented control ─────────────────────────────────────────────────────────
 
 function Seg<T extends string>({ value, options, onChange }: { value: T; options: { v: T; label: string }[]; onChange: (v: T) => void }) {
-  return (
-    <div style={{ display: "flex", gap: 1, padding: 2, background: "var(--bg-0)", borderRadius: 5, border: "0.5px solid var(--b1)" }}>
-      {options.map(o => (
-        <button key={o.v} onClick={() => onChange(o.v)} style={{
-          fontSize: 11, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
-          background: value === o.v ? "var(--blue1)" : "transparent",
-          color: value === o.v ? "var(--blue4)" : "var(--t3)",
-          border: value === o.v ? "0.5px solid var(--blue2)" : "0.5px solid transparent",
-          fontWeight: value === o.v ? 500 : 400,
-          transition: "background-color .1s, border-color .1s, color .1s",
-        }}>
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
+  return <Segmented label="View" value={value} onChange={onChange} options={options.map(o => ({ value: o.v, label: o.label }))} />;
 }
 
 // ── Main panel ────────────────────────────────────────────────────────────────
@@ -713,7 +700,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
           </span>
         )}
         {errorCount > 0 && (
-          <button onClick={handleFixAll} disabled={fixingAll}
+          <Button variant="ghost" size="xs" onClick={handleFixAll} disabled={fixingAll}
             title={`Repair the ${errorCount} errored quer${errorCount !== 1 ? "ies" : "y"} visible under the current filter`}
             style={{
               fontSize: 11, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
@@ -721,7 +708,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
               opacity: fixingAll ? 0.5 : 1,
             }}>
             {fixingAll ? "fixing…" : `Fix all (${errorCount})`}
-          </button>
+          </Button>
         )}
         {fixAllSummary && (
           <span style={{ fontSize: 11, color: "var(--t3)" }}>
@@ -735,14 +722,14 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
           {isRunning && <span className="ml-2 inline-flex items-center gap-1.5" style={{ color: "var(--t3)" }}><span className="aug-dot aug-dot-live" aria-hidden />live</span>}
         </span>
         {filtered.length > DEFAULT_LIMIT && (
-          <button onClick={() => setShowAll(v => !v)} style={{
+          <Button variant="ghost" size="xs" onClick={() => setShowAll(v => !v)} style={{
             fontSize: 11, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
             background: showAll ? "var(--blue1)" : "var(--bg-1)",
             color: showAll ? "var(--blue4)" : "var(--t3)",
             border: `0.5px solid ${showAll ? "var(--blue2)" : "var(--bg-3)"}`,
           }}>
             {showAll ? "Show less" : `Show all ${filtered.length}`}
-          </button>
+          </Button>
         )}
       </div>
 

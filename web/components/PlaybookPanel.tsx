@@ -7,6 +7,7 @@ import { pct, formatTimestamp } from "@/lib/format";
 import { getPlaybookVersions, type PlaybookVersion } from "@/lib/api";
 import { Loading } from "@/components/ui/states";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 interface PlaybookEntry {
   id: string;
@@ -136,7 +137,7 @@ export function PlaybookPanel() {
         <div className="px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: "0.5px solid var(--b2)" }}>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-[13px] font-medium" style={{ color: "var(--t1)" }}>Playbook</h2>
-            <button
+            <Button variant="ghost" size="xs"
               onClick={handleReseed}
               disabled={seeding}
               className="aug-fs-xs px-2 py-1 rounded-[4px] transition-colors"
@@ -145,7 +146,7 @@ export function PlaybookPanel() {
               onMouseLeave={e => e.currentTarget.style.color = "var(--t3)"}
             >
               {seeding ? "Seeding…" : "Re-seed from KB"}
-            </button>
+            </Button>
           </div>
           <div className="flex items-center gap-3 aug-fs-xs font-mono mb-3" style={{ color: "var(--t3)" }}>
             <span><span style={{ color: "var(--grn4)" }}>{activeCount}</span> active</span>
@@ -153,7 +154,7 @@ export function PlaybookPanel() {
             {provenCount > 0 && <span><span style={{ color: "var(--blue4)" }}>{provenCount}</span> proven</span>}
           </div>
           {ruleOutCount > 0 && (
-            <button
+            <Button variant="ghost" size="xs"
               onClick={() => setShowRuleOuts(v => !v)}
               data-testid="playbook-ruleouts-toggle"
               className="aug-fs-xs mb-2 text-left"
@@ -163,7 +164,7 @@ export function PlaybookPanel() {
               {showRuleOuts
                 ? `${ruleOutCount} data-quality rule-outs shown`
                 : `${ruleOutCount} data-quality rule-outs run in the Verifier — not listed`}
-            </button>
+            </Button>
           )}
           <Input
             value={filter}
@@ -174,7 +175,7 @@ export function PlaybookPanel() {
           />
           <div className="flex gap-1">
             {(["all", "active", "draft", "deprecated"] as const).map(s => (
-              <button
+              <Button variant="ghost" size="xs"
                 key={s}
                 onClick={() => setStatusFilter(s)}
                 className="text-[11px] px-2 py-0.5 rounded-[var(--r-chip)] font-mono transition-colors"
@@ -185,7 +186,7 @@ export function PlaybookPanel() {
                 }}
               >
                 {s}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -205,7 +206,7 @@ export function PlaybookPanel() {
             </p>
           )}
           {filtered.map(e => (
-            <button
+            <Button variant="ghost" size="xs"
               key={e.id}
               onClick={() => setSelected(selected === e.id ? null : e.id)}
               className="w-full text-left px-4 py-2.5 transition-colors"
@@ -236,7 +237,7 @@ export function PlaybookPanel() {
                   )}
                 </div>
               </div>
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -338,7 +339,7 @@ function PlaybookDetail({
       {/* Promote / deprecate */}
       <div className="flex gap-2 pt-2" style={{ borderTop: "0.5px solid var(--b2)" }}>
         {entry.status !== "active" && (
-          <button
+          <Button variant="ghost" size="xs"
             onClick={() => onStatusChange("active")}
             className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-colors"
             style={{ background: "var(--grn1)", border: "0.5px solid var(--grn2)", color: "var(--grn4)" }}
@@ -346,10 +347,10 @@ function PlaybookDetail({
             onMouseLeave={e => e.currentTarget.style.borderColor = "var(--grn2)"}
           >
             Promote to active
-          </button>
+          </Button>
         )}
         {entry.status !== "deprecated" && (
-          <button
+          <Button variant="ghost" size="xs"
             onClick={() => onStatusChange("deprecated")}
             className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-colors"
             style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}
@@ -357,16 +358,16 @@ function PlaybookDetail({
             onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.color = "var(--t3)"; }}
           >
             Deprecate
-          </button>
+          </Button>
         )}
         {entry.status === "deprecated" && (
-          <button
+          <Button variant="ghost" size="xs"
             onClick={() => onStatusChange("draft")}
             className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-colors"
             style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}
           >
             Restore to draft
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -385,14 +386,14 @@ function VersionHistory({ entryId, currentVersion }: { entryId: string; currentV
 
   return (
     <div style={{ borderTop: "0.5px solid var(--b1)", paddingTop: 12 }}>
-      <button onClick={toggle} className="flex items-center gap-2 aug-fs-xs" style={{ color: "var(--t3)" }}>
+      <Button variant="ghost" size="xs" onClick={toggle} className="flex items-center gap-2 aug-fs-xs" style={{ color: "var(--t3)" }}>
         <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .12s" }}>▸</span>
         Version history
         {currentVersion != null && (
           <span className="aug-fs-xs px-1.5 py-0.5 rounded-[3px] font-mono"
             style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}>v{currentVersion}</span>
         )}
-      </button>
+      </Button>
       {open && (
         <div className="mt-2 space-y-1.5">
           {versions === null && <Loading what="versions" />}

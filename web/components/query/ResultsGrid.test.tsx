@@ -238,7 +238,7 @@ describe("DE-5c — the value picker says where its values come from", () => {
     const picker = screen.getByTestId("column-value-picker");
     expect(screen.getByTestId("picker-source")).toHaveTextContent("From the 3 rows shown");
     expect(screen.getByTestId("picker-source")).not.toHaveTextContent("cut");
-    const boxes = picker.querySelectorAll<HTMLInputElement>("input[type=checkbox]");
+    const boxes = picker.querySelectorAll<HTMLElement>('[role="checkbox"]');
     expect(boxes).toHaveLength(3); // Complete, Shipped, NULL
     fireEvent.click(boxes[0]);
     fireEvent.click(boxes[1]);

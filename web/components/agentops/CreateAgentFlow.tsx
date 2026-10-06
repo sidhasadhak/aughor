@@ -49,6 +49,7 @@ import { formatCount } from "@/lib/format";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Step = "describe" | "start" | "scope" | "define" | "prove" | "reach";
 type Seed = { question: string; needs: string };
@@ -498,7 +499,7 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
                 {documents.map(d => (
                   <label key={d.doc_id} className="aug-fs-sm"
                     style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
-                    <input type="checkbox" checked={docIds.includes(d.doc_id)}
+                    <Checkbox checked={docIds.includes(d.doc_id)}
                       onChange={e => setDocIds(prev => e.target.checked
                         ? [...prev, d.doc_id] : prev.filter(x => x !== d.doc_id))} />
                     <span style={{ color: "var(--t1)" }}>{d.title || d.filename}</span>
@@ -518,7 +519,7 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
                 {packs.map(p => (
                   <label key={p.id} className="aug-fs-sm"
                     style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
-                    <input type="checkbox" checked={packIds.includes(p.id)}
+                    <Checkbox checked={packIds.includes(p.id)}
                       onChange={e => setPackIds(prev => e.target.checked
                         ? [...prev, p.id] : prev.filter(x => x !== p.id))} />
                     <span style={{ color: "var(--t1)" }}>{p.name}</span>

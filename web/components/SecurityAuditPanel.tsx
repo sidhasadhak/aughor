@@ -17,6 +17,8 @@ import {
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
+import { Button } from "@/components/ui/button";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -245,7 +247,7 @@ function BudgetEditor({ connId }: { connId: string }) {
           />
         </label>
       ))}
-      <button
+      <Button variant="ghost" size="xs"
         onClick={handleSave}
         disabled={saving}
         style={{
@@ -262,7 +264,7 @@ function BudgetEditor({ connId }: { connId: string }) {
         }}
       >
         {saved ? "Saved" : saving ? "Saving…" : "Save budget"}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -273,7 +275,7 @@ function SqlCell({ digest, full }: { digest: string; full: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div>
-      <button
+      <Button variant="ghost" size="xs"
         onClick={() => setOpen(o => !o)}
         style={{
           background: "none",
@@ -288,7 +290,7 @@ function SqlCell({ digest, full }: { digest: string; full: string }) {
         title="Click to expand"
       >
         {digest.length > 60 ? digest.slice(0, 60) + "…" : digest}
-      </button>
+      </Button>
       {open && (
         <pre style={{
           marginTop: 6,
@@ -316,7 +318,7 @@ function ErrorCell({ error }: { error: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div>
-      <button
+      <Button variant="ghost" size="xs"
         onClick={() => setOpen(o => !o)}
         style={{
           background: "none",
@@ -331,7 +333,7 @@ function ErrorCell({ error }: { error: string }) {
         title={open ? "Click to collapse" : "Click to see full error"}
       >
         {open ? error : (error.length > 48 ? error.slice(0, 48) + "…" : error)}
-      </button>
+      </Button>
       {open && (
         <pre style={{
           marginTop: 6,
@@ -398,19 +400,7 @@ function LensToggle({ value, onChange }: { value: Lens; onChange: (v: Lens) => v
     { v: "policies", label: "Policies" },
   ];
   return (
-    <div style={{ display: "flex", gap: 1, padding: 2, background: "var(--bg-1)", borderRadius: 6, border: "0.5px solid var(--b1)" }}>
-      {opts.map(o => (
-        <button key={o.v} onClick={() => onChange(o.v)} style={{
-          fontSize: 11, fontWeight: value === o.v ? 600 : 400, padding: "3px 12px", borderRadius: 4, cursor: "pointer",
-          background: value === o.v ? "var(--bg-3)" : "transparent",
-          color: value === o.v ? "var(--t1)" : "var(--t3)",
-          border: value === o.v ? "0.5px solid var(--b2)" : "0.5px solid transparent",
-          transition: "background-color .1s, border-color .1s, color .1s",
-        }}>
-          {o.label}
-        </button>
-      ))}
-    </div>
+    <Segmented label="Security view" value={value} onChange={onChange} options={opts.map(o => ({ value: o.v, label: o.label }))} />
   );
 }
 
@@ -453,10 +443,10 @@ function ActionApprovalsSection() {
         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t2)" }}>Action approvals</span>
         <span style={{ fontSize: 11, color: "var(--t3)" }}>graduated approval + audit</span>
         <div style={{ flex: 1 }} />
-        <button onClick={load} style={{ fontSize: 11, color: "var(--t3)", background: "none",
+        <Button variant="ghost" size="xs" onClick={load} style={{ fontSize: 11, color: "var(--t3)", background: "none",
           border: "1px solid var(--bg-3)", borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}>
           {loading ? "…" : "Refresh"}
-        </button>
+        </Button>
       </div>
 
       {revokeError && (
@@ -478,11 +468,11 @@ function ActionApprovalsSection() {
               <code style={{ color: "var(--t2)" }}>{e.action}</code>
               <span style={{ color: "var(--t3)" }}>@ {e.scope || "*"}</span>
               <div style={{ flex: 1 }} />
-              <button onClick={() => handleRevoke(e)}
+              <Button variant="ghost" size="xs" onClick={() => handleRevoke(e)}
                 style={{ fontSize: 11, color: "#fbbf24", background: "none", border: "1px solid var(--bg-3)",
                          borderRadius: 4, padding: "2px 7px", cursor: "pointer" }}>
                 Revoke
-              </button>
+              </Button>
             </div>
           ))}
         </div>
@@ -598,7 +588,7 @@ export function SecurityAuditPanel({
         <LensToggle value={lens} onChange={v => onLensChange?.(v)} />
         <div style={{ flex: 1 }} />
         {lens === "security" && connId && (
-          <button
+          <Button variant="ghost" size="xs"
             onClick={() => setShowBudget(b => !b)}
             style={{
               fontSize: 11,
@@ -611,10 +601,10 @@ export function SecurityAuditPanel({
             }}
           >
             Query Budget
-          </button>
+          </Button>
         )}
         {lens === "security" && (
-          <button
+          <Button variant="ghost" size="xs"
             onClick={load}
             disabled={loading}
             style={{
@@ -629,7 +619,7 @@ export function SecurityAuditPanel({
             }}
           >
             {loading ? "Loading…" : "Refresh"}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -708,7 +698,7 @@ export function SecurityAuditPanel({
           </SelectField>
           <span style={{ fontSize: 11, color: "var(--t3)", marginRight: 4, marginLeft: 8 }}>Verdict</span>
           {VERDICT_FILTERS.map(v => (
-            <button
+            <Button variant="ghost" size="xs"
               key={v}
               onClick={() => setVerdictFilter(v)}
               style={{
@@ -724,7 +714,7 @@ export function SecurityAuditPanel({
               }}
             >
               {v}
-            </button>
+            </Button>
           ))}
           <div style={{ flex: 1 }} />
           <span style={{ fontSize: 11, color: "var(--t3)" }}>{records.length} record{records.length !== 1 ? "s" : ""}</span>

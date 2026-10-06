@@ -8,6 +8,7 @@ import {
   type PackSummary, type BindingCandidateDTO, type PackDeltaDTO,
 } from "@/lib/api";
 import { SelectField } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 
 // Deploy console for Specialist Packs: propose → bind/verify → evaluate → activate, plus the
 // flywheel "expert changelog" (accept/dismiss proposed learnings). Self-contained.
@@ -30,7 +31,7 @@ export function PacksManager() {
       <div className="bg-white/[0.03] rounded-[var(--r3)] divide-y divide-white/5">
         {packs.map(p => (
           <div key={p.id} className="px-3 py-2">
-            <button onClick={() => setSel(sel === p.id ? null : p.id)}
+            <Button variant="ghost" size="xs" onClick={() => setSel(sel === p.id ? null : p.id)}
               className="w-full flex items-center justify-between gap-3 text-left">
               <span className="flex items-center gap-2">
                 <span className="text-xs text-zinc-200">{p.name || p.id}</span>
@@ -45,7 +46,7 @@ export function PacksManager() {
                 {p.layer ? "" : `${countNoun(p.metrics ?? 0, "metric")} · ${countNoun(p.roles ?? 0, "role")} · ${countNoun(p.evals ?? 0, "eval")} `}
                 {sel === p.id ? "▾" : "▸"}
               </span>
-            </button>
+            </Button>
             {sel === p.id && (p.layer
               // IP-1 — a knowledge package is reference every connection reads: there is
               // nothing to bind or evaluate, so it says what it carries instead.
@@ -156,16 +157,16 @@ function PackDeploy({ packId }: { packId: string }) {
           {schemas.length === 0 && <option value="">(schema)</option>}
           {schemas.map(s => <option key={s} value={s}>{s}</option>)}
         </SelectField>
-        <button className={btn} disabled={!conn || busy !== ""} onClick={propose}>
+        <Button variant="ghost" size="xs" className={btn} disabled={!conn || busy !== ""} onClick={propose}>
           {busy === "propose" ? "Proposing…" : "1 · Propose bindings"}
-        </button>
-        <button className={btn} disabled={!proposals || busy !== ""} onClick={deploy}>
+        </Button>
+        <Button variant="ghost" size="xs" className={btn} disabled={!proposals || busy !== ""} onClick={deploy}>
           {busy === "deploy" ? "Binding…" : "2 · Bind + verify"}
-        </button>
-        <button className={btn} disabled={verified !== true || busy !== ""} onClick={evaluate}
+        </Button>
+        <Button variant="ghost" size="xs" className={btn} disabled={verified !== true || busy !== ""} onClick={evaluate}
           title={verified !== true ? "Deploy first: run Bind + verify" : ""}>
           {busy === "evaluate" ? "Evaluating…" : "3 · Evaluate"}
-        </button>
+        </Button>
       </div>
       <p className="aug-fs-xs text-zinc-600">Deploy a pack: propose → bind + verify → evaluate → (set status active + enable the flag to steer runs).</p>
       {err && <p className="aug-fs-xs text-rose-400">{err}</p>}
@@ -231,8 +232,8 @@ function PackDeploy({ packId }: { packId: string }) {
                 <span className="text-zinc-500">[{d.kind}{d.target ? ` ${d.target}` : ""}]</span> {d.content}
               </span>
               <span className="shrink-0 flex gap-1">
-                <button className={btn} onClick={() => judgeDelta(d.id, "accepted")}>Accept</button>
-                <button className={btn} onClick={() => judgeDelta(d.id, "dismissed")}>Dismiss</button>
+                <Button variant="ghost" size="xs" className={btn} onClick={() => judgeDelta(d.id, "accepted")}>Accept</Button>
+                <Button variant="ghost" size="xs" className={btn} onClick={() => judgeDelta(d.id, "dismissed")}>Dismiss</Button>
               </span>
             </div>
           ))}
