@@ -82,9 +82,23 @@ def test_the_wal_file_is_never_recreated_across_operations(store):
     assert len(set(seen)) == 1, f"the WAL index was recreated (inodes {sorted(set(seen))})"
 
 
-def test_the_wal_holds_under_concurrent_readers_and_writers(store):
+def test_the_wal_holds_under_concurrent_readers_and_writers(store, monkeypatch):
     """The shape that actually crashed: several threads churning per-operation
-    connections against one store."""
+    connections against one store.
+
+    The invariant is the inode, not the latency. Four times on CI (2026-09-12, 09-26,
+    10-03, 10-06) this test alone went red with ``database is locked`` and passed on a
+    rerun of the same commit: four writers plus a ``gc.collect()`` in the loop — which
+    is the precondition under test, so it stays — against the store's 5-second busy
+    timeout, on a runner starved enough that a close's checkpoint outlived it. That is
+    a slow runner, not the fault this guards (a SIGBUS from an unlinked WAL index), so
+    this test's connections wait longer for the lock. A lock that never clears, or any
+    other error, still fails it; so does a vanished or recreated ``-shm``.
+    """
+    from aughor.db import sqlite_util
+    # Before the first operation: every per-operation connection is tuned as it opens.
+    monkeypatch.setattr(sqlite_util, "BUSY_TIMEOUT_MS", 60_000)
+
     rs, db = store
     rs.assign_role("org", "seed", "viewer")
 

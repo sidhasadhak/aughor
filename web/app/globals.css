@@ -632,7 +632,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 @keyframes aug-pulse     { 0%, 100% { opacity: .55 } 50% { opacity: 1 } }   /* brightness only: the dot is already coloured */
 @keyframes aug-caret     { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
 @keyframes aug-shimmer   { 0% { background-position: -180px 0 } 100% { background-position: 180px 0 } }
-@keyframes aug-shimmer-text { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
+@keyframes aug-shimmer-text { 0% { color: var(--t3) } 100% { color: var(--t1) } }
 
 /* step-in: a trace step, tool call or evidence row arrived — opacity and 4px up. */
 .aug-anim-up, .aug-step-in, .aug-stream-in { animation: aug-step-in var(--dur-2) var(--ease-out) both; }
@@ -660,14 +660,13 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
   background-size: 360px 100%;
   animation: aug-shimmer 1.1s linear infinite;
 }
-/* The text form of the same sweep: a readable label while something streams. */
+/* The text form of the same cue: a readable label while something streams. Solid text that
+   breathes between the muted step and the text's own — not a gradient clipped to the glyphs,
+   which decorated the label and painted over any colour it carried; and not --t3 to --t2,
+   which are one Radix step (gray-11) since 2026-10-06, so that sweep had stopped moving. */
 .aug-shimmer-text {
-  background: linear-gradient(90deg, var(--t3) 25%, var(--t2) 50%, var(--t3) 75%);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: aug-shimmer-text 1.1s linear infinite;
+  color: var(--t3);
+  animation: aug-shimmer-text 1.1s ease-in-out infinite alternate;
 }
 /* press: the element's own :active background does the work; the label never moves. */
 .aug-pressable { transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out); }
