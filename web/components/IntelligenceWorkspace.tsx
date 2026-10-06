@@ -11,6 +11,7 @@ import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { MetricDetailHost } from "@/components/brief/MetricDetail";
 import { SelectField } from "@/components/ui/select";
+import { defaultSchema, rememberSchema } from "@/lib/schemaChoice";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
 // The four perspectives are heavy graph/data views — load each only when its
@@ -164,8 +165,9 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         const names = entry?.schemas.map(s => s.name) ?? [];
         setSchemas(names);
         // TEMP (2026-06-26): "All schemas" removed — each schema is selected individually,
-        // so default to the first concrete schema rather than the all-schemas (null) scope.
-        setSelectedSchema(names[0] ?? null);
+        // so default to the first concrete schema rather than the all-schemas (null) scope —
+        // or to the one this person last chose here or in the Semantic Layer.
+        setSelectedSchema(defaultSchema(connectionId, names) || (names[0] ?? null));
         setSchemaResolved(true);   // same callback as setSelectedSchema → one batched render
       })
       .catch(() => { if (alive) { setSchemas([]); setSchemaResolved(true); } });
@@ -223,7 +225,10 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
           <span className="aug-label">Schema</span>
           <SelectField
             value={selectedSchema ?? ""}
-            onChange={e => setSelectedSchema(e.target.value || null)}
+            onChange={e => {
+              setSelectedSchema(e.target.value || null);
+              rememberSchema(connectionId, e.target.value);
+            }}
             aria-label="Schema scope"
             style={{
               fontSize: 12, color: "var(--t2)", background: "var(--bg-2)",

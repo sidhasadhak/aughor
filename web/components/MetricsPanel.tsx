@@ -480,7 +480,12 @@ function formToMetric(f: FormState): Metric {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function MetricsPanel({ connId }: { connId?: string }) {
+export function MetricsPanel({ connId, schema }: {
+  connId?: string;
+  /** The dataset whose proposed metrics to list. The explorer proposes per schema, so on a
+   *  connection holding several datasets a catalogue asked for none lists none of them. */
+  schema?: string;
+}) {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -570,12 +575,12 @@ export function MetricsPanel({ connId }: { connId?: string }) {
     try { setMetrics(await getMetrics(connId)); } catch {}
     if (!connId) { setRows([]); setCounts({}); return; }
     try {
-      const cat = await getMetricCatalogue(connId);
+      const cat = await getMetricCatalogue(connId, schema);
       setRows(cat.metrics); setCounts(cat.counts);
     } catch { setRows([]); setCounts({}); }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [connId]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [connId, schema]);
 
   // Opening a row is the edit gesture. An already-editable row opens straight into the
   // editor; a computed one opens to its provenance with a Customise action, because a
@@ -595,7 +600,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
     setMaterialising(row.name);
     setRowError((prev) => ({ ...prev, [row.name]: "" }));
     try {
-      const made = await materialiseMetric(connId, row.name);
+      const made = await materialiseMetric(connId, row.name, schema);
       await load();
       startEdit(made);
       setExpanded(made.name);

@@ -83,8 +83,14 @@ describe("the list is scoped to the connection", () => {
   it("asks the catalogue for THIS connection", async () => {
     render(<MetricsPanel connId="c1" />);
     await screen.findByText("Gross Merchandise Value");
-    expect(getMetricCatalogue).toHaveBeenCalledWith("c1");
+    expect(getMetricCatalogue).toHaveBeenCalledWith("c1", undefined);
     expect(getMetrics).toHaveBeenCalledWith("c1");
+  });
+
+  it("asks for the dataset in scope — the explorer proposes per schema", async () => {
+    render(<MetricsPanel connId="c1" schema="uber_ncr" />);
+    await screen.findByText("Gross Merchandise Value");
+    expect(getMetricCatalogue).toHaveBeenCalledWith("c1", "uber_ncr");
   });
 
   it("says nothing applies rather than showing another connection's metrics", async () => {
@@ -137,7 +143,7 @@ describe("opening a row", () => {
     render(<MetricsPanel connId="c1" />);
     await user.click(await screen.findByText("Gross Merchandise Value"));
     await user.click(await screen.findByRole("button", { name: /Customise for this connection/i }));
-    expect(materialiseMetric).toHaveBeenCalledWith("c1", "gmv");
+    expect(materialiseMetric).toHaveBeenCalledWith("c1", "gmv", undefined);
   });
 
   it("surfaces a refusal instead of failing silently", async () => {

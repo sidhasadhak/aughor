@@ -29,6 +29,7 @@ import { SelectField } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Input as UiInput } from "@/components/ui/input";
 import { TabStrip } from "@/components/ui/tab-strip";
+import { defaultSchema, rememberSchema } from "@/lib/schemaChoice";
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
 
@@ -810,6 +811,13 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
     if (scopeTable && !tables.includes(scopeTable)) setScopeTable("");
   }, [tables, scopeTable]);
 
+  // Metrics belong to ONE dataset: the explorer proposes them per schema. With no schema in the
+  // scope bar, a multi-dataset connection used to ask for none and list nothing the explorer had
+  // proposed — so the Metrics tab reads the scope bar's schema, else the one this person last
+  // chose (here or in Intelligence), else the first.
+  const metricsSchema = scopeSchema || defaultSchema(activeConn, schemas);
+  useEffect(() => { if (scopeSchema) rememberSchema(activeConn, scopeSchema); }, [activeConn, scopeSchema]);
+
   if (!activeConn) {
     return (
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--t3)", fontSize: 13 }}>
@@ -848,8 +856,14 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
           {activeTab === "Knowledge"   && <KnowledgeTab   connId={activeConn} />}
           {activeTab === "Metrics"     && (
             <div style={{ height: "100%", minHeight: 420 }}>
+              {!scopeSchema && metricsSchema && (
+                <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 8 }}>
+                  Showing the metrics for <strong style={{ color: "var(--t2)" }}>{metricsSchema}</strong> — this
+                  connection holds {schemas.length} datasets, and each has its own. Choose another in Schema above.
+                </div>
+              )}
               <TabIntro text="Metrics are governed KPI definitions — one canonical SQL formula per metric, with targets, owners and quality tests. Once defined here, the AI reuses the exact same formula everywhere, so “revenue” means the same thing in every chart and answer." />
-              <MetricsPanel connId={activeConn} />
+              <MetricsPanel connId={activeConn} schema={metricsSchema || undefined} />
             </div>
           )}
           {activeTab === "Benchmarks"  && <BenchmarksTab  connId={activeConn} />}

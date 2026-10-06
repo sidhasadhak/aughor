@@ -22,7 +22,8 @@
  */
 import { useEffect, useState } from "react";
 import NumberFlow from "@number-flow/react";
-import { getBusinessProfile, runDirectQuery, currencySymbol, type BriefingRangeBlock, type StatedRange } from "@/lib/api";
+import { getBusinessProfile, getMetricCatalogue, runDirectQuery, currencySymbol, type BriefingRangeBlock, type StatedRange } from "@/lib/api";
+import { STANDING_WORDS, metricStanding, type MetricStanding } from "@/lib/metricStanding";
 import { RangeMeasureTile, rangeTop } from "@/components/brief/BriefRange";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
@@ -52,6 +53,8 @@ export interface Kpi {
   flow?: KpiFlow;
   /** Full chart_sql result, kept so a click can expand the card into a rich chart. */
   chart?: { columns: string[]; rows: unknown[][] } | null;
+  /** Where this metric stands in the Semantic Layer; absent until the catalogue answered. */
+  standing?: MetricStanding;
 }
 
 // Categorical accent palette for the left border + sparkline (visual variety, like the
@@ -128,16 +131,27 @@ export function KpiStripView({ industry, period, kpis, scopeKey, note }: {
   const { configFor, save } = useVizConfigs(scopeKey ?? "");
   if (!kpis.length) return null;
   const expanded = kpis.find(k => k.name === expandedId && k.chart && k.chart.rows.length >= 2) ?? null;
+  // Said once when it is true of every tile; said on the tile when only some are not approved.
+  const noneApproved = kpis.every(k => k.standing && k.standing !== "approved");
+  const captionFor = (k: Kpi) => (!noneApproved && k.standing && k.standing !== "approved")
+    ? [k.trend?.caption, STANDING_WORDS[k.standing]].filter(Boolean).join(" · ")
+    : k.trend?.caption;
 
   return (
     <div>
-      <div className="aug-label" style={{ marginBottom: 8 }}>
+      <div className="aug-label" style={{ marginBottom: noneApproved ? 2 : 8 }}>
         Key Metrics
         {industry ? <span style={{ fontWeight: 400, color: "var(--t3)" }}>{` · ${industry}`}</span> : null}
         {note
           ? <span data-testid="kpi-strip-note" style={{ fontWeight: 400, color: "var(--amb4)" }}>{` · ${note}`}</span>
           : period ? <span style={{ fontWeight: 400, color: "var(--t3)" }}>{` · vs ${periodWord(period)}`}</span> : null}
       </div>
+      {noneApproved && (
+        <div data-testid="kpi-strip-standing" className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 8 }}>
+          The explorer proposed these from the data, and none is an approved definition yet — review
+          them in Data ▸ Semantic Layer.
+        </div>
+      )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
         {kpis.map(k => {
           const canExpand = !!(k.chart && k.chart.rows.length >= 2);
@@ -152,7 +166,7 @@ export function KpiStripView({ industry, period, kpis, scopeKey, note }: {
               value={<KpiValue kpi={k} />}
               delta={k.trend ? { text: k.trend.deltaText, sign: k.trend.sign, favorable: k.trend.favorable } : null}
               sparkline={k.trend?.values ?? null}
-              caption={k.trend?.caption}
+              caption={captionFor(k)}
               expandable={canExpand}
               open={isOpen}
               onClick={canExpand ? () => setExpandedId(isOpen ? null : k.name) : undefined}
@@ -268,8 +282,15 @@ export function IndustryKpiStrip({ connectionId, schema, scopeKey, rangeBlock, n
       }));
 
       if (!alive) return;
-      setKpis(results.filter((k): k is Kpi => k !== null));
+      const shown = results.filter((k): k is Kpi => k !== null);
+      setKpis(shown);
       setPeriod(seenPeriod);
+      // Where each tile stands in the Semantic Layer — read after the figures, so a slow or
+      // failed catalogue never holds the row back; on failure the tiles simply make no claim.
+      try {
+        const cat = await getMetricCatalogue(connectionId, schema);
+        if (alive) setKpis(shown.map(k => ({ ...k, standing: metricStanding(k.name, cat.metrics) })));
+      } catch { /* the standing is said only when it is known */ }
     })();
     return () => { alive = false; };
   }, [connectionId, schema, orgV]);
