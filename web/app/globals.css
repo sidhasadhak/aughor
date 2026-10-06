@@ -354,7 +354,6 @@ a:hover { color: var(--blue4); }
 }
 
 /* The theme toggle in the topbar: a small segmented pair. */
-.aug-seg-item-mono { font-size: 12px; padding: 3px 8px; }
 
 /* A group header's count: amber when something inside is waiting on a human, neutral when it is
    only a count. It resets the header's tracking and case — a figure is never letter-spaced. */
@@ -388,71 +387,8 @@ a:hover { color: var(--blue4); }
 .aug-content-meta { font-size: 12px; color: var(--t3); white-space: nowrap; }
 
 /* ── Selection — tabs underline, segmented fills; never both in one header ── */
-.aug-tabs { display: flex; align-items: flex-end; gap: 18px; border-bottom: 1px solid var(--b1); }
-.aug-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 0 7px;
-  margin-bottom: -1px;
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--t2);
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: color var(--dur-1) var(--ease-out);
-}
-.aug-tab:hover { color: var(--t1); }
-.aug-tab[aria-selected="true"],
-.aug-tab.active { color: var(--t1); font-weight: 600; border-bottom-color: var(--accent); }
-.aug-tab-badge {
-  padding: 0 6px;
-  border-radius: var(--r1);
-  background: var(--bg-3);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.45;
-  color: var(--t3);
-  font-variant-numeric: tabular-nums;
-}
-.aug-tab-badge-waiting { background: var(--amb1); color: var(--amb4); }
-
-.aug-segmented {
-  display: inline-flex;
-  align-items: stretch;
-  flex-shrink: 0;
-  border: 1px solid var(--b2);
-  border-radius: var(--r2);
-  overflow: hidden;
-}
-.aug-seg-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: auto;
-  min-height: 0;
-  padding: 4px 12px;
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.45;
-  white-space: nowrap;
-  color: var(--t2);
-  background: transparent;
-  border: none;
-  border-left: 1px solid var(--b2);
-  border-radius: 0;
-  cursor: pointer;
-  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
-}
-.aug-seg-item:first-child { border-left: none; }
-.aug-seg-item:hover { background: var(--bg-3); color: var(--t1); }
-.aug-seg-item[aria-selected="true"],
-.aug-seg-item[aria-pressed="true"],
-.aug-seg-item.active { background: var(--bg-4); color: var(--t1); font-weight: 600; }
-.aug-seg-item:disabled { color: var(--t3); cursor: not-allowed; background: transparent; }
-.aug-seg-item:focus-visible { outline-offset: -2px; }
+/* Tabs and segmented controls are Radix Themes' own since 2026-10-06 (components/ui/tab-strip.tsx,
+   components/ui/segmented.tsx). */
 
 /* ── Badge — 11px mono rectangles at 3px, tint 1 · border 2 · text 4 ─────── */
 .aug-badge,
@@ -560,35 +496,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-field-error { font-size: 11px; line-height: 1.45; color: var(--red4); }
 
 /* ── Table — 32px rows, 13px cells, sticky sentence-case header on --bg-1 ───── */
-.aug-dt { width: 100%; border-collapse: collapse; font-size: 13px; }
-.aug-dt thead th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  height: 30px;
-  padding: 0 12px;
-  text-align: left;
-  white-space: nowrap;
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--b1);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--t2);
-}
-.aug-dt tbody td {
-  height: 32px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--b0);
-  font-size: 13px;
-  color: var(--t1);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.aug-dt tbody tr { transition: background var(--dur-1) var(--ease-out); }
-.aug-dt tbody tr:hover td { background: var(--bg-hover); }
-.aug-dt tbody tr[aria-selected="true"] td,
-.aug-dt tbody tr.selected td { background: var(--bg-sel); }
-.aug-dt .num { text-align: right; font-variant-numeric: tabular-nums; }
+/* The dense table is Radix Themes' own since 2026-10-06 (components/ui/table.tsx). */
 
 /* ── Code — on --code-bg, one step below the canvas, never in a tinted box ── */
 .aug-code {
@@ -614,33 +522,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-panel-interactive:hover { border-color: var(--b3); }
 
 /* ── Callout — tint 1, border 2, a 3px left rule in hue 3 ─────────────────── */
-.aug-callout {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 9px 11px;
-  border: 1px solid var(--b2);
-  border-left-width: 3px;
-  border-radius: var(--r2);
-  background: var(--bg-3);
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--t1);
-}
-.aug-callout-kind {
-  font-size: 12px;
-  font-weight: 600;
-}
-.aug-callout-blue   { background: var(--blue1); border-color: var(--blue2); border-left-color: var(--blue3); }
-.aug-callout-green  { background: var(--grn1);  border-color: var(--grn2);  border-left-color: var(--grn3); }
-.aug-callout-amber  { background: var(--amb1);  border-color: var(--amb2);  border-left-color: var(--amb3); }
-.aug-callout-red    { background: var(--red1);  border-color: var(--red2);  border-left-color: var(--red3); }
-.aug-callout-violet { background: var(--vio1);  border-color: var(--vio2);  border-left-color: var(--vio3); }
-.aug-callout-blue   .aug-callout-kind { color: var(--blue3); }
-.aug-callout-green  .aug-callout-kind { color: var(--grn3); }
-.aug-callout-amber  .aug-callout-kind { color: var(--amb3); }
-.aug-callout-red    .aug-callout-kind { color: var(--red3); }
-.aug-callout-violet .aug-callout-kind { color: var(--vio3); }
+/* A callout is Radix Themes' own since 2026-10-06 (components/ui/callout.tsx). */
 
 /* ── Status dot — 7px, the only round chrome ─────────────────────────────── */
 .aug-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--t4); }
@@ -1019,12 +901,6 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-ledger-bar { flex: none; display: flex; align-items: center; gap: 12px; padding: 7px 16px; border-bottom: 1px solid var(--b1); }
 .aug-ledger-meta { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); white-space: nowrap; }
 .aug-ledger-scroll { flex: 1; min-height: 0; overflow: auto; }
-.aug-ledger-table { table-layout: fixed; }
-.aug-ledger-table tbody td { height: auto; padding: 5px 10px; vertical-align: top; }
-.aug-ledger-table tbody tr { cursor: pointer; }
-.aug-ledger-id { font-family: var(--font-mono); font-size: 11px; color: var(--blue4); }
-/* .aug-dt's nowrap outranks a bare class; the claim column is the one that wraps. */
-.aug-ledger-table tbody td.aug-ledger-claim { white-space: normal; }
 .aug-ledger-text { display: block; font-size: 12px; line-height: 1.5; color: var(--t1); }
 .aug-ledger-query {
   display: block; max-width: 100%; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1087,8 +963,7 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-profile-prose { margin: 0; max-width: 760px; font-size: 13px; line-height: 1.8; color: var(--t1); }
 .aug-profile-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .aug-profile-why { margin: 10px 0 0; max-width: 760px; font-size: 12px; line-height: 1.6; color: var(--t3); }
-.aug-profile-table .num { font-size: 11px; }
-.aug-profile-table td.aug-profile-tname { font-family: var(--font-mono); font-size: 11px; }
+.aug-profile-tname { font-family: var(--font-mono); font-size: 11px; }
 .aug-profile-dim { color: var(--t3); }
 .aug-profile-foot { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--b0); font-size: 11px; line-height: 1.6; color: var(--t3); }
 .aug-profile-rail { width: 340px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b1); }
@@ -1184,18 +1059,10 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 /* ── Two skins (2026-09-25) — the rules that differ between them beyond the tokens ──
    Dark follows Du Bois, light follows Excel (INSTRUMENT.md §4 item 5, the study §9.3).
    1 · Light draws gridlines both ways, like a sheet; dark keeps hairline rows. */
-[data-theme="light"] .aug-dt { border: 1px solid var(--b1); }
-[data-theme="light"] .aug-dt thead th,
-[data-theme="light"] .aug-dt tbody td { border-right: 1px solid var(--b0); }
-[data-theme="light"] .aug-dt thead th:last-child,
-[data-theme="light"] .aug-dt tbody td:last-child { border-right: none; }
 /* 2 · Light's selection is a tint of the accent (Excel green until 2026-10-06; the accent a
        person chose since): the active segment is the tint with accent text (dark keeps the
        pressed fill), and the rail's active item reads in the accent over the same tint. The
        active tab's underline and the rail's bar read --accent in both skins. */
-[data-theme="light"] .aug-seg-item[aria-selected="true"],
-[data-theme="light"] .aug-seg-item[aria-pressed="true"],
-[data-theme="light"] .aug-seg-item.active { background: var(--bg-sel); color: var(--accent-text); }
 [data-theme="light"] .aug-nav-item[aria-current="page"],
 [data-theme="light"] .aug-nav-item.active { color: var(--accent-text); }
 /* 3 · State on a value: a bordered pill in dark (a Du Bois tag), a cell fill in light (Excel's
@@ -1263,23 +1130,14 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
    under the context bar when there is one): underlined tabs that scroll rather than clip, so
    the header keeps its title and its one action. Light draws them as sheet tabs on chrome. */
 .aug-layer-tabs {
-  height: 36px;
   flex-shrink: 0;
-  display: flex;
-  align-items: stretch;
-  gap: 22px;
   padding: 0 16px;
-  border-bottom: 1px solid var(--b1);
   background: var(--bg-0);
   overflow-x: auto;
   scrollbar-width: none;
   white-space: nowrap;
 }
 .aug-layer-tabs::-webkit-scrollbar { display: none; }
-.aug-layer-tabs .aug-tab { height: auto; margin: 0; padding: 0 2px; border-radius: 0; flex-shrink: 0; }
-[data-theme="light"] .aug-layer-tabs { gap: 0; background: var(--bg-1); }
-[data-theme="light"] .aug-layer-tabs .aug-tab { padding: 0 14px; border-right: 1px solid var(--b1); }
-[data-theme="light"] .aug-layer-tabs .aug-tab[aria-selected="true"] { background: var(--bg-0); color: var(--accent-text); }
 /* The context bar is a toolbar that holds SCOPE (a connection, a schema), not filters: its
    controls sit left, spaced wider, on the page. */
 .aug-context-bar { gap: 16px; }
@@ -1293,14 +1151,9 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 :root[data-density="compact"] .aug-text-h3,
 :root[data-density="compact"] .aug-fs-ui,
 :root[data-density="compact"] .aug-state-claim { font-size: 13px; }
-:root[data-density="compact"] .aug-dt { font-size: 12px; }
-:root[data-density="compact"] .aug-dt thead th { height: 26px; padding: 0 10px; }
-:root[data-density="compact"] .aug-dt tbody td { height: 26px; padding: 0 10px; font-size: 12px; }
 :root[data-density="compact"] .aug-nav-item { height: 24px; }
 :root[data-density="compact"] .aug-rail-row { padding: 5px 0; }
-:root[data-density="compact"] .aug-layer-tabs,
 :root[data-density="compact"] .aug-toolbar { height: 32px; }
-:root[data-density="compact"] .aug-seg-item { padding: 3px 10px; font-size: 12px; }
 
 /* ── Semantic Layer › metric editor: fields left, governance right (2026-09-25) ──────────
    The governance report sat above a 36rem form and pushed the first field a screen down
@@ -1409,6 +1262,4 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 /* Columns are sized and their cells are short: a date or a chip broken over two lines doubles the
    row for nothing. In a ledger the first column is the statement, and it alone wraps. */
 [data-ledger] .rt-TableCell:not(:first-child), [data-ledger] .rt-TableColumnHeaderCell,
-[data-slot="table"] :is(.rt-TableCell, .rt-TableColumnHeaderCell) { white-space: nowrap; }
-/* A table whose columns are sized (layout="fixed") keeps a cell inside its column. */
-[data-slot="table"] .rt-TableRootTable:where(.rt-r-tl-fixed) :is(.rt-TableCell, .rt-TableColumnHeaderCell) { overflow: hidden; text-overflow: ellipsis; }
+[data-slot="table"] :is(.rt-TableCell, .rt-TableColumnHeaderCell) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

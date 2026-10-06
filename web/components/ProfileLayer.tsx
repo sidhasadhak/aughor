@@ -33,6 +33,8 @@ import { Input } from "@/components/ui/input";
 import { Pending, SkeletonRows } from "@/components/ui/motion";
 import { EvidenceDrawer, FindingActions } from "@/components/BriefingPanel";
 import { ProfilePanel } from "@/components/ProfilePanel";
+import { Segmented } from "@/components/ui/segmented";
+import { TabStrip } from "@/components/ui/tab-strip";
 
 // ── How the Hub read a domain ─────────────────────────────────────────────────────
 
@@ -252,13 +254,8 @@ function DomainPatterns({ connectionId, canvasId, schema, domain }: {
   return (
     <div style={{ padding: "14px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <div className="aug-segmented" role="group" aria-label="Pattern kind">
-          {PATTERN_FILTERS.map(f => (
-            <Button key={f} variant="ghost" className="aug-seg-item" aria-pressed={filter === f} onClick={() => setFilter(f)}>
-              {f === "all" ? `All (${here.length})` : f[0].toUpperCase() + f.slice(1)}
-            </Button>
-          ))}
-        </div>
+        <Segmented label="Pattern kind" value={filter} onChange={setFilter}
+          options={PATTERN_FILTERS.map(f => ({ value: f, label: f === "all" ? `All (${here.length})` : f[0].toUpperCase() + f.slice(1) }))} />
         <span className="aug-brief-meta" style={{ marginLeft: "auto" }}>{countNoun(shown.length, "pattern")} in this domain</span>
         <Button variant="outline" size="xs" disabled={refreshing} onClick={refresh}>
           {refreshing ? <><Pending /> Refreshing</> : "Refresh"}
@@ -375,13 +372,8 @@ function DomainPage({ domain, data, org, ctx, onBack }: {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", borderBottom: "1px solid var(--b1)" }}>
-        <div className="aug-segmented" role="tablist" aria-label={`${domain} views`}>
-          {tabs.map(t => (
-            <Button key={t.id} variant="ghost" role="tab" className="aug-seg-item" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>
-              {t.label}
-            </Button>
-          ))}
-        </div>
+        <TabStrip label={`${domain} views`} value={tab} onChange={setTab} size="1"
+          tabs={tabs.map(t => ({ id: t.id, label: t.label }))} />
         {tab === "findings" && (
           <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search findings…"
             aria-label={`Search the ${domain} findings`} className="aug-fs-sm" style={{ marginLeft: "auto", width: 240, height: 26 }} />

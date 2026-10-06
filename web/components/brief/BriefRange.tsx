@@ -19,6 +19,9 @@ import {
   readExpectedNext,
   type BriefingRange, type BriefingRangeBlock, type BriefingRangeMeasure, type ExpectedNext, type RangePreset,
 } from "@/lib/api";
+import { Segmented } from "@/components/ui/segmented";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 /** The control's value: the standing view, or a range. */
 export type RangeChoice = { preset: "standing" } | BriefingRange;
@@ -49,30 +52,22 @@ export function RangeControl({ value, onChange, disabled, standing, label = "Bri
   const ready = !!start && !!end && start <= end;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const, minWidth: 0 }}>
-      <div role="group" aria-label={label} className="aug-segmented">
-        {SEGMENTS.map(s => {
-          const on = !custom && value.preset === s.value;
-          const words = s.value === "standing" && standing ? standing : s;
-          return (
-            <Button key={s.value} variant="ghost" size="sm" className="aug-seg-item"
-              aria-pressed={on} title={words.title} disabled={disabled}
-              onClick={() => { setCustom(false); onChange({ preset: s.value } as RangeChoice); }}>
-              {words.label}
-            </Button>
-          );
-        })}
-        <Button variant="ghost" size="sm" className="aug-seg-item" aria-pressed={custom}
-          title="Any range, first and last day" disabled={disabled} onClick={() => setCustom(true)}>
-          Custom
-        </Button>
-      </div>
+      <Segmented label={label} value={custom ? "custom" : value.preset} disabled={disabled}
+        onChange={v => {
+          if (v === "custom") { setCustom(true); return; }
+          setCustom(false); onChange({ preset: v } as RangeChoice);
+        }}
+        options={[
+          ...SEGMENTS.map(s => { const words = s.value === "standing" && standing ? standing : s; return { value: s.value, label: words.label, title: words.title }; }),
+          { value: "custom" as const, label: "Custom", title: "Any range, first and last day" },
+        ]} />
       {custom && (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <input type="date" aria-label="First day" value={start} max={end || undefined}
-            onChange={e => setStart(e.target.value)} className="aug-input aug-fs-sm" />
+          <Input type="date" aria-label="First day" value={start} max={end || undefined}
+            onChange={e => setStart(e.target.value)} className="aug-fs-sm" />
           <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>to</span>
-          <input type="date" aria-label="Last day" value={end} min={start || undefined}
-            onChange={e => setEnd(e.target.value)} className="aug-input aug-fs-sm" />
+          <Input type="date" aria-label="Last day" value={end} min={start || undefined}
+            onChange={e => setEnd(e.target.value)} className="aug-fs-sm" />
           <Button size="sm" variant="secondary" disabled={disabled || !ready}
             onClick={() => onChange({ preset: "custom", start, end })}>
             Show
@@ -257,28 +252,28 @@ export function RangeSections({ block }: { block: BriefingRangeBlock }) {
       {moves.length > 0 && (
         <div>
           <div className="aug-label" style={{ marginBottom: 4 }}>What moved</div>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ color: "var(--t3)", textAlign: "left" }}>
-                <th style={{ fontWeight: 500, padding: "2px 8px 2px 0" }}>Metric</th>
-                <th style={{ fontWeight: 500, padding: "2px 8px" }}>Segment</th>
-                <th style={{ fontWeight: 500, padding: "2px 8px" }}>This range</th>
-                <th style={{ fontWeight: 500, padding: "2px 8px" }}>Comparison</th>
-                <th style={{ fontWeight: 500, padding: "2px 0 2px 8px" }}>Change</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow style={{ color: "var(--t3)", textAlign: "left" }}>
+                <TableHead style={{ fontWeight: 500, padding: "2px 8px 2px 0" }}>Metric</TableHead>
+                <TableHead style={{ fontWeight: 500, padding: "2px 8px" }}>Segment</TableHead>
+                <TableHead style={{ fontWeight: 500, padding: "2px 8px" }}>This range</TableHead>
+                <TableHead style={{ fontWeight: 500, padding: "2px 8px" }}>Comparison</TableHead>
+                <TableHead style={{ fontWeight: 500, padding: "2px 0 2px 8px" }}>Change</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {moves.map(c => (
-                <tr key={`${c.metric}:${c.dimension}:${c.group}`} style={{ borderTop: "1px solid var(--b1)" }}>
-                  <td style={{ padding: "4px 8px 4px 0", color: "var(--t1)" }}>{c.name}</td>
-                  <td style={{ padding: "4px 8px" }}>{c.dimension}: {c.group}</td>
-                  <td style={{ padding: "4px 8px" }}>{c.current_text ?? ""}</td>
-                  <td style={{ padding: "4px 8px", color: "var(--t2)" }}>{c.previous_text ?? ""}</td>
-                  <td style={{ padding: "4px 0 4px 8px", color: "var(--t2)" }}>{c.change_text ?? ""}</td>
-                </tr>
+                <TableRow key={`${c.metric}:${c.dimension}:${c.group}`} style={{ borderTop: "1px solid var(--b1)" }}>
+                  <TableCell style={{ padding: "4px 8px 4px 0", color: "var(--t1)" }}>{c.name}</TableCell>
+                  <TableCell style={{ padding: "4px 8px" }}>{c.dimension}: {c.group}</TableCell>
+                  <TableCell style={{ padding: "4px 8px" }}>{c.current_text ?? ""}</TableCell>
+                  <TableCell style={{ padding: "4px 8px", color: "var(--t2)" }}>{c.previous_text ?? ""}</TableCell>
+                  <TableCell style={{ padding: "4px 0 4px 8px", color: "var(--t2)" }}>{c.change_text ?? ""}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
           {thin.length > 0 && (
             <div style={{ color: "var(--t3)", marginTop: 4 }}>
               Too few to call: {thin.map(c => `${c.dimension} ${c.group} (${c.n} rows)`).join(", ")}.

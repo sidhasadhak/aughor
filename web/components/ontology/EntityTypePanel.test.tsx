@@ -11,7 +11,7 @@
  * column is refused by the server, silently, one round trip later.
  */
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, change, choose, valueOf } from "@/lib/testing";
 import userEvent from "@testing-library/user-event";
 
 import type { BackingPreview, ObjectTypeDetail } from "@/lib/objectTypes";
@@ -114,7 +114,7 @@ describe("EntityTypePanel — declaring what the builder cannot propose", () => 
 
     await user.type(screen.getByLabelText("Binding name"), "price_history");
     await user.type(screen.getByLabelText("Table"), "price_history");
-    await user.selectOptions(screen.getByLabelText("Binding kind"), "timeseries");
+    await choose(screen.getByLabelText("Binding kind"), "timeseries");
     await user.type(screen.getByLabelText("Time column"), "observed_at");
     await user.click(screen.getByRole("button", { name: "Bind" }));
 
@@ -130,14 +130,14 @@ describe("EntityTypePanel — declaring what the builder cannot propose", () => 
     panel();
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
     await user.type(screen.getByLabelText("Binding name"), "paid");
-    await user.selectOptions(screen.getByLabelText("Source kind"), "query");
+    await choose(screen.getByLabelText("Source kind"), "query");
     await user.type(screen.getByLabelText("SELECT"), "SELECT product_id, SUM(paid) AS paid FROM p GROUP BY 1");
-    await user.selectOptions(screen.getByLabelText("Binding kind"), "timeseries");
+    await choose(screen.getByLabelText("Binding kind"), "timeseries");
 
     // A timeseries with no time column cannot be reduced to a latest row: the form refuses before the round trip.
     expect(screen.getByRole("button", { name: "Bind" })).toBeDisabled();
 
-    await user.selectOptions(screen.getByLabelText("Binding kind"), "static");
+    await choose(screen.getByLabelText("Binding kind"), "static");
     await user.click(screen.getByRole("button", { name: "Bind" }));
     await waitFor(() => expect(addBinding).toHaveBeenCalled());
     expect(addBinding.mock.calls[0][3]).toEqual({
@@ -166,7 +166,7 @@ describe("EntityTypePanel — frames over a timeseries binding's readings", () =
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
     await user.type(screen.getByLabelText("Binding name"), "price_history");
     await user.type(screen.getByLabelText("Table"), "price_history");
-    await user.selectOptions(screen.getByLabelText("Binding kind"), "timeseries");
+    await choose(screen.getByLabelText("Binding kind"), "timeseries");
     await user.type(screen.getByLabelText("Time column"), "observed_at");
 
     await user.click(screen.getByRole("button", { name: "+ Add a frame" }));
@@ -177,7 +177,7 @@ describe("EntityTypePanel — frames over a timeseries binding's readings", () =
 
     await user.click(screen.getByRole("button", { name: "+ Add a frame" }));
     await user.type(screen.getByLabelText("Frame 2 property"), "price_before");
-    await user.selectOptions(screen.getByLabelText("Frame 2 shape"), "previous");
+    await choose(screen.getByLabelText("Frame 2 shape"), "previous");
     await user.type(screen.getByLabelText("Frame 2 column"), "price");
 
     await user.click(screen.getByRole("button", { name: "Bind" }));
@@ -218,7 +218,7 @@ describe("EntityTypePanel — ON-7: a part, and a link the builder did not find"
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
     await user.type(screen.getByLabelText("Binding name"), "lines");
     await user.type(screen.getByLabelText("Table"), "order_items");
-    await user.selectOptions(screen.getByLabelText("Binding kind"), "detail");
+    await choose(screen.getByLabelText("Binding kind"), "detail");
 
     // a detail binding with no rollup supplies nothing: the form refuses before the round trip
     expect(screen.getByRole("button", { name: "Bind" })).toBeDisabled();
@@ -226,7 +226,7 @@ describe("EntityTypePanel — ON-7: a part, and a link the builder did not find"
     await user.type(screen.getByLabelText("Rollup 1 column"), "quantity");
     await user.click(screen.getByRole("button", { name: "+ Add a rollup" }));
     await user.type(screen.getByLabelText("Rollup 2 property"), "line_count");
-    await user.selectOptions(screen.getByLabelText("Rollup 2 agg"), "count");
+    await choose(screen.getByLabelText("Rollup 2 agg"), "count");
     await user.type(screen.getByLabelText("Rollup 2 column"), "item_id");
     expect(screen.getByLabelText("Absorb its type as a part")).toBeChecked();
 
@@ -244,9 +244,9 @@ describe("EntityTypePanel — ON-7: a part, and a link the builder did not find"
     panel();
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
     await user.type(screen.getByLabelText("Binding name"), "lines");
-    await user.selectOptions(screen.getByLabelText("Source kind"), "query");
+    await choose(screen.getByLabelText("Source kind"), "query");
     await user.type(screen.getByLabelText("SELECT"), "SELECT product_id, quantity FROM order_items");
-    await user.selectOptions(screen.getByLabelText("Binding kind"), "detail");
+    await choose(screen.getByLabelText("Binding kind"), "detail");
     expect(screen.queryByLabelText("Absorb its type as a part")).toBeNull();
     await user.type(screen.getByLabelText("Rollup 1 property"), "units");
     await user.type(screen.getByLabelText("Rollup 1 column"), "quantity");
@@ -263,7 +263,7 @@ describe("EntityTypePanel — ON-7: a part, and a link the builder did not find"
     panel();
     await user.click(await screen.findByRole("button", { name: "Add a relationship" }));
     await user.type(screen.getByLabelText("Link verb"), "made_by");
-    await user.selectOptions(screen.getByLabelText("Link target type"), "brand");
+    await choose(screen.getByLabelText("Link target type"), "brand");
     expect(screen.getByRole("button", { name: "Declare" })).toBeDisabled();
     await user.type(screen.getByLabelText("Link column on this type"), "brand_id");
     await user.type(screen.getByLabelText("Link column on the other type"), "brand_id");
@@ -365,15 +365,15 @@ describe("EntityTypePanel — ON-8: a type of the organisation's ontology", () =
     const user = userEvent.setup();
     inDomain();
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
-    await user.selectOptions(screen.getByTestId("declare-binding-connection"), "crm1");
+    await choose(screen.getByTestId("declare-binding-connection"), "crm1");
     expect(screen.getByTestId("declare-binding-crosses")).toBeInTheDocument();
     await user.type(screen.getByLabelText("Binding name"), "tickets");
     await user.type(screen.getByLabelText("Table"), "tickets");
     await user.type(screen.getByLabelText("Binding schema"), "support");
-    await user.selectOptions(screen.getByLabelText("Binding kind"), "timeseries");
+    await choose(screen.getByLabelText("Binding kind"), "timeseries");
     await user.type(screen.getByLabelText("Time column"), "opened_at");
     expect(screen.getByRole("button", { name: "Bind" })).toBeDisabled();    // across two connections: static only
-    await user.selectOptions(screen.getByLabelText("Binding kind"), "static");
+    await choose(screen.getByLabelText("Binding kind"), "static");
     await user.click(screen.getByRole("button", { name: "Bind" }));
     await waitFor(() => expect(addBinding).toHaveBeenCalled());
     const [conn, entity, name, spec] = addBinding.mock.calls[0];
@@ -385,7 +385,7 @@ describe("EntityTypePanel — ON-8: a type of the organisation's ontology", () =
     const user = userEvent.setup();
     inDomain();
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
-    expect(screen.getByTestId("declare-binding-connection")).toHaveValue("shop1");
+    expect(valueOf(screen.getByTestId("declare-binding-connection"))).toBe("shop1");
     expect(screen.queryByTestId("declare-binding-crosses")).toBeNull();
     await user.type(screen.getByLabelText("Binding name"), "stock");
     await user.type(screen.getByLabelText("Table"), "stock");
@@ -421,11 +421,11 @@ describe("EntityTypePanel — ON-9: a process and a rule declared from the type 
     const declare = screen.getByRole("button", { name: "Declare the process" });
     await user.type(screen.getByLabelText("Process id"), "order_fulfilment");
     await user.type(screen.getByLabelText("Stage 1 name"), "placed");
-    await user.selectOptions(screen.getByLabelText("Stage 1 moment"), "created_at");
+    await choose(screen.getByLabelText("Stage 1 moment"), "created_at");
     await user.type(screen.getByLabelText("Stage 2 name"), "shipped");
-    await user.selectOptions(screen.getByLabelText("Stage 2 moment"), "shipped_at");
+    await choose(screen.getByLabelText("Stage 2 moment"), "shipped_at");
     expect(declare).toBeEnabled();
-    await user.selectOptions(screen.getByLabelText("Stage 2 promise"), "within_hours");
+    await choose(screen.getByLabelText("Stage 2 promise"), "within_hours");
     expect(declare).toBeDisabled();                                  // a promise names its hours first
     await user.type(screen.getByLabelText("Stage 2 promise hours"), "48");
     await user.click(declare);
@@ -441,8 +441,8 @@ describe("EntityTypePanel — ON-9: a process and a rule declared from the type 
     panel();
     await user.click(await screen.findByRole("button", { name: "Declare a rule" }));
     await user.type(screen.getByLabelText("Rule id"), "shipped_orders");
-    await user.selectOptions(screen.getByLabelText("Rule property"), "status");
-    await user.selectOptions(screen.getByLabelText("Rule operator"), "not_in");
+    await choose(screen.getByLabelText("Rule property"), "status");
+    await choose(screen.getByLabelText("Rule operator"), "not_in");
     await user.type(screen.getByLabelText("Rule value"), "cancelled, refunded");
     await user.click(screen.getByRole("checkbox", { name: "Revenue" }));
     await user.click(screen.getByRole("button", { name: "Declare the rule" }));
@@ -452,8 +452,8 @@ describe("EntityTypePanel — ON-9: a process and a rule declared from the type 
 
     await user.click(await screen.findByRole("button", { name: "Declare a rule" }));
     await user.type(screen.getByLabelText("Rule id"), "dach");
-    await user.selectOptions(screen.getByLabelText("Rule kind"), "value_set");
-    await user.selectOptions(screen.getByLabelText("Rule property"), "status");
+    await choose(screen.getByLabelText("Rule kind"), "value_set");
+    await choose(screen.getByLabelText("Rule property"), "status");
     await user.type(screen.getByLabelText("Rule values"), "DE, AT , CH");
     await user.click(screen.getByRole("button", { name: "Declare the rule" }));
     await waitFor(() => expect(declareRule).toHaveBeenCalledTimes(2));
@@ -540,7 +540,7 @@ describe("expression properties (2026-09-22)", () => {
     await user.click(await screen.findByRole("button", { name: "Declare an expression" }));
     await user.type(screen.getByLabelText("Expression name"), "days_listed");
     await user.type(screen.getByLabelText("Expression SQL"), "date_diff('day', listed_at, now())");
-    await user.selectOptions(screen.getByLabelText("Expression role"), "dimension");
+    await choose(screen.getByLabelText("Expression role"), "dimension");
     await user.type(screen.getByLabelText("Expression unit"), "days");
     await user.click(screen.getByRole("button", { name: "Declare" }));
     await waitFor(() => expect(declareExpression).toHaveBeenCalledWith("c1", detail.id, "days_listed",

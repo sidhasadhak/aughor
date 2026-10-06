@@ -43,6 +43,7 @@ import { toast } from "@/components/ui/toast";
 import { useRichSchema } from "@/lib/schema-context";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { SelectField } from "@/components/ui/select";
 
 export type QueryMode = "visual" | "sql";
 
@@ -386,8 +387,7 @@ function WorkbenchInner({
      in SQL than in Visual and every button in it shifted on a mode switch. A control
      that exists in one mode belongs with that mode's own controls. */
   const schemaControl = schemas.length > 0 ? (
-    <select
-      className="aug-input"
+    <SelectField
       style={controlStyle}
       value={defaultSchema}
       onChange={e => setDefaultSchema(e.target.value)}
@@ -395,7 +395,7 @@ function WorkbenchInner({
     >
       <option value="">(all schemas)</option>
       {schemas.map(s => <option key={s} value={s}>{s}</option>)}
-    </select>
+    </SelectField>
   ) : null;
 
   const sharedControls = (
@@ -414,8 +414,7 @@ function WorkbenchInner({
       ))}
 
       <span style={{ width: 1, height: 14, background: "var(--b1)", margin: "0 2px" }} />
-      <select
-        className="aug-input"
+      <SelectField
         style={controlStyle}
         value={connId}
         onChange={e => setConnId(e.target.value)}
@@ -425,7 +424,7 @@ function WorkbenchInner({
         {(connections ?? []).map(c => (
           <option key={c.id} value={c.id}>{c.name}</option>
         ))}
-      </select>
+      </SelectField>
 
 
       <SavedQueryBar

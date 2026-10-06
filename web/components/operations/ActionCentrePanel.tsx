@@ -30,6 +30,7 @@ import {
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 
 type Row = AuthorityRow;
 /** A connection as this page needs it: its id, and its name for the picker and the labels. */
@@ -285,12 +286,8 @@ function ActionRecord({ actionId, connectionId, connections, onBack }: {
                     : "No ceiling is set here. This action runs at the level its record earned, unless a mission caps it."}
                 </p>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <div role="group" aria-label="Cap it at" className="aug-segmented">
-                    {[0, 1, 2, 3, 4].map(l => (
-                      <Button key={l} variant="ghost" size="xs" aria-pressed={capAt === l}
-                        className={`aug-seg-item${capAt === l ? " active" : ""}`} onClick={() => setCapAt(l)}>L{l}</Button>
-                    ))}
-                  </div>
+                  <Segmented label="Cap it at" value={String(capAt)} onChange={v => setCapAt(Number(v))}
+                    options={[0, 1, 2, 3, 4].map(l => ({ value: String(l), label: `L${l}` }))} />
                   <Input value={capWhy} onChange={e => setCapWhy(e.target.value)} placeholder="Why (optional)" aria-label="Why it is capped" style={{ flex: "1 1 220px", maxWidth: 360 }} />
                   <Button size="xs" variant="outline" disabled={busy || capAt === null}
                     onClick={() => void act(async () => { await setActionCeiling(actionId, connectionId, capAt, capWhy.trim(), actor.by); setCapAt(null); setCapWhy(""); })}>
@@ -330,10 +327,8 @@ function ActionRecord({ actionId, connectionId, connections, onBack }: {
 
               <Section label="Take authority away">
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <div role="group" aria-label="For real or as a drill" className="aug-segmented">
-                    <Button variant="ghost" size="xs" aria-pressed={!drill} className={`aug-seg-item${!drill ? " active" : ""}`} onClick={() => setDrill(false)}>For real</Button>
-                    <Button variant="ghost" size="xs" aria-pressed={drill} className={`aug-seg-item${drill ? " active" : ""}`} onClick={() => setDrill(true)}>As a drill</Button>
-                  </div>
+                  <Segmented label="For real or as a drill" value={drill ? "drill" : "real"} onChange={v => setDrill(v === "drill")}
+                    options={[{ value: "real", label: "For real" }, { value: "drill", label: "As a drill" }]} />
                   <Input value={why} onChange={e => setWhy(e.target.value)} placeholder="Why — it is written on the demotion" aria-label="Why it is demoted" style={{ flex: "1 1 320px", maxWidth: 480 }} />
                   <Button size="xs" variant="outline" disabled={busy || !why.trim()}
                     onClick={() => void act(async () => { await demoteAction(actionId, connectionId, why.trim(), drill, actor.by); setWhy(""); })}>

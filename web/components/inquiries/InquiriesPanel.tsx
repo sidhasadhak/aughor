@@ -26,6 +26,8 @@ import {
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
+import { Callout } from "@/components/ui/callout";
 
 type StateFilter = "all" | "open" | "waiting" | "closed";
 
@@ -89,14 +91,8 @@ function InquiryLedger({ connections, onOpen, onAsk }: {
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-0)" }}>
       <div className="aug-toolbar">
-        <div role="group" aria-label="Filter inquiries by state" className="aug-segmented">
-          {FILTERS.map(f => (
-            <Button key={f.id} variant="ghost" size="xs" aria-pressed={filter === f.id}
-              className={`aug-seg-item${filter === f.id ? " active" : ""}`} onClick={() => setFilter(f.id)}>
-              {f.label}
-            </Button>
-          ))}
-        </div>
+        <Segmented label="Filter inquiries by state" value={filter} onChange={setFilter}
+          options={FILTERS.map(f => ({ value: f.id, label: f.label }))} />
         {load.data && (
           <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
             {countNoun(rows.length, "inquiry", "inquiries")} · every connection
@@ -260,10 +256,10 @@ function InquiryBody({ q, connections, onMoved, onReload, onOpenRun, onOpenDecis
       {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: "0 0 12px" }}>{error}</p>}
       {said && !error && <p className="aug-fs-sm" role="status" style={{ color: "var(--t2)", margin: "0 0 12px" }}>{said}</p>}
       {q.superseded_by && (
-        <div className="aug-callout aug-callout-amber" style={{ marginBottom: 16 }}>
+        <Callout tone="amber" style={{ marginBottom: 16 }}>
           <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>This is an earlier version of the inquiry. </span>
           <Button size="xs" variant="link" onClick={() => onMoved(q.superseded_by)}>Open it as it stands now</Button>
-        </div>
+        </Callout>
       )}
 
       <Section label="What is established" meta={countNoun(supported.length + q.established_claims.length, "statement")}>
@@ -414,14 +410,14 @@ function ProposedRunNote({ run }: { run: ProposedRun }) {
     could.decisions?.length ? countNoun(could.decisions.length, "decision") : "",
   ].filter(Boolean);
   return (
-    <div className="aug-callout aug-callout-blue" style={{ marginTop: 10 }}>
+    <Callout tone="blue" style={{ marginTop: 10 }}>
       <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>The next run: a deep analysis of this question.</div>
       <div className="aug-fs-sm" style={{ color: "var(--t2)", marginTop: 4, lineHeight: 1.55 }}>
         <div>What it would cost: {measured}</div>
         <div>What it could change: {changes.length ? changes.join(" · ") : "nothing that is recorded as open"}.</div>
         {run.rule && <div style={{ color: "var(--t3)" }}>{run.rule.charAt(0).toUpperCase() + run.rule.slice(1)}.</div>}
       </div>
-    </div>
+    </Callout>
   );
 }
 
@@ -447,12 +443,8 @@ function CloseForm({ busy, onClose }: {
   return (
     <div className="aug-form-grid">
       <label className="aug-fs-sm">Closed as</label>
-      <div role="group" aria-label="Closed as" className="aug-segmented" style={{ justifySelf: "start" }}>
-        {CLOSE_AS.map(c => (
-          <Button key={c} variant="ghost" size="xs" aria-pressed={closedAs === c}
-            className={`aug-seg-item${closedAs === c ? " active" : ""}`} onClick={() => setClosedAs(c)}>{c}</Button>
-        ))}
-      </div>
+      <Segmented label="Closed as" value={closedAs} onChange={setClosedAs} style={{ justifySelf: "start" }}
+        options={CLOSE_AS.map(c => ({ value: c, label: c }))} />
       <label className="aug-fs-sm" htmlFor="inq-believed">Believed at the start</label>
       <Input id="inq-believed" value={believed} onChange={e => setBelieved(e.target.value)} placeholder="What was assumed when it opened" />
       <label className="aug-fs-sm" htmlFor="inq-turned">Turned out</label>

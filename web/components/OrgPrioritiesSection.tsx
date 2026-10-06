@@ -9,6 +9,8 @@
  */
 import type { Priority } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const EMPTY_ROW: Priority = { metric: "", target: "", direction: "", by: "", note: "" };
 
@@ -26,23 +28,23 @@ export function OrgPrioritiesSection({ value, onChange }: { value: Priority[]; o
       {rows.map((r, i) => (
         <div key={i} className="flex flex-wrap items-end gap-2" data-testid="priority-row">
           <label className="flex flex-col aug-fs-xs text-zinc-500">metric
-            <input className="aug-input" aria-label={`Priority ${i + 1} metric`} value={r.metric} placeholder="return rate"
+            <Input aria-label={`Priority ${i + 1} metric`} value={r.metric} placeholder="return rate"
               onChange={e => set(i, { metric: e.target.value })} />
           </label>
           <label className="flex flex-col aug-fs-xs text-zinc-500">target
-            <input className="aug-input" aria-label={`Priority ${i + 1} target`} value={r.target} placeholder="< 8%"
+            <Input aria-label={`Priority ${i + 1} target`} value={r.target} placeholder="< 8%"
               onChange={e => set(i, { target: e.target.value })} />
           </label>
           <label className="flex flex-col aug-fs-xs text-zinc-500">good when
-            <select className="aug-input" aria-label={`Priority ${i + 1} direction`} value={r.direction}
+            <SelectField aria-label={`Priority ${i + 1} direction`} value={r.direction}
               onChange={e => set(i, { direction: e.target.value as Priority["direction"] })}>
               <option value="">(unsaid)</option>
               <option value="up">up</option>
               <option value="down">down</option>
-            </select>
+            </SelectField>
           </label>
           <label className="flex flex-col aug-fs-xs text-zinc-500">by
-            <input className="aug-input" aria-label={`Priority ${i + 1} by`} value={r.by} placeholder="Q4"
+            <Input aria-label={`Priority ${i + 1} by`} value={r.by} placeholder="Q4"
               onChange={e => set(i, { by: e.target.value })} />
           </label>
           <Button size="sm" variant="ghost" onClick={() => onChange(rows.filter((_, j) => j !== i))}>Remove</Button>

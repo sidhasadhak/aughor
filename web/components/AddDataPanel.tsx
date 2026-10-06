@@ -34,6 +34,9 @@ import { BrandLogo, brandColor } from "@/components/BrandLogos";
 import { Button } from "@/components/ui/button";
 import { ColumnTypeIcon } from "@/components/icons/columnType";
 import { Icon } from "@/components/ui/icon";
+import { SelectField } from "@/components/ui/select";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
@@ -318,20 +321,20 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 200px" }}>
             <label style={L}>Table name</label>
-            <input style={{ ...S, fontFamily: "var(--font-mono)" }} value={tableName}
+            <Input style={{ ...S, fontFamily: "var(--font-mono)" }} value={tableName}
               onChange={e => setTableName(e.target.value)} placeholder={a.suggested_table_name} />
           </div>
           <div style={{ flex: "1 1 200px" }}>
             <label style={L}>Schema</label>
-            <select style={{ ...S, cursor: "pointer" }} value={schema} onChange={e => setSchema(e.target.value)}>
+            <SelectField style={{ ...S, cursor: "pointer" }} value={schema} onChange={e => setSchema(e.target.value)}>
               {schemas.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            </SelectField>
           </div>
         </div>
 
         {/* New schema */}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input style={{ ...S, maxWidth: 220 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}
+          <Input style={{ ...S, maxWidth: 220 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}
             placeholder="New schema name…" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addSchema(); } }} />
           <Button variant="ghost" type="button" onClick={addSchema} disabled={!newSchema.trim() || addingSchema}
             className="h-auto p-0 font-normal"
@@ -377,10 +380,10 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                       kept as text · {c.kept_as_text}
                     </span>
                   )}
-                  <select value={chosen[c.name] ?? detected} onChange={e => setChosen(p => ({ ...p, [c.name]: e.target.value }))}
+                  <SelectField value={chosen[c.name] ?? detected} onChange={e => setChosen(p => ({ ...p, [c.name]: e.target.value }))}
                     style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg-2)", color: changed ? "var(--blue4,#60a5fa)" : "var(--t2)", border: `1px solid ${changed ? "var(--blue4,#60a5fa)" : "var(--b1)"}`, cursor: "pointer", fontFamily: "var(--font-mono)", flexShrink: 0, width: 120 }}>
                     {opts.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                  </SelectField>
                   {suggest && (
                     <Button variant="ghost" type="button" onClick={() => setChosen(p => ({ ...p, [c.name]: suggest }))}
                       title={c.detected_format
@@ -407,24 +410,24 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
           <div>
             <p style={sectionLabel}>Preview · first {a.preview.rows.length} rows</p>
             <div style={{ overflowX: "auto", border: "1px solid var(--b1)", borderRadius: 8 }}>
-              <table style={{ borderCollapse: "collapse", fontSize: 11, width: "100%" }}>
-                <thead>
-                  <tr>
+              <Table style={{ fontSize: 11 }}>
+                <TableHeader>
+                  <TableRow>
                     {a.preview.columns.map(col => (
-                      <th key={col} style={{ textAlign: "left", padding: "7px 10px", color: "var(--t3)", fontWeight: 600, borderBottom: "1px solid var(--b1)", background: "var(--bg-2)", whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>{col}</th>
+                      <TableHead key={col} style={{ textAlign: "left", padding: "7px 10px", color: "var(--t3)", fontWeight: 600, borderBottom: "1px solid var(--b1)", background: "var(--bg-2)", whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>{col}</TableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {a.preview.rows.map((row, ri) => (
-                    <tr key={ri}>
+                    <TableRow key={ri}>
                       {row.map((v, ci) => (
-                        <td key={ci} style={{ padding: "6px 10px", color: v === null ? "var(--t3)" : "var(--t2)", borderBottom: "1px solid var(--b0)", whiteSpace: "nowrap", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", fontStyle: v === null ? "italic" : "normal" }}>{v === null ? "NULL" : v}</td>
+                        <TableCell key={ci} style={{ padding: "6px 10px", color: v === null ? "var(--t3)" : "var(--t2)", borderBottom: "1px solid var(--b0)", whiteSpace: "nowrap", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", fontStyle: v === null ? "italic" : "normal" }}>{v === null ? "NULL" : v}</TableCell>
                       ))}
-                    </tr>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </div>
         )}
@@ -513,12 +516,12 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div style={{ flex: "1 1 200px" }}>
             <label style={L}>Target schema</label>
-            <select style={{ ...S, cursor: "pointer" }} value={bulkSchema} onChange={e => setBulkSchema(e.target.value)}>
+            <SelectField style={{ ...S, cursor: "pointer" }} value={bulkSchema} onChange={e => setBulkSchema(e.target.value)}>
               {schemas.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            </SelectField>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input style={{ ...S, maxWidth: 200 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}
+            <Input style={{ ...S, maxWidth: 200 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}
               placeholder="New schema name…" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); bulkAddSchema(); } }} />
             <Button variant="ghost" type="button" onClick={bulkAddSchema} disabled={!newSchema.trim() || addingSchema}
               className="h-auto p-0 font-normal"
@@ -743,7 +746,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
       <div style={{ maxWidth: 940, margin: "0 auto", padding: "26px 28px 64px" }}>
         {!picked ? (
           <>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search data sources…"
+            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search data sources…"
               style={{ ...S, maxWidth: 420, marginBottom: 28 }} />
 
             {/* Files */}
@@ -784,7 +787,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
 
             <div>
               <label style={L}>Connection name</label>
-              <input style={S} value={name} onChange={e => setName(e.target.value)} placeholder={meta(picked.type).label} required />
+              <Input style={S} value={name} onChange={e => setName(e.target.value)} placeholder={meta(picked.type).label} required />
             </div>
 
             {picked.fields.length === 0 && (
@@ -796,7 +799,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
             {picked.fields.map(f => (
               <div key={f.key}>
                 <label style={L}>{f.label}</label>
-                <input
+                <Input
                   style={{ ...S, fontFamily: f.secret || f.key === "dsn" ? "var(--font-mono)" : "inherit" }}
                   type={f.secret ? "password" : "text"}
                   placeholder={f.placeholder}

@@ -25,6 +25,8 @@ import {
   deleteAgentAlertRule, getAgentAlertVocabulary, listAgentAlertRules, listUserAgents,
   testAgentAlertRule, upsertAgentAlertRule, type AgentAlertRule, type UserAgent,
 } from "@/lib/api";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const COMPARATOR_LABEL: Record<string, string> = {
   gt: "is above", gte: "is at or above", lt: "is below", lte: "is at or below",
@@ -170,47 +172,47 @@ export function AgentAlertRulesPanel({ agentId = "", agentName = "" }: {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12,
           paddingTop: 12, borderTop: "1px solid var(--b1)" }}>
           <Field label="Name" width={200}>
-            <input className="aug-input" value={draft.name} placeholder="Error rate across agents"
+            <Input value={draft.name} placeholder="Error rate across agents"
               onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} />
           </Field>
           <Field label="Metric" width={190}>
-            <select className="aug-input" value={draft.metric}
+            <SelectField value={draft.metric}
               onChange={e => setDraft(d => ({ ...d, metric: e.target.value }))}>
               {metrics.map(m => (
                 <option key={m} value={m}>{METRIC_LABEL[m] ?? m}</option>
               ))}
-            </select>
+            </SelectField>
           </Field>
           <Field label="Condition" width={140}>
-            <select className="aug-input" value={draft.comparator}
+            <SelectField value={draft.comparator}
               onChange={e => setDraft(d => ({ ...d, comparator: e.target.value as Comparator }))}>
               {comparators.map(c => (
                 <option key={c} value={c}>{COMPARATOR_LABEL[c] ?? c}</option>
               ))}
-            </select>
+            </SelectField>
           </Field>
           <Field label="Threshold" width={100}>
-            <input className="aug-input" type="number" step="any" value={draft.threshold}
+            <Input type="number" step="any" value={draft.threshold}
               onChange={e => setDraft(d => ({ ...d, threshold: Number(e.target.value) }))} />
           </Field>
           <Field label="Window (min)" width={100}>
-            <input className="aug-input" type="number" min={1} value={draft.window_minutes}
+            <Input type="number" min={1} value={draft.window_minutes}
               onChange={e => setDraft(d => ({ ...d, window_minutes: Number(e.target.value) }))} />
           </Field>
           <Field label="Quiet period (min)" width={120}>
-            <input className="aug-input" type="number" min={0} value={draft.debounce_minutes}
+            <Input type="number" min={0} value={draft.debounce_minutes}
               onChange={e => setDraft(d => ({ ...d, debounce_minutes: Number(e.target.value) }))} />
           </Field>
           <Field label="Severity" width={110}>
-            <select className="aug-input" value={draft.severity}
+            <SelectField value={draft.severity}
               onChange={e => setDraft(d => ({ ...d, severity: e.target.value as typeof BLANK.severity }))}>
               <option value="info">info</option>
               <option value="warning">warning</option>
               <option value="critical">critical</option>
-            </select>
+            </SelectField>
           </Field>
           <Field label="Channel (trigger id)" width={170}>
-            <input className="aug-input" value={draft.channel} placeholder="in-app only"
+            <Input value={draft.channel} placeholder="in-app only"
               onChange={e => setDraft(d => ({ ...d, channel: e.target.value }))} />
           </Field>
           <Field label="Scope" width={200}>
@@ -220,11 +222,11 @@ export function AgentAlertRulesPanel({ agentId = "", agentName = "" }: {
                 {agentName || agentId}
               </span>
             ) : (
-              <select className="aug-input" value={draft.agent_id}
+              <SelectField value={draft.agent_id}
                 onChange={e => setDraft(d => ({ ...d, agent_id: e.target.value }))}>
                 <option value="">every agent</option>
                 {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
+              </SelectField>
             )}
           </Field>
           <div style={{ display: "flex", alignItems: "flex-end" }}>

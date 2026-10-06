@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { LayerVisibleContext } from "@/lib/useVisiblePoll";
+import { TabStrip } from "@/components/ui/tab-strip";
 
 /**
  * One perspective layer of a `<Workspace>` — an id, a switcher icon, a label,
@@ -77,38 +78,15 @@ export function Workspace<L extends string>({
       {headerControls && <div className="aug-toolbar aug-context-bar">{headerControls}</div>}
 
       {!hideTabs && (
-      <div role="tablist" aria-label={ariaLabel} className="aug-layer-tabs">
-        {layers.map(l => {
-          const on = l.id === layer;
-          return (
-            <Button
-              key={l.id}
-              role="tab"
-              aria-selected={on}
-              onClick={() => onLayerChange(l.id)}
-              title={l.blurb}
-              variant="ghost"
-              size="sm"
-              className="aug-tab"
-            >
-              {l.label}
-              {(badges?.[l.id] ?? 0) > 0 && (
-                // Amber: something in this layer is waiting on a human.
-                <span className="aug-tab-badge aug-tab-badge-waiting">
-                  {badges![l.id]}
-                </span>
-              )}
+        <TabStrip label={ariaLabel} value={layer} onChange={onLayerChange} className="aug-layer-tabs"
+          tabs={layers.map(l => ({ id: l.id, label: l.label, title: l.blurb, badge: badges?.[l.id] }))}
+          trailing={help && (
+            <Button variant="ghost" size="xs" aria-label="What is this layer?"
+              title={`What the ${layers.find(l => l.id === layer)?.label ?? "current"} layer is for, and what to do here`}
+              onClick={() => help(layer)}>
+              ?
             </Button>
-          );
-        })}
-        {help && (
-          <Button variant="ghost" size="xs" aria-label="What is this layer?"
-            title={`What the ${layers.find(l => l.id === layer)?.label ?? "current"} layer is for, and what to do here`}
-            onClick={() => help(layer)} style={{ marginLeft: "auto" }}>
-            ?
-          </Button>
-        )}
-      </div>
+          )} />
       )}
 
       {toolbar && <div className="aug-toolbar">{toolbar}</div>}

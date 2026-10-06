@@ -6,6 +6,7 @@ import { getApiBase } from "@/lib/config";
 import { pct, formatTimestamp } from "@/lib/format";
 import { getPlaybookVersions, type PlaybookVersion } from "@/lib/api";
 import { Loading } from "@/components/ui/states";
+import { Input } from "@/components/ui/input";
 
 interface PlaybookEntry {
   id: string;
@@ -164,7 +165,7 @@ export function PlaybookPanel() {
                 : `${ruleOutCount} data-quality rule-outs run in the Verifier — not listed`}
             </button>
           )}
-          <input
+          <Input
             value={filter}
             onChange={e => setFilter(e.target.value)}
             placeholder="Search recommendations…"

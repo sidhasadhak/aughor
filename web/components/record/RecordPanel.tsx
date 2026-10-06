@@ -24,6 +24,8 @@ import {
 } from "@/components/record/kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
+import { Callout } from "@/components/ui/callout";
 
 const KINDS: { id: string; label: string }[] = [
   { id: "", label: "All" },
@@ -113,12 +115,8 @@ function ClaimLedger({ connections, selectedConn, onOpen, onOpenDefinitions, onO
           aria-label="Find a claim" style={{ width: 260 }} />
       </div>
       <div className="aug-toolbar" style={{ flexWrap: "wrap", height: "auto", minHeight: 36, rowGap: 6, paddingTop: 4, paddingBottom: 4 }}>
-        <div role="group" aria-label="Kind of claim" className="aug-segmented">
-          {KINDS.map(k => (
-            <Button key={k.id || "all"} variant="ghost" size="xs" aria-pressed={kind === k.id}
-              className={`aug-seg-item${kind === k.id ? " active" : ""}`} onClick={() => setKind(k.id)}>{k.label}</Button>
-          ))}
-        </div>
+        <Segmented label="Kind of claim" value={kind || "all"} onChange={v => setKind(v === "all" ? "" : v)}
+          options={KINDS.map(k => ({ value: k.id || "all", label: k.label }))} />
         {load.data && (
           <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
             {countNoun(rows.length, "claim")}{asOf ? ` as recorded on ${asOf}` : ""} · every connection
@@ -244,10 +242,10 @@ function ClaimReader({ id, connections, onBack, onOpen, onInspectClaim, onOpenDe
           <Page rail={<ClaimRail c={claim} connections={connections} />}>
             {said && <p className="aug-fs-sm" role="status" style={{ color: "var(--t2)", margin: "0 0 12px" }}>{said}</p>}
             {claim.superseded_by && (
-              <div className="aug-callout aug-callout-amber" style={{ marginBottom: 16 }}>
+              <Callout tone="amber" style={{ marginBottom: 16 }}>
                 <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>This version was replaced. </span>
                 <Button size="xs" variant="link" onClick={() => onOpen(claim.superseded_by)}>Open the current one</Button>
-              </div>
+              </Callout>
             )}
             <Section label="What is held">
               <p className="aug-fs-h1 aug-lede">{claim.statement.text}</p>

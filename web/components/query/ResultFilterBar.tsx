@@ -16,6 +16,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { parseFilter, type FilterClause, type RankSpec } from "@/lib/query/resultFilter";
+import { Input } from "@/components/ui/input";
 
 export interface ActiveFilter {
   id: string;
@@ -66,7 +67,7 @@ export function ResultFilterBar({
         padding: "5px 14px", borderBottom: "1px solid var(--b0)", flexShrink: 0,
       }}
     >
-      <input
+      <Input
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {

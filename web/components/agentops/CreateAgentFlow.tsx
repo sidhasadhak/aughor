@@ -46,6 +46,9 @@ import {
   type PackSummary, type UserAgent,
 } from "@/lib/api";
 import { formatCount } from "@/lib/format";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 type Step = "describe" | "start" | "scope" | "define" | "prove" | "reach";
 type Seed = { question: string; needs: string };
@@ -282,18 +285,18 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
                   nothing is created here.">
             <Field label="Which connection?"
               hint="An agent's scope is drafted inside one connection.">
-              <select className="aug-input" value={connectionId}
+              <SelectField value={connectionId}
                 onChange={e => { setConnectionId(e.target.value); setSchemaScope(""); }}
                 style={{ width: "100%", maxWidth: 420 }}>
                 <option value="">Choose a connection…</option>
                 {connections.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
-              </select>
+              </SelectField>
             </Field>
             <Field label="What should it answer?"
               hint="Plain words. Name the decisions it should support, not the tables.">
-              <textarea className="aug-input" rows={3} value={description}
+              <Textarea className="aug-input" rows={3} value={description}
                 onChange={e => setDescription(e.target.value)}
                 placeholder="e.g. Answer questions about order volume and returns for the retail team, and always flag when a day is still partial."
                 style={{ width: "100%", maxWidth: 640 }} />
@@ -412,13 +415,13 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
         <>
           <Section title="Name it">
             <Field label="Name" hint="Appears in its answers — the agent is told who it is.">
-              <input className="aug-input" value={name} maxLength={120} autoFocus
+              <Input value={name} maxLength={120} autoFocus
                 onChange={e => setName(e.target.value)}
                 placeholder="e.g. Retention Analyst" style={{ width: "100%", maxWidth: 420 }} />
             </Field>
             <Field label="What it is for"
               hint="One line. Other agents read this when deciding whether to hand it a question — never the instructions.">
-              <input className="aug-input" value={purpose} maxLength={240}
+              <Input value={purpose} maxLength={240}
                 onChange={e => setPurpose(e.target.value)}
                 placeholder="e.g. Churn and retention questions for the subscriptions team"
                 style={{ width: "100%", maxWidth: 560 }} />
@@ -429,22 +432,22 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
             note="An agent that has not been told where to look cannot be judged on what it says.">
             <Field label="Connection"
               hint="Leave unset and the agent answers against whichever connection the question came from.">
-              <select className="aug-input" value={connectionId} style={{ maxWidth: 420 }}
+              <SelectField value={connectionId} style={{ maxWidth: 420 }}
                 onChange={e => { setConnectionId(e.target.value); setSchemaScope(""); }}>
                 <option value="">Any — use the question&rsquo;s connection</option>
                 {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              </SelectField>
             </Field>
 
             <Field label="Schema"
               hint={connectionId
                 ? "Picked from this connection's real catalogue — a schema that does not exist would make every ask fail."
                 : "Choose a connection first to pick a schema."}>
-              <select className="aug-input" value={schemaScope} disabled={!connectionId}
+              <SelectField value={schemaScope} disabled={!connectionId}
                 onChange={e => setSchemaScope(e.target.value)} style={{ maxWidth: 420 }}>
                 <option value="">All schemas in this connection</option>
                 {schemas.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              </SelectField>
             </Field>
 
             {connectionId && (
@@ -477,7 +480,7 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
               hint={template
                 ? `Prefilled from the ${template.name} pack — edit freely, it is only a starting stance.`
                 : "Standing instructions, prepended to every answer this agent gives."}>
-              <textarea className="aug-input" value={instructions} rows={8} maxLength={8000}
+              <Textarea className="aug-input" value={instructions} rows={8} maxLength={8000}
                 onChange={e => setInstructions(e.target.value)}
                 placeholder="What this agent is for, what it should prioritise, how it should present findings."
                 style={{ width: "100%", resize: "vertical", fontFamily: "var(--font-ui)" }} />
@@ -570,12 +573,12 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
             )}
 
             <Field label="Question">
-              <input className="aug-input" value={draft.question} style={{ width: "100%" }}
+              <Input value={draft.question} style={{ width: "100%" }}
                 onChange={e => setDraft(d => ({ ...d, question: e.target.value }))}
                 placeholder="A question you already know the right answer to" />
             </Field>
             <Field label="Reference SQL" hint="Read-only, and it must parse.">
-              <textarea className="aug-input" value={draft.sql} rows={3}
+              <Textarea className="aug-input" value={draft.sql} rows={3}
                 onChange={e => setDraft(d => ({ ...d, sql: e.target.value }))}
                 placeholder="SELECT …"
                 style={{ width: "100%", resize: "vertical", fontFamily: "var(--font-code)" }} />

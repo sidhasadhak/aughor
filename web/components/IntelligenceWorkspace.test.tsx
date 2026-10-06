@@ -12,7 +12,7 @@
  * Briefing swapped out for its "Reading this connection's schemas…" state and back in, and a Briefing
  * that mounts again asks again.
  */
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, change } from "@/lib/testing";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IntelligenceWorkspace, type IntelLayer } from "@/components/IntelligenceWorkspace";
@@ -125,7 +125,8 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
 
 
 describe("IntelligenceWorkspace — the Cockpit tab, beside the Briefing (Arc CT-7)", () => {
-  const tabs = () => screen.getAllByRole("tab").map(t => t.textContent?.trim());
+  // By the name a person hears: a Radix tab holds its label twice (one hidden, for its width).
+  const tabs = () => screen.getAllByRole("tab").map(t => t.querySelector(".rt-TabsTriggerInner")?.textContent?.trim());
   const flags = (on: boolean) => vi.mocked(getSystemFlags).mockResolvedValue(
     { "cockpit.composed": { value: on } as unknown as SystemFlag });
 

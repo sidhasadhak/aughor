@@ -32,6 +32,9 @@ import { claimsOf, getIdToken } from "@/lib/auth";
 import { formatTimestamp } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 /** Who is acting: the signed-in email when there is one, else the same word the
  *  actions inbox uses. Display + provenance material — the server owns identity. */
@@ -190,7 +193,7 @@ function CandidateRow({ cand, decision, onDecide, edit, onEdit, applyError }: {
           )}
           {edit !== undefined && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <textarea value={edit} onChange={e => onEdit(e.target.value)} rows={8}
+              <Textarea value={edit} onChange={e => onEdit(e.target.value)} rows={8}
                 data-testid={`intake-edit-${cand.id}`}
                 className="aug-fs-xs"
                 style={{ width: "100%", fontFamily: "var(--font-mono)", color: "var(--t1)",
@@ -332,7 +335,7 @@ function Doors({ connId, onStaged, knowledgeConns }: {
 
       {door === "paste" && (
         <div style={label}>
-          <textarea value={yamlText} onChange={e => setYamlText(e.target.value)} rows={6}
+          <Textarea value={yamlText} onChange={e => setYamlText(e.target.value)} rows={6}
             placeholder={"version: 1\nsections:\n  metrics:\n    - name: revenue\n      sql: SUM(amount)"}
             className="aug-fs-xs" style={{ ...input, fontFamily: "var(--font-mono)", resize: "vertical" }} />
           <div>
@@ -347,9 +350,9 @@ function Doors({ connId, onStaged, knowledgeConns }: {
 
       {door === "sheet" && (
         <div className="aug-fs-sm" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)}
+          <Input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)}
             placeholder="Spreadsheet link or id (link-shared)" style={{ ...input, flex: 2, minWidth: 220 }} />
-          <input value={sheetTab} onChange={e => setSheetTab(e.target.value)}
+          <Input value={sheetTab} onChange={e => setSheetTab(e.target.value)}
             placeholder="Worksheet (first tab if empty)" style={{ ...input, flex: 1, minWidth: 140 }} />
           <Button size="sm" disabled={busy || !sheetUrl.trim()}
             onClick={() => run(() => uploadIntakeSheet({
@@ -381,10 +384,10 @@ function Doors({ connId, onStaged, knowledgeConns }: {
 
       {door === "wiki" && (
         <div className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <select value={wikiConn} onChange={e => setWikiConn(e.target.value)} style={{ ...input, width: "auto" }}>
+          <SelectField value={wikiConn} onChange={e => setWikiConn(e.target.value)} style={{ ...input, width: "auto" }}>
             <option value="">Choose a wiki connection…</option>
             {knowledgeConns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          </SelectField>
           <Button size="sm" disabled={busy || !wikiConn}
             onClick={() => { setBusy(true); setErr(""); setNote("");
               fetch(`${getApiBase()}/intake/mine`, { method: "POST",
@@ -403,7 +406,7 @@ function Doors({ connId, onStaged, knowledgeConns }: {
 
       {door === "prose" && (
         <div style={label}>
-          <textarea value={proseText} onChange={e => setProseText(e.target.value)} rows={5}
+          <Textarea value={proseText} onChange={e => setProseText(e.target.value)} rows={5}
             placeholder="Paste prose or markdown that states definitions — e.g. “MRR is monthly recurring revenue, computed as …”"
             className="aug-fs-sm" style={{ ...input, resize: "vertical" }} />
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>

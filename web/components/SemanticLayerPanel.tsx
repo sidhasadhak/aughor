@@ -23,6 +23,9 @@ import { IntakePanel } from "@/components/intake/IntakePanel";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { Loading } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Input as UiInput } from "@/components/ui/input";
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
 
@@ -109,15 +112,10 @@ function Input({ value, onChange, placeholder, multiline, hint, mono, label }: {
   value: string; onChange: (v: string) => void; placeholder?: string;
   multiline?: boolean; hint?: string; mono?: boolean; label?: string;
 }) {
-  const base: React.CSSProperties = {
-    width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 5,
-    background: "var(--bg-1, #1a1a1a)", border: "1px solid var(--b0)",
-    color: "var(--t1, #e5e5e5)", outline: "none", resize: "vertical",
-    boxSizing: "border-box", fontFamily: mono ? "var(--font-mono)" : "inherit",
-  };
+  const mono_ = mono ? { fontFamily: "var(--font-mono)" } : undefined;
   const field = multiline
-    ? <textarea className="sl-in" rows={3} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={base} />
-    : <input className="sl-in" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={base} />;
+    ? <Textarea rows={3} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={{ width: "100%", ...mono_ }} />
+    : <UiInput value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={{ width: "100%", ...mono_ }} />;
   if (!label && !hint) return field;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -130,10 +128,10 @@ function Input({ value, onChange, placeholder, multiline, hint, mono, label }: {
 
 function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
-    <select value={value} onChange={e => onChange(e.target.value)}
+    <SelectField value={value} onChange={e => onChange(e.target.value)}
       style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg-1, #1a1a1a)", border: "1px solid var(--b0)", color: "var(--t1, #e5e5e5)", outline: "none" }}>
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    </SelectField>
   );
 }
 

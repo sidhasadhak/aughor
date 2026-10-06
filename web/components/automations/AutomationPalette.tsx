@@ -4,7 +4,7 @@
  * DS-1 · the palette — the canvas's vocabulary, on the canvas.
  *
  * Before this, adding a step meant clicking "Add Action", getting a `notify` row you did
- * not ask for, and changing its kind afterwards from a `<select>` that showed nine words
+ * not ask for, and changing its kind afterwards from a `<SelectField>` that showed nine words
  * and explained none of them. The descriptions for those kinds had been written months
  * earlier and rendered nowhere. This panel is where they finally are.
  *
@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { getAutomationPalette, type AutomationPaletteEntry } from "@/lib/api";
+import { SelectField } from "@/components/ui/select";
 
 export type PaletteGroup = "trigger" | "action";
 

@@ -14,6 +14,9 @@ import {
   getApprovalsAudit, getAllowlist, revokeApproval,
   type ApprovalAuditEvent, type AllowlistEntry,
 } from "@/lib/api";
+import { SelectField } from "@/components/ui/select";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -226,7 +229,7 @@ function BudgetEditor({ connId }: { connId: string }) {
           <span style={{ fontSize: 12, color: "var(--t2)", width: 110, flexShrink: 0 }}>
             {key === "max_rows" ? "Max rows" : key === "warn_time_ms" ? "Warn (ms)" : "Max time (ms)"}
           </span>
-          <input
+          <Input
             type="number"
             value={draft[key]}
             onChange={e => setDraft(d => d ? { ...d, [key]: Number(e.target.value) } : d)}
@@ -693,7 +696,7 @@ export function SecurityAuditPanel({
         {/* Filters */}
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <span style={{ fontSize: 11, color: "var(--t3)", marginRight: 4 }}>Connection</span>
-          <select
+          <SelectField
             value={filterConnId || ""}
             onChange={e => setFilterConnId(e.target.value || undefined)}
             style={{ fontSize: 11, color: "var(--t1)", background: "var(--bg-1)", border: "1px solid var(--bg-3)", borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}
@@ -702,7 +705,7 @@ export function SecurityAuditPanel({
             {connections.map(c => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
-          </select>
+          </SelectField>
           <span style={{ fontSize: 11, color: "var(--t3)", marginRight: 4, marginLeft: 8 }}>Verdict</span>
           {VERDICT_FILTERS.map(v => (
             <button
@@ -753,9 +756,9 @@ export function SecurityAuditPanel({
             borderRadius: 6,
             overflow: "auto",
           }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid var(--bg-3)" }}>
+            <Table style={{ fontSize: 12 }}>
+              <TableHeader>
+                <TableRow style={{ borderBottom: "1px solid var(--bg-3)" }}>
                   {([
                     { label: "Time",       col: "ts"         as const, align: "left"  },
                     { label: "Connection", col: "connection" as const, align: "left"  },
@@ -769,7 +772,7 @@ export function SecurityAuditPanel({
                   ]).map(h => {
                     const active = h.col != null && sortCol === h.col;
                     return (
-                      <th
+                      <TableHead
                         key={h.label}
                         onClick={h.col ? () => handleSort(h.col!) : undefined}
                         style={{
@@ -787,14 +790,14 @@ export function SecurityAuditPanel({
                       >
                         {h.label}
                         {h.col && <SortIcon active={active} dir={sortDir} />}
-                      </th>
+                      </TableHead>
                     );
                   })}
-                </tr>
-              </thead>
-              <tbody>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {sortedRecords.map((rec, i) => (
-                  <tr
+                  <TableRow
                     key={rec.id}
                     style={{
                       borderBottom: i < sortedRecords.length - 1 ? "1px solid var(--bg-2)" : "none",
@@ -803,39 +806,39 @@ export function SecurityAuditPanel({
                                : "transparent",
                     }}
                   >
-                    <td style={{ padding: "8px 12px", color: "var(--t3)", whiteSpace: "nowrap" }}>
+                    <TableCell style={{ padding: "8px 12px", color: "var(--t3)", whiteSpace: "nowrap" }}>
                       {rec.ts.replace("T", " ").replace("Z", "")}
-                    </td>
-                    <td style={{ padding: "8px 12px", color: "var(--t2)", whiteSpace: "nowrap" }}>
+                    </TableCell>
+                    <TableCell style={{ padding: "8px 12px", color: "var(--t2)", whiteSpace: "nowrap" }}>
                       <span title={rec.connection_id}>{connectionLabel(rec.connection_id, connections)}</span>
-                    </td>
-                    <td style={{ padding: "8px 12px" }}>
+                    </TableCell>
+                    <TableCell style={{ padding: "8px 12px" }}>
                       <AgentCell hypothesisId={rec.hypothesis_id} />
-                    </td>
-                    <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                    </TableCell>
+                    <TableCell style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
                       <VerdictBadge verdict={rec.verdict} />
-                    </td>
-                    <td style={{ padding: "8px 12px", maxWidth: 320 }}>
+                    </TableCell>
+                    <TableCell style={{ padding: "8px 12px", maxWidth: 320 }}>
                       <SqlCell digest={rec.sql_digest} full={rec.sql_full} />
-                    </td>
-                    <td style={{ padding: "8px 12px", color: "var(--t2)", textAlign: "right", whiteSpace: "nowrap" }}>
+                    </TableCell>
+                    <TableCell style={{ padding: "8px 12px", color: "var(--t2)", textAlign: "right", whiteSpace: "nowrap" }}>
                       {formatCount(rec.row_count)}
-                    </td>
-                    <td style={{ padding: "8px 12px", color: "var(--t2)", textAlign: "right", whiteSpace: "nowrap" }}>
+                    </TableCell>
+                    <TableCell style={{ padding: "8px 12px", color: "var(--t2)", textAlign: "right", whiteSpace: "nowrap" }}>
                       {rec.duration_ms < 1000
                         ? `${Math.round(rec.duration_ms)}ms`
                         : `${(rec.duration_ms / 1000).toFixed(1)}s`}
-                    </td>
-                    <td style={{ padding: "8px 12px", color: rec.pii_redacted > 0 ? "var(--amb3, #f59e0b)" : "var(--t3)", textAlign: "center" }}>
+                    </TableCell>
+                    <TableCell style={{ padding: "8px 12px", color: rec.pii_redacted > 0 ? "var(--amb3, #f59e0b)" : "var(--t3)", textAlign: "center" }}>
                       {rec.pii_redacted > 0 ? rec.pii_redacted : "—"}
-                    </td>
-                    <td style={{ padding: "8px 12px", color: "var(--red3)", maxWidth: 260 }}>
+                    </TableCell>
+                    <TableCell style={{ padding: "8px 12px", color: "var(--red3)", maxWidth: 260 }}>
                       {rec.error ? <ErrorCell error={rec.error} /> : "—"}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>

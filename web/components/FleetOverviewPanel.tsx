@@ -52,6 +52,7 @@ import { subscribeKernelEvents } from "@/lib/events";
 import { compactNumber, formatCost, formatCount, pct, relTime } from "@/lib/format";
 import { Loading, ReadFailed } from "@/components/ui/states";
 import { Term } from "@/components/agentops/Term";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 type Density = "calm" | "noc";
 type JobFilter = "active" | "all" | "succeeded" | "failed";
@@ -516,24 +517,24 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
             action={{ label: noc ? "Calm" : "NOC", onClick: () => setDensity(noc ? "calm" : "noc") }} />
       <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)",
                         borderRadius: "var(--r3)", overflow: "hidden" }}>
-        <table className="aug-dt" style={{ width: "100%" }}>
-          <thead>
-            <tr>
-                  <th style={{ width: 22 }} />
-              <th>Agent</th>
-              <th>Status</th>
-              <th>Live</th>
-                  <th>Activity</th>
-              <th>Runs</th>
-                  <th>Failures</th>
-              {noc && <th>Tokens</th>}
-              {noc && <th>Queries</th>}
-              {noc && <th>Unmetered</th>}
-              <th>Last run</th>
-                  <th />
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+                  <TableHead style={{ width: 22 }} />
+              <TableHead>Agent</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Live</TableHead>
+                  <TableHead>Activity</TableHead>
+              <TableHead>Runs</TableHead>
+                  <TableHead>Failures</TableHead>
+              {noc && <TableHead>Tokens</TableHead>}
+              {noc && <TableHead>Queries</TableHead>}
+              {noc && <TableHead>Unmetered</TableHead>}
+              <TableHead>Last run</TableHead>
+                  <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
                 <LaneHead cols={noc ? 12 : 9} title="Agents"
                   note={`${charters.length} built-in · ${personas.length} custom`} />
                 {[...charters, ...personas].map(row => (
@@ -552,8 +553,8 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                     {runners.map(r => <RunnerRow key={r.id} row={r} noc={noc} />)}
                   </>
                   )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
         </section>
 
@@ -580,39 +581,39 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                 {jobFilter === "active" ? "Nothing running right now." : "No jobs match this filter."}
               </p>
         ) : (
-          <table className="aug-dt" style={{ width: "100%" }}>
-            <thead>
-                  <tr><th>Job</th><th>Agent</th><th>State</th><th>Started</th><th>Duration</th><th /></tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+                  <TableRow><TableHead>Job</TableHead><TableHead>Agent</TableHead><TableHead>State</TableHead><TableHead>Started</TableHead><TableHead>Duration</TableHead><TableHead /></TableRow>
+            </TableHeader>
+            <TableBody>
                   {filteredJobs.slice(0, 60).map(j => (
-                  <tr key={j.id}>
-                      <td style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis",
+                  <TableRow key={j.id}>
+                      <TableCell style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis",
                                    whiteSpace: "nowrap" }} title={j.title || j.kind}>
                         {j.title || j.kind}
-                    </td>
-                      <td className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+                    </TableCell>
+                      <TableCell className="aug-fs-sm" style={{ color: "var(--t2)" }}>
                         {j.agent?.agent || j.kind}
-                    </td>
-                    <td>
+                    </TableCell>
+                    <TableCell>
                         <StatusChip hue={JOB_STATE_HUE[j.state] ?? "muted"} strength="soft">
                           {j.state.toLowerCase()}
                         </StatusChip>
-                    </td>
-                      <td className="aug-fs-sm" style={{ color: "var(--t2)" }}>{relTime(j.created_at)}</td>
-                      <td style={{ fontVariantNumeric: "tabular-nums" }}>
+                    </TableCell>
+                      <TableCell className="aug-fs-sm" style={{ color: "var(--t2)" }}>{relTime(j.created_at)}</TableCell>
+                      <TableCell style={{ fontVariantNumeric: "tabular-nums" }}>
                         {j.duration_ms ? fmtMs(j.duration_ms) : "—"}
-                      </td>
-                    <td>
+                      </TableCell>
+                    <TableCell>
                         {["RUNNING", "PENDING", "PAUSED"].includes(j.state) && (
                         <Button variant="ghost" size="xs"
                             onClick={() => cancelJob(j.id).then(load).catch(() => {})}>Kill</Button>
                       )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                   ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
           </div>
         </section>

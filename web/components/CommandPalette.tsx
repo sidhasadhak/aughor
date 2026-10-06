@@ -23,6 +23,7 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { newSessionId, projectThread } from "@/lib/chatTurn";
 import { useAughorChat } from "@/lib/useAughorChat";
 import { PartsMessage } from "@/components/chat/PartsMessage";
+import { Input } from "@/components/ui/input";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -547,7 +548,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
         ) : (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: "1px solid var(--b1)" }}>
           <PIcon name="spark" size={13} color="var(--t3)" />
-          <input
+          <Input
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
@@ -588,7 +589,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
               )}
             </div>
             <div style={{ padding: "10px 14px", borderTop: "1px solid var(--b0)", display: "flex", gap: 8 }}>
-              <input
+              <Input
                 value={followUp}
                 onChange={e => setFollowUp(e.target.value)}
                 onKeyDown={e => {

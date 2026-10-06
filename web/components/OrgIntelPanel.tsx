@@ -20,6 +20,8 @@ import { SkeletonRows } from "@/components/ui/motion";
 import { ErrorState } from "@/components/ui/states";
 import { deleteOrgInsight, getOrgIntelligence, type OrgInsight } from "@/lib/api";
 import { countNoun, formatTimestamp, relTime } from "@/lib/format";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 export function OrgIntelPanel() {
   const [insights, setInsights] = useState<OrgInsight[]>([]);
@@ -75,8 +77,8 @@ export function OrgIntelPanel() {
               {countNoun(insights.length, "promoted finding")} · {countNoun(domainCount, "domain")}
             </span>
           )}
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter findings"
-            aria-label="Filter promoted findings" className="aug-input aug-org-filter" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter findings"
+            aria-label="Filter promoted findings" className="aug-org-filter" />
           <Button variant="ghost" size="xs" onClick={() => { void load(); }}>Refresh</Button>
         </div>
 
@@ -97,40 +99,40 @@ export function OrgIntelPanel() {
         ) : (
           <>
             <div className="aug-ledger-scroll">
-              <table className="aug-dt aug-ledger-table">
-                <thead>
-                  <tr>
-                    <th className="aug-org-col-domain">domain</th>
-                    <th>finding · and the angle it came from</th>
-                    <th className="num aug-org-col-novelty">novelty</th>
-                    <th className="num aug-org-col-when">promoted</th>
-                    <th className="aug-org-col-door"><span className="sr-only">Remove</span></th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="aug-org-col-domain">domain</TableHead>
+                    <TableHead>finding · and the angle it came from</TableHead>
+                    <TableHead className="num aug-org-col-novelty">novelty</TableHead>
+                    <TableHead className="num aug-org-col-when">promoted</TableHead>
+                    <TableHead className="aug-org-col-door"><span className="sr-only">Remove</span></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {shown.map(i => (
-                    <tr key={i.id}>
-                      <td className="aug-org-domain">{i.domain || "General"}</td>
-                      <td className="aug-ledger-claim">
+                    <TableRow key={i.id}>
+                      <TableCell className="aug-org-domain">{i.domain || "General"}</TableCell>
+                      <TableCell className="aug-ledger-claim">
                         <span className="aug-ledger-text">{i.text}</span>
                         {(i.angle || i.canvas_id) && (
                           <span className="aug-ledger-query">
                             {[i.angle, i.canvas_id ? `canvas ${i.canvas_id.slice(0, 8)}` : ""].filter(Boolean).join(" · ")}
                           </span>
                         )}
-                      </td>
-                      <td className="num aug-org-novelty">{i.novelty == null ? "—" : i.novelty.toFixed(1)}</td>
-                      <td className="num aug-ledger-when" title={formatTimestamp(i.promoted_at)}>{relTime(i.promoted_at)}</td>
-                      <td className="aug-org-door">
+                      </TableCell>
+                      <TableCell className="num aug-org-novelty">{i.novelty == null ? "—" : i.novelty.toFixed(1)}</TableCell>
+                      <TableCell className="num aug-ledger-when" title={formatTimestamp(i.promoted_at)}>{relTime(i.promoted_at)}</TableCell>
+                      <TableCell className="aug-org-door">
                         <Button variant="ghost" size="xs" disabled={removing === i.id}
                           onClick={() => { void remove(i.id); }} title="Remove this finding from Org">
                           {removing === i.id ? "Removing" : "Remove"}
                         </Button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
               {shown.length === 0 && (
                 <p className="aug-ledger-empty">No promoted finding matches “{search.trim()}”.</p>
               )}

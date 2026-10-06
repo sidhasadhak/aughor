@@ -25,6 +25,8 @@ import {
 } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { useRichSchema } from "@/lib/schema-context";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const inputStyle = {
   fontSize: 11, background: "var(--bg-1)", border: "1px solid var(--b1)",
@@ -223,10 +225,10 @@ export function NewCardComposer({ connectionId, schema, onCreated, keptFor, star
       {/* ── From metric ── */}
       {mode === "metric" && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <select value={sel} onChange={e => pickMetric(e.target.value)} style={{ ...inputStyle, minWidth: 190 }}>
+          <SelectField value={sel} onChange={e => pickMetric(e.target.value)} style={{ ...inputStyle, minWidth: 190 }}>
             <option value="">Choose a metric…</option>
             {metrics.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
-          </select>
+          </SelectField>
           {metric && (
             <div style={{ display: "inline-flex", borderRadius: "var(--r2)", border: "1px solid var(--b1)", overflow: "hidden" }}>
               {([["value", "Value", !!metric.value_sql], ["trend", "Trend", !!metric.chart_sql]] as const).map(([s, label, avail]) => (
@@ -245,26 +247,26 @@ export function NewCardComposer({ connectionId, schema, onCreated, keptFor, star
       {/* ── Build (free-form metric + dimension) ── */}
       {mode === "build" && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <select value={bTable} onChange={e => pickTable(e.target.value)} style={{ ...inputStyle, minWidth: 170 }}
+          <SelectField value={bTable} onChange={e => pickTable(e.target.value)} style={{ ...inputStyle, minWidth: 170 }}
             title="Table">
             <option value="">{tables.length ? "Choose a table…" : "Loading schema…"}</option>
             {tables.map(t => <option key={t.name} value={t.name}>{t.name.split(".").pop()}</option>)}
-          </select>
+          </SelectField>
           {bTable && (
             <>
-              <select value={bAgg} onChange={e => setBAgg(e.target.value)} style={{ ...inputStyle, minWidth: 118 }} title="Aggregation">
+              <SelectField value={bAgg} onChange={e => setBAgg(e.target.value)} style={{ ...inputStyle, minWidth: 118 }} title="Aggregation">
                 {AGGS.map(a => <option key={a.v} value={a.v}>{a.t}</option>)}
-              </select>
+              </SelectField>
               {aggDef?.needsMeasure && (
-                <select value={bMeasure} onChange={e => setBMeasure(e.target.value)} style={{ ...inputStyle, minWidth: 150 }} title="Measure (numeric column)">
+                <SelectField value={bMeasure} onChange={e => setBMeasure(e.target.value)} style={{ ...inputStyle, minWidth: 150 }} title="Measure (numeric column)">
                   <option value="">{numericCols.length ? "Measure…" : "No numeric columns"}</option>
                   {numericCols.map(c => <option key={c.name} value={c.name}>{cleanLabel(c.name)}</option>)}
-                </select>
+                </SelectField>
               )}
-              <select value={bDim} onChange={e => setBDim(e.target.value)} style={{ ...inputStyle, minWidth: 150 }} title="Break down by (optional)">
+              <SelectField value={bDim} onChange={e => setBDim(e.target.value)} style={{ ...inputStyle, minWidth: 150 }} title="Break down by (optional)">
                 <option value="">By: nothing (single value)</option>
                 {dimCols.map(c => <option key={c.name} value={c.name}>By {cleanLabel(c.name)}</option>)}
-              </select>
+              </SelectField>
             </>
           )}
         </div>
@@ -272,7 +274,7 @@ export function NewCardComposer({ connectionId, schema, onCreated, keptFor, star
 
       {/* Title — shared. */}
       {sql && (
-        <input value={title} onChange={e => setTitle(e.target.value)} placeholder={defaultTitle || "Card title"}
+        <Input value={title} onChange={e => setTitle(e.target.value)} placeholder={defaultTitle || "Card title"}
           style={{ ...inputStyle, width: "100%" }} />
       )}
 

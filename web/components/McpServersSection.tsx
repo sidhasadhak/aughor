@@ -41,6 +41,7 @@ import {
   mcpServerHealth, revokeMcpTool, updateMcpServer,
   type McpServerRow, type McpToolRow,
 } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "7px 10px", borderRadius: "var(--r3)",
@@ -229,7 +230,7 @@ export function McpServersSection() {
         <div style={{ border: "1px solid var(--b1)", borderRadius: "var(--r2)",
           background: "var(--bg-1)", padding: "10px 12px", marginTop: 8,
           display: "flex", flexDirection: "column", gap: 8 }}>
-          <input className="aug-fs-ui" style={inputStyle} placeholder="Name"
+          <Input className="aug-fs-ui" style={inputStyle} placeholder="Name"
             value={name} onChange={e => setName(e.target.value)} aria-label="Server name" />
 
           <div style={{ display: "inline-flex", gap: 2, padding: 2, alignSelf: "flex-start",
@@ -245,10 +246,10 @@ export function McpServersSection() {
 
           {transport === "http" ? (
             <>
-              <input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+              <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
                 placeholder="https://example.com/mcp" aria-label="Server URL"
                 value={url} onChange={e => setUrl(e.target.value)} />
-              <input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+              <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
                 autoComplete="off"
                 placeholder="Authorization header (optional) — e.g. Bearer …"
                 aria-label="Authorization header"
@@ -260,10 +261,10 @@ export function McpServersSection() {
             </>
           ) : (
             <>
-              <input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+              <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
                 placeholder="Command — e.g. npx" aria-label="Command"
                 value={command} onChange={e => setCommand(e.target.value)} />
-              <input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+              <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
                 placeholder="Arguments — e.g. -y @modelcontextprotocol/server-everything"
                 aria-label="Arguments"
                 value={argsLine} onChange={e => setArgsLine(e.target.value)} />

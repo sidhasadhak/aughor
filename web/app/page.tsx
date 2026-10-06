@@ -133,6 +133,11 @@ import {
 } from "@/lib/api";
 import { costSummary, fmtCompact, fmtMs } from "@/lib/cost";
 import { subscribeKernelEvents } from "@/lib/events";
+import { Segmented } from "@/components/ui/segmented";
+import { TabStrip } from "@/components/ui/tab-strip";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -293,15 +298,9 @@ function Topbar({
           </span>
           <kbd>⌘K</kbd>
         </button>
-        {/* The theme toggle: a mono segmented pair, one click from every screen. */}
-        <div className="aug-segmented" role="group" aria-label="Theme">
-          {(["dark", "light"] as const).map(t => (
-            <Button key={t} variant="ghost" size="xs" aria-pressed={theme === t}
-              onClick={() => onThemeChange(t)} className="aug-seg-item aug-seg-item-mono font-normal">
-              {t}
-            </Button>
-          ))}
-        </div>
+        {/* The theme toggle: a segmented pair, one click from every screen. */}
+        <Segmented label="Theme" value={theme} onChange={onThemeChange}
+          options={[{ value: "dark", label: "dark" }, { value: "light", label: "light" }]} />
         <AuthControl />
       </div>
     </div>
@@ -621,7 +620,7 @@ function HomeScreen({
           <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 20px" }}>
             <div style={{ fontSize: 13, fontWeight: 650, color: "var(--t1)", marginBottom: 10 }}>Ask anything about your data</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <textarea
+              <Textarea
                 value={homeQ}
                 onChange={e => setHomeQ(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitHome(); } }}
@@ -724,32 +723,32 @@ function HomeScreen({
             </div>
           ) : (
             <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
-              <table className="aug-dt" style={{ width: "100%" }}>
-                <thead>
-                  <tr>
-                    <th>Question</th>
-                    <th>Time</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Question</TableHead>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {recentInvs.slice(0, 5).map((inv) => (
-                    <tr key={inv.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvestigation(inv.id, "investigation", inv.connection_id, inv.canvas_id)}>
-                      <td style={{ maxWidth: 400 }}>
+                    <TableRow key={inv.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvestigation(inv.id, "investigation", inv.connection_id, inv.canvas_id)}>
+                      <TableCell style={{ maxWidth: 400 }}>
                         <div style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-ui)" }}>{plainSubtitle(inv.question)}</div>
                         {inv.headline && <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>{plainSubtitle(inv.headline)}</div>}
-                      </td>
-                      <td style={{ color: "var(--t3)", fontSize: 11 }}>{timeAgo(inv.started_at)}</td>
-                      <td>
+                      </TableCell>
+                      <TableCell style={{ color: "var(--t3)", fontSize: 11 }}>{timeAgo(inv.started_at)}</TableCell>
+                      <TableCell>
                         {inv.status === "complete" && <span className="aug-tag aug-tag-green">Completed</span>}
                         {inv.status === "timed_out" && <span className="aug-tag aug-tag-amber">Timed out</span>}
                         {inv.status === "running"   && <span className="aug-tag aug-tag-blue">Running</span>}
                         {inv.status === "failed"    && <span className="aug-tag aug-tag-red">Failed</span>}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
         </div>
@@ -792,13 +791,8 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, wor
   return (
     <div className="aug-screen">
       <div className="aug-toolbar">
-        <div className="aug-segmented" role="tablist" aria-label="Filter runs">
-          {(["all", "investigation", "chat"] as const).map(f => (
-            <button key={f} role="tab" aria-selected={filter === f} onClick={() => setFilter(f)} className="aug-seg-item">
-              {f === "all" ? "All" : f === "investigation" ? "Agent" : "Chat"}
-            </button>
-          ))}
-        </div>
+        <Segmented label="Filter runs" value={filter} onChange={setFilter}
+          options={[{ value: "all", label: "All" }, { value: "investigation", label: "Agent" }, { value: "chat", label: "Chat" }]} />
         {/* PX-6 — the seven-surfaces audit measured these as views over DIFFERENT data
             planes, not duplicates: this list is the person's run history
             (/investigations); the machine view (event stream, traces, spans) lives in
@@ -912,11 +906,8 @@ function SettingsScreen({ theme, setTheme, density, setDensity, workspaceId, wor
   return (
     <div className="aug-screen">
       {/* Sub-tab rail — grouped settings instead of one long scroll */}
-      <div className="aug-tabs" role="tablist" aria-label="Settings sections" style={{ padding: "10px 16px 0", flexShrink: 0 }}>
-        {SUBS.map(s => (
-          <button key={s.id} role="tab" aria-selected={sub === s.id} onClick={() => setSub(s.id)} className="aug-tab">{s.label}</button>
-        ))}
-      </div>
+      <TabStrip label="Settings sections" value={sub} onChange={setSub} tabs={SUBS}
+        style={{ padding: "10px 16px 0", flexShrink: 0 }} />
 
       <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
 
@@ -1085,12 +1076,11 @@ function AddConnectionForm({
           {/* Name */}
           <div>
             <div className="aug-label" style={{ marginBottom: 5 }}>Name</div>
-            <input
+            <Input
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="My Data Source"
               required
-              className="aug-input"
             />
           </div>
 
@@ -1149,13 +1139,12 @@ function AddConnectionForm({
                     {f.label}
                     {f.optional && <span style={{ color: "var(--t3)", fontWeight: 400, marginLeft: 4 }}>(optional)</span>}
                   </div>
-                  <input
+                  <Input
                     value={fields[f.key] ?? ""}
                     onChange={e => setField(f.key, e.target.value)}
                     placeholder={f.placeholder}
                     type={f.secret ? "password" : "text"}
                     required={!f.optional}
-                    className="aug-input"
                     style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
                   />
                 </div>
@@ -1214,13 +1203,12 @@ function DeleteConnModal({
         <div style={{ fontSize: 11, color: "var(--t3)" }}>
           Type <span style={{ fontFamily: "var(--font-mono)", color: "var(--t2)" }}>{conn.name}</span> to confirm
         </div>
-        <input
+        <Input
           autoFocus
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && text === conn.name) handleConfirm(); }}
           placeholder={conn.name}
-          className="aug-input"
           style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
         />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>

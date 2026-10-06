@@ -23,6 +23,7 @@ import { getConnections, getOrgLLM, type Connection } from "@/lib/api";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ThreadsRail } from "@/components/ThreadsRail";
 import { Button } from "@/components/ui/button";
+import { SelectField } from "@/components/ui/select";
 
 /** The BYOK model chip — whose inference this org's turns run on (CI-5b). Renders
  *  nothing until loaded, and nothing at all for an unconfigured org on the
@@ -111,8 +112,7 @@ export default function ChatHome() {
           Aughor
         </span>
         {connections.length > 1 ? (
-          <select
-            className="aug-input"
+          <SelectField
             value={connId}
             style={{ width: "auto", cursor: "pointer" }}
             onChange={(e) => {
@@ -124,7 +124,7 @@ export default function ChatHome() {
             {connections.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
-          </select>
+          </SelectField>
         ) : (
           conn && <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{conn.name}</span>
         )}

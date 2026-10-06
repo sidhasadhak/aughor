@@ -42,6 +42,9 @@ import { bindingProblem, patchBodyFor, type SlackBotChanges } from "@/lib/slackB
 
 import { AgentSlackDoor } from "@/components/agentops/AgentSlackDoor";
 import { McpServersSection } from "@/components/McpServersSection";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Callout } from "@/components/ui/callout";
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "7px 10px", borderRadius: "var(--r3)",
@@ -247,7 +250,7 @@ export function IntegrationsPanel() {
         <ErrorState kind="Integration failed" what={error} style={{ marginBottom: 12 }} />
       )}
       {notice && (
-        <div className="aug-callout aug-callout-amber" style={{ marginBottom: 12 }}>{notice}</div>
+        <Callout tone="amber" style={{ marginBottom: 12 }}>{notice}</Callout>
       )}
 
       {categories.map(([category, rows]) => (
@@ -415,10 +418,10 @@ export function IntegrationsPanel() {
                           {editing && (
                             <div style={{ marginTop: 8, display: "flex",
                               flexDirection: "column", gap: 6 }}>
-                              <input className="aug-fs-ui" style={inputStyle} value={botDraft.name}
+                              <Input className="aug-fs-ui" style={inputStyle} value={botDraft.name}
                                 aria-label="Bot name"
                                 onChange={e => setBotDraft(d => ({ ...d, name: e.target.value }))} />
-                              <select className="aug-fs-ui" style={inputStyle}
+                              <SelectField className="aug-fs-ui" style={inputStyle}
                                 value={botDraft.agent_id} aria-label="Answers as agent"
                                 onChange={e => {
                                   const chosen = agents.find(a => a.id === e.target.value);
@@ -431,8 +434,8 @@ export function IntegrationsPanel() {
                                 {agents.map(a => (
                                   <option key={a.id} value={a.id}>{a.name}</option>
                                 ))}
-                              </select>
-                              <select className="aug-fs-ui" style={inputStyle}
+                              </SelectField>
+                              <SelectField className="aug-fs-ui" style={inputStyle}
                                 value={botDraft.connection_id} aria-label="Asks on connection"
                                 onChange={e => setBotDraft(d => ({ ...d,
                                   connection_id: e.target.value }))}>
@@ -446,9 +449,9 @@ export function IntegrationsPanel() {
                                 {connections.map(c => (
                                   <option key={c.id} value={c.id}>{c.name}</option>
                                 ))}
-                              </select>
+                              </SelectField>
                               {/* AO-2f — an optional home channel on the record. */}
-                              <input className="aug-fs-ui" style={inputStyle} value={botDraft.channel_id}
+                              <Input className="aug-fs-ui" style={inputStyle} value={botDraft.channel_id}
                                 aria-label="Home channel" placeholder="Home channel — #name or C… (optional)"
                                 onChange={e => setBotDraft(d => ({ ...d, channel_id: e.target.value }))} />
                               {/* AO-6 — rehearse: a post from an automation AS this bot waits in
@@ -579,7 +582,7 @@ export function IntegrationsPanel() {
                           Answer as (optional) — an app with no agent can still post; it
                           just cannot answer an @mention as anybody.
                         </div>
-                        <select className="aug-fs-ui" style={inputStyle} value={doorAgent}
+                        <SelectField className="aug-fs-ui" style={inputStyle} value={doorAgent}
                           aria-label="Answer as agent"
                           onChange={e => {
                             const chosen = agents.find(a => a.id === e.target.value);
@@ -590,7 +593,7 @@ export function IntegrationsPanel() {
                           {agents.map(a => (
                             <option key={a.id} value={a.id}>{a.name}</option>
                           ))}
-                        </select>
+                        </SelectField>
                       </div>
                     )}
                     <div style={{ marginBottom: 12 }}>
@@ -599,14 +602,14 @@ export function IntegrationsPanel() {
                         Asks on — the connection @mentions run against. When the agent is
                         bound to a connection it must be that one, or answers are refused.
                       </div>
-                      <select className="aug-fs-ui" style={inputStyle} value={doorConnection}
+                      <SelectField className="aug-fs-ui" style={inputStyle} value={doorConnection}
                         aria-label="Asks on connection"
                         onChange={e => setDoorConnection(e.target.value)}>
                         <option value="">No connection — posting only</option>
                         {connections.map(c => (
                           <option key={c.id} value={c.id}>{c.name}</option>
                         ))}
-                      </select>
+                      </SelectField>
                     </div>
                     <AgentSlackDoor
                       agentId={doorAgent}
@@ -661,7 +664,7 @@ export function IntegrationsPanel() {
                       {p.https_only ? " over HTTPS (a tunnel is enough)" : ""}, and be
                       registered in the {p.name} console verbatim.
                     </div>
-                    <input className="aug-fs-xs" style={{ ...inputStyle,
+                    <Input className="aug-fs-xs" style={{ ...inputStyle,
                       fontFamily: "var(--font-mono)" }}
                       value={callback} spellCheck={false} autoComplete="off"
                       aria-label="Redirect URI"
@@ -688,10 +691,10 @@ export function IntegrationsPanel() {
                         register that address instead.
                       </div>
                     )}
-                    <input className="aug-fs-ui" style={inputStyle} placeholder="Client ID"
+                    <Input className="aug-fs-ui" style={inputStyle} placeholder="Client ID"
                       value={clientId} autoComplete="off" spellCheck={false}
                       onChange={e => setClientId(e.target.value)} />
-                    <input className="aug-fs-ui" style={inputStyle}
+                    <Input className="aug-fs-ui" style={inputStyle}
                       placeholder={p.secret_preview
                         ? `Client secret — stored (${p.secret_preview}), leave blank to keep it`
                         : "Client secret"}

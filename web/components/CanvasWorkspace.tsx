@@ -10,6 +10,9 @@ import { LifecyclePanel } from "@/components/LifecyclePanel";
 import { Button } from "@/components/ui/button";
 import { ReadFailed } from "@/components/ui/states";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
@@ -332,7 +335,7 @@ function CanvasDocuments({ canvas, onSaved }: {
       ))}
 
       {unpinned.length > 0 && (
-        <select
+        <SelectField
           value=""
           disabled={busy}
           onChange={e => { if (e.target.value) setBinding([...pinnedIds, e.target.value]); }}
@@ -348,7 +351,7 @@ function CanvasDocuments({ canvas, onSaved }: {
           {unpinned.map(doc => (
             <option key={doc.doc_id} value={doc.doc_id}>{doc.title || doc.filename}</option>
           ))}
-        </select>
+        </SelectField>
       )}
 
       {all.length === 0 && (
@@ -402,7 +405,7 @@ function SettingsPopover({
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginBottom: 2 }}>Data Canvas Settings</div>
         <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", flexDirection: "column", gap: 4 }}>
           Name
-          <input
+          <Input
             value={name}
             onChange={e => setName(e.target.value)}
             style={{
@@ -415,7 +418,7 @@ function SettingsPopover({
         </label>
         <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", flexDirection: "column", gap: 4 }}>
           Description
-          <textarea
+          <Textarea
             value={desc}
             onChange={e => setDesc(e.target.value)}
             rows={2}

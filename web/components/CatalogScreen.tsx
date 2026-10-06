@@ -151,6 +151,8 @@ const CONN_TAG: Record<string, { label: string; color: string; bg: string; borde
 import { getApiBase } from "@/lib/config";
 import { Icon } from "@/components/ui/icon";
 import { Loading, ReadFailed } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 const _SYNCABLE      = ["stripe", "hubspot", "salesforce", "s3"];
 const _KNOWLEDGE     = ["confluence", "notion"];
 const _FILE_UPLOAD   = ["local_upload"];
@@ -438,7 +440,7 @@ function FilterBox({ value, onChange, placeholder }: { value: string; onChange:(
       <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--t3)", pointerEvents: "none", display: "inline-flex" }}>
         <Icon name="search" size={11} />
       </span>
-      <input
+      <Input
         value={value} onChange={e => onChange(e.target.value)}
         placeholder={placeholder ?? "Filter…"}
         style={{ fontSize: 11, padding: "5px 8px 5px 26px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid var(--b1)", color: "var(--t2)", outline: "none", width: 220 }}
@@ -473,21 +475,21 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
   return (
     <form onSubmit={handle} style={{ padding: "10px 12px", background: "var(--bg-0)", borderBottom: "0.5px solid var(--b1)", display: "flex", flexDirection: "column", gap: 8 }}>
       <p style={{ fontSize: 11, fontWeight: 500, color: "var(--t2)" }}>New connection</p>
-      <div><label style={L}>Name</label><input style={S} placeholder="My database" value={name} onChange={e => setName(e.target.value)} required /></div>
+      <div><label style={L}>Name</label><Input style={S} placeholder="My database" value={name} onChange={e => setName(e.target.value)} required /></div>
       <div>
         <label style={L}>Type</label>
-        <select style={{ ...S, cursor: "pointer" }} value={type} onChange={e => setType(e.target.value)}>
+        <SelectField style={{ ...S, cursor: "pointer" }} value={type} onChange={e => setType(e.target.value)}>
           <option value="postgres">PostgreSQL</option>
           <option value="duckdb">DuckDB file</option>
-        </select>
+        </SelectField>
       </div>
       <div>
         <label style={L}>{type === "postgres" ? "Connection string" : "File path"}</label>
-        <input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "postgresql://user:pass@host/db" : "/path/to/file.duckdb"} value={dsn} onChange={e => setDsn(e.target.value)} required />
+        <Input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "postgresql://user:pass@host/db" : "/path/to/file.duckdb"} value={dsn} onChange={e => setDsn(e.target.value)} required />
       </div>
       <div>
         <label style={L}>Schema <span style={{ color: "var(--t3)" }}>(optional)</span></label>
-        <input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "public" : "main"} value={schema} onChange={e => setSchema(e.target.value)} />
+        <Input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "public" : "main"} value={schema} onChange={e => setSchema(e.target.value)} />
       </div>
       {err && <p style={{ fontSize: 11, color: "var(--red4)" }}>{err}</p>}
       <div style={{ display: "flex", gap: 6 }}>
@@ -773,7 +775,7 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
                     </div>
                     {editingCol === col.name ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <select
+                        <SelectField
                           value={editType}
                           onChange={e => setEditType(e.target.value)}
                           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleSave(col.name); } if (e.key === "Escape") { setEditingCol(null); } }}
@@ -783,7 +785,7 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
                           {TYPE_OPTIONS.map(t => (
                             <option key={t} value={t} style={{ background: "var(--bg-0)", color: "var(--t1)" }}>{t}</option>
                           ))}
-                        </select>
+                        </SelectField>
                         <Button
                           variant="ghost"
                           onClick={() => handleSave(col.name)}
@@ -1784,7 +1786,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
           <span style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: "var(--t3)", pointerEvents: "none", display: "inline-flex" }}>
             <Icon name="search" size={11} />
           </span>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalog…"
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalog…"
             style={{ width: "100%", fontSize: 11, padding: "4px 8px 4px 24px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid var(--b1)", color: "var(--t2)", outline: "none" }} />
         </div>
 

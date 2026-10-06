@@ -46,6 +46,7 @@ import { ValueViewer } from "@/components/query/ValueViewer";
 import { RelatedRowsPicker } from "@/components/query/RelatedRowsPicker";
 import { NULL_GLYPH } from "@/lib/query/cellMenu";
 import type { RelatedJoin, RelatedJoinsAnswer, TypedColumn } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 
 /** The glyph for a real SQL NULL. Distinct from "" on purpose — defined beside the cell helpers (DE-5b),
  *  so the menu and the picker share it without importing the grid. */
@@ -415,7 +416,7 @@ export function ResultsGrid({
       </Button>
       {find !== null && (
         <>
-          <input
+          <Input
             ref={findRef}
             className="aug-fs-sm"
             value={find}
@@ -440,7 +441,7 @@ export function ResultsGrid({
         </>
       )}
       {goto !== null && (
-        <input
+        <Input
           autoFocus
           className="aug-fs-sm"
           value={goto}

@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { aughorEditorTheme, aughorSyntaxHighlighting } from "@/components/query/editor/theme";
 import { assistSql } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 
 interface AiMsg {
   role: "user" | "assistant";
@@ -199,8 +200,8 @@ export function AiPane({
       </div>
 
       <div style={{ display: "flex", gap: 6, padding: "6px 10px 10px", borderTop: "1px solid var(--b0)", flexShrink: 0 }}>
-        <input
-          className="aug-input aug-fs-ui"
+        <Input
+          className="aug-fs-ui"
           style={{ flex: 1 }}
           placeholder="Ask, or /optimize · /explain · /fix"
           value={draft}

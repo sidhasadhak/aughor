@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { linkOwner, listOwners, unlinkOwner, type OwnerEntry } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 function usesLabel(e: OwnerEntry): string {
   const counts: Record<string, number> = {};
@@ -91,7 +92,7 @@ export function OwnersPanel({ connectionId }: { connectionId?: string }) {
             {e.how === "unresolved" ? (
               <div className="flex items-center gap-2">
                 <span className="aug-fs-xs px-1.5 py-0.5 rounded border border-zinc-600 text-zinc-400">unresolved</span>
-                <input
+                <Input
                   aria-label={`Principal for ${e.owner_text}`}
                   value={drafts[e.owner_key] ?? ""}
                   onChange={ev => setDrafts(d => ({ ...d, [e.owner_key]: ev.target.value }))}

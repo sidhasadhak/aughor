@@ -22,6 +22,7 @@
 import React from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export interface OutcomeKeyPickerProps {
   /** The step whose outcome is being read — its alias, as the binding will name it. */
@@ -75,7 +76,7 @@ export function OutcomeKeyPicker({
       )}
 
       <div style={{ display: "flex", gap: 4 }}>
-        <input
+        <Input
           autoFocus
           value={typed}
           onChange={(e) => setTyped(e.target.value)}

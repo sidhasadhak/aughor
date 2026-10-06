@@ -27,6 +27,8 @@ import { Absent, Gate, Ledger, Page, Section, day, useLoad, type LedgerColumn } 
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
+import { Callout } from "@/components/ui/callout";
 
 interface PackListing {
   id: string; name: string; status: string; layer: string; source: string; description: string;
@@ -234,7 +236,7 @@ function PackUpload({ onUploaded }: { onUploaded: () => void }) {
       {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: "8px 0 0" }}>{error}</p>}
       {said && <p className="aug-fs-sm" role="status" style={{ color: "var(--t2)", margin: "8px 0 0" }}>{said}</p>}
       {verdict && (
-        <div className={`aug-callout ${verdict.ok ? "aug-callout-green" : "aug-callout-amber"}`} style={{ marginTop: 10 }}>
+        <Callout tone={verdict.ok ? "green" : "amber"} style={{ marginTop: 10 }}>
           <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
             {verdict.ok
               ? `${verdict.pack_id} passes the static checks (${countNoun(verdict.files, "file")}).`
@@ -252,7 +254,7 @@ function PackUpload({ onUploaded }: { onUploaded: () => void }) {
               {exists && <Button size="xs" variant="outline" disabled={busy} onClick={() => void upload(true)}>Replace the one that exists</Button>}
             </div>
           )}
-        </div>
+        </Callout>
       )}
     </div>
   );
@@ -322,12 +324,8 @@ function Methods({ builtin, registered, rule, onChanged }: {
           <label className="aug-fs-sm" htmlFor="me-name">Name</label>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <Input id="me-name" value={name} onChange={e => setName(e.target.value)} placeholder="vendor-forecaster" style={{ width: 240 }} />
-            <div role="group" aria-label="Kind of method" className="aug-segmented">
-              {METHOD_KINDS.map(k => (
-                <Button key={k} variant="ghost" size="xs" aria-pressed={kind === k}
-                  className={`aug-seg-item${kind === k ? " active" : ""}`} onClick={() => setKind(k)}>{k}</Button>
-              ))}
-            </div>
+            <Segmented label="Kind of method" value={kind} onChange={setKind}
+              options={METHOD_KINDS.map(k => ({ value: k, label: k }))} />
           </div>
           <label className="aug-fs-sm" htmlFor="me-server">Runs as</label>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -441,13 +439,13 @@ function Principals({ principals, onChanged }: { principals: ServicePrincipal[];
         </div>
       ))}
       {minted && (
-        <div className="aug-callout aug-callout-amber" style={{ margin: "10px 0" }}>
+        <Callout tone="amber" style={{ margin: "10px 0" }}>
           <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
             The key for {minted.name} is shown once and stored hashed. Copy it now.
           </div>
           <div className="aug-mono aug-fs-sm" style={{ marginTop: 6, overflowWrap: "anywhere", userSelect: "all" }}>{minted.key}</div>
           <Button size="xs" variant="ghost" style={{ marginTop: 6 }} onClick={() => setMinted(null)}>I have copied it</Button>
-        </div>
+        </Callout>
       )}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
         <Input value={name} onChange={e => setName(e.target.value)} placeholder="a name: vendor-forecaster" aria-label="Service principal name" style={{ width: 240 }} />

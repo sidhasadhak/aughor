@@ -6,7 +6,7 @@
  * differing only in schema scope looked identical, and two differing by one sentence of a
  * long prompt looked identical too. The history could be counted but not read.
  */
-import { render, screen } from "@testing-library/react";
+import { render, screen, change, choose, optionsOf } from "@/lib/testing";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -140,8 +140,7 @@ describe("AgentGuardrailsSection", () => {
     // appearing here is a promise the platform cannot keep.
     await showGuardrails(guardrails());
     const select = screen.getByRole("combobox");
-    expect([...select.querySelectorAll("option")].map(o => o.getAttribute("value")))
-      .toEqual(["off", "redact", "block"]);
+    expect(optionsOf(select).map(o => o.value)).toEqual(["off", "redact", "block"]);
   });
 
   it("says what the chosen mode actually does", async () => {
@@ -152,7 +151,7 @@ describe("AgentGuardrailsSection", () => {
   it("saves a mode change on its own, without the agent's Save button", async () => {
     // A guardrail is a decision ABOUT an agent, not part of its versioned configuration.
     await showGuardrails(guardrails());
-    await userEvent.selectOptions(screen.getByRole("combobox"), "block");
+    await choose(screen.getByRole("combobox"), "block");
 
     expect(setAgentGuardrailsFn).toHaveBeenCalledWith("ua_1",
       { pii: "block", max_tokens_per_run: null });
@@ -179,7 +178,8 @@ describe("AgentGuardrailsSection", () => {
     getAgentGuardrails.mockResolvedValue(null);
     const { container } = render(
       <AgentGuardrailsSection agent={agent()} onError={() => {}} />);
-    expect(container).toBeEmptyDOMElement();
+    // `render` wraps in a Theme; what the section itself drew is inside it.
+    expect(container.querySelector(".radix-themes") ?? container).toBeEmptyDOMElement();
   });
 });
 

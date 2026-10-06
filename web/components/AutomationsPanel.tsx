@@ -33,6 +33,7 @@ import { approverName } from "@/lib/auth";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
 
 // ── Vocabulary (mirrors the backend Literals) ────────────────────────────────────
 
@@ -344,7 +345,7 @@ export function AutomationsPanel({ connId, focusId }: Props) {
                 agent drafts a chain grounded in what this deployment actually has, and it
                 arrives as a seeded form with a dry-run receipt. Nothing is saved until the
                 person presses the same Create button they always would. */}
-            <input
+            <Input
               className="aug-fs-sm"
               placeholder="or describe it — e.g. post a Monday pipeline summary to #revenue"
               value={outcome}

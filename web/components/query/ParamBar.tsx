@@ -26,6 +26,9 @@ import {
 } from "@/lib/query/paramDefs";
 import { listSavedQueries, runWorkbenchQuery, type SavedQuery } from "@/lib/api";
 import { Loading } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 const WIDGETS: { v: ParamDef["widget"]; label: string }[] = [
   { v: "text", label: "Text" },
@@ -153,8 +156,8 @@ export function ParamBar({
             </span>
 
             {def.widget === "dropdown" ? (
-              <select
-                className="aug-input aug-fs-ui"
+              <SelectField
+                className="aug-fs-ui"
                 style={{ width: 140 }}
                 value={typeof value === "string" ? value : ""}
                 onFocus={() => def.optionsQueryId && loadQueryOptions(def.optionsQueryId)}
@@ -168,7 +171,7 @@ export function ParamBar({
                 {typeof value === "string" && value && Array.isArray(choices) && !choices.includes(value) && (
                   <option value={value}>{value}</option>
                 )}
-              </select>
+              </SelectField>
             ) : def.widget === "multiselect" ? (
               <Button variant="secondary" size="xs" className="aug-fs-ui"
                 style={{ minWidth: 120, justifyContent: "flex-start" }}
@@ -189,8 +192,8 @@ export function ParamBar({
                 <Icon name="bolt" size={11} /> {value}
               </Button>
             ) : (
-              <input
-                className="aug-input aug-fs-ui"
+              <Input
+                className="aug-fs-ui"
                 style={{ width: def.widget === "date" ? 130 : 120 }}
                 type={def.widget === "number" ? "number" : def.widget === "date" ? "date" : "text"}
                 value={typeof value === "string" ? value : ""}
@@ -283,13 +286,13 @@ export function ParamBar({
                   <div className="aug-label" style={{ marginBottom: 6 }}>:{name}</div>
                   <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                     <span style={{ color: "var(--t3)", width: 64, flexShrink: 0 }}>Label</span>
-                    <input className="aug-input aug-fs-ui" style={{ flex: 1 }}
+                    <Input className="aug-fs-ui" style={{ flex: 1 }}
                       value={def.label ?? ""} placeholder={`:${name}`}
                       onChange={e => patchDef(name, { label: e.target.value })} />
                   </label>
                   <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                     <span style={{ color: "var(--t3)", width: 64, flexShrink: 0 }}>Widget</span>
-                    <select className="aug-input aug-fs-ui" style={{ flex: 1 }}
+                    <SelectField className="aug-fs-ui" style={{ flex: 1 }}
                       value={def.widget}
                       onChange={e => {
                         const widget = e.target.value as ParamDef["widget"];
@@ -300,7 +303,7 @@ export function ParamBar({
                         if (wasList !== (widget === "multiselect")) setValue(name, widget === "multiselect" ? [] : "");
                       }}>
                       {WIDGETS.map(w => <option key={w.v} value={w.v}>{w.label}</option>)}
-                    </select>
+                    </SelectField>
                   </label>
                   {(def.widget === "dropdown" || def.widget === "multiselect" || def.widget === "text") && (
                     <>
@@ -308,7 +311,7 @@ export function ParamBar({
                         <span style={{ color: "var(--t3)", width: 64, flexShrink: 0, paddingTop: 3 }}>
                           {def.widget === "text" ? "Suggest" : "Choices"}
                         </span>
-                        <textarea className="aug-input aug-fs-ui" rows={3} style={{ flex: 1, resize: "vertical" }}
+                        <Textarea className="aug-fs-ui" rows={3} style={{ flex: 1, resize: "vertical" }}
                           placeholder={"one per line"}
                           value={(def.options ?? []).join("\n")}
                           onChange={e => patchDef(name, {
@@ -318,12 +321,12 @@ export function ParamBar({
                       {def.widget !== "text" && (
                         <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                           <span style={{ color: "var(--t3)", width: 64, flexShrink: 0 }}>From query</span>
-                          <select className="aug-input aug-fs-ui" style={{ flex: 1 }}
+                          <SelectField className="aug-fs-ui" style={{ flex: 1 }}
                             value={def.optionsQueryId ?? ""}
                             onChange={e => patchDef(name, { optionsQueryId: e.target.value || undefined })}>
                             <option value="">— typed choices above —</option>
                             {(savedList ?? []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                          </select>
+                          </SelectField>
                         </label>
                       )}
                     </>
@@ -331,7 +334,7 @@ export function ParamBar({
                   {def.widget !== "multiselect" && (
                     <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ color: "var(--t3)", width: 64, flexShrink: 0 }}>Default</span>
-                      <input className="aug-input aug-fs-ui" style={{ flex: 1 }}
+                      <Input className="aug-fs-ui" style={{ flex: 1 }}
                         value={typeof def.default === "string" ? def.default : ""}
                         placeholder="none"
                         onChange={e => patchDef(name, { default: e.target.value || undefined })} />

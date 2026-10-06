@@ -14,7 +14,7 @@
  *   * ticking it sends `json_mode` for that backend;
  *   * an existing pin loads back in as ticked.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, change } from "@/lib/testing";
 import { beforeEach, expect, it, vi } from "vitest";
 
 import { InferencePanel } from "@/components/InferencePanel";

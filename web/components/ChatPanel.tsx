@@ -17,6 +17,9 @@ import { WhyThisNumber } from "./WhyThisNumber";
 import { getApiBase } from "@/lib/config";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
 import { Icon } from "@/components/ui/icon";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 const FALLBACK_STARTERS = [
   { text: "Show me the top 10 rows from any table",  mode: "ask" as const },
@@ -131,7 +134,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
       )}
 
       {/* Textarea row */}
-      <textarea
+      <Textarea
         ref={textareaRef}
         rows={multiline ? 2 : 1}
         value={input}
@@ -188,7 +191,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
         {/* Agent picker — answer AS a saved user-defined persona.
             Hidden when the roster is empty (flag off → the list endpoint 404s → []). */}
         {(agents?.length ?? 0) > 0 && setAgentId && (
-          <select
+          <SelectField
             value={agentId ?? ""}
             onChange={(e) => setAgentId(e.target.value)}
             title="Answer as a saved agent (its instructions, documents and connection apply)"
@@ -204,7 +207,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             {agents!.filter(a => a.enabled).map(a => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
-          </select>
+          </SelectField>
         )}
 
         {/* Actions: clear · attach · send/stop */}
@@ -447,7 +450,7 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
         </div>
       )}
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        <input
+        <Input
           value={val}
           onChange={e => setVal(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); submit(); } }}

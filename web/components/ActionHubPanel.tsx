@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { getApiBase } from "@/lib/config";
+import { SelectField } from "@/components/ui/select";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Trigger {
@@ -87,40 +90,39 @@ function TriggerForm({
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div>
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Name</div>
-        <input value={name} onChange={e => setName(e.target.value)} required placeholder="My Slack Webhook" className="aug-input" />
+        <Input value={name} onChange={e => setName(e.target.value)} required placeholder="My Slack Webhook" />
       </div>
       <div>
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Type</div>
-        <select value={type} onChange={e => setType(e.target.value as typeof type)} className="aug-input">
+        <SelectField value={type} onChange={e => setType(e.target.value as typeof type)} className="aug-input">
           <option value="webhook">Webhook (generic)</option>
           <option value="slack">Slack incoming webhook</option>
           <option value="jira">Jira (create issue)</option>
-        </select>
+        </SelectField>
       </div>
       <div>
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>
           {type === "jira" ? "Jira base URL" : "Webhook URL"}
         </div>
-        <input value={url} onChange={e => setUrl(e.target.value)} required
-          placeholder={type === "slack" ? "https://hooks.slack.com/services/…" : type === "jira" ? "https://yourorg.atlassian.net/rest/api/3/issue" : "https://…"}
-          className="aug-input" style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
+        <Input value={url} onChange={e => setUrl(e.target.value)} required
+          placeholder={type === "slack" ? "https://hooks.slack.com/services/…" : type === "jira" ? "https://yourorg.atlassian.net/rest/api/3/issue" : "https://…"} style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
         />
       </div>
       {type === "slack" && (
         <div>
           <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Channel (optional)</div>
-          <input value={channel} onChange={e => setChannel(e.target.value)} placeholder="#general" className="aug-input" />
+          <Input value={channel} onChange={e => setChannel(e.target.value)} placeholder="#general" />
         </div>
       )}
       {type === "jira" && (
         <>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Project key</div>
-            <input value={project} onChange={e => setProject(e.target.value)} placeholder="OPS" className="aug-input" />
+            <Input value={project} onChange={e => setProject(e.target.value)} placeholder="OPS" />
           </div>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Issue type</div>
-            <input value={issueType} onChange={e => setIssue(e.target.value)} placeholder="Task" className="aug-input" />
+            <Input value={issueType} onChange={e => setIssue(e.target.value)} placeholder="Task" />
           </div>
         </>
       )}
@@ -357,24 +359,24 @@ export function ActionHubPanel() {
             </div>
           ) : (
             <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
-              <table className="aug-dt" style={{ width: "100%" }}>
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Trigger</th>
-                    <th>Recommendation</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Trigger</TableHead>
+                    <TableHead>Recommendation</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {[...logs].reverse().map(l => (
-                    <tr key={l.id}>
-                      <td style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>{timeAgo(l.fired_at)}</td>
-                      <td style={{ fontWeight: 500, color: "var(--t1)" }}>{l.trigger_name}</td>
-                      <td style={{ maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--t2)" }}>
+                    <TableRow key={l.id}>
+                      <TableCell style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>{timeAgo(l.fired_at)}</TableCell>
+                      <TableCell style={{ fontWeight: 500, color: "var(--t1)" }}>{l.trigger_name}</TableCell>
+                      <TableCell style={{ maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--t2)" }}>
                         {l.recommendation}
-                      </td>
-                      <td>
+                      </TableCell>
+                      <TableCell>
                         {l.status === "ok"
                           ? <span className="aug-tag aug-tag-green">ok {l.http_status}</span>
                           : l.status === "timeout"
@@ -383,11 +385,11 @@ export function ActionHubPanel() {
                           ? <span className="aug-tag" title={l.error ?? ""}>skipped</span>
                           : <span className="aug-tag aug-tag-red" title={l.error ?? ""}>{l.http_status ? `${l.http_status}` : "failed"}</span>
                         }
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )
         )}

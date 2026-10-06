@@ -22,6 +22,7 @@ import { relTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Loading, ReadFailed } from "@/components/ui/states";
+import { Input } from "@/components/ui/input";
 
 /** One line of SQL, however it was written. */
 function preview(sql: string): string {
@@ -115,9 +116,9 @@ export function OpenQueryDialog({
           </Button>
         </div>
         <div style={{ padding: "0 12px 8px" }}>
-          <input
+          <Input
             autoFocus
-            className="aug-input aug-fs-ui"
+            className="aug-fs-ui"
             style={{ width: "100%" }}
             placeholder={tab === "saved" ? "Search saved queries by name or SQL…" : "Search recent runs…"}
             value={search}

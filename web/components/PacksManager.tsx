@@ -7,6 +7,7 @@ import {
   getConnections, getCatalogTree,
   type PackSummary, type BindingCandidateDTO, type PackDeltaDTO,
 } from "@/lib/api";
+import { SelectField } from "@/components/ui/select";
 
 // Deploy console for Specialist Packs: propose → bind/verify → evaluate → activate, plus the
 // flywheel "expert changelog" (accept/dismiss proposed learnings). Self-contained.
@@ -148,13 +149,13 @@ function PackDeploy({ packId }: { packId: string }) {
     <div className="mt-2 pl-1 space-y-3">
       {/* Deploy controls */}
       <div className="flex flex-wrap items-center gap-2">
-        <select value={conn} onChange={e => setConn(e.target.value)} className={inp} aria-label="Connection">
+        <SelectField value={conn} onChange={e => setConn(e.target.value)} className={inp} aria-label="Connection">
           {conns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select value={schema} onChange={e => setSchema(e.target.value)} className={inp} aria-label="Schema">
+        </SelectField>
+        <SelectField value={schema} onChange={e => setSchema(e.target.value)} className={inp} aria-label="Schema">
           {schemas.length === 0 && <option value="">(schema)</option>}
           {schemas.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        </SelectField>
         <button className={btn} disabled={!conn || busy !== ""} onClick={propose}>
           {busy === "propose" ? "Proposing…" : "1 · Propose bindings"}
         </button>

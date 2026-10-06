@@ -31,6 +31,7 @@ import {
   type BusinessProfileResponse, type ExplorationFindings, type Metric, type OrgSettings, type SchemaProfile,
 } from "@/lib/api";
 import { countNoun, formatCount, formatTimestamp, pct, relTime } from "@/lib/format";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 type Load<T> = { state: "loading" } | { state: "ready"; data: T } | { state: "failed" };
 
@@ -244,22 +245,22 @@ export function ProfilePanel({ connectionId, canvasId, schema, workspaceId }: {
           ) : (
             <>
               <div className="aug-moves-wrap">
-                <table className="aug-dt aug-profile-table">
-                  <thead>
-                    <tr>
-                      <th>table</th>
-                      <th>grain</th>
-                      <th className="num">rows</th>
-                      <th className="num">latest record</th>
-                      <th className="num">avg null</th>
-                      <th className="num">profiled</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>table</TableHead>
+                      <TableHead>grain</TableHead>
+                      <TableHead className="num">rows</TableHead>
+                      <TableHead className="num">latest record</TableHead>
+                      <TableHead className="num">avg null</TableHead>
+                      <TableHead className="num">profiled</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {tableRows.map(t => (
-                      <tr key={t.table}>
-                        <td className="aug-profile-tname">{t.name}</td>
-                        <td>
+                      <TableRow key={t.table}>
+                        <TableCell className="aug-profile-tname">{t.name}</TableCell>
+                        <TableCell>
                           {t.grain_column ? (
                             <>
                               {t.grain_column}
@@ -268,17 +269,17 @@ export function ProfilePanel({ connectionId, canvasId, schema, workspaceId }: {
                                 : <span className="aug-profile-dim"> · unverified</span>}
                             </>
                           ) : <span className="aug-profile-dim">—</span>}
-                        </td>
-                        <td className="num">{formatCount(t.row_count)}</td>
-                        <td className="num" title={t.primary_timestamp ? `the latest ${t.primary_timestamp}` : undefined}>
+                        </TableCell>
+                        <TableCell className="num">{formatCount(t.row_count)}</TableCell>
+                        <TableCell className="num" title={t.primary_timestamp ? `the latest ${t.primary_timestamp}` : undefined}>
                           {t.date_range?.[1] ? t.date_range[1].slice(0, 10) : <span className="aug-profile-dim">no timestamp</span>}
-                        </td>
-                        <td className="num">{t.avgNull == null ? "—" : pct(t.avgNull, 1)}</td>
-                        <td className="num aug-profile-dim" title={formatTimestamp(t.computed_at)}>{relTime(t.computed_at)} ago</td>
-                      </tr>
+                        </TableCell>
+                        <TableCell className="num">{t.avgNull == null ? "—" : pct(t.avgNull, 1)}</TableCell>
+                        <TableCell className="num aug-profile-dim" title={formatTimestamp(t.computed_at)}>{relTime(t.computed_at)} ago</TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
               <p className="aug-profile-foot">
                 Grain is the key column the profiler checked — ✓ where it verified it. Null pressure is the average null rate
@@ -301,29 +302,29 @@ export function ProfilePanel({ connectionId, canvasId, schema, workspaceId }: {
             <p className="aug-brief-note">The explorer has not named what a blank means in any column yet.</p>
           ) : (
             <div className="aug-moves-wrap">
-              <table className="aug-dt aug-profile-table">
-                <thead>
-                  <tr>
-                    <th>column</th>
-                    <th>a blank means</th>
-                    <th>rule</th>
-                    <th className="num">null rate</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>column</TableHead>
+                    <TableHead>a blank means</TableHead>
+                    <TableHead>rule</TableHead>
+                    <TableHead className="num">null rate</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {blanks.map(([key, nm]) => {
                     const [table, column] = key.split(":");
                     return (
-                      <tr key={key}>
-                        <td className="aug-profile-tname">{table}.{column}</td>
-                        <td className={nm.meaning === "missing" ? "aug-profile-gap" : undefined}>{BLANK[nm.meaning] ?? nm.meaning}</td>
-                        <td className="aug-profile-rule" title={nm.business_rule ?? undefined}>{nm.business_rule ?? "—"}</td>
-                        <td className="num">{nm.null_rate == null ? "—" : pct(nm.null_rate, 1)}</td>
-                      </tr>
+                      <TableRow key={key}>
+                        <TableCell className="aug-profile-tname">{table}.{column}</TableCell>
+                        <TableCell className={nm.meaning === "missing" ? "aug-profile-gap" : undefined}>{BLANK[nm.meaning] ?? nm.meaning}</TableCell>
+                        <TableCell className="aug-profile-rule" title={nm.business_rule ?? undefined}>{nm.business_rule ?? "—"}</TableCell>
+                        <TableCell className="num">{nm.null_rate == null ? "—" : pct(nm.null_rate, 1)}</TableCell>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
         </Section>

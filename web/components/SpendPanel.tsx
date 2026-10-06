@@ -28,6 +28,9 @@ import { Icon } from "@/components/ui/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { csvFilename, downloadCsv, toCsv } from "@/lib/query/csv";
 import { PartialState } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 const cell: React.CSSProperties = { padding: "6px 10px", whiteSpace: "nowrap" };
 const num: React.CSSProperties = { ...cell, textAlign: "right", fontFamily: "var(--font-mono)" };
@@ -153,29 +156,29 @@ function CapsSection({ onCount }: { onCount: (n: number) => void }) {
       )}
       <div className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
         marginTop: 10, padding: "10px 12px", border: "1px solid var(--b0)", borderRadius: "var(--r3)", background: "var(--bg-2)" }}>
-        <select style={sel} value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value }))}>
+        <SelectField style={sel} value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value }))}>
           {(vocab.scopes.length ? vocab.scopes : ["org", "user"]).map(s =>
             <option key={s} value={s}>{s === "org" ? "whole org" : "one user"}</option>)}
-        </select>
+        </SelectField>
         {form.scope === "user" && (
-          <input style={{ ...sel, width: 150 }} placeholder="user id" value={form.subject}
+          <Input style={{ ...sel, width: 150 }} placeholder="user id" value={form.subject}
             onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} />
         )}
-        <select style={sel} value={form.metric} onChange={e => setForm(f => ({ ...f, metric: e.target.value }))}>
+        <SelectField style={sel} value={form.metric} onChange={e => setForm(f => ({ ...f, metric: e.target.value }))}>
           {(vocab.metrics.length ? vocab.metrics : ["calls", "total_tokens", "cost_usd"]).map(m =>
             <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}
-        </select>
-        <input style={{ ...sel, width: 110 }} placeholder="limit" inputMode="decimal"
+        </SelectField>
+        <Input style={{ ...sel, width: 110 }} placeholder="limit" inputMode="decimal"
           value={form.limit} onChange={e => setForm(f => ({ ...f, limit: e.target.value }))}
           data-testid="cap-limit" />
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>per</span>
-        <input style={{ ...sel, width: 60 }} inputMode="numeric" value={form.window_hours}
+        <Input style={{ ...sel, width: 60 }} inputMode="numeric" value={form.window_hours}
           onChange={e => setForm(f => ({ ...f, window_hours: e.target.value }))} />
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>hours ·</span>
-        <select style={sel} value={form.action} onChange={e => setForm(f => ({ ...f, action: e.target.value }))}>
+        <SelectField style={sel} value={form.action} onChange={e => setForm(f => ({ ...f, action: e.target.value }))}>
           {(vocab.actions.length ? vocab.actions : ["alert", "block"]).map(a =>
             <option key={a} value={a}>{a === "block" ? "block new work" : "alert only"}</option>)}
-        </select>
+        </SelectField>
         <Button size="sm" disabled={busy || !form.limit.trim()} onClick={declare} data-testid="cap-declare">
           Declare the cap
         </Button>
@@ -220,29 +223,29 @@ function UsageSection({ report, models }: { report: UsageReport | null; models: 
         <EmptyState variant="inline" title="No model calls recorded yet." />
       ) : (
         <div style={{ overflowX: "auto", border: "1px solid var(--b0)", borderRadius: "var(--r3)" }}>
-          <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "collapse", color: "var(--t2)" }}>
-            <thead>
-              <tr className="aug-fs-xs" style={{ color: "var(--t3)", textAlign: "left", borderBottom: "1px solid var(--b0)" }}>
-                <th style={cell}>Provider</th><th style={cell}>Model</th>
-                <th style={{ ...num }}>Calls</th><th style={{ ...num }}>Tokens</th>
-                <th style={{ ...num }}>Cost</th><th style={{ ...num }}>Failure rate</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+            <TableHeader>
+              <TableRow className="aug-fs-xs" style={{ color: "var(--t3)", textAlign: "left", borderBottom: "1px solid var(--b0)" }}>
+                <TableHead style={cell}>Provider</TableHead><TableHead style={cell}>Model</TableHead>
+                <TableHead style={{ ...num }}>Calls</TableHead><TableHead style={{ ...num }}>Tokens</TableHead>
+                <TableHead style={{ ...num }}>Cost</TableHead><TableHead style={{ ...num }}>Failure rate</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {rows.map((r, i) => (
-                <tr key={i} style={{ borderBottom: "1px solid var(--b0)" }}>
-                  <td style={cell}>{String(r.provider ?? "")}</td>
-                  <td style={{ ...cell, fontFamily: "var(--font-mono)" }}>{String(r.model ?? "")}</td>
-                  <td style={num}>{compactNumber(r.calls)}</td>
-                  <td style={num}>{compactNumber(r.total_tokens)}</td>
-                  <td style={num}>{r.cost_is_complete ? money(r.cost_usd) : `≥ ${money(r.cost_usd)}`}</td>
-                  <td style={{ ...num, color: r.failure_rate > 0.05 ? "var(--red4)" : undefined }}>
+                <TableRow key={i} style={{ borderBottom: "1px solid var(--b0)" }}>
+                  <TableCell style={cell}>{String(r.provider ?? "")}</TableCell>
+                  <TableCell style={{ ...cell, fontFamily: "var(--font-mono)" }}>{String(r.model ?? "")}</TableCell>
+                  <TableCell style={num}>{compactNumber(r.calls)}</TableCell>
+                  <TableCell style={num}>{compactNumber(r.total_tokens)}</TableCell>
+                  <TableCell style={num}>{r.cost_is_complete ? money(r.cost_usd) : `≥ ${money(r.cost_usd)}`}</TableCell>
+                  <TableCell style={{ ...num, color: r.failure_rate > 0.05 ? "var(--red4)" : undefined }}>
                     {pct(r.failure_rate)}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
       {models.some(m => m.failures > 0) && (
@@ -409,22 +412,22 @@ function FeedSection() {
           fetched window in memory — which is why the count line below says how many
           of how many, rather than presenting a slice as the whole. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        <select style={feedSel} value={category} onChange={e => setCategory(e.target.value)}
+        <SelectField style={feedSel} value={category} onChange={e => setCategory(e.target.value)}
           aria-label="Category" data-testid="feed-category">
           <option value="">All categories</option>
           {categories.map(c => <option key={c} value={c}>{c.replace(/_/g, " ")}</option>)}
-        </select>
-        <select style={feedSel} value={kind} onChange={e => setKind(e.target.value)}
+        </SelectField>
+        <SelectField style={feedSel} value={kind} onChange={e => setKind(e.target.value)}
           aria-label="Event" data-testid="feed-kind">
           <option value="">All events</option>
           {kinds.map(k => <option key={k} value={k}>{k}</option>)}
-        </select>
-        <select style={feedSel} value={actor} onChange={e => setActor(e.target.value)}
+        </SelectField>
+        <SelectField style={feedSel} value={actor} onChange={e => setActor(e.target.value)}
           aria-label="Actor" data-testid="feed-actor">
           <option value="">All actors</option>
           {actors.map(a => <option key={a} value={a}>{a}</option>)}
-        </select>
-        <input style={{ ...feedSel, width: 220 }} value={q} onChange={e => setQ(e.target.value)}
+        </SelectField>
+        <Input style={{ ...feedSel, width: 220 }} value={q} onChange={e => setQ(e.target.value)}
           placeholder="Search summary, event, actor…" aria-label="Search the feed"
           data-testid="feed-search" />
         {(category || kind || actor || q) && (
@@ -455,20 +458,20 @@ function FeedSection() {
       {!err && rows.length > 0 && (
         <div style={{ overflow: "auto", maxHeight: "58vh",
           border: "1px solid var(--b0)", borderRadius: "var(--r3)" }}>
-          <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "collapse", color: "var(--t2)" }}>
-            <thead>
-              <tr className="aug-fs-xs" style={{ textAlign: "left" }}>
+          <Table className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+            <TableHeader>
+              <TableRow className="aug-fs-xs" style={{ textAlign: "left" }}>
                 {FEED_COLUMNS.map(c => (
                   <SortHeader key={c.key} label={c.label} width={c.width}
                     active={sort.key === c.key} desc={sort.desc}
                     onClick={c.key === "summary" ? undefined : () => toggleSort(c.key as FeedSort["key"])} />
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {rows.map((e, i) => <FeedRow key={`${e.at}-${e.kind}-${i}`} ev={e} />)}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </>

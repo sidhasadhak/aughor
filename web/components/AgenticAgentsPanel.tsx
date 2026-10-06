@@ -53,10 +53,12 @@ import { evalChip } from "@/lib/agentEval";
 import { compactNumber, countNoun, formatCost, formatCount, formatDateTime, formatTimestamp, pct } from "@/lib/format";
 import { fmtMs } from "@/lib/cost";
 import { getFleetOverview } from "@/lib/api";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
+import { TabStrip } from "@/components/ui/tab-strip";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 type Selection =
   | { kind: "charter"; id: string }
@@ -485,13 +487,8 @@ function AgentDetail({ agent, onBack, onChanged, onDeleted, onError, onOpenTrace
             {agent.enabled ? "Pause" : "Resume"}
           </Button>
         </>} />
-      <div className="aug-tabs" role="tablist" aria-label="Agent views"
-        style={{ padding: "0 20px", flexShrink: 0 }}>
-        {TABS.map(t => (
-          <Button key={t.id} role="tab" aria-selected={tab === t.id} variant="ghost" size="sm"
-            className="aug-tab" onClick={() => setTab(t.id)}>{t.label}</Button>
-        ))}
-      </div>
+      <TabStrip label="Agent views" value={tab} onChange={setTab} tabs={TABS}
+        style={{ padding: "0 20px", flexShrink: 0 }} />
       <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
         <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: 20 }}>
           {tab === "overview" ? (
@@ -633,31 +630,31 @@ export function AgentRuns({ agent, onOpenTrace, range }: {
     );
   }
   return (
-    <table className="aug-dt" style={{ width: "100%" }}>
-      <thead>
-        <tr>
-          <th>Started</th><th>Question</th><th>Kind</th><th>Status</th>
-          <th className="num">Queries</th><th aria-label="Open"></th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Started</TableHead><TableHead>Question</TableHead><TableHead>Kind</TableHead><TableHead>Status</TableHead>
+          <TableHead className="num">Queries</TableHead><TableHead aria-label="Open"></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {runs.map(r => (
-          <tr key={r.id}>
-            <td style={{ color: "var(--t2)" }}>{formatTimestamp(r.started_at, "short")}</td>
-            <td style={{ whiteSpace: "normal", maxWidth: 560 }}>{r.headline || r.question}</td>
-            <td><StatusChip hue="muted" strength="soft">{r.kind === "chat" ? "quick" : "deep"}</StatusChip></td>
-            <td><StatusChip hue={STATUS_HUE[r.status] ?? "muted"}>{r.status}</StatusChip></td>
-            <td className="num">{formatCount(r.query_count)}</td>
-            <td>
+          <TableRow key={r.id}>
+            <TableCell style={{ color: "var(--t2)" }}>{formatTimestamp(r.started_at, "short")}</TableCell>
+            <TableCell style={{ whiteSpace: "normal", maxWidth: 560 }}>{r.headline || r.question}</TableCell>
+            <TableCell><StatusChip hue="muted" strength="soft">{r.kind === "chat" ? "quick" : "deep"}</StatusChip></TableCell>
+            <TableCell><StatusChip hue={STATUS_HUE[r.status] ?? "muted"}>{r.status}</StatusChip></TableCell>
+            <TableCell className="num">{formatCount(r.query_count)}</TableCell>
+            <TableCell>
               {onOpenTrace && r.kind !== "chat" && (
                 <Button variant="link" size="xs" onClick={() => onOpenTrace(r.id)}
                   title="Open this run's trace" style={{ padding: 0 }}>Trace</Button>
               )}
-            </td>
-          </tr>
+            </TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
 
@@ -960,7 +957,7 @@ function AgentBenchmark({ agent, onChanged, onError }: {
               )}
               {certifying?.id === c.id && (
                 <>
-                  <textarea className="aug-input" rows={3} value={certifying.sql}
+                  <Textarea className="aug-input" rows={3} value={certifying.sql}
                     placeholder="The reference SQL you certify (read-only)"
                     onChange={e => setCertifying({ id: c.id, sql: e.target.value })} />
                   <span style={{ display: "flex", gap: 6 }}>
@@ -1056,10 +1053,10 @@ function AgentBenchmark({ agent, onChanged, onError }: {
             }}>Remove</Button>
           </div>
         ))}
-        <input className="aug-input" placeholder="Golden question — e.g. How many active customers?"
+        <Input placeholder="Golden question — e.g. How many active customers?"
           value={goldenDraft.question}
           onChange={e => setGoldenDraft(d => ({ ...d, question: e.target.value }))} />
-        <textarea className="aug-input" rows={2}
+        <Textarea className="aug-input" rows={2}
           placeholder="Reference SQL (the known-correct answer; read-only)"
           value={goldenDraft.reference_sql}
           onChange={e => setGoldenDraft(d => ({ ...d, reference_sql: e.target.value }))} />
@@ -1148,32 +1145,32 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
     <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 14 }}>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">Name</span>
-        <input className="aug-input" value={form.name} maxLength={120}
+        <Input value={form.name} maxLength={120}
           onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">What it is for</span>
-        <input className="aug-input" value={form.purpose} maxLength={240}
+        <Input value={form.purpose} maxLength={240}
           placeholder="One line other agents read when deciding whether to hand this agent a question — never the instructions."
           onChange={e => setForm(f => ({ ...f, purpose: e.target.value }))} />
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">Instructions</span>
-        <textarea className="aug-input" rows={6} value={form.instructions} maxLength={8000}
+        <Textarea className="aug-input" rows={6} value={form.instructions} maxLength={8000}
           placeholder="Standing guidance this agent applies to every answer — domain focus, definitions to prefer, tone. It refines, never overrides, safety and grounding rules."
           onChange={e => setForm(f => ({ ...f, instructions: e.target.value }))} />
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">Connection</span>
-        <select className="aug-input" value={form.connection_id}
+        <SelectField value={form.connection_id}
           onChange={e => setForm(f => ({ ...f, connection_id: e.target.value }))}>
           <option value="">Any (use the ask&rsquo;s connection)</option>
           {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        </SelectField>
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">Schema scope</span>
-        <input className="aug-input" value={form.schema_scope} maxLength={120}
+        <Input value={form.schema_scope} maxLength={120}
           placeholder="e.g. finance — leave empty for all schemas"
           onChange={e => setForm(f => ({ ...f, schema_scope: e.target.value }))} />
         <span style={{ fontSize: 11, color: "var(--t3)" }}>
@@ -1404,12 +1401,12 @@ export function AgentGuardrailsSection({ agent, onError }: {
         <span className="aug-fs-sm" style={{ color: "var(--t2)", minWidth: 96 }}>
           Sensitive data
         </span>
-        <select className="aug-input" style={{ maxWidth: 140 }} value={policy.pii}
+        <SelectField style={{ maxWidth: 140 }} value={policy.pii}
           onChange={e => save({ ...policy, pii: e.target.value as AgentGuardrails["pii"] })}>
           {modes.map(m => (
             <option key={m} value={m}>{PII_COPY[m]?.label ?? m}</option>
           ))}
-        </select>
+        </SelectField>
         <span className="aug-fs-xs" style={{ flex: 1, minWidth: 0, color: "var(--t3)" }}>
           {PII_COPY[policy.pii]?.hint ?? ""}
         </span>
@@ -1419,7 +1416,7 @@ export function AgentGuardrailsSection({ agent, onError }: {
         <span className="aug-fs-sm" style={{ color: "var(--t2)", minWidth: 96 }}>
           Tokens per run
         </span>
-        <input className="aug-input" style={{ maxWidth: 140 }} type="number" min={1}
+        <Input style={{ maxWidth: 140 }} type="number" min={1}
           placeholder="no cap"
           value={capValue ?? ""}
           onChange={e => {
@@ -1743,10 +1740,10 @@ function AgentLimitRow({ knob, value, busy, onSet }: {
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ width: 110, color: "var(--t3)", flexShrink: 0 }}>{knob.label}</span>
-        <input type="number" value={draft} disabled={busy}
+        <Input type="number" value={draft} disabled={busy}
           min={knob.min} max={knob.max} step={1} inputMode="numeric"
           aria-label={knob.label}
-          className="aug-input aug-fs-xs"
+          className="aug-fs-xs"
           style={{ padding: "3px 6px", width: 120, fontVariantNumeric: "tabular-nums" }}
           onChange={e => setDraft(e.target.value)} />
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{knob.unit}</span>
@@ -1832,7 +1829,7 @@ export function AgentModelPin({ pinned, busy, onPin }: {
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
         <span style={{ width: 110, color: "var(--t3)", flexShrink: 0 }}>Model pin</span>
-        <input className="aug-input" value={draft} disabled={busy}
+        <Input value={draft} disabled={busy}
           spellCheck={false} autoComplete="off"
           placeholder={provider ? `paste a model id from ${provider}` : "paste a model id"}
           style={{ fontSize: 11, padding: "3px 6px", maxWidth: 260,

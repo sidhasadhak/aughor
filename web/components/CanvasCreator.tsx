@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
@@ -192,7 +193,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
               padding: "0 12px", height: 40, background: "var(--bg-0)",
             }}>
               <Icon name={SEARCH_ICON} size={14} color="var(--t3)" />
-              <input
+              <Input
                 placeholder="Search"
                 value={search}
                 onChange={e => setSearch(e.target.value)}

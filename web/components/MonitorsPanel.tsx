@@ -22,6 +22,9 @@ import { Button } from "@/components/ui/button";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { takeMonitorDraft } from "@/lib/query/monitorDraft";
 import { Loading } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -588,8 +591,7 @@ function MonitorForm({
 
       {/* Name */}
       <Field label="Name">
-        <input
-          className="aug-input"
+        <Input
           value={form.name}
           onChange={e => setField("name", e.target.value as any)}
           placeholder="e.g. Daily revenue drop alert"
@@ -609,12 +611,12 @@ function MonitorForm({
           ))}
         </div>
         {metricSource === "catalog" ? (
-          <select className="aug-input" value={form.metric_name ?? ""} onChange={e => setField("metric_name", e.target.value as any)} style={{ width: "100%" }}>
+          <SelectField value={form.metric_name ?? ""} onChange={e => setField("metric_name", e.target.value as any)} style={{ width: "100%" }}>
             <option value="">Select a metric…</option>
             {metrics.map(m => <option key={m.name} value={m.name}>{m.label ?? m.name}</option>)}
-          </select>
+          </SelectField>
         ) : (
-          <textarea
+          <Textarea
             className="aug-input"
             rows={3}
             value={form.custom_sql ?? ""}
@@ -649,12 +651,12 @@ function MonitorForm({
         <>
           <div style={{ display: "flex", gap: 12 }}>
             <Field label="Warning threshold" style={{ flex: 1 }}>
-              <input className="aug-input" type="number" value={form.warning_threshold ?? ""}
+              <Input type="number" value={form.warning_threshold ?? ""}
                 onChange={e => setField("warning_threshold", e.target.value ? Number(e.target.value) as any : null as any)}
                 placeholder="e.g. 10000" style={{ width: "100%" }} />
             </Field>
             <Field label="Critical threshold" style={{ flex: 1 }}>
-              <input className="aug-input" type="number" value={form.critical_threshold ?? ""}
+              <Input type="number" value={form.critical_threshold ?? ""}
                 onChange={e => setField("critical_threshold", e.target.value ? Number(e.target.value) as any : null as any)}
                 placeholder="e.g. 8000" style={{ width: "100%" }} />
             </Field>
@@ -687,7 +689,7 @@ function MonitorForm({
             </Field>
           )}
           <Field label="History window (days)" style={{ flex: 1 }}>
-            <input className="aug-input" type="number" min={7} max={365}
+            <Input type="number" min={7} max={365}
               value={form.history_days ?? 30}
               onChange={e => setField("history_days", Number(e.target.value) as any)}
               style={{ width: "100%" }} />
@@ -698,7 +700,7 @@ function MonitorForm({
       {alertOn === "segment_drift" && (
         <div style={{ display: "flex", gap: 12 }}>
           <Field label="Dimension column" style={{ flex: 2 }}>
-            <input className="aug-input" value={form.dimension_column ?? ""}
+            <Input value={form.dimension_column ?? ""}
               onChange={e => setField("dimension_column", e.target.value as any)}
               placeholder="e.g. region, channel" style={{ width: "100%" }} />
           </Field>
@@ -715,18 +717,18 @@ function MonitorForm({
         <>
           <div style={{ display: "flex", gap: 12 }}>
             <Field label="Table" style={{ flex: 2 }}>
-              <input className="aug-input" value={form.freshness_table ?? ""}
+              <Input value={form.freshness_table ?? ""}
                 onChange={e => setField("freshness_table", e.target.value as any)}
                 placeholder="e.g. orders" style={{ width: "100%" }} />
             </Field>
             <Field label="Timestamp column" style={{ flex: 1 }}>
-              <input className="aug-input" value={form.freshness_column ?? "updated_at"}
+              <Input value={form.freshness_column ?? "updated_at"}
                 onChange={e => setField("freshness_column", e.target.value as any)}
                 style={{ width: "100%" }} />
             </Field>
           </div>
           <Field label="SLA (hours)">
-            <input className="aug-input" type="number" min={1}
+            <Input type="number" min={1}
               value={form.freshness_sla_hours ?? 24}
               onChange={e => setField("freshness_sla_hours", Number(e.target.value) as any)}
               style={{ width: 120 }} />
@@ -752,7 +754,7 @@ function MonitorForm({
           ))}
         </div>
         {isCustomCron && (
-          <input className="aug-input" value={form.check_cron ?? ""}
+          <Input value={form.check_cron ?? ""}
             onChange={e => onCustomCronChange(e.target.value)}
             placeholder="cron expression, e.g. 0 9 * * 1-5"
             style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12 }} />
@@ -766,7 +768,7 @@ function MonitorForm({
 
       {/* Grace period (anti-flap debounce) */}
       <Field label="Grace period (hours)">
-        <input className="aug-input" type="number" min={0} step={0.5}
+        <Input type="number" min={0} step={0.5}
           value={form.grace_period_hours ?? 4}
           onChange={e => setField("grace_period_hours", Number(e.target.value) as any)}
           style={{ width: 120 }} />

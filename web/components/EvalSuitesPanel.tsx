@@ -22,6 +22,9 @@ import { Button } from "@/components/ui/button";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import type { EvalsLayer } from "@/components/EvalsWorkspace";
 import { Loading } from "@/components/ui/states";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -253,21 +256,21 @@ function SuiteForm({ form, setForm, connections, saving, error, onSave, onCancel
   return (
     <div style={{ maxWidth: 560, display: "flex", flexDirection: "column", gap: 20 }}>
       <Field label="Name">
-        <input className="aug-input" value={form.name}
+        <Input value={form.name}
           onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
           placeholder="e.g. Golden SQL — revenue questions" style={{ width: "100%" }} />
       </Field>
       <Field label="Description">
-        <textarea className="aug-input" rows={2} value={form.description}
+        <Textarea className="aug-input" rows={2} value={form.description}
           onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
           placeholder="What this suite measures" style={{ width: "100%", resize: "vertical" }} />
       </Field>
       <Field label="Connection">
-        <select className="aug-input" value={form.connection_id}
+        <SelectField value={form.connection_id}
           onChange={e => setForm(f => ({ ...f, connection_id: e.target.value }))} style={{ width: "100%" }}>
           <option value="">Select a connection…</option>
           {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        </SelectField>
         <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>
           A <code style={{ fontFamily: "var(--font-code)" }}>reference</code> suite replays each case&apos;s own SQL against this connection and
           scores the result against itself — a no-model harness check that should score ~100%.
@@ -354,7 +357,7 @@ function SuiteDetail({ suite, evaluators, onChanged, onDelete, onViewRuns, setEr
           <span style={{ fontSize: 11, color: "var(--t3)" }}>{detCount} deterministic evaluators</span>
           <div style={{ flex: 1 }} />
           <label style={{ fontSize: 11, color: "var(--t3)" }}>iterations</label>
-          <input className="aug-input" type="number" min={1} max={10} value={iterations}
+          <Input type="number" min={1} max={10} value={iterations}
             onChange={e => setIterations(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
             style={{ width: 56 }} title="Repeat each case N times — a case that passes some but not all is FLAKY, not rounded to pass/fail" />
           <Button variant="ghost" className="h-auto" onClick={run} disabled={running || suite.cases.length === 0}
@@ -389,9 +392,9 @@ function SuiteDetail({ suite, evaluators, onChanged, onDelete, onViewRuns, setEr
 
         {/* Add case */}
         <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-1)", border: "1px solid var(--bg-3)", borderRadius: 6, padding: 12 }}>
-          <input className="aug-input" value={question} onChange={e => setQuestion(e.target.value)}
+          <Input value={question} onChange={e => setQuestion(e.target.value)}
             placeholder="Question (optional label, e.g. 'Total revenue by month')" style={{ width: "100%" }} />
-          <textarea className="aug-input" rows={2} value={artifact} onChange={e => setArtifact(e.target.value)}
+          <Textarea className="aug-input" rows={2} value={artifact} onChange={e => setArtifact(e.target.value)}
             placeholder="SELECT ... — the SQL this case replays" style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12, resize: "vertical" }} />
           <div>
             <Button variant="ghost" className="h-auto" onClick={addCase} disabled={adding} style={{ fontSize: 12 }}>

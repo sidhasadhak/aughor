@@ -25,6 +25,7 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Loading } from "@/components/ui/states";
+import { Textarea } from "@/components/ui/textarea";
 
 const LABEL: React.CSSProperties = {
   fontSize: 11, color: "var(--t3)", textTransform: "uppercase",
@@ -62,7 +63,7 @@ function EditableField({ value, placeholder, multiline = true, onSave }: {
   };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <textarea className="aug-input" autoFocus value={draft} disabled={busy}
+      <Textarea className="aug-input" autoFocus value={draft} disabled={busy}
         onChange={e => setDraft(e.target.value)}
         onKeyDown={e => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save();

@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { createMonitor, getMonitors, type MonitorDef } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 
 const CRON_PRESETS = [
   { label: "Hourly", cron: "0 * * * *" },
@@ -139,8 +140,8 @@ export function SchedulePopover({
             )}
 
             <div className="aug-label" style={{ marginBottom: 6 }}>Add schedule</div>
-            <input
-              className="aug-input aug-fs-ui" style={{ width: "100%", marginBottom: 6 }}
+            <Input
+              className="aug-fs-ui" style={{ width: "100%", marginBottom: 6 }}
               value={name} onChange={e => setName(e.target.value)} placeholder="Schedule name"
             />
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
@@ -158,8 +159,8 @@ export function SchedulePopover({
               </Button>
             </div>
             {customCron && (
-              <input
-                className="aug-input aug-fs-ui font-mono" style={{ width: "100%", marginBottom: 6 }}
+              <Input
+                className="aug-fs-ui font-mono" style={{ width: "100%", marginBottom: 6 }}
                 value={cron} onChange={e => setCron(e.target.value)}
                 placeholder="m h dom mon dow"
               />

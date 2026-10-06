@@ -29,6 +29,8 @@ import { SkeletonRows } from "@/components/ui/motion";
 import { Confidence } from "@/components/ui/trust";
 import { getRecentEvidenceClaims, submitClaimFeedback, type EvidenceClaim } from "@/lib/api";
 import { countNoun, formatTimestamp, relTime } from "@/lib/format";
+import { Segmented } from "@/components/ui/segmented";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 type Feedback = "validated" | "disputed" | "needs_context";
 type Filter = "all" | "unreviewed" | Feedback;
@@ -127,15 +129,8 @@ export function EvidencePanel({ connectionId, canvasId, onInvestigate }: {
     <div className="aug-ledger">
       <div className="aug-ledger-main">
         <div className="aug-ledger-bar">
-          <div role="group" aria-label="Filter claims by feedback" className="aug-segmented">
-            {FILTERS.map(f => (
-              <Button key={f.id} variant="ghost" size="xs" aria-pressed={filter === f.id}
-                className="aug-seg-item aug-seg-item-mono font-normal"
-                onClick={() => setFilter(f.id)}>
-                {f.label} {counts[f.id]}
-              </Button>
-            ))}
-          </div>
+          <Segmented label="Filter claims by feedback" value={filter} onChange={setFilter}
+            options={FILTERS.map(f => ({ value: f.id, label: <>{f.label} {counts[f.id]}</> }))} />
           <span className="aug-ledger-meta">
             {claims.length >= LIMIT ? `the latest ${LIMIT} claims` : countNoun(claims.length, "claim")}
             {counts.disputed > 0 ? ` · ${counts.disputed} disputed` : ""}
@@ -144,42 +139,42 @@ export function EvidencePanel({ connectionId, canvasId, onInvestigate }: {
         </div>
 
         <div className="aug-ledger-scroll">
-          <table className="aug-dt aug-ledger-table">
-            <thead>
-              <tr>
-                <th className="aug-ledger-col-id">id</th>
-                <th>claim · and the query behind it</th>
-                <th className="aug-ledger-col-conf">confidence</th>
-                <th className="aug-ledger-col-fb">feedback</th>
-                <th className="num aug-ledger-col-when">when</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="aug-ledger-col-id">id</TableHead>
+                <TableHead>claim · and the query behind it</TableHead>
+                <TableHead className="aug-ledger-col-conf">confidence</TableHead>
+                <TableHead className="aug-ledger-col-fb">feedback</TableHead>
+                <TableHead className="num aug-ledger-col-when">when</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {shown.map(c => {
                 const query = queryLine(c.sql_source);
                 return (
-                  <tr key={c.id} aria-selected={selected?.id === c.id || undefined} tabIndex={0}
+                  <TableRow key={c.id} aria-selected={selected?.id === c.id || undefined} tabIndex={0}
                     onClick={() => setSelectedId(c.id)}
                     onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(c.id); } }}>
-                    <td className="aug-ledger-id">{shortId(c.id)}</td>
-                    <td className="aug-ledger-claim">
+                    <TableCell className="aug-ledger-id">{shortId(c.id)}</TableCell>
+                    <TableCell className="aug-ledger-claim">
                       <span className="aug-ledger-text">{c.claim_text}</span>
                       <span className="aug-ledger-query">{query ?? "no query recorded"}</span>
-                    </td>
-                    <td>{c.confidence == null
+                    </TableCell>
+                    <TableCell>{c.confidence == null
                       ? <span className="aug-ledger-none" title="no counted confidence for this claim yet">not counted</span>
-                      : <Confidence value={c.confidence} />}</td>
-                    <td>
+                      : <Confidence value={c.confidence} />}</TableCell>
+                    <TableCell>
                       {c.owner_feedback
                         ? <span className={FEEDBACK[c.owner_feedback].cls}>{FEEDBACK[c.owner_feedback].label}</span>
                         : <span className="aug-ledger-none">—</span>}
-                    </td>
-                    <td className="num aug-ledger-when" title={formatTimestamp(c.created_at)}>{relTime(c.created_at)}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="num aug-ledger-when" title={formatTimestamp(c.created_at)}>{relTime(c.created_at)}</TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
           {shown.length === 0 && (
             <p className="aug-ledger-empty">No claim here is {FILTERS.find(f => f.id === filter)?.label}.</p>
           )}

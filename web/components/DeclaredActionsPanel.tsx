@@ -29,6 +29,10 @@ import { getProposals, type StagedProposal } from "@/lib/api";
 import { claimsOf, getIdToken } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { countNoun, formatCount, formatTimestamp, relTime } from "@/lib/format";
+import { SelectField } from "@/components/ui/select";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 async function apiFetch(path: string, opts?: RequestInit) {
   const res = await fetch(`${getApiBase()}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -159,40 +163,40 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
     <div className="aug-actions-form">
       <div className="aug-actions-form-title">Declare an action</div>
       <Err e={err} />
-      <input style={input} placeholder="action id (e.g. refund_order)" value={id} onChange={e => setId(e.target.value)} />
+      <Input style={input} placeholder="action id (e.g. refund_order)" value={id} onChange={e => setId(e.target.value)} />
       <div style={{ display: "flex", gap: 6 }}>
-        <select style={{ ...input, flex: 1 }} value={kind} onChange={e => setKind(e.target.value)}>
+        <SelectField style={{ ...input, flex: 1 }} value={kind} onChange={e => setKind(e.target.value)}>
           <option value="side_effect">side_effect</option>
           <option value="annotate">annotate</option>
           <option value="query">query</option>
-        </select>
-        <select style={{ ...input, flex: 1 }} value={risk} onChange={e => setRisk(e.target.value)}>
+        </SelectField>
+        <SelectField style={{ ...input, flex: 1 }} value={risk} onChange={e => setRisk(e.target.value)}>
           <option value="high">high</option>
           <option value="low">low</option>
           <option value="read_only">read_only</option>
-        </select>
+        </SelectField>
       </div>
-      <input style={input} placeholder="description" value={description} onChange={e => setDescription(e.target.value)} />
-      <input style={input} placeholder="object type this action is about (e.g. order) — optional"
+      <Input style={input} placeholder="description" value={description} onChange={e => setDescription(e.target.value)} />
+      <Input style={input} placeholder="object type this action is about (e.g. order) — optional"
         value={objectType} onChange={e => setObjectType(e.target.value)} />
       <label style={hint}>the parameters a proposal must fill — an object parameter names ONE object, read live</label>
       {params.map((p, i) => (
         <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <input style={{ ...input, flex: 2 }} placeholder="name (e.g. amount_eur)"
+          <Input style={{ ...input, flex: 2 }} placeholder="name (e.g. amount_eur)"
             value={p.name} onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-          <select style={{ ...input, width: 90 }} value={p.kind}
+          <SelectField style={{ ...input, width: 90 }} value={p.kind}
             onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, kind: e.target.value as "value" | "object" } : x))}>
             <option value="value">value</option>
             <option value="object">object</option>
-          </select>
+          </SelectField>
           {p.kind === "object" ? (
-            <input style={{ ...input, flex: 1 }} placeholder="object type (e.g. order)" value={p.object_type}
+            <Input style={{ ...input, flex: 1 }} placeholder="object type (e.g. order)" value={p.object_type}
               onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, object_type: e.target.value } : x))} />
           ) : (
-            <select style={{ ...input, flex: 1 }} value={p.data_type}
+            <SelectField style={{ ...input, flex: 1 }} value={p.data_type}
               onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, data_type: e.target.value } : x))}>
               {["TEXT", "NUMERIC", "INTEGER", "BOOLEAN", "DATE"].map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+            </SelectField>
           )}
           <label className="aug-fs-xs" style={{ color: "var(--t3)", display: "flex", alignItems: "center", gap: 4, marginBottom: 6, whiteSpace: "nowrap" }}>
             <input type="checkbox" checked={p.required}
@@ -210,9 +214,9 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
       <label style={hint}>what a proposal must satisfy — the message is shown verbatim when it fails</label>
       {criteria.map((c, i) => (
         <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <input style={{ ...input, flex: 2, fontFamily: "var(--font-mono)" }} placeholder="amount_eur <= 10000"
+          <Input style={{ ...input, flex: 2, fontFamily: "var(--font-mono)" }} placeholder="amount_eur <= 10000"
             value={c.expr} onChange={e => setCriteria(cs => cs.map((x, j) => j === i ? { ...x, expr: e.target.value } : x))} />
-          <input style={{ ...input, flex: 3 }} placeholder="why — shown to the proposer on failure"
+          <Input style={{ ...input, flex: 3 }} placeholder="why — shown to the proposer on failure"
             value={c.message} onChange={e => setCriteria(cs => cs.map((x, j) => j === i ? { ...x, message: e.target.value } : x))} />
           <Button size="xs" variant="ghost" className="mb-1.5"
             onClick={() => setCriteria(cs => cs.filter((_, j) => j !== i))}>✕</Button>
@@ -227,13 +231,13 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
       </label>
       {edits.map((e, i) => (
         <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <input style={{ ...input, flex: 1 }} placeholder="object param (e.g. order)" value={e.object}
+          <Input style={{ ...input, flex: 1 }} placeholder="object param (e.g. order)" value={e.object}
             onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, object: ev.target.value } : x))} />
-          <input style={{ ...input, flex: 1 }} placeholder="property (e.g. review_flag)" value={e.property}
+          <Input style={{ ...input, flex: 1 }} placeholder="property (e.g. review_flag)" value={e.property}
             onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, property: ev.target.value } : x))} />
-          <input style={{ ...input, flex: 1 }} placeholder="value (e.g. true)" value={e.value}
+          <Input style={{ ...input, flex: 1 }} placeholder="value (e.g. true)" value={e.value}
             onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, value: ev.target.value } : x))} />
-          <input style={{ ...input, flex: 2 }} placeholder="note — {param} is filled from the proposal" value={e.note}
+          <Input style={{ ...input, flex: 2 }} placeholder="note — {param} is filled from the proposal" value={e.note}
             onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, note: ev.target.value } : x))} />
           <Button size="xs" variant="ghost" className="mb-1.5"
             onClick={() => setEdits(es => es.filter((_, j) => j !== i))}>✕</Button>
@@ -247,22 +251,22 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
         <>
           <label style={hint}>the call this action makes — described, never coded</label>
           <div style={{ display: "flex", gap: 6 }}>
-            <select style={{ ...input, width: 110 }} value={httpMethod} onChange={e => setHttpMethod(e.target.value)}>
+            <SelectField style={{ ...input, width: 110 }} value={httpMethod} onChange={e => setHttpMethod(e.target.value)}>
               {["POST", "GET", "PUT", "PATCH", "DELETE"].map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-            <input style={{ ...input, flex: 1 }} placeholder="https://events.pagerduty.com/v2/enqueue"
+            </SelectField>
+            <Input style={{ ...input, flex: 1 }} placeholder="https://events.pagerduty.com/v2/enqueue"
               value={httpUrl} onChange={e => setHttpUrl(e.target.value)} />
           </div>
           <div style={{ display: "flex", gap: 6 }}>
-            <input style={{ ...input, flex: 1 }} placeholder="auth header (e.g. Authorization)"
+            <Input style={{ ...input, flex: 1 }} placeholder="auth header (e.g. Authorization)"
               value={httpAuthHeader} onChange={e => setHttpAuthHeader(e.target.value)} />
-            <input style={{ ...input, flex: 1 }} type="password" placeholder="credential — stored encrypted"
+            <Input style={{ ...input, flex: 1 }} type="password" placeholder="credential — stored encrypted"
               value={httpSecret} onChange={e => setHttpSecret(e.target.value)} />
           </div>
           <label style={hint}>headers (JSON)</label>
-          <textarea style={{ ...input, minHeight: 36, fontFamily: "monospace" }} value={httpHeaders} onChange={e => setHttpHeaders(e.target.value)} />
+          <Textarea style={{ ...input, minHeight: 36, fontFamily: "monospace" }} value={httpHeaders} onChange={e => setHttpHeaders(e.target.value)} />
           <label style={hint}>body (JSON) — {"{param}"} placeholders are filled from the declared params</label>
-          <textarea style={{ ...input, minHeight: 44, fontFamily: "monospace" }} value={httpBody} onChange={e => setHttpBody(e.target.value)} />
+          <Textarea style={{ ...input, minHeight: 44, fontFamily: "monospace" }} value={httpBody} onChange={e => setHttpBody(e.target.value)} />
         </>
       )}
       <Button variant="default" size="sm" disabled={!id.trim()} onClick={save}>Save action</Button>
@@ -288,13 +292,13 @@ function AnnotateForm({ connectionId, onSaved }: { connectionId: string; onSaved
     <div className="aug-actions-form">
       <div className="aug-actions-form-title">Annotate a value</div>
       <Err e={err} />
-      <input style={input} placeholder="table" value={f.table} onChange={e => setF({ ...f, table: e.target.value })} />
+      <Input style={input} placeholder="table" value={f.table} onChange={e => setF({ ...f, table: e.target.value })} />
       <div style={{ display: "flex", gap: 6 }}>
-        <input style={{ ...input, flex: 1 }} placeholder="column (optional)" value={f.column} onChange={e => setF({ ...f, column: e.target.value })} />
-        <input style={{ ...input, flex: 1 }} placeholder="key column (optional)" value={f.key_column} onChange={e => setF({ ...f, key_column: e.target.value })} />
-        <input style={{ ...input, flex: 1 }} placeholder="row key (optional)" value={f.row_key} onChange={e => setF({ ...f, row_key: e.target.value })} />
+        <Input style={{ ...input, flex: 1 }} placeholder="column (optional)" value={f.column} onChange={e => setF({ ...f, column: e.target.value })} />
+        <Input style={{ ...input, flex: 1 }} placeholder="key column (optional)" value={f.key_column} onChange={e => setF({ ...f, key_column: e.target.value })} />
+        <Input style={{ ...input, flex: 1 }} placeholder="row key (optional)" value={f.row_key} onChange={e => setF({ ...f, row_key: e.target.value })} />
       </div>
-      <input style={input} placeholder="annotation / correction text" value={f.body} onChange={e => setF({ ...f, body: e.target.value })} />
+      <Input style={input} placeholder="annotation / correction text" value={f.body} onChange={e => setF({ ...f, body: e.target.value })} />
       <Button variant="default" size="sm" disabled={!f.table.trim() || !f.body.trim()} onClick={save}>Save annotation</Button>
     </div>
   );
@@ -325,7 +329,7 @@ function ProposeSection({ connectionId, onStaged }: { connectionId: string; onSt
         Paste a finding. The agent proposes any declared action it warrants; each valid proposal is staged in
         Awaiting approval, and nothing runs until a person approves it. Proposing uses a model call.
       </p>
-      <textarea style={{ ...input, minHeight: 72, marginTop: 8 }} placeholder="e.g. Order X9001 was charged EUR 480 twice — a clear duplicate charge." value={context} onChange={e => setContext(e.target.value)} />
+      <Textarea style={{ ...input, minHeight: 72, marginTop: 8 }} placeholder="e.g. Order X9001 was charged EUR 480 twice — a clear duplicate charge." value={context} onChange={e => setContext(e.target.value)} />
       <Button variant="secondary" size="sm" disabled={busy || !context.trim()} onClick={propose}>
         {busy ? "Proposing…" : "Propose actions"}
       </Button>
@@ -413,36 +417,36 @@ export function DeclaredActionsPanel({ connectionId }: { connectionId: string })
             <p className="aug-brief-note">No declared actions yet — declare one below.</p>
           ) : (
             <div className="aug-moves-wrap">
-              <table className="aug-dt aug-ledger-table">
-                <thead>
-                  <tr>
-                    <th className="aug-actions-col-id">action</th>
-                    <th>what it does</th>
-                    <th className="aug-actions-col-about">about</th>
-                    <th className="aug-actions-col-gate">gate</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="aug-actions-col-id">action</TableHead>
+                    <TableHead>what it does</TableHead>
+                    <TableHead className="aug-actions-col-about">about</TableHead>
+                    <TableHead className="aug-actions-col-gate">gate</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {actionList.map(a => {
                     const gate = GATE[a.risk];
                     return (
-                      <tr key={a.id}>
-                        <td className="aug-actions-id">{a.id}<span className="aug-actions-kind">{a.kind}</span></td>
-                        <td className="aug-ledger-claim">
+                      <TableRow key={a.id}>
+                        <TableCell className="aug-actions-id">{a.id}<span className="aug-actions-kind">{a.kind}</span></TableCell>
+                        <TableCell className="aug-ledger-claim">
                           <span className="aug-ledger-text">{a.description || "—"}</span>
                           {effectLines(a).map((line, i) => <span key={i} className="aug-ledger-query">{line}</span>)}
-                        </td>
-                        <td className="aug-actions-about">{a.object_type || "—"}</td>
-                        <td>
+                        </TableCell>
+                        <TableCell className="aug-actions-about">{a.object_type || "—"}</TableCell>
+                        <TableCell>
                           <span className={`aug-actions-gate${gate?.ask ? " aug-actions-gate-ask" : ""}`} title={gate?.title}>
                             {gate ? gate.label : String(a.risk || "—")}
                           </span>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
           <DeclareActionForm connectionId={connectionId} onSaved={loadActions} />
@@ -454,38 +458,38 @@ export function DeclaredActionsPanel({ connectionId }: { connectionId: string })
             <p className="aug-brief-note">No overlay edits yet — annotate or correct a value below.</p>
           ) : (
             <div className="aug-moves-wrap">
-              <table className="aug-dt aug-ledger-table">
-                <thead>
-                  <tr>
-                    <th className="aug-actions-col-target">target</th>
-                    <th>edit</th>
-                    <th className="num aug-memory-col-when">when</th>
-                    <th className="aug-memory-col-door"><span className="sr-only">Withdraw</span></th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="aug-actions-col-target">target</TableHead>
+                    <TableHead>edit</TableHead>
+                    <TableHead className="num aug-memory-col-when">when</TableHead>
+                    <TableHead className="aug-memory-col-door"><span className="sr-only">Withdraw</span></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {edits.map((e, i) => (
-                    <tr key={e.id || i}>
-                      <td className="aug-actions-target">
+                    <TableRow key={e.id || i}>
+                      <TableCell className="aug-actions-target">
                         {e.table}{e.column ? `.${e.column}` : ""}{e.row_key ? `#${e.key_column}=${e.row_key}` : ""}
-                      </td>
-                      <td className="aug-ledger-claim">
+                      </TableCell>
+                      <TableCell className="aug-ledger-claim">
                         <span className="aug-ledger-text">{e.body}</span>
                         <span className="aug-ledger-query">{[e.kind, e.actor || e.source, e.origin, e.note].filter(Boolean).join(" · ")}</span>
-                      </td>
-                      <td className="num aug-ledger-when" title={e.created_at ? formatTimestamp(e.created_at) : undefined}>
+                      </TableCell>
+                      <TableCell className="num aug-ledger-when" title={e.created_at ? formatTimestamp(e.created_at) : undefined}>
                         {e.created_at ? relTime(e.created_at) : "—"}
-                      </td>
-                      <td className="aug-org-door">
+                      </TableCell>
+                      <TableCell className="aug-org-door">
                         <Button size="xs" variant="ghost" disabled={busyEdit === e.id} onClick={() => withdraw(e.id)}
                           title="Withdraw this edit — the next read stops merging it and the source value, never written, is what shows">
                           {busyEdit === e.id ? "Withdrawing…" : "Withdraw"}
                         </Button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
           <AnnotateForm connectionId={connectionId} onSaved={loadEdits} />

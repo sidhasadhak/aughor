@@ -11,12 +11,13 @@
  *   params with a picker over what upstream steps publish; a guard typed by hand would
  *   have re-opened it one field over.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, change, optionsOf, valueOf } from "@/lib/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BindingCast, EffectRow, effectsForWire } from "@/components/automations/AutomationRows";
 import { getIntegrationConnections, getIntegrationOperations } from "@/lib/api";
 import type { AutoEffect } from "@/lib/api";
+import { SelectField } from "@/components/ui/select";
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
@@ -106,7 +107,7 @@ describe("the Only if editor", () => {
     renderRow(post({ when: [{ left: { $from: "numbers.ts" }, op: "truthy" }] }),
               [opener, post()], 1);
     const subject = await screen.findByLabelText("Only if subject");
-    expect([...subject.querySelectorAll("option")].map(o => o.textContent))
+    expect(optionsOf(subject).map(o => o.text))
       .toEqual(["numbers.ts", "numbers.channel"]);
   });
 
@@ -141,7 +142,7 @@ describe("the Only if editor", () => {
   it("asks for a value once the operator takes one", async () => {
     renderRow(post({ when: [{ left: { $from: "numbers.ts" }, op: "gt", right: 5 }] }),
               [opener, post()], 1);
-    expect(await screen.findByLabelText("Only if value")).toHaveValue("5");
+    expect(valueOf(await screen.findByLabelText("Only if value"))).toBe("5");
   });
 
   it("keeps a reference the picker can no longer offer, rather than silently re-pointing it",
@@ -151,7 +152,7 @@ describe("the Only if editor", () => {
       renderRow(post({ when: [{ left: { $from: "gone.answer" }, op: "truthy" }] }),
                 [opener, post()], 1);
       const subject = await screen.findByLabelText("Only if subject");
-      expect(subject).toHaveValue("gone.answer");
+      expect(valueOf(subject)).toBe("gone.answer");
       expect(screen.getByText("gone.answer (missing)")).toBeInTheDocument();
     });
 });
@@ -218,7 +219,7 @@ describe("the Otherwise editor", () => {
   it("offers only steps this one may be the otherwise OF — earlier, guarded, unfanned", async () => {
     renderRow(post(), [opener, guarded, post()], 2);
     const picker = await screen.findByLabelText("Otherwise of");
-    const options = [...picker.querySelectorAll("option")].map(o => o.value);
+    const options = optionsOf(picker).map(o => o.value);
     // `numbers` (no guard) must not be offered; `alerts` must.
     expect(options).toEqual(["", "alerts"]);
   });
@@ -231,10 +232,14 @@ describe("the Otherwise editor", () => {
   it("writes else_of on pick, and clears it back to undefined", async () => {
     const onChange = renderRow(post(), [opener, guarded, post()], 2);
     const picker = await screen.findByLabelText("Otherwise of");
-    fireEvent.change(picker, { target: { value: "alerts" } });
+    change(picker, { target: { value: "alerts" } });
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ else_of: "alerts" }));
-    fireEvent.change(picker, { target: { value: "" } });
-    expect(onChange).toHaveBeenLastCalledWith(
+    // Choosing what is already chosen is no change (a Themes select says nothing then, as a
+    // person would expect); clearing is a change from a step that HAS an "otherwise".
+    const again = renderRow(post({ else_of: "alerts" }), [opener, guarded, post()], 2);
+    const pickers = await screen.findAllByLabelText("Otherwise of");
+    change(pickers[pickers.length - 1], { target: { value: "" } });
+    expect(again).toHaveBeenLastCalledWith(
       expect.objectContaining({ else_of: undefined }));
   });
 
@@ -243,9 +248,9 @@ describe("the Otherwise editor", () => {
     // change WHEN this step runs without anyone touching it.
     renderRow(post({ else_of: "ghost" }), [opener, post()], 1);
     const picker = await screen.findByLabelText("Otherwise of");
-    expect([...picker.querySelectorAll("option")].map(o => o.textContent))
+    expect(optionsOf(picker).map(o => o.text))
       .toContain("ghost (missing)");
-    expect((picker as HTMLSelectElement).value).toBe("ghost");
+    expect(valueOf(picker)).toBe("ghost");
   });
 });
 
@@ -277,9 +282,9 @@ describe("the integration editor", () => {
     const picker = await screen.findByLabelText("Act as");
     // A revoked grant is dead and a needs_reconnect one is a refusal the provider has
     // already made — offering either is offering something that cannot work.
-    expect([...picker.querySelectorAll("option")].map(o => o.value))
+    expect(optionsOf(picker).map(o => o.value))
       .toEqual(["", "ic_g"]);
-    expect(screen.getByText("google · sales@example.com")).toBeInTheDocument();
+    expect(optionsOf(picker).map(o => o.text)).toContain("google · sales@example.com");
   });
 
   it("fetches the operations for THAT grant, and renders its declared ports", async () => {
@@ -304,23 +309,23 @@ describe("the integration editor", () => {
                                 params: { q: { $from: "step1.answer" } } })}
       agents={[]} bots={[]} onChange={onChange} />);
     const field = await screen.findByLabelText("Search");
-    expect(field).toHaveValue('{"$from":"step1.answer"}');
-    fireEvent.change(field, { target: { value: '{"$from": "step1.q"}' } });
+    expect(valueOf(field)).toBe('{"$from":"step1.answer"}');
+    change(field, { target: { value: '{"$from": "step1.q"}' } });
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       config: expect.objectContaining({ params: { q: { $from: "step1.q" } } }),
     }));
   });
 
   it("keeps a grant the picker cannot offer, marked missing — never silently cleared", async () => {
-    // Revoked since, or someone else's. A `<select>` whose value matches no option
+    // Revoked since, or someone else's. A `<SelectField>` whose value matches no option
     // renders as the placeholder, so the step would READ as one nobody configured and
     // the next save would make that true.
     render(<EffectRow e={step({ connection_id: "ic_gone", operation: "gmail.messages.list" })}
       agents={[]} bots={[]} onChange={vi.fn()} />);
     const picker = await screen.findByLabelText("Act as");
-    expect([...picker.querySelectorAll("option")].map(o => o.textContent))
+    expect(optionsOf(picker).map(o => o.text))
       .toContain("ic_gone (missing)");
-    expect((picker as HTMLSelectElement).value).toBe("ic_gone");
+    expect(valueOf(picker)).toBe("ic_gone");
     expect(screen.getByText(/an account you can no longer pick/)).toBeInTheDocument();
   });
 
@@ -330,7 +335,7 @@ describe("the integration editor", () => {
       agents={[]} bots={[]} onChange={vi.fn()} />);
     // The "connect one" sentence is for an EMPTY step; on a configured one it would hide
     // what the step actually says and invite a save that drops it.
-    expect(await screen.findByLabelText("Act as")).toHaveValue("ic_gone");
+    expect(valueOf(await screen.findByLabelText("Act as"))).toBe("ic_gone");
     expect(screen.queryByText(/No connected accounts/)).toBeNull();
   });
 
@@ -341,7 +346,7 @@ describe("the integration editor", () => {
     render(<EffectRow e={step({ connection_id: "ic_g", operation: "gmail.messages.list",
                                 params: { q: "is:unread" } })}
       agents={[]} bots={[]} onChange={onChange} />);
-    fireEvent.change(await screen.findByLabelText("Act as"), { target: { value: "" } });
+    change(await screen.findByLabelText("Act as"), { target: { value: "" } });
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       config: expect.objectContaining({ connection_id: "", operation: "", params: {} }),
     }));
@@ -373,13 +378,13 @@ describe("BindingCast", () => {
 
   it("shows the cast already declared", () => {
     render(<BindingCast value={{ $from: "s.count", $as: "text" }} onChange={() => {}} />);
-    expect((cast() as HTMLSelectElement).value).toBe("text");
+    expect(valueOf(cast()!)).toBe("text");
   });
 
   it("writes $as without disturbing the reference", () => {
     const seen: unknown[] = [];
     render(<BindingCast value={{ $from: "s.count" }} onChange={v => seen.push(v)} />);
-    fireEvent.change(cast()!, { target: { value: "text" } });
+    change(cast()!, { target: { value: "text" } });
     expect(seen[0]).toEqual({ $from: "s.count", $as: "text" });
   });
 
@@ -390,7 +395,7 @@ describe("BindingCast", () => {
     const seen: Record<string, unknown>[] = [];
     render(<BindingCast value={{ $from: "s.count", $as: "text" }}
                        onChange={v => seen.push(v as Record<string, unknown>)} />);
-    fireEvent.change(cast()!, { target: { value: "" } });
+    change(cast()!, { target: { value: "" } });
     expect(seen[0]).toEqual({ $from: "s.count" });
     expect("$as" in seen[0]).toBe(false);
   });
@@ -416,7 +421,7 @@ describe("the Trusted query editor", () => {
   it("opens on PICK for a step that names a query", () => {
     render(<EffectRow e={tq({ query_id: "tq_vetted" })} agents={[]} bots={[]}
       onChange={vi.fn()} />);
-    expect(screen.getByPlaceholderText("trusted query id")).toHaveValue("tq_vetted");
+    expect(valueOf(screen.getByPlaceholderText("trusted query id"))).toBe("tq_vetted");
     expect(screen.queryByPlaceholderText("SELECT …")).not.toBeInTheDocument();
   });
 
@@ -466,19 +471,19 @@ describe("the MCP call editor", () => {
     const onChange = vi.fn();
     const { rerender } = render(<EffectRow e={{ kind: "mcp_call", config: {} }} agents={[]}
       bots={[]} onChange={onChange} />);
-    fireEvent.change(await screen.findByLabelText("MCP server"), { target: { value: "srv_jira" } });
+    change(await screen.findByLabelText("MCP server"), { target: { value: "srv_jira" } });
     const picked = onChange.mock.lastCall![0] as AutoEffect;
     expect(picked.config).toEqual({ server_id: "srv_jira", tool: "", arguments: {} });
 
     rerender(<EffectRow e={picked} agents={[]} bots={[]} onChange={onChange} />);
     const tools = await screen.findByLabelText("MCP tool");
-    expect([...tools.querySelectorAll("option")].map(o => o.textContent))
+    expect(optionsOf(tools).map(o => o.text))
       .toEqual(["Which tool…", "Search issues", "Add comment (granted)"]);
-    fireEvent.change(tools, { target: { value: "search_issues" } });
+    change(tools, { target: { value: "search_issues" } });
     const withTool = onChange.mock.lastCall![0] as AutoEffect;
 
     rerender(<EffectRow e={withTool} agents={[]} bots={[]} onChange={onChange} />);
-    fireEvent.change(await screen.findByLabelText("limit"), { target: { value: "25" } });
+    change(await screen.findByLabelText("limit"), { target: { value: "25" } });
     expect((onChange.mock.lastCall![0] as AutoEffect).config).toEqual(
       { server_id: "srv_jira", tool: "search_issues", arguments: { limit: 25 } });
     expect(screen.getByLabelText("jql")).toHaveAttribute("placeholder", "jql — a JQL query");

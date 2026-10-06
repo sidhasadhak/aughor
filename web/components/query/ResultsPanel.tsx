@@ -42,6 +42,7 @@ import { EXTRACTORS, extractorById, guessTableName } from "@/lib/query/extractor
 import { applyFilters } from "@/lib/query/resultFilter";
 import type { RelatedJoin, TypedQueryPage, TypedQueryResult } from "@/lib/api";
 import type { Cell } from "@/lib/query/resultFilter";
+import { Input } from "@/components/ui/input";
 
 const noteStyle: React.CSSProperties = { fontSize: 13, color: "var(--t3)" };
 
@@ -441,8 +442,8 @@ export function ResultsPanel({
         {vizTabs.map(v => (
           <span key={v.id} style={{ position: "relative", display: "flex", alignItems: "center", flexShrink: 0 }}>
             {renaming === v.id ? (
-              <input
-                className="aug-input aug-fs-ui" autoFocus value={renameDraft}
+              <Input
+                className="aug-fs-ui" autoFocus value={renameDraft}
                 onChange={e => setRenameDraft(e.target.value)}
                 onBlur={() => { if (renameDraft.trim()) patchViz(v.id, { name: renameDraft.trim() }); setRenaming(""); }}
                 onKeyDown={e => {

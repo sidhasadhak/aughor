@@ -17,6 +17,7 @@ import { connectionLabel } from "@/lib/names";
 import { getCorrections, type CorrectionEntry, type CorrectionKind } from "@/lib/record";
 import { Absent, Gate, Ledger, Page, day, useLoad, type LedgerColumn } from "@/components/record/kit";
 import { Button } from "@/components/ui/button";
+import { Segmented } from "@/components/ui/segmented";
 
 const ORDER: CorrectionKind[] = [
   "restatement", "refuted_hypothesis", "missed_move", "prediction_outside_interval", "decision_worse_than_expected",
@@ -63,16 +64,9 @@ export function CorrectionsPanel({ connections, onOpenClaim, onOpenDecision, onO
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-0)" }}>
       <div className="aug-toolbar" style={{ flexWrap: "wrap", height: "auto", minHeight: 36, rowGap: 6, paddingTop: 4, paddingBottom: 4 }}>
-        <div role="group" aria-label="Kind of correction" className="aug-segmented">
-          <Button variant="ghost" size="xs" aria-pressed={kind === ""} className={`aug-seg-item${kind === "" ? " active" : ""}`}
-            onClick={() => setKind("")}>All</Button>
-          {ORDER.map(k => (
-            <Button key={k} variant="ghost" size="xs" aria-pressed={kind === k} title={load.data?.labels[k]}
-              className={`aug-seg-item${kind === k ? " active" : ""}`} onClick={() => setKind(k)}>
-              {SHORT[k]}{load.data ? ` · ${shownCount(k)}` : ""}
-            </Button>
-          ))}
-        </div>
+        <Segmented label="Kind of correction" value={kind || "all"} onChange={v => setKind(v === "all" ? "" : v)}
+          options={[{ value: "all" as const, label: "All" },
+            ...ORDER.map(k => ({ value: k, label: `${SHORT[k]}${load.data ? ` · ${shownCount(k)}` : ""}`, title: load.data?.labels[k] }))]} />
         {load.data && <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{countNoun(entries.length, "correction")} · every connection</span>}
       </div>
       <Page wide>

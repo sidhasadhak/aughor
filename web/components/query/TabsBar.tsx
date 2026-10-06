@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { queryTabName } from "@/lib/format";
 import type { ParamDef, ParamValue } from "@/lib/query/paramDefs";
+import { Input } from "@/components/ui/input";
 
 export interface EditorTab {
   id: string;
@@ -138,8 +139,7 @@ export function TabsBar({
             }}
           >
             {editing === t.id ? (
-              <input
-                className="aug-input"
+              <Input
                 autoFocus
                 value={draftName}
                 onChange={e => setDraftName(e.target.value)}
