@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 import { clearAgentPolicy, getAgentPolicy, getMyAccess, updateAgentPolicy, type AgentPolicyView } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type Level = "read" | "run" | "act";
 
@@ -143,12 +144,12 @@ export function AgentPolicySection() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <div>
           <label className="aug-fs-xs" style={labelStyle} htmlFor="agent-policy-connections">Connections the agent may touch</label>
-          <input id="agent-policy-connections" className="aug-input" value={connections} disabled={!canManage || saving}
+          <Input id="agent-policy-connections" value={connections} disabled={!canManage || saving}
             onChange={e => setConnections(e.target.value)} placeholder="all — or connection ids, comma-separated" />
         </div>
         <div>
           <label className="aug-fs-xs" style={labelStyle} htmlFor="agent-policy-tools">Tools the agent may call</label>
-          <input id="agent-policy-tools" className="aug-input" value={tools} disabled={!canManage || saving}
+          <Input id="agent-policy-tools" value={tools} disabled={!canManage || saving}
             onChange={e => setTools(e.target.value)} placeholder="all — or tool names, comma-separated" />
         </div>
       </div>

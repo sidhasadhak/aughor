@@ -18,6 +18,7 @@ import { getApiBase } from "@/lib/config";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
 import { Icon } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const FALLBACK_STARTERS = [
   { text: "Show me the top 10 rows from any table",  mode: "ask" as const },
@@ -448,7 +449,7 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
         </div>
       )}
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        <input
+        <Input
           value={val}
           onChange={e => setVal(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); submit(); } }}

@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import type { Connection, Workspace } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 
 /** One spacing system for the whole popover. Every row — a workspace, the section
  *  header, the divider, the footer — shares this horizontal inset, so the icons, the
@@ -302,7 +303,7 @@ export function WorkspaceSwitcher({
 
               {creating ? (
                 <div style={{ display: "flex", gap: 6, padding: "2px 8px 6px" }}>
-                  <input
+                  <Input
                     autoFocus
                     className="aug-fs-sm"
                     value={newName}

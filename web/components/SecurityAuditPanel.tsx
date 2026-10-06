@@ -16,6 +16,7 @@ import {
 } from "@/lib/api";
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -228,7 +229,7 @@ function BudgetEditor({ connId }: { connId: string }) {
           <span style={{ fontSize: 12, color: "var(--t2)", width: 110, flexShrink: 0 }}>
             {key === "max_rows" ? "Max rows" : key === "warn_time_ms" ? "Warn (ms)" : "Max time (ms)"}
           </span>
-          <input
+          <Input
             type="number"
             value={draft[key]}
             onChange={e => setDraft(d => d ? { ...d, [key]: Number(e.target.value) } : d)}

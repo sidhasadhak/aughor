@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { askThroughDoor, type DoorAnswer } from "@/lib/api";
 import { displayCellValue, formatCount } from "@/lib/format";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 const KEY = (agentId: string) => `aughor.embed.key.${agentId}`;
 
@@ -67,7 +68,7 @@ export default function EmbedAgentPage({ params }: { params: Promise<{ agentId: 
             Paste the agent&apos;s key (issued on its Doors tab). It stays in this tab&apos;s session
             only — not in the address bar, not on this page&apos;s server.
           </span>
-          <input className="aug-input" type="password" value={draftKey} autoComplete="off"
+          <Input type="password" value={draftKey} autoComplete="off"
             placeholder="the agent's key" aria-label="Agent key"
             onChange={e => setDraftKey(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveKey(); }} />
           <span><Button variant="default" size="sm" onClick={saveKey} disabled={!draftKey.trim()}>Use this key</Button></span>
@@ -77,13 +78,13 @@ export default function EmbedAgentPage({ params }: { params: Promise<{ agentId: 
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div style={{ flex: "3 1 320px" }}>
               <label className="aug-fs-xs" style={{ color: "var(--t3)" }}>Question</label>
-              <input className="aug-input" value={question} aria-label="Question"
+              <Input value={question} aria-label="Question"
                 placeholder="How many orders were placed yesterday?"
                 onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void ask(); }} />
             </div>
             <div style={{ flex: "1 1 160px" }}>
               <label className="aug-fs-xs" style={{ color: "var(--t3)" }}>Who is asking (optional)</label>
-              <input className="aug-input" value={asker} aria-label="Asker" placeholder="you@example.com"
+              <Input value={asker} aria-label="Asker" placeholder="you@example.com"
                 onChange={e => setAsker(e.target.value)} />
             </div>
             <Button variant="default" size="sm" onClick={() => void ask()} disabled={busy || !question.trim()}>

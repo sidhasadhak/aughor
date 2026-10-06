@@ -29,6 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
 
 /** What one mode can contribute to, and take from, the saved surface. */
 export interface SavedQueryBinding {
@@ -305,7 +306,7 @@ export function SavedQueryBar({
             <p className="aug-fs-ui" style={{ color: "var(--t3)", fontWeight: 600, marginBottom: 8 }}>
               Save query as
             </p>
-            <input
+            <Input
               autoFocus
               value={draftName}
               onChange={e => setDraftName(e.target.value)}
@@ -314,7 +315,7 @@ export function SavedQueryBar({
                 if (e.key === "Escape") setNaming(false);
               }}
               placeholder="Query name"
-              className="aug-input aug-fs-ui"
+              className="aug-fs-ui"
               style={{ width: "100%" }}
             />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>

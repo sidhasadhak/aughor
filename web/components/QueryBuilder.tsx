@@ -29,6 +29,7 @@ import { toast } from "@/components/ui/toast";
 import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
 import { Icon } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
@@ -117,29 +118,29 @@ function SemanticStepPanel({
           </div>
 
           {op === "filter" && (
-            <input value={predicate} onChange={e => setPredicate(e.target.value)}
+            <Input value={predicate} onChange={e => setPredicate(e.target.value)}
               placeholder="keep rows where… e.g. 'the ticket is a billing complaint'" className={inputCls} />
           )}
           {op === "top_k" && (
             <div className="flex items-center gap-2">
-              <input value={criterion} onChange={e => setCriterion(e.target.value)}
+              <Input value={criterion} onChange={e => setCriterion(e.target.value)}
                 placeholder="rank by… e.g. 'most severe outage'" className={`${inputCls} flex-1`} />
               <span className="aug-fs-xs text-zinc-500">keep</span>
-              <input type="number" min={1} value={k}
+              <Input type="number" min={1} value={k}
                 onChange={e => setK(Math.max(1, parseInt(e.target.value) || 1))} className={`${inputCls} w-16`} />
             </div>
           )}
           {op === "aggregate" && (
-            <input value={instruction} onChange={e => setInstruction(e.target.value)}
+            <Input value={instruction} onChange={e => setInstruction(e.target.value)}
               placeholder="synthesize… e.g. 'summarize the recurring complaint themes'" className={inputCls} />
           )}
           {op === "extract" && (
             <div className="flex flex-col gap-1.5">
               {fields.map((f, i) => (
                 <div key={i} className="flex items-center gap-1.5">
-                  <input value={f.name} onChange={e => setFields(fields.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                  <Input value={f.name} onChange={e => setFields(fields.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
                     placeholder="field name e.g. root_cause" className={`${inputCls} w-40`} />
-                  <input value={f.description} onChange={e => setFields(fields.map((x, j) => j === i ? { ...x, description: e.target.value } : x))}
+                  <Input value={f.description} onChange={e => setFields(fields.map((x, j) => j === i ? { ...x, description: e.target.value } : x))}
                     placeholder="what to extract" className={`${inputCls} flex-1`} />
                   {fields.length > 1 && (
                     <Button variant="ghost" size="xs" onClick={() => setFields(fields.filter((_, j) => j !== i))}
@@ -667,7 +668,7 @@ function AggPicker({ col, table, onAdd, onCancel }: {
         {agg === "CUSTOM" && (
           <div className="mb-5">
             <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">SQL expression</p>
-            <input ref={exprRef} value={expr} onChange={e => setExpr(e.target.value)}
+            <Input ref={exprRef} value={expr} onChange={e => setExpr(e.target.value)}
               placeholder="e.g. ROUND(SUM(revenue) / COUNT(*), 2)"
               className="w-full aug-fs-sm font-mono bg-zinc-800 border border-zinc-600 rounded-md px-3 py-2.5 text-zinc-200 outline-none focus:border-zinc-400 transition" />
           </div>
@@ -675,7 +676,7 @@ function AggPicker({ col, table, onAdd, onCancel }: {
 
         <div className="mb-5">
           <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Column alias</p>
-          <input value={alias} onChange={e => { aliasEdited.current = true; setAlias(e.target.value); }}
+          <Input value={alias} onChange={e => { aliasEdited.current = true; setAlias(e.target.value); }}
             placeholder="metric_name"
             className="w-full aug-fs-sm font-mono bg-zinc-800 border border-zinc-600 rounded-md px-3 py-2.5 text-zinc-200 outline-none focus:border-zinc-400 transition" />
         </div>
@@ -1728,7 +1729,7 @@ export function QueryBuilder({
                 <div className="absolute right-0 top-full mt-2 z-50 w-80 rounded-md border border-zinc-700 bg-zinc-900 shadow-[var(--shadow-sm)] p-3">
                   <p className="aug-fs-xs font-semibold text-zinc-300 mb-1">Pin to briefing cockpit</p>
                   <p className="aug-fs-xs text-zinc-500 mb-2.5 leading-snug">Re-run through the trust guards on save — a query that fails a guard is refused, not pinned.</p>
-                  <input autoFocus value={pinName} onChange={e => setPinName(e.target.value)}
+                  <Input autoFocus value={pinName} onChange={e => setPinName(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter") doPinQuery(pinName); if (e.key === "Escape") setShowPinName(false); }}
                     placeholder="Card title"
                     className="w-full aug-fs-sm bg-zinc-800 border border-zinc-600 rounded-md px-2.5 py-1.5 text-zinc-200 outline-none focus:border-violet-400" />
@@ -2051,7 +2052,7 @@ export function QueryBuilder({
                       </SelectField>
                       {!NO_VAL_OPS.includes(nfOp) && (
                         <>
-                          <input value={nfVal} onChange={e=>setNfVal(e.target.value)} list="qb-nf-distinct"
+                          <Input value={nfVal} onChange={e=>setNfVal(e.target.value)} list="qb-nf-distinct"
                             onKeyDown={e=>{if(e.key==="Enter")commitFilter();}} placeholder="value" autoFocus
                             className="aug-fs-sm font-mono bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-40 transition" />
                           {nfDistinct.length > 0 && (
@@ -2090,7 +2091,7 @@ export function QueryBuilder({
                           className="aug-fs-sm font-mono bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
                           {HAVING_OPS.map(op=><option key={op} value={op}>{op}</option>)}
                         </SelectField>
-                        <input value={h.val} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,val:e.target.value}:x))} placeholder="value"
+                        <Input value={h.val} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,val:e.target.value}:x))} placeholder="value"
                           className="aug-fs-sm font-mono bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-28 transition" />
                         <Button variant="ghost" size="xs" onClick={()=>setHaving(p=>p.filter(x=>x.id!==h.id))} className="h-auto py-0 font-normal text-zinc-500 hover:text-red-400 hover:bg-transparent dark:hover:bg-transparent text-sm leading-none px-1">×</Button>
                       </div>
@@ -2108,13 +2109,13 @@ export function QueryBuilder({
               <div className="border-t border-zinc-700/30 pt-4 flex items-end gap-6">
                 <div>
                   <p className="aug-fs-sm text-zinc-500 mb-2">ORDER BY</p>
-                  <input value={orderBy} onChange={e=>setOrderBy(e.target.value)}
+                  <Input value={orderBy} onChange={e=>setOrderBy(e.target.value)}
                     placeholder="e.g. total_revenue DESC"
                     className="aug-fs-sm font-mono bg-zinc-800/60 border border-zinc-700 rounded-md px-3 py-2 text-zinc-200 outline-none focus:border-zinc-500 w-56 transition" />
                 </div>
                 <div>
                   <p className="aug-fs-sm text-zinc-500 mb-2">LIMIT</p>
-                  <input type="number" min={0} max={50000} value={limit || ""} onChange={e=>{
+                  <Input type="number" min={0} max={50000} value={limit || ""} onChange={e=>{
                       const v = e.target.value;
                       setLimit(v === "" ? 0 : Math.max(0, parseInt(v) || 0));
                     }}
@@ -2182,7 +2183,7 @@ export function QueryBuilder({
                 <>
                   <div>
                     <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Chart title</p>
-                    <input value={chartTitle} onChange={e=>setChartTitle(e.target.value)} placeholder="(auto)"
+                    <Input value={chartTitle} onChange={e=>setChartTitle(e.target.value)} placeholder="(auto)"
                       className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
                   </div>
                   <div>
@@ -2217,12 +2218,12 @@ export function QueryBuilder({
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">X axis title</p>
-                      <input value={xTitle} onChange={e=>setXTitle(e.target.value)} placeholder="(auto)"
+                      <Input value={xTitle} onChange={e=>setXTitle(e.target.value)} placeholder="(auto)"
                         className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
                     </div>
                     <div>
                       <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Y axis title</p>
-                      <input value={yTitle} onChange={e=>setYTitle(e.target.value)} placeholder="(auto)"
+                      <Input value={yTitle} onChange={e=>setYTitle(e.target.value)} placeholder="(auto)"
                         className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
                     </div>
                   </div>

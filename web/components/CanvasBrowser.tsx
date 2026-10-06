@@ -6,6 +6,7 @@ import { AugTable } from "@/components/AugTable";
 import { Button } from "@/components/ui/button";
 import type { TableColumnsType } from "antd";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
@@ -370,7 +371,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
           onBlurCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b1)"; }}
         >
           <Icon name={SEARCH_ICON} size={14} color="var(--t3)" />
-          <input
+          <Input
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search Data Canvases, connections…"

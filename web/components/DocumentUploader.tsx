@@ -26,6 +26,7 @@ import {
   type ConvertFormat,
   type KnowledgeStatus,
 } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 
 /** Until the server answers, accept only what needs no converter. The list used to be
  *  a hard-coded five and stayed five while the parser grew to twenty — a capability
@@ -605,7 +606,7 @@ export function DocumentUploader() {
                   <label className="block aug-fs-xs text-zinc-400 mb-1" htmlFor="chunk-delimiter">
                     Delimiter
                   </label>
-                  <input
+                  <Input
                     id="chunk-delimiter"
                     type="text"
                     value={settings.delimiter ?? ""}
@@ -613,7 +614,7 @@ export function DocumentUploader() {
                     onChange={e => setSettings(prev => (e.target.value
                       ? { ...prev, delimiter: e.target.value }
                       : Object.fromEntries(Object.entries(prev).filter(([k]) => k !== "delimiter"))))}
-                    className="aug-input w-full font-mono"
+                    className="w-full font-mono"
                   />
                 </div>
                 {([
@@ -625,14 +626,14 @@ export function DocumentUploader() {
                     <label className="block aug-fs-xs text-zinc-400 mb-1" htmlFor={`chunk-${key}`}>
                       {label}
                     </label>
-                    <input
+                    <Input
                       id={`chunk-${key}`}
                       type="number"
                       min={1}
                       value={settings[key] ?? ""}
                       placeholder={String(cut?.settings?.[key] ?? "default")}
                       onChange={e => setNum(key)(e.target.value)}
-                      className="aug-input w-full"
+                      className="w-full"
                     />
                     <p className="aug-fs-xs text-zinc-600 mt-1">{hint}</p>
                   </div>

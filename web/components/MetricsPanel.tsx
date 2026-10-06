@@ -30,6 +30,7 @@ import {
 } from "@/lib/api";
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 // ── Governance lifecycle (B-8) ──────────────────────────────────────────────────
 const STATUS_STYLE: Record<string, string> = {
@@ -198,7 +199,7 @@ function DatesSection({ metric, proposals, onChanged }: {
       )}
       {!editing ? (
         <div className="flex items-center gap-2 mt-2 flex-wrap">
-          <input className="aug-input aug-fs-xs" placeholder="Who is confirming" value={actor}
+          <Input className="aug-fs-xs" placeholder="Who is confirming" value={actor}
             onChange={e => setActor(e.target.value)} aria-label="Who is confirming the dates" />
           {metric.time_kind && !confirmed && (
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => save({})}>Confirm</Button>
@@ -214,7 +215,7 @@ function DatesSection({ metric, proposals, onChanged }: {
               <option value="cohort">Cohort — completed by a later date</option>
             </SelectField>
           </label>
-          <input className="aug-input aug-fs-xs" list={listed ? grainList : undefined}
+          <Input className="aug-fs-xs" list={listed ? grainList : undefined}
             placeholder={listed ? "Date column — pick one of the proposals, or type schema.table.column" : "Date column — schema.table.column"}
             value={shownColumn} onChange={e => setColumn(e.target.value)} aria-label="Date column" />
           {listed && (
@@ -233,17 +234,17 @@ function DatesSection({ metric, proposals, onChanged }: {
           </p>
           {kind === "cohort" && (
             <>
-              <input className="aug-input aug-fs-xs" list={listed ? grainList : undefined} placeholder="Completing date, e.g. schema.table.returned_at" value={outcome}
+              <Input className="aug-fs-xs" list={listed ? grainList : undefined} placeholder="Completing date, e.g. schema.table.returned_at" value={outcome}
                 onChange={e => setOutcome(e.target.value)} aria-label="Completing date column" />
-              <input className="aug-input aug-fs-xs" placeholder="Settles after (days)" value={settles}
+              <Input className="aug-fs-xs" placeholder="Settles after (days)" value={settles}
                 onChange={e => setSettles(e.target.value)} aria-label="Settles after days" />
             </>
           )}
           {kind === "stock" && (
-            <input className="aug-input aug-fs-xs" list={listed ? grainList : undefined} placeholder="Counts until, e.g. schema.table.sold_at" value={until}
+            <Input className="aug-fs-xs" list={listed ? grainList : undefined} placeholder="Counts until, e.g. schema.table.sold_at" value={until}
               onChange={e => setUntil(e.target.value)} aria-label="Counts until column" />
           )}
-          <input className="aug-input aug-fs-xs" placeholder="Who is confirming" value={actor}
+          <Input className="aug-fs-xs" placeholder="Who is confirming" value={actor}
             onChange={e => setActor(e.target.value)} aria-label="Who is confirming the dates" />
           <div className="flex items-center gap-2">
             <Button size="sm" variant="secondary" disabled={busy || !shownColumn.trim()}
@@ -338,7 +339,7 @@ function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: (
       )}
       {actions.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap">
-          <input
+          <Input
             value={actor}
             onChange={(e) => setActor(e.target.value)}
             placeholder="actor (you / team)"
@@ -715,7 +716,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
 
             {/* ── Core fields ─────────────────────────────────────────────── */}
             <Field label="Name (snake_case)" required>
-              <input
+              <Input
                 className={inputCls}
                 placeholder="mrr"
                 value={form.name}
@@ -725,7 +726,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             </Field>
 
             <Field label="Label" required>
-              <input
+              <Input
                 className={inputCls}
                 placeholder="Monthly Recurring Revenue"
                 value={form.label}
@@ -785,7 +786,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
 
             <div className="grid grid-cols-2 gap-3">
               <Field label="Tables" hint="Comma-separated">
-                <input
+                <Input
                   className={inputCls}
                   placeholder="subscriptions, payments"
                   value={form.tables}
@@ -793,7 +794,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                 />
               </Field>
               <Field label="Unit">
-                <input
+                <Input
                   className={inputCls}
                   placeholder="$ or % or days"
                   value={form.unit}
@@ -803,7 +804,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             </div>
 
             <Field label="Dimensions" hint="Columns this metric can be sliced by, comma-separated">
-              <input
+              <Input
                 className={inputCls}
                 placeholder="order_date, country, plan_type"
                 value={form.dimensions}
@@ -812,7 +813,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             </Field>
 
             <Field label="Always-on Filters" hint="WHERE conditions always applied, comma-separated">
-              <input
+              <Input
                 className={inputCls}
                 placeholder="is_test = false, deleted_at IS NULL"
                 value={form.filters}
@@ -821,7 +822,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             </Field>
 
             <Field label="Caveats">
-              <input
+              <Input
                 className={inputCls}
                 placeholder="Finance-approved. Excludes internal test accounts."
                 value={form.caveats}
@@ -833,21 +834,21 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             <SectionHeader label="Health Scorecard" />
             <div className="grid grid-cols-3 gap-3">
               <Field label="Target value" hint="green">
-                <input
+                <Input
                   className={inputCls} type="number" placeholder="e.g. 0.08"
                   value={form.target_value}
                   onChange={(e) => setForm({ ...form, target_value: e.target.value })}
                 />
               </Field>
               <Field label="Warning ≥" hint="yellow">
-                <input
+                <Input
                   className={inputCls} type="number" placeholder="e.g. 0.10"
                   value={form.warning_threshold}
                   onChange={(e) => setForm({ ...form, warning_threshold: e.target.value })}
                 />
               </Field>
               <Field label="Critical ≥" hint="red">
-                <input
+                <Input
                   className={inputCls} type="number" placeholder="e.g. 0.15"
                   value={form.critical_threshold}
                   onChange={(e) => setForm({ ...form, critical_threshold: e.target.value })}
@@ -856,14 +857,14 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Target period">
-                <input
+                <Input
                   className={inputCls} placeholder="monthly, quarterly, ytd"
                   value={form.target_period}
                   onChange={(e) => setForm({ ...form, target_period: e.target.value })}
                 />
               </Field>
               <Field label="Benchmark source">
-                <input
+                <Input
                   className={inputCls} placeholder="internal: FY2025 plan"
                   value={form.benchmark_source}
                   onChange={(e) => setForm({ ...form, benchmark_source: e.target.value })}
@@ -876,14 +877,14 @@ export function MetricsPanel({ connId }: { connId?: string }) {
 
             <div className="grid grid-cols-2 gap-3">
               <Field label="Owner">
-                <input
+                <Input
                   className={inputCls} placeholder="Revenue team"
                   value={form.owner}
                   onChange={(e) => setForm({ ...form, owner: e.target.value })}
                 />
               </Field>
               <Field label="Approved by">
-                <input
+                <Input
                   className={inputCls} placeholder="Finance"
                   value={form.approved_by}
                   onChange={(e) => setForm({ ...form, approved_by: e.target.value })}
@@ -893,14 +894,14 @@ export function MetricsPanel({ connId }: { connId?: string }) {
 
             <div className="grid grid-cols-2 gap-3">
               <Field label="Freshness SLA" hint="human description">
-                <input
+                <Input
                   className={inputCls} placeholder="daily by 6am UTC"
                   value={form.freshness_sla}
                   onChange={(e) => setForm({ ...form, freshness_sla: e.target.value })}
                 />
               </Field>
               <Field label="Approved at" hint="YYYY-MM-DD">
-                <input
+                <Input
                   className={inputCls} placeholder="2026-01-15"
                   value={form.approved_at}
                   onChange={(e) => setForm({ ...form, approved_at: e.target.value })}

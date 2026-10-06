@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
 
 function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -73,7 +74,7 @@ export function VolumesPanel({ catalogId }: { catalogId: string }) {
       <div style={{ width: 220, borderRight: "0.5px solid var(--b1)", display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div style={{ padding: "10px 12px", borderBottom: "0.5px solid var(--b1)" }}>
           <div style={{ display: "flex", gap: 6 }}>
-            <input className="aug-input" value={newName} onChange={e => setNewName(e.target.value)}
+            <Input value={newName} onChange={e => setNewName(e.target.value)}
               onKeyDown={e => e.key === "Enter" && create()} placeholder="New volume…"
               style={{ flex: 1, fontSize: 12 }} />
             <Button variant="default" size="xs" disabled={busy || !newName.trim()} onClick={create}>Add</Button>

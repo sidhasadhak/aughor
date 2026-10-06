@@ -20,6 +20,7 @@ import { graduateCard, updateDashboardCard, type CardRunResult, type DashboardCa
 import { isEmptyVizConfig, type VizConfig } from "@/components/charts/vizConfig";
 import { toast } from "@/components/ui/toast";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 export type CardState = { card: DashboardCard; run?: CardRunResult; failed?: boolean };
 
@@ -94,7 +95,7 @@ export function CardAlertForm({ card, direction, onSet }: {
         <option value="below">below</option>
         <option value="above">above</option>
       </SelectField>
-      <input type="number" value={alertVal} onChange={e => setAlertVal(e.target.value)} placeholder="threshold"
+      <Input type="number" value={alertVal} onChange={e => setAlertVal(e.target.value)} placeholder="threshold"
         onKeyDown={e => { if (e.key === "Enter") saveAlert(); }}
         style={{ fontSize: 11, width: 74, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t1)", padding: "2px 4px", outline: "none" }} />
       <Button variant="ghost" size="xs" onClick={saveAlert} disabled={!alertVal || alertBusy}

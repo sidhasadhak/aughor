@@ -21,6 +21,7 @@ import {
 } from "@/lib/api";
 import { Segmented } from "@/components/ui/segmented";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 /** The control's value: the standing view, or a range. */
 export type RangeChoice = { preset: "standing" } | BriefingRange;
@@ -62,11 +63,11 @@ export function RangeControl({ value, onChange, disabled, standing, label = "Bri
         ]} />
       {custom && (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <input type="date" aria-label="First day" value={start} max={end || undefined}
-            onChange={e => setStart(e.target.value)} className="aug-input aug-fs-sm" />
+          <Input type="date" aria-label="First day" value={start} max={end || undefined}
+            onChange={e => setStart(e.target.value)} className="aug-fs-sm" />
           <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>to</span>
-          <input type="date" aria-label="Last day" value={end} min={start || undefined}
-            onChange={e => setEnd(e.target.value)} className="aug-input aug-fs-sm" />
+          <Input type="date" aria-label="Last day" value={end} min={start || undefined}
+            onChange={e => setEnd(e.target.value)} className="aug-fs-sm" />
           <Button size="sm" variant="secondary" disabled={disabled || !ready}
             onClick={() => onChange({ preset: "custom", start, end })}>
             Show

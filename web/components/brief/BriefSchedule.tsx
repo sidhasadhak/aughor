@@ -21,6 +21,7 @@ import { formatTimestamp } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const CRON_PRESETS: { label: string; cron: string }[] = [
   { label: "Weekdays 8:00 UTC", cron: "0 8 * * 1-5" },
@@ -155,7 +156,7 @@ export function BriefSchedule({ connId }: { connId: string }) {
 
       {triggers.length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-          <input style={{ ...field, width: 180 }} placeholder="Name this delivery"
+          <Input style={{ ...field, width: 180 }} placeholder="Name this delivery"
             value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
           <SelectField style={field} value={form.period}
             onChange={e => {

@@ -57,6 +57,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { BACKEND_LABEL } from "@/lib/llmMeta";
 import { TabStrip } from "@/components/ui/tab-strip";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 type Selection =
   | { kind: "charter"; id: string }
@@ -1051,7 +1052,7 @@ function AgentBenchmark({ agent, onChanged, onError }: {
             }}>Remove</Button>
           </div>
         ))}
-        <input className="aug-input" placeholder="Golden question — e.g. How many active customers?"
+        <Input placeholder="Golden question — e.g. How many active customers?"
           value={goldenDraft.question}
           onChange={e => setGoldenDraft(d => ({ ...d, question: e.target.value }))} />
         <textarea className="aug-input" rows={2}
@@ -1143,12 +1144,12 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
     <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 14 }}>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">Name</span>
-        <input className="aug-input" value={form.name} maxLength={120}
+        <Input value={form.name} maxLength={120}
           onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">What it is for</span>
-        <input className="aug-input" value={form.purpose} maxLength={240}
+        <Input value={form.purpose} maxLength={240}
           placeholder="One line other agents read when deciding whether to hand this agent a question — never the instructions."
           onChange={e => setForm(f => ({ ...f, purpose: e.target.value }))} />
       </label>
@@ -1168,7 +1169,7 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">Schema scope</span>
-        <input className="aug-input" value={form.schema_scope} maxLength={120}
+        <Input value={form.schema_scope} maxLength={120}
           placeholder="e.g. finance — leave empty for all schemas"
           onChange={e => setForm(f => ({ ...f, schema_scope: e.target.value }))} />
         <span style={{ fontSize: 11, color: "var(--t3)" }}>
@@ -1414,7 +1415,7 @@ export function AgentGuardrailsSection({ agent, onError }: {
         <span className="aug-fs-sm" style={{ color: "var(--t2)", minWidth: 96 }}>
           Tokens per run
         </span>
-        <input className="aug-input" style={{ maxWidth: 140 }} type="number" min={1}
+        <Input style={{ maxWidth: 140 }} type="number" min={1}
           placeholder="no cap"
           value={capValue ?? ""}
           onChange={e => {
@@ -1738,10 +1739,10 @@ function AgentLimitRow({ knob, value, busy, onSet }: {
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ width: 110, color: "var(--t3)", flexShrink: 0 }}>{knob.label}</span>
-        <input type="number" value={draft} disabled={busy}
+        <Input type="number" value={draft} disabled={busy}
           min={knob.min} max={knob.max} step={1} inputMode="numeric"
           aria-label={knob.label}
-          className="aug-input aug-fs-xs"
+          className="aug-fs-xs"
           style={{ padding: "3px 6px", width: 120, fontVariantNumeric: "tabular-nums" }}
           onChange={e => setDraft(e.target.value)} />
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{knob.unit}</span>
@@ -1827,7 +1828,7 @@ export function AgentModelPin({ pinned, busy, onPin }: {
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
         <span style={{ width: 110, color: "var(--t3)", flexShrink: 0 }}>Model pin</span>
-        <input className="aug-input" value={draft} disabled={busy}
+        <Input value={draft} disabled={busy}
           spellCheck={false} autoComplete="off"
           placeholder={provider ? `paste a model id from ${provider}` : "paste a model id"}
           style={{ fontSize: 11, padding: "3px 6px", maxWidth: 260,

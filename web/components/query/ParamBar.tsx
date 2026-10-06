@@ -27,6 +27,7 @@ import {
 import { listSavedQueries, runWorkbenchQuery, type SavedQuery } from "@/lib/api";
 import { Loading } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const WIDGETS: { v: ParamDef["widget"]; label: string }[] = [
   { v: "text", label: "Text" },
@@ -190,8 +191,8 @@ export function ParamBar({
                 <Icon name="bolt" size={11} /> {value}
               </Button>
             ) : (
-              <input
-                className="aug-input aug-fs-ui"
+              <Input
+                className="aug-fs-ui"
                 style={{ width: def.widget === "date" ? 130 : 120 }}
                 type={def.widget === "number" ? "number" : def.widget === "date" ? "date" : "text"}
                 value={typeof value === "string" ? value : ""}
@@ -284,7 +285,7 @@ export function ParamBar({
                   <div className="aug-label" style={{ marginBottom: 6 }}>:{name}</div>
                   <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                     <span style={{ color: "var(--t3)", width: 64, flexShrink: 0 }}>Label</span>
-                    <input className="aug-input aug-fs-ui" style={{ flex: 1 }}
+                    <Input className="aug-fs-ui" style={{ flex: 1 }}
                       value={def.label ?? ""} placeholder={`:${name}`}
                       onChange={e => patchDef(name, { label: e.target.value })} />
                   </label>
@@ -332,7 +333,7 @@ export function ParamBar({
                   {def.widget !== "multiselect" && (
                     <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ color: "var(--t3)", width: 64, flexShrink: 0 }}>Default</span>
-                      <input className="aug-input aug-fs-ui" style={{ flex: 1 }}
+                      <Input className="aug-fs-ui" style={{ flex: 1 }}
                         value={typeof def.default === "string" ? def.default : ""}
                         placeholder="none"
                         onChange={e => patchDef(name, { default: e.target.value || undefined })} />

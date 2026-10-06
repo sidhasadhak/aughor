@@ -36,6 +36,7 @@ import { ColumnTypeIcon } from "@/components/icons/columnType";
 import { Icon } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
@@ -320,7 +321,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 200px" }}>
             <label style={L}>Table name</label>
-            <input style={{ ...S, fontFamily: "var(--font-mono)" }} value={tableName}
+            <Input style={{ ...S, fontFamily: "var(--font-mono)" }} value={tableName}
               onChange={e => setTableName(e.target.value)} placeholder={a.suggested_table_name} />
           </div>
           <div style={{ flex: "1 1 200px" }}>
@@ -333,7 +334,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
 
         {/* New schema */}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input style={{ ...S, maxWidth: 220 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}
+          <Input style={{ ...S, maxWidth: 220 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}
             placeholder="New schema name…" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addSchema(); } }} />
           <Button variant="ghost" type="button" onClick={addSchema} disabled={!newSchema.trim() || addingSchema}
             className="h-auto p-0 font-normal"
@@ -520,7 +521,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
             </SelectField>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input style={{ ...S, maxWidth: 200 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}
+            <Input style={{ ...S, maxWidth: 200 }} value={newSchema} onChange={e => setNewSchema(e.target.value)}
               placeholder="New schema name…" onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); bulkAddSchema(); } }} />
             <Button variant="ghost" type="button" onClick={bulkAddSchema} disabled={!newSchema.trim() || addingSchema}
               className="h-auto p-0 font-normal"
@@ -745,7 +746,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
       <div style={{ maxWidth: 940, margin: "0 auto", padding: "26px 28px 64px" }}>
         {!picked ? (
           <>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search data sources…"
+            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search data sources…"
               style={{ ...S, maxWidth: 420, marginBottom: 28 }} />
 
             {/* Files */}
@@ -786,7 +787,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
 
             <div>
               <label style={L}>Connection name</label>
-              <input style={S} value={name} onChange={e => setName(e.target.value)} placeholder={meta(picked.type).label} required />
+              <Input style={S} value={name} onChange={e => setName(e.target.value)} placeholder={meta(picked.type).label} required />
             </div>
 
             {picked.fields.length === 0 && (
@@ -798,7 +799,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
             {picked.fields.map(f => (
               <div key={f.key}>
                 <label style={L}>{f.label}</label>
-                <input
+                <Input
                   style={{ ...S, fontFamily: f.secret || f.key === "dsn" ? "var(--font-mono)" : "inherit" }}
                   type={f.secret ? "password" : "text"}
                   placeholder={f.placeholder}

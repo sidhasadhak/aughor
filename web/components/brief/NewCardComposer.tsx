@@ -26,6 +26,7 @@ import {
 import { toast } from "@/components/ui/toast";
 import { useRichSchema } from "@/lib/schema-context";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const inputStyle = {
   fontSize: 11, background: "var(--bg-1)", border: "1px solid var(--b1)",
@@ -273,7 +274,7 @@ export function NewCardComposer({ connectionId, schema, onCreated, keptFor, star
 
       {/* Title — shared. */}
       {sql && (
-        <input value={title} onChange={e => setTitle(e.target.value)} placeholder={defaultTitle || "Card title"}
+        <Input value={title} onChange={e => setTitle(e.target.value)} placeholder={defaultTitle || "Card title"}
           style={{ ...inputStyle, width: "100%" }} />
       )}
 

@@ -43,6 +43,7 @@ import { bindingProblem, patchBodyFor, type SlackBotChanges } from "@/lib/slackB
 import { AgentSlackDoor } from "@/components/agentops/AgentSlackDoor";
 import { McpServersSection } from "@/components/McpServersSection";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "7px 10px", borderRadius: "var(--r3)",
@@ -416,7 +417,7 @@ export function IntegrationsPanel() {
                           {editing && (
                             <div style={{ marginTop: 8, display: "flex",
                               flexDirection: "column", gap: 6 }}>
-                              <input className="aug-fs-ui" style={inputStyle} value={botDraft.name}
+                              <Input className="aug-fs-ui" style={inputStyle} value={botDraft.name}
                                 aria-label="Bot name"
                                 onChange={e => setBotDraft(d => ({ ...d, name: e.target.value }))} />
                               <SelectField className="aug-fs-ui" style={inputStyle}
@@ -449,7 +450,7 @@ export function IntegrationsPanel() {
                                 ))}
                               </SelectField>
                               {/* AO-2f — an optional home channel on the record. */}
-                              <input className="aug-fs-ui" style={inputStyle} value={botDraft.channel_id}
+                              <Input className="aug-fs-ui" style={inputStyle} value={botDraft.channel_id}
                                 aria-label="Home channel" placeholder="Home channel — #name or C… (optional)"
                                 onChange={e => setBotDraft(d => ({ ...d, channel_id: e.target.value }))} />
                               {/* AO-6 — rehearse: a post from an automation AS this bot waits in
@@ -662,7 +663,7 @@ export function IntegrationsPanel() {
                       {p.https_only ? " over HTTPS (a tunnel is enough)" : ""}, and be
                       registered in the {p.name} console verbatim.
                     </div>
-                    <input className="aug-fs-xs" style={{ ...inputStyle,
+                    <Input className="aug-fs-xs" style={{ ...inputStyle,
                       fontFamily: "var(--font-mono)" }}
                       value={callback} spellCheck={false} autoComplete="off"
                       aria-label="Redirect URI"
@@ -689,10 +690,10 @@ export function IntegrationsPanel() {
                         register that address instead.
                       </div>
                     )}
-                    <input className="aug-fs-ui" style={inputStyle} placeholder="Client ID"
+                    <Input className="aug-fs-ui" style={inputStyle} placeholder="Client ID"
                       value={clientId} autoComplete="off" spellCheck={false}
                       onChange={e => setClientId(e.target.value)} />
-                    <input className="aug-fs-ui" style={inputStyle}
+                    <Input className="aug-fs-ui" style={inputStyle}
                       placeholder={p.secret_preview
                         ? `Client secret — stored (${p.secret_preview}), leave blank to keep it`
                         : "Client secret"}

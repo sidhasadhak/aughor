@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ReadFailed } from "@/components/ui/states";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
@@ -403,7 +404,7 @@ function SettingsPopover({
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginBottom: 2 }}>Data Canvas Settings</div>
         <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", flexDirection: "column", gap: 4 }}>
           Name
-          <input
+          <Input
             value={name}
             onChange={e => setName(e.target.value)}
             style={{

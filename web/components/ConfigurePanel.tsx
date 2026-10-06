@@ -21,6 +21,7 @@ import { Icon } from "@/components/ui/icon";
 import { ColumnTypeIcon } from "@/components/icons/columnType";
 import { Loading } from "@/components/ui/states";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SchemaColumn {
@@ -115,10 +116,9 @@ function AboutTab({
     <div className="flex-1 overflow-y-auto p-4 space-y-5">
       <div>
         <p className="aug-label mb-2">Data Canvas name</p>
-        <input
+        <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="aug-input"
           placeholder="Data Canvas name"
         />
       </div>
@@ -364,11 +364,11 @@ function DataTab({
             </button>
           </div>
         </div>
-        <input
+        <Input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter tables…"
-          className="aug-input py-1.5"
+          className="py-1.5"
         />
       </div>
 

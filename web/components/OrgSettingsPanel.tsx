@@ -29,6 +29,7 @@ import { OrgPlaybookSection } from "@/components/OrgPlaybookSection";
 import { OrgPrioritiesSection } from "@/components/OrgPrioritiesSection";
 import { Loading } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const EMPTY: OrgSettings = {
   company_name: "", website: "", hq_location: "", industry: "",
@@ -130,7 +131,7 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
   const TextField = (k: keyof OrgSettings, label: string) => (
     <div style={{ display: "flex", flexDirection: "column" }}>
       <label style={labelStyle}>{label}</label>
-      <input className="aug-input" value={String(s[k] ?? "")} onChange={onChange(k)} placeholder={inheritPh(k)} />
+      <Input value={String(s[k] ?? "")} onChange={onChange(k)} placeholder={inheritPh(k)} />
     </div>
   );
 

@@ -33,6 +33,7 @@ import { formatTimestamp } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 /** Who is acting: the signed-in email when there is one, else the same word the
  *  actions inbox uses. Display + provenance material — the server owns identity. */
@@ -348,9 +349,9 @@ function Doors({ connId, onStaged, knowledgeConns }: {
 
       {door === "sheet" && (
         <div className="aug-fs-sm" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)}
+          <Input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)}
             placeholder="Spreadsheet link or id (link-shared)" style={{ ...input, flex: 2, minWidth: 220 }} />
-          <input value={sheetTab} onChange={e => setSheetTab(e.target.value)}
+          <Input value={sheetTab} onChange={e => setSheetTab(e.target.value)}
             placeholder="Worksheet (first tab if empty)" style={{ ...input, flex: 1, minWidth: 140 }} />
           <Button size="sm" disabled={busy || !sheetUrl.trim()}
             onClick={() => run(() => uploadIntakeSheet({

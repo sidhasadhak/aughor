@@ -30,6 +30,7 @@ import { csvFilename, downloadCsv, toCsv } from "@/lib/query/csv";
 import { PartialState } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 const cell: React.CSSProperties = { padding: "6px 10px", whiteSpace: "nowrap" };
 const num: React.CSSProperties = { ...cell, textAlign: "right", fontFamily: "var(--font-mono)" };
@@ -160,18 +161,18 @@ function CapsSection({ onCount }: { onCount: (n: number) => void }) {
             <option key={s} value={s}>{s === "org" ? "whole org" : "one user"}</option>)}
         </SelectField>
         {form.scope === "user" && (
-          <input style={{ ...sel, width: 150 }} placeholder="user id" value={form.subject}
+          <Input style={{ ...sel, width: 150 }} placeholder="user id" value={form.subject}
             onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} />
         )}
         <SelectField style={sel} value={form.metric} onChange={e => setForm(f => ({ ...f, metric: e.target.value }))}>
           {(vocab.metrics.length ? vocab.metrics : ["calls", "total_tokens", "cost_usd"]).map(m =>
             <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}
         </SelectField>
-        <input style={{ ...sel, width: 110 }} placeholder="limit" inputMode="decimal"
+        <Input style={{ ...sel, width: 110 }} placeholder="limit" inputMode="decimal"
           value={form.limit} onChange={e => setForm(f => ({ ...f, limit: e.target.value }))}
           data-testid="cap-limit" />
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>per</span>
-        <input style={{ ...sel, width: 60 }} inputMode="numeric" value={form.window_hours}
+        <Input style={{ ...sel, width: 60 }} inputMode="numeric" value={form.window_hours}
           onChange={e => setForm(f => ({ ...f, window_hours: e.target.value }))} />
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>hours ·</span>
         <SelectField style={sel} value={form.action} onChange={e => setForm(f => ({ ...f, action: e.target.value }))}>
@@ -426,7 +427,7 @@ function FeedSection() {
           <option value="">All actors</option>
           {actors.map(a => <option key={a} value={a}>{a}</option>)}
         </SelectField>
-        <input style={{ ...feedSel, width: 220 }} value={q} onChange={e => setQ(e.target.value)}
+        <Input style={{ ...feedSel, width: 220 }} value={q} onChange={e => setQ(e.target.value)}
           placeholder="Search summary, event, actor…" aria-label="Search the feed"
           data-testid="feed-search" />
         {(category || kind || actor || q) && (

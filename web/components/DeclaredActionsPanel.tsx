@@ -31,6 +31,7 @@ import { getApiBase } from "@/lib/config";
 import { countNoun, formatCount, formatTimestamp, relTime } from "@/lib/format";
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 async function apiFetch(path: string, opts?: RequestInit) {
   const res = await fetch(`${getApiBase()}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -161,7 +162,7 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
     <div className="aug-actions-form">
       <div className="aug-actions-form-title">Declare an action</div>
       <Err e={err} />
-      <input style={input} placeholder="action id (e.g. refund_order)" value={id} onChange={e => setId(e.target.value)} />
+      <Input style={input} placeholder="action id (e.g. refund_order)" value={id} onChange={e => setId(e.target.value)} />
       <div style={{ display: "flex", gap: 6 }}>
         <SelectField style={{ ...input, flex: 1 }} value={kind} onChange={e => setKind(e.target.value)}>
           <option value="side_effect">side_effect</option>
@@ -174,13 +175,13 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
           <option value="read_only">read_only</option>
         </SelectField>
       </div>
-      <input style={input} placeholder="description" value={description} onChange={e => setDescription(e.target.value)} />
-      <input style={input} placeholder="object type this action is about (e.g. order) — optional"
+      <Input style={input} placeholder="description" value={description} onChange={e => setDescription(e.target.value)} />
+      <Input style={input} placeholder="object type this action is about (e.g. order) — optional"
         value={objectType} onChange={e => setObjectType(e.target.value)} />
       <label style={hint}>the parameters a proposal must fill — an object parameter names ONE object, read live</label>
       {params.map((p, i) => (
         <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <input style={{ ...input, flex: 2 }} placeholder="name (e.g. amount_eur)"
+          <Input style={{ ...input, flex: 2 }} placeholder="name (e.g. amount_eur)"
             value={p.name} onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
           <SelectField style={{ ...input, width: 90 }} value={p.kind}
             onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, kind: e.target.value as "value" | "object" } : x))}>
@@ -188,7 +189,7 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
             <option value="object">object</option>
           </SelectField>
           {p.kind === "object" ? (
-            <input style={{ ...input, flex: 1 }} placeholder="object type (e.g. order)" value={p.object_type}
+            <Input style={{ ...input, flex: 1 }} placeholder="object type (e.g. order)" value={p.object_type}
               onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, object_type: e.target.value } : x))} />
           ) : (
             <SelectField style={{ ...input, flex: 1 }} value={p.data_type}
@@ -212,9 +213,9 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
       <label style={hint}>what a proposal must satisfy — the message is shown verbatim when it fails</label>
       {criteria.map((c, i) => (
         <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <input style={{ ...input, flex: 2, fontFamily: "var(--font-mono)" }} placeholder="amount_eur <= 10000"
+          <Input style={{ ...input, flex: 2, fontFamily: "var(--font-mono)" }} placeholder="amount_eur <= 10000"
             value={c.expr} onChange={e => setCriteria(cs => cs.map((x, j) => j === i ? { ...x, expr: e.target.value } : x))} />
-          <input style={{ ...input, flex: 3 }} placeholder="why — shown to the proposer on failure"
+          <Input style={{ ...input, flex: 3 }} placeholder="why — shown to the proposer on failure"
             value={c.message} onChange={e => setCriteria(cs => cs.map((x, j) => j === i ? { ...x, message: e.target.value } : x))} />
           <Button size="xs" variant="ghost" className="mb-1.5"
             onClick={() => setCriteria(cs => cs.filter((_, j) => j !== i))}>✕</Button>
@@ -229,13 +230,13 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
       </label>
       {edits.map((e, i) => (
         <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <input style={{ ...input, flex: 1 }} placeholder="object param (e.g. order)" value={e.object}
+          <Input style={{ ...input, flex: 1 }} placeholder="object param (e.g. order)" value={e.object}
             onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, object: ev.target.value } : x))} />
-          <input style={{ ...input, flex: 1 }} placeholder="property (e.g. review_flag)" value={e.property}
+          <Input style={{ ...input, flex: 1 }} placeholder="property (e.g. review_flag)" value={e.property}
             onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, property: ev.target.value } : x))} />
-          <input style={{ ...input, flex: 1 }} placeholder="value (e.g. true)" value={e.value}
+          <Input style={{ ...input, flex: 1 }} placeholder="value (e.g. true)" value={e.value}
             onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, value: ev.target.value } : x))} />
-          <input style={{ ...input, flex: 2 }} placeholder="note — {param} is filled from the proposal" value={e.note}
+          <Input style={{ ...input, flex: 2 }} placeholder="note — {param} is filled from the proposal" value={e.note}
             onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, note: ev.target.value } : x))} />
           <Button size="xs" variant="ghost" className="mb-1.5"
             onClick={() => setEdits(es => es.filter((_, j) => j !== i))}>✕</Button>
@@ -252,13 +253,13 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
             <SelectField style={{ ...input, width: 110 }} value={httpMethod} onChange={e => setHttpMethod(e.target.value)}>
               {["POST", "GET", "PUT", "PATCH", "DELETE"].map(m => <option key={m} value={m}>{m}</option>)}
             </SelectField>
-            <input style={{ ...input, flex: 1 }} placeholder="https://events.pagerduty.com/v2/enqueue"
+            <Input style={{ ...input, flex: 1 }} placeholder="https://events.pagerduty.com/v2/enqueue"
               value={httpUrl} onChange={e => setHttpUrl(e.target.value)} />
           </div>
           <div style={{ display: "flex", gap: 6 }}>
-            <input style={{ ...input, flex: 1 }} placeholder="auth header (e.g. Authorization)"
+            <Input style={{ ...input, flex: 1 }} placeholder="auth header (e.g. Authorization)"
               value={httpAuthHeader} onChange={e => setHttpAuthHeader(e.target.value)} />
-            <input style={{ ...input, flex: 1 }} type="password" placeholder="credential — stored encrypted"
+            <Input style={{ ...input, flex: 1 }} type="password" placeholder="credential — stored encrypted"
               value={httpSecret} onChange={e => setHttpSecret(e.target.value)} />
           </div>
           <label style={hint}>headers (JSON)</label>
@@ -290,13 +291,13 @@ function AnnotateForm({ connectionId, onSaved }: { connectionId: string; onSaved
     <div className="aug-actions-form">
       <div className="aug-actions-form-title">Annotate a value</div>
       <Err e={err} />
-      <input style={input} placeholder="table" value={f.table} onChange={e => setF({ ...f, table: e.target.value })} />
+      <Input style={input} placeholder="table" value={f.table} onChange={e => setF({ ...f, table: e.target.value })} />
       <div style={{ display: "flex", gap: 6 }}>
-        <input style={{ ...input, flex: 1 }} placeholder="column (optional)" value={f.column} onChange={e => setF({ ...f, column: e.target.value })} />
-        <input style={{ ...input, flex: 1 }} placeholder="key column (optional)" value={f.key_column} onChange={e => setF({ ...f, key_column: e.target.value })} />
-        <input style={{ ...input, flex: 1 }} placeholder="row key (optional)" value={f.row_key} onChange={e => setF({ ...f, row_key: e.target.value })} />
+        <Input style={{ ...input, flex: 1 }} placeholder="column (optional)" value={f.column} onChange={e => setF({ ...f, column: e.target.value })} />
+        <Input style={{ ...input, flex: 1 }} placeholder="key column (optional)" value={f.key_column} onChange={e => setF({ ...f, key_column: e.target.value })} />
+        <Input style={{ ...input, flex: 1 }} placeholder="row key (optional)" value={f.row_key} onChange={e => setF({ ...f, row_key: e.target.value })} />
       </div>
-      <input style={input} placeholder="annotation / correction text" value={f.body} onChange={e => setF({ ...f, body: e.target.value })} />
+      <Input style={input} placeholder="annotation / correction text" value={f.body} onChange={e => setF({ ...f, body: e.target.value })} />
       <Button variant="default" size="sm" disabled={!f.table.trim() || !f.body.trim()} onClick={save}>Save annotation</Button>
     </div>
   );

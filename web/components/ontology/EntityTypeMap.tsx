@@ -570,9 +570,9 @@ function DeclareEntity({ declare, sources }: {
           : "A business entity, and the source whose rows are its objects. Its columns are read and its key counted " +
             "before anything is written."}
       </p>
-      <input className="aug-fs-xs" style={FIELD} value={id} placeholder="Id — PascalCase, e.g. PurchaseOrder"
+      <Input className="aug-fs-xs" style={FIELD} value={id} placeholder="Id — PascalCase, e.g. PurchaseOrder"
         aria-label="Entity id" onChange={(e) => setId(e.target.value)} />
-      <input className="aug-fs-xs" style={FIELD} value={name} placeholder="Display name" aria-label="Entity display name"
+      <Input className="aug-fs-xs" style={FIELD} value={name} placeholder="Display name" aria-label="Entity display name"
         onChange={(e) => setName(e.target.value)} />
       {sources && (
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -582,7 +582,7 @@ function DeclareEntity({ declare, sources }: {
             {Object.entries(sources).map(([cid, label]) => <option key={cid} value={cid}>{label}</option>)}
           </SelectField>
           {reads === "table" && (
-            <input className="aug-fs-xs" style={{ ...FIELD, width: 90 }} value={schemaName} placeholder="schema"
+            <Input className="aug-fs-xs" style={{ ...FIELD, width: 90 }} value={schemaName} placeholder="schema"
               aria-label="Entity schema" onChange={(e) => setSchemaName(e.target.value)} />
           )}
         </div>
@@ -593,14 +593,14 @@ function DeclareEntity({ declare, sources }: {
           <option value="table">table</option>
           <option value="query">SELECT</option>
         </SelectField>
-        <input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={source}
+        <Input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={source}
           aria-label={reads === "table" ? "Entity table" : "Entity SELECT"}
           placeholder={reads === "table" ? "purchase_orders" : "SELECT … one row per object"}
           onChange={(e) => setSource(e.target.value)} />
       </div>
-      <input className="aug-fs-xs" style={FIELD} value={key} placeholder="Key column" aria-label="Entity key column"
+      <Input className="aug-fs-xs" style={FIELD} value={key} placeholder="Key column" aria-label="Entity key column"
         onChange={(e) => setKey(e.target.value)} />
-      <input className="aug-fs-xs" style={FIELD} value={domain} placeholder="Domain (optional)" aria-label="Entity domain"
+      <Input className="aug-fs-xs" style={FIELD} value={domain} placeholder="Domain (optional)" aria-label="Entity domain"
         onChange={(e) => setDomain(e.target.value)} />
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <Button variant="outline" size="xs" disabled={busy || !ready} onClick={submit}>

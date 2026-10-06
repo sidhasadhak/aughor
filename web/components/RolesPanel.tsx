@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Loading, ReadFailed } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const ROLE_TINT: Record<string, string> = {
   owner: "var(--blue4)",
@@ -275,7 +276,7 @@ export function RolesPanel() {
                       </div>
                       {canManage && (
                         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <input className="aug-input" placeholder="user:alice@acme.com or agent:ua_…"
+                          <Input placeholder="user:alice@acme.com or agent:ua_…"
                             value={newMember} onChange={e => setNewMember(e.target.value)}
                             onKeyDown={e => { if (e.key === "Enter") onAddMember(); }} style={{ flex: 1 }} />
                           <Button variant="default" size="sm" onClick={onAddMember} disabled={busy || !newMember.trim()}>Add member</Button>
@@ -303,7 +304,7 @@ export function RolesPanel() {
                       </div>
                       {canManage && (
                         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <input className="aug-input" placeholder="securable (e.g. domain:supply-chain, promise:dispatch-24h)"
+                          <Input placeholder="securable (e.g. domain:supply-chain, promise:dispatch-24h)"
                             value={newSecurable} onChange={e => setNewSecurable(e.target.value)}
                             onKeyDown={e => { if (e.key === "Enter") onAddGrant(); }} style={{ flex: 1 }} />
                           <SelectField value={newLevel} onChange={e => setNewLevel(e.target.value)} style={{ cursor: "pointer", width: 120 }}>
@@ -322,7 +323,7 @@ export function RolesPanel() {
           {/* Create a function group */}
           {canManage && (
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input className="aug-input" placeholder="new group id (e.g. supply-chain)"
+              <Input placeholder="new group id (e.g. supply-chain)"
                 value={newGroupId} onChange={e => setNewGroupId(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") onCreateGroup(); }} style={{ flex: 1 }} />
               <SelectField value={newGroupChannel} onChange={e => setNewGroupChannel(e.target.value)} style={{ cursor: "pointer", width: 180 }}>
@@ -352,8 +353,7 @@ export function RolesPanel() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {/* Add a member */}
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                className="aug-input"
+              <Input
                 placeholder="user id (e.g. alice@acme.com)"
                 value={newUser}
                 onChange={e => setNewUser(e.target.value)}

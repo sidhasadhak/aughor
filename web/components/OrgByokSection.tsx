@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from "react";
 import { clearOrgLLM, getOrgLLM, updateOrgLLM, type OrgLLMConfig } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const BACKENDS = ["", "openrouter", "anthropic", "gemini", "groq", "together", "ollama", "lmstudio"];
 const KEYED = new Set(["openrouter", "anthropic", "gemini", "groq", "together"]);
@@ -111,8 +112,7 @@ export function OrgByokSection() {
             <label style={labelStyle}>
               API key {keySet ? "· set ✓" : keyUnreadable ? "· stored, unreadable" : "· not set"}
             </label>
-            <input
-              className="aug-input"
+            <Input
               type="password"
               value={keyInput}
               placeholder={keySet ? "(unchanged)"
@@ -126,8 +126,7 @@ export function OrgByokSection() {
         {backend && ROLES.map((r) => (
           <div key={r.key} style={{ display: "flex", flexDirection: "column" }}>
             <label style={labelStyle}>{r.label}</label>
-            <input
-              className="aug-input"
+            <Input
               value={models[r.key] ?? ""}
               placeholder="(backend default)"
               onChange={(e) => {

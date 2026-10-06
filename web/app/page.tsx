@@ -136,6 +136,7 @@ import { subscribeKernelEvents } from "@/lib/events";
 import { Segmented } from "@/components/ui/segmented";
 import { TabStrip } from "@/components/ui/tab-strip";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -1074,12 +1075,11 @@ function AddConnectionForm({
           {/* Name */}
           <div>
             <div className="aug-label" style={{ marginBottom: 5 }}>Name</div>
-            <input
+            <Input
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="My Data Source"
               required
-              className="aug-input"
             />
           </div>
 
@@ -1138,13 +1138,12 @@ function AddConnectionForm({
                     {f.label}
                     {f.optional && <span style={{ color: "var(--t3)", fontWeight: 400, marginLeft: 4 }}>(optional)</span>}
                   </div>
-                  <input
+                  <Input
                     value={fields[f.key] ?? ""}
                     onChange={e => setField(f.key, e.target.value)}
                     placeholder={f.placeholder}
                     type={f.secret ? "password" : "text"}
                     required={!f.optional}
-                    className="aug-input"
                     style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
                   />
                 </div>
@@ -1203,13 +1202,12 @@ function DeleteConnModal({
         <div style={{ fontSize: 11, color: "var(--t3)" }}>
           Type <span style={{ fontFamily: "var(--font-mono)", color: "var(--t2)" }}>{conn.name}</span> to confirm
         </div>
-        <input
+        <Input
           autoFocus
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && text === conn.name) handleConfirm(); }}
           placeholder={conn.name}
-          className="aug-input"
           style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
         />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>

@@ -12,6 +12,7 @@ import type { RangeChoice } from "@/components/brief/BriefRange";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import type { CockpitRange } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 
 const CHOICES: { v: string; t: string }[] = [
   { v: "standing", t: "As written" },
@@ -66,11 +67,11 @@ export function PeriodPicker({ value, onChange, showing, disabled }: {
       </Select>
       {custom && (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <input type="date" aria-label="First day" value={start} max={end || undefined}
-            onChange={e => setStart(e.target.value)} className="aug-input aug-fs-sm" />
+          <Input type="date" aria-label="First day" value={start} max={end || undefined}
+            onChange={e => setStart(e.target.value)} className="aug-fs-sm" />
           <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>to</span>
-          <input type="date" aria-label="Last day" value={end} min={start || undefined}
-            onChange={e => setEnd(e.target.value)} className="aug-input aug-fs-sm" />
+          <Input type="date" aria-label="Last day" value={end} min={start || undefined}
+            onChange={e => setEnd(e.target.value)} className="aug-fs-sm" />
           <Button size="sm" variant="secondary" disabled={disabled || !ready}
             onClick={() => onChange({ preset: "custom", start, end })}>
             Show

@@ -8,6 +8,7 @@ import { PacksManager } from "@/components/PacksManager";
 import { subscribeKernelEvents } from "@/lib/events";
 import { getApiBase, getApiBaseSource, setApiBase, normalizeApiBase, API_BASE_DEFAULT } from "@/lib/config";
 import { formatCount, pct as fmtPct } from "@/lib/format";
+import { Input } from "@/components/ui/input";
 
 function fmt(n: number | undefined | null): string {
   return n == null ? "—" : formatCount(n);
@@ -143,7 +144,7 @@ function Backend() {
           the machine running the backend.
         </p>
         <div className="flex items-center gap-2 mb-2">
-          <input
+          <Input
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") void save(); }}
@@ -445,7 +446,7 @@ function FeatureFlags() {
   return (
     <Section title="Feature flags">
       <div className="flex items-center gap-2 pb-2">
-        <input
+        <Input
           value={query} onChange={e => setQuery(e.target.value)}
           placeholder={`Search ${entries.length} flags — name, description, exit note…`}
           className="w-full text-xs px-2 py-1.5 rounded-[var(--r2)] outline-none"

@@ -9,6 +9,7 @@ import { askSpotlight } from "@/lib/commandRegistry";
 import { getApiBase } from "@/lib/config";
 import { subscribeKernelEvents } from "@/lib/events";
 import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
 
 interface Props {
   selectedId: string | null;
@@ -119,12 +120,12 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
             <span className="aug-fs-xs text-[var(--t3)]">{items.length}</span>
           </div>
         </div>
-        <input
+        <Input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search…"
-          className="aug-input py-1.5"
+          className="py-1.5"
         />
       </div>
       <ul className="flex-1 overflow-y-auto divide-y divide-zinc-600/40">

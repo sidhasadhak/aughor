@@ -18,6 +18,7 @@ import {
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { Term } from "@/components/agentops/Term";
+import { Input } from "@/components/ui/input";
 
 type Hue = "positive" | "info" | "caution" | "negative" | "muted" | "accent";
 
@@ -184,11 +185,11 @@ export function AgentDoors({ agent, onChat, onOpenAutomation, onOpenIntegrations
           {teamsDraft && (
             <div className="aug-fs-xs" style={{ padding: "8px 10px", border: "1px solid var(--b1)",
               borderRadius: "var(--r2)", display: "flex", flexDirection: "column", gap: 6 }}>
-              <input className="aug-input" value={teamsDraft.name} aria-label="Teams bot name"
+              <Input value={teamsDraft.name} aria-label="Teams bot name"
                 onChange={e => setTeamsDraft({ ...teamsDraft, name: e.target.value })} />
-              <input className="aug-input" value={teamsDraft.app_id} placeholder="Microsoft App ID" aria-label="App ID"
+              <Input value={teamsDraft.app_id} placeholder="Microsoft App ID" aria-label="App ID"
                 autoComplete="off" onChange={e => setTeamsDraft({ ...teamsDraft, app_id: e.target.value })} />
-              <input className="aug-input" value={teamsDraft.app_password} placeholder="App password (client secret)"
+              <Input value={teamsDraft.app_password} placeholder="App password (client secret)"
                 aria-label="App password" autoComplete="off" type="password"
                 onChange={e => setTeamsDraft({ ...teamsDraft, app_password: e.target.value })} />
               <span>

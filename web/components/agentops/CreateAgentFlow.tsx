@@ -47,6 +47,7 @@ import {
 } from "@/lib/api";
 import { formatCount } from "@/lib/format";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 type Step = "describe" | "start" | "scope" | "define" | "prove" | "reach";
 type Seed = { question: string; needs: string };
@@ -413,13 +414,13 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
         <>
           <Section title="Name it">
             <Field label="Name" hint="Appears in its answers — the agent is told who it is.">
-              <input className="aug-input" value={name} maxLength={120} autoFocus
+              <Input value={name} maxLength={120} autoFocus
                 onChange={e => setName(e.target.value)}
                 placeholder="e.g. Retention Analyst" style={{ width: "100%", maxWidth: 420 }} />
             </Field>
             <Field label="What it is for"
               hint="One line. Other agents read this when deciding whether to hand it a question — never the instructions.">
-              <input className="aug-input" value={purpose} maxLength={240}
+              <Input value={purpose} maxLength={240}
                 onChange={e => setPurpose(e.target.value)}
                 placeholder="e.g. Churn and retention questions for the subscriptions team"
                 style={{ width: "100%", maxWidth: 560 }} />
@@ -571,7 +572,7 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
             )}
 
             <Field label="Question">
-              <input className="aug-input" value={draft.question} style={{ width: "100%" }}
+              <Input value={draft.question} style={{ width: "100%" }}
                 onChange={e => setDraft(d => ({ ...d, question: e.target.value }))}
                 placeholder="A question you already know the right answer to" />
             </Field>

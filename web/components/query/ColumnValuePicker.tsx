@@ -20,6 +20,7 @@ import { Icon } from "@/components/ui/icon";
 import { formatCount } from "@/lib/format";
 import { NULL_GLYPH, distinctFromRows, pickedPhrase, type DistinctValue } from "@/lib/query/cellMenu";
 import type { Cell } from "@/lib/query/resultFilter";
+import { Input } from "@/components/ui/input";
 
 /** What a live read of the table answers. `source` names the table. DE-5d: `error` is the route's typed
  *  refusal, in the engine's words — the table was asked and could not be read, which is not "no values". */
@@ -117,7 +118,7 @@ export function ColumnValuePicker({
         padding: "0 8px 6px" }}>
         {source}
       </div>
-      <input
+      <Input
         className="aug-fs-sm"
         value={search}
         onChange={e => setSearch(e.target.value)}

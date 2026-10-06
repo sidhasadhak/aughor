@@ -35,6 +35,7 @@ import {
 import { fmtMs } from "@/lib/cost";
 import { compactNumber, relTime } from "@/lib/format";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 /** Depth of every span id, walked from the tree the API assembled. */
 function spanDepths(spans: TraceSpan[], depth = 1, out: Map<string, number> = new Map()) {
@@ -267,8 +268,8 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
         <div style={{ padding: 10, borderBottom: "1px solid var(--b1)",
                       display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <input
-              className="aug-input aug-fs-sm"
+            <Input
+              className="aug-fs-sm"
               style={{ flex: 1, minWidth: 0 }}
               placeholder="Search question or answer…"
               value={search}
@@ -302,8 +303,8 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                 identity this control could only ever return nothing, and a filter that
                 cannot match is worse than no filter. It appears the moment a run records
                 a user, which is also how an operator learns identity started arriving. */}
-            <input
-              className="aug-input aug-fs-xs" style={{ flex: 1 }}
+            <Input
+              className="aug-fs-xs" style={{ flex: 1 }}
               placeholder={anyUser ? "User ID" : "User ID — none recorded"}
               disabled={!anyUser}
               defaultValue={filters.user_id ?? ""}

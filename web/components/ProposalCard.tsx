@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { acceptProposal, getProposalById, rejectProposal, type StagedProposal } from "@/lib/api";
 import { formatCount, relTime, zonedTimeWords } from "@/lib/format";
+import { Input } from "@/components/ui/input";
 
 /** "2026-09-16T09:00:00Z" → "Tue, 16 Sep 2026 09:00 UTC" — the clock is always named. */
 export function utcWords(iso: string): string {
@@ -522,7 +523,7 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
                 <span className="aug-text-xs font-mono shrink-0" style={{ color: "var(--t3)", width: 88 }}>
                   step {c.action} · {c.key}
                 </span>
-                <input
+                <Input
                   className="aug-text-sm rounded px-2 py-1 flex-1 min-w-0"
                   style={{ background: "var(--bg-1)", border: "1px solid var(--b1)", color: "var(--t1)" }}
                   value={fills[spec] ?? ""}

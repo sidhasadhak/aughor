@@ -77,6 +77,7 @@ import {
   type History, type PushOptions,
 } from "@/lib/history";
 import { Loading } from "@/components/ui/states";
+import { Input } from "@/components/ui/input";
 
 export type { AutomationGraphData };
 
@@ -631,7 +632,7 @@ function DesignStepNodeInner({ data, selected }: { data: DesignNodeData; selecte
                   </Button>
                 </div>
               ) : (
-                <input
+                <Input
                   className="nodrag aug-fs-sm"
                   style={inputStyle}
                   placeholder={placeholder}
@@ -1590,7 +1591,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
               ← Automations
             </Button>
             {header.onName ? (
-              <input
+              <Input
                 className="aug-fs-ui"
                 aria-label="Name this automation"
                 value={header.name}

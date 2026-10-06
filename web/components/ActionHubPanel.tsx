@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { getApiBase } from "@/lib/config";
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Trigger {
@@ -89,7 +90,7 @@ function TriggerForm({
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div>
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Name</div>
-        <input value={name} onChange={e => setName(e.target.value)} required placeholder="My Slack Webhook" className="aug-input" />
+        <Input value={name} onChange={e => setName(e.target.value)} required placeholder="My Slack Webhook" />
       </div>
       <div>
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Type</div>
@@ -103,26 +104,25 @@ function TriggerForm({
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>
           {type === "jira" ? "Jira base URL" : "Webhook URL"}
         </div>
-        <input value={url} onChange={e => setUrl(e.target.value)} required
-          placeholder={type === "slack" ? "https://hooks.slack.com/services/…" : type === "jira" ? "https://yourorg.atlassian.net/rest/api/3/issue" : "https://…"}
-          className="aug-input" style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
+        <Input value={url} onChange={e => setUrl(e.target.value)} required
+          placeholder={type === "slack" ? "https://hooks.slack.com/services/…" : type === "jira" ? "https://yourorg.atlassian.net/rest/api/3/issue" : "https://…"} style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
         />
       </div>
       {type === "slack" && (
         <div>
           <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Channel (optional)</div>
-          <input value={channel} onChange={e => setChannel(e.target.value)} placeholder="#general" className="aug-input" />
+          <Input value={channel} onChange={e => setChannel(e.target.value)} placeholder="#general" />
         </div>
       )}
       {type === "jira" && (
         <>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Project key</div>
-            <input value={project} onChange={e => setProject(e.target.value)} placeholder="OPS" className="aug-input" />
+            <Input value={project} onChange={e => setProject(e.target.value)} placeholder="OPS" />
           </div>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Issue type</div>
-            <input value={issueType} onChange={e => setIssue(e.target.value)} placeholder="Task" className="aug-input" />
+            <Input value={issueType} onChange={e => setIssue(e.target.value)} placeholder="Task" />
           </div>
         </>
       )}

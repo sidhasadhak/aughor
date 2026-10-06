@@ -21,6 +21,7 @@ import { ErrorState } from "@/components/ui/states";
 import { deleteOrgInsight, getOrgIntelligence, type OrgInsight } from "@/lib/api";
 import { countNoun, formatTimestamp, relTime } from "@/lib/format";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 export function OrgIntelPanel() {
   const [insights, setInsights] = useState<OrgInsight[]>([]);
@@ -76,8 +77,8 @@ export function OrgIntelPanel() {
               {countNoun(insights.length, "promoted finding")} · {countNoun(domainCount, "domain")}
             </span>
           )}
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter findings"
-            aria-label="Filter promoted findings" className="aug-input aug-org-filter" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter findings"
+            aria-label="Filter promoted findings" className="aug-org-filter" />
           <Button variant="ghost" size="xs" onClick={() => { void load(); }}>Refresh</Button>
         </div>
 

@@ -27,6 +27,7 @@ import { Sparkline } from "@/components/brief/Sparkline";
 import { SkeletonRows } from "@/components/ui/motion";
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 /** The acting identity for governance writes — the signed-in email, else the
  *  same word the actions inbox uses. The server owns identity; this is provenance. */
@@ -495,13 +496,13 @@ function SeedTrustedForm({ onDone }: { onDone: () => void }) {
         onChange={e => setF(v => ({ ...v, connection_id: e.target.value }))} data-testid="tq-seed-conn">
         {conns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
       </SelectField>
-      <input style={fieldStyle} placeholder="The question this SQL answers, in the words people ask it"
+      <Input style={fieldStyle} placeholder="The question this SQL answers, in the words people ask it"
         value={f.question} onChange={e => setF(v => ({ ...v, question: e.target.value }))}
         data-testid="tq-seed-question" />
       <textarea style={{ ...fieldStyle, minHeight: 64, fontFamily: "var(--font-mono)" }}
         placeholder="SELECT …" value={f.sql} onChange={e => setF(v => ({ ...v, sql: e.target.value }))}
         data-testid="tq-seed-sql" />
-      <input style={fieldStyle} placeholder="note (optional) — why this is the right answer"
+      <Input style={fieldStyle} placeholder="note (optional) — why this is the right answer"
         value={f.note} onChange={e => setF(v => ({ ...v, note: e.target.value }))} />
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <Button size="sm" disabled={busy || !f.question.trim() || !f.sql.trim() || !f.connection_id}
@@ -530,11 +531,11 @@ function EditTrustedForm({ row, onDone }: { row: TrustedQueryRow; onDone: () => 
   };
   return (
     <div style={{ marginTop: 8 }}>
-      <input style={fieldStyle} value={f.question}
+      <Input style={fieldStyle} value={f.question}
         onChange={e => setF(v => ({ ...v, question: e.target.value }))} />
       <textarea style={{ ...fieldStyle, minHeight: 64, fontFamily: "var(--font-mono)" }}
         value={f.sql} onChange={e => setF(v => ({ ...v, sql: e.target.value }))} />
-      <input style={fieldStyle} placeholder="note" value={f.note}
+      <Input style={fieldStyle} placeholder="note" value={f.note}
         onChange={e => setF(v => ({ ...v, note: e.target.value }))} />
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <Button size="xs" disabled={busy} onClick={save}>Save — re-verifies, resets any approval</Button>

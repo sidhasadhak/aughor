@@ -18,6 +18,7 @@ import { useState } from "react";
 import { EvalSuite, getEvalSuites, createEvalSuite, addEvalCases } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const NEW = "__new__";
 
@@ -98,8 +99,8 @@ export function AddToEvalSuite({ connectionId, sql, question }: {
         <option value={NEW}>＋ New suite…</option>
       </SelectField>
       {target === NEW && (
-        <input
-          className="aug-input aug-text-xs"
+        <Input
+          className="aug-text-xs"
           value={newName}
           onChange={e => setNewName(e.target.value)}
           placeholder="New suite name"

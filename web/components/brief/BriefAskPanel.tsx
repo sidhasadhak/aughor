@@ -36,6 +36,7 @@ import { Button } from "@/components/ui/button";
 import { PartsMessage } from "@/components/chat/PartsMessage";
 import { projectThread, newSessionId } from "@/lib/chatTurn";
 import { useAughorChat } from "@/lib/useAughorChat";
+import { Input } from "@/components/ui/input";
 
 export const BRIEF_ASK_PANEL_WIDTH = 420;
 
@@ -137,12 +138,11 @@ export function BriefAskPanel({
       </div>
 
       <div style={{ flex: "0 0 auto", padding: "10px 14px", borderTop: "1px solid var(--b1)", display: "flex", gap: 8 }}>
-        <input
+        <Input
           value={draft}
           onChange={e => setDraft(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
           placeholder="Ask a follow-up…"
-          className="aug-input"
           style={{ flex: 1, padding: "8px 11px" }}
           disabled={streaming}
         />

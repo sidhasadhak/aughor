@@ -24,6 +24,7 @@ import {
 import { subscribeKernelEvents } from "@/lib/events";
 import { formatCount } from "@/lib/format";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
 // ── Phase metadata ────────────────────────────────────────────────────────────
 
@@ -253,7 +254,7 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
     <div className="rounded-md p-3 space-y-2 mt-2" style={{ background: "var(--bg-0)", border: "0.5px solid var(--b2)" }}>
       <p className="aug-fs-xs uppercase tracking-widest" style={{ color: "var(--t3)" }}>Guidance (optional)</p>
       <div className="flex gap-2">
-        <input type="text" value={hint} onChange={e => setHint(e.target.value)}
+        <Input type="text" value={hint} onChange={e => setHint(e.target.value)}
           onKeyDown={e => e.key === "Enter" && !loading && handleRetry()}
           placeholder="e.g. use click_ts instead of click_id…"
           className="flex-1 aug-fs-xs rounded px-2.5 py-1.5 focus:outline-none"

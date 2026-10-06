@@ -36,6 +36,7 @@ import { Icon } from "@/components/ui/icon";
 import { VisibilityLine } from "@/components/VisibilityLine";
 import { Button } from "@/components/ui/button";
 import { Loading } from "@/components/ui/states";
+import { Input } from "@/components/ui/input";
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
@@ -291,7 +292,7 @@ function DuplicatesDrawer({ connId, schema, onClose, onMerged }: {
                 ))}
               </div>
             <div className="flex items-center gap-1 pt-1">
-              <input
+              <Input
                 aria-label={`Why entities ${i + 1} are different`}
                 value={reasons[i] ?? ""}
                 onChange={ev => setReasons(r => ({ ...r, [i]: ev.target.value }))}
