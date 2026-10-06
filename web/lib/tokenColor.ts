@@ -11,9 +11,11 @@
  * So one reader, used by all three: the value is painted on a 1×1 canvas and read back,
  * which is the browser's own conversion to sRGB. Where there is no stylesheet (the server,
  * a test), the fallback is `lib/tokenFallback.ts` — the same steps at the default look.
+ *
+ * No React here: the chart config is bundled for the headless export path
+ * (`aughor/export/chart_ssr.bundle.mjs`), and a hook in this module put React in that
+ * bundle. The hook that re-reads tokens when `<html>` changes is `lib/useThemeStamp.ts`.
  */
-import { useEffect, useState } from "react";
-
 import { TOKEN_FALLBACK, type TokenName } from "@/lib/tokenFallback";
 
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -81,22 +83,4 @@ export function tokenPx(name: string, fallback: number): number {
   const px = parseFloat(getComputedStyle(probe).width);
   probe.remove();
   return Number.isFinite(px) && px > 0 ? px : fallback;
-}
-
-/** What `<html>` says about the skin and the look. A token's value can change when any of
- *  these does, so script that has read tokens reads them again when this string changes. */
-const WATCHED = ["data-theme", "data-accent-color", "data-gray-color", "data-radius", "data-scaling", "class"];
-const stampNow = (): string =>
-  typeof document === "undefined" ? "" : WATCHED.map(a => document.documentElement.getAttribute(a) ?? "").join("|");
-
-export function useThemeStamp(): string {
-  const [stamp, setStamp] = useState(stampNow);
-  useEffect(() => {
-    const sync = () => setStamp(stampNow());
-    sync();
-    const seen = new MutationObserver(sync);
-    seen.observe(document.documentElement, { attributes: true, attributeFilter: WATCHED });
-    return () => seen.disconnect();
-  }, []);
-  return stamp;
 }
