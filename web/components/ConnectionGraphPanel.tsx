@@ -26,6 +26,7 @@ import { SkeletonRows } from "@/components/ui/motion";
 import { ErrorState } from "@/components/ui/states";
 import { GraphCanvas } from "@/components/GraphCanvas";
 import { GraphAuditBar, StandingChip, WarrantChip } from "@/components/graph/WarrantChip";
+import { Segmented } from "@/components/ui/segmented";
 
 // The connection knowledge graph, rendered as a three-level ANTI-HAIRBALL surface:
 // domain cluster cards (cross-domain joins collapsed to counts) → the tables inside a
@@ -227,15 +228,11 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
             {audit?.drift?.drifted ? "Rebuild owed" : STALE_LABEL[graph.staleness]}
           </StatusChip>
         )}
-        <div role="group" aria-label="Graph view" className="aug-segmented aug-graph-modes">
-          {([["map", "Map"], ["cards", "Explore"], ["tour", "Tour"], ["review", "Review"]] as const).map(([m, label]) => (
-            <Button key={m} variant="ghost" size="xs" aria-pressed={mode === m}
-              className="aug-seg-item aug-seg-item-mono font-normal"
-              onClick={() => (m === "tour" ? openTour() : setMode(m))}>
-              {label}{m === "review" && review && review.total > 0 ? ` ${review.total}` : ""}
-            </Button>
-          ))}
-        </div>
+        <Segmented label="Graph view" value={mode} className="aug-graph-modes"
+          // "Tour" is a thing to start, not a view to be in: the view stays what it was.
+          onChange={m => (m === "tour" ? openTour() : setMode(m))}
+          options={([["map", "Map"], ["cards", "Explore"], ["tour", "Tour"], ["review", "Review"]] as const).map(([m, label]) => ({
+            value: m, label: `${label}${m === "review" && review && review.total > 0 ? ` ${review.total}` : ""}` }))} />
         <Button variant="ghost" size="xs" onClick={load}>Refresh</Button>
       </div>
 

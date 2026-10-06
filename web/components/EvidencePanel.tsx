@@ -29,6 +29,7 @@ import { SkeletonRows } from "@/components/ui/motion";
 import { Confidence } from "@/components/ui/trust";
 import { getRecentEvidenceClaims, submitClaimFeedback, type EvidenceClaim } from "@/lib/api";
 import { countNoun, formatTimestamp, relTime } from "@/lib/format";
+import { Segmented } from "@/components/ui/segmented";
 
 type Feedback = "validated" | "disputed" | "needs_context";
 type Filter = "all" | "unreviewed" | Feedback;
@@ -127,15 +128,8 @@ export function EvidencePanel({ connectionId, canvasId, onInvestigate }: {
     <div className="aug-ledger">
       <div className="aug-ledger-main">
         <div className="aug-ledger-bar">
-          <div role="group" aria-label="Filter claims by feedback" className="aug-segmented">
-            {FILTERS.map(f => (
-              <Button key={f.id} variant="ghost" size="xs" aria-pressed={filter === f.id}
-                className="aug-seg-item aug-seg-item-mono font-normal"
-                onClick={() => setFilter(f.id)}>
-                {f.label} {counts[f.id]}
-              </Button>
-            ))}
-          </div>
+          <Segmented label="Filter claims by feedback" value={filter} onChange={setFilter}
+            options={FILTERS.map(f => ({ value: f.id, label: <>{f.label} {counts[f.id]}</> }))} />
           <span className="aug-ledger-meta">
             {claims.length >= LIMIT ? `the latest ${LIMIT} claims` : countNoun(claims.length, "claim")}
             {counts.disputed > 0 ? ` · ${counts.disputed} disputed` : ""}

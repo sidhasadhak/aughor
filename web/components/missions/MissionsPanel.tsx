@@ -26,6 +26,7 @@ import {
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 
 const STATE_HUE: Record<string, ChipHue> = {
   active: "positive", proposed: "info", paused: "caution", met: "accent", retired: "muted",
@@ -196,12 +197,8 @@ function MissionForm({ connectionId, connections, onWritten, onCancel, editing }
   };
 
   const seg = (value: string, set: (v: string) => void, options: [string, string][], label: string) => (
-    <div role="group" aria-label={label} className="aug-segmented" style={{ justifySelf: "start" }}>
-      {options.map(([id, text]) => (
-        <Button key={id} variant="ghost" size="xs" aria-pressed={value === id}
-          className={`aug-seg-item${value === id ? " active" : ""}`} onClick={() => set(id)}>{text}</Button>
-      ))}
-    </div>
+    <Segmented label={label} value={value} onChange={set} style={{ justifySelf: "start" }}
+      options={options.map(([id, text]) => ({ value: id, label: text }))} />
   );
 
   return (

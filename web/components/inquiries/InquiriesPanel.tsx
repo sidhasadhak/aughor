@@ -26,6 +26,7 @@ import {
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 
 type StateFilter = "all" | "open" | "waiting" | "closed";
 
@@ -89,14 +90,8 @@ function InquiryLedger({ connections, onOpen, onAsk }: {
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-0)" }}>
       <div className="aug-toolbar">
-        <div role="group" aria-label="Filter inquiries by state" className="aug-segmented">
-          {FILTERS.map(f => (
-            <Button key={f.id} variant="ghost" size="xs" aria-pressed={filter === f.id}
-              className={`aug-seg-item${filter === f.id ? " active" : ""}`} onClick={() => setFilter(f.id)}>
-              {f.label}
-            </Button>
-          ))}
-        </div>
+        <Segmented label="Filter inquiries by state" value={filter} onChange={setFilter}
+          options={FILTERS.map(f => ({ value: f.id, label: f.label }))} />
         {load.data && (
           <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
             {countNoun(rows.length, "inquiry", "inquiries")} · every connection
@@ -447,12 +442,8 @@ function CloseForm({ busy, onClose }: {
   return (
     <div className="aug-form-grid">
       <label className="aug-fs-sm">Closed as</label>
-      <div role="group" aria-label="Closed as" className="aug-segmented" style={{ justifySelf: "start" }}>
-        {CLOSE_AS.map(c => (
-          <Button key={c} variant="ghost" size="xs" aria-pressed={closedAs === c}
-            className={`aug-seg-item${closedAs === c ? " active" : ""}`} onClick={() => setClosedAs(c)}>{c}</Button>
-        ))}
-      </div>
+      <Segmented label="Closed as" value={closedAs} onChange={setClosedAs} style={{ justifySelf: "start" }}
+        options={CLOSE_AS.map(c => ({ value: c, label: c }))} />
       <label className="aug-fs-sm" htmlFor="inq-believed">Believed at the start</label>
       <Input id="inq-believed" value={believed} onChange={e => setBelieved(e.target.value)} placeholder="What was assumed when it opened" />
       <label className="aug-fs-sm" htmlFor="inq-turned">Turned out</label>

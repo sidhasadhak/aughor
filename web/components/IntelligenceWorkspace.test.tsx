@@ -125,7 +125,8 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
 
 
 describe("IntelligenceWorkspace — the Cockpit tab, beside the Briefing (Arc CT-7)", () => {
-  const tabs = () => screen.getAllByRole("tab").map(t => t.textContent?.trim());
+  // By the name a person hears: a Radix tab holds its label twice (one hidden, for its width).
+  const tabs = () => screen.getAllByRole("tab").map(t => t.querySelector(".rt-TabsTriggerInner")?.textContent?.trim());
   const flags = (on: boolean) => vi.mocked(getSystemFlags).mockResolvedValue(
     { "cockpit.composed": { value: on } as unknown as SystemFlag });
 

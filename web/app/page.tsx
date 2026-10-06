@@ -133,6 +133,8 @@ import {
 } from "@/lib/api";
 import { costSummary, fmtCompact, fmtMs } from "@/lib/cost";
 import { subscribeKernelEvents } from "@/lib/events";
+import { Segmented } from "@/components/ui/segmented";
+import { TabStrip } from "@/components/ui/tab-strip";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -293,15 +295,9 @@ function Topbar({
           </span>
           <kbd>⌘K</kbd>
         </button>
-        {/* The theme toggle: a mono segmented pair, one click from every screen. */}
-        <div className="aug-segmented" role="group" aria-label="Theme">
-          {(["dark", "light"] as const).map(t => (
-            <Button key={t} variant="ghost" size="xs" aria-pressed={theme === t}
-              onClick={() => onThemeChange(t)} className="aug-seg-item aug-seg-item-mono font-normal">
-              {t}
-            </Button>
-          ))}
-        </div>
+        {/* The theme toggle: a segmented pair, one click from every screen. */}
+        <Segmented label="Theme" value={theme} onChange={onThemeChange}
+          options={[{ value: "dark", label: "dark" }, { value: "light", label: "light" }]} />
         <AuthControl />
       </div>
     </div>
@@ -792,13 +788,8 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, wor
   return (
     <div className="aug-screen">
       <div className="aug-toolbar">
-        <div className="aug-segmented" role="tablist" aria-label="Filter runs">
-          {(["all", "investigation", "chat"] as const).map(f => (
-            <button key={f} role="tab" aria-selected={filter === f} onClick={() => setFilter(f)} className="aug-seg-item">
-              {f === "all" ? "All" : f === "investigation" ? "Agent" : "Chat"}
-            </button>
-          ))}
-        </div>
+        <Segmented label="Filter runs" value={filter} onChange={setFilter}
+          options={[{ value: "all", label: "All" }, { value: "investigation", label: "Agent" }, { value: "chat", label: "Chat" }]} />
         {/* PX-6 — the seven-surfaces audit measured these as views over DIFFERENT data
             planes, not duplicates: this list is the person's run history
             (/investigations); the machine view (event stream, traces, spans) lives in
@@ -912,11 +903,8 @@ function SettingsScreen({ theme, setTheme, density, setDensity, workspaceId, wor
   return (
     <div className="aug-screen">
       {/* Sub-tab rail — grouped settings instead of one long scroll */}
-      <div className="aug-tabs" role="tablist" aria-label="Settings sections" style={{ padding: "10px 16px 0", flexShrink: 0 }}>
-        {SUBS.map(s => (
-          <button key={s.id} role="tab" aria-selected={sub === s.id} onClick={() => setSub(s.id)} className="aug-tab">{s.label}</button>
-        ))}
-      </div>
+      <TabStrip label="Settings sections" value={sub} onChange={setSub} tabs={SUBS}
+        style={{ padding: "10px 16px 0", flexShrink: 0 }} />
 
       <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
 

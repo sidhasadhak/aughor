@@ -16,6 +16,7 @@
 import { Button } from "@/components/ui/button";
 
 import { RANGE_KEYS, RANGE_LABELS, type RangeKey, type TimeRange } from "./useTimeRange";
+import { Segmented } from "@/components/ui/segmented";
 
 export function RangePicker({ range, onKey, onClearBrush }: {
   range: TimeRange;
@@ -26,20 +27,9 @@ export function RangePicker({ range, onKey, onClearBrush }: {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
       <span className="aug-label" style={{ whiteSpace: "nowrap" }}>Range</span>
-      <div role="group" aria-label="Time range" className="aug-segmented">
-        {RANGE_KEYS.map(k => {
-          const on = range.key === k && !brushed;
-          return (
-            <Button key={k} variant="ghost" size="sm"
-              onClick={() => onKey(k)}
-              title={RANGE_LABELS[k]}
-              aria-pressed={on}
-              className="aug-seg-item aug-num">
-              {k}
-            </Button>
-          );
-        })}
-      </div>
+      {/* A brushed window is none of the named ranges, so none is chosen while it stands. */}
+      <Segmented label="Time range" value={brushed ? "" : range.key} onChange={onKey}
+        options={RANGE_KEYS.map(k => ({ value: k, label: k, title: RANGE_LABELS[k] }))} />
       {brushed && (
         <Button variant="link" size="xs" onClick={onClearBrush}
           title="Clear the brushed window and go back to the named range">

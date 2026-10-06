@@ -27,6 +27,7 @@ import { Absent, Gate, Ledger, Page, Section, day, useLoad, type LedgerColumn } 
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 
 interface PackListing {
   id: string; name: string; status: string; layer: string; source: string; description: string;
@@ -322,12 +323,8 @@ function Methods({ builtin, registered, rule, onChanged }: {
           <label className="aug-fs-sm" htmlFor="me-name">Name</label>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <Input id="me-name" value={name} onChange={e => setName(e.target.value)} placeholder="vendor-forecaster" style={{ width: 240 }} />
-            <div role="group" aria-label="Kind of method" className="aug-segmented">
-              {METHOD_KINDS.map(k => (
-                <Button key={k} variant="ghost" size="xs" aria-pressed={kind === k}
-                  className={`aug-seg-item${kind === k ? " active" : ""}`} onClick={() => setKind(k)}>{k}</Button>
-              ))}
-            </div>
+            <Segmented label="Kind of method" value={kind} onChange={setKind}
+              options={METHOD_KINDS.map(k => ({ value: k, label: k }))} />
           </div>
           <label className="aug-fs-sm" htmlFor="me-server">Runs as</label>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>

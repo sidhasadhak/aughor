@@ -32,6 +32,7 @@ import {
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 
 type Filter = "all" | "due" | "waiting" | "reviewed";
 
@@ -100,14 +101,8 @@ function DecisionLedger({ connections, selectedConn, onOpen }: {
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-0)" }}>
       <div className="aug-toolbar">
-        <div role="group" aria-label="Filter decisions by review" className="aug-segmented">
-          {FILTERS.map(f => (
-            <Button key={f.id} variant="ghost" size="xs" aria-pressed={filter === f.id}
-              className={`aug-seg-item${filter === f.id ? " active" : ""}`} onClick={() => setFilter(f.id)}>
-              {f.label}
-            </Button>
-          ))}
-        </div>
+        <Segmented label="Filter decisions by review" value={filter} onChange={setFilter}
+          options={FILTERS.map(f => ({ value: f.id, label: f.label }))} />
         {load.data && (
           <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
             {countNoun(rows.length, "decision")} · every connection
@@ -600,14 +595,8 @@ function ProjectForm({ decision, actor, onBooked, onCancel }: {
   return (
     <div className="aug-form-grid">
       <label className="aug-fs-sm">Method</label>
-      <div role="group" aria-label="Method" className="aug-segmented" style={{ justifySelf: "start" }}>
-        {(["identity", "declared", "history", "intervention"] as const).map(m => (
-          <Button key={m} variant="ghost" size="xs" aria-pressed={method === m} title={METHOD_WORDS[m]}
-            className={`aug-seg-item${method === m ? " active" : ""}`} onClick={() => setMethod(m)}>
-            {METHOD_LABEL[m]}
-          </Button>
-        ))}
-      </div>
+      <Segmented label="Method" value={method} onChange={setMethod} style={{ justifySelf: "start" }}
+        options={(["identity", "declared", "history", "intervention"] as const).map(m => ({ value: m, label: METHOD_LABEL[m], title: METHOD_WORDS[m] }))} />
       <label className="aug-fs-sm" htmlFor="sc-metric">What it predicts</label>
       <div style={{ display: "flex", gap: 8 }}>
         <Input id="sc-metric" value={metric} onChange={e => setMetric(e.target.value)} placeholder="credit cost" style={{ flex: 1 }} />
@@ -713,12 +702,8 @@ function OutcomeForm({ decisionId, actor, onBooked }: {
             title="What the decision changed, against the baseline. Left empty, the measured figure less the baseline." />
         </div>
         <label className="aug-fs-sm">Verdict</label>
-        <div role="group" aria-label="Verdict" className="aug-segmented" style={{ justifySelf: "start" }}>
-          {VERDICTS.map(v => (
-            <Button key={v} variant="ghost" size="xs" aria-pressed={verdict === v}
-              className={`aug-seg-item${verdict === v ? " active" : ""}`} onClick={() => setVerdict(v)}>{verdictWords(v)}</Button>
-          ))}
-        </div>
+        <Segmented label="Verdict" value={verdict} onChange={setVerdict} style={{ justifySelf: "start" }}
+          options={VERDICTS.map(v => ({ value: v, label: verdictWords(v) }))} />
         <label className="aug-fs-sm" htmlFor="out-why">Why</label>
         <Input id="out-why" value={why} onChange={e => setWhy(e.target.value)} placeholder="What the measurement showed" />
         <span />

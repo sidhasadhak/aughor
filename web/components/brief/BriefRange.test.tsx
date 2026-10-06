@@ -55,14 +55,14 @@ describe("RangeControl", () => {
   it("asks for a custom range only once both days are picked, first before last", () => {
     const onChange = vi.fn();
     render(<RangeControl value={{ preset: "standing" }} onChange={onChange} />);
-    fireEvent.click(screen.getByText("Custom"));
+    fireEvent.click(screen.getByRole("radio", { name: "Custom" }));
     const show = screen.getByText("Show");
     expect((show as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("First day"), { target: { value: "2026-08-17" } });
     fireEvent.change(screen.getByLabelText("Last day"), { target: { value: "2026-08-26" } });
     fireEvent.click(show);
     expect(onChange).toHaveBeenCalledWith({ preset: "custom", start: "2026-08-17", end: "2026-08-26" });
-    fireEvent.click(screen.getByText("Month"));
+    fireEvent.click(screen.getByRole("radio", { name: "Month" }));
     expect(onChange).toHaveBeenLastCalledWith({ preset: "last_month" });
   });
 });

@@ -57,6 +57,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
+import { TabStrip } from "@/components/ui/tab-strip";
 
 type Selection =
   | { kind: "charter"; id: string }
@@ -485,13 +486,8 @@ function AgentDetail({ agent, onBack, onChanged, onDeleted, onError, onOpenTrace
             {agent.enabled ? "Pause" : "Resume"}
           </Button>
         </>} />
-      <div className="aug-tabs" role="tablist" aria-label="Agent views"
-        style={{ padding: "0 20px", flexShrink: 0 }}>
-        {TABS.map(t => (
-          <Button key={t.id} role="tab" aria-selected={tab === t.id} variant="ghost" size="sm"
-            className="aug-tab" onClick={() => setTab(t.id)}>{t.label}</Button>
-        ))}
-      </div>
+      <TabStrip label="Agent views" value={tab} onChange={setTab} tabs={TABS}
+        style={{ padding: "0 20px", flexShrink: 0 }} />
       <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
         <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: 20 }}>
           {tab === "overview" ? (

@@ -19,6 +19,7 @@ import {
   readExpectedNext,
   type BriefingRange, type BriefingRangeBlock, type BriefingRangeMeasure, type ExpectedNext, type RangePreset,
 } from "@/lib/api";
+import { Segmented } from "@/components/ui/segmented";
 
 /** The control's value: the standing view, or a range. */
 export type RangeChoice = { preset: "standing" } | BriefingRange;
@@ -49,23 +50,15 @@ export function RangeControl({ value, onChange, disabled, standing, label = "Bri
   const ready = !!start && !!end && start <= end;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const, minWidth: 0 }}>
-      <div role="group" aria-label={label} className="aug-segmented">
-        {SEGMENTS.map(s => {
-          const on = !custom && value.preset === s.value;
-          const words = s.value === "standing" && standing ? standing : s;
-          return (
-            <Button key={s.value} variant="ghost" size="sm" className="aug-seg-item"
-              aria-pressed={on} title={words.title} disabled={disabled}
-              onClick={() => { setCustom(false); onChange({ preset: s.value } as RangeChoice); }}>
-              {words.label}
-            </Button>
-          );
-        })}
-        <Button variant="ghost" size="sm" className="aug-seg-item" aria-pressed={custom}
-          title="Any range, first and last day" disabled={disabled} onClick={() => setCustom(true)}>
-          Custom
-        </Button>
-      </div>
+      <Segmented label={label} value={custom ? "custom" : value.preset} disabled={disabled}
+        onChange={v => {
+          if (v === "custom") { setCustom(true); return; }
+          setCustom(false); onChange({ preset: v } as RangeChoice);
+        }}
+        options={[
+          ...SEGMENTS.map(s => { const words = s.value === "standing" && standing ? standing : s; return { value: s.value, label: words.label, title: words.title }; }),
+          { value: "custom" as const, label: "Custom", title: "Any range, first and last day" },
+        ]} />
       {custom && (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <input type="date" aria-label="First day" value={start} max={end || undefined}

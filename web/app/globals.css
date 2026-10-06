@@ -354,7 +354,6 @@ a:hover { color: var(--blue4); }
 }
 
 /* The theme toggle in the topbar: a small segmented pair. */
-.aug-seg-item-mono { font-size: 12px; padding: 3px 8px; }
 
 /* A group header's count: amber when something inside is waiting on a human, neutral when it is
    only a count. It resets the header's tracking and case — a figure is never letter-spaced. */
@@ -388,71 +387,8 @@ a:hover { color: var(--blue4); }
 .aug-content-meta { font-size: 12px; color: var(--t3); white-space: nowrap; }
 
 /* ── Selection — tabs underline, segmented fills; never both in one header ── */
-.aug-tabs { display: flex; align-items: flex-end; gap: 18px; border-bottom: 1px solid var(--b1); }
-.aug-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 0 7px;
-  margin-bottom: -1px;
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--t2);
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: color var(--dur-1) var(--ease-out);
-}
-.aug-tab:hover { color: var(--t1); }
-.aug-tab[aria-selected="true"],
-.aug-tab.active { color: var(--t1); font-weight: 600; border-bottom-color: var(--accent); }
-.aug-tab-badge {
-  padding: 0 6px;
-  border-radius: var(--r1);
-  background: var(--bg-3);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.45;
-  color: var(--t3);
-  font-variant-numeric: tabular-nums;
-}
-.aug-tab-badge-waiting { background: var(--amb1); color: var(--amb4); }
-
-.aug-segmented {
-  display: inline-flex;
-  align-items: stretch;
-  flex-shrink: 0;
-  border: 1px solid var(--b2);
-  border-radius: var(--r2);
-  overflow: hidden;
-}
-.aug-seg-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: auto;
-  min-height: 0;
-  padding: 4px 12px;
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.45;
-  white-space: nowrap;
-  color: var(--t2);
-  background: transparent;
-  border: none;
-  border-left: 1px solid var(--b2);
-  border-radius: 0;
-  cursor: pointer;
-  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
-}
-.aug-seg-item:first-child { border-left: none; }
-.aug-seg-item:hover { background: var(--bg-3); color: var(--t1); }
-.aug-seg-item[aria-selected="true"],
-.aug-seg-item[aria-pressed="true"],
-.aug-seg-item.active { background: var(--bg-4); color: var(--t1); font-weight: 600; }
-.aug-seg-item:disabled { color: var(--t3); cursor: not-allowed; background: transparent; }
-.aug-seg-item:focus-visible { outline-offset: -2px; }
+/* Tabs and segmented controls are Radix Themes' own since 2026-10-06 (components/ui/tab-strip.tsx,
+   components/ui/segmented.tsx). */
 
 /* ── Badge — 11px mono rectangles at 3px, tint 1 · border 2 · text 4 ─────── */
 .aug-badge,
@@ -1193,9 +1129,6 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
        person chose since): the active segment is the tint with accent text (dark keeps the
        pressed fill), and the rail's active item reads in the accent over the same tint. The
        active tab's underline and the rail's bar read --accent in both skins. */
-[data-theme="light"] .aug-seg-item[aria-selected="true"],
-[data-theme="light"] .aug-seg-item[aria-pressed="true"],
-[data-theme="light"] .aug-seg-item.active { background: var(--bg-sel); color: var(--accent-text); }
 [data-theme="light"] .aug-nav-item[aria-current="page"],
 [data-theme="light"] .aug-nav-item.active { color: var(--accent-text); }
 /* 3 · State on a value: a bordered pill in dark (a Du Bois tag), a cell fill in light (Excel's
@@ -1263,23 +1196,14 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
    under the context bar when there is one): underlined tabs that scroll rather than clip, so
    the header keeps its title and its one action. Light draws them as sheet tabs on chrome. */
 .aug-layer-tabs {
-  height: 36px;
   flex-shrink: 0;
-  display: flex;
-  align-items: stretch;
-  gap: 22px;
   padding: 0 16px;
-  border-bottom: 1px solid var(--b1);
   background: var(--bg-0);
   overflow-x: auto;
   scrollbar-width: none;
   white-space: nowrap;
 }
 .aug-layer-tabs::-webkit-scrollbar { display: none; }
-.aug-layer-tabs .aug-tab { height: auto; margin: 0; padding: 0 2px; border-radius: 0; flex-shrink: 0; }
-[data-theme="light"] .aug-layer-tabs { gap: 0; background: var(--bg-1); }
-[data-theme="light"] .aug-layer-tabs .aug-tab { padding: 0 14px; border-right: 1px solid var(--b1); }
-[data-theme="light"] .aug-layer-tabs .aug-tab[aria-selected="true"] { background: var(--bg-0); color: var(--accent-text); }
 /* The context bar is a toolbar that holds SCOPE (a connection, a schema), not filters: its
    controls sit left, spaced wider, on the page. */
 .aug-context-bar { gap: 16px; }
@@ -1298,9 +1222,7 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 :root[data-density="compact"] .aug-dt tbody td { height: 26px; padding: 0 10px; font-size: 12px; }
 :root[data-density="compact"] .aug-nav-item { height: 24px; }
 :root[data-density="compact"] .aug-rail-row { padding: 5px 0; }
-:root[data-density="compact"] .aug-layer-tabs,
 :root[data-density="compact"] .aug-toolbar { height: 32px; }
-:root[data-density="compact"] .aug-seg-item { padding: 3px 10px; font-size: 12px; }
 
 /* ── Semantic Layer › metric editor: fields left, governance right (2026-09-25) ──────────
    The governance report sat above a 36rem form and pushed the first field a screen down
