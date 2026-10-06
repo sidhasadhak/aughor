@@ -76,7 +76,7 @@ def _sse(event_type: str, data: dict) -> str:
 
 
 def _error_event(exc: "BaseException | None" = None, *, message: str = "",
-                 reason: str = "") -> dict:
+                 reason: str = "", agent_id: str = "") -> dict:
     """The payload for an ``error`` SSE frame — the ONE place its shape is decided (Wave R4).
 
     This was assembled independently at fifteen sites, each emitting a bare
@@ -91,7 +91,7 @@ def _error_event(exc: "BaseException | None" = None, *, message: str = "",
     """
     from aughor.agent.answer_errors import error_event
 
-    return error_event(exc, message=message, reason=reason)
+    return error_event(exc, message=message, reason=reason, agent_id=agent_id)
 
 
 #: The follow-up ask, shared by both branches of the quick path's merged
@@ -4935,10 +4935,11 @@ async def _metered_stream(gen: AsyncGenerator[str, None],
         async for chunk in gen:
             yield chunk
     except metering.BudgetExceeded as be:
+        # The budget armed here is the Responder's (`_insight_budget`), so the event names
+        # it: the chat links straight to that agent's page, where the budget is raised.
         yield _sse("error", _error_event(
-            be, message=f"Answer stopped — {be.reason} exceeded. "
-                        f"Raise the Responder's budget with PATCH /agents/insight.",
-            reason="budget_exceeded"))
+            be, message=f"Answer stopped — the Responder's {be.reason} was reached.",
+            reason="budget_exceeded", agent_id="insight"))
     finally:
         if btoken is not None:
             metering.clear_budget(btoken)
