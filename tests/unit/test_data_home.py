@@ -9,6 +9,7 @@ once `aughor migrate-state` has verified a copy and written its marker.
 """
 from __future__ import annotations
 
+import json
 import sys
 
 import pytest
@@ -222,6 +223,7 @@ _STAYS = {
     ("aughor/cli.py", "src"): "migrate-state's SOURCE — the checkout's data/ it copies from",
     ("aughor/connectors/declarations.py", "'data/sales/'"): "a connect form's placeholder, not a path",
     ("aughor/db/home.py", "checkout_data"): "follow_checkout_file's anchor — the data/ it maps FROM",
+    ("aughor/db/home.py", "names"): "ledger_names: the OLD names a moved store's rows live under, never opened",
     ("aughor/db/keyfile.py", "LEGACY_KEY_FILE"): "the fallback for a key not yet moved; the home's copy wins",
     ("aughor/installer.py", "path"): "a stdlib mirror of the rule, held equal to the app in test_installer",
     ("aughor/ontology/column_config.py", "_DEFAULT_ROOT"): "authored, tracked — stays in the checkout",
@@ -352,3 +354,83 @@ class TestAConnectionsFileFollows:
         (clean_env / home.STATE_SUBDIR / "w.duckdb").write_bytes(b"")
         theirs = tmp_path / "someone" / "data" / "w.duckdb"
         assert home.follow_checkout_file(theirs) == theirs
+
+
+# ── a store keeps its NAME when its file moves ───────────────────────────────────────────────────
+#
+# The first real migration (2026-10-07) moved every file and re-keyed every ledger-backed store:
+# `KeyedJsonStore` / `LedgerListStore` name their rows after `str(path)`, the path changed, and the
+# rows stayed under the old name. Three finished canvases read as never explored; an empty-looking
+# store would have re-imported its stale legacy file. Rolled back after 99 s. These pin the fix.
+
+class TestAStoreKeepsItsNameWhenItsFileMoves:
+    @pytest.fixture
+    def ledger(self, clean_env, monkeypatch, tmp_path):
+        monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "ledger" / "system.db"))
+        (tmp_path / "ledger").mkdir()
+        return clean_env
+
+    @staticmethod
+    def _move(home_dir):
+        (home_dir / home.MARKER).write_text("migrated")
+        (home_dir / home.STATE_SUBDIR).mkdir(exist_ok=True)
+
+    def test_a_state_dir_store_reads_its_rows_after_the_move(self, ledger):
+        from aughor.util.json_store import KeyedJsonStore
+        KeyedJsonStore(paths.state_dir() / "kt_cache.json").put("k", 1)
+        self._move(ledger)
+        moved = KeyedJsonStore(paths.state_dir() / "kt_cache.json")
+        assert moved.path == ledger / home.STATE_SUBDIR / "kt_cache.json"
+        assert moved.get("k") == 1 and moved._store_id == "data/kt_cache.json"
+
+    def test_a_moved_store_never_reimports_its_stale_legacy_file(self, ledger):
+        from aughor.util.json_store import KeyedJsonStore
+        KeyedJsonStore(paths.state_dir() / "kt_legacy.json").put("k", "current")
+        self._move(ledger)
+        (ledger / home.STATE_SUBDIR / "kt_legacy.json").write_text(json.dumps({"k": "stale"}))
+        assert KeyedJsonStore(paths.state_dir() / "kt_legacy.json").get("k") == "current"
+
+    def test_a_store_anchored_on_its_module_keeps_its_absolute_name(self, ledger):
+        """The ontology cache's shape: `Path(__file__)…/data/x.json`, routed through rehome."""
+        from aughor.util.json_store import KeyedJsonStore
+        anchored = _pathlib.Path(home.__file__).parent.parent.parent / "data" / "kt_anchored.json"
+        KeyedJsonStore(anchored).put("k", "anchored")
+        self._move(ledger)
+        moved = KeyedJsonStore(home.rehome(anchored))
+        assert moved.get("k") == "anchored" and moved._store_id == str(anchored)
+
+    def test_the_relative_name_wins_when_both_hold_rows(self, ledger):
+        """theLook's schema profiles carry an orphaned absolute-name set beside the live one."""
+        from aughor.util.json_store import KeyedJsonStore
+        KeyedJsonStore(paths.state_dir() / "kt_both.json").put("k", "live")
+        KeyedJsonStore(_pathlib.Path(home.__file__).parent.parent.parent / "data" / "kt_both.json").put("k", "orphan")
+        self._move(ledger)
+        assert KeyedJsonStore(paths.state_dir() / "kt_both.json").get("k") == "live"
+
+    def test_a_store_new_since_the_move_takes_one_stable_name(self, ledger):
+        from aughor.util.json_store import KeyedJsonStore
+        self._move(ledger)
+        KeyedJsonStore(paths.state_dir() / "kt_new.json").put("k", "after")
+        again = KeyedJsonStore(paths.state_dir() / "kt_new.json")
+        assert again.get("k") == "after" and again._store_id == "data/kt_new.json"
+
+    def test_list_and_family_stores_keep_their_names_too(self, ledger):
+        from aughor.util.json_store import FileFamilyStore, LedgerListStore
+        LedgerListStore(paths.state_dir() / "kt_bots.json").upsert({"id": "b1"})
+        FileFamilyStore(paths.state_dir(), "kt_exploration_").put("canvas_c1", {"phase": "complete"})
+        self._move(ledger)
+        assert LedgerListStore(paths.state_dir() / "kt_bots.json").all() == [{"id": "b1"}]
+        fam = FileFamilyStore(paths.state_dir(), "kt_exploration_")
+        assert fam.keys_with_prefix("canvas_") == ["canvas_c1"]
+        assert fam.get_entry("canvas_c1") == {"phase": "complete"}
+
+    def test_before_the_move_a_name_is_its_path_exactly(self, ledger, tmp_path):
+        from aughor.util.json_store import KeyedJsonStore
+        assert home.ledger_names(paths.state_dir() / "anything.json") == []
+        store = KeyedJsonStore(tmp_path / "elsewhere.json")
+        store.put("k", 1)
+        assert store._store_id == str(tmp_path / "elsewhere.json")
+
+    def test_a_path_outside_the_home_keeps_its_name_after_the_move(self, ledger, tmp_path):
+        self._move(ledger)
+        assert home.ledger_names(tmp_path / "env-pointed" / "x.json") == []

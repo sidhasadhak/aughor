@@ -797,6 +797,12 @@ class Ledger:
             cur = self._conn.execute("DELETE FROM kv WHERE store=? AND key=?", (store, key))
         return cur.rowcount > 0
 
+    def kv_has(self, store: str) -> bool:
+        """Whether any row lives under ``store`` — one indexed probe, not a load."""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT 1 FROM kv WHERE store=? LIMIT 1", (store,)).fetchone() is not None
+
     def kv_load_all(self, store: str) -> dict:
         """Whole store as a dict, oldest-first (parity with the JSON file whose
         insertion order encoded MRU — ``next(iter(d))`` is the eviction victim)."""
