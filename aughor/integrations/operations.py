@@ -26,8 +26,9 @@ Three rules make the closed set actually closed:
    automation plane published a list at all (§3.2's measured limit); a remote read is the
    first thing that honestly does.
 
-**Scopes are stated, not guessed.** Every operation here is covered by its provider's
-``default_scopes``, so the roster a fresh grant can run is the roster it was granted — a
+**Scopes are stated, not guessed.** Every operation here is covered by a scope its provider's
+cards ask for (``Provider.requestable_scopes`` — its own, or one product's), so the roster a
+fresh grant can run is the roster it was granted — a
 row that needs a scope the user never consented to is a row that dims with a sentence
 naming the scope, not one that fails at 09:00 with the provider's own 403.
 """
@@ -83,6 +84,11 @@ class ResultShape(BaseModel):
     item_fields: tuple[str, ...] = ()
     #: ``published key -> dotted path in the response body``.
     fields: dict[str, str] = Field(default_factory=dict)
+    #: ``published key -> path through each ITEM`` whose strings are joined into one text.
+    #: A ``[]`` part walks every element of a list. For a provider that keeps an item's words
+    #: deep in nested lists — a Google slide's text sits under its page elements' text runs
+    #: (2026-10-07) — still a declared path, never a callable.
+    item_text: dict[str, str] = Field(default_factory=dict)
 
 
 class Operation(BaseModel):
@@ -152,10 +158,12 @@ class Operation(BaseModel):
 
 # ── the roster ───────────────────────────────────────────────────────────────────
 #
-# Small on purpose. Six operations across the three providers VA-11 shipped, each covered
-# by that provider's `default_scopes`, each proving one shape: a list (the fan source), a
-# single fetch (a path param), and a write (the approval gate). Forty would be a
-# catalogue; these are the shapes every later row is a copy of.
+# Small on purpose. The first six proved one shape each: a list (the fan source), a single
+# fetch (a path param), and a write (the approval gate). Google's four read tools
+# (2026-10-07) are copies of those shapes, one per product a Google card connects — each
+# covered by that product's own scope, so connecting the card is what lets its tool run.
+
+_GOOGLE_AUTH = "https://www.googleapis.com/auth/"
 
 OPERATIONS: tuple[Operation, ...] = (
     # ── Google ───────────────────────────────────────────────────────────────────
@@ -192,6 +200,88 @@ OPERATIONS: tuple[Operation, ...] = (
         ),
         result=ResultShape(fields={"id": "id", "thread_id": "threadId",
                                    "snippet": "snippet"}),
+    ),
+    # ── Google Sheets, Slides, Drive, Calendar — one read each ─────────────────────
+    Operation(
+        id="sheets.values.get",
+        provider="google",
+        label="Sheets · read a range",
+        description="The cells of one range of a spreadsheet, row by row — at most 200 rows, "
+                    "so name a range that fits.",
+        url="https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{range}",
+        scopes=(_GOOGLE_AUTH + "spreadsheets.readonly",),
+        params=(
+            OperationParam(name="spreadsheet_id", label="Spreadsheet id", required=True,
+                           in_path=True, placeholder="the id in …/spreadsheets/d/<id>/"),
+            OperationParam(name="range", label="Range", required=True, in_path=True,
+                           placeholder="Sheet1!A1:F50"),
+        ),
+        result=ResultShape(items_path="values", fields={"range": "range"}),
+    ),
+    Operation(
+        id="slides.presentations.get",
+        provider="google",
+        label="Slides · read a presentation",
+        description="Its title and the text of each slide's shapes and text boxes, in order.",
+        url="https://slides.googleapis.com/v1/presentations/{presentation_id}",
+        scopes=(_GOOGLE_AUTH + "presentations.readonly",),
+        params=(
+            OperationParam(name="presentation_id", label="Presentation id", required=True,
+                           in_path=True, placeholder="the id in …/presentation/d/<id>/"),
+            # Only the text runs come back — no images, layouts or masters — which keeps a
+            # whole deck to a few kilobytes in a stored run.
+            OperationParam(name="fields", label="Fields", bindable=False,
+                           default="title,slides(objectId,pageElements(shape(text(textElements(textRun(content))))))"),
+        ),
+        result=ResultShape(items_path="slides", item_fields=("objectId",),
+                           item_text={"text": "pageElements[].shape.text.textElements[].textRun.content"},
+                           fields={"title": "title"}),
+    ),
+    Operation(
+        id="drive.files.list",
+        provider="google",
+        label="Drive · find files",
+        description="Files matching a Drive search, newest first — names, types and links, "
+                    "never their contents.",
+        url="https://www.googleapis.com/drive/v3/files",
+        scopes=(_GOOGLE_AUTH + "drive.metadata.readonly",),
+        params=(
+            OperationParam(name="q", label="Search",
+                           placeholder="name contains 'budget' and trashed = false"),
+            OperationParam(name="pageSize", label="Limit", type="number", default=20,
+                           bindable=False),
+            OperationParam(name="orderBy", label="Order", default="modifiedTime desc",
+                           bindable=False),
+            OperationParam(name="fields", label="Fields", bindable=False,
+                           default="files(id,name,mimeType,modifiedTime,webViewLink),nextPageToken"),
+        ),
+        result=ResultShape(items_path="files",
+                           item_fields=("id", "name", "mimeType", "modifiedTime", "webViewLink"),
+                           fields={"next_page_token": "nextPageToken"}),
+    ),
+    Operation(
+        id="calendar.events.list",
+        provider="google",
+        label="Calendar · list events",
+        description="Events on your main calendar from a start time, soonest first.",
+        url="https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        scopes=(_GOOGLE_AUTH + "calendar.readonly",),
+        params=(
+            OperationParam(name="timeMin", label="From", required=True,
+                           placeholder="2026-10-08T00:00:00Z"),
+            OperationParam(name="timeMax", label="Until", placeholder="2026-10-15T00:00:00Z"),
+            OperationParam(name="q", label="Search", placeholder="board review"),
+            OperationParam(name="maxResults", label="Limit", type="number", default=25,
+                           bindable=False),
+            # A recurring meeting as its single occurrences, in time order — what "what is
+            # on this week" means; without these Google returns the series, unordered.
+            OperationParam(name="singleEvents", label="Expand recurring", type="boolean",
+                           default=True, bindable=False),
+            OperationParam(name="orderBy", label="Order", default="startTime", bindable=False),
+        ),
+        result=ResultShape(items_path="items",
+                           item_fields=("id", "summary", "start", "end", "location", "htmlLink"),
+                           fields={"next_page_token": "nextPageToken"}),
     ),
     # ── Slack ────────────────────────────────────────────────────────────────────
     Operation(
@@ -340,12 +430,38 @@ def extract(op: Operation, payload: dict) -> dict:
     if op.result.items_path:
         items = _dig(payload, op.result.items_path)
         items = items if isinstance(items, list) else []
-        out["items"] = [_shrink(it, op.result.item_fields) for it in items]
+        out["items"] = [_item(it, op.result) for it in items]
         out["count"] = len(items)
     for key, path in op.result.fields.items():
         got = _dig(payload, path)
         out[key] = got if got is not None else ""
     return out
+
+
+def _item(item: Any, shape: ResultShape) -> Any:
+    """One list item as published: its declared keys, and the texts gathered for it."""
+    kept = _shrink(item, shape.item_fields)
+    if shape.item_text and isinstance(item, dict):
+        kept = {**(kept if isinstance(kept, dict) else {}),
+                **{key: "".join(_gather(item, path)).strip() for key, path in shape.item_text.items()}}
+    return kept
+
+
+def _gather(node: Any, path: str) -> list[str]:
+    """Every string at ``path`` through ``node`` — a ``[]`` part walks each element of a list."""
+    nodes = [node]
+    for part in (p for p in (path or "").split(".") if p):
+        each = part.endswith("[]")
+        key = part[:-2] if each else part
+        found: list[Any] = []
+        for n in nodes:
+            val = n.get(key) if isinstance(n, dict) else None
+            if each:
+                found.extend(val if isinstance(val, list) else [])
+            elif val is not None:
+                found.append(val)
+        nodes = found
+    return [n for n in nodes if isinstance(n, str)]
 
 
 def _shrink(item: Any, keep: tuple[str, ...]) -> Any:

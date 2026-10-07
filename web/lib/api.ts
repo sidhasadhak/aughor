@@ -4871,6 +4871,21 @@ export interface IntegrationProvider {
    *  provider's error page. */
   https_only: boolean;
   connection: IntegrationConnection | null;
+  /** The products this provider's one app reaches, each connected from its own card (Google,
+   *  2026-10-07). Empty for a provider connected as a whole. */
+  products?: IntegrationProduct[];
+}
+
+/** One product of a provider's app — a scope on its single grant, consented on its own card. */
+export interface IntegrationProduct {
+  id: string;
+  name: string;
+  blurb: string;
+  scopes: string;
+  /** The grant is live and covers this product's scopes. */
+  connected: boolean;
+  /** The tools connecting it lets an automation run. */
+  tools: string[];
 }
 
 /* ── VA-9d · MCP servers this deployment may CALL ──────────────────────────────
@@ -5109,8 +5124,9 @@ export async function setupIntegrationApp(provider: string, body: {
 
 /** Begin the dance. The caller sends the BROWSER to `authorize_url` — a fetch cannot
  *  follow a consent screen. */
-export async function beginIntegrationConnect(provider: string): Promise<string> {
-  const res = await fetch(`${getApiBase()}/integrations/${provider}/connect`, { method: "POST" });
+export async function beginIntegrationConnect(provider: string, product?: string): Promise<string> {
+  const q = product ? `?product=${encodeURIComponent(product)}` : "";
+  const res = await fetch(`${getApiBase()}/integrations/${provider}/connect${q}`, { method: "POST" });
   if (!res.ok) {
     let detail = ""; try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON */ }
     throw new Error(detail || `Could not start the connection (${res.status})`);

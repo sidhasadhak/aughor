@@ -6920,6 +6920,9 @@ export interface paths {
         /**
          * Connect
          * @description Begin the dance; the client sends the browser to `authorize_url`.
+         *
+         *     ``product`` connects one product of the provider's app from its own card: the provider's
+         *     own scopes and that product's, and nothing another card would ask for.
          */
         post: operations["connect_integrations__provider_id__connect_post"];
         delete?: never;
@@ -32679,7 +32682,9 @@ export interface operations {
     };
     connect_integrations__provider_id__connect_post: {
         parameters: {
-            query?: never;
+            query?: {
+                product?: string | null;
+            };
             header?: never;
             path: {
                 provider_id: string;

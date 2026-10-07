@@ -15,7 +15,7 @@ import { ErrorState, Loading } from "@/components/ui/states";
  * What never appears here: a token. The API drops token fields server-side, so this
  * component could not render one if it tried — which is the point.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -203,11 +203,11 @@ export function IntegrationsPanel() {
     }
   };
 
-  const connect = async (provider: string) => {
-    setBusy(provider);
+  const connect = async (provider: string, product?: string) => {
+    setBusy(product ? `${provider}:${product}` : provider);
     setError("");
     try {
-      const url = await beginIntegrationConnect(provider);
+      const url = await beginIntegrationConnect(provider, product);
       // A NEW tab, so this one survives to refetch on refocus. The consent screen is
       // the provider's page; nothing about it belongs inside this app's frame. A popup
       // blocker returns null SILENTLY — measured — so the fallback is same-tab
@@ -219,6 +219,30 @@ export function IntegrationsPanel() {
       setBusy("");
     }
   };
+
+  /** Each product of a provider's one app is its own card (Google, 2026-10-07): Connect opens
+   *  the provider's consent for that product alone, and the grant grows a product at a time. */
+  const productCards = (p: IntegrationProvider) => (p.products ?? []).map(pr => {
+    const conn = p.connection;
+    const granted = (conn?.scopes || "").split(/[\s,]+/);
+    const stale = conn?.status === "needs_reconnect" && pr.scopes.split(" ").every(sc => granted.includes(sc));
+    const key = `${p.id}:${pr.id}`;
+    return (
+      <IntegrationCard key={key} testId={`integration-product-${pr.id}`} name={pr.name} blurb={pr.blurb}
+        status={pr.connected ? { tone: "ok", text: "connected" }
+          : stale ? { tone: "warn", text: "needs reconnect" } : null}
+        details={[pr.connected ? conn?.account : null,
+                  !p.configured ? `set up the ${p.name} app first` : null,
+                  pr.tools.length ? `tools: ${pr.tools.map(t => t.split(" · ").pop()).join(" · ")}` : null]}
+        actions={!pr.connected && (
+          <Button variant="default" size="xs" disabled={!p.configured || busy === key}
+            title={p.configured ? undefined : `Set up the ${p.name} app first — one app serves every ${p.name} card`}
+            onClick={() => void connect(p.id, pr.id)}>
+            {busy === key ? "…" : stale ? "Reconnect" : "Connect"}
+          </Button>
+        )} />
+    );
+  });
 
   const revoke = async (p: IntegrationProvider) => {
     if (!p.connection) return;
@@ -269,7 +293,10 @@ export function IntegrationsPanel() {
               const listening = bots.filter(b => b.enabled && b.listening).length;
               const conn = p.connection;
               const scopes = (conn?.scopes || "").split(/[\s,]+/).filter(Boolean);
+              const products = p.products ?? [];
+              const productsOn = products.filter(pr => pr.connected).length;
               return (
+              <Fragment key={p.id}>
               <IntegrationCard key={p.id} name={p.name} blurb={p.blurb} testId={`integration-card-${p.id}`}
                 status={slack
                   ? (bots.length === 0 ? null
@@ -287,8 +314,10 @@ export function IntegrationsPanel() {
                        ? `last heard ${formatDateTime(supervisor.heartbeat.last_seen_at)}` : null]
                   : conn?.status === "active"
                     ? [conn.account, `since ${formatDateTime(conn.created_at)}`,
-                       scopes.length ? `${scopes.length} permission${scopes.length === 1 ? "" : "s"} granted` : null]
-                    : [p.configured ? "app set up, not connected yet" : null]}
+                       products.length ? `${productsOn} of ${products.length} products connected`
+                         : scopes.length ? `${scopes.length} permission${scopes.length === 1 ? "" : "s"} granted` : null]
+                    : [p.configured ? (products.length ? "set up — connect each product from its card"
+                                                        : "app set up, not connected yet") : null]}
                 detailsTitle={conn?.status === "active" && scopes.length ? `granted: ${scopes.join(" ")}` : undefined}
                 actions={<>
                     {/* Set up was a ONE-WAY door: once an org client was stored the card
@@ -327,9 +356,12 @@ export function IntegrationsPanel() {
                         Set up
                       </Button>
                     ) : p.connection?.status === "active" ? (
+                      // A product is a scope on ONE grant, and Google revokes a grant whole —
+                      // so disconnecting is this card's, and says that it is every product.
                       <Button variant="ghost" size="xs" disabled={busy === p.id}
-                        onClick={() => revoke(p)}>Revoke</Button>
-                    ) : (
+                        title={products.length ? `${p.name} removes Aughor's access to every ${p.name} product at once` : undefined}
+                        onClick={() => revoke(p)}>{products.length ? "Disconnect all" : "Revoke"}</Button>
+                    ) : products.length ? null : (
                       <Button variant="default" size="xs" disabled={busy === p.id}
                         onClick={() => connect(p.id)}>
                         {p.connection?.status === "needs_reconnect" ? "Reconnect" : "Connect"}
@@ -730,6 +762,8 @@ export function IntegrationsPanel() {
                   </div>
                 )}
               </IntegrationCard>
+              {productCards(p)}
+              </Fragment>
               );
             })}
           </div>

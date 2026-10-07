@@ -21,6 +21,24 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 
+class Product(BaseModel):
+    """One product a provider's single app reaches, consented to on its own card.
+
+    Google is one OAuth app and one grant per person, and a product is a SCOPE on it: the
+    user, 2026-10-07, wanted Gmail, Sheets, Slides, Drive and Calendar as separate cards,
+    each opening Google's consent for that product alone. Each card asks for its own scopes
+    with `include_granted_scopes`, so the grant grows a product at a time and the token
+    response says which products it now covers. Google revokes a grant whole, never one
+    product of it — so disconnecting is the provider's, said on its card, not a product's.
+    """
+
+    id: str
+    name: str
+    blurb: str
+    #: Space-separated scopes this product's card requests, beside the provider's own.
+    scopes: str
+
+
 class Provider(BaseModel):
     id: str
     name: str
@@ -58,23 +76,53 @@ class Provider(BaseModel):
     #: missing is that the catalog pointed a fresh installer at OAuth, the one door
     #: their deployment cannot open. Empty = OAuth is the only way in.
     alt_door: str = ""
+    #: The products this provider's one app reaches, each connected from its own card.
+    #: Empty = the provider is connected as a whole, from its own card.
+    products: list[Product] = []
 
+    def product(self, product_id: str) -> "Product | None":
+        return next((p for p in self.products if p.id == product_id), None)
+
+    @property
+    def requestable_scopes(self) -> set[str]:
+        """Every scope this provider's cards may ask for — its own, and each product's."""
+        return set(self.default_scopes.split()) | {s for p in self.products for s in p.scopes.split()}
+
+
+_GOOGLE_AUTH = "https://www.googleapis.com/auth/"
 
 PROVIDERS: dict[str, Provider] = {p.id: p for p in [
     Provider(
         id="google",
         name="Google",
         category="Productivity",
-        blurb="Gmail, Drive, Calendar and Sheets under one Google grant.",
+        blurb="The one Google app every Google card uses — set it up once, then connect each product.",
         authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
         token_url="https://oauth2.googleapis.com/token",
         revoke_url="https://oauth2.googleapis.com/revoke",
-        default_scopes="openid email https://www.googleapis.com/auth/gmail.readonly",
+        # Who signed in, nothing more: each product's card asks for its own scope.
+        default_scopes="openid email",
         pkce=True,
         console_url="https://console.cloud.google.com/apis/credentials",
-        # Without these two, Google omits the refresh token on every consent after the
-        # first — a grant that silently cannot outlive its first hour.
-        authorize_extra={"access_type": "offline", "prompt": "consent"},
+        # Without the first two, Google omits the refresh token on every consent after the
+        # first — a grant that silently cannot outlive its first hour. The third keeps every
+        # product already granted when one more is added, so the token covers them all.
+        authorize_extra={"access_type": "offline", "prompt": "consent",
+                         "include_granted_scopes": "true"},
+        # Read-only, each the narrowest scope its tools need — Drive lists files by their
+        # metadata and never reads their contents.
+        products=[
+            Product(id="gmail", name="Gmail", blurb="Search and read your email.",
+                    scopes=_GOOGLE_AUTH + "gmail.readonly"),
+            Product(id="sheets", name="Google Sheets", blurb="Read the cells of a spreadsheet.",
+                    scopes=_GOOGLE_AUTH + "spreadsheets.readonly"),
+            Product(id="slides", name="Google Slides", blurb="Read the text of a presentation, slide by slide.",
+                    scopes=_GOOGLE_AUTH + "presentations.readonly"),
+            Product(id="drive", name="Google Drive", blurb="Find files by name, type or date — their names and links, not their contents.",
+                    scopes=_GOOGLE_AUTH + "drive.metadata.readonly"),
+            Product(id="calendar", name="Google Calendar", blurb="Read the events on your calendar.",
+                    scopes=_GOOGLE_AUTH + "calendar.readonly"),
+        ],
     ),
     Provider(
         id="slack",
