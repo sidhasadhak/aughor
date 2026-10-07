@@ -7,8 +7,9 @@ as the person's corrected statement, a hypothesis as refuted, a prediction refus
 wakes the inquiries that established the claim and reopens the decisions that stood on it, again
 when what replaced it is itself replaced; an option or a dissent added after booking is dated and
 named and what was chosen does not move; an edited mission keeps the day of its next report; a
-past report is read by its id and only under its own mission; and when no sign-in names the
-caller, the name a form carries is kept as ``person:`` — never as an authenticated ``user:``.
+past report is read by its id and only under its own mission; and a page's write is recorded under
+the person the request acts for — never a name the form carries (2026-10-07). With nobody signed in,
+that is this install's operator, `ana` here.
 """
 from __future__ import annotations
 
@@ -33,6 +34,7 @@ def _own_stores(tmp_path, monkeypatch):
     import aughor.settling.store as settling
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: 3)
     monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
 
 
 def _conn():
@@ -56,13 +58,11 @@ def _decision(conn: str, relied_on: list[str]) -> str:
 
 # ── who is acting ──────────────────────────────────────────────────────────────────────────
 
-def test_a_typed_name_is_a_person_and_never_reads_as_a_signed_in_user():
+def test_a_typed_name_is_never_who_acted():
     class P:
-        user_id = "ana@example.com"
-    assert R._actor(P(), "someone else") == "user:ana@example.com"     # a sign-in always wins
-    assert R._actor(None, "ana") == "person:ana"
-    assert R._actor(None, "user:ana") == "user:ana"                    # a full principal is kept as typed
-    assert R._actor(None, "  ") == ""
+        user_id = "bo@example.com"
+    assert R._who(P()) == "user:bo@example.com"                         # a sign-in always wins
+    assert R._who(None) == "user:ana"                                   # else the person the request acts for
 
 
 # ── the inquiry's page ─────────────────────────────────────────────────────────────────────
@@ -93,10 +93,10 @@ def test_a_persons_hypothesis_is_a_named_claim_and_a_refuted_one_like_it_is_said
     # the door: the form's name is the author when no sign-in is bound, and a missing one is a 422
     q2 = I.open_inquiry(question="Why did margin slip?", connection_id=conn, opened_by="person:ana", run_id="r2", now=NOW)
     view = R.add_record_inquiry_hypothesis(q2.id, R.HypothesisRequest(text="a discount stacked", by="cy"), principal=None)
-    assert view["hypothesis_claims"][0]["author"] == "person:cy" and view["resembles_refuted"] is None
-    with pytest.raises(HTTPException) as exc:
-        R.add_record_inquiry_hypothesis(q2.id, R.HypothesisRequest(text="a discount stacked"), principal=None)
-    assert exc.value.status_code == 422 and "say who holds it" in exc.value.detail
+    assert view["hypothesis_claims"][0]["author"] == "user:ana" and view["resembles_refuted"] is None
+    # no name is asked for: a hypothesis sent without one is the person the request acts for
+    unnamed = R.add_record_inquiry_hypothesis(q2.id, R.HypothesisRequest(text="the promo calendar moved"), principal=None)
+    assert unnamed["hypothesis_claims"][-1]["author"] == "user:ana"
 
 
 def test_an_inquiry_is_handed_to_a_person_and_the_hand_off_is_on_the_record():
@@ -191,17 +191,17 @@ def test_a_restatement_wakes_the_inquiry_and_reopens_the_decision_and_again_when
     did = _decision(conn, [cid])
     other = _decision(conn, [])                                         # stands on nothing: never reopened
     out = R.mark_record_claim_wrong(cid, R.MarkWrongRequest(corrected="APAC revenue was 2.72M last week", by="ana"), principal=None)
-    assert out["superseded"] == cid and out["tier"] == "declared" and out["author"] == "person:ana"
+    assert out["superseded"] == cid and out["tier"] == "declared" and out["author"] == "user:ana"
     assert len(out["woke_inquiries"]) == 1 and len(out["reopened_decisions"]) == 1
     woke = I.latest(q.key)
-    assert woke.state == "open" and woke.woke[-1]["why"] == f"claim {cid} it established was marked wrong by person:ana"
+    assert woke.state == "open" and woke.woke[-1]["why"] == f"claim {cid} it established was marked wrong by user:ana"
     held = R.get_record_inquiry(woke.id)["established_claims"]
     assert [(c["id"], c["cited_as"], c["restated_since"]) for c in held] == [(out["id"], cid, True)]
     view = R.get_record_decision(did)                                  # the old id reads the old version…
     assert view["reopened_by"] == "" and view["superseded_by"] == out["reopened_decisions"][0]
     reopened = R.get_record_decision(out["reopened_decisions"][0])     # …and the new one names what replaced its ground
     assert reopened["reopened_by"] == out["id"] and reopened["reopened_by_claim"]["statement"]["text"].endswith("2.72M last week")
-    assert reopened["extra"]["reopened"][-1]["why"] == "a claim it relied on was marked wrong by person:ana"
+    assert reopened["extra"]["reopened"][-1]["why"] == "a claim it relied on was marked wrong by user:ana"
     assert reopened["relied_on_claims"][0]["superseded_by"] == out["id"]      # cited as recorded then, and marked as replaced
     # the corrected claim still names the decision that stood on the version it corrected
     assert R.get_record_claim(out["id"])["relied_on_by"] == [reopened["id"]] == R.get_record_claim(cid)["relied_on_by"]
@@ -211,7 +211,7 @@ def test_a_restatement_wakes_the_inquiry_and_reopens_the_decision_and_again_when
         R.settle_record_decision_reopening(reopened["id"], R.StandsRequest(why=" "), principal=None)
     assert exc.value.status_code == 422
     stands = R.settle_record_decision_reopening(reopened["id"], R.StandsRequest(why="2.72M still clears the bar", by="ana"), principal=None)
-    assert stands["reopened_by"] == "" and stands["extra"]["reopened"][-1]["settled_by"] == "person:ana"
+    assert stands["reopened_by"] == "" and stands["extra"]["reopened"][-1]["settled_by"] == "user:ana"
     with pytest.raises(HTTPException):
         R.settle_record_decision_reopening(stands["id"], R.StandsRequest(why="again"), principal=None)
     # what replaced the claim is itself replaced: the decision stood on that too, so it reopens again
@@ -237,10 +237,10 @@ def test_an_option_or_a_dissent_added_later_is_dated_and_named_and_the_choice_do
     assert amended["chosen"] == "Extend it" and amended["version"] == 2
     assert [o["description"] for o in amended["options"]] == ["End it", "Extend it", "Extend it for enterprise only"]
     assert amended["dissent"] == [{"who": "user:bo", "why": "it pays customers who would renew anyway"}]
-    assert [(a["kind"], a["by"]) for a in amended["extra"]["amendments"]] == [("option", "person:ana"), ("dissent", "person:ana")]
+    assert [(a["kind"], a["by"]) for a in amended["extra"]["amendments"]] == [("option", "user:ana"), ("dissent", "user:ana")]
     assert len(D.get_decision(did).options) == 2                       # the version booked at the time stands
     again = R.amend_record_decision(did, R.AmendDecisionRequest(option="Pause it for a quarter"), principal=None)
-    assert len(again["options"]) == 4 and again["extra"]["amendments"][-1]["by"] == "unidentified"
+    assert len(again["options"]) == 4 and again["extra"]["amendments"][-1]["by"] == "user:ana"
     # a scenario booked for the decision as it stood is still its own under every later version
     booked = R.book_record_scenario(did, R.ScenarioRequest(method="identity", metric="credit cost", formula="a * b",
                                                            inputs={"a": 31, "b": 1290}), principal=None)
@@ -255,11 +255,9 @@ def test_an_edited_mission_keeps_the_day_of_its_next_report_and_a_past_report_is
     conn = _conn()
     body = dict(name="Protect margin " + uuid.uuid4().hex[:4], objective=R.ObjectiveIn(metric="gross margin", direction="up"),
                 connections=[conn], owner="user:ana", state="active", cadence="monthly")
-    with pytest.raises(HTTPException) as exc:                           # nobody signed in and nobody named
-        R.write_record_mission(R.MissionRequest(**body), principal=None)
-    assert exc.value.status_code == 422 and "people write missions" in exc.value.detail
-    first = R.write_record_mission(R.MissionRequest(**body, written_by="ana"), principal=None)
-    assert first["written_by"] == "person:ana" and first["version"] == 1
+    # nobody is asked who wrote it: the person the request acts for did, whatever name it carries
+    first = R.write_record_mission(R.MissionRequest(**body, written_by="someone else"), principal=None)
+    assert first["written_by"] == "user:ana" and first["version"] == 1
     m = M.get_mission(first["id"])
     m.review.next_report_on, m.extra["last_report_headline"] = "2026-11-20", "ahead"
     kept = M._book(m)
@@ -381,10 +379,10 @@ def test_a_set_aside_item_returns_early_when_the_record_behind_it_changes():
     # a departure and a proposed action have one id for life: they return on their day and not before
     held = R.set_record_item_aside(R.SetAsideRequest(kind="departure", ref="dep-1", until="2099-01-01", why="next sprint", by="amit"),
                                    principal=None)
-    assert (held["status"], held["ref"], held["by"], held["seen"]) == ("active", "dep-1", "person:amit", "")
+    assert (held["status"], held["ref"], held["by"], held["seen"]) == ("active", "dep-1", "user:ana", "")
     assert any(x["ref"] == "dep-1" for x in R.list_record_set_aside()["active"])
     back = R.restore_record_item(R.RestoreRequest(kind="departure", ref="dep-1", by="amit"), principal=None)
-    assert back["restored_by"] == "person:amit" and not any(x["ref"] == "dep-1" for x in R.list_record_set_aside()["active"])
+    assert back["restored_by"] == "user:ana" and not any(x["ref"] == "dep-1" for x in R.list_record_set_aside()["active"])
     with pytest.raises(HTTPException) as exc:
         R.set_record_item_aside(R.SetAsideRequest(kind="decision", ref=did, until="2020-01-01", why="x"), principal=None)
     assert exc.value.status_code == 422

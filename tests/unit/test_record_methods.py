@@ -82,12 +82,13 @@ def test_a_registered_method_projects_through_the_one_door_in_the_ladders_shape(
     assert M.get_method(name) is None and M.get_method(name, active_only=False).active is False
 
 
-def test_the_door_registers_and_withdraws():
+def test_the_door_registers_and_withdraws(monkeypatch):
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ops-lead")   # who the request acts for — never "unidentified"
     from fastapi import HTTPException
     name = "door-" + uuid.uuid4().hex[:4]
     out = R.register_method(R.MethodIn(name=name, kind="estimator", backtest=R.BacktestIn(n=12, mae=3.5, measured_on=["thelook"]),
                                        adapter=R.AdapterIn(server_id="s", tool="estimate")), principal=None)
-    assert out["name"] == name and out["declared_by"] == "unidentified"
+    assert out["name"] == name and out["declared_by"] == "user:ops-lead"
     with pytest.raises(HTTPException) as e:
         R.register_method(R.MethodIn(name="bad", kind="estimator", backtest=R.BacktestIn(n=0), adapter=R.AdapterIn(server_id="s", tool="t")), principal=None)
     assert e.value.status_code == 422

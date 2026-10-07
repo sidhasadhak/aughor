@@ -41,12 +41,13 @@ def test_the_signed_in_person_is_who_decided_whatever_the_body_says(client):
     assert r.json()["decided_by"] == "user:dana"
 
 
-def test_acting_person_never_passes_a_named_person_through():
+def test_acting_person_never_passes_a_named_person_through(monkeypatch):
     from aughor.org.context import reset_actor, set_actor
     from aughor.security.authz import acting_person
-    # outside a request there is nobody — not the name offered
-    assert acting_person(None, "user:ceo") == ""
-    assert acting_person(None, "ceo") == ""
+    # with no request bound, the install's own operator — never the name offered
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "the-operator")
+    assert acting_person(None, "user:ceo") == "user:the-operator"
+    assert acting_person(None, "ceo") == "user:the-operator"
     token = set_actor("op-ana")
     try:
         assert acting_person(None, "user:ceo") == "user:op-ana"

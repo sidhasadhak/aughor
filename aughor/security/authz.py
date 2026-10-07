@@ -112,8 +112,10 @@ def local_operator() -> str:
         # a launcher that sets LOGNAME=root recorded a person's approvals as root (2026-10-07).
         import pwd
         return pwd.getpwuid(os.getuid()).pw_name or "local operator"
-    except (ImportError, KeyError):
-        pass  # no passwd database (Windows) — the login name the session gives
+    except (ImportError, KeyError) as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "no account database here (Windows); the session's login name is read instead",
+                 counter="authz.local_operator_account")
     try:
         import getpass
         return getpass.getuser() or "local operator"
@@ -147,17 +149,15 @@ def caller() -> str:
 
 def acting_person(principal, named: str = "") -> str:
     """Who a write is recorded under, as ``user:<id>``: the identified caller, else the person the
-    request acts for (`current_actor`, set on every request). ``named`` — a name a form or a client
-    sent — is NOT read: who did something is who is signed in, never a name somebody typed, and the
-    old fallback recorded ``person:<anything>`` (and passed ``user:ceo`` through as written).
-    "" only outside a request with no principal."""
+    request acts for (`caller` — the one this request acts for, or this install's operator). ``named``
+    — a name a form or a client sent — is NOT read: who did something is who is signed in, never a
+    name somebody typed, and the old fallback recorded ``person:<anything>`` (and passed
+    ``user:ceo`` through as written)."""
     for attr in ("user_id", "email", "id", "sub", "name"):
         v = getattr(principal, attr, "") if principal is not None else ""
         if v:
             return f"user:{v}"
-    from aughor.org.context import current_actor
-    actor = current_actor()
-    return f"user:{actor}" if actor else ""
+    return f"user:{caller()}"
 
 
 # ── Ownership resolution: resource → connection → org ────────────────────────────

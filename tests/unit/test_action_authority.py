@@ -208,6 +208,7 @@ def test_graduation_is_earned_on_the_record_and_refused_without_an_outcome(monke
 
 
 def test_the_authority_door_lists_the_table_and_books_receipts(monkeypatch):
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ops-lead")   # who the request acts for — never "unidentified"
     from fastapi import HTTPException
     from aughor.routers import authority as R
     conn = _conn()
@@ -221,7 +222,7 @@ def test_the_authority_door_lists_the_table_and_books_receipts(monkeypatch):
         R.authority_graduate("refund", R.GraduateBody(connection_id=conn), principal=None)
     assert exc.value.status_code == 422 and "not earned" in exc.value.detail
     entry = R.authority_demote("refund", R.DemoteBody(connection_id=conn, why="a drill"), principal=None)
-    assert entry["to_level"] == 3 and A._latest(A.DEMOTION_KIND, "refund", conn)["by"] == "unidentified"
+    assert entry["to_level"] == 3 and A._latest(A.DEMOTION_KIND, "refund", conn)["by"] == "user:ops-lead"
     with pytest.raises(HTTPException):
         R.authority_demote("refund", R.DemoteBody(connection_id=conn, why="  "), principal=None)
     rec = R.authority_record("refund", connection_id=conn)
@@ -264,6 +265,7 @@ def test_a_persons_ceiling_only_lowers_and_is_lifted_as_a_new_version(monkeypatc
 
 
 def test_a_standing_grant_is_signed_only_at_l4_and_a_drill_is_a_demotion_that_says_so(monkeypatch):
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ops-lead")
     from fastapi import HTTPException
     from aughor.routers import authority as R
     conn = _conn()
@@ -280,7 +282,7 @@ def test_a_standing_grant_is_signed_only_at_l4_and_a_drill_is_a_demotion_that_sa
     signed = R.authority_widen("refund", R.WidenBody(connection_id=conn, target_value="ord-1", expires_days=7, max_uses=3),
                                principal=None)["grant"]
     assert (signed["target_arg"], signed["target_value"], signed["max_uses"]) == ("order_id", "ord-1", 3)
-    assert signed["graduation_receipt"] == "receipt-9" and signed["expires_at"] and signed["created_by"] == "unidentified"
+    assert signed["graduation_receipt"] == "receipt-9" and signed["expires_at"] and signed["created_by"] == "user:ops-lead"
     assert [g.id for g in grants.list_grants(conn)] == [signed["id"]]
     monkeypatch.undo()
     monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
