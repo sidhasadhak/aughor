@@ -263,7 +263,7 @@ export function IntegrationsPanel() {
           <div className="aug-fs-xs" style={{ color: "var(--t3)", letterSpacing: "0.06em",
             textTransform: "uppercase", marginBottom: 8 }}>{category}</div>
           <div style={{ display: "grid", gap: 10,
-            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
+            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", alignItems: "start" }}>
             {rows.map(p => {
               const slack = !p.oauth_ready && p.alt_door === "slack_app";
               const listening = bots.filter(b => b.enabled && b.listening).length;
@@ -705,7 +705,7 @@ export function IntegrationsPanel() {
                       onChange={e => setClientId(e.target.value)} />
                     <Input className="aug-fs-ui" style={inputStyle}
                       placeholder={p.secret_preview
-                        ? `Client secret — stored (${p.secret_preview}), leave blank to keep it`
+                        ? `Client secret — blank keeps ${p.secret_preview}`
                         : "Client secret"}
                       value={clientSecret} autoComplete="off" spellCheck={false}
                       onChange={e => setClientSecret(e.target.value)} />

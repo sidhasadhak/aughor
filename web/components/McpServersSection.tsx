@@ -290,7 +290,7 @@ export function McpServersSection() {
       )}
 
       <div style={{ display: "grid", gap: 10, marginBottom: 10,
-        gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
+        gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", alignItems: "start" }}>
         {ONE_CLICK.map(card => {
           const s = loaded ? servers.find(x => sameUrl(x.url, card.url)) : undefined;
           const byKey = !!s && s.oauth?.mode !== "oauth_authorization_code";
