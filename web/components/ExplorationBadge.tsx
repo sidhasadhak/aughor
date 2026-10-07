@@ -52,7 +52,9 @@ export function ExplorationBadge({ connectionId, className }: Props) {
 
   if (!status || status.phase === "pending") return null;
 
-  const isActive   = !["complete", "failed", "pending"].includes(status.phase);
+  // An interrupted run shows the phase it stopped at, never a pulse: nothing is running it.
+  const interrupted = !!status.interrupted;
+  const isActive   = !interrupted && !["complete", "failed", "pending"].includes(status.phase);
   const isComplete = status.phase === "complete";
   const isFailed   = status.phase === "failed";
 
@@ -64,6 +66,7 @@ export function ExplorationBadge({ connectionId, className }: Props) {
           isActive && !status.paused ? "bg-[var(--vio3)] aug-pulse-dot" : "",
           isActive &&  status.paused ? "bg-yellow-500"               : "",
           isComplete                 ? "bg-emerald-500"              : "",
+          interrupted                ? "bg-yellow-500"               : "",
           isFailed                   ? "bg-red-500"                  : "",
         )}
       />
@@ -73,7 +76,7 @@ export function ExplorationBadge({ connectionId, className }: Props) {
           isComplete ? "text-emerald-400/70" : isFailed ? "text-red-400/70" : "text-zinc-500",
         )}
       >
-        {status.paused ? "Paused · " : ""}
+        {status.paused ? "Paused · " : interrupted ? "Interrupted · " : ""}
         {PHASE_LABELS[status.phase] ?? status.phase}
         {isComplete && status.insights_found > 0
           ? ` · ${status.insights_found} finding${status.insights_found === 1 ? "" : "s"}`

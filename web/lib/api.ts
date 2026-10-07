@@ -2047,6 +2047,12 @@ export interface ExplorationStatus {
   /** {schema: phase} for the aggregate of a multi-schema connection — lets the
    *  Activity strip say WHICH run each phase belongs to. */
   per_schema?: Record<string, string> | null;
+  /** The run stopped mid-phase (a restart killed it) and nothing is running it — its phase is
+   *  where it stopped, not where it is. A person's Continue resumes it; nothing does on its own. */
+  interrupted?: boolean;
+  interrupted_at?: string | null;
+  interrupted_schemas?: string[];
+  interrupted_note?: string;
 }
 
 export async function getExplorationStatus(connectionId: string): Promise<ExplorationStatus> {

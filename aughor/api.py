@@ -737,11 +737,18 @@ async def _kernel_boot_recovery() -> None:
                 # Aggregate phase — the bare state reads 'pending' forever on a
                 # multi-schema connection, so recovery kept re-spawning explorers
                 # for explorations that had already completed per schema.
-                if not _expl_store.is_unfinished(_expl_store.load_aggregate(conn_id)):
+                payload = job.get("payload") or {}
+                schema = payload.get("schema_name") or None
+                # A dataset's own run is judged by its own state; a connection-level run by the
+                # aggregate.
+                state = (_expl_store.load(f"{conn_id}__{schema}") if schema
+                         else _expl_store.load_aggregate(conn_id))
+                if not _expl_store.is_unfinished(state):
                     continue
                 res = await spawn_explorer(
                     conn_id,
-                    domain_intel_only=bool((job.get("payload") or {}).get("domain_intel_only")),
+                    domain_intel_only=bool(payload.get("domain_intel_only")),
+                    schema_name=schema,
                 )
             logger.info(
                 "Boot recovery: exploration %s for %s — %s",

@@ -326,12 +326,71 @@ def _continues_at(state: dict) -> str | None:
     return continues_at(state)
 
 
+#: Phases a run is IN while it runs. `pending` is not one: a run that never started was never
+#: interrupted, it was never explored.
+_MID_RUN = {p.value for p in ExplorationPhase} - {
+    ExplorationPhase.PENDING.value, ExplorationPhase.COMPLETE.value, ExplorationPhase.FAILED.value}
+
+
+def _exploration_jobs(conn_id: str, *, active: bool) -> list[dict]:
+    """This connection's exploration jobs in the kernel ledger, newest first — the ACTIVE ones
+    (another process may own a run) or all of them."""
+    try:
+        from aughor.kernel.jobs import JobState
+        from aughor.kernel.ledger import Ledger
+        return Ledger.default().jobs_where(states=list(JobState.ACTIVE) if active else None,
+                                           conn_id=conn_id, kinds=["exploration"], limit=20)
+    except Exception as exc:  # noqa: BLE001 — an unreadable ledger cannot prove a run is dead
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the job ledger could not be read; no exploration is called interrupted",
+                 counter="explorer.liveness")
+        return [{"state": "UNKNOWN"}] if active else []
+
+
+def interrupted_runs(conn_id: str) -> list[str]:
+    """The store keys of this connection's runs that stopped MID-PHASE with nothing running them —
+    no explorer in this process and no active exploration job anywhere. A restart kills a run
+    between checkpoints; boot recovery resumes it only if its job is still ACTIVE when the next
+    process starts, and a restart inside the job's lease window reads it as another process's
+    and skips it (2026-09-28: theLook, left at `synthesis` ever since, under a pulsing badge).
+    Such a run is not running and must not say it is."""
+    from aughor.explorer import store as expl_store
+    keys = expl_store.schema_run_keys(conn_id) or [conn_id]
+    mid = [k for k in keys if str(expl_store.load(k).get("phase") or "") in _MID_RUN]
+    if not mid:
+        return []
+    live = {k for k in mid if (e := _explorers.get(k)) is not None and getattr(
+        getattr(e, "status", None), "phase", None) not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED)}
+    if _exploration_jobs(conn_id, active=True):
+        return []          # some process holds a run of this connection — not ours to call dead
+    return [k for k in mid if k not in live]
+
+
+def _interruption(conn_id: str, keys: list[str]) -> dict:
+    """What the status says about interrupted runs: which datasets, since when, and that a person's
+    Continue resumes them from their saved progress (nothing resumes them on its own)."""
+    if not keys:
+        return {"interrupted": False}
+    last = next((j for j in _exploration_jobs(conn_id, active=False)), {}) or {}
+    since = last.get("ended_at") or last.get("heartbeat_at") or last.get("started_at")
+    schemas = [k.split("__", 1)[1] for k in keys if "__" in k]
+    where = f" ({', '.join(schemas)})" if schemas else ""
+    return {"interrupted": True, "interrupted_at": since,
+            "interrupted_schemas": schemas,
+            "interrupted_note": (f"Interrupted{where} — the run stopped when the platform restarted"
+                                 f"{f' ({str(since)[:16]} UTC)' if since else ''} and nothing is running it. "
+                                 f"Its progress is saved: Continue resumes it.")}
+
+
 @router.get("/exploration/{conn_id}/status")
 def get_exploration_status(conn_id: str, schema: str | None = None):
     explorer = _explorer_for(conn_id, schema)
     if explorer:
-        return explorer._status.to_dict()
+        return {**explorer._status.to_dict(), "interrupted": False}
     state = _load_state(conn_id, schema)
+    stuck = interrupted_runs(conn_id)
+    if schema:
+        stuck = [k for k in stuck if k == _store_key(conn_id, schema)]
     # Restore counters persisted at completion time (survive server restarts)
     return {
         "connection_id": conn_id,
@@ -358,6 +417,7 @@ def get_exploration_status(conn_id: str, schema: str | None = None):
         "domain_intel_note": state.get("domain_intel_note"),
         # {schema: phase} for the 'All schemas' aggregate — lets the UI show per-schema progress.
         "per_schema": state.get("per_schema"),
+        **_interruption(conn_id, stuck),
     }
 
 
@@ -1088,6 +1148,15 @@ def stop_exploration(conn_id: str):
 
 @router.post("/exploration/{conn_id}/resume", dependencies=[gate(Capability.AUTO_EXPLORATION)])
 async def resume_exploration(conn_id: str):
+    """A person's Continue. An INTERRUPTED run resumes each of its datasets from saved progress —
+    the per-dataset runs of a multi-dataset connection each by its own key; a connection-level
+    resume there would start a fresh connection-wide run instead."""
+    stuck = interrupted_runs(conn_id)
+    if any("__" in k for k in stuck):
+        results = [await spawn_explorer(conn_id, schema_name=k.split("__", 1)[1]) for k in stuck if "__" in k]
+        refused = [r["reason"] for r in results if not r["ok"] and r.get("reason")]
+        return {"ok": any(r["ok"] for r in results), "resumed": sum(1 for r in results if r["ok"]),
+                **({"reason": "; ".join(sorted(set(refused)))} if refused else {})}
     existing = _explorers.get(conn_id)
     if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
         return {"ok": False, "reason": "already running"}

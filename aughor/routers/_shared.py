@@ -189,8 +189,12 @@ async def spawn_explorer(
         conn_id=conn_id,
         canvas_id=canvas_id,
         idempotency_key=f"explore:{'canvas:' + canvas_id if canvas_id else key}",
+        # `schema_name` rides the job so a restart resumes THIS dataset's run by its own key —
+        # without it boot recovery respawned the bare connection key, a fresh connection-wide
+        # run, and the dataset's own run stayed mid-phase for good.
         payload={"domain_intel_only": domain_intel_only,
-                 "tables_filter": tables_filter or None},
+                 "tables_filter": tables_filter or None,
+                 "schema_name": schema_name or None},
         on_finish=_cleanup,
     )
     # The kernel task is the cancellation handle — stop endpoints keep working.
