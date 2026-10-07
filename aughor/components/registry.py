@@ -463,7 +463,7 @@ def _integration_components(conn_id: Optional[str]) -> list[Component]:
     # `missing_scopes` imported rather than re-derived: the roster and the call seam
     # answering "this grant cannot do that" differently is the two-opinions failure this
     # whole registry exists to end, one plane down.
-    from aughor.integrations.operations import missing_scopes, operations_for
+    from aughor.integrations.operations import consent_door, missing_scopes, operations_for
     from aughor.integrations.store import list_connections
     from aughor.org.context import current_user_id
 
@@ -487,7 +487,7 @@ def _integration_components(conn_id: Optional[str]) -> list[Component]:
             if lacking and availability == "ready":
                 row_avail = "needs_setup"
                 row_reason = (f"this grant does not carry {', '.join(lacking)} — "
-                              f"reconnect {conn.provider.title()} and consent to it")
+                              f"{consent_door(conn.provider, lacking)}")
             out.append(Component(
                 id=f"integration:{conn.id}:{op.id}", family="integration", kind=op.id,
                 label=op.label, description=f"{who} — {op.description}".strip(" —"),

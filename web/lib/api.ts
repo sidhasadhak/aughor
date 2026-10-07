@@ -4871,6 +4871,21 @@ export interface IntegrationProvider {
    *  provider's error page. */
   https_only: boolean;
   connection: IntegrationConnection | null;
+  /** The products this provider's one app reaches, each connected from its own card (Google,
+   *  2026-10-07). Empty for a provider connected as a whole. */
+  products?: IntegrationProduct[];
+}
+
+/** One product of a provider's app — a scope on its single grant, consented on its own card. */
+export interface IntegrationProduct {
+  id: string;
+  name: string;
+  blurb: string;
+  scopes: string;
+  /** The grant is live and covers this product's scopes. */
+  connected: boolean;
+  /** The tools connecting it lets an automation run. */
+  tools: string[];
 }
 
 /* ── VA-9d · MCP servers this deployment may CALL ──────────────────────────────
@@ -4909,6 +4924,23 @@ export interface McpToolRow {
   callable_now: boolean;
 }
 
+/** How an http server is authenticated to: a credential in a header, a person's sign-in on the
+ *  server's own page, or this deployment's own OAuth client. */
+export type McpAuthMode = "header" | "oauth_authorization_code" | "oauth_client_credentials";
+
+/** What a read says of a server's sign-in — never the token. */
+export interface McpOAuthState {
+  mode: McpAuthMode;
+  signed_in: boolean;
+  obtained_at: string;
+  expires_at?: string;
+  /** The token set carries a refresh token, so the sign-in renews itself. */
+  refreshable?: boolean;
+  /** A sign-in begun here is waiting for the browser to come back to the API's callback. */
+  sign_in_pending?: boolean;
+  note?: string;
+}
+
 /** One allowlisted server, plus the roster last discovered against it.
  *
  *  `discovered_at` rides in the same object deliberately: a cached remote list rendered
@@ -4930,6 +4962,8 @@ export interface McpServerRow {
   /** The header the stored credential is sent in — `Authorization` unless the server names another
    *  (Composio takes `x-api-key`). Not secret. Absent from a server older than the field. */
   auth_header_name?: string;
+  auth_mode?: McpAuthMode;
+  oauth?: McpOAuthState;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -4953,6 +4987,8 @@ export interface McpServerInput {
   auth_header?: string;
   /** The header `auth_header` is sent in; omitted on an update keeps the stored name. */
   auth_header_name?: string;
+  /** `oauth_authorization_code`: a person signs in on the server's own page — no credential here. */
+  auth_mode?: McpAuthMode;
   enabled?: boolean;
 }
 
@@ -5019,6 +5055,21 @@ export async function discoverMcpServer(id: string): Promise<McpServerRow> {
   return res.json();
 }
 
+/** Start a person's sign-in. The API discovers the server's sign-in, registers itself with it and
+ *  answers with the page to open; the browser's return to the API's callback completes it. */
+export async function beginMcpSignIn(id: string): Promise<{ authorization_url: string; expires_in: number }> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}/oauth/begin`, { method: "POST" });
+  if (!res.ok) throw new Error(await _mcpError(res, "start the sign-in"));
+  return res.json();
+}
+
+/** Forget the person's sign-in. The server stays registered, and Sign in starts again. */
+export async function signOutMcpServer(id: string): Promise<McpServerRow> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}/oauth/sign-out`, { method: "POST" });
+  if (!res.ok) throw new Error(await _mcpError(res, "sign out"));
+  return res.json();
+}
+
 export async function mcpServerHealth(id: string): Promise<{
   server_id: string; ok: boolean; reason: string;
   tool_count: number; callable_count: number; detail?: string;
@@ -5073,8 +5124,9 @@ export async function setupIntegrationApp(provider: string, body: {
 
 /** Begin the dance. The caller sends the BROWSER to `authorize_url` — a fetch cannot
  *  follow a consent screen. */
-export async function beginIntegrationConnect(provider: string): Promise<string> {
-  const res = await fetch(`${getApiBase()}/integrations/${provider}/connect`, { method: "POST" });
+export async function beginIntegrationConnect(provider: string, product?: string): Promise<string> {
+  const q = product ? `?product=${encodeURIComponent(product)}` : "";
+  const res = await fetch(`${getApiBase()}/integrations/${provider}/connect${q}`, { method: "POST" });
   if (!res.ok) {
     let detail = ""; try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON */ }
     throw new Error(detail || `Could not start the connection (${res.status})`);

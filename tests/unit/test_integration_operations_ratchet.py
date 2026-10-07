@@ -7,7 +7,7 @@ each one a mistake a new entry can make in one line and nobody notices for a qua
 * **Every URL placeholder is a declared path param.** A `{foo}` with no `in_path` param
   behind it is never substituted, so the literal braces travel to the provider — and a
   path param with no placeholder is silently sent as a query key instead.
-* **Every operation's scopes are covered by its provider's `default_scopes`.** A row that
+* **Every operation's scopes are covered by ONE of its provider's cards.** A row that
   needs a scope a fresh grant never asks for is a row that dims for every user on every
   install, forever, with no way to fix it from the UI.
 * **Nothing declares a `publishes` key it cannot fill.**
@@ -38,13 +38,17 @@ def test_every_url_placeholder_is_a_declared_path_param(op):
 
 @pytest.mark.parametrize("op", OPERATIONS, ids=lambda o: o.id)
 def test_every_operation_is_reachable_with_the_scopes_its_provider_asks_for(op):
-    """Otherwise the row dims for every user on every install and no button fixes it."""
+    """Otherwise the row dims for every user on every install and no button fixes it.
+
+    ONE card's connect must be enough: the provider's own scopes, or those plus one product's
+    (Google's products are each a card, 2026-10-07). A tool needing two products' scopes would
+    dim until a person happened to connect both — a button that fixes it only by accident."""
     provider = PROVIDERS.get(op.provider)
     assert provider is not None, f"{op.id} names provider '{op.provider}', which is not one"
-    granted = set(provider.default_scopes.split())
-    assert set(op.scopes) <= granted, (
-        f"{op.id} needs {sorted(set(op.scopes) - granted)}, which "
-        f"{provider.name}'s default_scopes never request")
+    own = set(provider.default_scopes.split())
+    cards = [own] + [own | set(pr.scopes.split()) for pr in provider.products]
+    assert any(set(op.scopes) <= card for card in cards), (
+        f"{op.id} needs {sorted(set(op.scopes) - own)}, which no single {provider.name} card asks for")
 
 
 @pytest.mark.parametrize("op", OPERATIONS, ids=lambda o: o.id)

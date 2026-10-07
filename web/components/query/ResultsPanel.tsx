@@ -442,7 +442,7 @@ export function ResultsPanel({
         {vizTabs.map(v => (
           <span key={v.id} style={{ position: "relative", display: "flex", alignItems: "center", flexShrink: 0 }}>
             {renaming === v.id ? (
-              <Input
+              <Input bespoke
                 className="aug-fs-ui" autoFocus value={renameDraft}
                 onChange={e => setRenameDraft(e.target.value)}
                 onBlur={() => { if (renameDraft.trim()) patchViz(v.id, { name: renameDraft.trim() }); setRenaming(""); }}

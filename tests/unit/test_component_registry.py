@@ -316,10 +316,16 @@ def one_grant():
 
 
 def test_a_grant_becomes_rows_that_say_whose_consent_they_spend(one_grant):
+    from aughor.integrations.operations import operations_for
+
     rows = {c.id: c for c in components(family="integration")}
-    assert set(rows) == {"integration:ic_reg:gmail.messages.list",
-                         "integration:ic_reg:gmail.messages.get"}, \
+    assert set(rows) == {f"integration:ic_reg:{op.id}" for op in operations_for("google")}, \
         "one row per (grant x operation) — a provider is not placeable, an operation is"
+    # A Gmail-only grant offers Sheets dimmed, naming the card that grants it — Google's
+    # products are each a card (2026-10-07), and Google itself has no Connect to point at.
+    sheets = rows["integration:ic_reg:sheets.values.get"]
+    assert sheets.availability == "needs_setup"
+    assert "connect Google Sheets under Integrations" in sheets.reason
     listing = rows["integration:ic_reg:gmail.messages.list"]
     assert "as Google · sales@example.com" in listing.description
     assert listing.availability == "ready" and listing.governed_by == "aughor.govern.outbound"

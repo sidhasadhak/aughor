@@ -130,11 +130,28 @@ class CatalogueEntry:
 
 # ── Source 1: the registry ────────────────────────────────────────────────────
 
-def _defined_entries(connection_id: str) -> list[CatalogueEntry]:
+def _datasets_read(m) -> set[str]:
+    """The datasets (schemas) a definition reads: its statement's tables, else its ``tables`` field,
+    by the part before each table's name. Empty when they name none — bare names, as on a
+    connection of one dataset, say nothing to judge by."""
+    from aughor.semantic.metric_statement import is_statement, statement_tables
+
+    sql = m.sql or ""
+    names = (statement_tables(sql) if is_statement(sql) else []) or [str(t) for t in (m.tables or [])]
+    return {n.split(".")[-2].strip('`"[] ').lower() for n in names if "." in n}
+
+
+def _defined_entries(connection_id: str, schema_name: Optional[str] = None) -> list[CatalogueEntry]:
     from aughor.semantic.metrics import list_metrics
 
     out: list[CatalogueEntry] = []
     for m in list_metrics(connection_id=connection_id):
+        # A definition belongs to the dataset its tables are in. Without this every definition on
+        # a connection of several datasets was listed under each of them — Daily Gross Revenue,
+        # which reads `main.sales_transactions`, under amazon and uber_ncr (the user, 2026-10-07).
+        read = _datasets_read(m)
+        if schema_name and read and schema_name.lower() not in read:
+            continue
         out.append(CatalogueEntry(
             name=m.name, label=m.label or m.name, source=SOURCE_DEFINED,
             state=STATE_DEFINED, sql=m.sql or "", unit=m.unit or "",
@@ -283,7 +300,7 @@ def catalogue_for(connection_id: str, schema_name: Optional[str] = None) -> list
     if not connection_id:
         return []
     by_source = {
-        SOURCE_DEFINED: _defined_entries(connection_id),
+        SOURCE_DEFINED: _defined_entries(connection_id, schema_name),
         SOURCE_INDUSTRY: _industry_entries(connection_id, schema_name),
         SOURCE_EXPLORER: _explorer_entries(connection_id, schema_name),
     }

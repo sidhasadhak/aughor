@@ -32,21 +32,40 @@
  * says" want different next actions, and a granted row is marked as a WRITE rather than
  * simply going green.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import {
-  createMcpServer, deleteMcpServer, discoverMcpServer, grantMcpTool, listMcpServers,
-  mcpServerHealth, revokeMcpTool, updateMcpServer,
+  beginMcpSignIn, createMcpServer, deleteMcpServer, discoverMcpServer, grantMcpTool,
+  listMcpServers, mcpServerHealth, revokeMcpTool, signOutMcpServer, updateMcpServer,
   type McpServerRow, type McpToolRow,
 } from "@/lib/api";
 import { Input } from "@/components/ui/input";
+import { IntegrationCard } from "@/components/IntegrationCard";
+import { formatDateTime } from "@/lib/format";
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "7px 10px", borderRadius: "var(--r3)",
   border: "1px solid var(--b1)", background: "var(--bg-1)", color: "var(--t1)",
 };
+
+/** Servers a person connects with one click — signed in on the server's own page, so nothing
+ *  is typed (the user, 2026-10-07: "Why should user add name and URL by himself?"). Only
+ *  servers that let this deployment register itself for a sign-in belong here; measured that
+ *  day: Composio and Atlassian do, Slack's needs an app of your own and Google offers none —
+ *  those stay on their own cards above. Jira and Confluence are one Atlassian server, so one
+ *  sign-in connects both cards. */
+const ONE_CLICK: { id: string; name: string; server: string; url: string; blurb: string }[] = [
+  { id: "composio", name: "Composio", server: "Composio", url: "https://connect.composio.dev/mcp",
+    blurb: "500+ apps behind one sign-in: Gmail, Slack, GitHub, Notion and more, each connected inside Composio." },
+  { id: "jira", name: "Jira", server: "Atlassian", url: "https://mcp.atlassian.com/v1/mcp",
+    blurb: "Search and read issues and projects. One Atlassian sign-in connects Jira and Confluence." },
+  { id: "confluence", name: "Confluence", server: "Atlassian", url: "https://mcp.atlassian.com/v1/mcp",
+    blurb: "Search and read pages and spaces. One Atlassian sign-in connects Confluence and Jira." },
+];
+
+const sameUrl = (a: string, b: string) => a.trim().replace(/\/+$/, "") === b.trim().replace(/\/+$/, "");
 
 /** `args` is edited as one line and stored as a list. Split on whitespace, never handed to
  *  a shell — the model keeps `command` and `args` apart precisely so nothing ever splits
@@ -70,6 +89,14 @@ export function McpServersSection() {
   const [url, setUrl] = useState("");
   const [authHeader, setAuthHeader] = useState("");
   const [authHeaderName, setAuthHeaderName] = useState("Authorization");
+  // How a URL server is reached. Signing in on the server's own page is the default: a key in a
+  // header meant finding the right key AND the header the server reads it from (2026-10-07,
+  // Composio: two kinds of key, three header names, none of it on the form).
+  const [access, setAccess] = useState<"signin" | "key" | "none">("signin");
+  // The sign-in page, for when the browser would not let a tab open on its own.
+  const [signInLinks, setSignInLinks] = useState<Record<string, string>>({});
+  // Which card's controls are open — a server's or a one-click card's.
+  const [manageFor, setManageFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -83,6 +110,14 @@ export function McpServersSection() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  // A sign-in finishes in another tab, at the API's callback; this list learns of it by asking.
+  const waiting = servers.some(s => s.oauth?.sign_in_pending);
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setInterval(() => void load(), 3000);
+    return () => clearInterval(timer);
+  }, [waiting, load]);
 
   const act = async (id: string, fn: () => Promise<unknown>) => {
     setBusy(id);
@@ -100,6 +135,7 @@ export function McpServersSection() {
   const reset = () => {
     setAdding(false); setName(""); setCommand(""); setArgsLine("");
     setUrl(""); setAuthHeader(""); setAuthHeaderName("Authorization"); setTransport("http");
+    setAccess("signin");
   };
 
   const add = () => act("new", async () => {
@@ -107,11 +143,56 @@ export function McpServersSection() {
       name: name.trim(), transport,
       ...(transport === "stdio"
         ? { command: command.trim(), args: splitArgs(argsLine) }
-        : { url: url.trim(), auth_header: authHeader.trim(),
-            auth_header_name: authHeaderName.trim() || "Authorization" }),
+        : { url: url.trim(),
+            ...(access === "signin" ? { auth_mode: "oauth_authorization_code" as const }
+              : access === "key" ? { auth_header: authHeader.trim(),
+                                     auth_header_name: authHeaderName.trim() || "Authorization" }
+              : {}) }),
     });
     reset();
   });
+
+  /** Sign a person in to a server — the one `serverFor` names, which a one-click card first adds. */
+  const signIn = (busyKey: string, serverFor: () => Promise<string>) => {
+    // The tab opens inside the click, before anything is awaited: a tab opened after an await is
+    // a pop-up the browser may block. It is pointed at the sign-in page once the API has it.
+    const tab = window.open("about:blank", "_blank");
+    void act(busyKey, async () => {
+      try {
+        const id = await serverFor();
+        const { authorization_url } = await beginMcpSignIn(id);
+        if (tab && !tab.closed) {
+          tab.opener = null;
+          tab.location.href = authorization_url;
+        } else {
+          setSignInLinks(prev => ({ ...prev, [id]: authorization_url }));
+        }
+      } catch (e) {
+        tab?.close();
+        throw e;
+      }
+    });
+  };
+
+  const connect = (card: (typeof ONE_CLICK)[number]) => {
+    const here = servers.find(s => sameUrl(s.url, card.url));
+    signIn(card.id, async () => here?.id ?? (await createMcpServer({
+      name: card.server, transport: "http", url: card.url, auth_mode: "oauth_authorization_code",
+    })).id);
+  };
+
+  // A server just signed in to is asked what it offers without a second click — once per server
+  // here, so a discovery that fails is said and not retried in a loop.
+  const askedAfterSignIn = useRef(new Set<string>());
+  useEffect(() => {
+    for (const s of servers) {
+      if (s.oauth?.signed_in && !s.discovered_at && !askedAfterSignIn.current.has(s.id)) {
+        askedAfterSignIn.current.add(s.id);
+        void act(s.id, () => discoverMcpServer(s.id));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servers]);
 
   const checkHealth = (id: string) => act(id, async () => {
     const h = await mcpServerHealth(id);
@@ -122,6 +203,78 @@ export function McpServersSection() {
   });
 
   const canAdd = name.trim() && (transport === "stdio" ? command.trim() : url.trim());
+
+  /** The few facts a card says of its server: how it is signed in to, and what it offers. */
+  const serverFacts = (s: McpServerRow): (string | null)[] => {
+    const oauth = s.oauth?.mode === "oauth_authorization_code";
+    return [
+      oauth ? (s.oauth?.signed_in ? `signed in ${formatDateTime(s.oauth.obtained_at)}` : null)
+        : s.has_auth ? `${s.auth_header_name || "Authorization"} header stored` : null,
+      oauth && s.oauth?.signed_in && s.oauth.refreshable ? "renews itself" : null,
+      // The number that surprises people: healthy, and offering this deployment nothing it may call.
+      s.discovered_at ? `${s.tool_count} tools · ${s.callable_count} callable here`
+        : !oauth || s.oauth?.signed_in ? "not discovered yet" : null,
+    ];
+  };
+
+  const pendingLine = (s: McpServerRow) => s.oauth?.sign_in_pending ? (
+    <div className="aug-fs-xs" style={{ marginTop: 4, color: "var(--t3)" }}>
+      Waiting for you to finish signing in on the server&apos;s page
+      {signInLinks[s.id]
+        ? <> — <a href={signInLinks[s.id]} target="_blank" rel="noreferrer">open it</a></>
+        : "…"}
+    </div>
+  ) : null;
+
+  /** What Manage opens: the server's own controls, its reachability, and its roster. */
+  const controls = (s: McpServerRow) => (
+    <div style={{ marginTop: 10, borderTop: "1px solid var(--b1)", paddingTop: 10 }}>
+      {health[s.id] && (
+        <div className="aug-fs-xs" style={{ marginBottom: 6,
+          color: health[s.id].startsWith("unreachable") ? "var(--red3)" : "var(--grn4)" }}>
+          {health[s.id]}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+        {s.oauth?.mode === "oauth_authorization_code" && s.oauth.signed_in && (
+          <Button variant="ghost" size="xs" disabled={busy === s.id}
+            onClick={() => void act(s.id, () => signOutMcpServer(s.id))}>
+            Sign out
+          </Button>
+        )}
+        <Button variant="ghost" size="xs" disabled={busy === s.id}
+          onClick={() => void act(s.id, () => discoverMcpServer(s.id))}>
+          {busy === s.id ? "…" : s.discovered_at ? "Re-discover" : "Discover"}
+        </Button>
+        <Button variant="ghost" size="xs" disabled={busy === s.id}
+          onClick={() => void checkHealth(s.id)}>
+          Check
+        </Button>
+        <Button variant="ghost" size="xs" disabled={busy === s.id}
+          onClick={() => void act(s.id, () => updateMcpServer(s.id, {
+            name: s.name, transport: s.transport, command: s.command,
+            args: s.args, url: s.url, enabled: !s.enabled,
+          }))}>
+          {s.enabled ? "Turn off" : "Turn on"}
+        </Button>
+        {s.tool_count > 0 && (
+          <Button variant="ghost" size="xs"
+            onClick={() => setExpanded(expanded === s.id ? null : s.id)}>
+            {expanded === s.id ? "Hide tools" : "Tools"}
+          </Button>
+        )}
+        <span style={{ flex: 1 }} />
+        <Button variant="ghost" size="xs" style={{ color: "var(--red3)" }} disabled={busy === s.id}
+          onClick={() => void act(s.id, () => deleteMcpServer(s.id))}>
+          Remove
+        </Button>
+      </div>
+      {expanded === s.id && (
+        <ToolRoster tools={s.tools} discoveredAt={s.discovered_at} serverId={s.id}
+          onChanged={() => void load()} />
+      )}
+    </div>
+  );
 
   return (
     <div style={{ marginBottom: 18 }}>
@@ -136,6 +289,76 @@ export function McpServersSection() {
         </div>
       )}
 
+      <div style={{ display: "grid", gap: 10, marginBottom: 10,
+        gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", alignItems: "start" }}>
+        {ONE_CLICK.map(card => {
+          const s = loaded ? servers.find(x => sameUrl(x.url, card.url)) : undefined;
+          const byKey = !!s && s.oauth?.mode !== "oauth_authorization_code";
+          const signedIn = !!s?.oauth?.signed_in;
+          const managing = !!s && manageFor === card.id;
+          return (
+            <IntegrationCard key={card.id} testId={`mcp-card-${card.id}`} name={card.name} blurb={card.blurb}
+              status={signedIn ? { tone: "ok", text: "connected" }
+                : byKey ? { tone: "muted", text: "added with a key" }
+                : s?.oauth?.sign_in_pending ? { tone: "muted", text: "waiting for the sign-in" } : null}
+              details={s ? serverFacts(s) : []}
+              actions={<>
+                {s && (
+                  <Button variant="ghost" size="xs"
+                    onClick={() => setManageFor(cur => cur === card.id ? null : card.id)}>
+                    {managing ? "Close" : "Manage"}
+                  </Button>
+                )}
+                {loaded && !signedIn && !byKey && (
+                  <Button variant="default" size="xs" disabled={busy === card.id}
+                    onClick={() => connect(card)}>
+                    {busy === card.id ? "…" : s?.oauth?.sign_in_pending ? "Sign in again"
+                      : s ? "Sign in" : "Connect"}
+                  </Button>
+                )}
+              </>}>
+              {s && pendingLine(s)}
+              {s && managing && controls(s)}
+            </IntegrationCard>
+          );
+        })}
+        {servers.filter(s => !ONE_CLICK.some(c => sameUrl(s.url, c.url))).map(s => {
+          const oauth = s.oauth?.mode === "oauth_authorization_code";
+          const managing = manageFor === s.id;
+          return (
+            <IntegrationCard key={s.id} testId={`mcp-server-${s.id}`} name={s.name || s.id}
+              blurb={<span style={{ fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>
+                {s.transport === "stdio" ? [s.command, ...(s.args || [])].join(" ") : s.url}
+              </span>}
+              status={!s.enabled ? { tone: "muted", text: "off" }
+                : oauth ? (s.oauth?.signed_in ? { tone: "ok", text: "connected" }
+                  : { tone: "warn", text: "not signed in" })
+                : null}
+              details={serverFacts(s)}
+              actions={<>
+                <Button variant="ghost" size="xs"
+                  onClick={() => setManageFor(cur => cur === s.id ? null : s.id)}>
+                  {managing ? "Close" : "Manage"}
+                </Button>
+                {oauth && !s.oauth?.signed_in ? (
+                  <Button variant="default" size="xs" disabled={busy === s.id}
+                    onClick={() => signIn(s.id, async () => s.id)}>
+                    {busy === s.id ? "…" : s.oauth?.sign_in_pending ? "Sign in again" : "Sign in"}
+                  </Button>
+                ) : !s.discovered_at && (
+                  <Button variant="default" size="xs" disabled={busy === s.id}
+                    onClick={() => void act(s.id, () => discoverMcpServer(s.id))}>
+                    {busy === s.id ? "…" : "Discover"}
+                  </Button>
+                )}
+              </>}>
+              {pendingLine(s)}
+              {managing && controls(s)}
+            </IntegrationCard>
+          );
+        })}
+      </div>
+
       {loaded && servers.length === 0 && !adding && (
         <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 8,
           lineHeight: 1.6 }}>
@@ -145,88 +368,6 @@ export function McpServersSection() {
           become a step you can place on a workflow.
         </div>
       )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {servers.map(s => (
-          <div key={s.id} style={{ border: "1px solid var(--b1)",
-            borderRadius: "var(--r2)", background: "var(--bg-1)", padding: "10px 12px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: s.enabled ? "var(--t2)" : "var(--t3)" }}>
-                <Icon name="plug" size={15} />
-              </span>
-              <span className="aug-fs-ui" style={{ fontWeight: 600 }}>
-                {s.name || s.id}
-              </span>
-              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-                {s.transport === "stdio" ? "process" : "url"}
-              </span>
-              {!s.enabled && (
-                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>● off</span>
-              )}
-              <span style={{ flex: 1 }} />
-              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-                {/* The number that surprises people: healthy, and offering this
-                    deployment nothing it may call. */}
-                {s.discovered_at
-                  ? `${s.tool_count} tools · ${s.callable_count} callable here`
-                  : "not discovered yet"}
-              </span>
-            </div>
-
-            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4,
-              fontFamily: "var(--font-mono)", overflow: "hidden",
-              textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {s.transport === "stdio"
-                ? [s.command, ...(s.args || [])].join(" ")
-                : s.url}
-              {s.has_auth ? `  ·  ${s.auth_header_name || "Authorization"} header stored` : ""}
-            </div>
-
-            {health[s.id] && (
-              <div className="aug-fs-xs" style={{ marginTop: 4,
-                color: health[s.id].startsWith("unreachable")
-                  ? "var(--red3)" : "var(--grn4)" }}>
-                {health[s.id]}
-              </div>
-            )}
-
-            <div style={{ display: "flex", gap: 2, marginTop: 6, flexWrap: "wrap" }}>
-              <Button variant="ghost" size="xs" className="aug-fs-xs" disabled={busy === s.id}
-                onClick={() => void act(s.id, () => discoverMcpServer(s.id))}>
-                {busy === s.id ? "…" : s.discovered_at ? "Re-discover" : "Discover"}
-              </Button>
-              <Button variant="ghost" size="xs" className="aug-fs-xs" disabled={busy === s.id}
-                onClick={() => void checkHealth(s.id)}>
-                Check
-              </Button>
-              <Button variant="ghost" size="xs" className="aug-fs-xs" disabled={busy === s.id}
-                onClick={() => void act(s.id, () => updateMcpServer(s.id, {
-                  name: s.name, transport: s.transport, command: s.command,
-                  args: s.args, url: s.url, enabled: !s.enabled,
-                }))}>
-                {s.enabled ? "Turn off" : "Turn on"}
-              </Button>
-              {s.tool_count > 0 && (
-                <Button variant="ghost" size="xs" className="aug-fs-xs"
-                  onClick={() => setExpanded(expanded === s.id ? null : s.id)}>
-                  {expanded === s.id ? "Hide tools" : "Tools"}
-                </Button>
-              )}
-              <span style={{ flex: 1 }} />
-              <Button variant="ghost" size="xs" className="aug-fs-xs"
-                style={{ color: "var(--red3)" }} disabled={busy === s.id}
-                onClick={() => void act(s.id, () => deleteMcpServer(s.id))}>
-                Remove
-              </Button>
-            </div>
-
-            {expanded === s.id && (
-              <ToolRoster tools={s.tools} discoveredAt={s.discovered_at} serverId={s.id}
-                onChanged={() => void load()} />
-            )}
-          </div>
-        ))}
-      </div>
 
       {adding ? (
         <div style={{ border: "1px solid var(--b1)", borderRadius: "var(--r2)",
@@ -251,22 +392,48 @@ export function McpServersSection() {
               <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
                 placeholder="https://example.com/mcp" aria-label="Server URL"
                 value={url} onChange={e => setUrl(e.target.value)} />
-              {/* The header NAME the credential travels in. Most servers read `Authorization`;
-                  some name their own — Composio takes its key only as `x-api-key`. */}
-              <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
-                autoComplete="off"
-                placeholder="Header name — Authorization, or the one your server names (e.g. x-api-key)"
-                aria-label="Auth header name"
-                value={authHeaderName} onChange={e => setAuthHeaderName(e.target.value)} />
-              <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
-                autoComplete="off"
-                placeholder="Header value (optional) — e.g. Bearer …, or an API key"
-                aria-label="Auth header value"
-                value={authHeader} onChange={e => setAuthHeader(e.target.value)} />
-              <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-                <Icon name="lock" size={11} /> Stored encrypted, and never returned by any
-                read — not even masked.
+              <div role="group" aria-label="How Aughor gets in"
+                style={{ display: "inline-flex", gap: 2, padding: 2, alignSelf: "flex-start",
+                  border: "1px solid var(--b1)", borderRadius: "var(--r-chip)" }}>
+                {([["signin", "Sign in"], ["key", "API key"], ["none", "None"]] as const).map(([m, label]) => (
+                  <Button key={m} size="xs" className="aug-fs-xs"
+                    variant={access === m ? "secondary" : "ghost"}
+                    onClick={() => setAccess(m)}>
+                    {label}
+                  </Button>
+                ))}
               </div>
+              {access === "signin" && (
+                <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
+                  After adding it, press Sign in: the server&apos;s own page asks you to approve
+                  Aughor. There is no key to copy, and what it hands back is stored encrypted.
+                </div>
+              )}
+              {access === "key" && (
+                <>
+                  {/* The header NAME the credential travels in. Most servers read `Authorization`;
+                      some name their own — Composio takes its key only as `x-api-key`. */}
+                  <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+                    autoComplete="off"
+                    placeholder="Header name — Authorization, or the one your server names (e.g. x-api-key)"
+                    aria-label="Auth header name"
+                    value={authHeaderName} onChange={e => setAuthHeaderName(e.target.value)} />
+                  <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+                    autoComplete="off"
+                    placeholder="Header value — e.g. Bearer …, or an API key"
+                    aria-label="Auth header value"
+                    value={authHeader} onChange={e => setAuthHeader(e.target.value)} />
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                    <Icon name="lock" size={11} /> Stored encrypted, and never returned by any
+                    read — not even masked.
+                  </div>
+                </>
+              )}
+              {access === "none" && (
+                <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                  For a server that asks for no credential.
+                </div>
+              )}
             </>
           ) : (
             <>

@@ -115,7 +115,7 @@ def call_operation(connection_id: str, operation_id: str, params: Optional[dict]
     because the world may have moved between staging and accepting.
     """
     from aughor.integrations.operations import (
-        build_request, extract, get_operation, missing_scopes,
+        build_request, consent_door, extract, get_operation, missing_scopes,
     )
     from aughor.integrations.providers import get_provider
     from aughor.integrations.store import get_connection
@@ -159,8 +159,8 @@ def call_operation(connection_id: str, operation_id: str, params: Optional[dict]
     lacking = missing_scopes(op, conn.scopes)
     if lacking:
         return CallResult("refused",
-                          f"this grant does not carry {', '.join(lacking)} — reconnect "
-                          f"{conn.provider} and consent to it, then this step can run")
+                          f"this grant does not carry {', '.join(lacking)} — "
+                          f"{consent_door(conn.provider, lacking)}, then this step can run")
 
     try:
         url, query, body = build_request(op, dict(params or {}))

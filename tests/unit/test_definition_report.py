@@ -313,6 +313,31 @@ def test_a_definition_with_no_tables_is_unpinnable_with_a_reason(items):
     assert "no table" in pop.reason
 
 
+def test_a_statements_population_is_the_tables_its_from_reads(tmp_path):
+    """Ride Completion Rate (2026-10-07) is a whole statement over `uber_ncr.ncr_ride_bookings`
+    with `tables=[]`, and its report said the definition named no table. The population is what
+    the statement reads — schema kept, as written."""
+    path = tmp_path / "rides.duckdb"
+    w = duckdb.connect(str(path))
+    try:
+        w.execute("CREATE SCHEMA uber_ncr")
+        w.execute("CREATE TABLE uber_ncr.ncr_ride_bookings AS SELECT * FROM (VALUES "
+                  "('Completed'), ('Completed'), ('Cancelled by Driver')) AS t(\"Booking Status\")")
+    finally:
+        w.close()
+    db = DuckDBConnection(str(path))
+    try:
+        rate = MetricDefinition(
+            name="ride_completion_rate", label="Ride Completion Rate", status="approved",
+            sql="SELECT COUNT(CASE WHEN \"Booking Status\" = 'Completed' THEN 1 END) * 1.0 / COUNT(*) "
+                "AS completion_rate FROM uber_ncr.ncr_ride_bookings")
+        pop = build_report(rate, db, connection_id="workspace").population
+    finally:
+        db.close()
+    assert pop.mode == FINGERPRINTED and pop.token, pop
+    assert pop.tables == ("uber_ncr.ncr_ride_bookings",)
+
+
 # ── Advisory only ─────────────────────────────────────────────────────────────
 
 def test_the_report_cannot_reach_anything_that_holds_a_send():

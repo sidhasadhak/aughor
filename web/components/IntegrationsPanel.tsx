@@ -15,7 +15,7 @@ import { ErrorState, Loading } from "@/components/ui/states";
  * What never appears here: a token. The API drops token fields server-side, so this
  * component could not render one if it tried — which is the point.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -42,6 +42,7 @@ import { bindingProblem, patchBodyFor, type SlackBotChanges } from "@/lib/slackB
 
 import { AgentSlackDoor } from "@/components/agentops/AgentSlackDoor";
 import { McpServersSection } from "@/components/McpServersSection";
+import { IntegrationCard } from "@/components/IntegrationCard";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Callout } from "@/components/ui/callout";
@@ -71,6 +72,9 @@ export function IntegrationsPanel() {
   const [notice, setNotice] = useState("");
   /** The provider whose alternative door is open — Slack's app flow, today. */
   const [doorFor, setDoorFor] = useState<string | null>(null);
+  // Slack's bots, supervisor and key, opened on its card rather than always drawn (2026-10-07:
+  // "Slack card is too big with additional details which others do not have").
+  const [manageFor, setManageFor] = useState<string | null>(null);
   const [bots, setBots] = useState<SlackBotSummary[]>([]);
   const [agents, setAgents] = useState<UserAgent[]>([]);
   /** For the "asks on" choice — a bot's connection is what its @mentions run against. */
@@ -199,22 +203,55 @@ export function IntegrationsPanel() {
     }
   };
 
-  const connect = async (provider: string) => {
-    setBusy(provider);
+  const connect = async (provider: string, product?: string) => {
+    // A NEW tab, so this one survives to refetch on refocus. It opens inside the click,
+    // before anything is awaited — a tab opened after an await is a pop-up the browser may
+    // block — and is pointed at the consent screen once the API has the URL. It used to be
+    // `window.open(url, "_blank", "noopener")`, which returns null by spec even when the tab
+    // opens, so the blocked-pop-up fallback ALWAYS ran too: the consent screen in a new
+    // window AND in this tab (2026-10-07). Only a tab that truly did not open falls back.
+    const tab = window.open("about:blank", "_blank");
+    setBusy(product ? `${provider}:${product}` : provider);
     setError("");
     try {
-      const url = await beginIntegrationConnect(provider);
-      // A NEW tab, so this one survives to refetch on refocus. The consent screen is
-      // the provider's page; nothing about it belongs inside this app's frame. A popup
-      // blocker returns null SILENTLY — measured — so the fallback is same-tab
-      // navigation rather than a Connect button that does nothing.
-      if (!window.open(url, "_blank", "noopener")) window.location.href = url;
+      const url = await beginIntegrationConnect(provider, product);
+      if (tab && !tab.closed) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else {
+        window.location.href = url;
+      }
     } catch (e) {
+      tab?.close();
       setError((e as Error).message);
     } finally {
       setBusy("");
     }
   };
+
+  /** Each product of a provider's one app is its own card (Google, 2026-10-07): Connect opens
+   *  the provider's consent for that product alone, and the grant grows a product at a time. */
+  const productCards = (p: IntegrationProvider) => (p.products ?? []).map(pr => {
+    const conn = p.connection;
+    const granted = (conn?.scopes || "").split(/[\s,]+/);
+    const stale = conn?.status === "needs_reconnect" && pr.scopes.split(" ").every(sc => granted.includes(sc));
+    const key = `${p.id}:${pr.id}`;
+    return (
+      <IntegrationCard key={key} testId={`integration-product-${pr.id}`} name={pr.name} blurb={pr.blurb}
+        status={pr.connected ? { tone: "ok", text: "connected" }
+          : stale ? { tone: "warn", text: "needs reconnect" } : null}
+        details={[pr.connected ? conn?.account : null,
+                  !p.configured ? `set up the ${p.name} app first` : null,
+                  pr.tools.length ? `tools: ${pr.tools.map(t => t.split(" · ").pop()).join(" · ")}` : null]}
+        actions={!pr.connected && (
+          <Button variant="default" size="xs" disabled={!p.configured || busy === key}
+            title={p.configured ? undefined : `Set up the ${p.name} app first — one app serves every ${p.name} card`}
+            onClick={() => void connect(p.id, pr.id)}>
+            {busy === key ? "…" : stale ? "Reconnect" : "Connect"}
+          </Button>
+        )} />
+    );
+  });
 
   const revoke = async (p: IntegrationProvider) => {
     if (!p.connection) return;
@@ -240,9 +277,9 @@ export function IntegrationsPanel() {
   }
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "18px 22px", maxWidth: 980 }}>
+    <div style={{ flex: 1, overflowY: "auto", padding: "18px 22px" }}>
       <div className="aug-fs-sm" style={{ color: "var(--t2)", marginBottom: 14, maxWidth: 680 }}>
-        Connect the org's accounts by OAuth. Aughor holds every token itself — encrypted at
+        Connect the org&apos;s accounts by OAuth. Aughor holds every token itself — encrypted at
         rest, refreshed before expiry, never shown to a model or a screen — and each grant
         is a governed record with an owner, scopes and a revoke.
       </div>
@@ -259,24 +296,39 @@ export function IntegrationsPanel() {
           <div className="aug-fs-xs" style={{ color: "var(--t3)", letterSpacing: "0.06em",
             textTransform: "uppercase", marginBottom: 8 }}>{category}</div>
           <div style={{ display: "grid", gap: 10,
-            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
-            {rows.map(p => (
-              <div key={p.id} style={{ border: "1px solid var(--b1)",
-                borderRadius: "var(--r3)", padding: 14, background: "var(--bg-1)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span className="aug-fs-ui" style={{ fontWeight: 600 }}>{p.name}</span>
-                  {p.connection?.status === "active" && (
-                    <span className="aug-fs-xs" style={{ color: "var(--grn4)" }}>
-                      ● connected{p.connection.account ? ` · ${p.connection.account}` : ""}
-                    </span>
-                  )}
-                  {p.connection?.status === "needs_reconnect" && (
-                    <span className="aug-fs-xs" style={{ color: "var(--amb4)" }}>
-                      ● needs reconnect
-                    </span>
-                  )}
-                  <span style={{ marginLeft: "auto", display: "flex", alignItems: "center",
-                    gap: 6 }}>
+            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", alignItems: "start" }}>
+            {rows.map(p => {
+              const slack = !p.oauth_ready && p.alt_door === "slack_app";
+              const listening = bots.filter(b => b.enabled && b.listening).length;
+              const conn = p.connection;
+              const scopes = (conn?.scopes || "").split(/[\s,]+/).filter(Boolean);
+              const products = p.products ?? [];
+              const productsOn = products.filter(pr => pr.connected).length;
+              return (
+              <Fragment key={p.id}>
+              <IntegrationCard key={p.id} name={p.name} blurb={p.blurb} testId={`integration-card-${p.id}`}
+                status={slack
+                  ? (bots.length === 0 ? null
+                    : listening ? { tone: "ok", text: `${listening} bot${listening === 1 ? "" : "s"} listening` }
+                    : { tone: "warn", text: "not listening" })
+                  : conn?.status === "active" ? { tone: "ok", text: "connected" }
+                  : conn?.status === "needs_reconnect" ? { tone: "warn", text: "needs reconnect" }
+                  : null}
+                // A few facts, never the whole record: who, since when, how much was granted.
+                // What the provider GRANTED is read back from the token response, so a scope
+                // the user declined is never counted; the list itself is on hover.
+                details={slack
+                  ? [bots.map(b => b.name).join(", "),
+                     supervisor?.heartbeat?.fresh
+                       ? `last heard ${formatDateTime(supervisor.heartbeat.last_seen_at)}` : null]
+                  : conn?.status === "active"
+                    ? [conn.account, `since ${formatDateTime(conn.created_at)}`,
+                       products.length ? `${productsOn} of ${products.length} products connected`
+                         : scopes.length ? `${scopes.length} permission${scopes.length === 1 ? "" : "s"} granted` : null]
+                    : [p.configured ? (products.length ? "set up — connect each product from its card"
+                                                        : "app set up, not connected yet") : null]}
+                detailsTitle={conn?.status === "active" && scopes.length ? `granted: ${scopes.join(" ")}` : undefined}
+                actions={<>
                     {/* Set up was a ONE-WAY door: once an org client was stored the card
                         offered only Connect (or Revoke), so a client id pasted with a
                         typo, a rotated secret, or an app swapped for another could not
@@ -288,7 +340,13 @@ export function IntegrationsPanel() {
                         Connect would be pointing a fresh install at the one door its
                         deployment cannot open. OAuth comes back on its own the moment
                         the callback is https (a tunnel, or a real deployment). */}
-                    {!p.oauth_ready && p.alt_door === "slack_app" ? (
+                    {p.alt_door === "slack_app" && (bots.length > 0 || supervisor?.managed) && (
+                      <Button variant="ghost" size="xs"
+                        onClick={() => setManageFor(cur => cur === p.id ? null : p.id)}>
+                        {manageFor === p.id ? "Close" : "Manage"}
+                      </Button>
+                    )}
+                    {slack ? (
                       <Button variant="default" size="xs"
                         onClick={() => setDoorFor(cur => cur === p.id ? null : p.id)}>
                         {doorFor === p.id ? "Close" : "Add Slack app"}
@@ -307,25 +365,24 @@ export function IntegrationsPanel() {
                         Set up
                       </Button>
                     ) : p.connection?.status === "active" ? (
+                      // A product is a scope on ONE grant, and Google revokes a grant whole —
+                      // so disconnecting is this card's, and says that it is every product.
                       <Button variant="ghost" size="xs" disabled={busy === p.id}
-                        onClick={() => revoke(p)}>Revoke</Button>
-                    ) : (
+                        title={products.length ? `${p.name} removes Aughor's access to every ${p.name} product at once` : undefined}
+                        onClick={() => revoke(p)}>{products.length ? "Disconnect all" : "Revoke"}</Button>
+                    ) : products.length ? null : (
                       <Button variant="default" size="xs" disabled={busy === p.id}
                         onClick={() => connect(p.id)}>
                         {p.connection?.status === "needs_reconnect" ? "Reconnect" : "Connect"}
                       </Button>
                     )}
                     </>)}
-                  </span>
-                </div>
-                <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
-                  {p.blurb}
-                </div>
+                </>}>
 
                 {/* Why this card looks different from its neighbours — said plainly,
                     because "Add Slack app" beside Google's "Connect" is otherwise an
                     inconsistency a reader has to explain to themselves. */}
-                {!p.oauth_ready && p.alt_door === "slack_app" && (
+                {slack && manageFor === p.id && (
                   <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 6,
                     lineHeight: 1.5 }}>
                     {p.name}&apos;s OAuth needs an HTTPS callback and this deployment is
@@ -340,7 +397,7 @@ export function IntegrationsPanel() {
                     a shell PATCH, and a bot bound to the wrong connection sat answering
                     "did not answer (HTTP 409)" in Slack with nothing on this screen
                     saying why. */}
-                {p.alt_door === "slack_app" && bots.length > 0 && (
+                {p.alt_door === "slack_app" && manageFor === p.id && bots.length > 0 && (
                   <div style={{ marginTop: 10, borderTop: "1px solid var(--b1)",
                     paddingTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                     {bots.map(b => {
@@ -496,7 +553,7 @@ export function IntegrationsPanel() {
                 {/* Shown with NO bots too when the API manages it: on a fresh install the
                     supervisor runs before the first bot exists, and a row that waits for a
                     bot card reads as "nothing is running" (receipt, 2026-10-03). */}
-                {p.alt_door === "slack_app" && supervisor && (bots.length > 0 || supervisor.managed) && (
+                {p.alt_door === "slack_app" && manageFor === p.id && supervisor && (bots.length > 0 || supervisor.managed) && (
                   <div className="aug-fs-xs" style={{ marginTop: 10, borderTop: "1px solid var(--b1)",
                     paddingTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ color: supervisor.state === "running" ? "var(--grn4)"
@@ -526,7 +583,7 @@ export function IntegrationsPanel() {
                     )}
                   </div>
                 )}
-                {p.alt_door === "slack_app" && bots.length > 0 && (
+                {p.alt_door === "slack_app" && manageFor === p.id && bots.length > 0 && (
                   <div style={{ marginTop: 10, borderTop: "1px solid var(--b1)",
                     paddingTop: 10 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -629,14 +686,6 @@ export function IntegrationsPanel() {
                     />
                   </div>
                 )}
-                {p.connection?.status === "active" && p.connection.scopes && (
-                  // What the provider says was GRANTED — read back from the token
-                  // response, so a scope the user declined is never listed.
-                  <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 6,
-                    overflowWrap: "anywhere" }}>
-                    granted: {p.connection.scopes}
-                  </div>
-                )}
 
                 {setupFor === p.id && (
                   <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8,
@@ -697,7 +746,7 @@ export function IntegrationsPanel() {
                       onChange={e => setClientId(e.target.value)} />
                     <Input className="aug-fs-ui" style={inputStyle}
                       placeholder={p.secret_preview
-                        ? `Client secret — stored (${p.secret_preview}), leave blank to keep it`
+                        ? `Client secret — blank keeps ${p.secret_preview}`
                         : "Client secret"}
                       value={clientSecret} autoComplete="off" spellCheck={false}
                       onChange={e => setClientSecret(e.target.value)} />
@@ -721,8 +770,11 @@ export function IntegrationsPanel() {
                     </div>
                   </div>
                 )}
-              </div>
-            ))}
+              </IntegrationCard>
+              {productCards(p)}
+              </Fragment>
+              );
+            })}
           </div>
         </div>
       ))}

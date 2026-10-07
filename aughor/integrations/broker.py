@@ -35,6 +35,7 @@ from aughor.integrations.providers import Provider, get_provider
 from aughor.integrations.store import (
     get_app_decrypted,
     get_connection_decrypted,
+    list_connections,
     put_pending,
     save_connection,
     take_pending,
@@ -167,20 +168,30 @@ def complete(state: str, code: str) -> Connection:
             f"{provider.name} refused the exchange: "
             f"{body.get('error_description') or body.get('error') or 'no token returned'}")
 
-    conn = Connection(
+    user_id = str(pending.get("user_id", ""))
+    # One grant per person per provider. A consent that ADDS to it (a Google product connected
+    # from its own card, with `include_granted_scopes` — 2026-10-07) or renews it (a reconnect
+    # after `needs_reconnect`) keeps the grant's id, so an automation naming it keeps working
+    # and every card reads one record. A revoked grant is history and is never revived.
+    prior = next((c for c in list_connections(user_id)
+                  if c.provider == provider.id and c.status != "revoked"), None)
+    prior = get_connection_decrypted(prior.id) if prior else None
+    fields = dict(
         provider=provider.id,
-        user_id=str(pending.get("user_id", "")),
+        user_id=user_id,
         # What was GRANTED, read back from the response. Slack's v2 nests under
         # authed_user/bot; the top-level `scope` covers the common case and "" is the
         # honest value when a provider says nothing.
         scopes=str(body.get("scope", "") or ""),
-        account=_account_label(provider, body),
+        account=_account_label(provider, body) or (prior.account if prior else ""),
         access_token=str(body.get("access_token", "")),
-        refresh_token=str(body.get("refresh_token", "") or ""),
+        # A consent that returns no refresh token keeps the one the grant already has.
+        refresh_token=str(body.get("refresh_token", "") or (prior.refresh_token if prior else "")),
         token_type=str(body.get("token_type", "Bearer") or "Bearer"),
         expires_at=_expires_at(body.get("expires_in")),
         status="active",
     )
+    conn = prior.model_copy(update=fields) if prior else Connection(**fields)
     saved = save_connection(conn)
     _audit("integration.connect", saved)
     return saved

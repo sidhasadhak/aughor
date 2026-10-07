@@ -70,7 +70,7 @@ def wired(monkeypatch):
         "profile": _Profile([_NSM("Return Rate", "order_items.returned_at, order_items.id",
                                   "COUNT(returned_at)/COUNT(id)", "returns erode margin")]),
     }
-    monkeypatch.setattr(MC, "_defined_entries", lambda c: list(state["defined"]))
+    monkeypatch.setattr(MC, "_defined_entries", lambda c, s=None: list(state["defined"]))
     monkeypatch.setattr("aughor.business_profile.metric_kb.industry_scope",
                         lambda c, s=None, **k: "retail")
     monkeypatch.setattr("aughor.packs.knowledge.packages", lambda: tuple(state["packages"]))
@@ -200,3 +200,24 @@ class TestMaterialise:
                             lambda m, *a, **k: saved.update(m.model_dump()))
         MC.materialise("c1", "return_rate")
         assert saved["lineage"] == ["explorer"], "a reader must see where the formula came from"
+
+
+def test_a_definition_is_listed_under_the_dataset_its_tables_are_in(monkeypatch):
+    """Daily Gross Revenue reads `main.sales_transactions` and was listed under amazon and uber_ncr
+    too: every definition on a connection of several datasets showed under each (2026-10-07). A
+    definition whose tables name no dataset still shows everywhere — there is nothing to judge by."""
+    from types import SimpleNamespace as NS
+
+    def metric(name, sql, tables=()):
+        return NS(name=name, label=name, sql=sql, tables=list(tables), unit="", caveats="", dimensions=[],
+                  wrong_usage_examples=[], status="approved", version=1, owner="")
+
+    defined = [metric("ride_completion_rate", "SELECT COUNT(*) * 1.0 / 1 FROM uber_ncr.ncr_ride_bookings"),
+               metric("Daily Sales", 'SELECT SUM(totalPrice) AS "Daily Sales" FROM main.sales_transactions'),
+               metric("orders", "COUNT(*)", tables=["orders"])]
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **k: defined)
+
+    names = lambda schema: [e.name for e in MC._defined_entries("ws", schema)]  # noqa: E731
+    assert names("uber_ncr") == ["ride_completion_rate", "orders"]
+    assert names("main") == ["Daily Sales", "orders"]
+    assert names(None) == ["ride_completion_rate", "Daily Sales", "orders"]

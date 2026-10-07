@@ -139,7 +139,7 @@ export function TabsBar({
             }}
           >
             {editing === t.id ? (
-              <Input
+              <Input bespoke
                 autoFocus
                 value={draftName}
                 onChange={e => setDraftName(e.target.value)}

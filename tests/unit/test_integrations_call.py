@@ -114,7 +114,9 @@ def test_a_scope_the_user_declined_is_refused_with_the_scope_named(wire):
                                      scopes="openid email", status="active"))
     res = callmod.call_operation("ic_thin", "gmail.messages.list")
     assert res.status == "refused"
-    assert "gmail.readonly" in res.message and "reconnect" in res.message
+    # The door named is the card that grants it — Gmail's own, since Google's products are
+    # each a card and Google itself has no Connect (2026-10-07).
+    assert "gmail.readonly" in res.message and "connect Gmail under Integrations" in res.message
     assert wire["calls"] == []
 
 

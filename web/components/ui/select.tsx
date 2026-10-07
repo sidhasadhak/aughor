@@ -3,8 +3,11 @@
 import * as React from "react"
 import { Select as ThemesSelect } from "@radix-ui/themes"
 
+import { fieldClass, fieldStyle } from "@/components/ui/field"
+
 /**
- * A select, on Radix Themes: its size-1 trigger (24px) and its own menu.
+ * A select, on Radix Themes: its size-2 trigger — 32px, 14px text, the size of every form field
+ * (`ui/field.ts`) — and its own menu. `bespoke` is a select that draws itself (24px, as given).
  *
  *   <Select value={v} onValueChange={setV} items={{ a: "Alpha", b: "Beta" }}>
  *     <SelectTrigger aria-label="Letter"><SelectValue placeholder="Pick one" /></SelectTrigger>
@@ -27,16 +30,18 @@ function Select({
   defaultValue,
   onValueChange,
   items,
+  bespoke,
   ...props
 }: Omit<React.ComponentProps<typeof ThemesSelect.Root>, "size" | "onValueChange"> & {
   onValueChange?: (value: string) => void
   items?: Record<string, React.ReactNode>
+  bespoke?: boolean
 }) {
   // "" names an option only when one of the items is "": otherwise it means nothing is chosen.
   const inward = (v: string | undefined) => (v === "" && items && "" in items ? NONE : v)
   return (
     <Chosen.Provider value={{ value: value ?? "", items }}>
-      <ThemesSelect.Root data-slot="select" size="1" value={inward(value)} defaultValue={inward(defaultValue)}
+      <ThemesSelect.Root data-slot="select" size={bespoke ? "1" : "2"} value={inward(value)} defaultValue={inward(defaultValue)}
         onValueChange={v => onValueChange?.(outward(v))} {...props} />
     </Chosen.Provider>
   )
@@ -44,9 +49,13 @@ function Select({
 
 function SelectTrigger({
   size: _size,
+  bespoke,
+  className,
+  style,
   ...props
-}: React.ComponentProps<typeof ThemesSelect.Trigger> & { size?: "sm" | "default" }) {
-  return <ThemesSelect.Trigger data-slot="select-trigger" {...props} />
+}: React.ComponentProps<typeof ThemesSelect.Trigger> & { size?: "sm" | "default"; bespoke?: boolean }) {
+  return <ThemesSelect.Trigger data-slot="select-trigger" {...props}
+    className={bespoke ? className : fieldClass(className)} style={bespoke ? style : fieldStyle(style)} />
 }
 
 /** The chosen item's label, for a trigger that draws something beside it. */
@@ -110,6 +119,7 @@ function SelectField({
   "aria-label": ariaLabel,
   "aria-labelledby": ariaLabelledBy,
   "data-testid": testId,
+  bespoke,
   ...rest
 }: {
   value?: string | number
@@ -131,6 +141,8 @@ function SelectField({
   onFocus?: React.FocusEventHandler<HTMLButtonElement>
   onBlur?: React.FocusEventHandler<HTMLButtonElement>
   autoFocus?: boolean
+  /** A select that draws itself and is not a form field — see `ui/field.ts`. */
+  bespoke?: boolean
 }) {
   const opts = optionsOf(children)
   const all = flat(opts)
@@ -146,9 +158,9 @@ function SelectField({
   const item = (o: Opt) => <SelectItem key={o.value} value={o.value} disabled={o.disabled}>{o.label}</SelectItem>
   return (
     <Select value={shown} defaultValue={controlled ? undefined : String(defaultValue ?? first ?? "")} onValueChange={fire}
-      items={items} disabled={disabled} name={name}>
+      items={items} disabled={disabled} name={name} bespoke={bespoke}>
       {/* `data-value` on the trigger is the native select's `.value`, for whatever reads it. */}
-      <SelectTrigger id={id} className={className} style={style} title={title} aria-label={ariaLabel}
+      <SelectTrigger id={id} className={className} style={style} bespoke={bespoke} title={title} aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy} data-testid={testId} data-value={shown ?? String(defaultValue ?? first ?? "")} {...rest} />
       <SelectContent>
         {opts.map((o, i) => ("options" in o

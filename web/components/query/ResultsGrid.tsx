@@ -417,7 +417,7 @@ export function ResultsGrid({
       </Button>
       {find !== null && (
         <>
-          <Input
+          <Input bespoke
             ref={findRef}
             className="aug-fs-sm"
             value={find}
@@ -442,7 +442,7 @@ export function ResultsGrid({
         </>
       )}
       {goto !== null && (
-        <Input
+        <Input bespoke
           autoFocus
           className="aug-fs-sm"
           value={goto}

@@ -67,11 +67,18 @@ def _oauth_ready(provider, app, request) -> bool:
 @router.get("/integrations/catalog")
 def catalog(request: Request):
     """Every provider, with the two flags the two buttons need."""
-    mine = {c.provider: c for c in store.list_connections(_user())}
+    from aughor.integrations.operations import operations_for
+
+    # A live grant wins over a revoked one kept for its history.
+    mine: dict = {}
+    for c in store.list_connections(_user()):
+        if c.provider not in mine or mine[c.provider].status == "revoked":
+            mine[c.provider] = c
     out = []
     for p in PROVIDERS.values():
         app = store.get_app(p.id)
         conn = mine.get(p.id)
+        granted = set((conn.scopes or "").split()) if conn and conn.status == "active" else set()
         out.append({
             "id": p.id, "name": p.name, "category": p.category, "blurb": p.blurb,
             "configured": bool(app and app.client_id),
@@ -96,6 +103,14 @@ def catalog(request: Request):
             "oauth_ready": _oauth_ready(p, app, request),
             "alt_door": p.alt_door,
             "connection": conn.to_safe_dict() if conn else None,
+            # Each product its own card (Google, 2026-10-07): connected when the grant covers
+            # its scopes, and the tools that connecting it lets an automation run.
+            "products": [{
+                "id": pr.id, "name": pr.name, "blurb": pr.blurb, "scopes": pr.scopes,
+                "connected": bool(granted) and set(pr.scopes.split()) <= granted,
+                "tools": [op.label for op in operations_for(p.id)
+                          if set(op.scopes) <= set(pr.scopes.split())],
+            } for pr in p.products],
         })
     return {"providers": out, "redirect_uri": _callback_uri(request)}
 
@@ -190,8 +205,18 @@ def put_app(provider_id: str, body: AppBody, request: Request):
 # ── connect / callback ───────────────────────────────────────────────────────────
 
 @router.post("/integrations/{provider_id}/connect")
-def connect(provider_id: str, request: Request):
-    """Begin the dance; the client sends the browser to `authorize_url`."""
+def connect(provider_id: str, request: Request, product: Optional[str] = None):
+    """Begin the dance; the client sends the browser to `authorize_url`.
+
+    ``product`` connects one product of the provider's app from its own card: the provider's
+    own scopes and that product's, and nothing another card would ask for."""
+    scopes = ""
+    if product:
+        provider = get_provider(provider_id)
+        item = provider.product(product) if provider else None
+        if item is None:
+            raise HTTPException(404, f"{provider_id} has no product named {product!r}")
+        scopes = f"{provider.default_scopes} {item.scopes}".strip()
     # The AUTHORED callback wins over the derived one: a deployment registered under an
     # address it is not currently being reached at (every local Slack setup, since Slack
     # refuses http://) would otherwise send the provider a URI nobody registered.
@@ -200,7 +225,8 @@ def connect(provider_id: str, request: Request):
     try:
         url = broker.begin(provider_id, user_id=_user(),
                            redirect_uri=(app.redirect_uri if app else "")
-                                        or _callback_uri(request))
+                                        or _callback_uri(request),
+                           scopes=scopes)
     except broker.BrokerError as exc:
         raise HTTPException(422, str(exc))
     return {"authorize_url": url}
@@ -278,7 +304,7 @@ def operations(connection_id: Optional[str] = None):
     declared set, which is what a reader asking "what could this platform do for me"
     wants — the catalog, not their catalog.
     """
-    from aughor.integrations.operations import OPERATIONS, missing_scopes
+    from aughor.integrations.operations import OPERATIONS, consent_door, missing_scopes
 
     conn = store.get_connection(connection_id) if connection_id else None
     if connection_id and (conn is None or conn.user_id != _user()):
@@ -322,7 +348,7 @@ def operations(connection_id: Optional[str] = None):
             "availability": (grant_state if grant_problem
                              else ("needs_setup" if lacking else "ready")),
             "reason": (grant_problem or
-                       (f"this grant does not carry {', '.join(lacking)} — reconnect "
-                        f"{op.provider} and consent to it" if lacking else "")),
+                       (f"this grant does not carry {', '.join(lacking)} — "
+                        f"{consent_door(op.provider, lacking)}" if lacking else "")),
         })
     return {"operations": rows}

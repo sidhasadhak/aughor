@@ -67,7 +67,7 @@ export function ResultFilterBar({
         padding: "5px 14px", borderBottom: "1px solid var(--b0)", flexShrink: 0,
       }}
     >
-      <Input
+      <Input bespoke
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {

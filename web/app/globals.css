@@ -98,6 +98,10 @@ button { font-family: var(--font-ui); cursor: pointer; }
    colour never drew — unseen until the cockpit became the primitive's first user (Arc CT-4). */
 :where(button:not([data-slot="button"]):not([data-slot="tabs-trigger"])) { border: none; background: none; color: inherit; }
 input, textarea, select { font-family: var(--font-ui); font-size: 13px; color: var(--t1); }
+/* A form field's text is the field's own size (components/ui/field.ts). The rule above was
+   written for native fields and, unlayered, beat the size Radix gives a field's text: a 32px
+   field drew 13px beside a 14px select. A bespoke field carries no `data-field` and keeps it. */
+:is(input, textarea)[data-field="form"], [data-field="form"] :is(input, textarea) { font-size: revert-layer; }
 pre, code, kbd, samp {
   font-family: var(--font-code);
   font-variant-numeric: tabular-nums;

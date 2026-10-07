@@ -501,7 +501,14 @@ async def _unhandled_exception_handler(request: "Request", exc: Exception):
     from fastapi.responses import JSONResponse
     request_id = str(_uuid.uuid4())
     logger.exception("Unhandled error [%s] on %s %s", request_id, request.method, request.url.path)
-    return JSONResponse(status_code=500, content={"error": "internal_error", "request_id": request_id})
+    # Starlette runs this catch-all in ServerErrorMiddleware, OUTSIDE CORSMiddleware, so its 500
+    # carried no CORS header and a browser could not read it: every unexpected error reached the
+    # page as "Failed to fetch", never as this body and its request id (2026-10-07). An origin the
+    # CORS list already allows is told the same here.
+    origin = request.headers.get("origin", "")
+    headers = {"Access-Control-Allow-Origin": origin, "Vary": "Origin"} if origin in _cors_origins else {}
+    return JSONResponse(status_code=500, content={"error": "internal_error", "request_id": request_id},
+                        headers=headers)
 
 
 

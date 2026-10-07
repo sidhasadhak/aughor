@@ -99,3 +99,35 @@ def test_a_read_names_the_header_and_an_update_that_omits_it_keeps_it():
     refused = client.post("/mcp-servers", json={"name": "Bad", "transport": "http", "url": _URL,
                                                 "auth_header": "k", "auth_header_name": "Content-Type"})
     assert refused.status_code == 400 and "Content-Type" in refused.json()["detail"]
+
+
+def test_a_refusal_says_the_status_the_servers_reason_and_the_header_the_key_went_in():
+    """Composio refused a key sent in a misnamed header (2026-10-07), and the reader was shown
+    only "ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)" — the SDK runs its
+    transport in a task group. A local server refuses the way Composio did, through the real SDK."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class Refuse(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Bearer error="unauthorized", '
+                                                 'error_description="No Authorization: Bearer header on request"')
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error":"Authorization required"}')
+
+        def log_message(self, *args):
+            pass
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Refuse)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{httpd.server_port}/mcp"
+        with pytest.raises(S.McpUnreachable) as refused:
+            S.list_tools(McpServer(name="Composio", transport="http", url=url, auth_header="ck_test",
+                                   auth_header_name="thelook-composio"), timeout_s=10)
+    finally:
+        httpd.shutdown()
+    assert str(refused.value) == ('the server answered 401 Unauthorized, saying "No Authorization: Bearer header '
+                                  'on request" — the credential went in the thelook-composio header')
