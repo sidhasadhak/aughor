@@ -382,11 +382,20 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         return {"columns": [], "rows": [], "row_count": 0, "caveats": [], "error": None,
                 "value": None, "refresh": card.refresh.model_dump(), "scoped": None}
     spec = _card_range(card.connection_id, preset, start, end, workspace_id)
+    metric = _governed_metric_of(card)
+    if metric is not None and spec is not None:
+        measured = _metric_card_for_range(card, metric, spec, compare)
+        if measured is not None:
+            return measured
     try:
         db = open_connection_for(card.connection_id)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
-    sql, scoped, cut_on = card.sql, None, None
+    # A card made from a metric runs the metric's CURRENT definition — the copy taken when the card
+    # was made went stale the moment the definition was corrected (the user, 2026-10-07: "no static
+    # or stale metrics").
+    base = _metric_statement(metric) or card.sql
+    sql, scoped, cut_on = base, None, None
     if spec is not None:
         from aughor.briefing.ranges import phrases
         from aughor.briefing.reask import grain_for
@@ -397,10 +406,10 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
 
         dialect = str(getattr(db, "dialect", "") or "duckdb")
         covers = phrases(spec)["covers"]
-        table, col, why = grain_for(card.sql, [], profile_entry_for(card.connection_id, statement_tables(card.sql)) or {}, dialect)
+        table, col, why = grain_for(base, [], profile_entry_for(card.connection_id, statement_tables(base)) or {}, dialect)
         cut = None
         if table is not None:
-            cut, why, _ = scoped_statement(card.sql, table, window_predicate(col, spec.start, spec.end), dialect=dialect)
+            cut, why, _ = scoped_statement(base, table, window_predicate(col, spec.start, spec.end), dialect=dialect)
         if cut is None:
             scoped = {"covers": covers, "standing": True, "why": why, "grain": None}
         else:
@@ -410,7 +419,7 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
     try:
         result = execute_guarded(db, sql, query_id=f"card:{card_id}", schema=None)
         if compare and cut_on is not None and _scalar(result) is not None:
-            previous = _previous_figure(db, card, spec, *cut_on, execute_guarded)
+            previous = _previous_figure(db, card, spec, *cut_on, execute_guarded, sql=base)
     finally:
         try:
             db.close()
@@ -447,7 +456,63 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
     }
 
 
-def _previous_figure(db, card, spec, table: str, col: str, dialect: str, execute) -> dict:
+def _governed_metric_of(card):
+    """The definition a card was made from, as it reads NOW, or None (a card of its own SQL)."""
+    name = str(getattr(card.provenance, "metric", "") or "").strip() if card.provenance else ""
+    if not name:
+        return None
+    try:
+        from aughor.semantic.metrics import get_metric
+        return get_metric(name, connection_id=card.connection_id)
+    except Exception as exc:  # noqa: BLE001 — the card keeps its own SQL and says nothing new
+        tolerate(exc, "a card's metric could not be read; it runs the SQL it was made with",
+                 counter="dashboard.card_metric")
+        return None
+
+
+def _metric_statement(metric) -> str:
+    if metric is None or not (metric.sql or "").strip():
+        return ""
+    from aughor.semantic.metrics import value_query
+    return value_query(metric) or ""
+
+
+def _metric_card_for_range(card, metric, spec, compare: bool) -> Optional[dict]:
+    """A metric card read for a range the way the Briefing reads the metric — on its own dates, with
+    its comparison at equal age — never cut on whatever date the profiler calls its table's main
+    one. None when the metric's dates are not set, so the card falls back to the cut."""
+    from aughor.briefing.ranges import compared_word, phrases, read_value
+    from aughor.cockpit.host import FINAL, status_of
+    from aughor.knowledge import period_brief
+    from aughor.semantic import metric_time as mt
+
+    if not mt.declared(metric):
+        return None
+    try:
+        with period_brief.connection_runner(card.connection_id) as (run_sql, dialect):
+            rows, why = mt.run_measure(metric, spec.windows(), run_sql, dialect=dialect)
+    except Exception as exc:  # noqa: BLE001 — the cut below still answers
+        tolerate(exc, "a metric card could not be measured for its range; it is cut instead",
+                 counter="dashboard.card_measure")
+        return None
+    got = {r["window"]: r for r in rows}
+    value = None if why else read_value(got.get("current"))
+    words = phrases(spec)
+    out = {"columns": [metric.name], "rows": [[value]] if value is not None else [],
+           "row_count": 1 if value is not None else 0, "caveats": [], "error": why or None,
+           "value": value, "refresh": card.refresh.model_dump(),
+           "scoped": {"covers": words["covers"], "standing": False, "why": "" if value is not None else
+                      (why or "its data has no rows in this range"), "grain": metric.time_column},
+           "metric": {"name": metric.name, "version": metric.version, "status": metric.status}}
+    if compare:
+        pv = None if why else read_value(got.get("previous"))
+        out["previous"] = {"covers": words["compared_with"], "word": compared_word(spec),
+                           "equal_age": status_of(spec) == FINAL, "value": pv,
+                           "why": "" if pv is not None else "it has no figure there"}
+    return out
+
+
+def _previous_figure(db, card, spec, table: str, col: str, dialect: str, execute, sql: str = "") -> dict:
     """The card's figure for the window its range is compared with, cut as the range was.
     ``value`` is None when that window has none, with ``why``; never a zero."""
     from aughor.briefing.ranges import compared_word, phrases
@@ -457,7 +522,7 @@ def _previous_figure(db, card, spec, table: str, col: str, dialect: str, execute
 
     said = {"covers": phrases(spec)["compared_with"], "word": compared_word(spec),
             "equal_age": status_of(spec) == FINAL, "value": None, "why": ""}
-    cut, why, _ = scoped_statement(card.sql, table, window_predicate(col, spec.previous_start, spec.previous_end),
+    cut, why, _ = scoped_statement(sql or card.sql, table, window_predicate(col, spec.previous_start, spec.previous_end),
                                    dialect=dialect)
     if cut is None:
         return {**said, "why": why}

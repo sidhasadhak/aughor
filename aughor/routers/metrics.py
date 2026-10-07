@@ -13,20 +13,25 @@ from aughor.licensing import Capability, gate
 logger = logging.getLogger(__name__)
 
 from aughor.semantic.metrics import (
+    ALL_DATASETS,
     GLOBAL_CONNECTION,
     MetricDefinition,
     compute_value,
+    definition_at,
     delete_metric,
     get_metric,
+    home_schema,
     is_org_scope,
     list_metrics,
+    move_metric,
     org_scope,
     organisation_visible,
+    same_dataset,
     save_metric,
     validate_metric,
     check_freshness,
 )
-from aughor.security.authz import connection_owner_guard
+from aughor.security.authz import caller, connection_owner_guard
 
 #: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
 router = APIRouter(tags=["metrics"], dependencies=[Depends(connection_owner_guard)])
@@ -57,13 +62,18 @@ class MetricRequest(BaseModel):
     #: Two e-commerce businesses do not share a formula; the tables and columns differ.
     #: `"*"` stays the default so an intentionally global house metric is still one call.
     connection: str = GLOBAL_CONNECTION
+    #: The dataset it belongs to (`MetricDefinition.schema_name`); ``"*"`` — every dataset of the
+    #: connection. Sending another dataset than the one addressed moves the definition there.
+    schema_name: Optional[str] = None
     label: str
-    sql: str
+    sql: str = ""
     tables: list[str] = []
     dimensions: list[str] = []
     filters: list[str] = []
     unit: Optional[str] = None
     caveats: Optional[str] = None
+    #: `additive` | `non_additive`. Not carried by this model before, so every edit erased it.
+    additivity: Optional[str] = None
     target_value: Optional[float] = None
     warning_threshold: Optional[float] = None
     critical_threshold: Optional[float] = None
@@ -76,6 +86,9 @@ class MetricRequest(BaseModel):
     quality_tests: list[str] = []
     lineage: list[str] = []
     wrong_usage_examples: list[str] = []
+    #: IGNORED. Approval is stamped by the approve transition with the person signed in — a create
+    #: that carried `approved_by` used to land already approved, and an edit's typed value was
+    #: silently overwritten. Kept so an older client that still sends them is not refused.
     approved_by: Optional[str] = None
     approved_at: Optional[str] = None
     # Arc BR-2 — a person's correction of the time fields; sending them stamps the editor
@@ -85,6 +98,8 @@ class MetricRequest(BaseModel):
     outcome_column: Optional[str] = None
     until_column: Optional[str] = None
     settles_after_days: Optional[int] = None
+    time_grain: Optional[str] = None
+    #: IGNORED — stamped by the server with the person signed in (see `_stamp_time_edit`).
     time_confirmed_by: Optional[str] = None
 
 
@@ -138,14 +153,17 @@ def get_metric_catalogue(conn_id: str, schema: Optional[str] = None):
     a connection is not in the registry yet. A pack's recipe is role-bound until this
     connection binds those roles, and the explorer's judgement lives on the business
     profile. Both are computed here and materialised only when someone edits one."""
-    from aughor.semantic.metric_catalogue import catalogue_for
+    from aughor.semantic.metric_catalogue import catalogue_for, removed_for
 
+    # ``schema=*`` — every dataset of the connection at once (the Semantic Layer's "All schemas").
     schema = schema or _declared_schema(conn_id)
     rows = catalogue_for(conn_id, schema)
     return {
         "connection_id": conn_id,
         "schema": schema,
         "metrics": [r.as_dict() for r in rows],
+        # The proposals a person removed here — listed so a removal can be undone, never re-proposed.
+        "removed": removed_for(conn_id, schema),
         "counts": {
             "total": len(rows),
             "defined": sum(1 for r in rows if r.source == "defined"),
@@ -164,16 +182,60 @@ def get_metric_catalogue(conn_id: str, schema: Optional[str] = None):
              status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])
 def materialise_metric(conn_id: str, name: str, schema: Optional[str] = None,
                        actor: str = ""):
-    """Copy-on-write: turn a computed row into an editable, connection-scoped definition.
+    """Copy-on-write: turn a computed row into an editable definition of this connection and dataset.
 
-    Lands as `draft` — see `metric_catalogue.materialise`. A row that needs a binding is
-    refused with the roles it is missing, rather than written as SQL that cannot run."""
+    Lands as `draft` — see `metric_catalogue.materialise`. A recipe this connection has not bound
+    lands as a draft whose SQL is the person's to write, with the package's formula beside it.
+    ``actor`` is ignored: the draft is the signed-in person's."""
     from aughor.semantic.metric_catalogue import MaterialiseError, materialise
 
     try:
-        return materialise(conn_id, name, schema or _declared_schema(conn_id), actor=actor).model_dump()
+        return materialise(conn_id, name, schema or _declared_schema(conn_id), actor=caller()).model_dump()
     except MaterialiseError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/metrics/catalogue/{conn_id}/{name}/remove", dependencies=[gate(Capability.METRICS_DEFINE)])
+def remove_proposal(conn_id: str, name: str, schema: Optional[str] = None):
+    """Remove a PROPOSED metric — an industry recipe or the explorer's — from this dataset (``*``:
+    every dataset). The user, 2026-10-07: *"user needs the right to remove the proposed Metric"*.
+    Recorded, with who and when, so a rebuild never proposes it again, and restorable."""
+    from aughor.semantic.metric_catalogue import SOURCE_DEFINED, find_entry
+    from aughor.semantic.metrics import dismiss_proposal
+
+    dataset = schema or _declared_schema(conn_id) or ALL_DATASETS
+    entry = find_entry(conn_id, name, dataset)
+    if entry is not None and entry.source == SOURCE_DEFINED:
+        raise HTTPException(status_code=409, detail=(
+            f"{entry.label!r} is a definition, not a proposal — remove it from its editor "
+            f"(an approved one is retired first)."))
+    record = dismiss_proposal(conn_id, entry.schema if entry is not None else dataset, name, by=caller(),
+                              label=(entry.label if entry is not None else name),
+                              source=(entry.source if entry is not None else ""))
+    _audit({"metric": name, "connection": conn_id, "schema_name": record["schema_name"],
+            "action": "remove_proposal", "source": record["source"]})
+    return record
+
+
+@router.post("/metrics/catalogue/{conn_id}/{name}/restore", dependencies=[gate(Capability.METRICS_DEFINE)])
+def restore_removed_proposal(conn_id: str, name: str, schema: Optional[str] = None):
+    """Undo a removal: the proposal is listed again."""
+    from aughor.semantic.metrics import restore_proposal
+
+    dataset = schema or _declared_schema(conn_id) or ALL_DATASETS
+    if not restore_proposal(conn_id, dataset, name):
+        raise HTTPException(status_code=404, detail=f"No removed proposal named {name!r} here.")
+    _audit({"metric": name, "connection": conn_id, "schema_name": dataset, "action": "restore_proposal"})
+    return {"ok": True, "name": name, "schema_name": dataset}
+
+
+def _audit(event: dict) -> None:
+    """One `metric.governance` event, stamped with who did it and when."""
+    from datetime import datetime, timezone
+
+    from aughor.kernel.ledger import Ledger
+    Ledger.default().emit("metric.governance", {
+        "actor": caller(), "at": datetime.now(timezone.utc).isoformat(), **event})
 
 
 #: 2026-09-26, the user: *"let every metric have mandatorily a SELECT statement"*. A row
@@ -226,64 +288,15 @@ def _require_binds(sql: str, connection: str, name: str, tables, filters, existi
     The runnable form is what is checked — `as_statement` over the declared tables and
     filters — because that is exactly what the value path executes, not the stored text.
     """
-    from aughor.semantic.metric_statement import as_statement
-
     text = (sql or "").strip()
     if not text:
         return
     if existing is not None and text == (str(getattr(existing, "sql", "") or "")).strip():
         return                      # untouched formula — not this save's business
-    runnable = as_statement(text, list(tables or []), list(filters or []), name) or text
-
-    def _unchecked(why: str) -> None:
-        from aughor.stats import stats
-        stats.inc("metrics.save_unchecked")
-        logger.info("metric save not bind-checked (%s): %s", why, name)
-
-    try:
-        import sqlglot
-        sqlglot.parse_one(runnable, read="bigquery")
-    except ImportError as exc:
-        # No parser on this install. The dry run below may still bind it, but "not parsed
-        # here" and "parsed clean" must not look alike to whoever reads the counters.
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "sqlglot is unavailable, so the definition was not parse-checked; the "
-                      "engine's own dry run below still gates it",
-                 counter="metrics.save_no_parser")
-    except Exception as exc:
-        raise HTTPException(status_code=422, detail=(
-            f"that SQL does not parse, so it cannot be a definition: {str(exc).splitlines()[0][:200]}"))
-
-    if not connection or connection == GLOBAL_CONNECTION:
-        _unchecked("global definition — no connection to ask")
-        return
-    if is_org_scope(connection):
-        _unchecked("organisation definition — no one connection to ask")
-        return
-    from aughor.db.connection import open_connection_for
-    try:
-        db = open_connection_for(connection)
-    except Exception as exc:
-        _unchecked(f"connection unreachable ({type(exc).__name__})")
-        return
-    try:
-        ok, err = db.dry_run(runnable)
-    except Exception as exc:
-        _unchecked(f"dry run unavailable ({type(exc).__name__})")
-        return
-    finally:
-        try:
-            db.close()
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "a close that fails is logged, not raised over the answer",
-                     counter="metrics.save_check_close")
-    if not ok:
-        from aughor.stats import stats
-        stats.inc("metrics.save_refused_bind")
-        raise HTTPException(status_code=422, detail=(
-            f"{connection} cannot run that SQL, so it cannot be its definition of "
-            f"{name}: {str(err or 'the engine refused it').splitlines()[0][:300]}"))
+    from aughor.semantic.metric_checks import runs_on
+    verdict, why = runs_on(text, connection, name, tables, filters)
+    if verdict == "refused":
+        raise HTTPException(status_code=422, detail=why)
 
 
 def _restate_briefings(connection: str) -> None:
@@ -300,12 +313,18 @@ def _restate_briefings(connection: str) -> None:
     Best-effort and silent about nothing: an invalidation that fails is counted, because the
     next reader would otherwise be told yesterday's answer with today's confidence.
     """
-    if not connection or connection == GLOBAL_CONNECTION or is_org_scope(connection):
-        # An organisation's definition reaches every connection of the organisation; the cache is per
-        # connection and expires on its own TTL — said here, not pretended invalidated.
+    if not connection:
         return
     try:
         from aughor.knowledge import briefing as _briefing
+        if connection == GLOBAL_CONNECTION or is_org_scope(connection):
+            # A house-wide or an organisation's definition reaches every connection that does not
+            # define its own, so every connection's cached Briefings were measured without it.
+            from aughor.db.registry import list_connections
+            dropped = sum(_briefing.invalidate(str(c.get("id"))) for c in list_connections() if c.get("id"))
+            if dropped:
+                logger.info("metric change invalidated %d cached briefing(s) across connections", dropped)
+            return
         dropped = _briefing.invalidate(connection)
         if dropped:
             logger.info("metric change invalidated %d cached briefing(s) for %s", dropped, connection)
@@ -442,6 +461,31 @@ def _require_own_organisation(connection: str) -> None:
             "why": f"{connection!r} is another organisation's scope; this organisation writes {org_scope(org)!r}"})
 
 
+#: What a client may not set on a definition: governance is the transitions', and approval and a
+#: date confirmation are stamped with the person signed in.
+_SERVER_OWNED = ("status", "version", "proposed_by", "proposed_at", "approved_by", "approved_at",
+                 "time_confirmed_by", "time_source")
+
+
+def _stamp_time_edit(existing, req: MetricRequest) -> dict:
+    """The time fields this save writes. Ones the edit SENT are a person's — confirmed by the person
+    signed in, never by a name the form carried (the user, 2026-10-07: *"user did not enter the name
+    again because the user is already logged in"*)."""
+    from aughor.semantic.metric_time import TIME_FIELDS, merge_time_edit
+    sent = req.model_dump(include=(set(TIME_FIELDS) - {"time_confirmed_by"}) & req.model_fields_set)
+    if sent:
+        sent["time_confirmed_by"] = caller()
+    try:
+        return merge_time_edit(existing, sent)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+def _dataset(value: Optional[str]) -> Optional[str]:
+    v = (value or "").strip()
+    return v or None
+
+
 @router.post("/metrics", status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])
 def create_metric(req: MetricRequest):
     _require_own_organisation(req.connection)
@@ -451,86 +495,131 @@ def create_metric(req: MetricRequest):
     # trail. The approval question belongs to the approve transition, not to authoring.
     from aughor import govern
     govern.guard("metric.define", req.name)
-    # Scoped: `revenue` on this connection is a different metric from `revenue` on
-    # another, and from the global default. Checking the name alone refused the second
-    # connection's own definition — the very thing the store's (connection, name) key
-    # exists to allow.
-    # EXACT scope, not a resolving read: `get_metric(name, connection_id=…)` falls back
-    # to the global definition when the connection has none of its own — correct for
-    # answering "what does this connection use", and wrong here, where it would report
-    # the global `revenue` as this connection's duplicate and refuse the scoped one.
-    _existing = get_metric(req.name, connection_id=req.connection)
-    if _existing is not None and _existing.connection == req.connection:
-        raise HTTPException(
-            status_code=409,
-            detail=(f"Metric '{req.name}' already exists for connection "
-                    f"'{req.connection}'. Use PUT to update."))
-    m = MetricDefinition(**req.model_dump())
+    # EXACT scope — this connection's own definition of this name IN ITS DATASET. A resolving read
+    # would report the global `revenue` as this connection's duplicate; a name-only read would
+    # report staging's `revenue` as marts' (the user, 2026-10-07: each dataset may define its own).
+    home = home_schema(req.model_dump())
+    if definition_at(req.name, req.connection, home) is not None:
+        where = "every dataset of " if home == ALL_DATASETS else f"dataset '{home}' of "
+        raise HTTPException(status_code=409, detail=(
+            f"'{req.name}' is already defined for {where}connection '{req.connection}' — open it "
+            f"to change it, or choose another name."))
+    data = {k: v for k, v in req.model_dump().items() if k not in _SERVER_OWNED}
+    data.update(_stamp_time_edit(None, req))
+    from aughor.semantic.metric_time import with_dates
+    m = with_dates(req.connection, MetricDefinition(**data))
     save_metric(m)
+    _restate_briefings(req.connection)
+    _audit({"metric": m.name, "connection": m.connection, "schema_name": home_schema(m), "action": "define"})
     return m.model_dump()
 
 
+def _addressed(name: str, connection: str, schema: Optional[str]):
+    """The definition a request addresses: this connection's own, in the dataset named — never the
+    house default standing in for it (a write must not inherit the global's governance state)."""
+    if schema:
+        return definition_at(name, connection, schema)
+    existing = get_metric(name, connection_id=connection)
+    if existing is not None and existing.connection != connection:
+        return None
+    return existing
+
+
 @router.put("/metrics/{name}", dependencies=[gate(Capability.METRICS_DEFINE)])
-def update_metric(name: str, req: MetricRequest):
+def update_metric(name: str, req: MetricRequest, schema: Optional[str] = None):
+    """Edit a definition — ANY field (the user, 2026-10-07): its name and its dataset too, which
+    move it. ``schema`` is the dataset of the definition being edited; ``req.schema_name`` is the
+    one it is saved in. Governance stays the transitions': a changed formula on an approved metric
+    returns it to `proposed` for review."""
     _require_own_organisation(req.connection)
     from aughor import govern
     govern.guard("metric.define", name)   # G1: same declared action, the edit door
-    # Resolve the metric being edited WITHIN its connection, and keep it there. Before
-    # this, an edit rebuilt the definition from a request that could not express a
-    # connection, so a scoped metric was rewritten as global and leaked into every
-    # other connection's catalogue carrying SQL for tables they do not have.
-    existing = get_metric(name, connection_id=req.connection)
-    if existing is not None and existing.connection != req.connection:
-        # A RESOLVING read, so this is the global definition standing in for a connection
-        # that has none of its own. It is not the thing being edited: writing a scoped
-        # override must not inherit the global's governance state, or a brand-new
-        # per-connection formula would arrive already stamped `approved` by whoever
-        # approved the house default. Treat it as a new definition at this scope.
-        existing = None
+    existing = _addressed(name, req.connection, _dataset(schema))
     _require_statement(req.sql, existing)
-    _require_binds(req.sql, req.connection, name, req.tables, req.filters, existing)
-    data = {**req.model_dump(), "name": name}
-    # Arc BR-2: the time fields are kept unless this edit SENT them — an editor that does not
-    # know them must not erase what the platform set — and a sent correction is a person's.
-    from aughor.semantic.metric_time import TIME_FIELDS, merge_time_edit
-    try:
-        data.update(merge_time_edit(existing, req.model_dump(include=set(TIME_FIELDS) & req.model_fields_set)))
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+    new_name = (req.name or name).strip()
+    _require_binds(req.sql, req.connection, new_name, req.tables, req.filters, existing)
+    from aughor.semantic.metric_catalogue import normalize_name
+    if new_name != name and normalize_name(new_name) != new_name:
+        raise HTTPException(status_code=422, detail=(
+            f"A metric's name is lowercase words joined by underscores — {normalize_name(new_name)!r}, "
+            f"for example. The label is where it reads as a person would write it."))
+    was = home_schema(existing) if existing is not None else None
+    target_ds = _dataset(req.schema_name) or was
+    moved = existing is not None and (new_name != name or not same_dataset(target_ds, was))
+    if moved and definition_at(new_name, req.connection, target_ds or ALL_DATASETS) is not None:
+        where = "every dataset of" if (target_ds or ALL_DATASETS) == ALL_DATASETS else f"dataset '{target_ds}' of"
+        raise HTTPException(status_code=409, detail=(
+            f"'{new_name}' is already defined in {where} connection '{req.connection}' — open that "
+            f"one, or choose another name."))
+    data = {k: v for k, v in req.model_dump().items() if k not in _SERVER_OWNED}
+    data.update({"name": new_name, "schema_name": target_ds})
+    data.update(_stamp_time_edit(existing, req))
     audit = None
     if existing is not None:
         # Governance state is owned by the transition workflow (B-8), not by edits —
         # carry status/version/stamps forward. But changing the FORMULA of an approved
         # metric un-approves it: it returns to 'proposed' for re-review, and that's audited.
-        data["status"] = existing.status
-        data["version"] = existing.version
-        data["proposed_by"], data["proposed_at"] = existing.proposed_by, existing.proposed_at
-        data["approved_by"], data["approved_at"] = existing.approved_by, existing.approved_at
+        for k in ("status", "version", "proposed_by", "proposed_at", "approved_by", "approved_at"):
+            data[k] = getattr(existing, k)
         if existing.status == "approved" and (req.sql or "").strip() != (existing.sql or "").strip():
-            from datetime import datetime, timezone
             data["status"] = "proposed"
             data["approved_by"] = data["approved_at"] = None
-            audit = {"metric": name, "action": "edit_reproposed",
-                     "actor": existing.owner or "editor", "from": "approved", "to": "proposed",
-                     "version": existing.version, "at": datetime.now(timezone.utc).isoformat()}
-    m = MetricDefinition(**data)
-    save_metric(m)
+            audit = {"metric": new_name, "connection": req.connection, "schema_name": target_ds,
+                     "action": "edit_reproposed", "from": "approved", "to": "proposed",
+                     "version": existing.version}
+    from aughor.semantic.metric_time import with_dates
+    m = with_dates(req.connection, MetricDefinition(**data))
+    if moved:
+        move_metric(name, req.connection, was, m)
+        _audit({"metric": new_name, "connection": req.connection, "schema_name": home_schema(m),
+                "action": "moved", "from_name": name, "from_schema": was})
+    else:
+        save_metric(m)
     _restate_briefings(req.connection)
     if audit:
-        from aughor.kernel.ledger import Ledger
-        Ledger.default().emit("metric.governance", audit)
+        _audit(audit)
     return m.model_dump()
+
+
+@router.post("/metrics/{name}/promote", dependencies=[gate(Capability.METRICS_DEFINE)])
+def promote_metric(name: str, connection_id: str, schema: str):
+    """Promote one dataset's definition to its whole CONNECTION (the user, 2026-10-07: datasets
+    *"should be distinctly defined for each of the schema with a possibility of promoting it to the
+    connection level"*). Every dataset then reads it, except one that keeps a definition of its
+    own under the same name. Its governance state moves with it; the move is audited."""
+    existing = definition_at(name, connection_id, schema)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"No definition '{name}' in dataset '{schema}'.")
+    was = home_schema(existing)
+    if was == ALL_DATASETS:
+        raise HTTPException(status_code=409, detail=f"'{name}' already belongs to every dataset of this connection.")
+    if definition_at(name, connection_id, ALL_DATASETS) is not None:
+        raise HTTPException(status_code=409, detail=(
+            f"This connection already has a '{name}' for every dataset — open it to compare, then "
+            f"remove or rename one of the two."))
+    from aughor import govern
+    govern.guard("metric.define", name)
+    promoted = existing.model_copy(update={"schema_name": ALL_DATASETS})
+    move_metric(name, connection_id, was, promoted)
+    _restate_briefings(connection_id)
+    _audit({"metric": name, "connection": connection_id, "schema_name": ALL_DATASETS,
+            "action": "promoted", "from_schema": was})
+    return promoted.model_dump()
 
 
 class TransitionRequest(BaseModel):
     action: str   # propose | approve | reject | deprecate
-    actor: str    # who is performing it (person/team)
+    #: IGNORED — the transition is the signed-in person's (`caller`). It was required, and the
+    #: Metrics tab asked whoever clicked Approve to type a name, which is what it then recorded.
+    actor: str = ""
     #: WHICH connection's definition is being governed. Resolving by name alone meant a
     #: transition aimed at one connection's `revenue` landed on another's — live, an
     #: approve intended for theLook's draft was refused because the SAMPLES `revenue`
     #: was already approved, and the draft stayed unapproved with no sign why.
     #: Approval is per formula, and two connections' formulas are different things.
     connection: str = GLOBAL_CONNECTION
+    #: WHICH dataset's definition, when two datasets each define the name.
+    schema_name: Optional[str] = None
 
 
 @router.post("/metrics/{name}/transition", dependencies=[gate(Capability.METRICS_DEFINE)])
@@ -542,11 +631,7 @@ def transition_metric(name: str, req: TransitionRequest):
     from aughor.semantic.governance import apply_transition
     from aughor.kernel.ledger import Ledger
 
-    m = get_metric(name, connection_id=req.connection)
-    if m is not None and m.connection != req.connection:
-        # A resolving read reached the house default, not this connection's definition.
-        # Approving that would stamp the global formula on someone else's intent.
-        m = None
+    m = _addressed(name, req.connection, _dataset(req.schema_name))
     if not m:
         raise HTTPException(
             status_code=404,
@@ -561,27 +646,43 @@ def transition_metric(name: str, req: TransitionRequest):
         govern.guard(_action, name)
     now = datetime.now(timezone.utc).isoformat()
     try:
-        updated, audit = apply_transition(m.model_dump(), req.action, req.actor, now)
+        updated, audit = apply_transition(m.model_dump(), req.action, caller(), now)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     save_metric(MetricDefinition(**updated))
     _restate_briefings(req.connection)
+    audit = {**audit, "connection": req.connection, "schema_name": home_schema(m)}
     Ledger.default().emit("metric.governance", audit)
     return {"metric": updated, "audit": audit}
 
 
-@router.get("/metrics/{name}/audit")
-def metric_audit(name: str, limit: int = 50):
-    """The governance audit trail for a metric — every transition, newest first."""
+def _trail(name: str, connection: Optional[str] = None, schema: Optional[str] = None) -> list[dict]:
+    """A definition's governance events, newest first. An event recorded before events named their
+    connection and dataset is kept — it cannot be told apart, and dropping it would hide history."""
     from aughor.kernel.ledger import Ledger
     events = Ledger.default().events(kind="metric.governance", limit=1000)
-    trail = [e["payload"] for e in events
-             if e.get("payload") and e["payload"].get("metric") == name]
-    return {"metric": name, "audit": trail[:limit]}
+    out = []
+    for e in events:
+        p = e.get("payload") or {}
+        if p.get("metric") != name and p.get("from_name") != name:
+            continue
+        if connection and p.get("connection") and p.get("connection") != connection:
+            continue
+        if schema and p.get("schema_name") and not same_dataset(p.get("schema_name"), schema):
+            continue
+        out.append(p)
+    return out
+
+
+@router.get("/metrics/{name}/audit")
+def metric_audit(name: str, limit: int = 50, connection_id: Optional[str] = None,
+                 schema: Optional[str] = None):
+    """The governance audit trail for a metric — every transition, newest first."""
+    return {"metric": name, "audit": _trail(name, connection_id, schema)[:limit]}
 
 
 @router.get("/metrics/{name}/definition-report")
-async def metric_definition_report(name: str, conn_id: str):
+async def metric_definition_report(name: str, conn_id: str, schema: Optional[str] = None):
     """A3 — the instrument beside the approval ask.
 
     `POST /metrics/{name}/transition` validates the lifecycle, persists and journals, and tells
@@ -606,21 +707,15 @@ async def metric_definition_report(name: str, conn_id: str):
     """
     from aughor.db.connection import open_connection_for
     from aughor.kernel.errors import tolerate
-    from aughor.kernel.ledger import Ledger
     from aughor.semantic.definition_report import build_report
 
-    metric = get_metric(name, connection_id=conn_id)
-    if metric is not None and (metric.connection or GLOBAL_CONNECTION) != conn_id:
-        # A resolving read reached the house default, not this connection's definition.
-        metric = None
+    metric = _addressed(name, conn_id, _dataset(schema))
     if not metric:
         raise HTTPException(
             status_code=404,
             detail=f"Metric '{name}' not found for connection '{conn_id}'.")
 
-    events = Ledger.default().events(kind="metric.governance", limit=1000)
-    trail = [e["payload"] for e in events
-             if e.get("payload") and e["payload"].get("metric") == name]
+    trail = _trail(name, conn_id, schema)
 
     try:
         db = open_connection_for(conn_id)
@@ -686,7 +781,7 @@ def _report_payload(report) -> dict:
 
 @router.delete("/metrics/{name}", dependencies=[gate(Capability.METRICS_DEFINE)])
 def remove_metric(name: str, sql: Optional[str] = None,
-                  connection: Optional[str] = None):
+                  connection: Optional[str] = None, schema: Optional[str] = None):
     """Remove a metric — the one irreversible verb on this router, and until now the only
     unguarded one.
 
@@ -696,21 +791,20 @@ def remove_metric(name: str, sql: Optional[str] = None,
     carrying `approved_by: Finance` — and nothing anywhere recorded it. The trail endpoint
     below would have shown a metric's whole history with its deletion missing.
 
-    `metric.delete` is declared HIGH, so this now asks for approval like every other
-    destructive verb, and the deletion lands in the same `metric.governance` trail as the
-    transitions that preceded it.
+    `metric.delete` is declared HIGH, so a definition that was EVER approved asks for approval
+    like every other destructive verb. One nobody ever approved — a draft, a proposal — is
+    removed on the person's click (the user, 2026-10-07: *"the right to remove the proposed
+    Metric"*): nothing was ever measured or sent on it. Either way the removal lands in the same
+    `metric.governance` trail as the transitions that preceded it, stamped with who removed it.
 
-    `connection` narrows it to ONE connection's definition. Omitted, the old behaviour
-    stands and every connection's metric of that name goes — which is what you want when
-    retiring a name outright, and emphatically not what you want when one warehouse
-    redefines its own `revenue`.
+    `connection` (and `schema`, its dataset) narrows it to ONE definition, and records the name as
+    removed there, so the explorer or a package that proposed it does not propose it again.
+    Omitted, the old behaviour stands and every connection's metric of that name goes — which is
+    what you want when retiring a name outright, and emphatically not what you want when one
+    warehouse redefines its own `revenue`.
     """
-    from datetime import datetime, timezone
-
     from aughor import govern
-    from aughor.kernel.ledger import Ledger
 
-    govern.guard("metric.delete", name)
     # Read BEFORE deleting: the trail should say what was removed, and afterwards there is
     # nothing left to describe. SCOPED to the same connection `delete_metric` is about to use —
     # the deletion was always scoped, but the row read to DESCRIBE it was not, so the audit
@@ -718,13 +812,22 @@ def remove_metric(name: str, sql: Optional[str] = None,
     # that misdescribes what it recorded is worse than no trail, because it is believed.
     # With `connection` omitted the resolver behaves exactly as before, which is right: every
     # definition of that name is going, and the entry describes one of them.
-    doomed = get_metric(name, connection_id=connection)
-    if not delete_metric(name, sql=sql, connection_id=connection):
+    doomed = (definition_at(name, connection, schema) if connection and schema
+              else get_metric(name, connection_id=connection))
+    if doomed is None or connection is None or int(doomed.version or 0) > 0 or doomed.status in ("approved", "deprecated"):
+        govern.guard("metric.delete", name)
+    if not delete_metric(name, sql=sql, connection_id=connection, schema_name=schema):
         raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
-    Ledger.default().emit("metric.governance", {
+    dataset = home_schema(doomed) if doomed is not None else (schema or ALL_DATASETS)
+    if connection:
+        from aughor.semantic.metrics import dismiss_proposal
+        dismiss_proposal(connection, dataset, name, by=caller(),
+                         label=(doomed.label if doomed else name), source="defined")
+    _audit({
         "metric": name,
+        "connection": connection,
+        "schema_name": dataset if connection else None,
         "action": "delete",
-        "at": datetime.now(timezone.utc).isoformat(),
         # Which grain, when a name carries several. `null` means every one of them went.
         "sql": sql,
         "approved_by": (doomed.approved_by if doomed else None),

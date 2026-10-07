@@ -267,32 +267,106 @@ def _get_kind(metric: Any) -> str:
     return str(getattr(metric, "time_kind", "") or "")
 
 
-def governed_metrics(conn_id: str) -> list:
+def governed_metrics(conn_id: str, schema: Optional[str] = None) -> list:
     """The connection's approved metrics in reading order (§6 item 43(d)): sales first, profit
     last, the industry's own order within. Ordered BEFORE any cap, so a connection past it keeps
     its headline end — and every reader that caps (the measured table, the predictions) caps
-    the same list."""
+    the same list.
+
+    ``schema`` — the dataset in view: its own definitions and the ones promoted to every dataset,
+    never another dataset's. The Cockpit of the workspace's Uber data measured Daily Gross Revenue,
+    which reads the `main` dataset, beside the rides (2026-10-07)."""
     from aughor.briefing.reading_order import industry_order, ordered
     from aughor.semantic.metrics import list_metrics
 
-    return ordered([m for m in list_metrics(connection_id=conn_id)
+    return ordered([m for m in list_metrics(connection_id=conn_id, schema_name=schema or None)
                     if m.status == "approved" and m.connection == conn_id],
                    industry_order(conn_id))
 
 
+def data_ends(m: Any, run_sql: Callable[[str], tuple], dialect: str) -> Optional[date]:
+    """The last day a metric's own date has rows — one statement over the table its date is on — or
+    None when it cannot be read."""
+    from sqlglot import exp
+
+    from aughor.semantic import metric_time as mt
+    from aughor.semantic.metric_statement import split_grain
+
+    table, col = split_grain(getattr(m, "time_column", None))
+    table = table or next(iter(mt.tables_read(m)), None)
+    if not (table and col):
+        return None
+    try:
+        sql = (exp.select(exp.alias_(exp.Max(this=mt._day(exp.column(col))), "last_day"))
+               .from_(mt._table(table, dialect)).sql(dialect=dialect))
+        _cols, rows, error = run_sql(sql)
+    except Exception as exc:  # noqa: BLE001 — not known is said by the caller, never guessed
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a metric's last day of data could not be read", counter="briefing.range.data_ends")
+        return None
+    if error or not rows:
+        return None
+    first = rows[0]
+    cells = list(first.values()) if isinstance(first, dict) else list(first)
+    return mt._as_date(cells[0]) if cells else None
+
+
+def anchored_spec(spec: RangeSpec, last_day: date) -> Optional[RangeSpec]:
+    """The same kind of range, ending where a metric's data does: the month, week, day or year that
+    holds its last day, or a custom range of the same length ending there. None when the data does
+    not end before the range — then the range itself is the right one to read."""
+    if last_day >= spec.start:
+        return None
+    lag = spec.lag_days
+    if spec.preset == "custom":
+        new, _ = resolve_range("custom", start=last_day - (spec.end - spec.start) + timedelta(days=1),
+                               end=last_day, today=spec.as_of, lag_days=lag, lag_source=spec.lag_source)
+        return new
+    if spec.preset in ("month_to_date", "year_to_date"):
+        fiscal = spec.start.month if spec.preset == "year_to_date" else 1
+        new, _ = resolve_range(spec.preset, today=last_day + timedelta(days=lag), lag_days=lag,
+                               lag_source=spec.lag_source, fiscal_start_month=fiscal)
+        return new
+    period = PRESET_PERIOD.get(spec.preset)
+    fiscal = spec.start.month if period == "year" else 1
+    # The period that holds the last day ends at `ends`; read as of its own last day, it is complete.
+    if period == "day":
+        ends = last_day + timedelta(days=1)
+    elif period == "week":
+        ends = last_day - timedelta(days=last_day.weekday()) + timedelta(days=7)
+    elif period == "month":
+        ends = (last_day.replace(day=1) + timedelta(days=32)).replace(day=1)
+    else:
+        ends = date(last_day.year + (1 if last_day.month >= fiscal else 0), fiscal, 1)
+    new, _ = resolve_range(spec.preset, today=ends - timedelta(days=1) + timedelta(days=lag), lag_days=lag,
+                           lag_source=spec.lag_source, fiscal_start_month=fiscal)
+    return new
+
+
+def _unsettled(m: Any, spec: RangeSpec) -> bool:
+    """Whether a figure reads a table the platform has not yet seen stop changing — by the tables its
+    statement reads, which a statement's empty `tables` field never named."""
+    from aughor.semantic import metric_time as mt
+    return bool({mt.bare_name(t) for t in mt.tables_read(m)} & set(spec.still_moving))
+
+
 def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tuple], dialect: str,
-                  north_stars: Optional[list] = None) -> dict:
+                  north_stars: Optional[list] = None, schema: Optional[str] = None) -> dict:
     """Every approved metric measured for the range and its comparisons. Returns ``{"measured",
     "unmeasured"}``; every approved metric lands in exactly one list, and a north star with no
-    approved definition is named in ``unmeasured`` with that reason."""
+    approved definition is named in ``unmeasured`` with that reason.
+
+    A metric whose data ENDED before the range is read over the same kind of range at its data's
+    end, and says so (``anchored``) — a dataset that stopped in 2024 reads its last month, never a
+    blank in every preset (the user, 2026-10-07: *"no static or stale metrics"*). A range with no
+    rows is never a figure: a count over it answers 0, and that 0 was shown as measured."""
     from aughor.knowledge.period_brief import partial_span
     from aughor.semantic import metric_time as mt
 
     said = mt.ensure_dates(conn_id, run_sql=run_sql, dialect=dialect, today=spec.as_of)
-    governed = governed_metrics(conn_id)
+    governed = governed_metrics(conn_id, schema)
     approved, over_cap = governed[:MAX_METRICS], governed[MAX_METRICS:]
     windows = spec.windows()
-    slack = _slack(spec.days)
     measured: list[dict] = []
     unmeasured: list[dict] = []
     for m in approved:
@@ -306,31 +380,54 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
             continue
         got = {r["window"]: r for r in rows}
         cur = got.get("current")
-        if not cur or cur["value"] is None:
+        read, at, anchored = spec, windows, None
+        if read_value(cur) is None and m.time_kind != "stock":
+            last = data_ends(m, run_sql, dialect)
+            moved = anchored_spec(spec, last) if last is not None else None
+            if moved is not None:
+                rows, why = mt.run_measure(m, moved.windows(), run_sql, dialect=dialect)
+                got = {r["window"]: r for r in rows} if not why else {}
+                if read_value(got.get("current")) is not None:
+                    read, at, cur = moved, moved.windows(), got.get("current")
+                    words = phrases(moved)
+                    anchored = {"start": _d(moved.start), "end": _d(moved.end), "data_ends": _d(last),
+                                "covers": words["covers"], "compared_with": words["compared_with"],
+                                "last_year_label": words["last_year"],
+                                "why": (f"its data ends {_d(last)}, before this range — this is "
+                                        f"{words['covers']}, the latest it covers")}
+            if anchored is None:
+                reason = (f"its data ends {_d(last)}, before this range" if last is not None and last < spec.start
+                          else "its data has no rows in this range")
+                unmeasured.append({"name": name, "reason": reason})
+                continue
+        elif cur is None or cur["value"] is None:
             unmeasured.append({"name": name, "reason": "its data has no rows in this range"})
             continue
+        slack = _slack(read.days)
         prev, ly = got.get("previous"), got.get("last_year")
         cur_partial = (None if m.time_kind == "stock"
-                       else partial_span(cur["first"], cur["last"], spec.start, spec.end, slack))
+                       else partial_span(cur["first"], cur["last"], read.start, read.end, slack))
         prev_partial = (None if (prev is None or prev["value"] is None or m.time_kind == "stock")
-                        else partial_span(prev["first"], prev["last"], spec.previous_start, spec.previous_end, slack))
-        pv = prev["value"] if prev else None
-        lv = ly["value"] if ly else None
+                        else partial_span(prev["first"], prev["last"], read.previous_start, read.previous_end, slack))
+        pv = read_value(prev) if m.time_kind != "stock" else (prev["value"] if prev else None)
+        lv = read_value(ly) if m.time_kind != "stock" else (ly["value"] if ly else None)
+        windows_read = at
         measured.append({
             "name": name, "metric": m.name, "unit": m.unit or "", "time_kind": m.time_kind,
             "time_source": m.time_source, "confirmed": bool(m.time_confirmed_by),
             "current": cur["value"], "previous": pv, "last_year": lv,
             "rel": None if (cur_partial or prev_partial) else _rel(cur["value"], pv),
             "rel_last_year": None if cur_partial else _rel(cur["value"], lv),
-            "status": mt.figure_status(m, windows[0], as_of=spec.as_of, lag_days=spec.lag_days,
-                                       unsettled=bool({mt.bare_name(t) for t in m.tables} & set(spec.still_moving))),
+            "status": mt.figure_status(m, windows_read[0], as_of=read.as_of, lag_days=read.lag_days,
+                                       unsettled=_unsettled(m, read)),
             "current_partial": cur_partial, "previous_partial": prev_partial,
             # BR-6 — said, never implied: a provisional flow figure against a settled comparison
             # is not a fair move, and the reader is told so beside the number.
             "equal_age": equal_age(m, mt.figure_status(
-                m, windows[0], as_of=spec.as_of, lag_days=spec.lag_days,
-                unsettled=bool({mt.bare_name(t) for t in m.tables} & set(spec.still_moving)))),
-            "sql": mt.measure_sql(m, windows, dialect=dialect)[0] or "",
+                m, windows_read[0], as_of=read.as_of, lag_days=read.lag_days,
+                unsettled=_unsettled(m, read))),
+            "sql": mt.measure_sql(m, windows_read, dialect=dialect)[0] or "",
+            "anchored": anchored,
         })
     # A metric the CAP cut says the cap cut it. Measured 2026-09-27: theLook had ten approved
     # definitions against a cap of eight, and the two it dropped fell through to the north-star
@@ -369,6 +466,11 @@ def metric_line(m: dict, block: dict, currency_code: Optional[str]) -> str:
     POINTS: "15.1% to 14.3% (-0.8 pts)", never "a 6% improvement" of a rate."""
     from aughor.knowledge import period_brief
 
+    if m.get("anchored"):
+        # Read over its own data's last range — its sentence names THAT range, not the one asked for.
+        a = m["anchored"]
+        block = {**block, "covers": a["covers"], "compared_with": a["compared_with"],
+                 "last_year_label": a.get("last_year_label")}
     share = m.get("unit") == "ratio 0..1"
     if share and m.get("rel") is not None and m.get("previous") is not None:
         pts = (m["current"] - m["previous"]) * 100
@@ -437,7 +539,7 @@ def _currency(profile: Any, workspace_id: Optional[str]) -> Optional[str]:
 
 
 def measured_block(conn_id: str, spec: RangeSpec, *, profile: Any = None, workspace_id: Optional[str] = None,
-                   runner: Optional[Callable[[], Any]] = None) -> dict:
+                   runner: Optional[Callable[[], Any]] = None, schema: Optional[str] = None) -> dict:
     """The range's approved metrics, measured, and nothing else — the Cockpit's default view (ROADMAP
     §6 item 43). The same measurement and the same wording a range Briefing carries, with no recipe
     section, no narrative and no model call."""
@@ -447,7 +549,8 @@ def measured_block(conn_id: str, spec: RangeSpec, *, profile: Any = None, worksp
     north = list(getattr(profile, "north_star_metrics", None) or []) if profile is not None else []
     try:
         with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
-            got = measure_range(conn_id, spec, run_sql=run_sql, dialect=dialect, north_stars=north)
+            got = measure_range(conn_id, spec, run_sql=run_sql, dialect=dialect, north_stars=north,
+                                schema=schema)
     except Exception as exc:  # noqa: BLE001
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the range measurement could not open the connection", counter="briefing.range.measure")
@@ -520,7 +623,8 @@ def read_value(row: Optional[dict]) -> Optional[float]:
 
 
 def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: Any = None,
-                 workspace_id: Optional[str] = None, runner: Optional[Callable[[], Any]] = None) -> dict:
+                 workspace_id: Optional[str] = None, runner: Optional[Callable[[], Any]] = None,
+                 schema: Optional[str] = None) -> dict:
     """One approved metric read for the range and the ranges before it, with how it is defined and
     dated — what a reader opens a figure for. One warehouse statement and no model call. Every
     earlier range is read at the same age as the range, as its comparison is. A metric that cannot
@@ -531,7 +635,7 @@ def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: An
     from aughor.semantic.metrics import list_metrics
 
     def approved():
-        return next((x for x in list_metrics(connection_id=conn_id)
+        return next((x for x in list_metrics(connection_id=conn_id, schema_name=schema or None)
                      if x.name == metric_name and x.status == "approved" and x.connection == conn_id), None)
 
     def describe(m) -> dict:
@@ -599,7 +703,9 @@ def build_range_briefing(conn_id: str, spec: RangeSpec, *, scope_key: str, domai
         from aughor.briefing import recipes
         try:
             with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
-                got = measure_range(conn_id, spec, run_sql=run_sql, dialect=dialect, north_stars=north)
+                # The dataset in view rides the scope key (`conn:schema`), as every caller writes it.
+                got = measure_range(conn_id, spec, run_sql=run_sql, dialect=dialect, north_stars=north,
+                                    schema=(scope_key.split(":", 1)[1] if ":" in scope_key else None))
                 # Arc BR-4: the recipe's own sections — what moved, why, the Day's early read …
                 try:
                     extra = recipes.apply(conn_id, spec, got, run_sql=run_sql, dialect=dialect,

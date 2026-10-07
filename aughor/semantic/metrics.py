@@ -98,6 +98,14 @@ class MetricDefinition(BaseModel):
     connection: str = Field(
         default=GLOBAL_CONNECTION,
         description="Connection this definition applies to; '*' is the default for all")
+    #: The DATASET (schema) of its connection this definition belongs to (the user, 2026-10-07:
+    #: an organisation keeps stage, vault, marts … as datasets of one warehouse, and each may define
+    #: the same name its own way). ``"*"`` — every dataset of the connection: a definition PROMOTED
+    #: to the connection. Empty — not said, so it belongs to the one dataset its SQL reads (every row
+    #: written before this field), or to every dataset when its SQL names none.
+    schema_name: Optional[str] = Field(
+        default=None, description="The dataset this definition belongs to; '*' = every dataset of "
+                                  "its connection; empty = the dataset its SQL reads")
     label: str = Field(description="Human-readable display name, e.g. 'Active accounts'")
     sql: str = Field(description="Approved SQL expression, e.g. \"SUM(amount) FILTER (WHERE status='active')\"")
     tables: list[str] = Field(default_factory=list, description="Tables this metric draws from")
@@ -141,6 +149,10 @@ class MetricDefinition(BaseModel):
         default=None, description="A stock's end: a row counts until this date, e.g. 'sold_at'")
     settles_after_days: Optional[int] = Field(
         default=None, description="A cohort's maturity: days until its outcome stops arriving")
+    #: The period this metric is reported by — `day`, `week`, `month`, `quarter` or `year`. Its
+    #: latest figure is measured over the last such period its data covers. Empty = a month.
+    time_grain: Optional[str] = Field(
+        default=None, description="The period it is reported by: day, week, month, quarter or year")
     time_source: Optional[str] = Field(
         default=None, description="Where the time fields came from, in words")
     time_confirmed_by: Optional[str] = Field(
@@ -216,11 +228,21 @@ def _save_raw(metrics: list[dict], path: Path) -> None:
 
 # ── The overlay: seed + instance ──────────────────────────────────────────────
 
-Key = tuple[str, str]
+#: (connection, name, dataset) — the dataset as STORED: "" for a row that names none.
+Key = tuple[str, str, str]
 
 
 def _key(raw: dict) -> Key:
-    return (_conn_of(raw), str(raw.get("name") or ""))
+    return (_conn_of(raw), str(raw.get("name") or ""), str(raw.get("schema_name") or ""))
+
+
+def _hidden_rows(hidden: set) -> list[dict]:
+    """The hidden keys as written — a key without a dataset keeps the two-field shape it always had."""
+    return [{"connection": c, "name": n, **({"schema_name": s} if s else {})} for c, n, s in sorted(hidden)]
+
+
+def _hidden_key(h: dict) -> Key:
+    return (str(h["connection"]), str(h["name"]), str(h.get("schema_name") or ""))
 
 
 def _grouped(rows: list[dict]) -> dict[Key, list[dict]]:
@@ -237,6 +259,9 @@ class _Instance:
     rows: list[dict] = field(default_factory=list)
     hidden: set[Key] = field(default_factory=set)
     converted_from: Optional[dict] = None
+    #: Proposals a person removed — `{connection, schema_name, name, by, at, …}` — so the explorer and
+    #: the industry packages never propose them here again. Supersede, not delete: restorable.
+    dismissed: list[dict] = field(default_factory=list)
 
     def owns(self, k: Key) -> bool:
         return any(_key(m) == k for m in self.rows)
@@ -253,8 +278,9 @@ def _parse_instance(p: Path) -> _Instance:
                                             if k not in present})
     if isinstance(data, dict) and data.get("format") == INSTANCE_FORMAT:
         return _Instance(rows=list(data.get("rows") or []),
-                         hidden={(str(h["connection"]), str(h["name"])) for h in data.get("hidden") or []},
-                         converted_from=data.get("converted_from"))
+                         hidden={_hidden_key(h) for h in data.get("hidden") or []},
+                         converted_from=data.get("converted_from"),
+                         dismissed=[d for d in data.get("dismissed") or [] if isinstance(d, dict)])
     raise ValueError(f"not a metrics instance file (format {data.get('format') if isinstance(data, dict) else type(data).__name__!r})")
 
 
@@ -340,10 +366,11 @@ def _refuse_shipped(p: Path) -> None:
 def _write_instance(inst: _Instance) -> None:
     p = _default_path()
     _refuse_shipped(p)
-    payload: dict = {"format": INSTANCE_FORMAT, "rows": inst.rows,
-                     "hidden": [{"connection": c, "name": n} for c, n in sorted(inst.hidden)]}
+    payload: dict = {"format": INSTANCE_FORMAT, "rows": inst.rows, "hidden": _hidden_rows(inst.hidden)}
     if inst.converted_from:
         payload["converted_from"] = inst.converted_from
+    if inst.dismissed:
+        payload["dismissed"] = inst.dismissed
     _atomic_write(p, payload)
     _invalidate_hints()
 
@@ -429,7 +456,7 @@ def materialize() -> _Instance:
                                     "written: " + "; ".join(problems))
         _refuse_shipped(p)
         text = json.dumps({"format": INSTANCE_FORMAT, "rows": inst.rows,
-                           "hidden": [{"connection": c, "name": n} for c, n in sorted(inst.hidden)],
+                           "hidden": _hidden_rows(inst.hidden),
                            "converted_from": inst.converted_from}, indent=2)
         ours = _create_if_absent(p, text)
         if ours is None:
@@ -524,29 +551,89 @@ def _folded_scopes(connection_id: str) -> list[str]:
         return []
 
 
-def _scoped_rows(rows: list[dict], connection_id: str) -> list[dict]:
+#: A definition's dataset when it belongs to every dataset of its connection.
+ALL_DATASETS = "*"
+
+
+def _field(m, name: str):
+    return m.get(name) if isinstance(m, dict) else getattr(m, name, None)
+
+
+def datasets_read(m) -> set[str]:
+    """The datasets (schemas) a definition's SQL reads: its statement's tables, else its ``tables``
+    field, by the part before each table's name, lowercased. Empty when they name none — bare names,
+    as on a connection of one dataset, say nothing to judge by."""
+    from aughor.semantic.metric_statement import is_statement, statement_tables
+
+    sql = str(_field(m, "sql") or "")
+    try:
+        names = statement_tables(sql) if is_statement(sql) else []
+    except Exception as exc:  # noqa: BLE001 — an unparsable statement reads as naming nothing
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a definition's tables could not be read from its SQL", counter="metrics.datasets_read")
+        names = []
+    names = names or [str(t) for t in (_field(m, "tables") or [])]
+    return {n.split(".")[-2].strip('`"[] ').lower() for n in names if "." in n}
+
+
+def home_schema(m) -> str:
+    """The dataset a definition belongs to: the one it names; else the ONE dataset its SQL reads
+    (every definition written before datasets were named — one that reads `main.sales_transactions`
+    is `main`'s); else ``"*"``, every dataset of its connection.
+    Compare it with `same_dataset`: a warehouse's dataset names are not reliably one case."""
+    named = str(_field(m, "schema_name") or "").strip()
+    if named:
+        return named
+    read = datasets_read(m)
+    return next(iter(read)) if len(read) == 1 else ALL_DATASETS
+
+
+def same_dataset(a: Optional[str], b: Optional[str]) -> bool:
+    return str(a or ALL_DATASETS).strip().lower() == str(b or ALL_DATASETS).strip().lower()
+
+
+def _in_dataset(m, schema_name: Optional[str]) -> bool:
+    """Whether a definition applies when ``schema_name`` is in view: its own dataset's, or every dataset's."""
+    if not schema_name or schema_name == ALL_DATASETS:
+        return True
+    home = home_schema(m)
+    return home == ALL_DATASETS or same_dataset(home, schema_name)
+
+
+def _scoped_rows(rows: list[dict], connection_id: str, schema_name: Optional[str] = None) -> list[dict]:
     """The connection's own entries, then the folded scopes' entries it does not shadow, then its
     ORGANISATION's (`org:<id>`), then the global entries no scoped name shadows — override-wins at
-    every step: the specific answer beats the general one, and the organisation's beats the install's."""
-    out = [m for m in rows if _conn_of(m) == connection_id]
+    every step: the specific answer beats the general one, and the organisation's beats the install's.
+
+    With a dataset in view, a definition of THAT dataset shadows the connection's definition of the
+    same name (one promoted to every dataset), and another dataset's definitions are not read at all —
+    a name on `staging` is not the same name on `marts`. Without one, every dataset's are read."""
+    own = [m for m in rows if _conn_of(m) == connection_id and _in_dataset(m, schema_name)]
+    if schema_name and schema_name != ALL_DATASETS:
+        here = [m for m in own if home_schema(m) != ALL_DATASETS]
+        names = {m.get("name") for m in here}
+        own = here + [m for m in own if home_schema(m) == ALL_DATASETS and m.get("name") not in names]
+    out = list(own)
     names = {m.get("name") for m in out}
     for scope in _folded_scopes(connection_id):
         for m in rows:
-            if _conn_of(m) == scope and m.get("name") not in names:
+            if _conn_of(m) == scope and m.get("name") not in names and _in_dataset(m, schema_name):
                 out.append(m)
                 names.add(m.get("name"))
     if not is_org_scope(connection_id):
         org = org_scope(organisation_of(connection_id))
         for m in rows:
-            if _conn_of(m) == org and m.get("name") not in names:
+            if _conn_of(m) == org and m.get("name") not in names and _in_dataset(m, schema_name):
                 out.append(m)
                 names.add(m.get("name"))
-    out += [m for m in rows if _conn_of(m) == GLOBAL_CONNECTION and m.get("name") not in names]
+    out += [m for m in rows if _conn_of(m) == GLOBAL_CONNECTION and m.get("name") not in names
+            and _in_dataset(m, schema_name)]
     return out
 
 
 def list_metrics(path: Path | None = None,
-                 connection_id: str | None = None) -> list[MetricDefinition]:
+                 connection_id: str | None = None,
+                 schema_name: str | None = None) -> list[MetricDefinition]:
     """Every metric, or the ones that apply to ``connection_id`` with scoped shadowing.
 
     Wave O2 resolution, and the ONLY rule here: a connection-scoped entry SHADOWS the
@@ -562,16 +649,17 @@ def list_metrics(path: Path | None = None,
     rows = _load_raw(path)
     if connection_id is None:
         return [MetricDefinition(**m) for m in rows]
-    return [MetricDefinition(**m) for m in _scoped_rows(rows, connection_id)]
+    return [MetricDefinition(**m) for m in _scoped_rows(rows, connection_id, schema_name)]
 
 
 def get_metric(name: str, path: Path | None = None,
-               connection_id: str | None = None) -> MetricDefinition | None:
+               connection_id: str | None = None,
+               schema_name: str | None = None) -> MetricDefinition | None:
     rows = _load_raw(path)
     if connection_id is not None:
         # Own, folded, then global — the same order list_metrics resolves, so the one
         # metric a caller asks for by name is the one the list would have shown.
-        for m in _scoped_rows(rows, connection_id):
+        for m in _scoped_rows(rows, connection_id, schema_name):
             if m.get("name") == name:
                 return MetricDefinition(**m)
         return None
@@ -579,6 +667,105 @@ def get_metric(name: str, path: Path | None = None,
         if m.get("name") == name:
             return MetricDefinition(**m)
     return None
+
+
+def definition_at(name: str, connection_id: str, schema_name: Optional[str] = None,
+                  path: Path | None = None) -> MetricDefinition | None:
+    """The definition a person is editing: THIS connection's own, of THIS dataset — never the
+    house default or another dataset's standing in for it. ``schema_name`` None reads the
+    connection's own definition of that name in any dataset (the caller named none)."""
+    want = (schema_name or "").strip()
+    for m in _load_raw(path):
+        if m.get("name") != name or _conn_of(m) != connection_id:
+            continue
+        if want and not same_dataset(home_schema(m), want):
+            continue
+        return MetricDefinition(**m)
+    return None
+
+
+def _same_definition(m: dict, name: str, connection_id: str, schema_name: Optional[str]) -> bool:
+    if m.get("name") != name or _conn_of(m) != connection_id:
+        return False
+    want = (schema_name or "").strip()
+    return not want or same_dataset(home_schema(m), want)
+
+
+def move_metric(name: str, connection_id: str, schema_name: Optional[str],
+                metric: MetricDefinition) -> None:
+    """Replace one definition with ``metric`` in one write — a rename, or a move to another dataset
+    (promoting it to every dataset of the connection is one). The old key goes in the same write
+    the new one lands in, so nothing reads both or neither."""
+    with _WRITE_LOCK:
+        inst = materialize()
+        seed = _read_rows(_seed_path())
+        old = {_key(m) for m in _merge(seed, inst) if _same_definition(m, name, connection_id, schema_name)}
+        for k in old:
+            if not inst.owns(k):
+                inst.rows += [m for m in seed if _key(m) == k]
+        inst.rows = [m for m in inst.rows if not _same_definition(m, name, connection_id, schema_name)]
+        seed_keys = {_key(m) for m in seed}
+        inst.hidden |= {k for k in old if k in seed_keys}
+        new = metric.model_dump()
+        inst.hidden.discard(_key(new))
+        _upsert(inst.rows, new)
+        _write_instance(inst)
+
+
+# ── Removed proposals ─────────────────────────────────────────────────────────
+
+def _dismissal_key(d: dict) -> tuple[str, str, str]:
+    return (str(d.get("connection") or ""), str(d.get("schema_name") or ALL_DATASETS).lower(),
+            _normal(d.get("name")))
+
+
+def _normal(text) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(text or "").lower()).strip("_")
+
+
+def dismissed_proposals(connection_id: str) -> list[dict]:
+    """Every proposal a person removed from this connection — newest last — with who and when."""
+    return [dict(d) for d in _instance().dismissed if str(d.get("connection") or "") == connection_id]
+
+
+def dismiss_proposal(connection_id: str, schema_name: Optional[str], name: str, *, by: str,
+                     label: str = "", source: str = "") -> dict:
+    """Record that a person removed a proposed metric from this dataset (``"*"``: every dataset).
+    The explorer and the industry packages propose by name on every rebuild, so the record — not
+    the row's absence — is what keeps it from coming back."""
+    entry = {"connection": connection_id, "schema_name": (schema_name or ALL_DATASETS),
+             "name": _normal(name), "label": label or name, "source": source, "by": by,
+             "at": datetime.now(timezone.utc).isoformat()}
+    with _WRITE_LOCK:
+        inst = materialize()
+        k = _dismissal_key(entry)
+        inst.dismissed = [d for d in inst.dismissed if _dismissal_key(d) != k] + [entry]
+        _write_instance(inst)
+    return entry
+
+
+def restore_proposal(connection_id: str, schema_name: Optional[str], name: str) -> bool:
+    """Undo a removal. Returns whether there was one."""
+    k = (connection_id, str(schema_name or ALL_DATASETS).lower(), _normal(name))
+    with _WRITE_LOCK:
+        inst = materialize()
+        kept = [d for d in inst.dismissed if _dismissal_key(d) != k]
+        if len(kept) == len(inst.dismissed):
+            return False
+        inst.dismissed = kept
+        _write_instance(inst)
+    return True
+
+
+def is_dismissed(dismissed: list[dict], connection_id: str, schema_name: Optional[str], name: str) -> bool:
+    """Whether a proposal named ``name`` in ``schema_name`` was removed — in that dataset, or in every one."""
+    s = str(schema_name or ALL_DATASETS).lower()
+    n = _normal(name)
+    for d in dismissed:
+        k = _dismissal_key(d)
+        if k[0] == connection_id and k[2] == n and k[1] in (s, ALL_DATASETS):
+            return True
+    return False
 
 
 def save_metric(metric: MetricDefinition, path: Path | None = None) -> None:
@@ -614,7 +801,7 @@ def _upsert(rows: list[dict], dump: dict) -> None:
 
 
 def delete_metric(name: str, sql: str | None = None, path: Path | None = None,
-                  connection_id: str | None = None) -> bool:
+                  connection_id: str | None = None, schema_name: str | None = None) -> bool:
     """Remove a metric by name. Returns True if anything was deleted.
 
     Grain-aware: a name can carry several governed grains, each with a distinct
@@ -633,6 +820,10 @@ def delete_metric(name: str, sql: str | None = None, path: Path | None = None,
         # depend on; without the connection filter, un-scoping one connection's metric
         # would delete it for everybody.
         if connection_id is not None and _conn_of(m) != connection_id:
+            return False
+        # One dataset's definition, when the caller names the dataset: a name on staging is not the
+        # same name on marts.
+        if schema_name and connection_id is not None and not _same_definition(m, name, connection_id, schema_name):
             return False
         return sql is None or (m.get("sql") or "") == sql
 

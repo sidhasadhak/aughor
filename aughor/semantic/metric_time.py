@@ -33,9 +33,12 @@ from functools import reduce
 from typing import Any, Callable, Optional
 
 KINDS = ("flow", "stock", "cohort")
-#: The fields an edit may send; ``time_source`` is written by the platform, never sent.
+#: The periods a metric is reported by (`time_grain`).
+GRAINS = ("day", "week", "month", "quarter", "year")
+#: The fields an edit may send; ``time_source`` is written by the platform, never sent, and
+#: ``time_confirmed_by`` is stamped by the server with the person signed in, never typed.
 TIME_FIELDS = ("time_column", "time_kind", "outcome_column", "until_column",
-               "settles_after_days", "time_confirmed_by")
+               "settles_after_days", "time_grain", "time_confirmed_by")
 #: A cohort's maturity is the day by which this share of its outcomes has arrived.
 MATURITY_SHARE = 0.95
 #: Fewer outcomes than this and a maturity is not measured — it is said to be unknown.
@@ -72,6 +75,9 @@ def merge_time_edit(existing: Any, sent: dict) -> dict:
     kind = sent.get("time_kind", out["time_kind"])
     if kind is not None and kind not in KINDS:
         raise ValueError(f"time_kind must be one of {', '.join(KINDS)}")
+    grain = sent.get("time_grain", out["time_grain"])
+    if grain not in (None, "") and grain not in GRAINS:
+        raise ValueError(f"time_grain must be one of {', '.join(GRAINS)}")
     before = {k: out[k] for k in TIME_FIELDS if k != "time_confirmed_by"}
     out.update({k: v for k, v in sent.items() if k in TIME_FIELDS})
     who = sent.get("time_confirmed_by") or out.get("time_confirmed_by") or "a person"
@@ -254,15 +260,21 @@ def infer(metric: Any, profile_entry: dict, *, dialect: str = "duckdb") -> Infer
             if col in time_cols:
                 (required if present else empty).add(col)
 
-    if empty:
+    if empty and _counts_rows(expr):
         until = sorted(empty)[0]
         start = primary if primary and primary != until else ""
         if not start:
             return Inference(None, f"it keeps rows where {until} is empty, but its table has no "
                                    "other date for a row to start counting from")
-        return _set("stock", grain(start), f"set automatically: its filter keeps rows where {until} is "
+        return _set("stock", grain(start), f"set automatically: it counts the rows where {until} is "
                                            f"empty, so it is a level — a row counts from {start} until "
                                            f"{until}", until=grain(until))
+    # A SUM or an average over rows whose date is empty — revenue `WHERE cancelled_at IS NULL` — is
+    # a flow that leaves the cancelled rows out, not a level. Read as a level it was measured as
+    # everything up to each window's end, a figure that barely moved between periods and stood
+    # still once the data ended. (An open balance — receivables `WHERE paid_at IS NULL` — IS a
+    # level; the source says how it was read, and a person sets it to a stock in the editor.)
+    excluded = sorted(empty)
     ratio = _ratio(expr)
     if ratio is not None:
         num, den = ratio
@@ -274,10 +286,12 @@ def infer(metric: Any, profile_entry: dict, *, dialect: str = "duckdb") -> Infer
                         f"set automatically: its numerator counts rows that have {outcome} and its "
                         f"denominator counts every row, so it is tied to {anchor} and completed "
                         f"by {outcome}", outcome=grain(outcome))
+    leaves_out = (f"; it leaves out the rows where {excluded[0]} is set — if it is an open balance, "
+                  f"set it to a level" if excluded else "")
     if required:
         col = sorted(required)[0]
         return _set("flow", grain(col), f"set automatically: its filter requires {col}, so a row counts "
-                                        f"on the day of {col}")
+                                        f"on the day of {col}{leaves_out}")
     counted = _presence_tests(expr, time_cols)
     if ratio is None and len(counted) == 1:
         col = next(iter(counted))
@@ -286,8 +300,17 @@ def infer(metric: Any, profile_entry: dict, *, dialect: str = "duckdb") -> Infer
     if primary:
         return _set("flow", grain(primary), f"set automatically: {primary} is the main date of {table} — "
                                             "the one the platform reads to learn when the table's numbers "
-                                            "settle")
+                                            f"settle{leaves_out}")
     return Inference(None, "its table has no date the profiler recognised")
+
+
+def _counts_rows(expr) -> bool:
+    """Whether a formula is a count of rows — ``COUNT(*)``, ``COUNT(id)``, ``COUNT(DISTINCT id)`` —
+    the one shape a filter on an EMPTY date makes a level: the rows open at a date."""
+    from sqlglot import exp
+    while isinstance(expr, exp.Paren):
+        expr = expr.this
+    return isinstance(expr, exp.Count)
 
 
 def measure_maturity(metric: Any, run_sql: RunSql, *, dialect: str, today: date,
@@ -634,10 +657,45 @@ def figure_status(metric: Any, window: Window, *, as_of: date, lag_days: int,
 
 # ── the automatic setter (the user's call, §6 item 34(b)) ──────────────────────────────────
 
+def tables_read(m: Any) -> list[str]:
+    """The tables a definition reads — its statement's, else its ``tables`` field. A statement's
+    ``tables`` is usually empty, and reading the field alone found no profile and set no dates."""
+    from aughor.semantic.metric_statement import is_statement, statement_tables
+    sql = str(_get(m, "sql") or "")
+    try:
+        read = statement_tables(sql) if is_statement(sql) else []
+    except Exception:  # noqa: BLE001 — an unparsable statement reads its declared tables
+        read = []
+    return read or [str(t) for t in (_get(m, "tables") or []) if str(t).strip()]
+
+
+def with_dates(connection_id: str, metric: Any):
+    """``metric`` with its dates set by rule when nobody has set them — applied where a definition
+    comes into being (written in the editor, made from a proposal, imported), so a new metric is
+    measurable for any range from its first save instead of waiting to be approved. A metric whose
+    dates a person set, or that already has them, is returned as it is; so is one no rule reads."""
+    if _get(metric, "time_confirmed_by") or declared(metric) or not str(_get(metric, "sql") or "").strip():
+        return metric
+    try:
+        from aughor.tools.profile_cache import profile_entry_for
+        inf = infer(metric, profile_entry_for(connection_id, tables_read(metric)))
+    except Exception as exc:  # noqa: BLE001 — a definition saves without dates rather than not at all
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "dates could not be set by rule; the definition is saved without them",
+                 counter="metric_time.with_dates")
+        return metric
+    if inf.fields is None:
+        return metric
+    fields = {k: v for k, v in inf.fields.items()}
+    return metric.model_copy(update=fields) if hasattr(metric, "model_copy") else {**metric, **fields}
+
+
 def ensure_dates(connection_id: str, *, run_sql: Optional[RunSql] = None, dialect: str = "duckdb",
                  today: Optional[date] = None) -> dict[str, str]:
-    """Set the dates of every APPROVED metric of this connection by rule, and — given a runner —
-    measure a cohort's maturity once. A metric a person confirmed or corrected is never touched;
+    """Set the dates of every metric of this connection by rule, and — given a runner —
+    measure a cohort's maturity once. Every status, not only approved: a draft measured in the
+    Metrics tab, or a proposal someone is about to approve, is read over a range like any other
+    (the user, 2026-10-07 — *"no static or stale metrics"*). A metric a person confirmed or corrected is never touched;
     one set automatically is RE-DERIVED each time, so a corrected rule heals what an older rule
     set (measured 2026-09-26: the first live run saved every theLook metric as a flow on its
     table's main date, and a fixed rule could not replace them). Returns ``{metric: what
@@ -649,21 +707,24 @@ def ensure_dates(connection_id: str, *, run_sql: Optional[RunSql] = None, dialec
     out: dict[str, str] = {}
     try:
         metrics = [m for m in list_metrics(connection_id=connection_id)
-                   if m.status == "approved" and m.connection == connection_id]
+                   if m.connection == connection_id and (m.sql or "").strip()]
     except Exception as exc:  # noqa: BLE001
         from aughor.kernel.errors import tolerate
         tolerate(exc, "an unreadable metric catalogue sets no dates", counter="metric_time.catalogue")
         return out
     profiles: dict[tuple, dict] = {}
+    saved = False
     for m in metrics:
         if m.time_confirmed_by:
             out[m.name] = f"confirmed by {m.time_confirmed_by}"
             continue
         # Per metric: on a connection of several schemas the newest profile describes one of them,
-        # and a metric on another schema would find no date to set by rule. One read per table set.
-        tables_key = tuple(sorted(str(t) for t in (m.tables or [])))
+        # and a metric on another schema would find no date to set by rule. One read per table set
+        # — the STATEMENT's tables, which a statement's empty `tables` field never named.
+        read = tables_read(m)
+        tables_key = tuple(sorted(read))
         if tables_key not in profiles:
-            profiles[tables_key] = profile_entry_for(connection_id, m.tables)
+            profiles[tables_key] = profile_entry_for(connection_id, read)
         profile = profiles[tables_key]
         inf = infer(m, profile, dialect=dialect)
         if inf.fields is None:
@@ -687,9 +748,19 @@ def ensure_dates(connection_id: str, *, run_sql: Optional[RunSql] = None, dialec
         try:
             save_metric(MetricDefinition(**{**m.model_dump(), **fields}))
             out[m.name] = "set automatically"
+            saved = True
         except Exception as exc:  # noqa: BLE001
             from aughor.kernel.errors import tolerate
             tolerate(exc, "a metric whose dates cannot be saved is measured without them",
                      counter="metric_time.save")
             out[m.name] = f"its dates could not be saved ({type(exc).__name__})"
+    if saved:
+        # A figure cached before these dates were set was measured without them.
+        try:
+            from aughor.knowledge import briefing as _briefing
+            _briefing.invalidate(connection_id)
+        except Exception as exc:  # noqa: BLE001 — the dates stand either way
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "dates were set but the connection's cached Briefings could not be dropped",
+                     counter="metric_time.invalidate")
     return out
