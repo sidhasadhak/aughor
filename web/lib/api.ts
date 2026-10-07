@@ -1208,10 +1208,7 @@ export async function transitionMetric(name: string, action: string, actor: stri
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(connection ? { action, actor, connection } : { action, actor }),
   });
-  if (!res.ok) {
-    const detail = await res.json().then(d => d?.detail).catch(() => null);
-    throw new Error(detail || "Transition failed");
-  }
+  if (!res.ok) throw await refused(res, "Changing the metric's state");
   return res.json();
 }
 
@@ -3395,6 +3392,17 @@ function fastApiError(body: unknown, fallback: string): string {
       .map(d => (d && typeof d === "object" && "msg" in d ? String((d as { msg: unknown }).msg) : null))
       .filter(Boolean);
     if (msgs.length) return msgs.join("; ");
+  }
+  // A refusal the server explained as an OBJECT — `{code, why}`, `{message, code}`, the approval
+  // gate's 428. `new Error(object)` printed "[object Object]" under Approve on 2026-10-07.
+  if (detail && typeof detail === "object") {
+    const d = detail as Record<string, unknown>;
+    if (d.error === "approval_required") {
+      return `This needs approval first: approve "${String(d.action || "this action")}" in the approval prompt, then try again.`;
+    }
+    for (const key of ["message", "why", "reason", "hint"]) {
+      if (typeof d[key] === "string" && d[key]) return d[key] as string;
+    }
   }
   return fallback;
 }
