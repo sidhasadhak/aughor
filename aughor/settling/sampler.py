@@ -60,8 +60,8 @@ def time_tables(connection_id: str) -> list[tuple[str, str, int]]:
     """(table, primary timestamp, row count) for every profiled table that has a
     timestamp, largest first, capped. From the profiler's most recent cache entry."""
     try:
-        from aughor.tools.profile_cache import latest_profile_entry
-        latest = latest_profile_entry(connection_id)
+        from aughor.tools.profile_cache import merged_profile_entry
+        latest = merged_profile_entry(connection_id)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "no profile cache means no time tables to read", counter="settling.profile_cache")

@@ -143,11 +143,11 @@ def _profile(conn, qualified_tables: list, connection_id: str = ""):
 def _cached_profiles(connection_id: str, qualified_tables: list):
     """The profiler's latest cached profiles, matched to each qualified table by its exact
     name or, when exactly one cached table has it, its bare name. Reads; never builds."""
-    from aughor.tools.profile_cache import latest_profile_entry
+    from aughor.tools.profile_cache import merged_profile_entry
     from aughor.tools.profiler import ColumnProfile, TableProfile
     from aughor.tools.table_names import bare
 
-    entry = latest_profile_entry(connection_id) if connection_id else {}
+    entry = merged_profile_entry(connection_id) if connection_id else {}
     cached = entry.get("tables") or {}
     by_bare: dict = {}
     for name in cached:

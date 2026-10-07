@@ -10,8 +10,8 @@ affected tables are re-profiled. Tables whose fingerprint hasn't changed are loa
 from cache without touching the database.
 
 File: data/schema_profiles.json
-  Max entries: 20 (connection × fingerprint combos)
-  Eviction: LRU — oldest entry removed when cap exceeded
+  Max entries: 40 PER CONNECTION (fingerprints of one connection)
+  Eviction: LRU within the connection — one connection's profiling never evicts another's
 """
 from __future__ import annotations
 
@@ -23,8 +23,12 @@ from aughor.db.paths import state_dir
 from aughor.util.json_store import KeyedJsonStore
 
 _CACHE_PATH = state_dir() / "schema_profiles.json"
-_MAX_ENTRIES = 20
-_store = KeyedJsonStore(_CACHE_PATH, max_entries=_MAX_ENTRIES)
+#: The cap is per CONNECTION. It was 20 across the whole install, and the workspace alone held
+#: 15 fingerprints (one per dataset profiled, and one more each time a dataset changed) — so
+#: profiling a few datasets there evicted every other connection's profiles, and a metric's
+#: dates and a question's columns read from nothing until that connection was profiled again.
+_MAX_PER_CONNECTION = 40
+_store = KeyedJsonStore(_CACHE_PATH)
 
 
 def cache_path():
@@ -180,6 +184,23 @@ def profile_entry_for(connection_id: str, tables) -> dict:
     return covers_all or covers_any or latest_profile_entry(connection_id)
 
 
+def merged_profile_entry(connection_id: str) -> dict:
+    """Every table the profiler has seen on this connection, each as its NEWEST entry profiled it
+    — ``{"tables": …, "columns": …}``, the shape one entry has — or ``{}`` when it was never profiled.
+
+    For a reader that does not know its tables up front (a Briefing's findings, the settling
+    sampler, a dashboard's cards). Reading the newest entry alone described only the dataset
+    profiled last: on the workspace, every other dataset's dates and columns read as absent."""
+    prefix = f"{connection_id}:"
+    tables: dict = {}
+    columns: dict = {}
+    for key, entry in _load().items():                   # oldest first; a newer entry wins per table
+        if key.startswith(prefix) and isinstance(entry, dict):
+            tables.update(entry.get("tables") or {})
+            columns.update(entry.get("columns") or {})
+    return {"tables": tables, "columns": columns} if (tables or columns) else {}
+
+
 def latest_profiled_tables(connection_id: str) -> list[str]:
     """CB-5 — every table the profiler saw on this connection, from its most recent cache entry
     (entries are keyed ``connection_id:fingerprint``; the last written wins). ``[]`` when the
@@ -315,11 +336,12 @@ def save_profiles(
     table_profiles: dict[str, TableProfile],
     column_profiles: dict[str, ColumnProfile],
 ) -> None:
-    """Persist profiles to the cache. Evicts oldest entry when cap is reached."""
+    """Persist profiles to the cache. Evicts this connection's oldest entry past its cap."""
     _store.put(_cache_key(connection_id, fingerprint), {
         "tables": {t: tp.to_dict() for t, tp in table_profiles.items()},
         "columns": {k: cp.to_dict() for k, cp in column_profiles.items()},
     })
+    _store.trim_prefix(f"{connection_id}:", _MAX_PER_CONNECTION)
 
 
 def invalidate(connection_id: str) -> None:

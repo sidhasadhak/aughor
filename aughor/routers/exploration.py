@@ -745,7 +745,7 @@ def reask_findings_for_range(conn_id: str, preset: str | None = None, start: str
 
     from aughor.briefing.reask import reask_findings
     from aughor.knowledge import period_brief
-    from aughor.tools.profile_cache import latest_profile_entry
+    from aughor.tools.profile_cache import merged_profile_entry
 
     spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id)
     if spec is None:
@@ -759,7 +759,7 @@ def reask_findings_for_range(conn_id: str, preset: str | None = None, start: str
     findings = [{**f, "domain": dom} for dom, blk in (by_domain or {}).items()
                 for f in (blk if isinstance(blk, list) else ((blk or {}).get("insights") or []))
                 if isinstance(f, dict)]
-    profile = latest_profile_entry(conn_id) or {}
+    profile = merged_profile_entry(conn_id) or {}
     with period_brief.connection_runner(conn_id) as (run_sql, dialect):
         out = reask_findings(findings, spec, run_sql=run_sql, dialect=dialect, profile_entry=profile)
     out = {**out, "total": len(findings), "profiled": bool(profile), "cached": False}

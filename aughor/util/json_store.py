@@ -195,6 +195,22 @@ class KeyedJsonStore:
                 self._file_save(cache)
             return len(evict)
 
+    def trim_prefix(self, prefix: str, keep: int) -> int:
+        """Keep the ``keep`` most recently used keys starting with ``prefix``, dropping the older
+        ones. Returns how many were dropped."""
+        try:
+            return self._ledger().kv_trim_prefix(self._store_id, prefix, keep)
+        except Exception as exc:
+            _fell_back(self.path, exc, "trim_prefix")
+            cache = self._file_load()
+            mine = [k for k in cache if k.startswith(prefix)]      # oldest first
+            evict = mine[:max(0, len(mine) - keep)]
+            for k in evict:
+                del cache[k]
+            if evict:
+                self._file_save(cache)
+            return len(evict)
+
 
 class FileFamilyStore(KeyedJsonStore):
     """A KeyedJsonStore for a family whose LEGACY layout was one file PER KEY

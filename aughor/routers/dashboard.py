@@ -392,11 +392,12 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         from aughor.briefing.reask import grain_for
         from aughor.semantic.metric_statement import scoped_statement
         from aughor.semantic.metric_time import window_predicate
-        from aughor.tools.profile_cache import latest_profile_entry
+        from aughor.semantic.metric_statement import statement_tables
+        from aughor.tools.profile_cache import profile_entry_for
 
         dialect = str(getattr(db, "dialect", "") or "duckdb")
         covers = phrases(spec)["covers"]
-        table, col, why = grain_for(card.sql, [], latest_profile_entry(card.connection_id) or {}, dialect)
+        table, col, why = grain_for(card.sql, [], profile_entry_for(card.connection_id, statement_tables(card.sql)) or {}, dialect)
         cut = None
         if table is not None:
             cut, why, _ = scoped_statement(card.sql, table, window_predicate(col, spec.start, spec.end), dialect=dialect)

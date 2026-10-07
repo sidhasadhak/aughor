@@ -839,6 +839,17 @@ class Ledger:
                 self._conn.execute("DELETE FROM kv WHERE store=? AND key=?", (store, k))
         return len(keys)
 
+    def kv_trim_prefix(self, store: str, prefix: str, keep: int) -> int:
+        """Keep the ``keep`` most recently used keys starting with ``prefix``; drop the older ones.
+        Returns how many were dropped. A cap per prefix, where ``max_entries`` caps the whole store."""
+        with self._lock, self._conn:
+            keys = [r[0] for r in self._conn.execute(
+                "SELECT key FROM kv WHERE store=? ORDER BY seq DESC", (store,)).fetchall()
+                if r[0].startswith(prefix)]
+            for k in keys[keep:]:
+                self._conn.execute("DELETE FROM kv WHERE store=? AND key=?", (store, k))
+        return max(0, len(keys) - keep)
+
     # ── meta ─────────────────────────────────────────────────────────────────
 
     def meta_get(self, k: str) -> Optional[str]:
