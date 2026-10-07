@@ -443,7 +443,7 @@ function FilterBox({ value, onChange, placeholder }: { value: string; onChange:(
       <Input
         value={value} onChange={e => onChange(e.target.value)}
         placeholder={placeholder ?? "Filter…"}
-        style={{ fontSize: 11, padding: "5px 8px 5px 26px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid var(--b1)", color: "var(--t2)", outline: "none", width: 220 }}
+        style={{ width: 220 }}
       />
     </div>
   );
@@ -485,11 +485,11 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
       </div>
       <div>
         <label style={L}>{type === "postgres" ? "Connection string" : "File path"}</label>
-        <Input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "postgresql://user:pass@host/db" : "/path/to/file.duckdb"} value={dsn} onChange={e => setDsn(e.target.value)} required />
+        <Input style={S} placeholder={type === "postgres" ? "postgresql://user:pass@host/db" : "/path/to/file.duckdb"} value={dsn} onChange={e => setDsn(e.target.value)} required />
       </div>
       <div>
         <label style={L}>Schema <span style={{ color: "var(--t3)" }}>(optional)</span></label>
-        <Input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "public" : "main"} value={schema} onChange={e => setSchema(e.target.value)} />
+        <Input style={S} placeholder={type === "postgres" ? "public" : "main"} value={schema} onChange={e => setSchema(e.target.value)} />
       </div>
       {err && <p style={{ fontSize: 11, color: "var(--red4)" }}>{err}</p>}
       <div style={{ display: "flex", gap: 6 }}>
@@ -780,7 +780,7 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
                           onChange={e => setEditType(e.target.value)}
                           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleSave(col.name); } if (e.key === "Escape") { setEditingCol(null); } }}
                           autoFocus
-                          style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t2)", background: "var(--bg-0)", border: "0.5px solid var(--blue2)", borderRadius: 3, padding: "2px 5px", width: 110, outline: "none", cursor: "pointer" }}
+                          style={{ width: 110, cursor: "pointer" }}
                         >
                           {TYPE_OPTIONS.map(t => (
                             <option key={t} value={t} style={{ background: "var(--bg-0)", color: "var(--t1)" }}>{t}</option>
@@ -1786,7 +1786,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
             <Icon name="search" size={11} />
           </span>
           <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalog…"
-            style={{ width: "100%", fontSize: 11, padding: "4px 8px 4px 24px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid var(--b1)", color: "var(--t2)", outline: "none" }} />
+            style={{ width: "100%" }} />
         </div>
 
         {/* Tree body */}

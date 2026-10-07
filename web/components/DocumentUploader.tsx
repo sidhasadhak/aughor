@@ -617,7 +617,7 @@ export function DocumentUploader() {
                     onChange={e => setSettings(prev => (e.target.value
                       ? { ...prev, delimiter: e.target.value }
                       : Object.fromEntries(Object.entries(prev).filter(([k]) => k !== "delimiter"))))}
-                    className="w-full font-mono"
+                    className="w-full"
                   />
                 </div>
                 {([

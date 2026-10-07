@@ -297,7 +297,7 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
             </Field>
             <Field label="What should it answer?"
               hint="Plain words. Name the decisions it should support, not the tables.">
-              <Textarea className="aug-input" rows={3} value={description}
+              <Textarea rows={3} value={description}
                 onChange={e => setDescription(e.target.value)}
                 placeholder="e.g. Answer questions about order volume and returns for the retail team, and always flag when a day is still partial."
                 style={{ width: "100%", maxWidth: 640 }} />
@@ -481,10 +481,10 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
               hint={template
                 ? `Prefilled from the ${template.name} pack — edit freely, it is only a starting stance.`
                 : "Standing instructions, prepended to every answer this agent gives."}>
-              <Textarea className="aug-input" value={instructions} rows={8} maxLength={8000}
+              <Textarea value={instructions} rows={8} maxLength={8000}
                 onChange={e => setInstructions(e.target.value)}
                 placeholder="What this agent is for, what it should prioritise, how it should present findings."
-                style={{ width: "100%", resize: "vertical", fontFamily: "var(--font-ui)" }} />
+                style={{ width: "100%", resize: "vertical" }} />
             </Field>
           </Section>
 
@@ -579,10 +579,10 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
                 placeholder="A question you already know the right answer to" />
             </Field>
             <Field label="Reference SQL" hint="Read-only, and it must parse.">
-              <Textarea className="aug-input" value={draft.sql} rows={3}
+              <Textarea value={draft.sql} rows={3}
                 onChange={e => setDraft(d => ({ ...d, sql: e.target.value }))}
                 placeholder="SELECT …"
-                style={{ width: "100%", resize: "vertical", fontFamily: "var(--font-code)" }} />
+                style={{ width: "100%", resize: "vertical" }} />
             </Field>
             <Button variant="outline" size="sm"
               disabled={!draft.question.trim() || !draft.sql.trim()}

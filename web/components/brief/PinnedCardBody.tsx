@@ -90,14 +90,13 @@ export function CardAlertForm({ card, direction, onSet }: {
   };
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-      <SelectField value={alertDir} onChange={e => setAlertDir(e.target.value as "below" | "above")}
-        style={{ fontSize: 11, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t2)", padding: "2px 4px" }}>
+      <SelectField value={alertDir} onChange={e => setAlertDir(e.target.value as "below" | "above")}>
         <option value="below">below</option>
         <option value="above">above</option>
       </SelectField>
       <Input type="number" value={alertVal} onChange={e => setAlertVal(e.target.value)} placeholder="threshold"
         onKeyDown={e => { if (e.key === "Enter") saveAlert(); }}
-        style={{ fontSize: 11, width: 74, background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", color: "var(--t1)", padding: "2px 4px", outline: "none" }} />
+        style={{ width: 74 }} />
       <Button variant="ghost" size="xs" onClick={saveAlert} disabled={!alertVal || alertBusy}
         style={{ fontSize: 11, color: "var(--amb4)", padding: "2px 6px" }}>{alertBusy ? "…" : "Save"}</Button>
     </div>

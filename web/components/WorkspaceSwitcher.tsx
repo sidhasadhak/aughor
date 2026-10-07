@@ -306,16 +306,12 @@ export function WorkspaceSwitcher({
                 <div style={{ display: "flex", gap: 6, padding: "2px 8px 6px" }}>
                   <Input
                     autoFocus
-                    className="aug-fs-sm"
                     value={newName}
                     onChange={e => setNewName(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter") submitNew(); if (e.key === "Escape") { setCreating(false); setNewName(""); } }}
                     placeholder="Workspace name…"
-                    style={{
-                      flex: 1, minWidth: 0, padding: "6px 9px",
-                      background: "var(--bg-2)", border: "1px solid var(--b2)",
-                      borderRadius: "var(--r2)", color: "var(--t1)", outline: "none",
-                    }}
+                    style={{ flex: 1,
+                      minWidth: 0 }}
                   />
                   <Button onClick={submitNew} variant="secondary" size="sm" disabled={busy}
                     className="aug-fs-sm">

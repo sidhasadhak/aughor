@@ -235,7 +235,7 @@ function DatesSection({ metric, proposals, onChanged }: {
               <option value="cohort">Cohort — completed by a later date</option>
             </SelectField>
           </label>
-          <Input className="aug-fs-xs" list={listed ? grainList : undefined}
+          <Input list={listed ? grainList : undefined}
             placeholder={listed ? "Date column — pick one of the proposals, or type schema.table.column" : "Date column — schema.table.column"}
             value={shownColumn} onChange={e => setColumn(e.target.value)} aria-label="Date column" />
           {listed && (
@@ -254,14 +254,14 @@ function DatesSection({ metric, proposals, onChanged }: {
           </p>
           {kind === "cohort" && (
             <>
-              <Input className="aug-fs-xs" list={listed ? grainList : undefined} placeholder="Completing date, e.g. schema.table.returned_at" value={outcome}
+              <Input list={listed ? grainList : undefined} placeholder="Completing date, e.g. schema.table.returned_at" value={outcome}
                 onChange={e => setOutcome(e.target.value)} aria-label="Completing date column" />
-              <Input className="aug-fs-xs" placeholder="Settles after (days)" value={settles}
+              <Input placeholder="Settles after (days)" value={settles}
                 onChange={e => setSettles(e.target.value)} aria-label="Settles after days" />
             </>
           )}
           {kind === "stock" && (
-            <Input className="aug-fs-xs" list={listed ? grainList : undefined} placeholder="Counts until, e.g. schema.table.sold_at" value={until}
+            <Input list={listed ? grainList : undefined} placeholder="Counts until, e.g. schema.table.sold_at" value={until}
               onChange={e => setUntil(e.target.value)} aria-label="Counts until column" />
           )}
           <label className="aug-fs-xs text-zinc-400">Reported by

@@ -335,16 +335,12 @@ export function AutomationsPanel({ connId, focusId }: Props) {
                 arrives as a seeded form with a dry-run receipt. Nothing is saved until the
                 person presses the same Create button they always would. */}
             <Input
-              className="aug-fs-sm"
               placeholder="or describe it — e.g. post a Monday pipeline summary to #revenue"
               value={outcome}
               onChange={e => setOutcome(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter") void onPropose(); }}
-              style={{
-                width: 340, padding: "5px 10px", marginRight: 8,
-                borderRadius: "var(--r3)", border: "1px solid var(--b1)",
-                background: "var(--bg-1, var(--bg-2))", color: "var(--t1)",
-              }} />
+              style={{ width: 340,
+                marginRight: 8 }} />
             <Button variant="ghost" className="h-auto aug-fs-sm" disabled={!outcome.trim() || proposing}
               onClick={() => void onPropose()} style={{ padding: "5px 12px" }}>
               {proposing ? "Drafting…" : "Propose"}

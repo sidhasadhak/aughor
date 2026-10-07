@@ -76,7 +76,7 @@ export function VolumesPanel({ catalogId }: { catalogId: string }) {
           <div style={{ display: "flex", gap: 6 }}>
             <Input value={newName} onChange={e => setNewName(e.target.value)}
               onKeyDown={e => e.key === "Enter" && create()} placeholder="New volume…"
-              style={{ flex: 1, fontSize: 12 }} />
+              style={{ flex: 1 }} />
             <Button variant="default" size="xs" disabled={busy || !newName.trim()} onClick={create}>Add</Button>
           </div>
         </div>

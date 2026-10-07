@@ -64,10 +64,10 @@ export function RangeControl({ value, onChange, disabled, standing, label = "Bri
       {custom && (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <Input type="date" aria-label="First day" value={start} max={end || undefined}
-            onChange={e => setStart(e.target.value)} className="aug-fs-sm" />
+            onChange={e => setStart(e.target.value)} />
           <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>to</span>
           <Input type="date" aria-label="Last day" value={end} min={start || undefined}
-            onChange={e => setEnd(e.target.value)} className="aug-fs-sm" />
+            onChange={e => setEnd(e.target.value)} />
           <Button size="sm" variant="secondary" disabled={disabled || !ready}
             onClick={() => onChange({ preset: "custom", start, end })}>
             Show

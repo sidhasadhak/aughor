@@ -297,7 +297,7 @@ function DuplicatesDrawer({ connId, schema, onClose, onMerged }: {
                 value={reasons[i] ?? ""}
                 onChange={ev => setReasons(r => ({ ...r, [i]: ev.target.value }))}
                 placeholder="why they are different (optional)"
-                className="aug-fs-xs flex-1 bg-zinc-900 border border-zinc-600 rounded px-2 py-0.5 text-zinc-200"
+                className="flex-1"
               />
               <Button size="sm" variant="ghost" onClick={() => doReject(c, i)} disabled={merging !== null}>
                 Not duplicates

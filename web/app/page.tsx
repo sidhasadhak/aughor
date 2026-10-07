@@ -564,8 +564,7 @@ function HomeScreen({
                 placeholder="e.g. Where are we losing money? · Which segments churn most? · How did revenue trend last quarter?"
                 rows={2}
                 aria-label="Ask a question about your data"
-                className="aug-input"
-                style={{ width: "100%", resize: "vertical", fontSize: 13, lineHeight: 1.5, padding: "10px 12px" }}
+                style={{ width: "100%", resize: "vertical" }}
               />
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <div role="group" aria-label="Answer depth" style={{ display: "flex", gap: 4, padding: 3, background: "var(--bg-3)", borderRadius: "var(--r2)", border: "1px solid var(--b1)" }}>
@@ -989,7 +988,6 @@ function AddConnectionForm({
                     placeholder={f.placeholder}
                     type={f.secret ? "password" : "text"}
                     required={!f.optional}
-                    style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
                   />
                 </div>
               ))}
@@ -1053,7 +1051,6 @@ function DeleteConnModal({
           onChange={e => setText(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && text === conn.name) handleConfirm(); }}
           placeholder={conn.name}
-          style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
         />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <Button onClick={onCancel} variant="ghost" size="sm">Cancel</Button>

@@ -616,8 +616,8 @@ function SqlEditor({ value, rows, taRef, onChange, onKeyDown, onClick, placehold
         ref={taRef} value={value} onChange={onChange} onKeyDown={onKeyDown} onClick={onClick}
         onScroll={e => { if (preRef.current) { preRef.current.scrollTop = e.currentTarget.scrollTop; preRef.current.scrollLeft = e.currentTarget.scrollLeft; } }}
         spellCheck={false} rows={rows} placeholder={placeholder}
-        className="relative w-full outline-none resize-none focus:border-zinc-500"
-        style={{ ...metrics, background: "transparent", color: "transparent", caretColor: "#f4f4f5", borderColor: "#3f3f46" }} />
+        className="relative w-full resize-none"
+        style={{ ...metrics, caretColor: "#f4f4f5" }} />
     </div>
   );
 }
@@ -672,7 +672,7 @@ function AggPicker({ col, table, onAdd, onCancel }: {
             <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">SQL expression</p>
             <Input ref={exprRef} value={expr} onChange={e => setExpr(e.target.value)}
               placeholder="e.g. ROUND(SUM(revenue) / COUNT(*), 2)"
-              className="w-full aug-fs-sm font-mono bg-zinc-800 border border-zinc-600 rounded-md px-3 py-2.5 text-zinc-200 outline-none focus:border-zinc-400 transition" />
+              className="w-full" />
           </div>
         )}
 
@@ -680,7 +680,7 @@ function AggPicker({ col, table, onAdd, onCancel }: {
           <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Column alias</p>
           <Input value={alias} onChange={e => { aliasEdited.current = true; setAlias(e.target.value); }}
             placeholder="metric_name"
-            className="w-full aug-fs-sm font-mono bg-zinc-800 border border-zinc-600 rounded-md px-3 py-2.5 text-zinc-200 outline-none focus:border-zinc-400 transition" />
+            className="w-full" />
         </div>
 
         <div className="mb-6 px-4 py-3 rounded-md bg-zinc-800/70 border border-zinc-700/60">
@@ -1734,7 +1734,7 @@ export function QueryBuilder({
                   <Input autoFocus value={pinName} onChange={e => setPinName(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter") doPinQuery(pinName); if (e.key === "Escape") setShowPinName(false); }}
                     placeholder="Card title"
-                    className="w-full aug-fs-sm bg-zinc-800 border border-zinc-600 rounded-md px-2.5 py-1.5 text-zinc-200 outline-none focus:border-violet-400" />
+                    className="w-full" />
                   {pinError && <p className="aug-fs-xs text-red-400 mt-2 leading-snug">{pinError}</p>}
                   <div className="flex justify-end gap-2 mt-2.5">
                     <Button variant="ghost" size="xs" onClick={() => setShowPinName(false)} className="h-auto font-normal aug-fs-xs text-zinc-400 hover:text-zinc-200 hover:bg-transparent dark:hover:bg-transparent px-2 py-1">Cancel</Button>
@@ -1817,7 +1817,7 @@ export function QueryBuilder({
                 <div className="pb-1 flex items-center gap-2">
                   <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500">Display</p>
                   <SelectField value={vizType} onChange={e=>setVizType(e.target.value as VizMode)}
-                    className="aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition min-w-[150px]">
+                    className="min-w-[150px]">
                     {availTypes.length > 0 && (
                       <optgroup label="Chart">
                         {(["auto", ...availTypes] as VizMode[]).map(t => (
@@ -1886,7 +1886,7 @@ export function QueryBuilder({
                               const t = e.target.value as DimItem["transform"];
                               setDims(p => p.map(x => x.id === d.id ? { ...x, transform: t || undefined } : x));
                             }}
-                            className="aug-fs-xs bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 text-zinc-300 outline-none ml-1"
+                            className="ml-1"
                             onClick={e=> e.stopPropagation()}
                           >
                             <option value="">raw</option>
@@ -2035,28 +2035,25 @@ export function QueryBuilder({
                   {showAddFilter ? (
                     <div className="flex items-center gap-2 flex-wrap p-3 rounded-md border border-zinc-700/60 bg-zinc-800/30">
                       {isMulti && (
-                        <SelectField value={nfTable} onChange={e=>{ setNfTable(e.target.value); setNfCol(""); setNfDistinct([]); }}
-                          className="aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                        <SelectField value={nfTable} onChange={e=>{ setNfTable(e.target.value); setNfCol(""); setNfDistinct([]); }}>
                           <option value="">table</option>
                           {allTables.map(t=><option key={t} value={t}>{t}</option>)}
                         </SelectField>
                       )}
-                      <SelectField value={nfCol} onChange={e=>{ const c=e.target.value; setNfCol(c); loadDistinct(nfTable||primaryTable||"", c); }}
-                        className="aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                      <SelectField value={nfCol} onChange={e=>{ const c=e.target.value; setNfCol(c); loadDistinct(nfTable||primaryTable||"", c); }}>
                         <option value="">column</option>
                         {(isMulti&&nfTable ? tableCols[nfTable]??[] : allTables.flatMap(t=>tableCols[t]??[])).map(c=>(
                           <option key={c.name} value={c.name}>{c.name}</option>
                         ))}
                       </SelectField>
-                      <SelectField value={nfOp} onChange={e=>setNfOp(e.target.value as FilterOp)}
-                        className="aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                      <SelectField value={nfOp} onChange={e=>setNfOp(e.target.value as FilterOp)}>
                         {FILTER_OPS.map(op=><option key={op} value={op}>{op}</option>)}
                       </SelectField>
                       {!NO_VAL_OPS.includes(nfOp) && (
                         <>
                           <Input value={nfVal} onChange={e=>setNfVal(e.target.value)} list="qb-nf-distinct"
                             onKeyDown={e=>{if(e.key==="Enter")commitFilter();}} placeholder="value" autoFocus
-                            className="aug-fs-sm font-mono bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-40 transition" />
+                            className="w-40" />
                           {nfDistinct.length > 0 && (
                             <datalist id="qb-nf-distinct">
                               {nfDistinct.map(v => <option key={v} value={v} />)}
@@ -2086,15 +2083,14 @@ export function QueryBuilder({
                     {having.map(h => (
                       <div key={h.id} className="flex items-center gap-2 flex-wrap">
                         <SelectField value={h.measureId} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,measureId:e.target.value}:x))}
-                          className="aug-fs-sm font-mono bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition max-w-[200px]">
+                          className="max-w-[200px]">
                           {measures.map(mm=><option key={mm.id} value={mm.id}>{mm.alias||measureExpr(mm,isMulti)}</option>)}
                         </SelectField>
-                        <SelectField value={h.op} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,op:e.target.value}:x))}
-                          className="aug-fs-sm font-mono bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                        <SelectField value={h.op} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,op:e.target.value}:x))}>
                           {HAVING_OPS.map(op=><option key={op} value={op}>{op}</option>)}
                         </SelectField>
                         <Input value={h.val} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,val:e.target.value}:x))} placeholder="value"
-                          className="aug-fs-sm font-mono bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-28 transition" />
+                          className="w-28" />
                         <Button variant="ghost" size="xs" onClick={()=>setHaving(p=>p.filter(x=>x.id!==h.id))} className="h-auto py-0 font-normal text-zinc-500 hover:text-red-400 hover:bg-transparent dark:hover:bg-transparent text-sm leading-none px-1">×</Button>
                       </div>
                     ))}
@@ -2113,7 +2109,7 @@ export function QueryBuilder({
                   <p className="aug-fs-sm text-zinc-500 mb-2">ORDER BY</p>
                   <Input value={orderBy} onChange={e=>setOrderBy(e.target.value)}
                     placeholder="e.g. total_revenue DESC"
-                    className="aug-fs-sm font-mono bg-zinc-800/60 border border-zinc-700 rounded-md px-3 py-2 text-zinc-200 outline-none focus:border-zinc-500 w-56 transition" />
+                    className="w-56" />
                 </div>
                 <div>
                   <p className="aug-fs-sm text-zinc-500 mb-2">LIMIT</p>
@@ -2123,7 +2119,7 @@ export function QueryBuilder({
                     }}
                     placeholder="∞"
                     title="Rows to preview. Blank or 0 = no limit (unbounded — use with care on large tables)."
-                    className="aug-fs-sm font-mono bg-zinc-800/60 border border-zinc-700 rounded-md px-3 py-2 text-zinc-200 outline-none focus:border-zinc-500 w-24 transition" />
+                    className="w-24" />
                 </div>
               </div>
 
@@ -2186,7 +2182,7 @@ export function QueryBuilder({
                   <div>
                     <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Chart title</p>
                     <Input value={chartTitle} onChange={e=>setChartTitle(e.target.value)} placeholder="(auto)"
-                      className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
+                      className="w-full" />
                   </div>
                   <div>
                     <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Labels</p>
@@ -2198,7 +2194,7 @@ export function QueryBuilder({
                   <div>
                     <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Color scheme</p>
                     <SelectField value={colorScheme} onChange={e=>setColorScheme(e.target.value)}
-                      className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                      className="w-full">
                       {COLOR_SCHEMES.map(([v,l])=><option key={v} value={v}>{l}</option>)}
                     </SelectField>
                     <p className="aug-fs-xs text-zinc-600 mt-1">Applies to multi-series charts.</p>
@@ -2206,14 +2202,14 @@ export function QueryBuilder({
                   <div>
                     <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Number format</p>
                     <SelectField value={numberFormat} onChange={e=>setNumberFormat(e.target.value)}
-                      className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                      className="w-full">
                       {NUMBER_FORMATS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
                     </SelectField>
                   </div>
                   <div>
                     <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Legend</p>
                     <SelectField value={legendPos} onChange={e=>setLegendPos(e.target.value)}
-                      className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                      className="w-full">
                       {LEGEND_POS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
                     </SelectField>
                   </div>
@@ -2221,12 +2217,12 @@ export function QueryBuilder({
                     <div>
                       <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">X axis title</p>
                       <Input value={xTitle} onChange={e=>setXTitle(e.target.value)} placeholder="(auto)"
-                        className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
+                        className="w-full" />
                     </div>
                     <div>
                       <p className="aug-fs-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Y axis title</p>
                       <Input value={yTitle} onChange={e=>setYTitle(e.target.value)} placeholder="(auto)"
-                        className="w-full aug-fs-sm bg-zinc-800 border border-zinc-700 rounded-[var(--r3)] px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
+                        className="w-full" />
                     </div>
                   </div>
                 </>

@@ -259,8 +259,7 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
         <Input type="text" value={hint} onChange={e => setHint(e.target.value)}
           onKeyDown={e => e.key === "Enter" && !loading && handleRetry()}
           placeholder="e.g. use click_ts instead of click_id…"
-          className="flex-1 aug-fs-xs rounded px-2.5 py-1.5 focus:outline-none"
-          style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t2)" }} />
+          className="flex-1" />
         <Button variant="ghost" size="xs" onClick={handleRetry} disabled={loading}
           className="aug-fs-xs px-3 py-1.5 rounded disabled:opacity-40 shrink-0"
           style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>

@@ -97,7 +97,7 @@ export function OwnersPanel({ connectionId }: { connectionId?: string }) {
                   value={drafts[e.owner_key] ?? ""}
                   onChange={ev => setDrafts(d => ({ ...d, [e.owner_key]: ev.target.value }))}
                   placeholder="user:ana@corp"
-                  className="aug-fs-xs bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-zinc-200 w-44"
+                  className="w-44"
                 />
                 <Button size="sm" variant="secondary" disabled={busy === e.owner_key} onClick={() => void link(e)}>Link</Button>
               </div>

@@ -99,8 +99,7 @@ function Input({ value, onChange, placeholder, multiline, hint, mono, label }: {
 
 function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
-    <SelectField value={value} onChange={e => onChange(e.target.value)}
-      style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg-1, #1a1a1a)", border: "1px solid var(--b0)", color: "var(--t1, #e5e5e5)", outline: "none" }}>
+    <SelectField value={value} onChange={e => onChange(e.target.value)}>
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </SelectField>
   );

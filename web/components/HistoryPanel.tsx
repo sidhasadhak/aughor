@@ -126,7 +126,6 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search…"
-          className="py-1.5"
         />
       </div>
       <ul className="flex-1 overflow-y-auto divide-y divide-zinc-600/40">

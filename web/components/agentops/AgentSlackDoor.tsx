@@ -240,12 +240,12 @@ export function AgentSlackDoor({
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
                 <div style={{ flex: "1 1 220px", minWidth: 0 }}>
                   <label className="aug-fs-xs" style={labelStyle}>App name — what Slack will show</label>
-                  <Input className="aug-fs-ui" style={inputStyle} value={appName}
+                  <Input style={inputStyle} value={appName}
                     onChange={e => setAppName(e.target.value)} placeholder="Aughor" />
                 </div>
                 <div style={{ flex: "2 1 320px", minWidth: 0 }}>
                   <label className="aug-fs-xs" style={labelStyle}>Configuration token</label>
-                  <Input className="aug-fs-ui" style={inputStyle} value={configToken} autoComplete="off"
+                  <Input style={inputStyle} value={configToken} autoComplete="off"
                     spellCheck={false} onChange={e => setConfigToken(e.target.value)} placeholder="xoxe.xoxp-…" />
                 </div>
                 <Button variant="default" size="sm" onClick={createApp}
@@ -280,13 +280,13 @@ export function AgentSlackDoor({
               ) : (
                 <>
                   <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{app.steps[0]}</div>
-                  <Input className="aug-fs-ui" style={inputStyle} value={pastedBotToken} autoComplete="off"
+                  <Input style={inputStyle} value={pastedBotToken} autoComplete="off"
                     spellCheck={false} onChange={e => setPastedBotToken(e.target.value)} placeholder="xoxb-…" />
                 </>
               )}
               <div className="aug-fs-sm" style={{ fontWeight: 500 }}>3 · The app-level token (the one Slack has no API for)</div>
               <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{app.steps[1]}</div>
-              <Input className="aug-fs-ui" style={inputStyle} value={pastedAppToken} autoComplete="off"
+              <Input style={inputStyle} value={pastedAppToken} autoComplete="off"
                 spellCheck={false} onChange={e => setPastedAppToken(e.target.value)} placeholder="xapp-…" />
               <Button variant="default" size="sm" style={{ alignSelf: "flex-start" }}
                 disabled={finishing || !pastedAppToken.trim() || (!app.oauth_available && !pastedBotToken.trim())}
@@ -328,7 +328,7 @@ export function AgentSlackDoor({
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <label className="aug-fs-xs" style={labelStyle}>App name — what Slack will show</label>
-            <Input className="aug-fs-ui" style={inputStyle} value={appName}
+            <Input style={inputStyle} value={appName}
               onChange={e => setAppName(e.target.value)} placeholder="Aughor" />
           </div>
           <Button variant="secondary" size="sm" onClick={render} disabled={rendering}>
@@ -381,17 +381,17 @@ export function AgentSlackDoor({
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div>
                 <label className="aug-fs-xs" style={labelStyle}>Bot user OAuth token — OAuth &amp; Permissions</label>
-                <Input className="aug-fs-ui" style={inputStyle} value={botToken} autoComplete="off" spellCheck={false}
+                <Input style={inputStyle} value={botToken} autoComplete="off" spellCheck={false}
                   onChange={e => setBotToken(e.target.value)} placeholder="xoxb-…" />
               </div>
               <div>
                 <label className="aug-fs-xs" style={labelStyle}>App-level token — Basic Information, scope connections:write</label>
-                <Input className="aug-fs-ui" style={inputStyle} value={appToken} autoComplete="off" spellCheck={false}
+                <Input style={inputStyle} value={appToken} autoComplete="off" spellCheck={false}
                   onChange={e => setAppToken(e.target.value)} placeholder="xapp-…" />
               </div>
               <div>
                 <label className="aug-fs-xs" style={labelStyle}>Signing secret — Basic Information</label>
-                <Input className="aug-fs-ui" style={inputStyle} value={signingSecret} autoComplete="off" spellCheck={false}
+                <Input style={inputStyle} value={signingSecret} autoComplete="off" spellCheck={false}
                   onChange={e => setSigningSecret(e.target.value)} placeholder="the signing secret" />
               </div>
             </div>

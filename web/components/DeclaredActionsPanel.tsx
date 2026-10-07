@@ -215,7 +215,7 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
       <label style={hint}>what a proposal must satisfy — the message is shown verbatim when it fails</label>
       {criteria.map((c, i) => (
         <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <Input style={{ ...input, flex: 2, fontFamily: "var(--font-mono)" }} placeholder="amount_eur <= 10000"
+          <Input style={{ ...input, flex: 2 }} placeholder="amount_eur <= 10000"
             value={c.expr} onChange={e => setCriteria(cs => cs.map((x, j) => j === i ? { ...x, expr: e.target.value } : x))} />
           <Input style={{ ...input, flex: 3 }} placeholder="why — shown to the proposer on failure"
             value={c.message} onChange={e => setCriteria(cs => cs.map((x, j) => j === i ? { ...x, message: e.target.value } : x))} />
@@ -265,9 +265,9 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
               value={httpSecret} onChange={e => setHttpSecret(e.target.value)} />
           </div>
           <label style={hint}>headers (JSON)</label>
-          <Textarea style={{ ...input, minHeight: 36, fontFamily: "monospace" }} value={httpHeaders} onChange={e => setHttpHeaders(e.target.value)} />
+          <Textarea style={{ ...input, minHeight: 36 }} value={httpHeaders} onChange={e => setHttpHeaders(e.target.value)} />
           <label style={hint}>body (JSON) — {"{param}"} placeholders are filled from the declared params</label>
-          <Textarea style={{ ...input, minHeight: 44, fontFamily: "monospace" }} value={httpBody} onChange={e => setHttpBody(e.target.value)} />
+          <Textarea style={{ ...input, minHeight: 44 }} value={httpBody} onChange={e => setHttpBody(e.target.value)} />
         </>
       )}
       <Button variant="default" size="sm" disabled={!id.trim()} onClick={save}>Save action</Button>

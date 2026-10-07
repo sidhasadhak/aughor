@@ -633,7 +633,7 @@ function DesignStepNodeInner({ data, selected }: { data: DesignNodeData; selecte
                 </div>
               ) : (
                 <Input
-                  className="nodrag aug-fs-sm"
+                  className="nodrag"
                   style={inputStyle}
                   placeholder={placeholder}
                   value={String(data.config[field] ?? "")}
@@ -1592,14 +1592,11 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
             </Button>
             {header.onName ? (
               <Input
-                className="aug-fs-ui"
                 aria-label="Name this automation"
                 value={header.name}
                 onChange={e => header.onName?.(e.target.value)}
                 placeholder="Name this automation"
-                style={{ fontWeight: 600, background: "var(--bg-1)",
-                  border: "1px solid var(--b1)", borderRadius: "var(--r2)",
-                  padding: "3px 8px", color: "var(--t1)", width: 200 }}
+                style={{ width: 200 }}
               />
             ) : (
               <span className="aug-fs-ui" style={{ fontWeight: 600, overflow: "hidden",

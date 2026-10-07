@@ -424,7 +424,7 @@ function ClarifyCard({ turn, onClarify, onAnswerAnyway }: {
           onChange={e => setVal(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); submit(); } }}
           placeholder="Add the detail…"
-          style={{ flex: 1, fontSize: 12, padding: "6px 10px", borderRadius: "var(--r1)", background: "var(--bg-1)", border: "1px solid var(--b2)", color: "var(--t1)", outline: "none" }}
+          style={{ flex: 1 }}
         />
         <Button variant="ghost" size="xs" onClick={submit} disabled={!val.trim()}
           className="h-auto hover:bg-transparent dark:hover:bg-transparent disabled:opacity-40"

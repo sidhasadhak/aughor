@@ -476,10 +476,10 @@ export function IntegrationsPanel() {
                           {editing && (
                             <div style={{ marginTop: 8, display: "flex",
                               flexDirection: "column", gap: 6 }}>
-                              <Input className="aug-fs-ui" style={inputStyle} value={botDraft.name}
+                              <Input style={inputStyle} value={botDraft.name}
                                 aria-label="Bot name"
                                 onChange={e => setBotDraft(d => ({ ...d, name: e.target.value }))} />
-                              <SelectField className="aug-fs-ui" style={inputStyle}
+                              <SelectField style={inputStyle}
                                 value={botDraft.agent_id} aria-label="Answers as agent"
                                 onChange={e => {
                                   const chosen = agents.find(a => a.id === e.target.value);
@@ -493,7 +493,7 @@ export function IntegrationsPanel() {
                                   <option key={a.id} value={a.id}>{a.name}</option>
                                 ))}
                               </SelectField>
-                              <SelectField className="aug-fs-ui" style={inputStyle}
+                              <SelectField style={inputStyle}
                                 value={botDraft.connection_id} aria-label="Asks on connection"
                                 onChange={e => setBotDraft(d => ({ ...d,
                                   connection_id: e.target.value }))}>
@@ -509,7 +509,7 @@ export function IntegrationsPanel() {
                                 ))}
                               </SelectField>
                               {/* AO-2f — an optional home channel on the record. */}
-                              <Input className="aug-fs-ui" style={inputStyle} value={botDraft.channel_id}
+                              <Input style={inputStyle} value={botDraft.channel_id}
                                 aria-label="Home channel" placeholder="Home channel — #name or C… (optional)"
                                 onChange={e => setBotDraft(d => ({ ...d, channel_id: e.target.value }))} />
                               {/* AO-6 — rehearse: a post from an automation AS this bot waits in
@@ -640,7 +640,7 @@ export function IntegrationsPanel() {
                           Answer as (optional) — an app with no agent can still post; it
                           just cannot answer an @mention as anybody.
                         </div>
-                        <SelectField className="aug-fs-ui" style={inputStyle} value={doorAgent}
+                        <SelectField style={inputStyle} value={doorAgent}
                           aria-label="Answer as agent"
                           onChange={e => {
                             const chosen = agents.find(a => a.id === e.target.value);
@@ -660,7 +660,7 @@ export function IntegrationsPanel() {
                         Asks on — the connection @mentions run against. When the agent is
                         bound to a connection it must be that one, or answers are refused.
                       </div>
-                      <SelectField className="aug-fs-ui" style={inputStyle} value={doorConnection}
+                      <SelectField style={inputStyle} value={doorConnection}
                         aria-label="Asks on connection"
                         onChange={e => setDoorConnection(e.target.value)}>
                         <option value="">No connection — posting only</option>
@@ -714,8 +714,7 @@ export function IntegrationsPanel() {
                       {p.https_only ? " over HTTPS (a tunnel is enough)" : ""}, and be
                       registered in the {p.name} console verbatim.
                     </div>
-                    <Input className="aug-fs-xs" style={{ ...inputStyle,
-                      fontFamily: "var(--font-mono)" }}
+                    <Input style={inputStyle}
                       value={callback} spellCheck={false} autoComplete="off"
                       aria-label="Redirect URI"
                       placeholder={redirectUri}
@@ -741,10 +740,10 @@ export function IntegrationsPanel() {
                         register that address instead.
                       </div>
                     )}
-                    <Input className="aug-fs-ui" style={inputStyle} placeholder="Client ID"
+                    <Input style={inputStyle} placeholder="Client ID"
                       value={clientId} autoComplete="off" spellCheck={false}
                       onChange={e => setClientId(e.target.value)} />
-                    <Input className="aug-fs-ui" style={inputStyle}
+                    <Input style={inputStyle}
                       placeholder={p.secret_preview
                         ? `Client secret — blank keeps ${p.secret_preview}`
                         : "Client secret"}

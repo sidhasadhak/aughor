@@ -198,10 +198,9 @@ function CandidateRow({ cand, decision, onDecide, edit, onEdit, applyError }: {
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <Textarea value={edit} onChange={e => onEdit(e.target.value)} rows={8}
                 data-testid={`intake-edit-${cand.id}`}
-                className="aug-fs-xs"
-                style={{ width: "100%", fontFamily: "var(--font-mono)", color: "var(--t1)",
-                  background: "var(--bg-1)", border: `1px solid ${editInvalid ? "var(--red4)" : "var(--b1)"}`,
-                  borderRadius: "var(--r2)", padding: 8, boxSizing: "border-box", resize: "vertical" }} />
+                style={{ width: "100%",
+                         boxSizing: "border-box",
+                         resize: "vertical" }} />
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <span className="aug-fs-xs" style={{ color: editInvalid ? "var(--red4)" : "var(--t3)" }}>
                   {editInvalid ? "Not valid JSON yet." : "An edited object is accepted with your version."}
@@ -388,8 +387,7 @@ function Doors({ connId, schema, onStaged, knowledgeConns }: {
       {door === "paste" && (
         <div style={label}>
           <Textarea value={yamlText} onChange={e => setYamlText(e.target.value)} rows={6}
-            placeholder={"version: 1\nsections:\n  metrics:\n    - name: revenue\n      sql: SUM(amount)"}
-            className="aug-fs-xs" style={{ ...input, fontFamily: "var(--font-mono)", resize: "vertical" }} />
+            placeholder={"version: 1\nsections:\n  metrics:\n    - name: revenue\n      sql: SUM(amount)"} style={{ ...input, resize: "vertical" }} />
           <div>
             <Button size="sm" disabled={busy || !yamlText.trim()}
               onClick={() => run(() => uploadIntakeBundleYaml({
@@ -459,8 +457,7 @@ function Doors({ connId, schema, onStaged, knowledgeConns }: {
       {door === "prose" && (
         <div style={label}>
           <Textarea value={proseText} onChange={e => setProseText(e.target.value)} rows={5}
-            placeholder="Paste prose or markdown that states definitions — e.g. “MRR is monthly recurring revenue, computed as …”"
-            className="aug-fs-sm" style={{ ...input, resize: "vertical" }} />
+            placeholder="Paste prose or markdown that states definitions — e.g. “MRR is monthly recurring revenue, computed as …”" style={{ ...input, resize: "vertical" }} />
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <Button size="sm" disabled={busy || !proseText.trim()}
               onClick={() => { setBusy(true); setErr(""); setNote("");

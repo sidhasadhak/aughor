@@ -525,8 +525,7 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
                   step {c.action} · {c.key}
                 </span>
                 <Input
-                  className="aug-text-sm rounded px-2 py-1 flex-1 min-w-0"
-                  style={{ background: "var(--bg-1)", border: "1px solid var(--b1)", color: "var(--t1)" }}
+                  className="flex-1 min-w-0"
                   value={fills[spec] ?? ""}
                   placeholder={c.key === "channel" ? "#channel" : c.key}
                   onChange={e => setFills(f => ({ ...f, [spec]: e.target.value }))}

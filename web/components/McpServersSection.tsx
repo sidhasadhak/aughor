@@ -373,7 +373,7 @@ export function McpServersSection() {
         <div style={{ border: "1px solid var(--b1)", borderRadius: "var(--r2)",
           background: "var(--bg-1)", padding: "10px 12px", marginTop: 8,
           display: "flex", flexDirection: "column", gap: 8 }}>
-          <Input className="aug-fs-ui" style={inputStyle} placeholder="Name"
+          <Input style={inputStyle} placeholder="Name"
             value={name} onChange={e => setName(e.target.value)} aria-label="Server name" />
 
           <div style={{ display: "inline-flex", gap: 2, padding: 2, alignSelf: "flex-start",
@@ -389,7 +389,7 @@ export function McpServersSection() {
 
           {transport === "http" ? (
             <>
-              <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+              <Input style={inputStyle} spellCheck={false}
                 placeholder="https://example.com/mcp" aria-label="Server URL"
                 value={url} onChange={e => setUrl(e.target.value)} />
               <div role="group" aria-label="How Aughor gets in"
@@ -413,12 +413,12 @@ export function McpServersSection() {
                 <>
                   {/* The header NAME the credential travels in. Most servers read `Authorization`;
                       some name their own — Composio takes its key only as `x-api-key`. */}
-                  <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+                  <Input style={inputStyle} spellCheck={false}
                     autoComplete="off"
                     placeholder="Header name — Authorization, or the one your server names (e.g. x-api-key)"
                     aria-label="Auth header name"
                     value={authHeaderName} onChange={e => setAuthHeaderName(e.target.value)} />
-                  <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+                  <Input style={inputStyle} spellCheck={false}
                     autoComplete="off"
                     placeholder="Header value — e.g. Bearer …, or an API key"
                     aria-label="Auth header value"
@@ -437,10 +437,10 @@ export function McpServersSection() {
             </>
           ) : (
             <>
-              <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+              <Input style={inputStyle} spellCheck={false}
                 placeholder="Command — e.g. npx" aria-label="Command"
                 value={command} onChange={e => setCommand(e.target.value)} />
-              <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+              <Input style={inputStyle} spellCheck={false}
                 placeholder="Arguments — e.g. -y @modelcontextprotocol/server-everything"
                 aria-label="Arguments"
                 value={argsLine} onChange={e => setArgsLine(e.target.value)} />

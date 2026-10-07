@@ -453,7 +453,7 @@ export function InferencePanel() {
       {/* Backend */}
       <div>
         <label style={labelStyle}>Provider</label>
-        <SelectField value={backend} onChange={(e) => onBackend(e.target.value)} style={{ ...inputStyle, fontFamily: "inherit" }}>
+        <SelectField value={backend} onChange={(e) => onBackend(e.target.value)} style={inputStyle}>
           {cfg.backends.map((b) => (
             <option key={b} value={b}>{BACKEND_LABEL[b] ?? b}</option>
           ))}
@@ -614,7 +614,7 @@ export function InferencePanel() {
           <SelectField
             value={fallbackBackend}
             onChange={(e) => { setFallbackBackend(e.target.value); setFallbackModel(""); }}
-            style={{ ...inputStyle, fontFamily: "inherit" }}
+            style={inputStyle}
           >
             <option value="">Built-in order (try each configured provider)</option>
             <option value="none">No fallback — fail on the primary</option>

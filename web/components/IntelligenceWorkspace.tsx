@@ -207,11 +207,8 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
             value={connectionId}
             onChange={e => onConnectionChange?.(e.target.value)}
             aria-label="Connection"
-            style={{
-              fontSize: 12, color: "var(--t2)", background: "var(--bg-2)",
-              border: "1px solid var(--b1)", borderRadius: "var(--r2)",
-              padding: "3px 8px", cursor: "pointer", maxWidth: 200,
-            }}
+            style={{ cursor: "pointer",
+                                  maxWidth: 200 }}
           >
             {connections!.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </SelectField>
@@ -230,11 +227,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
               rememberSchema(connectionId, e.target.value);
             }}
             aria-label="Schema scope"
-            style={{
-              fontSize: 12, color: "var(--t2)", background: "var(--bg-2)",
-              border: "1px solid var(--b1)", borderRadius: "var(--r2)",
-              padding: "3px 8px", cursor: "pointer",
-            }}
+            style={{ cursor: "pointer" }}
           >
             {/* TEMP (2026-06-26): "All schemas" option removed — select each schema individually. */}
             {schemas.map(s => <option key={s} value={s}>{s}</option>)}

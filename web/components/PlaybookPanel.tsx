@@ -170,8 +170,7 @@ export function PlaybookPanel() {
             value={filter}
             onChange={e => setFilter(e.target.value)}
             placeholder="Search recommendations…"
-            className="w-full aug-fs-xs rounded-md px-2.5 py-1.5 focus:outline-none mb-2"
-            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}
+            className="w-full mb-2"
           />
           <div className="flex gap-1">
             {(["all", "active", "draft", "deprecated"] as const).map(s => (

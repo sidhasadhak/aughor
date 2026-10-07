@@ -76,7 +76,7 @@ export function FeedbackPrompt({ investigationId, hypotheses, onSubmit, postComp
           Optional: add context, correct an interpretation, or redirect the report focus
         </label>
         <Textarea
-          className="w-full rounded-[var(--r3)] bg-zinc-800 border border-zinc-600 text-sm text-zinc-100 placeholder:text-zinc-400 p-3 resize-none focus:outline-none focus:ring-1 focus:ring-violet-500 transition"
+          className="w-full resize-none"
           rows={3}
           placeholder="e.g. Focus on APAC segment, the EU numbers are expected due to the Nov promotion. Ignore H3."
           value={feedback}

@@ -570,12 +570,11 @@ function MonitorForm({
           </SelectField>
         ) : (
           <Textarea
-            className="aug-input"
             rows={3}
             value={form.custom_sql ?? ""}
             onChange={e => setField("custom_sql", e.target.value as any)}
             placeholder="SELECT SUM(revenue) FROM orders WHERE date = CURRENT_DATE"
-            style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12, resize: "vertical" }}
+            style={{ width: "100%", resize: "vertical" }}
           />
         )}
       </Field>
@@ -687,7 +686,7 @@ function MonitorForm({
           <Input value={form.check_cron ?? ""}
             onChange={e => onCustomCronChange(e.target.value)}
             placeholder="cron expression, e.g. 0 9 * * 1-5"
-            style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12 }} />
+            style={{ width: "100%" }} />
         )}
         {!isCustomCron && (
           <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>

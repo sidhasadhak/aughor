@@ -958,7 +958,7 @@ function AgentBenchmark({ agent, onChanged, onError }: {
               )}
               {certifying?.id === c.id && (
                 <>
-                  <Textarea className="aug-input" rows={3} value={certifying.sql}
+                  <Textarea rows={3} value={certifying.sql}
                     placeholder="The reference SQL you certify (read-only)"
                     onChange={e => setCertifying({ id: c.id, sql: e.target.value })} />
                   <span style={{ display: "flex", gap: 6 }}>
@@ -1057,7 +1057,7 @@ function AgentBenchmark({ agent, onChanged, onError }: {
         <Input placeholder="Golden question — e.g. How many active customers?"
           value={goldenDraft.question}
           onChange={e => setGoldenDraft(d => ({ ...d, question: e.target.value }))} />
-        <Textarea className="aug-input" rows={2}
+        <Textarea rows={2}
           placeholder="Reference SQL (the known-correct answer; read-only)"
           value={goldenDraft.reference_sql}
           onChange={e => setGoldenDraft(d => ({ ...d, reference_sql: e.target.value }))} />
@@ -1157,7 +1157,7 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span className="aug-label">Instructions</span>
-        <Textarea className="aug-input" rows={6} value={form.instructions} maxLength={8000}
+        <Textarea rows={6} value={form.instructions} maxLength={8000}
           placeholder="Standing guidance this agent applies to every answer — domain focus, definitions to prefer, tone. It refines, never overrides, safety and grounding rules."
           onChange={e => setForm(f => ({ ...f, instructions: e.target.value }))} />
       </label>
@@ -1734,8 +1734,7 @@ function BudgetRow({ label, unit, value, busy, onSave }: {
       <span style={{ width: 110, color: "var(--t3)", flexShrink: 0 }}>{label}</span>
       <Input type="number" value={draft} disabled={busy} min={1} step={1} inputMode="numeric"
         aria-label={`${label} budget per run`} placeholder="role default"
-        className="aug-fs-xs"
-        style={{ padding: "3px 6px", width: 120, fontVariantNumeric: "tabular-nums" }}
+        style={{ width: 120, fontVariantNumeric: "tabular-nums" }}
         onChange={e => setDraft(e.target.value)} />
       <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{unit}</span>
       {dirty && (
@@ -1796,8 +1795,7 @@ function AgentLimitRow({ knob, value, busy, onSet }: {
         <Input type="number" value={draft} disabled={busy}
           min={knob.min} max={knob.max} step={1} inputMode="numeric"
           aria-label={knob.label}
-          className="aug-fs-xs"
-          style={{ padding: "3px 6px", width: 120, fontVariantNumeric: "tabular-nums" }}
+          style={{ width: 120, fontVariantNumeric: "tabular-nums" }}
           onChange={e => setDraft(e.target.value)} />
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{knob.unit}</span>
         {dirty && (
@@ -1885,8 +1883,7 @@ export function AgentModelPin({ pinned, busy, onPin }: {
         <Input value={draft} disabled={busy}
           spellCheck={false} autoComplete="off"
           placeholder={provider ? `paste a model id from ${provider}` : "paste a model id"}
-          style={{ fontSize: 11, padding: "3px 6px", maxWidth: 260,
-            fontFamily: "var(--font-mono)" }}
+          style={{ maxWidth: 260 }}
           onChange={e => setDraft(e.target.value)} />
         {dirty && (
           <Button size="xs" variant="secondary" disabled={busy} onClick={save}>

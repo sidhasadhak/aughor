@@ -113,15 +113,13 @@ export function KnowledgeSourcesSection() {
         <div className="rounded border border-zinc-700 bg-zinc-950/60 p-3 space-y-2">
           <p className="aug-fs-sm text-zinc-300 font-medium">Connect {connecting.label}</p>
           <Input value={name} onChange={e => setName(e.target.value)}
-                 placeholder={`Name (e.g. Team ${connecting.label})`}
-                 className="aug-fs-sm" />
+                 placeholder={`Name (e.g. Team ${connecting.label})`} />
           {connecting.fields.map(f => (
             <Input key={f.key}
                    type={f.secret ? "password" : "text"}
                    value={form[f.key] ?? ""}
                    onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-                   placeholder={`${f.label}${f.placeholder ? ` — ${f.placeholder}` : ""}`}
-                   className="aug-fs-sm" />
+                   placeholder={`${f.label}${f.placeholder ? ` — ${f.placeholder}` : ""}`} />
           ))}
           <div className="flex items-center gap-2">
             <Button size="xs" disabled={busy} onClick={connect}
