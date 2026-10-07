@@ -204,16 +204,25 @@ export function IntegrationsPanel() {
   };
 
   const connect = async (provider: string, product?: string) => {
+    // A NEW tab, so this one survives to refetch on refocus. It opens inside the click,
+    // before anything is awaited — a tab opened after an await is a pop-up the browser may
+    // block — and is pointed at the consent screen once the API has the URL. It used to be
+    // `window.open(url, "_blank", "noopener")`, which returns null by spec even when the tab
+    // opens, so the blocked-pop-up fallback ALWAYS ran too: the consent screen in a new
+    // window AND in this tab (2026-10-07). Only a tab that truly did not open falls back.
+    const tab = window.open("about:blank", "_blank");
     setBusy(product ? `${provider}:${product}` : provider);
     setError("");
     try {
       const url = await beginIntegrationConnect(provider, product);
-      // A NEW tab, so this one survives to refetch on refocus. The consent screen is
-      // the provider's page; nothing about it belongs inside this app's frame. A popup
-      // blocker returns null SILENTLY — measured — so the fallback is same-tab
-      // navigation rather than a Connect button that does nothing.
-      if (!window.open(url, "_blank", "noopener")) window.location.href = url;
+      if (tab && !tab.closed) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else {
+        window.location.href = url;
+      }
     } catch (e) {
+      tab?.close();
       setError((e as Error).message);
     } finally {
       setBusy("");
