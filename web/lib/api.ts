@@ -214,7 +214,7 @@ export async function updateOrgSettings(settings: OrgSettings): Promise<OrgSetti
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Failed to update org settings");
+    throw new Error(fastApiError(err, "Failed to update org settings"));
   }
   return res.json();
 }
@@ -253,7 +253,7 @@ export async function updateIndustryChoice(industries: string[] | null): Promise
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Failed to save the industry choice");
+    throw new Error(fastApiError(err, "Failed to save the industry choice"));
   }
   return res.json();
 }
@@ -289,7 +289,7 @@ export async function updateOrgLLM(patch: OrgLLMPatch): Promise<OrgLLMConfig> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Failed to update org model settings");
+    throw new Error(fastApiError(err, "Failed to update org model settings"));
   }
   return res.json();
 }
@@ -317,7 +317,7 @@ export async function rescopeContext(connectionId: string, keep: string[]): Prom
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Failed to rescope context");
+    throw new Error(fastApiError(err, "Failed to rescope context"));
   }
   return res.json();
 }
@@ -415,7 +415,7 @@ export async function recordVerdict(input: {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Failed to record verdict");
+    throw new Error(fastApiError(err, "Failed to record verdict"));
   }
 }
 
@@ -485,7 +485,7 @@ export async function annotateTable(connectionId: string, input: {
     });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Failed to annotate");
+    throw new Error(fastApiError(err, "Failed to annotate"));
   }
   return res.json();
 }
@@ -509,7 +509,7 @@ export async function createWorkspace(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Failed to create workspace");
+    throw new Error(fastApiError(err, "Failed to create workspace"));
   }
   return res.json();
 }
@@ -525,7 +525,7 @@ export async function updateWorkspace(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Failed to update workspace");
+    throw new Error(fastApiError(err, "Failed to update workspace"));
   }
   return res.json();
 }
@@ -534,7 +534,7 @@ export async function deleteWorkspace(id: string): Promise<void> {
   const res = await fetch(`${getApiBase()}/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Failed to delete workspace");
+    throw new Error(fastApiError(err, "Failed to delete workspace"));
   }
 }
 
@@ -557,7 +557,7 @@ export async function addConnection(
   });
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.detail ?? "Failed to add connection");
+    throw new Error(fastApiError(err, "Failed to add connection"));
   }
   return res.json();
 }
@@ -606,7 +606,7 @@ export async function uploadFileToConnection(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Upload failed");
+    throw new Error(fastApiError(err, "Upload failed"));
   }
   return res.json();
 }
@@ -639,7 +639,7 @@ export async function bulkUploadFilesToConnection(
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Bulk upload failed");
+    throw new Error(fastApiError(err, "Bulk upload failed"));
   }
   return res.json();
 }
@@ -678,7 +678,7 @@ export async function analyzeConnectionFile(
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Analyze failed");
+    throw new Error(fastApiError(err, "Analyze failed"));
   }
   return res.json();
 }
@@ -726,7 +726,7 @@ export async function createConnectionSchema(connId: string, name: string): Prom
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Schema create failed");
+    throw new Error(fastApiError(err, "Schema create failed"));
   }
   const data = await res.json();
   return data.schema;
@@ -741,7 +741,7 @@ export async function deleteConnectionSchema(connId: string, schema: string): Pr
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Schema remove failed");
+    throw new Error(fastApiError(err, "Schema remove failed"));
   }
 }
 
@@ -753,7 +753,7 @@ export async function deleteConnectionTable(connId: string, table: string, schem
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Table remove failed");
+    throw new Error(fastApiError(err, "Table remove failed"));
   }
 }
 
@@ -1074,7 +1074,7 @@ export async function materialiseMetric(connectionId: string, name: string, sche
   );
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail || "Could not make this metric editable");
+    throw new Error(fastApiError(body, "Could not make this metric editable"));
   }
   return res.json();
 }
@@ -1087,7 +1087,7 @@ export async function createMetric(m: Omit<Metric, never>): Promise<Metric> {
   });
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.detail ?? "Failed to create metric");
+    throw new Error(fastApiError(err, "Failed to create metric"));
   }
   return res.json();
 }
@@ -1179,7 +1179,7 @@ export async function updateMetric(name: string, m: Metric): Promise<Metric> {
   });
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.detail ?? "Failed to update metric");
+    throw new Error(fastApiError(err, "Failed to update metric"));
   }
   return res.json();
 }
@@ -1275,7 +1275,7 @@ export async function validateMetric(name: string, connId: string): Promise<Metr
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Validation failed");
+    throw new Error(fastApiError(err, "Validation failed"));
   }
   return res.json();
 }
@@ -1286,7 +1286,7 @@ export async function getMetricFreshness(name: string, connId: string): Promise<
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Freshness check failed");
+    throw new Error(fastApiError(err, "Freshness check failed"));
   }
   return res.json();
 }
@@ -1411,7 +1411,7 @@ export async function rebuildOntology(connectionId: string, schemaName?: string)
     // The server says why the build failed and whether the previous ontology is unchanged; a bare
     // "Ontology rebuild failed" said neither.
     let detail = "";
-    try { detail = (await res.json())?.detail ?? ""; } catch { /* not JSON */ }
+    try { detail = fastApiError(await res.json(), ""); } catch { /* not JSON */ }
     throw new Error(detail || "Ontology rebuild failed");
   }
   return res.json();
@@ -1496,7 +1496,7 @@ export async function getOntology(connectionId: string, schemaName?: string): Pr
   if (!res.ok) {
     const built = (res.headers.get("X-Ontology-Schemas") ?? "").split(",").filter(Boolean);
     let detail = "";
-    try { detail = (await res.json())?.detail ?? ""; } catch { /* not JSON */ }
+    try { detail = fastApiError(await res.json(), ""); } catch { /* not JSON */ }
     throw new OntologyNotBuilt(detail || "Ontology not available for this connection", built);
   }
   return res.json();
@@ -1797,7 +1797,7 @@ export async function mergeOntologyEntities(
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error((e as { detail?: string }).detail ?? "Merge failed");
+    throw new Error(fastApiError(e, "Merge failed"));
   }
   return res.json();
 }
@@ -1911,7 +1911,7 @@ export async function proposeLearnedSkill(
   const res = await fetch(`${getApiBase()}/ontology/skills/propose?${q}`, { method: "POST" });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error((e as { detail?: string }).detail ?? "Run is not skill-worthy");
+    throw new Error(fastApiError(e, "Run is not skill-worthy"));
   }
   return (await res.json()).candidate as QueryTemplate;
 }
@@ -1928,7 +1928,7 @@ export async function saveLearnedSkill(
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error((e as { detail?: string }).detail ?? "Skill rejected (SQL not read-only or failed dry-run)");
+    throw new Error(fastApiError(e, "Skill rejected (SQL not read-only or failed dry-run)"));
   }
   return res.json();
 }
@@ -2730,7 +2730,7 @@ export async function retryQuery(
   });
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.detail ?? "Retry failed");
+    throw new Error(fastApiError(err, "Retry failed"));
   }
   return res.json();
 }
@@ -2774,7 +2774,7 @@ export async function fixEpisode(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sql: ep.sql, error: ep.error, think: ep.think ?? "", phase: ep.phase ?? "domain_intel", hint, canvas_id: canvasId }),
   });
-  if (!res.ok) { const e = await res.json(); throw new Error(e.detail ?? "fix-and-save failed"); }
+  if (!res.ok) { const e = await res.json(); throw new Error(fastApiError(e, "fix-and-save failed")); }
   return res.json();
 }
 
@@ -2794,7 +2794,7 @@ export async function fixAll(
       hint, canvas_id: canvasId,
     }),
   });
-  if (!res.ok) { const e = await res.json(); throw new Error(e.detail ?? "fix-all failed"); }
+  if (!res.ok) { const e = await res.json(); throw new Error(fastApiError(e, "fix-all failed")); }
   return res.json();
 }
 
@@ -2917,7 +2917,7 @@ export async function linkOwner(ownerText: string, principal: string): Promise<O
   });
   if (!res.ok) {
     let detail = `${res.status}`;
-    try { detail = (await res.json()).detail ?? detail; } catch { /* keep the status */ }
+    try { detail = fastApiError(await res.json(), detail); } catch { /* keep the status */ }
     throw new Error(String(detail));
   }
   return res.json();
@@ -3853,7 +3853,7 @@ export async function runDirectQuery(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? "Query failed");
+    throw new Error(fastApiError(err, "Query failed"));
   }
   return res.json();
 }
@@ -3925,7 +3925,7 @@ export async function getAgentPolicy(): Promise<AgentPolicyView> {
   const res = await fetch(`${getApiBase()}/org-settings/agent-policy`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? "Could not read the agent policy");
+    throw new Error(fastApiError(err, "Could not read the agent policy"));
   }
   return res.json();
 }
@@ -3984,7 +3984,7 @@ export async function getRelatedJoins(connId: string, table: string, column: str
   const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/related-joins?${qs.toString()}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? "Could not read the joins");
+    throw new Error(fastApiError(err, "Could not read the joins"));
   }
   return res.json();
 }
@@ -4046,7 +4046,7 @@ async function postCutRequest<T>(path: string, body: Record<string, unknown>, si
   if (!res.ok) {
     if (res.status === 499) throw new QueryCancelled();
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? "Query failed");
+    throw new Error(fastApiError(err, "Query failed"));
   }
   return res.json();
 }
@@ -4120,7 +4120,7 @@ export async function runWorkbenchQuery(
     // races the disconnect, so it means cancelled here too — never an error toast.
     if (res.status === 499) throw new QueryCancelled();
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? "Query failed");
+    throw new Error(fastApiError(err, "Query failed"));
   }
   return res.json();
 }
@@ -4199,7 +4199,7 @@ export async function runSemanticOp(connId: string, sql: string, op: SemanticOpR
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? "Semantic step failed");
+    throw new Error(fastApiError(err, "Semantic step failed"));
   }
   return res.json();
 }
@@ -4354,7 +4354,7 @@ export async function submitClaimFeedback(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? "Feedback submission failed");
+    throw new Error(fastApiError(err, "Feedback submission failed"));
   }
   return res.json();
 }
@@ -5116,7 +5116,7 @@ export async function setupIntegrationApp(provider: string, body: {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    let detail = ""; try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON */ }
+    let detail = ""; try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON */ }
     throw new Error(detail || `Could not save the app (${res.status})`);
   }
   return res.json();
@@ -5128,7 +5128,7 @@ export async function beginIntegrationConnect(provider: string, product?: string
   const q = product ? `?product=${encodeURIComponent(product)}` : "";
   const res = await fetch(`${getApiBase()}/integrations/${provider}/connect${q}`, { method: "POST" });
   if (!res.ok) {
-    let detail = ""; try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON */ }
+    let detail = ""; try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON */ }
     throw new Error(detail || `Could not start the connection (${res.status})`);
   }
   return (await res.json()).authorize_url;
@@ -5237,7 +5237,7 @@ export async function createSlackBot(body: {
     // The server's own reason, verbatim — "invalid_auth" and "missing credential(s)" call
     // for different fixes and a generic message would hide which one happened.
     let detail = "";
-    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
     throw new Error(detail || `Could not create the Slack bot (${res.status})`);
   }
   return res.json();
@@ -5284,7 +5284,7 @@ export async function updateSlackBot(id: string, body: SlackBotPatch): Promise<S
   });
   if (!res.ok) {
     let detail = "";
-    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
     throw new Error(detail || `Could not update the Slack bot (${res.status})`);
   }
   return res.json();
@@ -5316,7 +5316,7 @@ export async function createSlackApp(body: {
   });
   if (!res.ok) {
     let detail = "";
-    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
     throw new Error(detail || `Could not create the Slack app (${res.status})`);
   }
   return res.json();
@@ -5346,7 +5346,7 @@ export async function restartManagedSupervisor(): Promise<ManagedSupervisorStatu
   const res = await fetch(`${getApiBase()}/slack-bots/supervisor/restart`, { method: "POST" });
   if (!res.ok) {
     let detail = "";
-    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
     throw new Error(detail || `Could not restart the supervisor (${res.status})`);
   }
   return res.json();
@@ -5395,7 +5395,7 @@ export async function createTeamsBot(body: {
   });
   if (!res.ok) {
     let detail = "";
-    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
     throw new Error(detail || `Could not create the Teams bot (${res.status})`);
   }
   return res.json();
@@ -5423,7 +5423,7 @@ export async function askThroughDoor(agentId: string, key: string, body: {
   });
   if (!res.ok) {
     let detail = "";
-    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
     throw new Error(detail || `the door said ${res.status}`);
   }
   return res.json();
@@ -5433,7 +5433,7 @@ export async function deleteSlackBot(id: string): Promise<void> {
   const res = await fetch(`${getApiBase()}/slack-bots/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) {
     let detail = "";
-    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
     throw new Error(detail || `Could not delete the Slack bot (${res.status})`);
   }
 }
@@ -6133,7 +6133,7 @@ export async function dryRunAutomationDraft(
     body: JSON.stringify(body),
   });
   const parsed = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(parsed?.detail || `Dry run failed (${res.status})`);
+  if (!res.ok) throw new Error(fastApiError(parsed, `Dry run failed (${res.status})`));
   return parsed;
 }
 
@@ -6365,7 +6365,7 @@ export async function createBriefSubscription(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "Failed to create brief subscription");
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Failed to create brief subscription"));
   return res.json();
 }
 
@@ -6864,7 +6864,7 @@ export async function readRangeBriefing(
   const res = await fetch(url);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Failed to read the briefing for this range");
+    throw new Error(fastApiError(err, "Failed to read the briefing for this range"));
   }
   return res.json();
 }
@@ -6886,7 +6886,7 @@ export async function measureRange(
   const res = await fetch(url, { method: "POST" });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "The metrics for this range could not be measured");
+    throw new Error(fastApiError(err, "The metrics for this range could not be measured"));
   }
   return res.json();
 }
@@ -6932,7 +6932,7 @@ export async function readMetricTrend(
   const res = await fetch(url, { method: "POST" });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "This metric could not be read");
+    throw new Error(fastApiError(err, "This metric could not be read"));
   }
   return res.json();
 }
@@ -7011,7 +7011,7 @@ export async function readExpectedNext(
   const res = await fetch(url, { method: "POST" });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "What is expected next could not be read");
+    throw new Error(fastApiError(err, "What is expected next could not be read"));
   }
   return res.json();
 }
@@ -7024,7 +7024,7 @@ export async function buildRangeBriefing(
   const res = await fetch(url, { method: "POST" });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Failed to build the briefing for this range");
+    throw new Error(fastApiError(err, "Failed to build the briefing for this range"));
   }
   return res.json();
 }
@@ -7196,7 +7196,7 @@ export async function addLlmModel(backend: string, model: string): Promise<{ bac
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error((e as { detail?: string }).detail ?? "Failed to add model");
+    throw new Error(fastApiError(e, "Failed to add model"));
   }
   return res.json();
 }
@@ -7206,7 +7206,7 @@ export async function removeLlmModel(backend: string, model: string): Promise<{ 
   const res = await fetch(`${getApiBase()}/llm/models?${q}`, { method: "DELETE" });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error((e as { detail?: string }).detail ?? "Failed to remove model");
+    throw new Error(fastApiError(e, "Failed to remove model"));
   }
   return res.json();
 }
@@ -7219,7 +7219,7 @@ export async function setLlmConfig(patch: LlmConfigPatch): Promise<LlmConfig> {
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error((e as { detail?: string }).detail ?? "Failed to save inference config");
+    throw new Error(fastApiError(e, "Failed to save inference config"));
   }
   return res.json();
 }
@@ -7622,7 +7622,7 @@ export async function groundBriefingNumber(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? "Grounding failed");
+    throw new Error(fastApiError(err, "Grounding failed"));
   }
   return res.json();
 }
@@ -7769,7 +7769,7 @@ export async function createVolume(catalogId: string, name: string): Promise<Met
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
   });
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Failed to create volume"); }
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(fastApiError(e, "Failed to create volume")); }
   return res.json();
 }
 
@@ -7783,7 +7783,7 @@ export async function uploadVolumeObject(volumeId: string, file: File): Promise<
   const form = new FormData();
   form.append("file", file);
   const res = await fetch(`${getApiBase()}/metastore/volumes/${encodeURIComponent(volumeId)}/objects`, { method: "POST", body: form });
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Upload failed"); }
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(fastApiError(e, "Upload failed")); }
   return res.json();
 }
 
@@ -7810,7 +7810,7 @@ export async function grantWorkspaceCatalog(workspaceId: string, catalogId: stri
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ catalog_id: catalogId }),
   });
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Grant failed"); }
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(fastApiError(e, "Grant failed")); }
   return (await res.json()).catalogs ?? [];
 }
 
@@ -7947,7 +7947,7 @@ export async function applyPostproc(
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ columns, rows, op, value_col: valueCol, window, agg }),
   });
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? "Transform failed"); }
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(fastApiError(e, "Transform failed")); }
   return res.json();
 }
 
@@ -8195,7 +8195,7 @@ export async function proposePackBindings(
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connection_id: connectionId, schema, business_model: businessModel }),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "propose failed");
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "propose failed"));
   return res.json();
 }
 
@@ -8219,7 +8219,7 @@ export async function evaluatePack(
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connection_id: connectionId, schema }),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "evaluate failed");
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "evaluate failed"));
   return res.json();
 }
 
@@ -8605,7 +8605,7 @@ export async function draftAgentGoldens(agentId: string): Promise<{ drafted: Age
   });
   if (!res.ok) {
     let detail = "";
-    try { detail = (await res.json())?.detail ?? ""; } catch { /* non-JSON body */ }
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
     throw new Error(detail || `draft failed (${res.status})`);
   }
   return res.json();
@@ -8978,7 +8978,7 @@ export async function runEvalSuite(
     // The API returns a 400 with a specific detail for a non-'reference' target or a
     // suite missing a connection — surface it rather than a generic message.
     let detail = "Failed to run suite";
-    try { detail = (await res.json()).detail || detail; } catch { /* keep default */ }
+    try { detail = fastApiError(await res.json(), detail); } catch { /* keep default */ }
     throw new Error(detail);
   }
   return res.json();
@@ -9057,7 +9057,7 @@ export async function compareEvalExperiment(a: string, b: string): Promise<Exper
   const res = await fetch(`${getApiBase()}/evals/experiments/compare?${qs.toString()}`);
   if (!res.ok) {
     let detail = "Failed to compare runs";
-    try { detail = (await res.json()).detail || detail; } catch { /* keep default */ }
+    try { detail = fastApiError(await res.json(), detail); } catch { /* keep default */ }
     throw new Error(detail);
   }
   return res.json();
@@ -9530,7 +9530,7 @@ export async function upsertAgentAlertRule(rule: Partial<AgentAlertRule>): Promi
     body: JSON.stringify(rule),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.detail || `save failed (${res.status})`);
+  if (!res.ok) throw new Error(fastApiError(body, `save failed (${res.status})`));
   return body;
 }
 
@@ -9550,7 +9550,7 @@ export async function testAgentAlertRule(ruleId: string): Promise<{
   const res = await fetch(`${getApiBase()}/obs/agent-alerts/rules/${ruleId}/test`,
     { method: "POST" });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.detail || `test failed (${res.status})`);
+  if (!res.ok) throw new Error(fastApiError(body, `test failed (${res.status})`));
   return body;
 }
 
@@ -9558,7 +9558,7 @@ export async function acknowledgeAgentAlert(eventId: string): Promise<AgentAlert
   const res = await fetch(`${getApiBase()}/obs/agent-alerts/events/${eventId}/ack`,
     { method: "POST" });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.detail || `acknowledge failed (${res.status})`);
+  if (!res.ok) throw new Error(fastApiError(body, `acknowledge failed (${res.status})`));
   return body;
 }
 
@@ -9757,7 +9757,7 @@ export async function recordTraceFeedback(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Failed to record feedback");
+    throw new Error(fastApiError(err, "Failed to record feedback"));
   }
   return res.json();
 }
