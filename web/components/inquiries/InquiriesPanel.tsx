@@ -217,25 +217,25 @@ function InquiryBody({ q, connections, onMoved, onReload, onOpenRun, onOpenDecis
             <div style={{ display: "flex", gap: 6 }}>
               <Input aria-label="Hand to" value={handTo} onChange={e => setHandTo(e.target.value)} placeholder="a person" style={{ flex: 1, minWidth: 0 }} />
               <Button size="xs" variant="outline" disabled={busy || !handTo.trim()}
-                onClick={() => void act(() => handInquiry(q.id, handTo.trim(), actor.by), () => { setHandTo(""); setSaid("Handed over. Nothing was sent: the name is on the record."); })}>
+                onClick={() => void act(() => handInquiry(q.id, handTo.trim()), () => { setHandTo(""); setSaid("Handed over. Nothing was sent: the name is on the record."); })}>
                 Hand over
               </Button>
             </div>
             {owner && (
               <Button size="xs" variant="link" style={{ padding: 0, justifySelf: "start" }} disabled={busy}
-                onClick={() => void act(() => handInquiry(q.id, "", actor.by), () => setSaid("The owner's name was taken off."))}>
+                onClick={() => void act(() => handInquiry(q.id, ""), () => setSaid("The owner's name was taken off."))}>
                 Take {whoLabel(owner)} off
               </Button>
             )}
             <div style={{ display: "flex", gap: 6 }}>
               <Input type="date" aria-label="Next check date" min={today} value={checkOn} onChange={e => setCheckOn(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
               <Button size="xs" variant="outline" disabled={busy || !checkOn}
-                onClick={() => void act(() => setInquiryNextCheck(q.id, checkOn, waitsFor.trim(), actor.by), () => { setCheckOn(""); setWaitsFor(""); setSaid("It waits until that day, then wakes on its own."); })}>
+                onClick={() => void act(() => setInquiryNextCheck(q.id, checkOn, waitsFor.trim()), () => { setCheckOn(""); setWaitsFor(""); setSaid("It waits until that day, then wakes on its own."); })}>
                 Set
               </Button>
               {q.next_check && (
                 <Button size="xs" variant="ghost" disabled={busy}
-                  onClick={() => void act(() => setInquiryNextCheck(q.id, "", "", actor.by), () => setSaid("The check date was cleared, so it is open again."))}>
+                  onClick={() => void act(() => setInquiryNextCheck(q.id, "", ""), () => setSaid("The check date was cleared, so it is open again."))}>
                   Clear
                 </Button>
               )}
@@ -288,8 +288,8 @@ function InquiryBody({ q, connections, onMoved, onReload, onOpenRun, onOpenDecis
             <span />
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <ActorField actor={actor} id="inq-hyp-actor" />
-              <Button size="xs" disabled={busy || !hypothesis.trim() || (!actor.signedIn && !actor.by)}
-                onClick={() => void act(() => addInquiryHypothesis(q.id, hypothesis.trim(), actor.by), d => {
+              <Button size="xs" disabled={busy || !hypothesis.trim()}
+                onClick={() => void act(() => addInquiryHypothesis(q.id, hypothesis.trim()), d => {
                   const like = (d as InquiryDetail & { resembles_refuted?: { refuted_on?: string; evidence?: string } | null }).resembles_refuted;
                   setSaid(like
                     ? `Added. The Record already holds one like it as refuted${like.refuted_on ? ` on ${like.refuted_on}` : ""}${like.evidence ? `: ${like.evidence}` : ""}. Yours is kept beside it.`

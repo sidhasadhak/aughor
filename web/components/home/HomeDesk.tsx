@@ -70,8 +70,7 @@ export function HomeDesk({ connectionId, analyses, onOpenAnalysis, onDraft }: {
     if (!connectionId) { setFindings([]); return; }
     domainFindings(connectionId).then(setFindings).catch(() => setFindings([]));
   }, [connectionId]);
-  const actorBy = actor.by;
-  useEffect(() => { readYou(actorBy).then(setYou).catch(() => setYou(null)); }, [actorBy, said.length]);
+  useEffect(() => { readYou().then(setYou).catch(() => setYou(null)); }, [said.length]);
 
   // A question answered during this visit stays on screen with its confirmation; it leaves on the next.
   const [answeredNow, setAnsweredNow] = useState<ReadonlySet<string>>(new Set());
@@ -103,7 +102,7 @@ export function HomeDesk({ connectionId, analyses, onOpenAnalysis, onDraft }: {
         <QuestionCard key={question?.about.id ?? "none"} question={question} connectionId={connectionId}
           actor={actor} onBooked={id => { setAnsweredNow(prev => new Set([...prev, id])); reloadRecord(); }} />
         <LookCard findings={findings} acted={new Set([...answered, ...decided])} connectionId={connectionId}
-          actorBy={actor.by} onDecided={reloadRecord} />
+          onDecided={reloadRecord} />
       </div>
 
       <section aria-label="Your standing questions">
@@ -209,9 +208,8 @@ function QuestionCard({ question, connectionId, actor, onBooked }: {
   }
   const answer = async (text: string) => {
     setError("");
-    if (!actor.signedIn && !actor.by) { setError("Give your name first — nobody is signed in on this install."); return; }
     try {
-      await bookSaid({ connection_id: connectionId, text, about: question.about.id, asked: question.text, by: actor.by });
+      await bookSaid({ connection_id: connectionId, text, about: question.about.id, asked: question.text });
       setKept(text);
       onBooked(question.about.id);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -223,7 +221,7 @@ function QuestionCard({ question, connectionId, actor, onBooked }: {
       <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
         {ANSWERS.map(a => <Button key={a} size="sm" variant="outline" onClick={() => answer(a)}>{a}</Button>)}
       </div>
-      {!actor.signedIn && <div style={{ marginTop: 10 }}><ActorField actor={actor} id="home-actor" /></div>}
+      <div style={{ marginTop: 10 }}><ActorField actor={actor} id="home-actor" /></div>
       <div style={{ ...note, color: error ? "var(--red4)" : "var(--t3)" }}>
         {error || (kept
           ? `Kept as said by you on ${shortDate(new Date().toISOString())}: ${kept}.`
@@ -233,11 +231,10 @@ function QuestionCard({ question, connectionId, actor, onBooked }: {
   );
 }
 
-function LookCard({ findings, acted, connectionId, actorBy, onDecided }: {
+function LookCard({ findings, acted, connectionId, onDecided }: {
   findings: Finding[] | null;
   acted: ReadonlySet<string>;
   connectionId: string;
-  actorBy?: string;
   onDecided: () => void;
 }) {
   const [skip, setSkip] = useState<Set<string>>(new Set());
@@ -259,7 +256,7 @@ function LookCard({ findings, acted, connectionId, actorBy, onDecided }: {
   const decide = async () => {
     try {
       const d = await declareDecision({ question: finding.text, chosen: text.trim(), connection_id: connectionId,
-        decided_by: actorBy, note: `Decided from Home on finding ${finding.id}` });
+        note: `Decided from Home on finding ${finding.id}` });
       onDecided();
       next(`Booked as a decision; its review is set for ${shortDate(d.review_on)}.`);
     } catch (e) { setSaidLine(e instanceof Error ? e.message : String(e)); }

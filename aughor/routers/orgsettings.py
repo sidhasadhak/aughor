@@ -223,9 +223,10 @@ def put_agent_policy(body: _AgentPolicyBody, request: Request):
     _refuse_an_agent(request)
     from aughor.org.context import current_org_id, current_user_id
     from aughor.orgsettings.agent_policy import save_agent_policy
+    from aughor.security.authz import caller
     try:
         save_agent_policy(current_org_id(), level=body.level, connections=body.connections, tools=body.tools,
-                          set_by=current_user_id() or "api-key")
+                          set_by=current_user_id() or caller())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return _agent_policy_view()

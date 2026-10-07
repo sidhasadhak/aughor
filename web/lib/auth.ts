@@ -82,11 +82,9 @@ export function installAuthFetch(apiBase: string): void {
 }
 
 
-/** SP-14 — the name an accept or reject is RECORDED under. The signed-in person's
- *  email when identity is present; otherwise the calling surface's own name, which
- *  is every pre-identity deployment's behavior unchanged. The measured break this
- *  closes: Accept recorded "operator" / "control-room" — the page's name, not a
- *  person's. */
+/** SP-14 — the name an accept or reject SENDS. The server no longer reads it: an accept
+ *  is recorded under the person the request acts for (`authz.caller`), never a name a
+ *  page sends. Kept so older servers still get the signed-in email or the surface. */
 export function approverName(surface: string): string {
   try {
     return claimsOf(getIdToken())?.email || surface;

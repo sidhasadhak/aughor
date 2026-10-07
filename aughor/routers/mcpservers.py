@@ -37,6 +37,7 @@ from aughor.mcpservers.models import (
     CALLABLE, GRANT_ACTIVE, McpServer, McpToolGrant, grant_verdict,
 )
 from aughor.mcpservers.session import McpUnreachable
+from aughor.security.authz import caller
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +274,7 @@ class GrantRequest(BaseModel):
     roster server-side, because a client that could state which declaration it was ratifying
     could ratify one the server never made."""
 
-    granted_by: str = ""
+    granted_by: str = ""    # ignored: who ratifies is the person signed in (`authz.caller`)
     note: str = ""
 
 
@@ -313,7 +314,7 @@ def grant_tool(server_id: str, tool_name: str, body: GrantRequest) -> dict:
         server_id=server_id, tool_name=tool_name,
         # Pinned from the roster, never from the request — see `GrantRequest`.
         read_only_hint=tool.read_only_hint, destructive_hint=tool.destructive_hint,
-        granted_by=body.granted_by, note=body.note))
+        granted_by=caller(), note=body.note))
     return {"granted": grant.model_dump(), "server": _view(_server_or_404(server_id))}
 
 

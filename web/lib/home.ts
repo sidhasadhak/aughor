@@ -216,7 +216,8 @@ export async function recheckFinding(connectionId: string, id: string): Promise<
     { method: "POST" }));
 }
 
-export async function bookSaid(body: { connection_id: string; text: string; about: string; asked: string; by?: string }): Promise<Claim> {
+/** Booked as said by the person signed in — the server's record of who, never a name sent here. */
+export async function bookSaid(body: { connection_id: string; text: string; about: string; asked: string }): Promise<Claim> {
   return json(await fetch(`${getApiBase()}/record/claims/said`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
 }
@@ -229,6 +230,7 @@ export interface YourRecord {
   note?: string;
 }
 
-export async function readYou(by?: string): Promise<YourRecord> {
-  return json(await fetch(`${getApiBase()}/record/you${by ? `?by=${encodeURIComponent(by)}` : ""}`));
+/** The reader's own record — whoever the server says is reading, not a name the page sends. */
+export async function readYou(): Promise<YourRecord> {
+  return json(await fetch(`${getApiBase()}/record/you`));
 }

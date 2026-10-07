@@ -140,15 +140,16 @@ def list_usage_caps(observe: bool = True):
 @router.put("/governance/caps")
 def put_usage_cap(body: CapIn):
     """Declare (or replace) one cap. The author is the identified caller — a limit
-    nobody set is not a policy, so an unidentified localhost operator is recorded as
-    ``operator`` rather than blank."""
+    nobody set is not a policy, so without a sign-in it is the person the request acts
+    for (`authz.caller`), never blank and never the word ``operator``."""
     from aughor.govern.cap_store import set_cap
     from aughor.org.context import current_user_id
+    from aughor.security.authz import caller
 
     try:
         cap = set_cap(body.scope, body.subject, body.metric, body.limit,
                       window_hours=body.window_hours, action=body.action,
-                      set_by=current_user_id() or "operator")
+                      set_by=current_user_id() or caller())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return cap.to_dict()
@@ -161,9 +162,10 @@ def delete_usage_cap(scope: str, metric: str, subject: str = "*",
     still reads as present would keep refusing work after the operator lifted it)."""
     from aughor.govern.cap_store import clear_cap
     from aughor.org.context import current_user_id
+    from aughor.security.authz import caller
 
     removed = clear_cap(scope, subject, metric, window_hours=window_hours,
-                        cleared_by=current_user_id() or "operator")
+                        cleared_by=current_user_id() or caller())
     if not removed:
         raise HTTPException(status_code=404, detail="no cap matches those dimensions")
     return {"removed": True, "scope": scope, "subject": subject, "metric": metric,

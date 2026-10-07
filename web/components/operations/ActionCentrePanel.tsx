@@ -276,7 +276,7 @@ function ActionRecord({ actionId, connectionId, connections, onBack }: {
                       onUndo={() => void act(() => undoExecution(actionId, String(x.id), connectionId))} />)}
               </Section>
 
-              {!actor.signedIn && (
+              {actor.name && (
                 <div style={{ marginBottom: 12 }}><ActorField actor={actor} id="ac-actor" /></div>
               )}
               <Section label="The ceiling a person set">
@@ -290,11 +290,11 @@ function ActionRecord({ actionId, connectionId, connections, onBack }: {
                     options={[0, 1, 2, 3, 4].map(l => ({ value: String(l), label: `L${l}` }))} />
                   <Input value={capWhy} onChange={e => setCapWhy(e.target.value)} placeholder="Why (optional)" aria-label="Why it is capped" style={{ flex: "1 1 220px", maxWidth: 360 }} />
                   <Button size="xs" variant="outline" disabled={busy || capAt === null}
-                    onClick={() => void act(async () => { await setActionCeiling(actionId, connectionId, capAt, capWhy.trim(), actor.by); setCapAt(null); setCapWhy(""); })}>
+                    onClick={() => void act(async () => { await setActionCeiling(actionId, connectionId, capAt, capWhy.trim()); setCapAt(null); setCapWhy(""); })}>
                     Set the ceiling
                   </Button>
                   {rec.person_ceiling && (
-                    <Button size="xs" variant="ghost" disabled={busy} onClick={() => void act(() => setActionCeiling(actionId, connectionId, null, "", actor.by))}>Lift it</Button>
+                    <Button size="xs" variant="ghost" disabled={busy} onClick={() => void act(() => setActionCeiling(actionId, connectionId, null, ""))}>Lift it</Button>
                   )}
                 </div>
                 <Absent>A ceiling only lowers. Setting it above L{rec.earned}, what the record earned, grants nothing.</Absent>
@@ -314,7 +314,7 @@ function ActionRecord({ actionId, connectionId, connections, onBack }: {
                     <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>uses</span>
                     <Button size="xs" variant="outline" disabled={busy || !target.trim()}
                       onClick={() => void act(async () => {
-                        await signStandingGrant(actionId, connectionId, { target_value: target.trim(), expires_days: Number(expires) || 0, max_uses: Number(maxUses) || 0, by: actor.by });
+                        await signStandingGrant(actionId, connectionId, { target_value: target.trim(), expires_days: Number(expires) || 0, max_uses: Number(maxUses) || 0 });
                         setTarget("");
                       })}>
                       Sign the grant
@@ -331,7 +331,7 @@ function ActionRecord({ actionId, connectionId, connections, onBack }: {
                     options={[{ value: "real", label: "For real" }, { value: "drill", label: "As a drill" }]} />
                   <Input value={why} onChange={e => setWhy(e.target.value)} placeholder="Why — it is written on the demotion" aria-label="Why it is demoted" style={{ flex: "1 1 320px", maxWidth: 480 }} />
                   <Button size="xs" variant="outline" disabled={busy || !why.trim()}
-                    onClick={() => void act(async () => { await demoteAction(actionId, connectionId, why.trim(), drill, actor.by); setWhy(""); })}>
+                    onClick={() => void act(async () => { await demoteAction(actionId, connectionId, why.trim(), drill); setWhy(""); })}>
                     {drill ? "Run the drill" : "Demote it"}
                   </Button>
                 </div>

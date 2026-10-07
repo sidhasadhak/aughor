@@ -6863,12 +6863,7 @@ def _record_acceptance(inv_id: str, outcome, req: "OutcomeRequest", principal):
     report = inv.get("report") if isinstance(inv.get("report"), dict) else {}
     spec = report.get("spec") if isinstance(report, dict) else None
     connection_id = str(inv.get("connection_id") or "")
-    accepted_by = ""
-    for attr in ("user_id", "email", "id", "sub", "name"):
-        v = getattr(principal, attr, "") if principal is not None else ""
-        if v:
-            accepted_by = str(v)
-            break
+    accepted_by = _who_decided(principal)
     try:
         from aughor.db.measure import run_sql_for
         run_sql = (run_sql_for(connection_id, internal=True) if (spec and connection_id)
@@ -6917,11 +6912,14 @@ def _book_recommendation_decision(outcome, *, chosen: str, decided_by: str, conn
 
 
 def _who_decided(principal) -> str:
+    """Who accepted or declined: the signed-in person, else the one the request acts for — never a
+    name a client sends. Bare, as the playbook's outcome records have always kept it."""
     for attr in ("user_id", "email", "id", "sub", "name"):
         v = getattr(principal, attr, "") if principal is not None else ""
         if v:
             return str(v)
-    return ""
+    from aughor.security.authz import caller
+    return caller()
 
 
 @router.post("/investigations/{inv_id}/recommendations/{rec_index}/outcome", status_code=201)

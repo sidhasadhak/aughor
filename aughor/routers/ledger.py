@@ -43,9 +43,11 @@ def _visible(conn_id: str) -> bool:
     return visible is None or not conn_id or conn_id in visible
 
 
-def _author(principal, fallback: str = "") -> tuple[str, str]:
+def _author(principal) -> tuple[str, str]:
     """``(author, author_kind)``: a service principal is an agent under its own name; a person is a
-    person; nobody (identity off) is the name the body gave, as an agent."""
+    person; with identity off, the person the request acts for (`authz.acting_person`). The body's
+    ``author`` used to stand in there, as an agent — so any client could post under any name."""
+    from aughor.security.authz import acting_person
     from aughor.security.service_principals import is_service
     if principal is not None and is_service(principal):
         return str(principal.user_id), "agent"
@@ -54,8 +56,8 @@ def _author(principal, fallback: str = "") -> tuple[str, str]:
         if v:
             v = str(v)
             return (v if ":" in v else f"user:{v}"), "person"
-    name = (fallback or "").strip()
-    return (name if name else "unidentified"), "agent"
+    who = acting_person(None)
+    return (who, "person") if who else ("unidentified", "agent")
 
 
 # ── the contract and the catalogue ─────────────────────────────────────────────────────────
@@ -131,7 +133,7 @@ class ClaimIn(BaseModel):
     definition_version: str = ""
     state: str = ""
     natural_key: str = ""          # to restate the same claim later; the author's own
-    author: str = ""               # read only when no principal is bound (identity off)
+    author: str = ""               # ignored: the author is the principal, else who the request acts for
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -151,7 +153,7 @@ def post_claim(req: ClaimIn, principal=Depends(get_principal)) -> dict:
     natural key is the author's own and cannot restate another author's claim."""
     from aughor.kernel.contract import API_LAW
     from aughor.security.service_principals import allowed_connection, is_service
-    author, author_kind = _author(principal, req.author)
+    author, author_kind = _author(principal)
     if not req.warrants:
         raise HTTPException(status_code=422, detail={"code": "CLAIM_REFUSED", "why": API_LAW})
     conn = req.about.key if req.about.kind == "connection" else ""

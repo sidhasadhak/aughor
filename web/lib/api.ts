@@ -7993,6 +7993,9 @@ export async function setSystemFlag(name: string, value: boolean): Promise<Syste
 
 export interface MyAccess {
   user_id: string | null;
+  /** Who what you do is recorded under: the signed-in person, else this install's own login. */
+  actor: string;
+  signed_in: boolean;
   org_id: string;
   roles: string[];
   permissions: string[];

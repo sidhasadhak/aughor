@@ -15,7 +15,7 @@ vi.mock("@/lib/home", async (importOriginal) => {
       { id: "f1", text: "Email drives the most unique user activity.", domain: "Key Questions", generated_at: "2026-09-27" },
     ]),
     bookSaid: vi.fn(async (body: unknown) => { booked.push(body); return {}; }),
-    readYou: vi.fn(async () => ({ principal: "person:Amit", n: 0, by_kind: {}, predictions: { scored: 0, inside: 0, coverage_observed: null } })),
+    readYou: vi.fn(async () => ({ principal: "user:amit", n: 0, by_kind: {}, predictions: { scored: 0, inside: 0, coverage_observed: null } })),
     dismissFinding: vi.fn(async () => undefined),
     recheckFinding: vi.fn(async () => ({ status: "confirmed" })),
   };
@@ -29,9 +29,11 @@ vi.mock("@/lib/record", async (importOriginal) => ({
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   getAnalysisSummary: vi.fn(async () => ({ headline: "", summary: "More orders, smaller ones." })),
+  getMyAccess: vi.fn(async () => ({ user_id: null, actor: "amit", signed_in: false, org_id: "default", roles: [], permissions: [] })),
 }));
 
 import { SCHEDULED_HEADER, type Analysis } from "@/lib/home";
+import { forgetMe } from "@/lib/useMe";
 import { HomeDesk } from "./HomeDesk";
 
 const ANALYSES: Analysis[] = [
@@ -45,7 +47,7 @@ const ANALYSES: Analysis[] = [
 describe("HomeDesk", () => {
   beforeEach(() => {
     booked.length = 0;
-    window.localStorage.setItem("aughor_record_actor", "Amit");
+    forgetMe();
   });
 
   it("leads with the move, asks the question, and offers the finding — each from its record", async () => {
@@ -58,11 +60,15 @@ describe("HomeDesk", () => {
     expect(screen.getByText(/Nothing on the record lands in the next seven days/)).toBeInTheDocument();
   });
 
-  it("books a person's answer about the analysis that asked it", async () => {
+  it("books a person's answer about the analysis that asked it, without asking their name", async () => {
     render(<HomeDesk connectionId="c1" analyses={ANALYSES} onOpenAnalysis={() => {}} onDraft={() => {}} />);
+    // who the answer is recorded as is the server's word, shown — there is no name to type
+    expect(await screen.findByText("amit")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("your name")).not.toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "A campaign" })); });
     await waitFor(() => expect(booked).toHaveLength(1));
-    expect(booked[0]).toMatchObject({ connection_id: "c1", text: "A campaign", about: "aug", by: "Amit" });
+    expect(booked[0]).toMatchObject({ connection_id: "c1", text: "A campaign", about: "aug" });
+    expect(booked[0]).not.toHaveProperty("by");
     expect(screen.getByTestId("home-question")).toHaveTextContent("Kept as said by you");
   });
 

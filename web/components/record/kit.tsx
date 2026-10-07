@@ -16,9 +16,9 @@ import { TableActions, tableFromElement } from "@/components/TableActions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loading, ReadFailed } from "@/components/ui/states";
-import { claimsOf, getIdToken } from "@/lib/auth";
 import { pct } from "@/lib/format";
 import { markClaimWrong, type Claim, type MarkedWrong } from "@/lib/record";
+import { useMe } from "@/lib/useMe";
 
 // ── a read ───────────────────────────────────────────────────────────────────────────────
 
@@ -63,45 +63,31 @@ export function Gate<T>({ load, what, children }: {
 
 // ── who is writing ───────────────────────────────────────────────────────────────────────
 
-const ACTOR_KEY = "aughor_record_actor";
-
 export interface Actor {
-  /** A sign-in names the reader; the server records it and nothing here is sent. */
+  /** A sign-in names the reader; without one, the install's own login does. */
   signedIn: boolean;
+  /** Who a write is recorded under, as the server says — "" until it has answered. */
   name: string;
-  setName: (v: string) => void;
-  /** What a write carries as `by`: the typed name without a sign-in, nothing with one. */
-  by: string | undefined;
 }
 
 /**
- * Who a page writes as. With a sign-in the server records the person and the form asks nothing.
- * Without one, a form that records a person's act asks for a name — once, remembered on this
- * browser — because "nobody identified marked this wrong" is not a record anyone can use.
+ * Who a page writes as. Nothing here is sent: the server records every write under the person the
+ * request acts for, so a form never asks for a name. It used to ask, once per browser, and the
+ * name typed was what the record kept — anyone could act as anyone.
  */
 export function useActor(): Actor {
-  const [signedIn] = useState(() => {
-    try { return !!claimsOf(getIdToken())?.email; } catch { return false; }
-  });
-  const [name, setNameState] = useState(() => {
-    try { return window.localStorage.getItem(ACTOR_KEY) ?? ""; } catch { return ""; }
-  });
-  const setName = useCallback((v: string) => {
-    setNameState(v);
-    try { window.localStorage.setItem(ACTOR_KEY, v); } catch { /* a private window keeps it for the page */ }
-  }, []);
-  return { signedIn, name, setName, by: signedIn ? undefined : name.trim() || undefined };
+  const me = useMe();
+  return { signedIn: !!me?.signed_in, name: me?.actor ?? "" };
 }
 
-/** The name a write is recorded under, asked only when no sign-in gives one. */
+/** A read-only line: who a write is recorded as. Shown so the person can see it; never asked. */
 export function ActorField({ actor, id = "record-actor" }: { actor: Actor; id?: string }) {
-  if (actor.signedIn) return null;
+  if (!actor.name) return null;
   return (
-    <label htmlFor={id} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-      title="Nobody is signed in on this install, so the record keeps the name you give here.">
-      <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Recorded as</span>
-      <Input id={id} value={actor.name} onChange={e => actor.setName(e.target.value)} placeholder="your name" style={{ width: 150 }} />
-    </label>
+    <span id={id} className="aug-fs-sm" style={{ color: "var(--t3)" }}
+      title={actor.signedIn ? "Recorded under your sign-in." : "Nobody signs in on this install, so the record keeps the login it runs under."}>
+      Recorded as <span style={{ color: "var(--t2)" }}>{actor.name}</span>
+    </span>
   );
 }
 
@@ -338,12 +324,12 @@ export function MarkWrong({ claim, actor, onMarked }: {
   if (claim.kind === "prediction" || (claim.kind === "hypothesis" && claim.state === "refuted")) return null;
   if (!open) return <Button size="xs" variant="ghost" onClick={() => setOpen(true)}>Mark wrong</Button>;
   const hypothesis = claim.kind === "hypothesis";
-  const ready = (hypothesis ? why.trim() : corrected.trim()) && (actor.signedIn || actor.by);
+  const ready = hypothesis ? why.trim() : corrected.trim();
   const submit = async () => {
     setBusy(true);
     setError("");
     try {
-      onMarked(await markClaimWrong(claim.id, { corrected: corrected.trim(), why: why.trim(), by: actor.by }));
+      onMarked(await markClaimWrong(claim.id, { corrected: corrected.trim(), why: why.trim() }));
       setOpen(false);
       setCorrected("");
       setWhy("");

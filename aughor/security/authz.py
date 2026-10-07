@@ -100,19 +100,57 @@ def get_principal(request: Request) -> Optional[Principal]:
     return getattr(request.state, "principal", None)
 
 
+def local_operator() -> str:
+    """The person an install without sign-in acts for: whoever is logged in to the computer it runs
+    on (``AUGHOR_LOCAL_USER`` names someone else). One person's install has one operator, and their
+    login is the credential they already presented."""
+    named = (os.environ.get("AUGHOR_LOCAL_USER") or "").strip()
+    if named:
+        return named
+    try:
+        import getpass
+        return getpass.getuser() or "local operator"
+    except Exception as exc:  # noqa: BLE001 — no login name on this host
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the computer's login could not be read; the install's operator is unnamed",
+                 counter="authz.local_operator")
+        return "local operator"
+
+
+def resolve_actor(request: Request) -> str:
+    """Who this request acts for — the person every write it makes is recorded under.
+
+    The signed-in person (a verified sign-in, a service principal, the self-host header) when one
+    is presented, whether or not identity is ENFORCED: enforcement decides who may call, while the
+    record of who did something should name them either way. Otherwise this install's own login.
+    Never anything from the request body — a name typed into a form is not who is signed in."""
+    principal = getattr(getattr(request, "state", None), "principal", None) or resolve_principal(request)
+    user = str(getattr(principal, "user_id", "") or "").strip()
+    if user and user != "anonymous":
+        return user
+    return local_operator()
+
+
+def caller() -> str:
+    """The person a route's write is recorded under: the one this request acts for, else this
+    install's operator (a route mounted without the API's middleware, as a test mounts one)."""
+    from aughor.org.context import current_actor
+    return current_actor() or local_operator()
+
+
 def acting_person(principal, named: str = "") -> str:
-    """Who a write is recorded under: the identified caller as ``user:<id>`` — or, when no sign-in
-    is bound to the request, the name the form carried, kept as ``person:<name>`` so it never
-    reads as an authenticated ``user:``. "" when neither: a door that needs a named person then
-    refuses and says so, and one that does not records "unidentified"."""
+    """Who a write is recorded under, as ``user:<id>``: the identified caller, else the person the
+    request acts for (`current_actor`, set on every request). ``named`` — a name a form or a client
+    sent — is NOT read: who did something is who is signed in, never a name somebody typed, and the
+    old fallback recorded ``person:<anything>`` (and passed ``user:ceo`` through as written).
+    "" only outside a request with no principal."""
     for attr in ("user_id", "email", "id", "sub", "name"):
         v = getattr(principal, attr, "") if principal is not None else ""
         if v:
             return f"user:{v}"
-    named = (named or "").strip()
-    if not named:
-        return ""
-    return named if ":" in named else f"person:{named}"
+    from aughor.org.context import current_actor
+    actor = current_actor()
+    return f"user:{actor}" if actor else ""
 
 
 # ── Ownership resolution: resource → connection → org ────────────────────────────

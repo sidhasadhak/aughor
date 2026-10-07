@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from aughor.db.registry import BUILTIN_ID
-from aughor.security.authz import connection_owner_guard
+from aughor.security.authz import caller, connection_owner_guard
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +30,12 @@ router = APIRouter(prefix="/kinetic-actions", tags=["kinetic"],
 
 class ExecuteRequest(BaseModel):
     params: dict = Field(default_factory=dict)
-    actor: str = ""
+    actor: str = ""                         # ignored: the person signed in is who acts (`authz.caller`)
 
 
 class ProposeRequest(BaseModel):
     context: str                            # a finding / question the proposal is grounded in
-    actor: str = "agent"
+    actor: str = "agent"                    # ignored: the agent proposes; no client names the proposer
 
 
 class AnnotateRequest(BaseModel):
@@ -48,7 +48,7 @@ class AnnotateRequest(BaseModel):
 
 
 class AcceptRequest(BaseModel):
-    actor: str = ""
+    actor: str = ""                         # ignored: the person signed in is who accepts
     mint_grant: bool = False                # also mint a target-bound standing grant on accept
     #: SP-9 — the approver's answers to a draft's OPEN choices, from the card's own
     #: fields: {"<action number>.<key>": value}. Only an open choice may be filled;
@@ -57,11 +57,11 @@ class AcceptRequest(BaseModel):
 
 
 class RejectRequest(BaseModel):
-    actor: str = ""
+    actor: str = ""                         # ignored: the person signed in is who rejects
 
 
 class SupersedeRequest(BaseModel):
-    actor: str = ""
+    actor: str = ""                         # ignored: the person signed in is who supersedes
     #: What replaced the draft — shown as the resolved row's message.
     note: str = ""
 
@@ -95,7 +95,7 @@ def execute_action(
 
     from aughor.actions.executor import execute_kinetic_action
     # scope = the connection id — the grain the approval allowlist is keyed on.
-    result = execute_kinetic_action(action, body.params, actor=body.actor, scope=connection_id,
+    result = execute_kinetic_action(action, body.params, actor=caller(), scope=connection_id,
                                     schema_name=schema_name or "")
     if result.ok:
         # granted_by (A4) cites the standing grant that auto-allowed an unattended run ('' otherwise),
@@ -140,7 +140,7 @@ def propose_actions_route(
         staged = stage_proposal(StagedProposal(
             connection_id=connection_id, schema_name=schema_name or "",
             action_id=p.action_id, params=p.params, reasoning=p.reasoning,
-            proposer=body.actor or "agent", source="agent",
+            proposer="agent", source="agent",
             run_id=run_id, call_id=str(i)))
         inbox_ids[i] = staged.id
 
@@ -236,7 +236,7 @@ def accept_inbox(proposal_id: str, body: AcceptRequest):
     executor bypasses the approval gate (never the criteria). A criterion failure returns 422 with
     the authored message; a re-accept of an already-resolved proposal returns 409."""
     from aughor.actions.inbox import accept_proposal
-    result, grant_id = accept_proposal(proposal_id, actor=body.actor, mint_grant=body.mint_grant,
+    result, grant_id = accept_proposal(proposal_id, actor=caller(), mint_grant=body.mint_grant,
                                        fills=body.fills or None)
     link_id = _finish_accepted_send(proposal_id, result)
     _resume_parked_run(proposal_id)
@@ -260,7 +260,7 @@ def supersede_inbox(proposal_id: str, body: SupersedeRequest):
     like separate work. No side effect, first-responder-wins; a re-supersede is a
     no-op, and an already-accepted draft stays what it is."""
     from aughor.actions.inbox import supersede_proposal
-    return {"superseded": supersede_proposal(proposal_id, actor=body.actor,
+    return {"superseded": supersede_proposal(proposal_id, actor=caller(),
                                              note=body.note)}
 
 
@@ -268,7 +268,7 @@ def supersede_inbox(proposal_id: str, body: SupersedeRequest):
 def reject_inbox(proposal_id: str, body: RejectRequest):
     """Reject a staged proposal — resolved with the actor, no side effect. A re-reject is a no-op."""
     from aughor.actions.inbox import reject_proposal
-    rejected = reject_proposal(proposal_id, actor=body.actor)
+    rejected = reject_proposal(proposal_id, actor=caller())
     if rejected:
         _resume_parked_run(proposal_id)
     return {"rejected": rejected}

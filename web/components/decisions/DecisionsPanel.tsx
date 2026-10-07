@@ -159,7 +159,7 @@ function DeclareForm({ connectionId, onBooked, onCancel }: {
       const options = [chosen, ...others.split("\n")].map(o => o.trim()).filter(Boolean);
       const d = await declareDecision({
         question: question.trim(), chosen: chosen.trim(), options, connection_id: connectionId, review_on: reviewOn,
-        decided_at: decidedOn ? `${decidedOn}T12:00:00Z` : undefined, decided_by: actor.by,
+        decided_at: decidedOn ? `${decidedOn}T12:00:00Z` : undefined,
         expectation: metric.trim()
           ? { metric: metric.trim(), low: lo, high: hi, mid: lo !== null && hi !== null ? (lo + hi) / 2 : null, unit: unit.trim(), settles_on: reviewOn }
           : null,
@@ -308,7 +308,7 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
             <Input aria-label="Why it still stands" value={standsWhy} onChange={e => setStandsWhy(e.target.value)}
               placeholder="Why the choice still holds" style={{ flex: "1 1 260px" }} />
             <ActorField actor={actor} id="dec-stands-actor" />
-            <Button size="xs" disabled={busy || !standsWhy.trim()} onClick={() => void write(() => decisionStands(d.id, standsWhy.trim(), actor.by))}>It still stands</Button>
+            <Button size="xs" disabled={busy || !standsWhy.trim()} onClick={() => void write(() => decisionStands(d.id, standsWhy.trim()))}>It still stands</Button>
             <Button size="xs" variant="ghost" onClick={() => onOpenClaim(d.reopened_by)}>Open the claim</Button>
           </div>
         </Callout>
@@ -320,7 +320,7 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
             <Input aria-label="An option that was on the table" value={option} onChange={e => setOption(e.target.value)}
               placeholder="An option that was on the table" style={{ flex: "1 1 280px" }} />
             <ActorField actor={actor} id="dec-opt-actor" />
-            <Button size="xs" disabled={busy || !option.trim()} onClick={() => void write(() => amendDecision(d.id, { option: option.trim(), by: actor.by }))}>Add it</Button>
+            <Button size="xs" disabled={busy || !option.trim()} onClick={() => void write(() => amendDecision(d.id, { option: option.trim() }))}>Add it</Button>
             <Button size="xs" variant="ghost" onClick={() => setAdding("")}>Cancel</Button>
             <span className="aug-fs-sm" style={{ color: "var(--t3)", flexBasis: "100%" }}>It is marked as added today. What was chosen does not change — choosing again is a new decision.</span>
           </div>
@@ -388,7 +388,7 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <ActorField actor={actor} id="dec-dis-actor" />
               <Button size="xs" disabled={busy || !dissentWho.trim() || !dissentWhy.trim()}
-                onClick={() => void write(() => amendDecision(d.id, { dissent: { who: dissentWho.trim(), why: dissentWhy.trim() }, by: actor.by }))}>Record it</Button>
+                onClick={() => void write(() => amendDecision(d.id, { dissent: { who: dissentWho.trim(), why: dissentWhy.trim() } }))}>Record it</Button>
               <Button size="xs" variant="ghost" onClick={() => setAdding("")}>Cancel</Button>
               <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Dissent is kept with the decision; it is marked as recorded today.</span>
             </div>
@@ -577,14 +577,14 @@ function ProjectForm({ decision, actor, onBooked, onCancel }: {
           if (num(v ?? "") === null) throw new Error(`"${part.trim()}" is not a name = number`);
           parsed[k] = Number(v);
         }
-        await bookScenario(decision.id, { method, metric: metric.trim(), formula: formula.trim(), inputs: parsed, unit: unit.trim(), by: actor.by });
+        await bookScenario(decision.id, { method, metric: metric.trim(), formula: formula.trim(), inputs: parsed, unit: unit.trim() });
       } else if (method === "declared") {
         await bookScenario(decision.id, {
-          method, metric: metric.trim(), unit: unit.trim(), by: actor.by,
+          method, metric: metric.trim(), unit: unit.trim(),
           assumption: { variable: variable.trim(), value: num(value), low: num(low), high: num(high), unit: unit.trim() },
         });
       } else {
-        await bookScenario(decision.id, { method, metric: metric.trim(), unit: unit.trim(), by: actor.by });
+        await bookScenario(decision.id, { method, metric: metric.trim(), unit: unit.trim() });
       }
       onBooked();
     } catch (e) {
@@ -651,7 +651,7 @@ function ProjectForm({ decision, actor, onBooked, onCancel }: {
       <span />
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         {method === "declared" && <ActorField actor={actor} id="sc-actor" />}
-        <Button size="xs" disabled={busy || !metric.trim() || (method === "declared" && !actor.signedIn && !actor.by)}
+        <Button size="xs" disabled={busy || !metric.trim()}
           onClick={() => void submit()}>Book the projection</Button>
         <Button size="xs" variant="ghost" onClick={onCancel}>Cancel</Button>
         <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{METHOD_HINT[method]}</span>
@@ -682,7 +682,6 @@ function OutcomeForm({ decisionId, actor, onBooked }: {
         measured_on: new Date().toISOString().slice(0, 10), actual: num(actual), baseline: num(baseline), verdict, why: why.trim(),
         // Left empty, the effect is the measured figure less its baseline when both are given.
         effect_value: num(effect) ?? (num(actual) !== null && num(baseline) !== null ? num(actual)! - num(baseline)! : null),
-        measured_by: actor.by,
       });
       onBooked(booked.decision?.id ?? null);
     } catch (e) {

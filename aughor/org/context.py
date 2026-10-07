@@ -76,6 +76,32 @@ def reset_user_id(token: "contextvars.Token[str]") -> None:
         tolerate(exc, "user context reset", counter="org")
 
 
+# ── The acting person (who a write is recorded under) ───────────────────────────
+# Set on EVERY request by the API's context middleware, identity enforced or not: the signed-in
+# person when there is one, else this install's own login. Kept apart from `_current_user`, which
+# the RBAC row policy reads and which must stay empty when identity is off. Empty outside a
+# request (a schedule, an automation run), where the caller names itself.
+_current_actor: contextvars.ContextVar[str] = contextvars.ContextVar("aughor_current_actor", default="")
+
+
+def current_actor() -> str:
+    """Who the running request acts for, or "" outside a request. Never read from a request body:
+    a person approving a metric or confirming its dates is the person signed in, not a name typed."""
+    return _current_actor.get() or ""
+
+
+def set_actor(actor: str) -> "contextvars.Token[str]":
+    return _current_actor.set(actor or "")
+
+
+def reset_actor(token: "contextvars.Token[str]") -> None:
+    try:
+        _current_actor.reset(token)
+    except Exception as exc:  # best-effort, like reset_org_id
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "actor context reset", counter="org")
+
+
 # ── Current session (correlates the turns of one conversation) ─────────────────
 # Unlike org/user (header-derived, pinned by the identity middleware), the session
 # id rides the request BODY (AskRequest.session_id), so it is pinned by the /ask

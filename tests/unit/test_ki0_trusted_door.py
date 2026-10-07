@@ -134,10 +134,13 @@ def _seed(sql=GOOD_SQL, question=QUESTION, **over):
     return client.post("/learning/trusted", json=body)
 
 
-def test_seed_approve_and_the_prompt_block(tq_store, demo_conn):
+def test_seed_approve_and_the_prompt_block(tq_store, demo_conn, monkeypatch):
     from aughor.semantic.trusted_queries import build_trusted_block, retrieve_trusted
 
-    r = _seed()
+    # Who seeds and who approves are the people the requests act for — here the install's login,
+    # set per act — never the `actor` a body carries.
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana@example.com")
+    r = _seed(actor="someone-typed")
     assert r.status_code == 201, r.text
     row = r.json()["trusted_query"]
     assert row["status"] == "proposed"
@@ -147,8 +150,9 @@ def test_seed_approve_and_the_prompt_block(tq_store, demo_conn):
     assert retrieve_trusted(QUESTION, CONN) == []
 
     # The SECOND recorded act: approval. This is what makes it prompt-authoritative.
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "lead@example.com")
     t = client.post(f"/learning/trusted/{row['id']}/transition",
-                    json={"action": "approve", "actor": "lead@example.com"})
+                    json={"action": "approve", "actor": "someone-typed"})
     assert t.status_code == 200, t.text
     approved = t.json()["trusted_query"]
     assert approved["status"] == "approved" and approved["version"] == 1
@@ -216,13 +220,16 @@ def test_identical_reseed_of_approved_row_is_a_noop(tq_store, demo_conn):
     assert again.json()["trusted_query"]["status"] == "approved"
 
 
-def test_unknown_connection_is_404_and_blank_actor_400(tq_store, demo_conn):
+def test_unknown_connection_is_404_and_no_actor_need_be_sent(tq_store, demo_conn, monkeypatch):
     r = client.post("/learning/trusted", json={
         "connection_id": "no-such", "question": "q here", "sql": "SELECT 1",
         "actor": "ana@example.com"})
     assert r.status_code == 404
+    # A blank actor used to be refused because the client had to name one; the server names it now.
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana-op")
     r2 = _seed(actor="   ")
-    assert r2.status_code == 400
+    assert r2.status_code == 201, r2.text
+    assert r2.json()["trusted_query"]["proposed_by"] == "ana-op"
 
 
 def test_delete_is_audited_and_404s_when_gone(tq_store, demo_conn):

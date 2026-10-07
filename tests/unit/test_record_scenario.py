@@ -148,11 +148,18 @@ def test_a_scenario_is_booked_for_a_decision_through_the_door():
     assert out["prediction"]["extra"]["method"] == "identity" and out["prediction"]["extra"]["for"] == did
     assert out["scenario"]["for_id"] == did and out["scenario"]["tier"] == "identity"
     assert S.scenarios_for(did)[0].predictions == [out["prediction"]["id"]]
-    declared = R.book_record_scenario(did, R.ScenarioRequest(
-        method="declared", metric="units", direction="down",
-        assumption=R.AssumptionIn(variable="elasticity", value=-1.8, by="user:ana", low=-2.5, high=-1.0, unit="%")),
-        principal=None)
+    # an assumption is the person who states it — the request's, never the `by` its body names
+    from aughor.org.context import reset_actor, set_actor
+    token = set_actor("ana")
+    try:
+        declared = R.book_record_scenario(did, R.ScenarioRequest(
+            method="declared", metric="units", direction="down",
+            assumption=R.AssumptionIn(variable="elasticity", value=-1.8, by="user:ceo", low=-2.5, high=-1.0, unit="%")),
+            principal=None)
+    finally:
+        reset_actor(token)
     assert declared["prediction"]["tier"] == "declared" and declared["scenario"]["assumptions"][0]["claim"]
+    assert declared["scenario"]["assumptions"][0]["by"] == "user:ana"
     from fastapi import HTTPException
     with pytest.raises(HTTPException) as exc:
         R.book_record_scenario(did, R.ScenarioRequest(method="learned", metric="x"), principal=None)
