@@ -32,7 +32,7 @@
  * says" want different next actions, and a granted row is marked as a WRITE rather than
  * simply going green.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -47,6 +47,23 @@ const inputStyle: React.CSSProperties = {
   width: "100%", padding: "7px 10px", borderRadius: "var(--r3)",
   border: "1px solid var(--b1)", background: "var(--bg-1)", color: "var(--t1)",
 };
+
+/** Servers a person connects with one click — signed in on the server's own page, so nothing
+ *  is typed (the user, 2026-10-07: "Why should user add name and URL by himself?"). Only
+ *  servers that let this deployment register itself for a sign-in belong here; measured that
+ *  day: Composio and Atlassian do, Slack's needs an app of your own and Google offers none —
+ *  those stay on their own cards above. Jira and Confluence are one Atlassian server, so one
+ *  sign-in connects both cards. */
+const ONE_CLICK: { id: string; name: string; server: string; url: string; blurb: string }[] = [
+  { id: "composio", name: "Composio", server: "Composio", url: "https://connect.composio.dev/mcp",
+    blurb: "500+ apps behind one sign-in: Gmail, Slack, GitHub, Notion and more, each connected inside Composio." },
+  { id: "jira", name: "Jira", server: "Atlassian", url: "https://mcp.atlassian.com/v1/mcp",
+    blurb: "Search and read issues and projects. One Atlassian sign-in connects Jira and Confluence." },
+  { id: "confluence", name: "Confluence", server: "Atlassian", url: "https://mcp.atlassian.com/v1/mcp",
+    blurb: "Search and read pages and spaces. One Atlassian sign-in connects Confluence and Jira." },
+];
+
+const sameUrl = (a: string, b: string) => a.trim().replace(/\/+$/, "") === b.trim().replace(/\/+$/, "");
 
 /** `args` is edited as one line and stored as a list. Split on whitespace, never handed to
  *  a shell — the model keeps `command` and `args` apart precisely so nothing ever splits
@@ -131,18 +148,20 @@ export function McpServersSection() {
     reset();
   });
 
-  const signIn = (s: McpServerRow) => {
+  /** Sign a person in to a server — the one `serverFor` names, which a one-click card first adds. */
+  const signIn = (busyKey: string, serverFor: () => Promise<string>) => {
     // The tab opens inside the click, before anything is awaited: a tab opened after an await is
     // a pop-up the browser may block. It is pointed at the sign-in page once the API has it.
     const tab = window.open("about:blank", "_blank");
-    void act(s.id, async () => {
+    void act(busyKey, async () => {
       try {
-        const { authorization_url } = await beginMcpSignIn(s.id);
+        const id = await serverFor();
+        const { authorization_url } = await beginMcpSignIn(id);
         if (tab && !tab.closed) {
           tab.opener = null;
           tab.location.href = authorization_url;
         } else {
-          setSignInLinks(prev => ({ ...prev, [s.id]: authorization_url }));
+          setSignInLinks(prev => ({ ...prev, [id]: authorization_url }));
         }
       } catch (e) {
         tab?.close();
@@ -150,6 +169,26 @@ export function McpServersSection() {
       }
     });
   };
+
+  const connect = (card: (typeof ONE_CLICK)[number]) => {
+    const here = servers.find(s => sameUrl(s.url, card.url));
+    signIn(card.id, async () => here?.id ?? (await createMcpServer({
+      name: card.server, transport: "http", url: card.url, auth_mode: "oauth_authorization_code",
+    })).id);
+  };
+
+  // A server just signed in to is asked what it offers without a second click — once per server
+  // here, so a discovery that fails is said and not retried in a loop.
+  const askedAfterSignIn = useRef(new Set<string>());
+  useEffect(() => {
+    for (const s of servers) {
+      if (s.oauth?.signed_in && !s.discovered_at && !askedAfterSignIn.current.has(s.id)) {
+        askedAfterSignIn.current.add(s.id);
+        void act(s.id, () => discoverMcpServer(s.id));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servers]);
 
   const checkHealth = (id: string) => act(id, async () => {
     const h = await mcpServerHealth(id);
@@ -173,6 +212,54 @@ export function McpServersSection() {
           {error}
         </div>
       )}
+
+      <div style={{ display: "grid", gap: 10, marginBottom: 10,
+        gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
+        {ONE_CLICK.map(card => {
+          const s = loaded ? servers.find(x => sameUrl(x.url, card.url)) : undefined;
+          const byKey = s && s.oauth?.mode !== "oauth_authorization_code";
+          const signedIn = !!s?.oauth?.signed_in;
+          return (
+            <div key={card.id} data-testid={`mcp-card-${card.id}`} style={{ border: "1px solid var(--b1)",
+              borderRadius: "var(--r3)", padding: 14, background: "var(--bg-1)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="aug-fs-ui" style={{ fontWeight: 600 }}>{card.name}</span>
+                {signedIn && (
+                  <span className="aug-fs-xs" style={{ color: "var(--grn4)" }}>● connected</span>
+                )}
+                {byKey && (
+                  <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>added with a key — below</span>
+                )}
+                <span style={{ marginLeft: "auto" }}>
+                  {loaded && !signedIn && !byKey && (
+                    <Button variant="default" size="xs" disabled={busy === card.id}
+                      onClick={() => connect(card)}>
+                      {busy === card.id ? "…" : s?.oauth?.sign_in_pending ? "Sign in again"
+                        : s ? "Sign in" : "Connect"}
+                    </Button>
+                  )}
+                </span>
+              </div>
+              <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>{card.blurb}</div>
+              {s && signedIn && (
+                <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
+                  {s.discovered_at
+                    ? `${s.tool_count} tools · ${s.callable_count} callable here`
+                    : "Asking it what it offers…"}
+                </div>
+              )}
+              {s && !signedIn && s.oauth?.sign_in_pending && (
+                <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
+                  Waiting for you to finish signing in on {card.server}&apos;s page
+                  {signInLinks[s.id]
+                    ? <> — <a href={signInLinks[s.id]} target="_blank" rel="noreferrer">open it</a></>
+                    : "…"}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       {loaded && servers.length === 0 && !adding && (
         <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 8,
@@ -247,7 +334,7 @@ export function McpServersSection() {
                 </Button>
               ) : (
                 <Button size="xs" className="aug-fs-xs" disabled={busy === s.id}
-                  onClick={() => signIn(s)}>
+                  onClick={() => signIn(s.id, async () => s.id)}>
                   {busy === s.id ? "…" : s.oauth.sign_in_pending ? "Sign in again" : "Sign in"}
                 </Button>
               ))}

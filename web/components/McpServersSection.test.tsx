@@ -14,7 +14,7 @@
  * * **Adding a server contacts nothing.** Registering and running something against a
  *   third party are different acts, and the surface must not fuse them.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { McpServersSection } from "@/components/McpServersSection";
@@ -152,16 +152,16 @@ describe("signing in", () => {
     expect(screen.queryByLabelText(/auth header value/i)).toBeNull();
     fireEvent.change(screen.getByLabelText(/server name/i), { target: { value: "Composio" } });
     fireEvent.change(screen.getByLabelText(/server url/i),
-      { target: { value: "https://connect.composio.dev/mcp" } });
+      { target: { value: "https://mcp.example.com/mcp" } });
     api.listMcpServers.mockResolvedValue({ servers: [server({
-      transport: "http", url: "https://connect.composio.dev/mcp", command: "", args: [],
+      transport: "http", url: "https://mcp.example.com/mcp", command: "", args: [],
       discovered_at: "", tool_count: 0, callable_count: 0, tools: [],
       auth_mode: "oauth_authorization_code",
       oauth: { mode: "oauth_authorization_code", signed_in: false, obtained_at: "" } })] });
     fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
 
     await waitFor(() => expect(api.createMcpServer).toHaveBeenCalledWith(expect.objectContaining(
-      { transport: "http", url: "https://connect.composio.dev/mcp", auth_mode: "oauth_authorization_code" })));
+      { transport: "http", url: "https://mcp.example.com/mcp", auth_mode: "oauth_authorization_code" })));
     expect(api.createMcpServer.mock.calls[0][0]).not.toHaveProperty("auth_header");
     expect(await screen.findByText(/not signed in/)).toBeInTheDocument();
 
@@ -170,6 +170,50 @@ describe("signing in", () => {
     expect(open).toHaveBeenCalledTimes(1);
     expect(api.beginMcpSignIn).toHaveBeenCalledWith("s1");
     open.mockRestore();
+  });
+
+  // 2026-10-07: "Why should user add name and URL by himself?" A card that knows its server
+  // adds it and opens the sign-in in the same click; Jira and Confluence are one Atlassian server.
+  it("connects Jira in one click, and one Atlassian sign-in connects Confluence too", async () => {
+    const ATLASSIAN = "https://mcp.atlassian.com/v1/mcp";
+    const atlassian = (over: Partial<McpServerRow> = {}) => server({
+      id: "atl", name: "Atlassian", transport: "http", url: ATLASSIAN, command: "", args: [],
+      discovered_at: "", tool_count: 0, callable_count: 0, tools: [],
+      auth_mode: "oauth_authorization_code",
+      oauth: { mode: "oauth_authorization_code", signed_in: false, obtained_at: "" }, ...over });
+    const tab = { location: { href: "" }, opener: {} as unknown, closed: false, close: vi.fn() };
+    const open = vi.spyOn(window, "open").mockReturnValue(tab as unknown as Window);
+    api.createMcpServer.mockResolvedValue(atlassian());
+    api.beginMcpSignIn.mockResolvedValue({ authorization_url: "https://mcp.atlassian.com/v1/authorize?state=a1", expires_in: 600 });
+    const view = render(<McpServersSection />);
+    fireEvent.click(within(await screen.findByTestId("mcp-card-jira")).getByRole("button", { name: /^connect$/i }));
+
+    await waitFor(() => expect(tab.location.href).toBe("https://mcp.atlassian.com/v1/authorize?state=a1"));
+    expect(api.createMcpServer).toHaveBeenCalledWith(
+      { name: "Atlassian", transport: "http", url: ATLASSIAN, auth_mode: "oauth_authorization_code" });
+    expect(api.beginMcpSignIn).toHaveBeenCalledWith("atl");
+    expect(open).toHaveBeenCalledTimes(1);
+    open.mockRestore();
+    view.unmount();
+
+    // Back from the sign-in: asked what it offers without a click, then both cards say connected.
+    api.listMcpServers.mockResolvedValue({ servers: [atlassian({
+      oauth: { mode: "oauth_authorization_code", signed_in: true, obtained_at: "2026-10-07T14:00:00Z" } })] });
+    api.discoverMcpServer.mockImplementation(async () => {
+      api.listMcpServers.mockResolvedValue({ servers: [atlassian({
+        discovered_at: "2026-10-07T14:00:05Z", tool_count: 3, callable_count: 2,
+        oauth: { mode: "oauth_authorization_code", signed_in: true, obtained_at: "2026-10-07T14:00:00Z" } })] });
+      return atlassian();
+    });
+    render(<McpServersSection />);
+    await waitFor(() => expect(api.discoverMcpServer).toHaveBeenCalledWith("atl"));
+    for (const card of ["mcp-card-jira", "mcp-card-confluence"]) {
+      const el = await screen.findByTestId(card);
+      await waitFor(() => expect(within(el).getByText(/3 tools · 2 callable here/)).toBeInTheDocument());
+      expect(within(el).getByText(/connected/)).toBeInTheDocument();
+      expect(within(el).queryByRole("button")).toBeNull();
+    }
+    expect(api.discoverMcpServer).toHaveBeenCalledTimes(1);
   });
 });
 
