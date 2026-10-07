@@ -134,13 +134,19 @@ def test_a_service_principal_posts_a_claim_with_its_warrant_and_the_laws_hold_at
     assert [v["version"] for v in R.read_claim_versions(view["id"])] == [2, 1]
     yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date().isoformat()
     assert R.read_claims(connection_id=conn, as_of=yesterday) == []
-    # a person posts as a person; nobody (identity off) posts as the name given, an agent
+    # a person posts as a person; with identity off, the person the request acts for — the name a
+    # body gives is not read, so a client cannot post as "tool:x" (or as anyone else)
     person = R.post_claim(R.ClaimIn(kind="said", statement=R.StatementIn(text="we said so"), about=R.AboutIn(kind="connection", key=conn),
                                     warrants=[R.WarrantIn(kind="attestation", ref="meeting-1")]), principal=PERSON)
     assert person["author"] == "user:ana" and person["author_kind"] == "person"
-    nobody = R.post_claim(R.ClaimIn(kind="said", statement=R.StatementIn(text="a tool said so"), about=R.AboutIn(kind="connection", key=conn),
-                                    warrants=_warrant(), author="tool:x"), principal=None)
-    assert nobody["author"] == "tool:x" and nobody["author_kind"] == "agent"
+    from aughor.org.context import reset_actor, set_actor
+    token = set_actor("operator-ana")
+    try:
+        nobody = R.post_claim(R.ClaimIn(kind="said", statement=R.StatementIn(text="a tool said so"), about=R.AboutIn(kind="connection", key=conn),
+                                        warrants=_warrant(), author="tool:x"), principal=None)
+    finally:
+        reset_actor(token)
+    assert nobody["author"] == "user:operator-ana" and nobody["author_kind"] == "person"
     record = R.read_principal_record(f"service:{name}")
     assert record["n"] == 1 and record["by_kind"] == {"observation": 1} and record["restated"] == 1
 

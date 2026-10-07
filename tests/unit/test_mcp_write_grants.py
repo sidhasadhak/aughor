@@ -534,13 +534,14 @@ def test_a_lost_WRITE_reaches_the_engine_as_uncertain_and_is_NEVER_RETRIED(monke
 
 # ── the HTTP surface ─────────────────────────────────────────────────────────────
 
-def test_the_route_pins_the_declaration_from_the_ROSTER_not_the_request(client):
+def test_the_route_pins_the_declaration_from_the_ROSTER_not_the_request(client, monkeypatch):
     """The load-bearing property of the grant API. `GrantRequest` carries no declaration
     fields at all, so a client cannot state which declaration it is approving — one that
     could would be able to approve a declaration the server never made, which turns the
     pinning that makes drift detectable into a value the caller chooses.
     """
     s = _discovered()
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "amit-op")   # who the request acts for, nobody signed in
     res = client.put(f"/mcp-servers/{s.id}/grants/{MUTATING}",
                      json={"granted_by": "amit", "note": "cleanup job",
                            # Ignored — and that is the claim.
@@ -552,7 +553,8 @@ def test_the_route_pins_the_declaration_from_the_ROSTER_not_the_request(client):
     assert stored.read_only_hint is False and stored.destructive_hint is True, (
         "the request's declaration was believed; a caller could grant a tool as read-only "
         "and defeat drift detection")
-    assert stored.granted_by == "amit" and stored.note == "cleanup job"
+    # ...and so was the request's `granted_by`: who ratified is the caller, not a name sent
+    assert stored.granted_by == "amit-op" and stored.note == "cleanup job"
 
 
 def test_granting_an_UNDISCOVERED_tool_is_404_not_a_grant_for_nothing(client):

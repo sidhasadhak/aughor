@@ -201,7 +201,7 @@ export function ScheduleEditor({ cron, onCron, timezone = "" }: {
               if (occurrence === "custom") onCron(s.cron || toCron(s));
               else put({ occurrence });
             }}
-            style={{ ...inputStyle, padding: "6px 8px" }}>
+            style={inputStyle}>
             <option value="hourly">Hourly</option>
             <option value="daily">Daily</option>
             <option value="weekly">Weekly</option>
@@ -214,7 +214,7 @@ export function ScheduleEditor({ cron, onCron, timezone = "" }: {
             <label style={fieldLabel}>At ({clock})</label>
             <Input type="time" value={s.time} aria-label={`Time of day, ${clock}`}
               onChange={e => e.target.value && put({ time: e.target.value })}
-              style={{ ...inputStyle, padding: "5px 8px", width: 96 }} />
+              style={{ ...inputStyle, width: 96 }} />
           </div>
         )}
         {s.occurrence === "hourly" && (
@@ -222,7 +222,7 @@ export function ScheduleEditor({ cron, onCron, timezone = "" }: {
             <label style={fieldLabel}>At minute</label>
             <Input type="number" min={0} max={59} value={s.minute} aria-label="Minute of the hour"
               onChange={e => put({ minute: Math.min(59, Math.max(0, Number(e.target.value) || 0)) })}
-              style={{ ...inputStyle, padding: "5px 8px", width: 72 }} />
+              style={{ ...inputStyle, width: 72 }} />
           </div>
         )}
         {s.occurrence === "monthly" && (
@@ -230,7 +230,7 @@ export function ScheduleEditor({ cron, onCron, timezone = "" }: {
             <label style={fieldLabel}>On day</label>
             <SelectField value={s.dayOfMonth} aria-label="Day of the month"
               onChange={e => put({ dayOfMonth: Number(e.target.value) })}
-              style={{ ...inputStyle, padding: "6px 8px", width: 72 }}>
+              style={{ ...inputStyle, width: 72 }}>
               {Array.from({ length: 28 }, (_, i) => i + 1).map(d =>
                 <option key={d} value={d}>{d}</option>)}
             </SelectField>

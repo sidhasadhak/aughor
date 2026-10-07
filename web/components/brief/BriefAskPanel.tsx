@@ -160,7 +160,7 @@ export function BriefAskPanel({
           onChange={e => setDraft(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
           placeholder="Ask a follow-up…"
-          style={{ flex: 1, padding: "8px 11px" }}
+          style={{ flex: 1 }}
           disabled={streaming}
         />
         <Button variant="default" onClick={send} disabled={!draft.trim() || streaming}

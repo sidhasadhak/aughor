@@ -130,7 +130,6 @@ export function ThreadsRail({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter conversations"
             aria-label="Filter conversations"
-            className="aug-fs-xs h-7"
           />
         </div>
       )}
@@ -160,7 +159,6 @@ export function ThreadsRail({
                     if (e.key === "Escape") setRenaming(null);
                   }}
                   onBlur={() => commitRename(t.session_id)}
-                  className="aug-fs-xs h-7"
                 />
                 <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 3, paddingLeft: 2 }}>
                   Enter to save · empty restores the first question

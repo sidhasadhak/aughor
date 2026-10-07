@@ -500,7 +500,7 @@ function SeedTrustedForm({ onDone }: { onDone: () => void }) {
       <Input style={fieldStyle} placeholder="The question this SQL answers, in the words people ask it"
         value={f.question} onChange={e => setF(v => ({ ...v, question: e.target.value }))}
         data-testid="tq-seed-question" />
-      <Textarea style={{ ...fieldStyle, minHeight: 64, fontFamily: "var(--font-mono)" }}
+      <Textarea style={{ ...fieldStyle, minHeight: 64 }}
         placeholder="SELECT …" value={f.sql} onChange={e => setF(v => ({ ...v, sql: e.target.value }))}
         data-testid="tq-seed-sql" />
       <Input style={fieldStyle} placeholder="note (optional) — why this is the right answer"
@@ -534,7 +534,7 @@ function EditTrustedForm({ row, onDone }: { row: TrustedQueryRow; onDone: () => 
     <div style={{ marginTop: 8 }}>
       <Input style={fieldStyle} value={f.question}
         onChange={e => setF(v => ({ ...v, question: e.target.value }))} />
-      <Textarea style={{ ...fieldStyle, minHeight: 64, fontFamily: "var(--font-mono)" }}
+      <Textarea style={{ ...fieldStyle, minHeight: 64 }}
         value={f.sql} onChange={e => setF(v => ({ ...v, sql: e.target.value }))} />
       <Input style={fieldStyle} placeholder="note" value={f.note}
         onChange={e => setF(v => ({ ...v, note: e.target.value }))} />

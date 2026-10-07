@@ -321,7 +321,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 200px" }}>
             <label style={L}>Table name</label>
-            <Input style={{ ...S, fontFamily: "var(--font-mono)" }} value={tableName}
+            <Input style={S} value={tableName}
               onChange={e => setTableName(e.target.value)} placeholder={a.suggested_table_name} />
           </div>
           <div style={{ flex: "1 1 200px" }}>
@@ -381,7 +381,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                     </span>
                   )}
                   <SelectField value={chosen[c.name] ?? detected} onChange={e => setChosen(p => ({ ...p, [c.name]: e.target.value }))}
-                    style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg-2)", color: changed ? "var(--blue4,#60a5fa)" : "var(--t2)", border: `1px solid ${changed ? "var(--blue4,#60a5fa)" : "var(--b1)"}`, cursor: "pointer", fontFamily: "var(--font-mono)", flexShrink: 0, width: 120 }}>
+                    style={{ cursor: "pointer", flexShrink: 0, width: 120 }}>
                     {opts.map(o => <option key={o} value={o}>{o}</option>)}
                   </SelectField>
                   {suggest && (
@@ -798,7 +798,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
               <div key={f.key}>
                 <label style={L}>{f.label}</label>
                 <Input
-                  style={{ ...S, fontFamily: f.secret || f.key === "dsn" ? "var(--font-mono)" : "inherit" }}
+                  style={S}
                   type={f.secret ? "password" : "text"}
                   placeholder={f.placeholder}
                   value={values[f.key] ?? ""}

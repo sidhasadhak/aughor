@@ -118,7 +118,6 @@ export function OpenQueryDialog({
         <div style={{ padding: "0 12px 8px" }}>
           <Input
             autoFocus
-            className="aug-fs-ui"
             style={{ width: "100%" }}
             placeholder={tab === "saved" ? "Search saved queries by name or SQL…" : "Search recent runs…"}
             value={search}

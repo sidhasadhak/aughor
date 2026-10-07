@@ -329,13 +329,6 @@ function CanvasDocuments({ canvas, onSaved }: {
           value=""
           disabled={busy}
           onChange={e => { if (e.target.value) setBinding([...pinnedIds, e.target.value]); }}
-          className="aug-fs-xs"
-          style={{
-            background: "var(--bg-3)", border: "1px solid var(--b1)",
-            borderRadius: "var(--r2)", padding: "6px 8px",
-            color: "var(--t2)", outline: "none",
-            fontFamily: "var(--font-ui)",
-          }}
         >
           <option value="">Pin a document…</option>
           {unpinned.map(doc => (
@@ -398,12 +391,6 @@ function SettingsPopover({
           <Input
             value={name}
             onChange={e => setName(e.target.value)}
-            style={{
-              background: "var(--bg-3)", border: "1px solid var(--b1)",
-              borderRadius: "var(--r2)", padding: "6px 10px",
-              fontSize: 12, color: "var(--t1)", outline: "none",
-              fontFamily: "var(--font-ui)",
-            }}
           />
         </label>
         <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -412,12 +399,7 @@ function SettingsPopover({
             value={desc}
             onChange={e => setDesc(e.target.value)}
             rows={2}
-            style={{
-              background: "var(--bg-3)", border: "1px solid var(--b1)",
-              borderRadius: "var(--r2)", padding: "6px 10px",
-              fontSize: 12, color: "var(--t1)", outline: "none", resize: "none",
-              fontFamily: "var(--font-ui)",
-            }}
+            style={{ resize: "none" }}
           />
         </label>
 

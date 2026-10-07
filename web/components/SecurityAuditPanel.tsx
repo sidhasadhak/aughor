@@ -235,15 +235,7 @@ function BudgetEditor({ connId }: { connId: string }) {
             type="number"
             value={draft[key]}
             onChange={e => setDraft(d => d ? { ...d, [key]: Number(e.target.value) } : d)}
-            style={{
-              width: 100,
-              background: "var(--bg-0)",
-              border: "1px solid var(--bg-3)",
-              borderRadius: 4,
-              padding: "4px 8px",
-              color: "var(--t1)",
-              fontSize: 12,
-            }}
+            style={{ width: 100 }}
           />
         </label>
       ))}
@@ -678,7 +670,7 @@ export function SecurityAuditPanel({
           <SelectField
             value={filterConnId || ""}
             onChange={e => setFilterConnId(e.target.value || undefined)}
-            style={{ fontSize: 11, color: "var(--t1)", background: "var(--bg-1)", border: "1px solid var(--bg-3)", borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}
+            style={{ cursor: "pointer" }}
           >
             <option value="">All connections</option>
             {connections.map(c => (

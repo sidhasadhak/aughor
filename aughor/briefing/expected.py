@@ -39,7 +39,8 @@ def _said(claim: Any) -> dict:
 
 
 def expected_next(conn_id: str, spec: R.RangeSpec, *, profile: Any = None, workspace_id: Optional[str] = None,
-                  runner: Optional[Callable[[], Any]] = None, today: Optional[_dt.date] = None) -> dict:
+                  runner: Optional[Callable[[], Any]] = None, today: Optional[_dt.date] = None,
+                  schema: Optional[str] = None) -> dict:
     """``{"target", "why", "items"}`` — the next range (``None`` with why when there is none to
     predict) and, per approved metric, the band expected for it or why none is stated. Books each
     new prediction; one already on record is read back and nothing is measured for it."""
@@ -64,7 +65,7 @@ def expected_next(conn_id: str, spec: R.RangeSpec, *, profile: Any = None, works
     label = R._span(target.start, target.end)
     out = {"target": {"start": R._d(target.start), "last_day": last_day, "label": label, "settles_on": settles_on},
            "why": "", "items": []}
-    approved = R.governed_metrics(conn_id)[:R.MAX_METRICS]
+    approved = R.governed_metrics(conn_id, schema)[:R.MAX_METRICS]
     fresh = [m for m in approved if C.latest(_key(conn_id, m.name, last_day)) is None]
     measured: dict[str, tuple[list, str]] = {}
     if fresh:

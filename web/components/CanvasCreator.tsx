@@ -197,10 +197,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                 placeholder="Search"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                style={{
-                  flex: 1, background: "none", border: "none", outline: "none",
-                  fontSize: 13, color: "var(--t1)", fontFamily: "var(--font-ui)",
-                }}
+                style={{ flex: 1 }}
               />
             </div>
             <Button variant="ghost" size="xs"

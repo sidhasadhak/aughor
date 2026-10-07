@@ -21,6 +21,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  downloadMetricTemplate, getMetricFileColumns, type MetricFileColumn,
   exportIntakeBundle, getConnections, getIntakeMapperStats, getIntakePlan,
   listIntakeBundles, mineIntakeUsage, resolveIntakeBundle, uploadIntakeBundleYaml,
   uploadIntakeFile, uploadIntakeProse, uploadIntakeSheet,
@@ -35,6 +36,7 @@ import { Icon } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 /** Who is acting: the signed-in email when there is one, else the same word the
  *  actions inbox uses. Display + provenance material — the server owns identity. */
@@ -47,7 +49,8 @@ function actorName(): string {
 export function candidateLabel(kind: string, payload: Record<string, unknown>): string {
   const s = (k: string) => String(payload[k] ?? "").trim();
   switch (kind) {
-    case "metric": return s("name") || "metric";
+    // Two datasets may each define one name — the dataset tells their rows apart.
+    case "metric": return [s("name") || "metric", s("schema_name")].filter(Boolean).join(" · ");
     case "synonym": return s("synonym") ? `“${s("synonym")}” → ${s("subject_id") || s("subject_kind")}` : "synonym";
     case "glossary": return s("table") || "glossary entry";
     case "rule": case "join": case "definition": return s("title") || kind;
@@ -195,10 +198,9 @@ function CandidateRow({ cand, decision, onDecide, edit, onEdit, applyError }: {
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <Textarea value={edit} onChange={e => onEdit(e.target.value)} rows={8}
                 data-testid={`intake-edit-${cand.id}`}
-                className="aug-fs-xs"
-                style={{ width: "100%", fontFamily: "var(--font-mono)", color: "var(--t1)",
-                  background: "var(--bg-1)", border: `1px solid ${editInvalid ? "var(--red4)" : "var(--b1)"}`,
-                  borderRadius: "var(--r2)", padding: 8, boxSizing: "border-box", resize: "vertical" }} />
+                style={{ width: "100%",
+                         boxSizing: "border-box",
+                         resize: "vertical" }} />
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <span className="aug-fs-xs" style={{ color: editInvalid ? "var(--red4)" : "var(--t3)" }}>
                   {editInvalid ? "Not valid JSON yet." : "An edited object is accepted with your version."}
@@ -258,8 +260,50 @@ const DOORS: { id: DoorId; word: string; icon: IconName }[] = [
   { id: "prose", word: "Prose (model)", icon: "wand" },
 ];
 
-function Doors({ connId, onStaged, knowledgeConns }: {
+/** The metric file's columns — the import format, read from the server's one list of them
+ *  (`intake.mappers.METRIC_COLUMNS`), so this reference, the template and the importer never differ. */
+function MetricFileColumns() {
+  const [open, setOpen] = useState(false);
+  const [cols, setCols] = useState<MetricFileColumn[] | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (!open || cols) return;
+    getMetricFileColumns().then(setCols).catch(e => setErr(e instanceof Error ? e.message : String(e)));
+  }, [open, cols]);
+  return (
+    <div style={{ width: "100%" }} data-testid="metric-file-columns">
+      <Button size="xs" variant="ghost" onClick={() => setOpen(o => !o)}>
+        {open ? "▾" : "▸"} The metric file&rsquo;s columns
+      </Button>
+      {open && err && <p className="aug-fs-xs" style={{ color: "var(--red4)" }}>{err}</p>}
+      {open && cols && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Column</TableHead><TableHead>What it holds</TableHead><TableHead>Example</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {cols.map(c => (
+              <TableRow key={c.column}>
+                <TableCell className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
+                  {c.column}{c.required ? " *" : ""}
+                </TableCell>
+                <TableCell className="aug-fs-xs">{c.meaning}</TableCell>
+                <TableCell className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)" }}>{c.example}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  );
+}
+
+function Doors({ connId, schema, onStaged, knowledgeConns }: {
   connId: string;
+  /** The dataset in view — a row of a metric file that names no dataset belongs to it. */
+  schema?: string;
   onStaged: (r: IntakeStageResult) => void;
   knowledgeConns: Connection[];
 }) {
@@ -319,25 +363,31 @@ function Doors({ connId, onStaged, knowledgeConns }: {
             accept=".csv,.tsv,.xlsx,.json,.md,.markdown,.yaml,.yml"
             onChange={e => {
               const f = e.target.files?.[0];
-              if (f) run(() => uploadIntakeFile(f, connId, actorName()),
+              if (f) run(() => uploadIntakeFile(f, connId, actorName(), "", schema ?? ""),
                 `“${f.name}” staged. Review the plan below.`);
               e.target.value = "";
             }} />
           <Button size="sm" disabled={busy} onClick={() => fileRef.current?.click()}>
             <Icon name="upload" size={13} /> Choose a file
           </Button>
+          <Button size="sm" variant="ghost" disabled={busy}
+            onClick={() => downloadMetricTemplate().catch(e => setErr(e instanceof Error ? e.message : String(e)))}>
+            <Icon name="download" size={13} /> Download the metric template
+          </Button>
           <span style={{ color: "var(--t3)" }}>
-            A metric dictionary (CSV / TSV / XLSX), a dbt <span style={{ fontFamily: "var(--font-mono)" }}>manifest.json</span>,
-            or a SKILL.md. Every object still waits for your verdict.
+            A metric file (CSV / TSV / XLSX) — its name, SQL, dataset, dates and grain, unit, caveats and
+            targets{schema ? <> (a row with no dataset belongs to <strong>{schema}</strong>)</> : null} —
+            a dbt <span style={{ fontFamily: "var(--font-mono)" }}>manifest.json</span>, or a SKILL.md.
+            Every object still waits for your verdict.
           </span>
+          <MetricFileColumns />
         </div>
       )}
 
       {door === "paste" && (
         <div style={label}>
           <Textarea value={yamlText} onChange={e => setYamlText(e.target.value)} rows={6}
-            placeholder={"version: 1\nsections:\n  metrics:\n    - name: revenue\n      sql: SUM(amount)"}
-            className="aug-fs-xs" style={{ ...input, fontFamily: "var(--font-mono)", resize: "vertical" }} />
+            placeholder={"version: 1\nsections:\n  metrics:\n    - name: revenue\n      sql: SUM(amount)"} style={{ ...input, resize: "vertical" }} />
           <div>
             <Button size="sm" disabled={busy || !yamlText.trim()}
               onClick={() => run(() => uploadIntakeBundleYaml({
@@ -407,8 +457,7 @@ function Doors({ connId, onStaged, knowledgeConns }: {
       {door === "prose" && (
         <div style={label}>
           <Textarea value={proseText} onChange={e => setProseText(e.target.value)} rows={5}
-            placeholder="Paste prose or markdown that states definitions — e.g. “MRR is monthly recurring revenue, computed as …”"
-            className="aug-fs-sm" style={{ ...input, resize: "vertical" }} />
+            placeholder="Paste prose or markdown that states definitions — e.g. “MRR is monthly recurring revenue, computed as …”" style={{ ...input, resize: "vertical" }} />
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <Button size="sm" disabled={busy || !proseText.trim()}
               onClick={() => { setBusy(true); setErr(""); setNote("");
@@ -441,7 +490,7 @@ function Doors({ connId, onStaged, knowledgeConns }: {
 
 // ── The panel ─────────────────────────────────────────────────────────────────
 
-export function IntakePanel({ connId }: { connId: string }) {
+export function IntakePanel({ connId, schema }: { connId: string; schema?: string }) {
   const [bundles, setBundles] = useState<IntakeBundle[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [plan, setPlan] = useState<IntakePlan | null>(null);
@@ -543,7 +592,7 @@ export function IntakePanel({ connId }: { connId: string }) {
         </p>
       </div>
 
-      <Doors connId={connId} onStaged={onStaged} knowledgeConns={knowledgeConns} />
+      <Doors connId={connId} schema={schema} onStaged={onStaged} knowledgeConns={knowledgeConns} />
 
       {refused.length > 0 && (
         <div className="aug-fs-xs" style={{ border: "1px solid color-mix(in srgb, var(--amb4) 40%, transparent)",

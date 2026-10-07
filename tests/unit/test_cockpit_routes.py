@@ -241,7 +241,9 @@ def test_a_spec_is_kept_and_then_read(client, desk, on):
     body = client.get(desk.path, params=desk.q).json()
     assert (body["connection_id"], body["owner"], body["cockpit_id"]) == (desk.connection, ME, desk.cockpit_id)
     assert body["cockpit"]["version"] == 1 and body["cockpit"]["spec"] == desk.spec
-    assert body["cockpit"]["approved_by"] == "person"            # identity is off in the suite
+    # identity is off in the suite: the version is kept in the name of the login the request acts for
+    from aughor.security.authz import local_operator
+    assert body["cockpit"]["approved_by"] == f"user:{local_operator()}"
     assert body["cockpit"]["source"] == "a person's own hand"
     assert body["cockpit"]["note"] == "the first cut"
     assert [h["version"] for h in body["history"]] == [1] and "spec" not in body["history"][0]

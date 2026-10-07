@@ -58,7 +58,7 @@ export function FilingsSection() {
     if (!closing || !outcome.trim()) return;
     setBusy(true);
     try {
-      await closeFiling(closing.id, outcome.trim(), recovered.trim(), actor.by);
+      await closeFiling(closing.id, outcome.trim(), recovered.trim());
       toast.success(`Closed “${filingName(closing)}”.`);
       setClosing(null);
       filings.reload();

@@ -74,6 +74,7 @@ def revenue(monkeypatch, tmp_path):
                                  time_kind="flow", time_column="created_at",
                                  time_source="set automatically: test"))
     monkeypatch.setattr("aughor.tools.profile_cache.latest_profile_entry", lambda cid: PROFILE)
+    monkeypatch.setattr("aughor.tools.profile_cache.merged_profile_entry", lambda cid: PROFILE)
     return get_metric("revenue", connection_id="c1")
 
 

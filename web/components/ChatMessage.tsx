@@ -864,7 +864,7 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
                       value={draft}
                       onChange={e => setDraft(e.target.value)}
                       rows={2}
-                      className="w-full aug-fs-sm text-zinc-200 rounded border border-zinc-700 bg-[var(--bg-0)] px-2 py-1.5 resize-none focus:outline-none focus:border-amber-600"
+                      className="w-full resize-none"
                     />
                     <div className="flex gap-2">
                       <Button variant="ghost" size="xs" onClick={() => saveEdit(item.id)} disabled={busy === item.id}
@@ -1336,7 +1336,7 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
           <Textarea autoFocus rows={2} value={annotateText}
             onChange={(e) => setAnnotateText(e.target.value)}
             placeholder={`Note on ${annotateTarget} (e.g. 'March data is a partial load — totals run low')`}
-            className="w-full bg-transparent aug-fs-xs text-zinc-200 placeholder:text-zinc-500 resize-none focus:outline-none" />
+            className="w-full resize-none" />
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="xs" disabled={annotateBusy || !annotateText.trim()}
               onClick={submitAnnotation}
@@ -1623,8 +1623,7 @@ export function ChatMessage({
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitEdit(); }
                   if (e.key === "Escape") setEditing(false);
                 }}
-                className="w-full aug-fs-sm text-zinc-100 rounded-[var(--r3)] px-3 py-2 resize-none focus:outline-none"
-                style={{ background: "var(--bg-2)", border: "1px solid var(--bfocus)" }}
+                className="w-full resize-none"
               />
               <div className="flex items-center justify-end gap-2">
                 <Button variant="ghost" size="xs" onClick={() => setEditing(false)}

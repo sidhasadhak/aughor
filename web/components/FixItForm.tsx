@@ -41,7 +41,7 @@ export function FixItForm({
         value={note}
         onChange={(e) => setNote(e.target.value)}
         placeholder="What was wrong? (e.g. 'revenue should exclude cancelled orders')"
-        className="w-full bg-transparent aug-fs-xs text-zinc-200 placeholder:text-zinc-500 resize-none focus:outline-none"
+        className="w-full resize-none"
       />
       {withSql && !showSql && (
         <Button
@@ -59,7 +59,7 @@ export function FixItForm({
           value={sql}
           onChange={(e) => setSql(e.target.value)}
           placeholder="SELECT … (the query that computes it correctly)"
-          className="w-full bg-transparent aug-fs-xs font-mono text-zinc-200 placeholder:text-zinc-600 resize-none focus:outline-none"
+          className="w-full resize-none"
         />
       )}
       <div className="flex items-center gap-2">

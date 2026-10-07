@@ -2393,7 +2393,8 @@ class _ConfirmRequest(BaseModel):
     #: Every proposal of the scope's draft that is still the model's.
     all: bool = False
     targets: list[_ConfirmTarget] = []
-    #: Who confirms — recorded on the declaration beside the model that proposed it.
+    #: Ignored: who confirms is the person signed in (`authz.caller`), recorded on the declaration beside the
+    #: model that proposed it — never a name the client sends.
     actor: str = ""
 
 
@@ -2585,9 +2586,11 @@ def confirm_ontology_proposals(
     if not targets:
         raise HTTPException(status_code=400,
                             detail="nothing to confirm — no target was named, and no proposal is still the model's")
+    from aughor.security.authz import caller
     confirmed, refused = [], []
+    who = caller()
     for target in targets:
-        why = _confirm_proposal(connection_id, effective, target, body.actor.strip())
+        why = _confirm_proposal(connection_id, effective, target, who)
         (refused if why else confirmed).append({**target, **({"why": why} if why else {})})
     _invalidate_schema_cache(connection_id)
     return {**draft_view(_get_ontology_graph(connection_id, effective), draft),

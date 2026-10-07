@@ -294,8 +294,6 @@ export function AutomationPalette({ connId, only, bindFilter, onClearBindFilter,
           onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
           placeholder="Search steps…"
           aria-label="Search the palette"
-          className="aug-fs-sm"
-          style={{ height: 26 }}
         />
         <Button variant="ghost" size="icon-xs" aria-label="Close the palette" onClick={onClose}>
           <Icon name="close" size={12} />

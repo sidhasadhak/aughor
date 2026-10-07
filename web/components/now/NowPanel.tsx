@@ -336,7 +336,7 @@ function NotNow({ row, actor, onDone, onCancel }: {
     setBusy(true);
     setError("");
     try {
-      await setItemAside({ kind: row.kind, ref: row.id, until, why: why.trim(), title: row.title, by: actor.by });
+      await setItemAside({ kind: row.kind, ref: row.id, until, why: why.trim(), title: row.title });
       onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -409,7 +409,7 @@ function WaitingList({ waiting, aside, returned, connections, doors, inspect, on
   };
   const restore = async (a: SetAside) => {
     setError("");
-    try { await restoreItem(a.item_kind, a.ref, actor.by); onAsideChanged(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try { await restoreItem(a.item_kind, a.ref); onAsideChanged(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
 
   return (

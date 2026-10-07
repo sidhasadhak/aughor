@@ -265,7 +265,7 @@ def apply(conn_id: str, spec: Any, got: dict, *, run_sql: Callable[[str], tuple]
     ``unmeasured`` from ``ranges.measure_range``). Returns what to add: ``moves``, ``thin``,
     ``why``, ``early``, ``alerts`` and the extra candidate findings the narrator reads."""
     from aughor.semantic.metrics import list_metrics
-    from aughor.tools.profile_cache import latest_profile_entry
+    from aughor.tools.profile_cache import merged_profile_entry
 
     recipe = recipe_for(spec.preset)
     sections = SECTIONS[recipe]
@@ -277,7 +277,7 @@ def apply(conn_id: str, spec: Any, got: dict, *, run_sql: Callable[[str], tuple]
                  "early": None, "candidates": {}}
     if "what_moved" in sections or "why" in sections:
         moved = what_moved(metrics, spec, run_sql, dialect=dialect,
-                           profile_entry=latest_profile_entry(conn_id))
+                           profile_entry=merged_profile_entry(conn_id))
         for c in moved["moves"] + moved["thin"]:   # the page shows the text the narrator read
             c["current_text"] = _fmt(c["current"], c, currency)
             c["previous_text"] = _fmt(c["previous"], c, currency)

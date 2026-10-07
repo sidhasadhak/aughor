@@ -229,8 +229,7 @@ export function AgenticOpsWorkspace({
           color: "var(--t2)" }}>
           Connection
           <SelectField value={connId ?? ""} aria-label="Connection"
-            onChange={e => onSelectConnection(e.target.value)}
-            style={{ height: 24, padding: "0 6px" }}>
+            onChange={e => onSelectConnection(e.target.value)}>
             {!connId && <option value="">choose…</option>}
             {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </SelectField>

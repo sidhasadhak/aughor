@@ -37,7 +37,9 @@ override-wins discipline `list_metrics` and `data/ontology_overrides/` already p
 - ``defined``       — a real `MetricDefinition`; editable in place.
 - ``needs_binding`` — an industry recipe whose required roles are NOT bound to this
   connection, so it cannot be computed here. Listed on purpose (the user asked for every
-  applicable metric) but never as though it were available. `unmeasured ⇒ never read`.
+  applicable metric) but never as though it were available. `unmeasured ⇒ never read`. Never a
+  dead end (the user, 2026-10-07): a person binds its roles, writes its SQL over this connection's
+  own columns (`materialise` lands it as a draft to write), or removes it.
 - ``formula_rejected`` — an explorer metric that HAD a `value_sql` and lost it: the
   build-time audit could not trust it and blanked it, and the recipe-grounded
   regeneration did not recover it. The row carries the audit's own reason. This is
@@ -90,6 +92,17 @@ def normalize_name(text: str) -> str:
     return t.strip("_")
 
 
+_MEASURED = re.compile(r"\s*\(measured\s*≈[^)]*\)", re.IGNORECASE)
+
+
+def plain_unit(text) -> str:
+    """A unit without the figure the explorer measured once and wrote into it — "USD (measured ≈
+    508.18)" is "USD". That figure anchors the explorer's own magnitude check; as a metric's unit it
+    is a number frozen at profiling time, shown beside every figure since as if it were current
+    (the user, 2026-10-07: "no static or stale metrics")."""
+    return _MEASURED.sub("", str(text or "")).strip()
+
+
 @dataclass
 class CatalogueEntry:
     """One row of the connection's metric catalogue."""
@@ -122,6 +135,9 @@ class CatalogueEntry:
     owner: str = ""
     #: True when this row can be edited in place; False means `materialise()` runs first.
     editable: bool = False
+    #: The dataset (schema) it belongs to; ``"*"`` — every dataset of the connection. Two datasets
+    #: may each have their own `revenue`, so a row is (source, dataset, name), never the name alone.
+    schema: str = "*"
 
     def as_dict(self) -> dict:
         from dataclasses import asdict
@@ -130,35 +146,21 @@ class CatalogueEntry:
 
 # ── Source 1: the registry ────────────────────────────────────────────────────
 
-def _datasets_read(m) -> set[str]:
-    """The datasets (schemas) a definition reads: its statement's tables, else its ``tables`` field,
-    by the part before each table's name. Empty when they name none — bare names, as on a
-    connection of one dataset, say nothing to judge by."""
-    from aughor.semantic.metric_statement import is_statement, statement_tables
-
-    sql = m.sql or ""
-    names = (statement_tables(sql) if is_statement(sql) else []) or [str(t) for t in (m.tables or [])]
-    return {n.split(".")[-2].strip('`"[] ').lower() for n in names if "." in n}
-
-
 def _defined_entries(connection_id: str, schema_name: Optional[str] = None) -> list[CatalogueEntry]:
-    from aughor.semantic.metrics import list_metrics
+    """The connection's definitions in view: with a dataset, that dataset's and those promoted to
+    every dataset (`list_metrics`' own rule); without one, every dataset's. Each says which it is."""
+    from aughor.semantic.metrics import ALL_DATASETS, home_schema, list_metrics
 
+    scope = None if schema_name in (None, "", ALL_DATASETS) else schema_name
     out: list[CatalogueEntry] = []
-    for m in list_metrics(connection_id=connection_id):
-        # A definition belongs to the dataset its tables are in. Without this every definition on
-        # a connection of several datasets was listed under each of them — Daily Gross Revenue,
-        # which reads `main.sales_transactions`, under amazon and uber_ncr (the user, 2026-10-07).
-        read = _datasets_read(m)
-        if schema_name and read and schema_name.lower() not in read:
-            continue
+    for m in list_metrics(connection_id=connection_id, schema_name=scope):
         out.append(CatalogueEntry(
             name=m.name, label=m.label or m.name, source=SOURCE_DEFINED,
-            state=STATE_DEFINED, sql=m.sql or "", unit=m.unit or "",
+            state=STATE_DEFINED, sql=m.sql or "", unit=plain_unit(m.unit),
             definition=m.caveats or "", dimensions=list(m.dimensions or []),
             tables=list(m.tables or []), anti_patterns=list(m.wrong_usage_examples or []),
             status=m.status or "draft", version=int(m.version or 0),
-            owner=m.owner or "", editable=True,
+            owner=m.owner or "", editable=True, schema=home_schema(m),
         ))
     return out
 
@@ -236,7 +238,7 @@ def _industry_entries(connection_id: str, schema_name: Optional[str]) -> list[Ca
                 anti_patterns=list(pm.anti_patterns or []),
                 pack_id=pkg.pack_id, required_roles=required, missing_roles=missing,
                 sane_range=(sr.model_dump() if hasattr(sr, "model_dump") else sr),
-                editable=False,
+                editable=False, schema=schema_name or "*",
             ))
     return out
 
@@ -269,7 +271,9 @@ def _explorer_entries(connection_id: str, schema_name: Optional[str]) -> list[Ca
     for m in (getattr(profile, "north_star_metrics", None) or []):
         # `maps_to` is prose naming real columns ("order_items.sale_price, …"); split it
         # back into the tables it touches so the row can say where the metric lives.
-        tables = sorted({p.split(".")[0] for p in re.findall(r"[\w.]+\.[\w]+", m.maps_to or "")})
+        # The table is everything before the column: `orders.amount` → `orders`, and a qualified
+        # `marts.orders.amount` → `marts.orders`, not the dataset alone.
+        tables = sorted({p.rsplit(".", 1)[0] for p in re.findall(r"[\w.]+\.[\w]+", m.maps_to or "")})
         value_sql = (getattr(m, "value_sql", "") or "").strip()
         reason = "" if value_sql else str(rejections.get(m.name) or "").strip()
         if value_sql:
@@ -281,49 +285,131 @@ def _explorer_entries(connection_id: str, schema_name: Optional[str]) -> list[Ca
         out.append(CatalogueEntry(
             name=normalize_name(m.name), label=m.name, source=SOURCE_EXPLORER,
             state=state, sql=value_sql, reason=reason,
-            unit=m.unit_or_range or "", definition=(m.definition or "").strip(),
+            unit=plain_unit(m.unit_or_range), definition=(m.definition or "").strip(),
             tables=tables, why_it_matters=(m.why_it_matters or "").strip(),
-            editable=False,
+            editable=False, schema=schema_name or "*",
         ))
     return out
 
 
 # ── The catalogue ─────────────────────────────────────────────────────────────
 
-def catalogue_for(connection_id: str, schema_name: Optional[str] = None) -> list[CatalogueEntry]:
-    """Every metric that applies to this connection, best source first, deduped by name.
+def _datasets_of(connection_id: str, schema_name: Optional[str]) -> list[Optional[str]]:
+    """The datasets whose proposals a view lists: the one in view, or — for every dataset (``"*"``) —
+    each dataset the explorer has profiled, else the connection's own profile."""
+    from aughor.semantic.metrics import ALL_DATASETS
+    if schema_name != ALL_DATASETS:
+        return [schema_name or None]
+    try:
+        from aughor.business_profile.store import profiled_schemas
+        return list(profiled_schemas(connection_id)) or [None]
+    except Exception as exc:  # noqa: BLE001 — no profile store means the connection's own view
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the profiled datasets could not be listed; the connection's own profile is read",
+                 counter="metric_catalogue.datasets")
+        return [None]
 
-    Precedence is `defined` → `industry` → `explorer`: an edited definition shadows the
-    recipe it came from, and a reviewed industry recipe shadows an inferred one. The
-    shadowed row is dropped rather than listed twice — the tab already warns about
-    duplicate names, and two rows for one metric is that warning, self-inflicted."""
+
+def _one_unbound_row_per_recipe(rows: list[CatalogueEntry]) -> list[CatalogueEntry]:
+    """Across every dataset, an industry recipe no dataset has bound is ONE row for the connection —
+    not the same "needs binding" eleven times. A recipe some dataset HAS bound keeps that dataset's row."""
+    out: list[CatalogueEntry] = []
+    seen_unbound: set[str] = set()
+    for r in rows:
+        if r.state != STATE_NEEDS_BINDING:
+            out.append(r)
+            continue
+        key = normalize_name(r.name)
+        if key in seen_unbound:
+            continue
+        seen_unbound.add(key)
+        r.schema = "*"
+        out.append(r)
+    return out
+
+
+def catalogue_for(connection_id: str, schema_name: Optional[str] = None) -> list[CatalogueEntry]:
+    """Every metric that applies to this connection, best source first, one row per metric.
+
+    ``schema_name`` — the dataset in view; ``"*"`` — every dataset of the connection at once, each
+    row saying which it is (the user, 2026-10-07: *"when I select all schemas … all the metrics across
+    all the schemas of the selected connection should be displayed"*). Without either, the
+    connection's own view.
+
+    Precedence is `defined` → `industry` → `explorer`: an edited definition shadows the recipe it
+    came from, and a reviewed industry recipe shadows an inferred one — WITHIN a dataset. A
+    definition promoted to every dataset shadows that name in all of them; one dataset's definition
+    shadows only its own. A proposal a person removed is not listed (`removed_for` lists those)."""
+    from aughor.semantic.metrics import ALL_DATASETS, dismissed_proposals, is_dismissed
+
     if not connection_id:
         return []
-    by_source = {
-        SOURCE_DEFINED: _defined_entries(connection_id, schema_name),
-        SOURCE_INDUSTRY: _industry_entries(connection_id, schema_name),
-        SOURCE_EXPLORER: _explorer_entries(connection_id, schema_name),
-    }
-    seen: set[str] = set()
+    every = schema_name == ALL_DATASETS
+    defined = _defined_entries(connection_id, schema_name)
+    industry: list[CatalogueEntry] = []
+    explorer: list[CatalogueEntry] = []
+    for ds in _datasets_of(connection_id, schema_name):
+        industry += _industry_entries(connection_id, ds)
+        explorer += _explorer_entries(connection_id, ds)
+    if every:
+        industry = _one_unbound_row_per_recipe(industry)
+    try:
+        removed = dismissed_proposals(connection_id)
+    except Exception as exc:  # noqa: BLE001 — an unreadable store removes nothing and says so
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "removed proposals could not be read; every proposal is listed",
+                 counter="metric_catalogue.removed")
+        removed = []
+
+    taken: set[tuple[str, str]] = set()     # (dataset, name) a better source already lists
+
+    def _slot(e: CatalogueEntry) -> tuple[str, str]:
+        # One view of one dataset is one namespace; the every-dataset view is one per dataset.
+        return ((e.schema or "*").lower() if every else "*", normalize_name(e.name))
+
+    def _shadowed(e: CatalogueEntry) -> bool:
+        ds, key = _slot(e)
+        if ds == "*":
+            return any(n == key for _, n in taken)
+        return (ds, key) in taken or ("*", key) in taken
+
     out: list[CatalogueEntry] = []
-    for src in _PRECEDENCE:
-        for entry in by_source[src]:
-            key = normalize_name(entry.name)
-            if key in seen:
+    for e in defined:
+        if _slot(e) in taken:
+            continue
+        taken.add(_slot(e))
+        out.append(e)
+    for batch in (industry, explorer):
+        for e in batch:
+            if _shadowed(e) or is_dismissed(removed, connection_id, e.schema, e.name):
                 continue
-            seen.add(key)
-            out.append(entry)
+            taken.add(_slot(e))
+            out.append(e)
     return out
+
+
+def removed_for(connection_id: str, schema_name: Optional[str] = None) -> list[dict]:
+    """The proposals a person removed, as the view in ``schema_name`` would have listed them."""
+    from aughor.semantic.metrics import ALL_DATASETS, dismissed_proposals
+    rows = dismissed_proposals(connection_id)
+    if schema_name in (None, "", ALL_DATASETS):
+        return rows
+    want = schema_name.lower()
+    return [d for d in rows if str(d.get("schema_name") or "*").lower() in (want, "*")]
 
 
 def find_entry(connection_id: str, name: str,
                schema_name: Optional[str] = None) -> Optional[CatalogueEntry]:
-    """One catalogue row by name, matched the way the catalogue dedupes."""
+    """One catalogue row by name, matched the way the catalogue dedupes — in the dataset named
+    (``"*"``: the row the every-dataset view lists for the connection)."""
+    from aughor.semantic.metrics import same_dataset
     key = normalize_name(name)
-    for entry in catalogue_for(connection_id, schema_name):
-        if normalize_name(entry.name) == key:
+    rows = [e for e in catalogue_for(connection_id, schema_name) if normalize_name(e.name) == key]
+    want = (schema_name or "").strip()
+    for entry in rows:
+        if not want or same_dataset(entry.schema, want):
             return entry
-    return None
+    return rows[0] if rows else None
 
 
 # ── Copy-on-write ─────────────────────────────────────────────────────────────
@@ -410,31 +496,36 @@ def _resolve_roles(sql: str, pack_id: str, connection_id: str,
 
 def materialise(connection_id: str, name: str, schema_name: Optional[str] = None,
                 actor: str = "") -> "object":
-    """Turn an industry or explorer row into a connection-scoped `MetricDefinition`.
+    """Turn an industry or explorer row into a `MetricDefinition` of THIS connection and dataset.
 
     This is the edit step: the catalogue is computed, so there is nothing to write into
     until someone wants to change one. The copy is scoped to THIS connection, so it
     shadows the recipe for this connection only — another connection reading the same
     package still gets the package's version, and a package update still reaches every
-    connection that has not customised it.
+    connection that has not customised it. And to the row's DATASET: staging's `revenue` and
+    marts' `revenue` become two definitions, never one overwriting the other (promoting one to
+    the whole connection is a separate, deliberate step).
 
     It lands as ``draft``. Never ``approved``: the live catalogue having zero approved
     metrics is what holds outbound KPI sends under law 2, and a formula nobody has
     reviewed must not lift that hold. `status` is moved by the governance transitions the
     Metrics tab already exposes (draft → proposed → approved), by a person.
 
-    A ``needs_binding`` row is refused. Its formula still carries `{{role.x.y}}`
-    placeholders, so materialising it would write a definition that cannot execute, and a
-    stored definition that cannot execute is worse than an honest absence — it shadows the
-    recipe and reads as available.
+    A recipe whose roles or attributes this connection has not bound lands as a draft WITHOUT
+    SQL — its formula carried in the caveats, naming the roles it needs — for the person to write
+    over this connection's own columns. It used to be refused, which left the row with no action
+    at all (the user, 2026-10-07: *"no 'this requires binding' — that's a dead end"*). A draft
+    with no SQL is never measured and never shadows a computable recipe as available: the
+    coherence guard and every measurement read only definitions that have SQL.
     """
-    from aughor.semantic.metrics import MetricDefinition, get_metric, save_metric
+    from aughor.semantic.metrics import ALL_DATASETS, MetricDefinition, definition_at, save_metric
 
     entry = find_entry(connection_id, name, schema_name)
     if entry is None:
         raise MaterialiseError(f"no metric named {name!r} applies to this connection")
+    dataset = entry.schema or schema_name or ALL_DATASETS
     if entry.source == SOURCE_DEFINED:
-        existing = get_metric(entry.name, connection_id=connection_id)
+        existing = definition_at(entry.name, connection_id, dataset)
         if existing is not None:
             return existing
         raise MaterialiseError(f"{name!r} is already defined but could not be read back")
@@ -442,40 +533,40 @@ def materialise(connection_id: str, name: str, schema_name: Optional[str] = None
     # supply the formula, and it lands `draft`, which the coherence guard already skips
     # (it reads only metrics with a non-empty `sql`). Refusing here would leave the one
     # row that most needs editing as the only one that cannot be.
-    if entry.state == STATE_NEEDS_BINDING:
-        roles = ", ".join(entry.missing_roles) or "its required roles"
-        raise MaterialiseError(
-            f"{entry.label!r} needs {roles} bound to this connection before it can be "
-            f"edited — its formula still names roles, not columns")
-
-    sql = entry.sql
+    sql, to_write = entry.sql, ""
     if entry.source == SOURCE_INDUSTRY:
-        sql, unresolved = _resolve_roles(sql, entry.pack_id, connection_id, schema_name)
-        if unresolved:
-            raise MaterialiseError(
-                f"{entry.label!r} names {', '.join(sorted(set(unresolved)))}, which this "
-                f"connection has not bound — binding the ROLE is not enough, every "
-                f"attribute the formula names needs a column")
+        sql, unresolved = _resolve_roles(sql, entry.pack_id, connection_id,
+                                         None if dataset == ALL_DATASETS else dataset)
+        if entry.state == STATE_NEEDS_BINDING or unresolved:
+            needs = sorted(set(unresolved)) or [f"{r}.*" for r in entry.missing_roles]
+            to_write = (f"Write this over this connection's own columns. The {entry.pack_id} package's "
+                        f"formula is {entry.sql.strip()} — it needs {', '.join(needs)}; binding those "
+                        f"roles under Settings ▸ System ▸ Packages lets the package resolve it instead.")
+            sql = ""
 
     from aughor.semantic.metric_statement import as_statement
+    caveats = "\n\n".join(t for t in (entry.definition, to_write) if t) or None
     metric = MetricDefinition(
         name=normalize_name(entry.name),
         connection=connection_id,
+        schema_name=dataset,
         label=entry.label or entry.name,
         # Every proposal is a statement (2026-09-26): a catalogue formula written as an
         # aggregate is wrapped over its first table, so the editor opens on runnable SQL.
-        sql=as_statement(sql, list(entry.tables), [], normalize_name(entry.name)),
+        sql=as_statement(sql, list(entry.tables), [], normalize_name(entry.name)) if sql else "",
         tables=list(entry.tables),
         dimensions=list(entry.dimensions),
         unit=entry.unit or None,
-        caveats=entry.definition or None,
+        caveats=caveats,
         wrong_usage_examples=list(entry.anti_patterns),
         lineage=([f"{entry.source}: {entry.pack_id}"] if entry.pack_id
                  else [entry.source]),
         status="draft",
         proposed_by=actor or None,
     )
+    from aughor.semantic.metric_time import with_dates
+    metric = with_dates(connection_id, metric)
     save_metric(metric)
-    logger.info("materialised %s metric %r for connection %s", entry.source, metric.name,
-                connection_id)
+    logger.info("materialised %s metric %r for connection %s (dataset %s)", entry.source, metric.name,
+                connection_id, dataset)
     return metric

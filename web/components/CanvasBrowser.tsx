@@ -375,10 +375,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search Data Canvases, connections…"
-            style={{
-              flex: 1, background: "none", border: "none", outline: "none",
-              fontSize: 13, color: "var(--t1)", fontFamily: "var(--font-ui)",
-            }}
+            style={{ flex: 1 }}
           />
           {search && (
             <Button variant="ghost" size="xs" onClick={() => setSearch("")}

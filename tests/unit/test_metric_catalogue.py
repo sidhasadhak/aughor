@@ -183,12 +183,17 @@ class TestMaterialise:
         assert "{{role" not in saved["sql"]
         assert m.name == "gross_margin_rate"
 
-    def test_it_refuses_an_unbindable_recipe(self, wired, monkeypatch):
+    def test_an_unbindable_recipe_lands_as_a_draft_to_write_never_a_dead_end(self, wired, monkeypatch):
+        """It was refused, which left the row with no action (the user, 2026-10-07). It lands as a
+        draft WITHOUT SQL — never an unexecutable formula — carrying the package's formula and the
+        roles it needs, for the person to write over this connection's columns."""
+        saved = {}
         monkeypatch.setattr("aughor.semantic.metrics.save_metric",
-                            lambda *a, **k: pytest.fail("must not write an unexecutable definition"))
-        with pytest.raises(MC.MaterialiseError) as e:
-            MC.materialise("c1", "net_interest_margin")
-        assert "financial_period" in str(e.value)
+                            lambda m, *a, **k: saved.update(m.model_dump()))
+        MC.materialise("c1", "net_interest_margin")
+        assert saved["sql"] == "" and saved["status"] == "draft"
+        assert "{{role." not in saved["sql"]
+        assert "financial_period" in saved["caveats"], saved["caveats"]
 
     def test_it_refuses_an_unknown_metric(self, wired):
         with pytest.raises(MC.MaterialiseError):
@@ -202,22 +207,20 @@ class TestMaterialise:
         assert saved["lineage"] == ["explorer"], "a reader must see where the formula came from"
 
 
-def test_a_definition_is_listed_under_the_dataset_its_tables_are_in(monkeypatch):
+def test_a_definition_is_listed_under_the_dataset_its_tables_are_in(monkeypatch, tmp_path):
     """Daily Gross Revenue reads `main.sales_transactions` and was listed under amazon and uber_ncr
     too: every definition on a connection of several datasets showed under each (2026-10-07). A
-    definition whose tables name no dataset still shows everywhere — there is nothing to judge by."""
-    from types import SimpleNamespace as NS
-
-    def metric(name, sql, tables=()):
-        return NS(name=name, label=name, sql=sql, tables=list(tables), unit="", caveats="", dimensions=[],
-                  wrong_usage_examples=[], status="approved", version=1, owner="")
-
-    defined = [metric("ride_completion_rate", "SELECT COUNT(*) * 1.0 / 1 FROM uber_ncr.ncr_ride_bookings"),
-               metric("Daily Sales", 'SELECT SUM(totalPrice) AS "Daily Sales" FROM main.sales_transactions'),
-               metric("orders", "COUNT(*)", tables=["orders"])]
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **k: defined)
+    definition whose tables name no dataset still shows everywhere — there is nothing to judge by.
+    Read through the real store, whose dataset rule now decides it (`list_metrics(schema_name=…)`)."""
+    from aughor.semantic.metrics import MetricDefinition, save_metric
+    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    for name, sql, tables in (("ride_completion_rate", "SELECT COUNT(*) * 1.0 / 1 FROM uber_ncr.ncr_ride_bookings", []),
+                              ("Daily Sales", 'SELECT SUM(totalPrice) AS "Daily Sales" FROM main.sales_transactions', []),
+                              ("orders", "COUNT(*)", ["orders"])):
+        save_metric(MetricDefinition(name=name, connection="ws", label=name, sql=sql, tables=tables))
 
     names = lambda schema: [e.name for e in MC._defined_entries("ws", schema)]  # noqa: E731
     assert names("uber_ncr") == ["ride_completion_rate", "orders"]
     assert names("main") == ["Daily Sales", "orders"]
     assert names(None) == ["ride_completion_rate", "Daily Sales", "orders"]
+    assert [e.schema for e in MC._defined_entries("ws", None)] == ["uber_ncr", "main", "*"]

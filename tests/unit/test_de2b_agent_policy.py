@@ -209,7 +209,9 @@ def test_the_policy_route_is_set_by_a_person_and_refuses_the_agent():
     assert by_agent.status_code == 403 and by_agent.json()["detail"]["code"] == P.CODE_SELF_SET
     assert by_person.status_code == 200
     eff = after.json()["effective"]
-    assert eff["level"] == "act" and eff["connections"] == ["c1"] and eff["set_by"] == "api-key"
+    from aughor.security.authz import local_operator
+    # nobody signs in here: the policy is set by the login the request acts for, not the word "api-key"
+    assert eff["level"] == "act" and eff["connections"] == ["c1"] and eff["set_by"] == local_operator()
     assert cleared.json()["effective"]["source"] == "default"
 
 

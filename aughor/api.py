@@ -311,25 +311,33 @@ class _OrgContextMiddleware:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
-        from aughor.security.authz import require_identity_enabled, resolve_principal
-        if not require_identity_enabled():
-            return await self.app(scope, receive, send)
         from starlette.requests import Request as _Req
-        principal = resolve_principal(_Req(scope))
-        if principal is None:
-            return await self.app(scope, receive, send)
-        from aughor.org.context import reset_org_id, reset_user_id, set_org_id, set_user_id
-        token = set_org_id(principal.org_id)
-        user_token = set_user_id(principal.user_id)   # for the RBAC row-policy injector (Rec 7)
+
+        from aughor.org.context import reset_actor, set_actor
+        from aughor.security.authz import require_identity_enabled, resolve_actor, resolve_principal
+        # Who this request acts for — bound on EVERY request, identity enforced or not, so every
+        # write records the person making it without a form asking them for their name.
+        actor_token = set_actor(resolve_actor(_Req(scope)))
         try:
-            await self.app(scope, receive, send)
-        finally:
+            if not require_identity_enabled():
+                return await self.app(scope, receive, send)
+            principal = resolve_principal(_Req(scope))
+            if principal is None:
+                return await self.app(scope, receive, send)
+            from aughor.org.context import reset_org_id, reset_user_id, set_org_id, set_user_id
+            token = set_org_id(principal.org_id)
+            user_token = set_user_id(principal.user_id)   # for the RBAC row-policy injector (Rec 7)
             try:
-                reset_user_id(user_token)
-                reset_org_id(token)
-            except Exception as _exc:
-                from aughor.kernel.errors import tolerate
-                tolerate(_exc, "org contextvar reset (best-effort)", counter="org.reset")
+                await self.app(scope, receive, send)
+            finally:
+                try:
+                    reset_user_id(user_token)
+                    reset_org_id(token)
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "org contextvar reset (best-effort)", counter="org.reset")
+        finally:
+            reset_actor(actor_token)
 
 
 class _WorkspaceContextMiddleware:

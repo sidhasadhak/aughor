@@ -745,7 +745,7 @@ def reask_findings_for_range(conn_id: str, preset: str | None = None, start: str
 
     from aughor.briefing.reask import reask_findings
     from aughor.knowledge import period_brief
-    from aughor.tools.profile_cache import latest_profile_entry
+    from aughor.tools.profile_cache import merged_profile_entry
 
     spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id)
     if spec is None:
@@ -759,7 +759,7 @@ def reask_findings_for_range(conn_id: str, preset: str | None = None, start: str
     findings = [{**f, "domain": dom} for dom, blk in (by_domain or {}).items()
                 for f in (blk if isinstance(blk, list) else ((blk or {}).get("insights") or []))
                 if isinstance(f, dict)]
-    profile = latest_profile_entry(conn_id) or {}
+    profile = merged_profile_entry(conn_id) or {}
     with period_brief.connection_runner(conn_id) as (run_sql, dialect):
         out = reask_findings(findings, spec, run_sql=run_sql, dialect=dialect, profile_entry=profile)
     out = {**out, "total": len(findings), "profiled": bool(profile), "cached": False}
@@ -815,7 +815,7 @@ def measure_range_metrics(conn_id: str, schema: str | None = None, workspace_id:
         return {"period": kept, "from_briefing": True, "measured_at": entry.get("generated_at"),
                 "scope_key": scope_key}
     measured = ranges.measured_block(conn_id, spec, profile=_load_business_profile(conn_id, schema),
-                                     workspace_id=workspace_id)
+                                     workspace_id=workspace_id, schema=schema)
     return {"period": measured, "from_briefing": False,
             "measured_at": datetime.now(timezone.utc).isoformat(), "scope_key": scope_key}
 
@@ -832,7 +832,7 @@ def read_metric_trend(conn_id: str, metric: str, schema: str | None = None, work
     if spec is None:
         raise HTTPException(status_code=422, detail="name a range: a preset, or a start and an end")
     seen = ranges.metric_trend(conn_id, spec, metric, profile=_load_business_profile(conn_id, schema),
-                               workspace_id=workspace_id)
+                               workspace_id=workspace_id, schema=schema)
     if not seen.get("found"):
         raise HTTPException(status_code=404, detail=seen.get("why") or "no such metric")
     return {**seen, "period": ranges.range_block(spec)}
@@ -850,7 +850,7 @@ def read_expected_next(conn_id: str, schema: str | None = None, workspace_id: st
     if spec is None:
         raise HTTPException(status_code=422, detail="name a range: a preset, or a start and an end")
     return expected.expected_next(conn_id, spec, profile=_load_business_profile(conn_id, schema),
-                                  workspace_id=workspace_id)
+                                  workspace_id=workspace_id, schema=schema)
 
 
 def _period_briefing(conn_id: str, period: str, *, schema: str | None,

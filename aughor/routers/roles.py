@@ -50,9 +50,14 @@ def list_roles():
 def my_access(request: Request):
     """The caller's effective identity, roles and permissions — so a client can
     show/hide admin surfaces. In localhost mode the caller resolves to owner."""
+    from aughor.security.authz import caller
     principal = get_principal(request)
     return {
         "user_id": principal.user_id if principal else None,
+        # Who what this person does is recorded under — the signed-in person, or this install's own
+        # login when nobody signs in. A form shows it; it never asks for a name.
+        "actor": caller(),
+        "signed_in": principal is not None,
         "org_id": principal.org_id if principal else current_org_id(),
         "roles": resolve_roles(principal),
         "permissions": _sorted_perms(permissions_for(principal)),

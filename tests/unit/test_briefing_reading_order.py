@@ -80,7 +80,7 @@ def test_the_cap_keeps_the_headline_end(monkeypatch):
 
     approved = [N(name=f"cost_{i}", label="", status="approved", connection="c1") for i in range(R.MAX_METRICS)]
     approved.append(N(name="revenue", label="Revenue", status="approved", connection="c1"))
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None: approved)
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None, **k: approved)
     monkeypatch.setattr(RO, "industry_order", lambda conn_id: [])
     got = R.governed_metrics("c1")
     assert got[0].name == "revenue" and len(got[:R.MAX_METRICS]) == R.MAX_METRICS

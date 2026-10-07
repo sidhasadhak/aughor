@@ -107,9 +107,7 @@ def post_pack_upload(body: PackFilesIn, request: Request):
     """Check, then write the pack as a draft under the imported root with its provenance. A pack with
     errors is refused with them; a draft steers nothing until a person activates it."""
     from aughor.packs.kit import KitRefused, upload
-    from aughor.security.authz import get_principal
-    principal = get_principal(request)
-    who = next((f"user:{getattr(principal, a)}" for a in ("user_id", "email", "id") if getattr(principal, a, "")), "") if principal else ""
+    who = _who(get_principal(request))
     try:
         return upload(body.files, by=who or "unidentified", source_url=body.source_url, overwrite=body.overwrite)
     except KitRefused as e:
@@ -140,10 +138,8 @@ def post_pack_demote(pack_id: str, body: DemoteIn, request: Request):
     """Demote a pack on its measured record; refused when the record does not call for it unless a
     person forces it with a reason."""
     from aughor.packs.record import demote
-    from aughor.security.authz import get_principal
     _dir_for(pack_id)
-    principal = get_principal(request)
-    who = next((f"user:{getattr(principal, a)}" for a in ("user_id", "email", "id") if getattr(principal, a, "")), "") if principal else "unidentified"
+    who = _who(get_principal(request)) or "unidentified"
     try:
         return demote(pack_id, by=who, why=body.why, force=body.force)
     except ValueError as e:
@@ -286,11 +282,9 @@ def get_binding(pack_id: str, connection_id: str, schema: Optional[str] = None):
 # ── what a pack proposes on connect (the close-out, C7) ──────────────────────────────────────
 
 def _who(principal) -> str:
-    for attr in ("user_id", "email", "id", "sub", "name"):
-        v = getattr(principal, attr, "") if principal is not None else ""
-        if v:
-            return f"user:{v}"
-    return ""
+    """Who a pack write is recorded under: the signed-in person, else the one the request acts for."""
+    from aughor.security.authz import acting_person
+    return acting_person(principal)
 
 
 def _graph_for(connection_id: str, schema_name: Optional[str]):
@@ -364,14 +358,14 @@ def post_confirm_terms(pack_id: str, body: TermsVerdictIn, principal=Depends(get
 
 
 class InstallIn(BaseModel):
-    actor: str = ""
+    actor: str = ""       # ignored: the person signed in installs (`_who`)
     #: Where the pack's automations run. Omit it and the group, tags and subscriptions
     #: still install; the automations are reported as waiting for a connection.
     connection_id: str = ""
 
 
 @router.post("/packs/{pack_id}/install")
-def post_install(pack_id: str, body: InstallIn):
+def post_install(pack_id: str, body: InstallIn, principal=Depends(get_principal)):
     """Install this pack's function layer (HB-6, §6 24 c): the group it ships — tagged
     via subscribe grants on its domains, subscribed to its securables, waiting for
     members — and its automations, which land declared, on probation and disarmed.
@@ -384,7 +378,7 @@ def post_install(pack_id: str, body: InstallIn):
     govern.guard("pack.install", pack_id)
     from aughor.packs.install import InstallRefused, install_pack
     try:
-        return install_pack(pack_id, actor=body.actor, connection_id=body.connection_id)
+        return install_pack(pack_id, actor=_who(principal), connection_id=body.connection_id)
     except InstallRefused as e:
         # 409 for the same reason promotion uses it: the request is well-formed and the
         # pack is real — the pack's own state or layer says no.
@@ -417,14 +411,14 @@ def post_delta_status(delta_id: int, body: DeltaStatusIn):
 
 class StatusIn(BaseModel):
     status: str = Field(description="draft | active | deprecated")
-    actor: str = ""
+    actor: str = ""       # ignored: the person signed in moves it (`_who`)
     connection_id: str = ""
     schema_name: Optional[str] = Field(default=None, alias="schema")
     model_config = ConfigDict(populate_by_name=True)
 
 
 @router.post("/packs/{pack_id}/status")
-def post_pack_status(pack_id: str, body: StatusIn):
+def post_pack_status(pack_id: str, body: StatusIn, principal=Depends(get_principal)):
     """Move a pack between draft / active / deprecated — the write `status` never had.
 
     Four endpoints and two modules READ this field; none wrote it, so the only way to
@@ -459,7 +453,7 @@ def post_pack_status(pack_id: str, body: StatusIn):
         # No `packs_dir`: promote resolves through the same roots this route read from,
         # so an imported pack is promotable and a route cannot write to a root it did not
         # look in.
-        pack = set_status(pack_id, body.status, actor=body.actor, gate_decision=decision)
+        pack = set_status(pack_id, body.status, actor=_who(principal), gate_decision=decision)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except PromotionRefused as e:

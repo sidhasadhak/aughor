@@ -18,26 +18,160 @@ from typing import Any
 #: What a spreadsheet id looks like once extracted from an id or URL.
 _SHEET_ID_RE = re.compile(r"[a-zA-Z0-9-_]{10,}")
 
+#: The metric file's columns — the ONE description of the import format: the template a person
+#: downloads, the reference the Import tab shows and this mapper all read it. ``(column, required,
+#: what it holds, example)``. Asked for 2026-10-07: *"a rich structure in which an organisation can
+#: build a CSV file … the formula, the name, the Date grain, the caveats — the most critical fields
+#: required for a metric to be defined"*.
+METRIC_COLUMNS: tuple[tuple[str, bool, str, str], ...] = (
+    ("name", True, "The metric's id: lowercase words joined by underscores. Unique within its dataset.",
+     "net_revenue"),
+    ("label", False, "How it reads to a person. Defaults to the name.", "Net revenue"),
+    ("sql", True, "A whole SELECT returning ONE row with the value — no date filter: the period "
+                  "picker sets the dates.",
+     "SELECT SUM(amount) AS net_revenue FROM sales.orders WHERE status <> 'cancelled'"),
+    ("dataset", False, "The dataset (schema) it belongs to. Empty: the one its SQL reads. "
+                       "* : every dataset of the connection.", "sales"),
+    ("description", False, "What it means, in a sentence a reader trusts.",
+     "Revenue after refunds and cancellations, in USD."),
+    ("unit", False, "USD, %, count, days … — how its figure is shown.", "USD"),
+    ("date_column", False, "The date that puts a row in a period: table.column. Empty: set by rule "
+                           "from the table's main date.", "sales.orders.ordered_at"),
+    ("date_kind", False, "flow (adds up over a period), stock (a level at a date) or cohort "
+                         "(tied to one date, completed by a later one). Default flow.", "flow"),
+    ("date_grain", False, "The period it is reported by: day, week, month, quarter or year.", "month"),
+    ("until_column", False, "A stock's end: a row counts until this date.", ""),
+    ("outcome_column", False, "A cohort's completing event.", ""),
+    ("settles_after_days", False, "A cohort's maturity, in days.", ""),
+    ("caveats", False, "Exclusions and known limits.", "Excludes B2B invoices."),
+    ("dimensions", False, "Columns it can be sliced by, comma-separated.", "region, channel"),
+    ("filters", False, "Conditions always applied, one per line or ; separated.", ""),
+    ("tables", False, "Tables it reads, comma-separated (read from the SQL when empty).", ""),
+    ("additivity", False, "additive or non_additive — whether period figures may be summed.", "additive"),
+    ("owner", False, "The team or person who answers for it.", "Finance"),
+    ("target_value", False, "The figure it aims for.", "1200000"),
+    ("warning_threshold", False, "Below (or above) this it reads amber.", "1000000"),
+    ("critical_threshold", False, "Below (or above) this it reads red.", "800000"),
+    ("target_period", False, "The period the target is for: monthly, quarterly, ytd.", "monthly"),
+    ("benchmark_source", False, "Where the target comes from.", "FY2026 plan"),
+    ("anti_patterns", False, "Ways NOT to compute it, one per line or ; separated — the assistant "
+                             "is told never to.", "Never count cancelled orders"),
+    ("quality_tests", False, "SQL assertions that must hold, one per line or ; separated.", ""),
+    ("freshness_sla", False, "When its data is due, in words.", "daily by 06:00 UTC"),
+    ("freshness_check_sql", False, "SQL returning its data's newest timestamp.", ""),
+    ("synonyms", False, "Other names people use for it, comma-separated.", "net sales, NR"),
+)
+
 #: Header spellings a metric dictionary is seen in the wild with, mapped to the
 #: canonical field. Matching is case-insensitive on the stripped header.
 HEADER_ALIASES: dict[str, str] = {
     # the metric's identity
-    "name": "name", "metric": "name", "metric_name": "name", "kpi": "name",
+    "name": "name", "metric": "name", "metric_name": "name", "kpi": "name", "id": "name",
     # display
     "label": "label", "display_name": "label", "title": "label",
     # the formula — only rows WITH one become governed-metric candidates
-    "sql": "sql", "formula": "sql", "expression": "sql", "calculation": "sql",
+    "sql": "sql", "formula": "sql", "expression": "sql", "calculation": "sql", "statement": "sql",
     # the prose definition — the shape most dictionaries actually have
     "definition": "definition", "description": "definition",
     "business_definition": "definition", "meaning": "definition",
+    # where it lives
+    "dataset": "schema_name", "schema": "schema_name", "schema_name": "schema_name",
+    # its dates — how it is measured for a period
+    "date_column": "time_column", "time_column": "time_column", "date": "time_column",
+    "date_kind": "time_kind", "time_kind": "time_kind", "kind": "time_kind",
+    "date_grain": "time_grain", "time_grain": "time_grain", "grain": "time_grain",
+    "granularity": "time_grain", "period": "time_grain", "reporting_period": "time_grain",
+    "until_column": "until_column", "outcome_column": "outcome_column",
+    "settles_after_days": "settles_after_days", "maturity_days": "settles_after_days",
     # the rest of the governed-metric fields
     "unit": "unit", "format": "unit",
     "owner": "owner", "steward": "owner", "team": "owner",
     "caveats": "caveats", "notes": "caveats", "exclusions": "caveats",
     "table": "tables", "tables": "tables", "source_table": "tables",
+    "dimensions": "dimensions", "slice_by": "dimensions", "breakdowns": "dimensions",
+    "filters": "filters", "always_on_filters": "filters",
+    "additivity": "additivity",
+    "target_value": "target_value", "target": "target_value",
+    "warning_threshold": "warning_threshold", "warning": "warning_threshold",
+    "critical_threshold": "critical_threshold", "critical": "critical_threshold",
+    "target_period": "target_period", "benchmark_source": "benchmark_source", "benchmark": "benchmark_source",
+    "anti_patterns": "wrong_usage_examples", "wrong_usage_examples": "wrong_usage_examples",
+    "never": "wrong_usage_examples", "do_not": "wrong_usage_examples",
+    "quality_tests": "quality_tests", "tests": "quality_tests",
+    "lineage": "lineage", "freshness_sla": "freshness_sla", "freshness_check_sql": "freshness_check_sql",
     # synonyms
     "aliases": "aliases", "synonyms": "aliases", "also_known_as": "aliases",
 }
+
+#: Fields read as a list: words split on commas (or ;), prose and SQL on new lines (or ;) — a
+#: filter `status IN ('a', 'b')` and an anti-pattern sentence both carry commas.
+_WORD_LISTS = ("tables", "dimensions")
+_LINE_LISTS = ("filters", "wrong_usage_examples", "quality_tests", "lineage")
+_NUMBERS = ("target_value", "warning_threshold", "critical_threshold")
+_SCALARS = ("unit", "owner", "caveats", "schema_name", "time_column", "time_kind", "time_grain",
+            "until_column", "outcome_column", "additivity", "target_period", "benchmark_source",
+            "freshness_sla", "freshness_check_sql")
+
+
+def metric_template_csv() -> str:
+    """The template a person downloads: every column, and one example row a reader can copy."""
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([c for c, *_ in METRIC_COLUMNS])
+    w.writerow([ex for *_, ex in METRIC_COLUMNS])
+    return buf.getvalue()
+
+
+def _metric_fields(vals: dict[str, str]) -> tuple[dict[str, Any], str]:
+    """A row's governed-metric fields, typed and checked — ``(fields, "")`` or ``({}, why)``."""
+    from aughor.semantic.metric_catalogue import normalize_name
+    from aughor.semantic.metric_time import GRAINS, KINDS
+
+    name = normalize_name(vals["name"])
+    m: dict[str, Any] = {"name": name, "label": vals.get("label") or vals["name"], "sql": vals["sql"]}
+    for k in _SCALARS:
+        if vals.get(k):
+            m[k] = vals[k]
+    if not m.get("caveats") and vals.get("definition"):
+        m["caveats"] = vals["definition"]
+    for k in _WORD_LISTS:
+        if vals.get(k):
+            m[k] = [t.strip() for t in vals[k].replace(";", ",").split(",") if t.strip()]
+    for k in _LINE_LISTS:
+        if vals.get(k):
+            m[k] = [t.strip() for t in re.split(r"[;\n]", vals[k]) if t.strip()]
+    for k in _NUMBERS:
+        if vals.get(k):
+            try:
+                m[k] = float(vals[k].replace(",", "").replace("_", ""))
+            except ValueError:
+                return {}, f"{k} {vals[k]!r} is not a number"
+    if vals.get("settles_after_days"):
+        try:
+            m["settles_after_days"] = int(float(vals["settles_after_days"]))
+        except ValueError:
+            return {}, f"settles_after_days {vals['settles_after_days']!r} is not a number of days"
+    kind = str(m.get("time_kind") or "").lower()
+    if kind:
+        if kind not in KINDS:
+            return {}, f"date_kind {m['time_kind']!r} is not one of {', '.join(KINDS)}"
+        m["time_kind"] = kind
+    elif m.get("time_column"):
+        m["time_kind"] = "flow"
+    grain = str(m.get("time_grain") or "").lower()
+    if grain:
+        grain = {"daily": "day", "weekly": "week", "monthly": "month", "quarterly": "quarter",
+                 "yearly": "year", "annual": "year"}.get(grain, grain)
+        if grain not in GRAINS:
+            return {}, f"date_grain {m['time_grain']!r} is not one of {', '.join(GRAINS)}"
+        m["time_grain"] = grain
+    if m.get("additivity") and m["additivity"].lower().replace("-", "_") not in ("additive", "non_additive"):
+        return {}, f"additivity {m['additivity']!r} is not additive or non_additive"
+    if m.get("time_kind") == "stock" and not m.get("until_column"):
+        return {}, "a stock needs an until_column — the date a row stops counting"
+    if m.get("time_kind") == "cohort" and not m.get("outcome_column"):
+        return {}, "a cohort needs an outcome_column — the event that completes it"
+    return m, ""
 
 
 def read_tabular(filename: str, data: bytes) -> tuple[list[str], list[dict]]:
@@ -132,15 +266,10 @@ def map_dictionary_rows(headers: list[str],
             refused.append(f"row {i}: no metric name")
             continue
         if vals.get("sql"):
-            m: dict[str, Any] = {"name": name.lower().replace(" ", "_"),
-                                 "label": vals.get("label") or name,
-                                 "sql": vals["sql"]}
-            for k in ("unit", "owner", "caveats"):
-                if vals.get(k):
-                    m[k] = vals[k]
-            if vals.get("tables"):
-                m["tables"] = [t.strip() for t in
-                               vals["tables"].replace(";", ",").split(",") if t.strip()]
+            m, why = _metric_fields(vals)
+            if why:
+                refused.append(f"row {i} ({name}): {why}")
+                continue
             metrics.append(m)
         if vals.get("definition"):
             definitions.append({"title": name, "body": vals["definition"],
@@ -150,8 +279,9 @@ def map_dictionary_rows(headers: list[str],
         for alias in [a.strip() for a in
                       (vals.get("aliases") or "").replace(";", ",").split(",")]:
             if alias:
+                from aughor.semantic.metric_catalogue import normalize_name
                 synonyms.append({"subject_kind": "metric",
-                                 "subject_id": name.lower().replace(" ", "_"),
+                                 "subject_id": normalize_name(name),
                                  "synonym": alias, "source": "human"})
 
     sections: dict[str, Any] = {}

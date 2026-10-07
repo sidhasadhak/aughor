@@ -100,6 +100,41 @@ def _anchor_metric_trends(raw: Optional[dict]) -> Optional[dict]:
     return raw
 
 
+def _without_removed(raw: Optional[dict], connection_id: str) -> Optional[dict]:
+    """Serve-time: drop each north-star metric a person REMOVED from this dataset (the user,
+    2026-10-07 — *"the right to remove the proposed Metric"*). The explorer re-proposes by name on
+    every rebuild, and the Briefing, the KPI strip, the sentinel and the agent's context all read
+    these metrics here; the removal record in the metric store is the authority, applied at this
+    one read so every reader honours it. Best-effort: a store that cannot be read removes nothing."""
+    if not raw:
+        return raw
+    try:
+        from aughor.semantic.metrics import dismissed_proposals, is_dismissed
+        removed = dismissed_proposals(connection_id)
+        if not removed:
+            return raw
+        prof = raw.get("profile") or {}
+        schema = raw.get("schema_name")
+        kept = [m for m in (prof.get("north_star_metrics") or [])
+                if not is_dismissed(removed, connection_id, schema, str((m or {}).get("name") or ""))]
+        return {**raw, "profile": {**prof, "north_star_metrics": kept}}
+    except Exception as exc:  # noqa: BLE001 — a removal that cannot be read is said, not raised
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "removed proposals could not be read; the explorer's metrics are served as stored",
+                 counter="profile.removed_proposals")
+        return raw
+
+
+def profiled_schemas(connection_id: str) -> list[str]:
+    """Every dataset of this connection that has a business profile of its own, in key order."""
+    out: list[str] = []
+    for key in _family().keys_with_prefix(f"{_safe(connection_id)}__"):
+        schema = str((_read(key) or {}).get("schema_name") or "").strip()
+        if schema and schema not in out:
+            out.append(schema)
+    return out
+
+
 def load_raw(connection_id: str, schema_name: Optional[str] = None) -> Optional[dict]:
     """The stored payload for a (connection, schema), or None.
 
@@ -115,13 +150,13 @@ def load_raw(connection_id: str, schema_name: Optional[str] = None) -> Optional[
     Each metric's ``chart_sql`` is re-anchored to the most-recent window on read (see
     ``_anchor_metric_trends``)."""
     if schema_name:
-        return _anchor_metric_trends(_read(_key(connection_id, schema_name)))
+        return _without_removed(_anchor_metric_trends(_read(_key(connection_id, schema_name))), connection_id)
     conn_level = _read(_key(connection_id))
     if conn_level is not None:
-        return _anchor_metric_trends(conn_level)
+        return _without_removed(_anchor_metric_trends(conn_level), connection_id)
     scoped = _family().keys_with_prefix(f"{_safe(connection_id)}__")
     if len(scoped) == 1:
-        return _anchor_metric_trends(_read(scoped[0]))
+        return _without_removed(_anchor_metric_trends(_read(scoped[0])), connection_id)
     return None
 
 

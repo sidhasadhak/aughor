@@ -91,8 +91,6 @@ export function AddToEvalSuite({ connectionId, sql, question }: {
       <SelectField
         value={target}
         onChange={e => setTarget(e.target.value)}
-        className="aug-input aug-text-xs"
-        style={{ padding: "2px 6px" }}
         aria-label="Target eval suite"
       >
         {(suites ?? []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -100,11 +98,10 @@ export function AddToEvalSuite({ connectionId, sql, question }: {
       </SelectField>
       {target === NEW && (
         <Input
-          className="aug-text-xs"
           value={newName}
           onChange={e => setNewName(e.target.value)}
           placeholder="New suite name"
-          style={{ padding: "2px 6px", width: 150 }}
+          style={{ width: 150 }}
           aria-label="New suite name"
         />
       )}

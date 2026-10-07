@@ -63,14 +63,14 @@ function EditableField({ value, placeholder, multiline = true, onSave }: {
   };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <Textarea className="aug-input" autoFocus value={draft} disabled={busy}
+      <Textarea autoFocus value={draft} disabled={busy}
         onChange={e => setDraft(e.target.value)}
         onKeyDown={e => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save();
           if (e.key === "Enter" && !multiline && !e.shiftKey) { e.preventDefault(); save(); }
           if (e.key === "Escape") setEditing(false);
         }}
-        style={{ fontSize: 12, lineHeight: 1.5, minHeight: multiline ? 54 : 32, resize: "vertical", width: "100%" }} />
+        style={{ minHeight: multiline ? 54 : 32, resize: "vertical", width: "100%" }} />
       <div style={{ display: "flex", gap: 8 }}>
         <Button variant="default" size="xs" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</Button>
         <Button variant="ghost" size="xs" disabled={busy} onClick={() => { setDraft(value); setEditing(false); }}>Cancel</Button>

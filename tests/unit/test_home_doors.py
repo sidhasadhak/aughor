@@ -50,20 +50,26 @@ def test_the_prior_door_reads_without_running_anything(client):
     assert r.json()["count"] >= 1
 
 
-def test_a_person_answer_is_booked_as_theirs_and_restated_not_duplicated(client):
+def test_a_person_answer_is_booked_as_theirs_and_restated_not_duplicated(client, monkeypatch):
+    # Nobody signs in here, so the request acts for the install's own login — the name a body
+    # carries ("by") is not who answered and is not recorded.
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "amit-home")
     body = {"connection_id": "builtin", "text": "A campaign", "about": "inv-aug",
-            "asked": "August revenue rose 13.2%. Did the team do anything that explains it?", "by": "Amit"}
+            "asked": "August revenue rose 13.2%. Did the team do anything that explains it?", "by": "Someone Else"}
     first = client.post("/record/claims/said", json=body)
     assert first.status_code == 201, first.text
-    assert first.json()["kind"] == "said" and first.json()["author"] == "person:Amit"
+    assert first.json()["kind"] == "said" and first.json()["author"] == "user:amit-home"
     again = client.post("/record/claims/said", json={**body, "text": "A price change"})
     assert again.status_code == 201
     assert again.json()["supersedes"] == first.json()["id"]
-    you = client.get("/record/you", params={"by": "Amit"}).json()
-    assert you["principal"] == "person:Amit" and you["by_kind"].get("said", 0) >= 1
+    you = client.get("/record/you", params={"by": "Someone Else"}).json()
+    assert you["principal"] == "user:amit-home" and you["by_kind"].get("said", 0) >= 1
 
 
-def test_an_unnamed_answer_is_refused_and_an_unnamed_reader_has_no_record(client):
-    r = client.post("/record/claims/said", json={"connection_id": "builtin", "text": "A campaign"})
-    assert r.status_code == 422
+def test_an_answer_needs_no_name_and_a_reader_reads_only_their_own_record(client, monkeypatch):
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "nobody-yet-home")
     assert client.get("/record/you").json()["n"] == 0
+    r = client.post("/record/claims/said", json={"connection_id": "builtin", "text": "A campaign", "about": "inv-x"})
+    assert r.status_code == 201, r.text
+    assert r.json()["author"] == "user:nobody-yet-home"
+    assert client.get("/record/you").json()["n"] == 1

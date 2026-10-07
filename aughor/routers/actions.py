@@ -200,10 +200,11 @@ def execute_recommendation_action(inv_id: str, rec_index: int, body: dict):
     from aughor.govern.departure import PERSON, gate_departure
     from aughor.govern.departure_basis import measurement_for_analysis
     from aughor.org.context import current_org_id, current_user_id
+    from aughor.security.authz import caller
     conn_id = str(inv.get("connection_id") or "")
     verdict = gate_departure(
         kind="recommendation", org_id=current_org_id(), conn_id=conn_id, text=rec_text,
-        target=trigger_id, actor=f"user:{current_user_id()}" if current_user_id() else "person",
+        target=trigger_id, actor=f"user:{current_user_id() or caller()}",
         investigation_id=inv_id, origin=PERSON, source_kind="analysis", source_id=inv_id,
         source_name=str(inv.get("headline") or "")[:120],
         measurement=measurement_for_analysis(inv_id, conn_id))
@@ -258,11 +259,12 @@ def send_finding_to_trigger(trigger_id: str, body: _SendFindingBody):
     from aughor.govern.departure import PERSON, gate_departure
     from aughor.govern.departure_basis import measurement_for_finding
     from aughor.org.context import current_org_id, current_user_id
+    from aughor.security.authz import caller
     conn_id = (body.conn_id or "").strip()
     source_id = (body.source_id or "").strip()
     verdict = gate_departure(
         kind="finding_share", org_id=current_org_id(), conn_id=conn_id, text=body.text,
-        target=trigger_id, actor=f"user:{current_user_id()}" if current_user_id() else "person",
+        target=trigger_id, actor=f"user:{current_user_id() or caller()}",
         origin=PERSON, source_kind="finding", source_id=source_id,
         source_name=(body.headline or "")[:120],
         measurement=measurement_for_finding(source_id, conn_id) if conn_id and source_id else None)

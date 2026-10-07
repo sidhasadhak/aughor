@@ -99,8 +99,7 @@ function Input({ value, onChange, placeholder, multiline, hint, mono, label }: {
 
 function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
-    <SelectField value={value} onChange={e => onChange(e.target.value)}
-      style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg-1, #1a1a1a)", border: "1px solid var(--b0)", color: "var(--t1, #e5e5e5)", outline: "none" }}>
+    <SelectField value={value} onChange={e => onChange(e.target.value)}>
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </SelectField>
   );
@@ -811,11 +810,11 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
     if (scopeTable && !tables.includes(scopeTable)) setScopeTable("");
   }, [tables, scopeTable]);
 
-  // Metrics belong to ONE dataset: the explorer proposes them per schema. With no schema in the
-  // scope bar, a multi-dataset connection used to ask for none and list nothing the explorer had
-  // proposed — so the Metrics tab reads the scope bar's schema, else the one this person last
-  // chose (here or in Intelligence), else the first.
-  const metricsSchema = scopeSchema || defaultSchema(activeConn, schemas);
+  // Each dataset has its own metrics. "All schemas" on a connection of several lists EVERY dataset's,
+  // each row saying which (the user, 2026-10-07: "when I select all schemas … all the metrics across
+  // all the schemas of the selected connection should be displayed") — it used to quietly show one
+  // dataset, the last one chosen, under a banner saying so.
+  const metricsSchema = scopeSchema || (schemas.length > 1 ? "*" : defaultSchema(activeConn, schemas));
   useEffect(() => { if (scopeSchema) rememberSchema(activeConn, scopeSchema); }, [activeConn, scopeSchema]);
 
   if (!activeConn) {
@@ -856,18 +855,12 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
           {activeTab === "Knowledge"   && <KnowledgeTab   connId={activeConn} />}
           {activeTab === "Metrics"     && (
             <div style={{ height: "100%", minHeight: 420 }}>
-              {!scopeSchema && metricsSchema && (
-                <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 8 }}>
-                  Showing the metrics for <strong style={{ color: "var(--t2)" }}>{metricsSchema}</strong> — this
-                  connection holds {schemas.length} datasets, and each has its own. Choose another in Schema above.
-                </div>
-              )}
               <TabIntro text="Metrics are governed KPI definitions — one canonical SQL formula per metric, with targets, owners and quality tests. Once defined here, the AI reuses the exact same formula everywhere, so “revenue” means the same thing in every chart and answer." />
-              <MetricsPanel connId={activeConn} schema={metricsSchema || undefined} />
+              <MetricsPanel connId={activeConn} schema={metricsSchema || undefined} datasets={schemas} />
             </div>
           )}
           {activeTab === "Benchmarks"  && <BenchmarksTab  connId={activeConn} />}
-          {activeTab === "Import"      && <IntakePanel    connId={activeConn} />}
+          {activeTab === "Import"      && <IntakePanel    connId={activeConn} schema={scopeSchema} />}
         </div>
       </div>
     </div>

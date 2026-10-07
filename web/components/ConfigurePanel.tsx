@@ -131,8 +131,7 @@ function AboutTab({
           onChange={(e) => setDesc(e.target.value)}
           rows={4}
           placeholder="What is this canvas about? Auto-generated from your data — edit anytime."
-          className="w-full resize-none border border-[var(--b2)] rounded-md px-3 py-2 aug-fs-sm text-[var(--t1)] placeholder:text-[var(--t3)] focus:outline-none focus:border-[var(--bfocus)] transition-colors"
-          style={{ background: "var(--bg-0)", fontFamily: "var(--font-ui)" }}
+          className="w-full resize-none"
         />
       </div>
 
@@ -369,7 +368,6 @@ function DataTab({
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter tables…"
-          className="py-1.5"
         />
       </div>
 
@@ -486,8 +484,7 @@ function InstructionsEditor({
         disabled={!loaded}
         aria-label={label}
         placeholder={loaded ? placeholder : "Loading…"}
-        className="flex-1 resize-none border border-[var(--b2)] rounded-md px-3 py-2.5 aug-fs-sm font-mono text-[var(--t1)] placeholder:text-[var(--t3)] focus:outline-none focus:border-[var(--bfocus)] transition-colors"
-        style={{ background: "var(--bg-0)" }}
+        className="flex-1 resize-none"
       />
       <div className="flex justify-end shrink-0">
         <Button

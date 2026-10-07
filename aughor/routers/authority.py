@@ -27,11 +27,8 @@ def _actions(connection_id: str, schema_name: Optional[str]) -> dict:
 
 
 def _who(principal) -> str:
-    for attr in ("user_id", "email", "id", "sub", "name"):
-        v = getattr(principal, attr, "") if principal is not None else ""
-        if v:
-            return f"user:{v}"
-    return ""
+    """Who books it: the signed-in person, else the one the request acts for (`authz.acting_person`)."""
+    return acting_person(principal)
 
 
 @router.get("")
@@ -139,7 +136,7 @@ class CeilingBody(BaseModel):
     connection_id: str = BUILTIN_ID
     level: Optional[int] = None    # L0–L5; None lifts the cap
     why: str = ""
-    by: str = ""                   # the person, when no sign-in names them
+    by: str = ""                   # ignored: the person signed in sets it
 
 
 @router.post("/{action_id}/ceiling", status_code=201)
@@ -148,7 +145,7 @@ def authority_ceiling(action_id: str, body: CeilingBody, principal=Depends(get_p
     A ceiling only lowers what the record earned; it grants nothing."""
     try:
         entry = A.set_ceiling(action_id, body.connection_id, level=body.level,
-                              by=acting_person(principal, body.by) or "unidentified", why=body.why)
+                              by=_who(principal) or "unidentified", why=body.why)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return {"entry": entry, "action_id": action_id, "scope": body.connection_id}
@@ -160,7 +157,7 @@ class WidenBody(BaseModel):
     target_value: str
     expires_days: int = 30
     max_uses: int = 0              # 0 = no cap on uses
-    by: str = ""
+    by: str = ""                   # ignored: the person signed in signs it
 
 
 @router.post("/{action_id}/widen", status_code=201)
@@ -178,7 +175,7 @@ def authority_widen(action_id: str, body: WidenBody, principal=Depends(get_princ
         raise HTTPException(status_code=422, detail="an expiry and a cap on uses are counts")
     try:
         grant = A.widen(action, body.connection_id, target_value=body.target_value.strip(),
-                        by=acting_person(principal, body.by) or "unidentified", expires_days=body.expires_days,
+                        by=_who(principal) or "unidentified", expires_days=body.expires_days,
                         max_uses=body.max_uses)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -189,7 +186,7 @@ class DemoteBody(BaseModel):
     connection_id: str = BUILTIN_ID
     why: str
     drill: bool = False            # a person rehearsing the demotion: the same entry, marked as a drill
-    by: str = ""
+    by: str = ""                   # ignored: the person signed in demotes
 
 
 @router.post("/{action_id}/demote", status_code=201)
@@ -198,6 +195,6 @@ def authority_demote(action_id: str, body: DemoteBody, principal=Depends(get_pri
     standing grants of (action, scope) are withdrawn with it."""
     if not (body.why or "").strip():
         raise HTTPException(status_code=422, detail="a demotion says why")
-    entry = A.demote(action_id, body.connection_id, why=body.why, by=acting_person(principal, body.by) or "unidentified",
+    entry = A.demote(action_id, body.connection_id, why=body.why, by=_who(principal) or "unidentified",
                      evidence={"drill": True} if body.drill else None)
     return {"entry": entry, "action_id": action_id, "scope": body.connection_id, "to_level": 3, "drill": body.drill}

@@ -80,3 +80,27 @@ def test_the_date_rule_sets_an_uber_metrics_date_though_traffic_was_profiled_aft
     m = get_metric("rides", connection_id=workspace)
     assert said["rides"] == "set automatically" and m.time_column == "date", (said, m.time_column)
     assert m.time_source.startswith("set automatically")
+
+
+def test_a_reader_that_names_no_tables_sees_every_dataset_each_as_last_profiled(workspace):
+    """The Briefing, the settling sampler, a re-ask and the overview read no single statement's
+    tables. They read the newest entry, which was the traffic data alone; they read every dataset now."""
+    merged = pc.merged_profile_entry(workspace)
+    assert {"uber_ncr.ncr_ride_bookings", "traffic.all_dimesnsions_2"} <= set(merged["tables"])
+    assert merged["tables"]["uber_ncr.ncr_ride_bookings"]["primary_timestamp"] == "Date"
+    assert pc.merged_profile_entry("never-profiled") == {}
+
+
+def test_one_connections_profiling_never_evicts_anothers(workspace, monkeypatch):
+    """The cap was 20 entries across the install, and the workspace alone held 15."""
+    monkeypatch.setattr(pc, "_MAX_PER_CONNECTION", 3)
+    pc._store.invalidate_prefix("other:")
+    try:
+        pc.save_profiles("other", "only", {}, {})
+        for i in range(5):
+            pc.save_profiles(workspace, f"fp{i}", {}, {})
+        mine = [k for k in pc._load() if k.startswith(f"{workspace}:")]
+        assert mine == [f"{workspace}:fp2", f"{workspace}:fp3", f"{workspace}:fp4"]
+        assert "other:only" in pc._load()
+    finally:
+        pc._store.invalidate_prefix("other:")

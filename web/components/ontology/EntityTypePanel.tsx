@@ -328,22 +328,22 @@ function DeclareProcess({ detail, connectionId, schema, onOpenProcess, onChanged
         moment is resolved and the whole process counted before anything is written.
       </p>
       <div style={{ display: "flex", gap: 6 }}>
-        <Input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={id} placeholder="id — order_fulfilment"
+        <Input style={{ ...FIELD, flex: 1 }} value={id} placeholder="id — order_fulfilment"
           aria-label="Process id" onChange={(e) => setId(e.target.value)} />
-        <Input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={name} placeholder="Display name (optional)"
+        <Input style={{ ...FIELD, flex: 1 }} value={name} placeholder="Display name (optional)"
           aria-label="Process display name" onChange={(e) => setName(e.target.value)} />
       </div>
       {stages.map((s, i) => (
         <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          <Input className="aug-fs-xs" style={{ ...FIELD, width: 110 }} value={s.name} placeholder={i ? "shipped" : "placed"}
+          <Input style={{ ...FIELD, width: 110 }} value={s.name} placeholder={i ? "shipped" : "placed"}
             aria-label={`Stage ${i + 1} name`} onChange={(e) => edit(i, { name: e.target.value })} />
-          <SelectField className="aug-fs-xs" style={SELECT} value={s.timestamp} aria-label={`Stage ${i + 1} moment`}
+          <SelectField style={SELECT} value={s.timestamp} aria-label={`Stage ${i + 1} moment`}
             onChange={(e) => edit(i, { timestamp: e.target.value })}>
             <option value="">moment…</option>
             {moments.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
           </SelectField>
           {i > 0 && (
-            <SelectField className="aug-fs-xs" style={SELECT} value={s.terms} aria-label={`Stage ${i + 1} promise`}
+            <SelectField style={SELECT} value={s.terms} aria-label={`Stage ${i + 1} promise`}
               onChange={(e) => edit(i, { terms: e.target.value as StageDraft["terms"] })}>
               <option value="">no promise</option>
               <option value="within_days">within days</option>
@@ -351,7 +351,7 @@ function DeclareProcess({ detail, connectionId, schema, onOpenProcess, onChanged
             </SelectField>
           )}
           {i > 0 && s.terms && (
-            <Input className="aug-fs-xs" style={{ ...FIELD, width: 56 }} value={s.amount} inputMode="numeric"
+            <Input style={{ ...FIELD, width: 56 }} value={s.amount} inputMode="numeric"
               placeholder={s.terms === "within_hours" ? "24" : "2"}
               aria-label={`Stage ${i + 1} promise ${s.terms === "within_hours" ? "hours" : "days"}`}
               onChange={(e) => edit(i, { amount: e.target.value })} />
@@ -437,16 +437,16 @@ function DeclareRule({ detail, connectionId, schema, onChanged }: {
         compiled and counted before anything is written, and read as a segment named by its id.
       </p>
       <div style={{ display: "flex", gap: 6 }}>
-        <Input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={id} placeholder="id — fulfilled_orders"
+        <Input style={{ ...FIELD, flex: 1 }} value={id} placeholder="id — fulfilled_orders"
           aria-label="Rule id" onChange={(e) => setId(e.target.value)} />
-        <SelectField className="aug-fs-xs" style={SELECT} value={kind} aria-label="Rule kind"
+        <SelectField style={SELECT} value={kind} aria-label="Rule kind"
           onChange={(e) => { setKind(e.target.value as "value_set" | "condition"); setProperty(""); }}>
           <option value="condition">condition</option>
           <option value="value_set">value set</option>
         </SelectField>
       </div>
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-        <SelectField className="aug-fs-xs" style={SELECT} value={property} aria-label="Rule property"
+        <SelectField style={SELECT} value={property} aria-label="Rule property"
           onChange={(e) => setProperty(e.target.value)}>
           <option value="">property…</option>
           {(kind === "value_set" ? groupable : detail.properties).map((p) => (
@@ -454,16 +454,16 @@ function DeclareRule({ detail, connectionId, schema, onChanged }: {
           ))}
         </SelectField>
         {kind === "value_set" ? (
-          <Input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={values} placeholder="DE, AT, CH"
+          <Input style={{ ...FIELD, flex: 1 }} value={values} placeholder="DE, AT, CH"
             aria-label="Rule values" onChange={(e) => setValues(e.target.value)} />
         ) : (
           <>
-            <SelectField className="aug-fs-xs" style={SELECT} value={op} aria-label="Rule operator"
+            <SelectField style={SELECT} value={op} aria-label="Rule operator"
               onChange={(e) => setOp(e.target.value)}>
               {OPS.map((o) => <option key={o} value={o}>{o.replace("_", " ")}</option>)}
             </SelectField>
             {!NO_VALUE.has(op) && (
-              <Input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={value}
+              <Input style={{ ...FIELD, flex: 1 }} value={value}
                 placeholder={LISTED.has(op) ? "cancelled, refunded" : "value"} aria-label="Rule value"
                 onChange={(e) => setValue(e.target.value)} />
             )}
@@ -736,7 +736,7 @@ function DisplaySection({ detail, connectionId, schema, onChanged, readOnly }: {
         {!readOnly && (
           <>
             <label className="aug-fs-xs" htmlFor={`display-${detail.object_type}`} style={{ color: "var(--t3)" }}>Declare</label>
-            <SelectField id={`display-${detail.object_type}`} className="aug-fs-xs" style={SELECT} value={shown.property}
+            <SelectField id={`display-${detail.object_type}`} style={SELECT} value={shown.property}
               disabled={busy} onChange={(e) => act(() => declareDisplayProperty(connectionId, detail.id, e.target.value, schema))}>
               {choices.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
             </SelectField>
@@ -829,17 +829,17 @@ function ExpressionsSection({ detail, connectionId, schema, onChanged }: {
         <Button variant="ghost" size="xs" onClick={() => setOpen(true)} style={{ marginTop: 4 }}>Declare an expression</Button>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }} data-testid="declare-expression">
-          <Input className="aug-fs-xs" style={FIELD} value={name} placeholder="days_to_ship" aria-label="Expression name"
+          <Input style={FIELD} value={name} placeholder="days_to_ship" aria-label="Expression name"
             onChange={(e) => setName(e.target.value)} />
-          <Input className="aug-fs-xs" style={{ ...FIELD, ...MONO }} value={expression} aria-label="Expression SQL"
+          <Input style={{ ...FIELD, ...MONO }} value={expression} aria-label="Expression SQL"
             placeholder="date_diff('day', order_date, shipped_at)" onChange={(e) => setExpression(e.target.value)} />
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-            <SelectField className="aug-fs-xs" style={SELECT} value={role} aria-label="Expression role"
+            <SelectField style={SELECT} value={role} aria-label="Expression role"
               onChange={(e) => setRole(e.target.value as "measure" | "dimension")}>
               <option value="measure">measure</option>
               <option value="dimension">dimension</option>
             </SelectField>
-            <Input className="aug-fs-xs" style={{ ...FIELD, width: 90 }} value={unit} placeholder="unit" aria-label="Expression unit"
+            <Input style={{ ...FIELD, width: 90 }} value={unit} placeholder="unit" aria-label="Expression unit"
               onChange={(e) => setUnit(e.target.value)} />
             <Button variant="outline" size="xs" disabled={!!busy || !name.trim() || !expression.trim()}
               onClick={() => act("declare", () => declareExpression(connectionId, detail.id, name.trim(),
@@ -1103,12 +1103,12 @@ function BackingEditor({ detail, busy, onPreview, onSet, onWithdraw }: {
         Read {detail.display_name} from a keyed SELECT: its rows are the objects, and every property is read from it.
         Nothing is written until it is set.
       </p>
-      <Textarea className="aug-fs-xs" style={{ ...FIELD, ...MONO, width: "100%", minHeight: 64 }} value={sql}
+      <Textarea style={{ ...FIELD, ...MONO, width: "100%", minHeight: 64 }} value={sql}
         aria-label="Backing SELECT" placeholder="SELECT c.customer_id, c.name, p.lifetime_spend FROM …"
         onChange={(e) => { setSql(e.target.value); setPreview(null); }} />
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
         <span className="aug-fs-xs" style={term}>key</span>
-        <Input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={key} aria-label="Backing key"
+        <Input style={{ ...FIELD, width: 150 }} value={key} aria-label="Backing key"
           onChange={(e) => { setKey(e.target.value); setPreview(null); }} />
         <Button variant="outline" size="xs" disabled={looking || !sql.trim() || !key.trim()} onClick={look}>
           {looking ? "Reading…" : "Preview"}
@@ -1285,14 +1285,14 @@ function DeclareBinding({ detail, busy, onDeclare, sources }: {
       {sources && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>from</span>
-          <SelectField className="aug-fs-xs" style={SELECT} value={connection} aria-label="Binding connection"
+          <SelectField style={SELECT} value={connection} aria-label="Binding connection"
             data-testid="declare-binding-connection" onChange={(e) => setConnection(e.target.value)}>
             {Object.entries(sources).map(([cid, label]) => (
               <option key={cid} value={cid}>{cid === detail.connection_id ? `${label} (its own)` : label}</option>
             ))}
           </SelectField>
           {reads === "table" && (
-            <Input className="aug-fs-xs" style={{ ...FIELD, width: 110 }} value={schemaName} placeholder="schema"
+            <Input style={{ ...FIELD, width: 110 }} value={schemaName} placeholder="schema"
               aria-label="Binding schema" onChange={(e) => setSchemaName(e.target.value)} />
           )}
           {crosses && (
@@ -1304,23 +1304,23 @@ function DeclareBinding({ detail, busy, onDeclare, sources }: {
         </div>
       )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        <Input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={name} placeholder="binding name"
+        <Input style={{ ...FIELD, width: 150 }} value={name} placeholder="binding name"
           aria-label="Binding name" onChange={(e) => setName(e.target.value)} />
-        <SelectField className="aug-fs-xs" style={SELECT} value={reads} aria-label="Source kind"
+        <SelectField style={SELECT} value={reads} aria-label="Source kind"
           onChange={(e) => setReads(e.target.value as "table" | "query")}>
           <option value="table">table</option>
           <option value="query">SELECT</option>
         </SelectField>
-        <Input className="aug-fs-xs" style={{ ...FIELD, flex: 1, minWidth: 220 }} value={source}
+        <Input style={{ ...FIELD, flex: 1, minWidth: 220 }} value={source}
           aria-label={reads === "table" ? "Table" : "SELECT"}
           placeholder={reads === "table" ? "price_history" : "SELECT product_id, AVG(price) AS price FROM … GROUP BY 1"}
           onChange={(e) => setSource(e.target.value)} />
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>on</span>
-        <Input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={key} aria-label="Key column"
+        <Input style={{ ...FIELD, width: 150 }} value={key} aria-label="Key column"
           placeholder={detail.key.property} onChange={(e) => setKey(e.target.value)} />
-        <SelectField className="aug-fs-xs" style={SELECT} value={kind} aria-label="Binding kind"
+        <SelectField style={SELECT} value={kind} aria-label="Binding kind"
           onChange={(e) => setKind(e.target.value as BindingSpec["kind"])}>
           <option value="static">static</option>
           <option value="timeseries">timeseries</option>
@@ -1329,7 +1329,7 @@ function DeclareBinding({ detail, busy, onDeclare, sources }: {
         {kind === "timeseries" && (
           <>
             <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>over</span>
-            <Input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={timeColumn} aria-label="Time column"
+            <Input style={{ ...FIELD, width: 150 }} value={timeColumn} aria-label="Time column"
               placeholder="observed_at" onChange={(e) => setTimeColumn(e.target.value)} />
           </>
         )}
@@ -1346,10 +1346,10 @@ function DeclareBinding({ detail, busy, onDeclare, sources }: {
           </p>
           {frames.map((f, i) => (
             <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
-              <Input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={f.name}
+              <Input style={{ ...FIELD, width: 150 }} value={f.name}
                 aria-label={`Frame ${i + 1} property`} placeholder="avg_price_3"
                 onChange={(e) => setFrames((fs) => fs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-              <SelectField className="aug-fs-xs" style={SELECT} value={f.what} aria-label={`Frame ${i + 1} shape`}
+              <SelectField style={SELECT} value={f.what} aria-label={`Frame ${i + 1} shape`}
                 onChange={(e) => setFrames((fs) => fs.map((x, j) => j === i ? { ...x, what: e.target.value as Shape } : x))}>
                 <option value="avg-trailing">average of the last N</option>
                 <option value="sum-cumulative">total to date</option>
@@ -1359,11 +1359,11 @@ function DeclareBinding({ detail, busy, onDeclare, sources }: {
                 <option value="previous">the reading before</option>
               </SelectField>
               <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>of</span>
-              <Input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={f.column}
+              <Input style={{ ...FIELD, width: 150 }} value={f.column}
                 aria-label={`Frame ${i + 1} column`} placeholder="price"
                 onChange={(e) => setFrames((fs) => fs.map((x, j) => j === i ? { ...x, column: e.target.value } : x))} />
               {f.what === "avg-trailing" && (
-                <Input className="aug-fs-xs" style={{ ...FIELD, width: 60 }} value={f.window} type="number" min={1}
+                <Input style={{ ...FIELD, width: 60 }} value={f.window} type="number" min={1}
                   aria-label={`Frame ${i + 1} readings`}
                   onChange={(e) => setFrames((fs) => fs.map((x, j) => j === i ? { ...x, window: e.target.value } : x))} />
               )}
@@ -1386,10 +1386,10 @@ function DeclareBinding({ detail, busy, onDeclare, sources }: {
           </p>
           {rollups.map((r, i) => (
             <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
-              <Input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={r.name}
+              <Input style={{ ...FIELD, width: 150 }} value={r.name}
                 aria-label={`Rollup ${i + 1} property`} placeholder="units"
                 onChange={(e) => setRollups((rs) => rs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-              <SelectField className="aug-fs-xs" style={SELECT} value={r.agg} aria-label={`Rollup ${i + 1} agg`}
+              <SelectField style={SELECT} value={r.agg} aria-label={`Rollup ${i + 1} agg`}
                 onChange={(e) => setRollups((rs) => rs.map((x, j) => j === i ? { ...x, agg: e.target.value as RollupAgg } : x))}>
                 <option value="sum">sum of</option>
                 <option value="count">how many carry</option>
@@ -1397,7 +1397,7 @@ function DeclareBinding({ detail, busy, onDeclare, sources }: {
                 <option value="min">lowest</option>
                 <option value="max">highest</option>
               </SelectField>
-              <Input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={r.column}
+              <Input style={{ ...FIELD, width: 150 }} value={r.column}
                 aria-label={`Rollup ${i + 1} column`} placeholder="quantity"
                 onChange={(e) => setRollups((rs) => rs.map((x, j) => j === i ? { ...x, column: e.target.value } : x))} />
               <Button variant="ghost" size="xs" onClick={() => setRollups((rs) => rs.filter((_, j) => j !== i))}>
@@ -1507,7 +1507,7 @@ function NameLink({ link, connectionId, schema, onChanged }: {
   }
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-      <Input className="aug-fs-xs" style={{ ...FIELD, width: 220 }} value={name} autoFocus disabled={busy}
+      <Input style={{ ...FIELD, width: 220 }} value={name} autoFocus disabled={busy}
         placeholder="shipped_as" aria-label={`Business name for ${link.name}`}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) void save(); if (e.key === "Escape") setOpen(false); }} />
@@ -1569,19 +1569,19 @@ function AddRelationship({ detail, types, connectionId, schema, onChanged }: {
     <div style={{ marginTop: 10, paddingTop: 8, borderTop: RULE }} data-testid="declare-link">
       <div className="aug-fs-xs" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         <span style={{ color: "var(--t2)" }}>{detail.display_name}</span>
-        <Input className="aug-fs-xs" style={{ ...FIELD, width: 130 }} value={name} placeholder="placed_by"
+        <Input style={{ ...FIELD, width: 130 }} value={name} placeholder="placed_by"
           aria-label="Link verb" onChange={(e) => setName(e.target.value)} />
-        <SelectField className="aug-fs-xs" style={SELECT} value={target} aria-label="Link target type"
+        <SelectField style={SELECT} value={target} aria-label="Link target type"
           onChange={(e) => setTo(e.target.value)}>
           {others.map((t) => <option key={t.object_type} value={t.object_type}>{t.display_name}</option>)}
         </SelectField>
       </div>
       <div className="aug-fs-xs" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
         <span style={{ color: "var(--t3)" }}>on</span>
-        <Input className="aug-fs-xs" style={{ ...FIELD, width: 130 }} value={fromColumn} placeholder={detail.key.property}
+        <Input style={{ ...FIELD, width: 130 }} value={fromColumn} placeholder={detail.key.property}
           aria-label="Link column on this type" onChange={(e) => setFromColumn(e.target.value)} />
         <span style={{ color: "var(--t3)" }}>=</span>
-        <Input className="aug-fs-xs" style={{ ...FIELD, width: 130 }} value={toColumn} placeholder="its column"
+        <Input style={{ ...FIELD, width: 130 }} value={toColumn} placeholder="its column"
           aria-label="Link column on the other type" onChange={(e) => setToColumn(e.target.value)} />
         <Button variant="outline" size="xs" disabled={busy || !ready} onClick={declare}>
           {busy ? "Declaring…" : "Declare"}
@@ -1827,7 +1827,7 @@ function PathFinder({ detail, types, connectionId, schema, onOpen }: {
   return (
     <Section title="Path to" aside="how this type reaches another, hop by hop">
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        <SelectField className="aug-fs-xs" style={SELECT} value={chosen} aria-label="Target entity type"
+        <SelectField style={SELECT} value={chosen} aria-label="Target entity type"
           onChange={(e) => { setTarget(e.target.value); setFound(null); }}>
           {others.map((t) => <option key={t.object_type} value={t.object_type}>{t.display_name}</option>)}
         </SelectField>

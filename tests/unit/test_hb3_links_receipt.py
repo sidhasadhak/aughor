@@ -72,17 +72,19 @@ def test_links_doors(client, monkeypatch):
 
 def test_a_close_names_who_closed_it_and_every_open_filing_is_one_list(client, monkeypatch):
     """Agent Ops ▸ By duty lists every open filing and closes one with an outcome (ROADMAP §6 item
-    42d). With no sign-in, the name the page carried is kept as a person — never as a `user:`."""
+    42d). With no sign-in, the closer is the login the request acts for — the name a page carries
+    is not read, and no close is left as the bare `user:` it used to write."""
     monkeypatch.setattr(L, "stamped_measures", lambda ref: {})
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana-op")
     first = client.post("/links", json={"object_ref": "finding:late_dispatch", "kind": "ticket", "ref": "OPS-7"}).json()
     second = client.post("/links", json={"object_ref": "process:returns", "kind": "doc", "title": "Returns runbook"}).json()
     open_ids = {r["id"] for r in client.get("/links", params={"status": "open", "limit": 500}).json()["links"]}
     assert {first["id"], second["id"]} <= open_ids                     # across objects, no object_ref asked
 
     closed = client.post(f"/links/{first['id']}/close", json={"outcome": "carrier changed", "by": "Ana"}).json()
-    assert closed["closed_by"] == "person:Ana" and closed["outcome"] == "carrier changed"
+    assert closed["closed_by"] == "user:ana-op" and closed["outcome"] == "carrier changed"
     unnamed = client.post(f"/links/{second['id']}/close", json={"outcome": "superseded"}).json()
-    assert unnamed["closed_by"] == "user:"                              # as this door has always written it
+    assert unnamed["closed_by"] == "user:ana-op"
     open_ids = {r["id"] for r in client.get("/links", params={"status": "open", "limit": 500}).json()["links"]}
     assert not ({first["id"], second["id"]} & open_ids)
 

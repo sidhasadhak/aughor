@@ -152,8 +152,7 @@ function Backend() {
             spellCheck={false}
             placeholder={API_BASE_DEFAULT}
             aria-label="Backend URL"
-            className="flex-1 bg-white/[0.04] rounded-[var(--r2)] px-2 py-1 aug-fs-xs
-                       text-zinc-200 outline-none focus:bg-white/[0.07]"
+            className="flex-1"
           />
           <Button size="xs" variant="secondary" disabled={busy || !dirty} onClick={() => void save()}>
             {busy ? "checking…" : "Save"}
@@ -450,8 +449,7 @@ function FeatureFlags() {
         <Input
           value={query} onChange={e => setQuery(e.target.value)}
           placeholder={`Search ${entries.length} flags — name, description, exit note…`}
-          className="w-full text-xs px-2 py-1.5 rounded-[var(--r2)] outline-none"
-          style={{ background: "var(--bg-1)", color: "var(--t1)", border: "1px solid var(--b1)" }}
+          className="w-full"
         />
         {q && (
           <Button size="xs" variant="ghost" onClick={() => setQuery("")} className="shrink-0">Clear</Button>

@@ -4,9 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Filing } from "@/lib/api";
 
+import { forgetMe } from "@/lib/useMe";
+
 import { FilingsSection, ProbationSection, aboutWords, openFor } from "./FilingsSection";
 
-const api = vi.hoisted(() => ({ listFilings: vi.fn(), closeFiling: vi.fn(), getHubMap: vi.fn() }));
+const api = vi.hoisted(() => ({ listFilings: vi.fn(), closeFiling: vi.fn(), getHubMap: vi.fn(), getMyAccess: vi.fn() }));
 vi.mock("@/lib/api", async (original) => ({ ...(await original<typeof import("@/lib/api")>()), ...api }));
 
 const filing = (id: string, extra: Partial<Filing> = {}): Filing => ({
@@ -20,6 +22,8 @@ beforeEach(() => {
   try { localStorage.clear(); } catch { /* jsdom */ }
   api.listFilings.mockResolvedValue([filing("f1"), filing("f2", { kind: "doc", title: "", ref: "", object_ref: "finding:late_dispatch", source: "user:ana" })]);
   api.closeFiling.mockResolvedValue(filing("f1", { status: "closed" }));
+  api.getMyAccess.mockResolvedValue({ user_id: null, actor: "ana", signed_in: false, org_id: "default", roles: [], permissions: [] });
+  forgetMe();
 });
 
 describe("filed and open", () => {
@@ -35,16 +39,18 @@ describe("filed and open", () => {
     expect(screen.getByRole("button", { name: /CSV/ })).toBeInTheDocument();
   });
 
-  it("closes one only with what happened, under the name given, and reads the list again", async () => {
+  it("closes one only with what happened, under who is signed in, and reads the list again", async () => {
     render(<FilingsSection />);
     fireEvent.click((await screen.findAllByRole("button", { name: "Close" }))[0]);
     const send = screen.getByRole("button", { name: "Close it" });
     expect(send).toBeDisabled();                                   // an outcome is the point of closing
     fireEvent.change(screen.getByLabelText("What happened"), { target: { value: "carrier re-routed via hub B" } });
     fireEvent.change(screen.getByLabelText("What it recovered"), { target: { value: "34 late lines" } });
-    fireEvent.change(screen.getByPlaceholderText("your name"), { target: { value: "Ana" } });
+    // no name is asked: the closer is who the server says is acting, shown, and not sent
+    expect(screen.queryByPlaceholderText("your name")).toBeNull();
+    expect(await screen.findByText("Recorded as", { exact: false })).toHaveTextContent("Recorded as ana");
     fireEvent.click(send);
-    await waitFor(() => expect(api.closeFiling).toHaveBeenCalledWith("f1", "carrier re-routed via hub B", "34 late lines", "Ana"));
+    await waitFor(() => expect(api.closeFiling).toHaveBeenCalledWith("f1", "carrier re-routed via hub B", "34 late lines"));
     await waitFor(() => expect(api.listFilings).toHaveBeenCalledTimes(2));
     expect(screen.queryByTestId("filing-close")).toBeNull();
   });

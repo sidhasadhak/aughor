@@ -23,7 +23,8 @@ class AllowRequest(BaseModel):
 @router.post("/approvals/allow")
 def approve_action(req: AllowRequest):
     """Allowlist a high-risk action for a scope so future attempts proceed."""
-    rec = govern.allow(req.action, req.scope)
+    from aughor.security.authz import caller
+    rec = govern.allow(req.action, req.scope, actor=caller())   # the person signed in approves it
     return {"allowed": True, "entry": rec, "risk": govern.classify(req.action).value}
 
 

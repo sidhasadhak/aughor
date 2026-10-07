@@ -99,8 +99,8 @@ def render(connection_id: str, tables: list[str], *, budget: int = DEFAULT_BUDGE
 
     Read-only against the profile cache: nothing here runs SQL. Tables in the order given (the
     linker's rank), each whole or not at all."""
-    from aughor.tools.profile_cache import latest_profile_entry
-    entry = latest_profile_entry(connection_id) or {}
+    from aughor.tools.profile_cache import profile_entry_for
+    entry = profile_entry_for(connection_id, tables) or {}
     table_profiles = {_bare(t): d for t, d in (entry.get("tables") or {}).items()
                       if isinstance(d, dict)}
     by_table: dict[str, list[dict]] = {}

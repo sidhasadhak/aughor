@@ -376,7 +376,7 @@ function DomainPage({ domain, data, org, ctx, onBack }: {
           tabs={tabs.map(t => ({ id: t.id, label: t.label }))} />
         {tab === "findings" && (
           <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search findings…"
-            aria-label={`Search the ${domain} findings`} className="aug-fs-sm" style={{ marginLeft: "auto", width: 240, height: 26 }} />
+            aria-label={`Search the ${domain} findings`} style={{ marginLeft: "auto", width: 240 }} />
         )}
       </div>
 
@@ -474,7 +474,7 @@ export function ProfileLayer({ connectionId, canvasId, schema, workspaceId }: {
         {names.length > 8 && (
           <div style={{ padding: "2px 10px 6px" }}>
             <Input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter domains…"
-              aria-label="Filter domains" className="aug-fs-xs" style={{ height: 24 }} />
+              aria-label="Filter domains" />
           </div>
         )}
         <div className="aug-profile-domains-list">

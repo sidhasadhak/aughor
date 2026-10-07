@@ -170,9 +170,6 @@ export function BindingCast({ value, onChange }: {
     <SelectField
       aria-label="convert the bound value"
       title={BINDING_HINT}
-      className="aug-fs-xs"
-      style={{ background: "var(--bg-1)", color: "var(--t2)",
-               border: "1px solid var(--b1)", borderRadius: 4, padding: "2px 4px" }}
       value={current}
       onChange={ev => {
         const next: Record<string, unknown> = { ...binding };
@@ -304,8 +301,9 @@ function TrustedQueryRows({ e, set }: {
           <Input style={inputStyle} value={String(e.config.question ?? "")}
             onChange={ev => set({ question: ev.target.value })}
             placeholder="what this query answers, in a sentence" />
-          <Textarea style={{ ...inputStyle, minHeight: 88, marginTop: 4,
-                             fontFamily: "var(--font-mono)", lineHeight: 1.5 }}
+          <Textarea style={{ ...inputStyle,
+                             minHeight: 88,
+                             marginTop: 4 }}
             value={String(e.config.sql ?? "")}
             onChange={ev => set({ sql: ev.target.value })}
             placeholder="SELECT …" />
@@ -352,7 +350,7 @@ export function GuardRows({ e, siblings, index, onChange }: {
         {clauses.length > 1 && (
           <SelectField value={e.when_logic ?? "all"} aria-label="Only if logic"
             onChange={ev => onChange({ ...e, when_logic: ev.target.value as "all" | "any" })}
-            style={{ ...inputStyle, width: 74, padding: "3px 6px", fontSize: 11 }}>
+            style={{ ...inputStyle, width: 74 }}>
             <option value="all">all</option>
             <option value="any">any</option>
           </SelectField>
@@ -366,7 +364,7 @@ export function GuardRows({ e, siblings, index, onChange }: {
         <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "center" }}>
           <SelectField value={refOf(c.left)} aria-label="Only if subject"
             onChange={ev => patch(i, { left: { $from: ev.target.value } })}
-            style={{ ...inputStyle, width: 150, fontSize: 12 }}>
+            style={{ ...inputStyle, width: 150 }}>
             {/* A reference the picker cannot offer — a step renamed or deleted since —
                 is kept as an option rather than silently re-pointed at the first entry,
                 which would change what the guard tests without anyone touching it. */}
@@ -377,11 +375,11 @@ export function GuardRows({ e, siblings, index, onChange }: {
           </SelectField>
           <SelectField value={c.op} aria-label="Only if comparison"
             onChange={ev => patch(i, { op: ev.target.value })}
-            style={{ ...inputStyle, width: 96, fontSize: 12 }}>
+            style={{ ...inputStyle, width: 96 }}>
             {ops.map(o => <option key={o.op} value={o.op}>{o.label}</option>)}
           </SelectField>
           {!unary.has(c.op) && (
-            <Input style={{ ...inputStyle, flex: 1, fontSize: 12 }} value={String(c.right ?? "")}
+            <Input style={{ ...inputStyle, flex: 1 }} value={String(c.right ?? "")}
               aria-label="Only if value" placeholder="value"
               onChange={ev => patch(i, { right: ev.target.value })} />
           )}
@@ -426,7 +424,7 @@ export function OtherwiseRows({ e, siblings, index, onChange }: {
         <span style={{ ...labelStyle, marginBottom: 0 }}>Otherwise</span>
         <SelectField value={current} aria-label="Otherwise of"
           onChange={ev => onChange({ ...e, else_of: ev.target.value || undefined })}
-          style={{ ...inputStyle, flex: 1, fontSize: 12 }}>
+          style={{ ...inputStyle, flex: 1 }}>
           <option value="">— runs regardless —</option>
           {/* A target the picker cannot offer — deleted, renamed, or no longer guarded
               — is kept as an option rather than silently cleared, which would change
@@ -512,7 +510,7 @@ export function ForEachRows({ e, onChange }: {
       </div>
       {items.map((item, i) => (
         <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "center" }}>
-          <Input className="aug-fs-sm" style={{ ...inputStyle, flex: 1 }}
+          <Input style={{ ...inputStyle, flex: 1 }}
             value={String(item ?? "")}
             aria-label={`For each item ${i + 1}`} placeholder="one item — e.g. EMEA"
             onChange={ev => put(items.map((v, n) => (n === i ? ev.target.value : v)))} />
@@ -967,7 +965,7 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
               onChange={ev => set({ data: ev.target.value })}
               title={BINDING_HINT}
               placeholder={'data — drag a gives port here, or {"$from": "step1.rows"}'} />
-            <Textarea style={{ ...inputStyle, minHeight: 64, marginTop: 4, lineHeight: 1.5 }}
+            <Textarea style={{ ...inputStyle, minHeight: 64, marginTop: 4 }}
               value={String(e.config.context ?? "")}
               onChange={ev => set({ context: ev.target.value })}
               placeholder="what to make of it — e.g. call out anything unusual and say what changed" />

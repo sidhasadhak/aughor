@@ -95,7 +95,7 @@ function TriggerForm({
       </div>
       <div>
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Type</div>
-        <SelectField value={type} onChange={e => setType(e.target.value as typeof type)} className="aug-input">
+        <SelectField value={type} onChange={e => setType(e.target.value as typeof type)}>
           <option value="webhook">Webhook (generic)</option>
           <option value="slack">Slack incoming webhook</option>
           <option value="jira">Jira (create issue)</option>
@@ -106,7 +106,7 @@ function TriggerForm({
           {type === "jira" ? "Jira base URL" : "Webhook URL"}
         </div>
         <Input value={url} onChange={e => setUrl(e.target.value)} required
-          placeholder={type === "slack" ? "https://hooks.slack.com/services/…" : type === "jira" ? "https://yourorg.atlassian.net/rest/api/3/issue" : "https://…"} style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
+          placeholder={type === "slack" ? "https://hooks.slack.com/services/…" : type === "jira" ? "https://yourorg.atlassian.net/rest/api/3/issue" : "https://…"}
         />
       </div>
       {type === "slack" && (

@@ -105,7 +105,7 @@ def test_the_door_serves_the_re_ask_and_its_cache_and_refuses_without_a_range(mo
         "Orders": {"insights": [{"id": "f2", "sql": "SELECT COUNT(*) AS n FROM orders", "signature": {"tables": ["orders"]}}]},
         # The store's own shape is a plain list per domain; the served block wraps it. Both must read.
         "Catalog": [{"id": "f3", "sql": "SELECT COUNT(*) AS n FROM products", "signature": {"tables": ["products"]}}]})
-    monkeypatch.setattr("aughor.tools.profile_cache.latest_profile_entry", lambda cid: PROFILE)
+    monkeypatch.setattr("aughor.tools.profile_cache.merged_profile_entry", lambda cid: PROFILE)
     seen = {"opened": 0}
 
     @contextmanager

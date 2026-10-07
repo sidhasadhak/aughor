@@ -68,6 +68,13 @@ def _home(request: Request, connection_id: str, cockpit_id: str):
     return Home(connection_id, person_of(request), cockpit_id)
 
 
+def _approved_by(request: Request) -> str:
+    """Who approves a version: the person signed in, else the one this request acts for. It was the
+    home's owner, which without a sign-in is nobody in particular and wrote the bare word "person"."""
+    from aughor.security.authz import acting_person, caller, get_principal
+    return acting_person(get_principal(request)) or f"user:{caller()}"
+
+
 def _answer(kept, **more) -> dict:
     code = _STATUS_CODE.get(kept.status)
     if code:
@@ -171,9 +178,8 @@ def keep_cockpit(request: Request, cockpit_id: str, connection_id: str, req: Kee
     version, or a refusal with the reasons."""
     _on()
     from aughor.cockpit import versions
-    from aughor.cockpit.home import approver
     home = _home(request, connection_id, cockpit_id)
-    return _answer(versions.keep(home, req.spec, approved_by=approver(home.owner),
+    return _answer(versions.keep(home, req.spec, approved_by=_approved_by(request),
                                  source="a person's own hand", note=req.note, written_by_model=False),
                    cockpit_id=home.cockpit_id)
 
@@ -184,7 +190,7 @@ def start_first(request: Request, connection_id: str) -> dict:
     order the person arranged them. Written by code, kept like any other spec."""
     _on()
     from aughor.cockpit import cards, compose, versions
-    from aughor.cockpit.home import FIRST, approver
+    from aughor.cockpit.home import FIRST
     home = _home(request, connection_id, FIRST)
     if versions.latest(home) is not None:
         raise HTTPException(status_code=409, detail={
@@ -196,7 +202,7 @@ def start_first(request: Request, connection_id: str) -> dict:
             "status": "refused", "kept": False, "version": None, "artifact_id": "",
             "sentences": ["There are no pinned cards to start from. Name an area to draft a cockpit instead."]})
     spec = compose.default_spec("My cockpit", held, order=_layout_order(connection_id, home.owner))
-    return _answer(versions.keep(home, spec, approved_by=approver(home.owner),
+    return _answer(versions.keep(home, spec, approved_by=_approved_by(request),
                                  source="started from the cards pinned in the Briefing",
                                  written_by_model=False),
                    cockpit_id=home.cockpit_id)
@@ -232,9 +238,8 @@ def restore_cockpit(request: Request, cockpit_id: str, connection_id: str, req: 
     cards as they are today."""
     _on()
     from aughor.cockpit import versions
-    from aughor.cockpit.home import approver
     home = _home(request, connection_id, cockpit_id)
-    return _answer(versions.restore(home, req.version, approved_by=approver(home.owner)),
+    return _answer(versions.restore(home, req.version, approved_by=_approved_by(request)),
                    cockpit_id=home.cockpit_id)
 
 
@@ -243,7 +248,6 @@ def retire_cockpit(request: Request, cockpit_id: str, connection_id: str, req: R
     """Retire a cockpit. Its history stays."""
     _on()
     from aughor.cockpit import versions
-    from aughor.cockpit.home import approver
     home = _home(request, connection_id, cockpit_id)
-    return _answer(versions.retire(home, approved_by=approver(home.owner), note=req.note),
+    return _answer(versions.retire(home, approved_by=_approved_by(request), note=req.note),
                    cockpit_id=home.cockpit_id)

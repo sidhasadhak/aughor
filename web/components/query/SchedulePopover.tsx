@@ -140,8 +140,7 @@ export function SchedulePopover({
             )}
 
             <div className="aug-label" style={{ marginBottom: 6 }}>Add schedule</div>
-            <Input
-              className="aug-fs-ui" style={{ width: "100%", marginBottom: 6 }}
+            <Input style={{ width: "100%", marginBottom: 6 }}
               value={name} onChange={e => setName(e.target.value)} placeholder="Schedule name"
             />
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
@@ -159,8 +158,7 @@ export function SchedulePopover({
               </Button>
             </div>
             {customCron && (
-              <Input
-                className="aug-fs-ui font-mono" style={{ width: "100%", marginBottom: 6 }}
+              <Input style={{ width: "100%", marginBottom: 6 }}
                 value={cron} onChange={e => setCron(e.target.value)}
                 placeholder="m h dom mon dow"
               />

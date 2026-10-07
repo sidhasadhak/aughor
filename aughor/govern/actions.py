@@ -33,7 +33,7 @@ _LOG = logging.getLogger("aughor.govern")
 from fastapi import HTTPException
 
 from aughor.kernel.ledger import Ledger
-from aughor.org.context import current_org_id
+from aughor.org.context import current_actor, current_org_id
 from aughor.util.time import now_iso as _now
 
 _ALLOW_STORE = "action_allowlist"
@@ -104,7 +104,9 @@ def is_allowed(action: str, scope: str = "") -> bool:
 
 
 def allow(action: str, scope: str = "", *, actor: str = "") -> dict:
-    """Add a per-scope allowlist entry so future high-risk `action`s on `scope` proceed."""
+    """Add a per-scope allowlist entry so future high-risk `action`s on `scope` proceed. With no
+    ``actor``, the person the running request acts for; outside a request, the org as before."""
+    actor = actor or current_actor()
     rec = {"allowed": True, "action": action, "scope": scope or "*",
            "by": actor or current_org_id(), "at": _now()}
     Ledger.default().kv_put(_ALLOW_STORE, _key(action, scope), rec)
@@ -145,8 +147,12 @@ def audit(action: str, scope: str, decision: str, *, actor: str = "", detail: st
     so a door that reports ``slack:U…`` files under the platform user it links to.
 
     ``org_id`` is unchanged and still stamped — the tenant was never the wrong thing to
-    record, only the wrong thing to record AS THE ACTOR."""
+    record, only the wrong thing to record AS THE ACTOR.
+
+    No ``actor`` inside a request is the person that request acts for (`current_actor`): a gated
+    route a person called is theirs, not unattributed. Outside one it stays ``UNATTRIBUTED``."""
     from aughor.identity.resolver import attribution_key
+    actor = actor or current_actor()
     Ledger.default().emit(_AUDIT_KIND, {
         "action": action, "risk": (risk or classify(action)).value, "decision": decision,
         "scope": scope or "", "actor": attribution_key(actor),

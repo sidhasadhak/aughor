@@ -24,11 +24,17 @@ import type { CatalogueMetric } from "@/lib/api";
 const getMetrics = vi.fn();
 const getMetricCatalogue = vi.fn();
 const materialiseMetric = vi.fn();
+const removeProposal = vi.fn();
+const restoreProposal = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   getMetrics: (...a: unknown[]) => getMetrics(...a),
   getMetricCatalogue: (...a: unknown[]) => getMetricCatalogue(...a),
   materialiseMetric: (...a: unknown[]) => materialiseMetric(...a),
+  removeProposal: (...a: unknown[]) => removeProposal(...a),
+  restoreProposal: (...a: unknown[]) => restoreProposal(...a),
+  promoteMetric: vi.fn(),
+  getMyAccess: vi.fn(async () => ({ actor: "ana@example.com", signed_in: false })),
   createMetric: vi.fn(),
   updateMetric: vi.fn(),
   deleteMetric: vi.fn(),
@@ -49,7 +55,7 @@ function row(over: Partial<CatalogueMetric> = {}): CatalogueMetric {
     dimensions: [], tables: ["order_items"], anti_patterns: [], pack_id: "",
     required_roles: [], missing_roles: [], sane_range: null,
     why_it_matters: "Primary indicator of scale.", reason: "", status: "", version: 0, owner: "",
-    editable: false, ...over,
+    editable: false, schema: "*", ...over,
   };
 }
 
@@ -121,16 +127,45 @@ describe("opening a row", () => {
     const user = userEvent.setup();
     render(<MetricsPanel connId="c1" />);
     await user.click(await screen.findByText("Net interest margin"));
-    expect(await screen.findByText(/has not bound financial_period/)).toBeInTheDocument();
+    expect(await screen.findByText(/names financial_period/)).toBeInTheDocument();
   });
 
-  it("refuses to customise a recipe this connection cannot compute", async () => {
+  it("offers every way forward for a recipe this connection has not bound — never a dead end", async () => {
+    // The user, 2026-10-07: "no 'this requires binding' — that's a dead end with no action possible".
     const user = userEvent.setup();
+    materialiseMetric.mockResolvedValue({
+      name: "net_interest_margin", label: "Net interest margin", sql: "", connection: "c1",
+      schema_name: "*", home_schema: "*", tables: [], dimensions: [], filters: [], quality_tests: [],
+      lineage: ["industry: banking"], wrong_usage_examples: [], status: "draft", version: 0,
+    });
     render(<MetricsPanel connId="c1" />);
     await user.click(await screen.findByText("Net interest margin"));
-    const btn = await screen.findByRole("button", { name: /Customise for this connection/i });
-    expect(btn).toBeDisabled();
-    expect(materialiseMetric).not.toHaveBeenCalled();
+    const write = await screen.findByRole("button", { name: /Write its SQL for this connection/i });
+    expect(write).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Bind its roles/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^Remove$/i })).toBeEnabled();
+    await user.click(write);
+    expect(materialiseMetric).toHaveBeenCalledWith("c1", "net_interest_margin", "*");
+  });
+
+  it("removes a proposal on a confirmed click, and lists it to restore", async () => {
+    const user = userEvent.setup();
+    removeProposal.mockResolvedValue({});
+    render(<MetricsPanel connId="c1" />);
+    await user.click(await screen.findByText("Gross Merchandise Value"));
+    await user.click(await screen.findByRole("button", { name: /^Remove$/i }));
+    expect(removeProposal).not.toHaveBeenCalled();
+    getMetricCatalogue.mockResolvedValue({
+      connection_id: "c1", metrics: CATALOGUE.filter((r) => r.name !== "gmv"), counts: { total: 2 },
+      removed: [{ connection: "c1", schema_name: "*", name: "gmv", label: "Gross Merchandise Value",
+                  source: "explorer", by: "ana@example.com", at: "2026-10-07T20:00:00+00:00" }],
+    });
+    await user.click(screen.getByRole("button", { name: /Remove — sure/i }));
+    expect(removeProposal).toHaveBeenCalledWith("c1", "gmv", "*");
+    await user.click(await screen.findByRole("button", { name: /Removed here \(1\)/ }));
+    expect(screen.getByText(/removed by ana@example.com on 2026-10-07/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Restore/ }));
+    expect(restoreProposal).toHaveBeenCalledWith("c1", "gmv", "*");
   });
 
   it("copies a computable one on request, scoped to the connection", async () => {
@@ -143,7 +178,7 @@ describe("opening a row", () => {
     render(<MetricsPanel connId="c1" />);
     await user.click(await screen.findByText("Gross Merchandise Value"));
     await user.click(await screen.findByRole("button", { name: /Customise for this connection/i }));
-    expect(materialiseMetric).toHaveBeenCalledWith("c1", "gmv", undefined);
+    expect(materialiseMetric).toHaveBeenCalledWith("c1", "gmv", "*");
   });
 
   it("surfaces a refusal instead of failing silently", async () => {

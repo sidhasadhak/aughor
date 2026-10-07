@@ -375,7 +375,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleContinue(); }
                 }}
                 placeholder="Ask anything about your data…"
-                className="w-full bg-transparent aug-fs-sm text-zinc-100 placeholder:text-zinc-500 px-4 pt-3 pb-2 resize-none focus:outline-none"
+                className="w-full resize-none"
               />
               <div className="flex items-center justify-between px-3 pb-2.5">
                 {/* Mode toggle */}

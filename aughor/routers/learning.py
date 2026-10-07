@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from aughor.licensing import Capability, gate
 from aughor.org.context import current_org_id
-from aughor.security.authz import connection_owner_guard
+from aughor.security.authz import caller, connection_owner_guard
 
 #: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
 router = APIRouter(tags=["learning"], dependencies=[Depends(connection_owner_guard)])
@@ -271,7 +271,9 @@ class TrustedQueryIn(BaseModel):
     tables: list[str] = Field(default_factory=list)
     note: str = ""
     tags: list[str] = Field(default_factory=list)
-    actor: str            # who is seeding — provenance is not optional (§3.10)
+    # Ignored: who seeds is the person signed in (`authz.caller`), never a name a client sends —
+    # provenance is not optional (§3.10), so it is not left to whoever fills in the field.
+    actor: str = ""
     source: str = "api"   # api | <importer name>; internal writers stamp their own
 
 
@@ -281,12 +283,12 @@ class TrustedQueryEdit(BaseModel):
     tables: Optional[list[str]] = None
     note: Optional[str] = None
     tags: Optional[list[str]] = None
-    actor: str
+    actor: str = ""       # ignored: the person signed in edits
 
 
 class TrustedTransitionIn(BaseModel):
     action: str   # propose | approve | reject | deprecate
-    actor: str
+    actor: str = ""       # ignored: the person signed in moves it
 
 
 def _check_trusted_conn_org(request: Request, conn_id: str) -> None:
@@ -327,12 +329,10 @@ def create_trusted(body: TrustedQueryIn, request: Request):
     _check_trusted_conn_org(request, body.connection_id)
     if not (body.sql or "").strip() or not (body.question or "").strip():
         raise HTTPException(status_code=400, detail="question and sql are required")
-    if not (body.actor or "").strip():
-        raise HTTPException(status_code=400, detail="actor is required")
     try:
         return seed_trusted(body.connection_id, body.question, body.sql,
                             tables=body.tables, note=body.note, tags=body.tags,
-                            actor=body.actor, source=body.source)
+                            actor=caller(), source=body.source)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
 
@@ -351,8 +351,7 @@ def edit_trusted(tq_id: str, body: TrustedQueryEdit, request: Request):
     if tq is None:
         raise HTTPException(status_code=404, detail="No such trusted query")
     _check_trusted_conn_org(request, tq.connection_id)
-    if not (body.actor or "").strip():
-        raise HTTPException(status_code=400, detail="actor is required")
+    actor = caller()
 
     was = tq.status
     if body.question is not None:
@@ -375,7 +374,7 @@ def edit_trusted(tq_id: str, body: TrustedQueryEdit, request: Request):
     now = _now()
     passed = bool(report.get("passed"))
     tq.status = "proposed" if passed else "draft"
-    tq.proposed_by, tq.proposed_at = (body.actor, now) if passed else ("", "")
+    tq.proposed_by, tq.proposed_at = (actor, now) if passed else ("", "")
     tq.verified_by = tq.verified_at = ""
     if report.get("battery") is not None:
         tq.last_executed_at = now
@@ -383,7 +382,7 @@ def edit_trusted(tq_id: str, body: TrustedQueryEdit, request: Request):
     save_trusted(tq)
     _emit_trusted_governance({
         "trusted_query": tq_id, "connection_id": tq.connection_id,
-        "action": "edit", "actor": body.actor,
+        "action": "edit", "actor": actor,
         "from": was, "to": tq.status, "version": tq.version, "at": now,
     })
     return {"trusted_query": tq.model_dump(), "verification": report}
@@ -407,6 +406,7 @@ def transition_trusted(tq_id: str, body: TrustedTransitionIn, request: Request):
     _check_trusted_conn_org(request, tq.connection_id)
 
     now = _now()
+    actor = caller()
     action = str(body.action or "").strip().lower()
     if action == "propose":
         try:
@@ -424,20 +424,20 @@ def transition_trusted(tq_id: str, body: TrustedTransitionIn, request: Request):
 
     try:
         updated, audit = apply_transition(
-            {**tq.model_dump(), "name": tq.id}, action, body.actor, now)
+            {**tq.model_dump(), "name": tq.id}, action, actor, now)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     updated.pop("name", None)
     if action == "approve":
         # The governance machine stamps metrics vocabulary; this store's fields are
         # the VERIFIED_AT/VERIFIED_BY the roadmap named. One mapping site, tested.
-        updated["verified_by"] = updated.pop("approved_by", body.actor)
+        updated["verified_by"] = updated.pop("approved_by", actor)
         updated["verified_at"] = updated.pop("approved_at", now)
     row = TrustedQuery(**updated)
     save_trusted(row)
     _emit_trusted_governance({
         "trusted_query": tq_id, "connection_id": row.connection_id,
-        "action": action, "actor": body.actor,
+        "action": action, "actor": actor,
         "from": audit["from"], "to": audit["to"],
         "version": row.version, "at": now,
     })
@@ -446,7 +446,7 @@ def transition_trusted(tq_id: str, body: TrustedTransitionIn, request: Request):
 
 @router.post("/learning/trusted/{tq_id}/promote",
              dependencies=[gate(Capability.SEMANTIC_EDIT)])
-def promote_trusted(tq_id: str, request: Request, actor: str = ""):
+def promote_trusted(tq_id: str, request: Request, actor: str = ""):  # `actor` ignored: the caller promotes
     """DS-19 — a query authored on an automation's node joins the connection's catalogue.
 
     §6 item 26 (c), the user's call: an authored query is PRIVATE to its chain, with the
@@ -475,7 +475,7 @@ def promote_trusted(tq_id: str, request: Request, actor: str = ""):
     save_trusted(tq)
     _emit_trusted_governance({
         "trusted_query": tq_id, "connection_id": tq.connection_id,
-        "action": "promote", "actor": actor,
+        "action": "promote", "actor": caller(),
         "from": f"automation:{was}", "to": "catalogue",
         "status": tq.status, "version": tq.version, "at": _now(),
         "question": (tq.question or "")[:120],
@@ -485,7 +485,7 @@ def promote_trusted(tq_id: str, request: Request, actor: str = ""):
 
 @router.delete("/learning/trusted/{tq_id}",
                dependencies=[gate(Capability.SEMANTIC_EDIT)])
-def remove_trusted(tq_id: str, request: Request, actor: str = ""):
+def remove_trusted(tq_id: str, request: Request, actor: str = ""):  # `actor` ignored: the caller removes
     """Remove a trusted query — audited, because the metrics catalog already paid for
     an unaudited delete: two calls emptied it on a live install and nothing anywhere
     recorded that it happened."""
@@ -498,7 +498,7 @@ def remove_trusted(tq_id: str, request: Request, actor: str = ""):
     delete_trusted(tq_id)
     _emit_trusted_governance({
         "trusted_query": tq_id, "connection_id": tq.connection_id,
-        "action": "delete", "actor": actor,
+        "action": "delete", "actor": caller(),
         "from": tq.status, "to": "", "version": tq.version, "at": _now(),
         "question": (tq.question or "")[:120],
     })

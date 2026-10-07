@@ -177,7 +177,6 @@ function MissionForm({ connectionId, connections, onWritten, onCancel, editing }
         cadence,
         state: editing.state,
         key: editing.key,
-        written_by: actor.by,
       } : {
         name: name.trim(),
         objective,
@@ -187,7 +186,6 @@ function MissionForm({ connectionId, connections, onWritten, onCancel, editing }
         budget: { interruptions_per_week: num(interruptions) ?? 3 },
         cadence,
         state: "proposed",
-        written_by: actor.by,
       };
       onWritten(await writeMission(body));
     } catch (e) {
@@ -247,7 +245,7 @@ function MissionForm({ connectionId, connections, onWritten, onCancel, editing }
         <span />
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <ActorField actor={actor} id="mi-actor" />
-          <Button size="xs" disabled={busy || !name.trim() || !metric.trim() || (!actor.signedIn && !actor.by)}
+          <Button size="xs" disabled={busy || !name.trim() || !metric.trim()}
             onClick={() => void submit()}>{editing ? "Save as a new version" : "Write it"}</Button>
           <Button size="xs" variant="ghost" onClick={onCancel}>Cancel</Button>
           <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>

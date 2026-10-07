@@ -270,7 +270,6 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                       display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <Input
-              className="aug-fs-sm"
               style={{ flex: 1, minWidth: 0 }}
               placeholder="Search question or answer…"
               value={search}
@@ -304,15 +303,13 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                 identity this control could only ever return nothing, and a filter that
                 cannot match is worse than no filter. It appears the moment a run records
                 a user, which is also how an operator learns identity started arriving. */}
-            <Input
-              className="aug-fs-xs" style={{ flex: 1 }}
+            <Input style={{ flex: 1 }}
               placeholder={anyUser ? "User ID" : "User ID — none recorded"}
               disabled={!anyUser}
               defaultValue={filters.user_id ?? ""}
               onBlur={e => setFilters(f => ({ ...f, user_id: e.target.value || undefined }))}
             />
-            <SelectField
-              className="aug-fs-xs" style={{ flex: 1 }}
+            <SelectField style={{ flex: 1 }}
               value={filters.min_duration_ms ?? ""}
               onChange={e => setFilters(f => ({
                 ...f, min_duration_ms: e.target.value ? Number(e.target.value) : undefined }))}
@@ -322,8 +319,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
               <option value="10000">over 10s</option>
               <option value="60000">over 1m</option>
             </SelectField>
-            <SelectField
-              className="aug-fs-xs" style={{ flex: 1 }}
+            <SelectField style={{ flex: 1 }}
               value={filters.min_tokens ?? ""}
               onChange={e => setFilters(f => ({
                 ...f, min_tokens: e.target.value ? Number(e.target.value) : undefined }))}
@@ -407,8 +403,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
             {total === 0 ? "0 runs" : `${offset + 1}–${Math.min(offset + pageSize, total)} of ${total}`}
             {scanned != null && <span style={{ color: "var(--t3)" }}> · last {compactNumber(scanned)} events</span>}
           </span>
-          <SelectField
-            className="aug-fs-xs" style={{ width: 62, marginLeft: "auto" }}
+          <SelectField style={{ width: 62, marginLeft: "auto" }}
             value={pageSize}
             onChange={e => setPageSize(Number(e.target.value))}
           >
@@ -663,7 +658,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                     runs on this store do not have; it used to be the only control here,
                     so on a quick turn the buttons did nothing at all. */}
                 <div className="aug-fs-sm" style={{ marginBottom: 8 }}>Was this run helpful?</div>
-                <Textarea className="aug-fs-sm" value={note} rows={2}
+                <Textarea value={note} rows={2}
                   placeholder="Optional note (what was right or wrong)"
                   onChange={e => setNote(e.target.value)}
                   style={{ width: "100%", marginBottom: 8 }} />
@@ -716,7 +711,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                         accepts. Offered only when ONE statement ran, because otherwise
                         there is no single query this would be correcting. */}
                     {runSql && (
-                      <Textarea className="aug-fs-sm font-code" rows={3}
+                      <Textarea rows={3}
                         value={correctedSql}
                         placeholder="Optional: the SQL that WOULD have been right (used with “Needs correction”)"
                         onChange={e => setCorrectedSql(e.target.value)}

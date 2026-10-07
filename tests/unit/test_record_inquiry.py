@@ -221,7 +221,8 @@ def test_the_heartbeat_wakes_a_waiting_inquiry_on_its_date_and_a_restated_claim_
     assert [x.key for x in woke] == [q.key] and I.latest(q.key).state == "open"
 
 
-def test_a_person_closes_an_inquiry_with_lessons_through_the_door():
+def test_a_person_closes_an_inquiry_with_lessons_through_the_door(monkeypatch):
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ops-lead")
     conn = _conn()
     q = I.open_inquiry(question="q", connection_id=conn, opened_by="person", now=NOW)
     view = R.close_record_inquiry(q.id, R.CloseInquiryRequest(closed_as="overtaken",
@@ -229,7 +230,7 @@ def test_a_person_closes_an_inquiry_with_lessons_through_the_door():
                                                                         "turned_out": "a packaging change"}]),
                                   principal=None)
     assert view["state"] == "closed" and view["closed_as"] == "overtaken" and view["lessons"][0]["turned_out"] == "a packaging change"
-    assert view["extra"]["closed_by"] == "unidentified"
+    assert view["extra"]["closed_by"] == "user:ops-lead"          # who the request acts for, never "unidentified"
     from fastapi import HTTPException
     with pytest.raises(HTTPException):
         R.close_record_inquiry(q.id, R.CloseInquiryRequest(closed_as="done"), principal=None)
