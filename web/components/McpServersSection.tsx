@@ -37,8 +37,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import {
-  createMcpServer, deleteMcpServer, discoverMcpServer, grantMcpTool, listMcpServers,
-  mcpServerHealth, revokeMcpTool, updateMcpServer,
+  beginMcpSignIn, createMcpServer, deleteMcpServer, discoverMcpServer, grantMcpTool,
+  listMcpServers, mcpServerHealth, revokeMcpTool, signOutMcpServer, updateMcpServer,
   type McpServerRow, type McpToolRow,
 } from "@/lib/api";
 import { Input } from "@/components/ui/input";
@@ -70,6 +70,12 @@ export function McpServersSection() {
   const [url, setUrl] = useState("");
   const [authHeader, setAuthHeader] = useState("");
   const [authHeaderName, setAuthHeaderName] = useState("Authorization");
+  // How a URL server is reached. Signing in on the server's own page is the default: a key in a
+  // header meant finding the right key AND the header the server reads it from (2026-10-07,
+  // Composio: two kinds of key, three header names, none of it on the form).
+  const [access, setAccess] = useState<"signin" | "key" | "none">("signin");
+  // The sign-in page, for when the browser would not let a tab open on its own.
+  const [signInLinks, setSignInLinks] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     try {
@@ -83,6 +89,14 @@ export function McpServersSection() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  // A sign-in finishes in another tab, at the API's callback; this list learns of it by asking.
+  const waiting = servers.some(s => s.oauth?.sign_in_pending);
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setInterval(() => void load(), 3000);
+    return () => clearInterval(timer);
+  }, [waiting, load]);
 
   const act = async (id: string, fn: () => Promise<unknown>) => {
     setBusy(id);
@@ -100,6 +114,7 @@ export function McpServersSection() {
   const reset = () => {
     setAdding(false); setName(""); setCommand(""); setArgsLine("");
     setUrl(""); setAuthHeader(""); setAuthHeaderName("Authorization"); setTransport("http");
+    setAccess("signin");
   };
 
   const add = () => act("new", async () => {
@@ -107,11 +122,34 @@ export function McpServersSection() {
       name: name.trim(), transport,
       ...(transport === "stdio"
         ? { command: command.trim(), args: splitArgs(argsLine) }
-        : { url: url.trim(), auth_header: authHeader.trim(),
-            auth_header_name: authHeaderName.trim() || "Authorization" }),
+        : { url: url.trim(),
+            ...(access === "signin" ? { auth_mode: "oauth_authorization_code" as const }
+              : access === "key" ? { auth_header: authHeader.trim(),
+                                     auth_header_name: authHeaderName.trim() || "Authorization" }
+              : {}) }),
     });
     reset();
   });
+
+  const signIn = (s: McpServerRow) => {
+    // The tab opens inside the click, before anything is awaited: a tab opened after an await is
+    // a pop-up the browser may block. It is pointed at the sign-in page once the API has it.
+    const tab = window.open("about:blank", "_blank");
+    void act(s.id, async () => {
+      try {
+        const { authorization_url } = await beginMcpSignIn(s.id);
+        if (tab && !tab.closed) {
+          tab.opener = null;
+          tab.location.href = authorization_url;
+        } else {
+          setSignInLinks(prev => ({ ...prev, [s.id]: authorization_url }));
+        }
+      } catch (e) {
+        tab?.close();
+        throw e;
+      }
+    });
+  };
 
   const checkHealth = (id: string) => act(id, async () => {
     const h = await mcpServerHealth(id);
@@ -179,8 +217,19 @@ export function McpServersSection() {
               {s.transport === "stdio"
                 ? [s.command, ...(s.args || [])].join(" ")
                 : s.url}
-              {s.has_auth ? `  ·  ${s.auth_header_name || "Authorization"} header stored` : ""}
+              {s.oauth?.mode === "oauth_authorization_code"
+                ? `  ·  ${s.oauth.signed_in ? "signed in" : "not signed in"}`
+                : s.has_auth ? `  ·  ${s.auth_header_name || "Authorization"} header stored` : ""}
             </div>
+
+            {s.oauth?.sign_in_pending && (
+              <div className="aug-fs-xs" style={{ marginTop: 4, color: "var(--t3)" }}>
+                Waiting for you to finish signing in on the server&apos;s page
+                {signInLinks[s.id]
+                  ? <> — <a href={signInLinks[s.id]} target="_blank" rel="noreferrer">open it</a></>
+                  : "…"}
+              </div>
+            )}
 
             {health[s.id] && (
               <div className="aug-fs-xs" style={{ marginTop: 4,
@@ -191,6 +240,17 @@ export function McpServersSection() {
             )}
 
             <div style={{ display: "flex", gap: 2, marginTop: 6, flexWrap: "wrap" }}>
+              {s.oauth?.mode === "oauth_authorization_code" && (s.oauth.signed_in ? (
+                <Button variant="ghost" size="xs" className="aug-fs-xs" disabled={busy === s.id}
+                  onClick={() => void act(s.id, () => signOutMcpServer(s.id))}>
+                  Sign out
+                </Button>
+              ) : (
+                <Button size="xs" className="aug-fs-xs" disabled={busy === s.id}
+                  onClick={() => signIn(s)}>
+                  {busy === s.id ? "…" : s.oauth.sign_in_pending ? "Sign in again" : "Sign in"}
+                </Button>
+              ))}
               <Button variant="ghost" size="xs" className="aug-fs-xs" disabled={busy === s.id}
                 onClick={() => void act(s.id, () => discoverMcpServer(s.id))}>
                 {busy === s.id ? "…" : s.discovered_at ? "Re-discover" : "Discover"}
@@ -251,22 +311,48 @@ export function McpServersSection() {
               <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
                 placeholder="https://example.com/mcp" aria-label="Server URL"
                 value={url} onChange={e => setUrl(e.target.value)} />
-              {/* The header NAME the credential travels in. Most servers read `Authorization`;
-                  some name their own — Composio takes its key only as `x-api-key`. */}
-              <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
-                autoComplete="off"
-                placeholder="Header name — Authorization, or the one your server names (e.g. x-api-key)"
-                aria-label="Auth header name"
-                value={authHeaderName} onChange={e => setAuthHeaderName(e.target.value)} />
-              <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
-                autoComplete="off"
-                placeholder="Header value (optional) — e.g. Bearer …, or an API key"
-                aria-label="Auth header value"
-                value={authHeader} onChange={e => setAuthHeader(e.target.value)} />
-              <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-                <Icon name="lock" size={11} /> Stored encrypted, and never returned by any
-                read — not even masked.
+              <div role="group" aria-label="How Aughor gets in"
+                style={{ display: "inline-flex", gap: 2, padding: 2, alignSelf: "flex-start",
+                  border: "1px solid var(--b1)", borderRadius: "var(--r-chip)" }}>
+                {([["signin", "Sign in"], ["key", "API key"], ["none", "None"]] as const).map(([m, label]) => (
+                  <Button key={m} size="xs" className="aug-fs-xs"
+                    variant={access === m ? "secondary" : "ghost"}
+                    onClick={() => setAccess(m)}>
+                    {label}
+                  </Button>
+                ))}
               </div>
+              {access === "signin" && (
+                <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
+                  After adding it, press Sign in: the server&apos;s own page asks you to approve
+                  Aughor. There is no key to copy, and what it hands back is stored encrypted.
+                </div>
+              )}
+              {access === "key" && (
+                <>
+                  {/* The header NAME the credential travels in. Most servers read `Authorization`;
+                      some name their own — Composio takes its key only as `x-api-key`. */}
+                  <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+                    autoComplete="off"
+                    placeholder="Header name — Authorization, or the one your server names (e.g. x-api-key)"
+                    aria-label="Auth header name"
+                    value={authHeaderName} onChange={e => setAuthHeaderName(e.target.value)} />
+                  <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+                    autoComplete="off"
+                    placeholder="Header value — e.g. Bearer …, or an API key"
+                    aria-label="Auth header value"
+                    value={authHeader} onChange={e => setAuthHeader(e.target.value)} />
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                    <Icon name="lock" size={11} /> Stored encrypted, and never returned by any
+                    read — not even masked.
+                  </div>
+                </>
+              )}
+              {access === "none" && (
+                <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                  For a server that asks for no credential.
+                </div>
+              )}
             </>
           ) : (
             <>

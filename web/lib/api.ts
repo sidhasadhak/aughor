@@ -4909,6 +4909,21 @@ export interface McpToolRow {
   callable_now: boolean;
 }
 
+/** How an http server is authenticated to: a credential in a header, a person's sign-in on the
+ *  server's own page, or this deployment's own OAuth client. */
+export type McpAuthMode = "header" | "oauth_authorization_code" | "oauth_client_credentials";
+
+/** What a read says of a server's sign-in — never the token. */
+export interface McpOAuthState {
+  mode: McpAuthMode;
+  signed_in: boolean;
+  obtained_at: string;
+  expires_at?: string;
+  /** A sign-in begun here is waiting for the browser to come back to the API's callback. */
+  sign_in_pending?: boolean;
+  note?: string;
+}
+
 /** One allowlisted server, plus the roster last discovered against it.
  *
  *  `discovered_at` rides in the same object deliberately: a cached remote list rendered
@@ -4930,6 +4945,8 @@ export interface McpServerRow {
   /** The header the stored credential is sent in — `Authorization` unless the server names another
    *  (Composio takes `x-api-key`). Not secret. Absent from a server older than the field. */
   auth_header_name?: string;
+  auth_mode?: McpAuthMode;
+  oauth?: McpOAuthState;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -4953,6 +4970,8 @@ export interface McpServerInput {
   auth_header?: string;
   /** The header `auth_header` is sent in; omitted on an update keeps the stored name. */
   auth_header_name?: string;
+  /** `oauth_authorization_code`: a person signs in on the server's own page — no credential here. */
+  auth_mode?: McpAuthMode;
   enabled?: boolean;
 }
 
@@ -5016,6 +5035,21 @@ export async function deleteMcpServer(id: string): Promise<void> {
 export async function discoverMcpServer(id: string): Promise<McpServerRow> {
   const res = await fetch(`${getApiBase()}/mcp-servers/${id}/discover`, { method: "POST" });
   if (!res.ok) throw new Error(await _mcpError(res, "reach that server"));
+  return res.json();
+}
+
+/** Start a person's sign-in. The API discovers the server's sign-in, registers itself with it and
+ *  answers with the page to open; the browser's return to the API's callback completes it. */
+export async function beginMcpSignIn(id: string): Promise<{ authorization_url: string; expires_in: number }> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}/oauth/begin`, { method: "POST" });
+  if (!res.ok) throw new Error(await _mcpError(res, "start the sign-in"));
+  return res.json();
+}
+
+/** Forget the person's sign-in. The server stays registered, and Sign in starts again. */
+export async function signOutMcpServer(id: string): Promise<McpServerRow> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}/oauth/sign-out`, { method: "POST" });
+  if (!res.ok) throw new Error(await _mcpError(res, "sign out"));
   return res.json();
 }
 

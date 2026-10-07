@@ -29,6 +29,8 @@ const api = vi.hoisted(() => ({
   mcpServerHealth: vi.fn(),
   grantMcpTool: vi.fn(),
   revokeMcpTool: vi.fn(),
+  beginMcpSignIn: vi.fn(),
+  signOutMcpServer: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async (importOriginal) => ({
@@ -124,6 +126,7 @@ describe("adding a server", () => {
   it("sends the credential's header name — Authorization by default, x-api-key when a server names it", async () => {
     render(<McpServersSection />);
     fireEvent.click(await screen.findByRole("button", { name: /custom mcp/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^api key$/i }));
     expect(screen.getByLabelText(/auth header name/i)).toHaveValue("Authorization");
     fireEvent.change(screen.getByLabelText(/server name/i), { target: { value: "Composio" } });
     fireEvent.change(screen.getByLabelText(/server url/i),
@@ -133,6 +136,40 @@ describe("adding a server", () => {
     fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
     await waitFor(() => expect(api.createMcpServer).toHaveBeenCalledWith(
       expect.objectContaining({ transport: "http", auth_header: "ak_test", auth_header_name: "x-api-key" })));
+  });
+});
+
+describe("signing in", () => {
+  // 2026-10-07: Composio's key went in the wrong header twice — two kinds of key, three header
+  // names, none of it on the form. A server that signs in needs none of it.
+  it("adds a server that signs in by default, and Sign in opens the server's own page", async () => {
+    const tab = { location: { href: "" }, opener: {} as unknown, closed: false, close: vi.fn() };
+    const open = vi.spyOn(window, "open").mockReturnValue(tab as unknown as Window);
+    api.beginMcpSignIn.mockResolvedValue(
+      { authorization_url: "https://connect.composio.dev/oauth/authorize?state=st1", expires_in: 600 });
+    render(<McpServersSection />);
+    fireEvent.click(await screen.findByRole("button", { name: /custom mcp/i }));
+    expect(screen.queryByLabelText(/auth header value/i)).toBeNull();
+    fireEvent.change(screen.getByLabelText(/server name/i), { target: { value: "Composio" } });
+    fireEvent.change(screen.getByLabelText(/server url/i),
+      { target: { value: "https://connect.composio.dev/mcp" } });
+    api.listMcpServers.mockResolvedValue({ servers: [server({
+      transport: "http", url: "https://connect.composio.dev/mcp", command: "", args: [],
+      discovered_at: "", tool_count: 0, callable_count: 0, tools: [],
+      auth_mode: "oauth_authorization_code",
+      oauth: { mode: "oauth_authorization_code", signed_in: false, obtained_at: "" } })] });
+    fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
+
+    await waitFor(() => expect(api.createMcpServer).toHaveBeenCalledWith(expect.objectContaining(
+      { transport: "http", url: "https://connect.composio.dev/mcp", auth_mode: "oauth_authorization_code" })));
+    expect(api.createMcpServer.mock.calls[0][0]).not.toHaveProperty("auth_header");
+    expect(await screen.findByText(/not signed in/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+    await waitFor(() => expect(tab.location.href).toBe("https://connect.composio.dev/oauth/authorize?state=st1"));
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(api.beginMcpSignIn).toHaveBeenCalledWith("s1");
+    open.mockRestore();
   });
 });
 

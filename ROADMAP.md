@@ -575,6 +575,10 @@ Slack, Microsoft) and the ask is covered; forty is a catalogue, not a milestone.
    never the record. Deliberately unbuilt until a second implementation is actually wired:
    seams built before their second implementation are usually wrong. (If that day comes,
    Nango's Elastic Licence is a question for a lawyer first.)
+   🛑 **Nango DROPPED, at the user's word, 2026-10-07: "Drop nango entirely"** — not as this
+   seam's vault and not as an outside MCP tool server (its server needs three headers and a
+   per-app integration in Nango before it offers a tool). Do not re-propose it. Outside tools
+   arrive through `+ Custom MCP`, signed in on the server's own page.
 
 **The authorization rule, decided once:** our graduated approval gate is the POLICY authority;
 any vendor's per-action authz is transport. Two gates that can disagree is strictly worse than
