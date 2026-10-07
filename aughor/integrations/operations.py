@@ -383,6 +383,22 @@ def missing_scopes(op: Operation, granted: str) -> tuple[str, ...]:
     return tuple(s for s in op.scopes if s not in have)
 
 
+def consent_door(provider_id: str, lacking: tuple[str, ...]) -> str:
+    """Where a person grants a scope a grant lacks — the one sentence every surface says.
+
+    A provider whose consent is split into products (Google, 2026-10-07) has no Connect of its
+    own: the scope is granted on the product's card, so that card is the door named. Otherwise
+    the provider is reconnected and the scope consented to."""
+    from aughor.integrations.providers import get_provider
+    provider = get_provider(provider_id)
+    if provider is None:
+        return f"reconnect {provider_id} and consent to it"
+    for pr in provider.products:
+        if set(lacking) <= set(pr.scopes.split()):
+            return f"connect {pr.name} under Integrations"
+    return f"reconnect {provider.name} and consent to it"
+
+
 def build_request(op: Operation, params: dict) -> tuple[str, dict, dict]:
     """``(url, query, body)`` for one call — the whole of how a param reaches a provider.
 

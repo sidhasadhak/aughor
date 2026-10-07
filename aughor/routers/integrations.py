@@ -304,7 +304,7 @@ def operations(connection_id: Optional[str] = None):
     declared set, which is what a reader asking "what could this platform do for me"
     wants — the catalog, not their catalog.
     """
-    from aughor.integrations.operations import OPERATIONS, missing_scopes
+    from aughor.integrations.operations import OPERATIONS, consent_door, missing_scopes
 
     conn = store.get_connection(connection_id) if connection_id else None
     if connection_id and (conn is None or conn.user_id != _user()):
@@ -348,7 +348,7 @@ def operations(connection_id: Optional[str] = None):
             "availability": (grant_state if grant_problem
                              else ("needs_setup" if lacking else "ready")),
             "reason": (grant_problem or
-                       (f"this grant does not carry {', '.join(lacking)} — reconnect "
-                        f"{op.provider} and consent to it" if lacking else "")),
+                       (f"this grant does not carry {', '.join(lacking)} — "
+                        f"{consent_door(op.provider, lacking)}" if lacking else "")),
         })
     return {"operations": rows}
