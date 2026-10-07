@@ -120,6 +120,20 @@ describe("adding a server", () => {
         args: ["-y", "@modelcontextprotocol/server-everything"],
       })));
   });
+
+  it("sends the credential's header name — Authorization by default, x-api-key when a server names it", async () => {
+    render(<McpServersSection />);
+    fireEvent.click(await screen.findByRole("button", { name: /custom mcp/i }));
+    expect(screen.getByLabelText(/auth header name/i)).toHaveValue("Authorization");
+    fireEvent.change(screen.getByLabelText(/server name/i), { target: { value: "Composio" } });
+    fireEvent.change(screen.getByLabelText(/server url/i),
+      { target: { value: "https://backend.composio.dev/v3/mcp/srv?user_id=u1" } });
+    fireEvent.change(screen.getByLabelText(/auth header name/i), { target: { value: "x-api-key" } });
+    fireEvent.change(screen.getByLabelText(/auth header value/i), { target: { value: "ak_test" } });
+    fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
+    await waitFor(() => expect(api.createMcpServer).toHaveBeenCalledWith(
+      expect.objectContaining({ transport: "http", auth_header: "ak_test", auth_header_name: "x-api-key" })));
+  });
 });
 
 describe("the roster", () => {
@@ -176,7 +190,8 @@ describe("a credential never reaches this component", () => {
                          url: "https://example.com/mcp", has_auth: true })],
     });
     render(<McpServersSection />);
-    expect(await screen.findByText(/auth header stored/)).toBeInTheDocument();
+    // It names the header the stored credential travels in — Authorization unless the server named another.
+    expect(await screen.findByText(/Authorization header stored/)).toBeInTheDocument();
     // `McpServerRow` carries no `auth_header` at all, so there is nothing to leak here.
     expect(screen.queryByText(/Bearer /)).toBeNull();
   });

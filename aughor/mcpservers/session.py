@@ -78,7 +78,8 @@ async def open_session(server: McpServer, timeout_s: float, *, auth=None):
     if auth is None and server.auth_mode != "header":
         from aughor.mcpservers.oauth import auth_for
         auth = auth_for(server)
-    headers = {"Authorization": server.auth_header} if (server.auth_header and server.auth_mode == "header") else None
+    headers = ({server.auth_header_name or "Authorization": server.auth_header}
+               if (server.auth_header and server.auth_mode == "header") else None)
     async with streamablehttp_client(server.url, headers=headers, timeout=timeout_s, auth=auth) as (
             read, write, _get_session_id):
         async with ClientSession(read, write) as session:
