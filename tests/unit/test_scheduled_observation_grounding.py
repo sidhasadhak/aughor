@@ -199,3 +199,73 @@ def test_previous_summary_reaches_the_scheduled_prompt(runs_store, monkeypatch):
     q = captured["question"]
     assert "Yesterday the source said 1,769." in q
     assert "restated its own history" in q
+
+
+# ── the previous report's DEFINITION, so a definition change is not called a restatement ──────
+# Traced 2026-10-07: theLook's daily runs read Revenue under three definitions in five days; this
+# block told each run that any disagreement IS the source restating, and the 4 October report
+# blamed the source for the switch from items not Cancelled to items marked Complete.
+
+
+def test_the_previous_basis_is_quoted_and_a_definition_change_is_not_a_restatement(runs_store, monkeypatch):
+    from aughor.automations.models import AutomationRun
+    import aughor.db.history as history
+
+    runs_store.append_run(AutomationRun(automation_id="daily", outcome="fired", effects=[
+        EffectOutcome(kind="investigate", target="q", status="executed",
+                      data={"summary": "Revenue increased by 7.55% to $20,496.80 on September 25, 2026.",
+                            "investigation_id": "f4255ab0"})]))
+    report = {
+        "metric_definition": "Revenue — computed as `SUM(sale_price)`; on order_items",
+        "envelope": {"provenance": {"sql": [
+            "SELECT DATE(created_at), SUM(sale_price) FROM order_items "
+            "WHERE status <> 'Cancelled' AND created_at >= '2026-09-24' GROUP BY 1"]}},
+    }
+    monkeypatch.setattr(history, "get_investigation", lambda iid: {"report": report} if iid == "f4255ab0" else None)
+    note = temporal.previous_report_note("daily")
+    assert "That report's definition: Revenue — computed as `SUM(sale_price)`; on order_items" in note
+    assert "Its figures were read WHERE status <> 'Cancelled' AND created_at >= '2026-09-24'" in note
+    assert "the difference is the DEFINITION" in note and "do not call it a restatement" in note
+    # The block still ends on its sentence, so the person's words are still recovered from it.
+    asked = "What changed in theLook in the last day?"
+    assert temporal.ask_of(note + "\n\n" + asked) == asked
+
+
+def test_an_unreadable_previous_run_quotes_its_summary_alone(runs_store, monkeypatch):
+    from aughor.automations.models import AutomationRun
+    import aughor.db.history as history
+
+    runs_store.append_run(AutomationRun(automation_id="daily2", outcome="fired", effects=[
+        EffectOutcome(kind="investigate", target="q", status="executed",
+                      data={"summary": "Orders fell.", "investigation_id": "gone"})]))
+    monkeypatch.setattr(history, "get_investigation", lambda iid: None)
+    note = temporal.previous_report_note("daily2")
+    assert "Orders fell." in note and "That report's definition" not in note
+
+
+# ── a hand-set lag shorter than the measured one is said, not silently kept ────────────────────
+# theLook's daily run reads at 8 days by a person's setting; the settling read puts the source at
+# 29 (still moving at the oldest age it read), and governed revenue for 24 September moved from
+# $15,929.96 to $19,057.53 between 8 and 9 days old (2026-10-07).
+
+
+def test_reading_younger_than_the_source_settles_is_said():
+    note = temporal.unsettled_note(8, 29)
+    assert "still changing days up to 29 days old" in note and "reads at 8" in note
+    assert "never call a later change to the same day a business change" in note
+
+
+def test_no_sentence_when_the_lag_is_the_learned_one_or_none_was_learned():
+    assert temporal.unsettled_note(29, 29) == ""
+    assert temporal.unsettled_note(8, None) == ""
+    assert temporal.unsettled_note(12, 9) == ""
+
+
+def test_the_sentence_rides_the_generated_block_and_leaves_the_persons_words(runs_store, monkeypatch):
+    auto = _automation([Condition(kind="schedule", config={"cron": "0 9 * * *"})])
+    block = temporal.scheduled_grounding(auto, {"observation_lag_days": 8}, learned_lag=29)
+    assert "reads at 8 by its own setting" in block
+    asked = "What changed in theLook in the last day?"
+    assert temporal.ask_of(block + "\n\n" + asked) == asked
+    # The person's lag still wins: the window is 8 days back, not 29.
+    assert "observation lag of 8 days" in block

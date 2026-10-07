@@ -1254,6 +1254,50 @@ def find_prior_answers(question: str, connection_id: str, *,
         return []
 
 
+def asked_before(question: str, connection_id: str, *, scan: int = 2000) -> dict:
+    """What is already on record for this exact question on this connection, for a PERSON to see
+    before anything runs (Home's "Ask, with memory").
+
+    `find_prior_answers` serves the model and reads quick answers only; the measured repeats are
+    mostly deep runs — "Which 10 product categories brought in the most revenue in the last 6
+    months…" ran 13 times in two days as `investigation` rows (2026-10-05) and nothing told the
+    person it was answered. Same matching (normalised equality), same tenancy predicate, both
+    kinds. ``{"count": 0}`` when nothing matches or the history cannot be read."""
+    empty = {"count": 0, "first_at": "", "last_at": "", "latest": None}
+    if not (question or "").strip() or not connection_id:
+        return empty
+    try:
+        target = _normalize_question(question)
+        if not target:
+            return empty
+        c = _conn()
+        ensure_once(c, _ensure_schema)
+        from aughor.security.authz import require_identity_enabled
+        _org, _op = ((" AND org_id = ?", [current_org_id()])
+                     if require_identity_enabled() else ("", []))
+        rows = c.execute(
+            f"""SELECT id, question, headline, started_at, kind
+               FROM investigations
+               WHERE connection_id = ? AND kind IN ('chat', 'investigation'){_org}
+                 AND (status IS NULL OR status = 'complete')
+               ORDER BY started_at DESC
+               LIMIT ?""",
+            (connection_id, *_op, int(scan)),
+        ).fetchall()
+        c.close()
+        hits = [dict(r) for r in rows if _normalize_question(dict(r).get("question", "")) == target]
+        if not hits:
+            return empty
+        latest = hits[0]
+        return {"count": len(hits), "first_at": hits[-1].get("started_at", ""),
+                "last_at": latest.get("started_at", ""),
+                "latest": {"id": latest.get("id", ""), "kind": latest.get("kind", ""),
+                           "headline": latest.get("headline", "") or "",
+                           "asked_at": latest.get("started_at", "")}}
+    except Exception:
+        return empty
+
+
 def investigation_counts_since(days: int = 7) -> dict:
     """Org-scoped started/completed counts over a trailing day window (SP-1 read).
 

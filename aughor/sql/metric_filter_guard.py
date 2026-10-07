@@ -179,7 +179,69 @@ def _computes(select: exp.Select, formula: exp.Expression, ref: str, only_ref: b
     return False
 
 
-def _dealt_with(select: exp.Select, column: str, ref: str, values: set) -> bool:
+def _exclusion(pred: exp.Expression) -> Optional[tuple[exp.Expression, set]]:
+    """``(the node to replace, the values it excludes)`` when ``pred`` keeps every row of its
+    column but some named values — ``x <> 'a'``, ``x NOT IN ('a', 'b')``, ``NOT x = 'a'`` — else
+    None. ``pred`` is the comparison itself; the node returned includes its NOT."""
+    outer: exp.Expression = pred
+    while isinstance(outer.parent, exp.Paren):
+        outer = outer.parent
+    negated = isinstance(outer.parent, exp.Not)
+    node = outer.parent if negated else pred
+    literals = {str(lit.this) for lit in pred.find_all(exp.Literal)}
+    if isinstance(pred, exp.NEQ) and not negated and literals:
+        return node, literals
+    if negated and isinstance(pred, (exp.EQ, exp.In)) and literals:
+        if isinstance(pred, exp.In) and not all(isinstance(e, exp.Literal) for e in pred.expressions):
+            return None
+        return node, literals
+    return None
+
+
+def _stem(word: str) -> str:
+    w = word.lower()
+    for suffix in ("led", "ed", "ing", "s"):
+        if len(w) > len(suffix) + 3 and w.endswith(suffix):
+            return w[: -len(suffix)]
+    return w
+
+
+def _asked_for(values: set, asked: str) -> bool:
+    """Does the question name any of these values ("excluding returns" names `Returned`)?
+
+    With no question in hand the answer is yes: a caller that cannot say what was asked keeps
+    the old reading, that a condition naming the filter's value was chosen on purpose."""
+    text = (asked or "").lower()
+    if not text.strip():
+        return True
+    return any(_stem(str(v)) in text for v in values if str(v).strip())
+
+
+def _drifted(select: exp.Select, column: str, ref: str, values: set, asked: str) -> list:
+    """The exclusions on ``column`` in this scope that remove MORE than the declared filter does,
+    and that the question did not ask for: the writer borrowed a sibling metric's population.
+    Measured 2026-10-05/06: theLook's daily runs read Revenue (declared `status <> 'Cancelled'`)
+    through `status NOT IN ('Cancelled', 'Returned')` — Net merchandise revenue's filter — on a
+    question that said "the governed Revenue metric exactly as defined, including its status
+    filter", and this guard let them pass as "dealt with" because the condition named Cancelled."""
+    want, ref = column.lower(), ref.lower()
+    out = []
+    for col in _own(select, exp.Column):
+        if col.name.lower() != want or (col.table and col.table.lower() != ref):
+            continue
+        pred = col.find_ancestor(exp.Predicate, exp.Select)
+        if not isinstance(pred, exp.Predicate):
+            continue
+        found = _exclusion(pred)
+        if found is None:
+            continue
+        node, excluded = found
+        if values and excluded > values and not _asked_for(excluded - values, asked):
+            out.append(node)
+    return out
+
+
+def _dealt_with(select: exp.Select, column: str, ref: str, values: set, asked: str = "") -> bool:
     """Has this scope chosen its own rows of ``column`` — so that the declared filter on it would
     answer a different question? ``values`` are the ones the filter names, as written.
 
@@ -202,6 +264,9 @@ def _dealt_with(select: exp.Select, column: str, ref: str, values: set) -> bool:
         cond = col.find_ancestor(exp.Predicate, exp.Select)
         if not isinstance(cond, exp.Predicate):
             return True                                  # shown, grouped or ordered by
+        found = _exclusion(cond)
+        if found is not None and found[1] > values and not _asked_for(found[1] - values, asked):
+            continue                                     # a borrowed, wider exclusion: replaced
         if {str(lit.this) for lit in cond.find_all(exp.Literal)} & values:
             return True                                  # names what the filter is about
         outer = cond.parent
@@ -286,6 +351,7 @@ def enforce_metric_filters(sql: str, rules: list, dialect: str = "duckdb") -> tu
             formula = _formula(rule.get("formula") or "", dialect)
             tables = {str(t).split(".")[-1].lower() for t in (rule.get("tables") or []) if t}
             filters = [str(f) for f in (rule.get("filters") or []) if str(f).strip()]
+            asked = str(rule.get("asked") or "")
             if formula is None or not tables or not filters:
                 continue
             for select in list(tree.find_all(exp.Select)):
@@ -302,13 +368,24 @@ def enforce_metric_filters(sql: str, rules: list, dialect: str = "duckdb") -> tu
                         done.add(key)
                         columns = {c.name for c in cond.find_all(exp.Column)}
                         values = {str(lit.this) for lit in cond.find_all(exp.Literal)}
-                        if not columns or any(_dealt_with(select, c, ref, values)
-                                              or _dealt_with(scope, c, here, values)
+                        if not columns or any(_dealt_with(select, c, ref, values, asked)
+                                              or _dealt_with(scope, c, here, values, asked)
                                               for c in columns):
                             continue            # a scope has dealt with it — leave it alone
                         for col in cond.find_all(exp.Column):
                             if not col.table:
                                 col.set("table", exp.to_identifier(here))
+                        # A wider exclusion borrowed from another metric is REPLACED, not ANDed:
+                        # adding `<> 'Cancelled'` beside `NOT IN ('Cancelled','Returned')` would
+                        # change nothing, and the figure would still be over the wrong rows.
+                        drift = [n for c in columns for n in _drifted(scope, c, here, values, asked)]
+                        if drift:
+                            replaced = drift[0].sql(dialect=dialect)
+                            drift[0].replace(cond)
+                            applied.append({"metric": str(rule.get("metric") or ""),
+                                            "table": table.name, "filter": text,
+                                            "replaced": replaced})
+                            continue
                         scope.where(cond, copy=False)
                         applied.append({"metric": str(rule.get("metric") or ""),
                                         "table": table.name, "filter": text})

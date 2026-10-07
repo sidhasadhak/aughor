@@ -104,7 +104,7 @@ def test_describe_table_returns_what_it_promises(monkeypatch):
               "TABLE: main.customers (2 rows)\n"
               "  id           INTEGER\n")
     monkeypatch.setattr(converse_tools, "_connection",
-                        lambda cid: type("C", (), {"get_schema": lambda self: schema})())
+                        lambda cid, **kw: type("C", (), {"get_schema": lambda self: schema})())
 
     out = converse_tools.describe_table("c1", {"table": "orders"})
 

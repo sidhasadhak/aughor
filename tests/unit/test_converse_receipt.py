@@ -34,7 +34,7 @@ def session(monkeypatch):
     monkeypatch.delenv("AUGHOR_TOOL_LOOP_STEPS", raising=False)
     schema = "TABLE: analytics.orders\n  order_id  BIGINT\n  total  DOUBLE\n"
     monkeypatch.setattr(ct, "_connection",
-                        lambda cid: type("C", (), {"get_schema": staticmethod(lambda: schema)})())
+                        lambda cid, **kw: type("C", (), {"get_schema": staticmethod(lambda: schema)})())
     monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: _Result())
     return LLMProvider(backend="faux", role="coder")
 

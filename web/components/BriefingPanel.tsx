@@ -3229,6 +3229,8 @@ export function BriefingPanel({
           connectionId={connectionId}
           schema={schema}
           canvasId={canvasId}
+          periodKey={rangeBlock?.key}
+          periodCovers={rangeBlock?.covers}
           onClose={() => setAskOpen(false)}
           onOpenInAsk={onInvestigate}
         />

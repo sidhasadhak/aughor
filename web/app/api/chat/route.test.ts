@@ -197,3 +197,30 @@ describe("the question comes from `messages`, not `question`", () => {
     expect(seen.body?.session_id).toBe("s1");
   });
 });
+
+describe("an Ask this briefing turn carries what it was asked from", () => {
+  /** The Briefing's panel sends its schema, `surface: "briefing"` and the open period's key.
+   *  The backend keeps the conversation to that schema and reads that period's Briefing, so
+   *  all three must reach `/ask` (2026-10-06: an answer on uber_ncr came from two other
+   *  datasets on the same connection). */
+  it("forwards schema, surface and brief_period to the unified door", async () => {
+    const seen: { url?: string; body?: Record<string, unknown> } = {};
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      seen.url = String(url);
+      seen.body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      return sse('data: {"type":"done"}\n\n');
+    });
+    await POST(new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        messages: [{ id: "1", role: "user", parts: [{ type: "text", text: "Which city leads?" }] }],
+        connection_id: "workspace", session_id: "s1", depth: "quick", schema: "uber_ncr",
+        surface: "briefing", brief_period: "range:last_month:2026-08-01..2026-08-31",
+      }),
+    }));
+    expect(seen.url).toMatch(/\/ask$/);
+    expect(seen.body?.schema).toBe("uber_ncr");
+    expect(seen.body?.surface).toBe("briefing");
+    expect(seen.body?.brief_period).toBe("range:last_month:2026-08-01..2026-08-31");
+  });
+});

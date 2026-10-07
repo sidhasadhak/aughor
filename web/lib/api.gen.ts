@@ -1156,6 +1156,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ask/prior": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ask Prior Endpoint
+         * @description What is already on record for this exact question here — how many times it was answered,
+         *     when first and last, and the newest answer's headline — so a person sees it BEFORE a run is
+         *     paid for (Home, "Ask, with memory"). A read: nothing runs and no model is called.
+         */
+        get: operations["ask_prior_endpoint_ask_prior_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ask/stream/{session_id}": {
         parameters: {
             query?: never;
@@ -13017,6 +13039,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/record/claims/said": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Book Record Said
+         * @description What a person told the platform, booked as theirs: kind and tier ``said``, dated, authored
+         *     by the person — Home's "A question for you". One answer per person per item; answering again
+         *     restates it, the earlier answer kept. Before this door a ``said`` claim came only from a filed
+         *     Slack reply (CB-8); a sentence typed into the product had nowhere to go.
+         */
+        post: operations["book_record_said_record_claims_said_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/record/claims/{claim_id}": {
         parameters: {
             query?: never;
@@ -13649,6 +13694,28 @@ export interface paths {
          * @description Bring a set-aside item back before its day.
          */
         post: operations["restore_record_item_record_set_aside_restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/record/you": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Record You
+         * @description Between you and the platform: what became of the entries the person reading wrote — the
+         *     signed-in caller, or the name this browser writes under. The principal's record, resolved
+         *     here so a page never has to guess whether its reader is a `user:` or a `person:`.
+         */
+        get: operations["read_record_you_record_you_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -15283,6 +15350,11 @@ export interface components {
              * @default true
              */
             allow_clarify: boolean;
+            /**
+             * Brief Period
+             * @default
+             */
+            brief_period: string;
             /** Canvas Id */
             canvas_id?: string | null;
             /**
@@ -18601,6 +18673,28 @@ export interface components {
         RunNowRequest: {
             /** Run Id */
             run_id?: string | null;
+        };
+        /** SaidRequest */
+        SaidRequest: {
+            /**
+             * About
+             * @default
+             */
+            about: string;
+            /**
+             * Asked
+             * @default
+             */
+            asked: string;
+            /**
+             * By
+             * @default
+             */
+            by: string;
+            /** Connection Id */
+            connection_id: string;
+            /** Text */
+            text: string;
         };
         /** ScenarioRequest */
         ScenarioRequest: {
@@ -22996,6 +23090,40 @@ export interface operations {
                 question: string;
                 /** @description canvas id — scopes the custom-instructions block */
                 canvas?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ask_prior_endpoint_ask_prior_get: {
+        parameters: {
+            query: {
+                /** @description connection id */
+                connection_id: string;
+                /** @description the question as typed */
+                question: string;
             };
             header?: never;
             path?: never;
@@ -43024,6 +43152,41 @@ export interface operations {
             };
         };
     };
+    book_record_said_record_claims_said_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaidRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_record_claim_record_claims__claim_id__get: {
         parameters: {
             query?: never;
@@ -44180,6 +44343,39 @@ export interface operations {
                 "application/json": components["schemas"]["aughor__routers__record__RestoreRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_record_you_record_you_get: {
+        parameters: {
+            query?: {
+                by?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

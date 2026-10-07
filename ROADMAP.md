@@ -11632,6 +11632,53 @@ items carry no action or prediction of their own, and a Briefing is not signed a
 *(2026-10-05, later: the items of this paragraph that waited on a decision were all decided and built, or closed,
 under §6 item 42 — and "no action of their own" was wrong when written: cited items have carried one since CB-7.)*
 
+### 3.55 · Home — the one page that prepares for a person and trades with them (DRAFTED 2026-10-06 at the user's *"lets write this down and push a branch"*, extended 2026-10-07 at *"build the whole picture with the previous and the current suggestions"*; NOT decided — §6 item 45; `docs/HOME_STUDY_2026-10-06.md`)
+
+> **The fact it answers.** Five of Home's six blocks copy or link to a page that exists: the Get Started cards are
+> rail rows, the four stat tiles are Catalog, Ontology, Intelligence and Activity, the health scorecard is the Health
+> page's own component, and the recent-activity table is Agent runs. The 2027 study folded Home into Now (its §U);
+> the rail was kept (§4.10), so Home stays without a job of its own.
+
+**The proposal.** Every other page reports to the person. Home **prepares** — work done before they arrive, filtered
+to what they follow — and **trades** — it gives back what it holds and asks for what only a person knows. It has
+seven sections, in page order, and no figure is stated twice:
+1 · **Ask, with memory** — before anything runs, what is already on record for the question, matched exactly
+(`db/history.find_prior_answers`, which today feeds only the model's prompt), plus "answer it every morning";
+2 · **The one thing to know** — the largest move in the person's numbers since their last visit, already looked into
+by the daily run, with a warning when the day it compares with was measured differently before;
+3 · **A question for you** — one a day that only a person can answer, kept as `said` by them;
+4 · **Worth another look** — one conclusion nobody acted on, with decide · check again · not worth it, each an
+existing door (3 and 4 are the two sections the user named as liked);
+5 · **Your standing questions** — repeated questions re-answered each morning by re-running their stored SQL with no
+model, with how often the answers agreed;
+6 · **The week ahead** — what lands in the coming days; what is due stays on Now;
+7 · **Between you and Aughor** — what the person told it and how it held up
+(`GET /principals/{principal}/record`).
+
+The copies leave. The study also carries the live figures behind it:
+- an empty Record;
+- one question asked 13 times;
+- 12 answers to one July question giving four revenue figures in three days;
+- two daily runs putting 26 Sep revenue at $5,762.95 and $17,316.12, under two definitions, neither of them the
+  governed one.
+
+It also has each section's doors, what it costs (analyses record an organisation, not a person) and the build order.
+
+**BUILT 2026-10-07 (first version)** at the user's *"lets build the proposed home page restructing too"*
+(`web/components/home/`, `web/lib/home.ts`). The four copied blocks are gone, and every section is picked by code
+from records — no model fills the page.
+- New doors: `GET /ask/prior` (what is on record for a question, quick and deep answers both, exact match),
+  `POST /record/claims/said` (a person's answer, booked as theirs) and `GET /record/you` (their record).
+- Received live on a scratch pair seeded with the install's own headlines: the recall, the 27 Sep lead with its
+  run's summary, a booked answer (`said`, `person:<name>`), the week ahead and the counts.
+
+**Not built yet, said here so the page is not read as more than it is:**
+- the standing questions' morning re-run and "answer it every morning" — the list shows questions asked three or
+  more times, with their latest answer;
+- the lead's warning when its comparison day was measured differently before;
+- a count of how often the data agreed with what a person said;
+- attribution of asks to a person. "You" is the name a form carries while identity is off.
+
 ---
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
@@ -13698,6 +13745,42 @@ the browser** · **measure the premise before building.**
     found blind to a `<button` whose attributes start on the next line — it counted 9 while 105 stood; it sees them
     now, 72 moved onto the shared Button, `Segmented` and `TabStrip`, and the 33 that remain are raw on purpose, each
     named in `PENDING.md`.
+
+45. ✅ **DECIDED 2026-10-07 — build it** (the user: *"lets build the proposed home page restructing too"*). The open
+    calls below were built on the defaults recommended here, each changeable:
+    (b) the question is about the newest analysis whose headline credits a cause no person has spoken to;
+    (c) worded from that headline by code: "…. Did the team do anything that explains it?";
+    (d) "acted on" is dismissed, decided on, or answered here;
+    (e) standing questions are listed, with no re-run yet (nothing spends);
+    (f) "you" is the Record's typed name until sign-in is on.
+    As first asked:
+    ⏳ **OPEN 2026-10-06 — what Home is for** (§3.55, `docs/HOME_STUDY_2026-10-06.md`; proposed in chat 2026-10-05
+    on the user's *"make sure that it has distinct value and doesnt just copy stuff from other pages/tabs"*, written
+    down 2026-10-06, extended 2026-10-07 with the proactive sections). The user liked *"A question for you"* and
+    *"Worth another look"* (2026-10-07). Waiting on the user:
+    (a) whether Home becomes the seven-section page and drops the blocks that copy other pages;
+    (b) A question for you — the ranking rule, i.e. which question it asks on a given day;
+    (c) A question for you — the wording, composed by code from records, since no model authors a fact;
+    (d) Worth another look — what "acted on" means: cited by a decision, dismissed, promoted, or any of them;
+    (e) Your standing questions — re-run the stored SQL with no model by default (recommended), and a model run only
+    on an opt-in, with a budget shown;
+    (f) who "you" is on an install with identity off — the name a form carries, until sign-in is on.
+    If adopted, the proposed order is: the copies out, Ask with memory, Worth another look and the score; then the
+    one thing to know and the week ahead; then standing questions; then A question for you, once (b) and (c) are
+    settled.
+    Also recorded in the study, not here: two Brain map redesigns were shown 2026-10-05 and not taken.
+
+46. ⏳ **Wanted, not built — every part of the Briefing can be asked about** (the user, 2026-10-07: *"each and every
+    component or the module on the briefing should become question ready… the graphs the charts the numbers
+    everything should be questionable by the user. Maybe it's too much at the moment, but sometime we will have to
+    do it"*).
+    What landed the same day is the ground it stands on. "Ask this briefing" now:
+    - keeps to the Briefing's schema (the converse tools had read the bare connection);
+    - reads the range Briefing the person has open, by its period key;
+    - knows each Key Metrics tile's definition.
+
+    A question about one component would name that component as the turn's `focus` — the field SP-15 already
+    carries on `/ask` — so the answer starts from that tile's or chart's own SQL and period. Not designed.
 
 ---
 

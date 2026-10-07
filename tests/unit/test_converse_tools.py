@@ -29,7 +29,7 @@ def fake_conn(monkeypatch):
     # The real schema-render format: `TABLE: name` then two-space-indented columns.
     schema = "TABLE: analytics.orders\n  order_id  BIGINT\n  total  DOUBLE\n"
     conn = SimpleNamespace(get_schema=lambda: schema)
-    monkeypatch.setattr(ct, "_connection", lambda cid: conn)
+    monkeypatch.setattr(ct, "_connection", lambda cid, **kw: conn)
     return conn
 
 
@@ -366,13 +366,13 @@ def test_the_system_prompt_names_the_engine_its_rules_and_the_clock(monkeypatch)
     from aughor.db.dialects import writer_rules
 
     bq = SimpleNamespace(dialect="bigquery", writes_native_sql=True)
-    monkeypatch.setattr(ct, "_connection", lambda cid: bq)
+    monkeypatch.setattr(ct, "_connection", lambda cid, **kw: bq)
     prompt = ct.converse_system_prompt("thelook")
     assert "SQL DIALECT: BigQuery" in prompt
     assert writer_rules(bq) in prompt
     assert f"TODAY: {today_utc()}" in prompt
 
-    def _unopenable(cid):
+    def _unopenable(cid, **kw):
         raise KeyError(cid)
 
     monkeypatch.setattr(ct, "_connection", _unopenable)
@@ -475,7 +475,7 @@ def test_a_join_that_over_counts_is_flagged_and_the_compiled_query_is_not(monkey
     _seed_ecommerce(con)
     con.close()
     conn = open_connection("duckdb", str(path), schema_name="ecommerce", connection_id="fanout-t")
-    monkeypatch.setattr(ct, "_connection", lambda cid: conn)
+    monkeypatch.setattr(ct, "_connection", lambda cid, **kw: conn)
 
     naive = ("SELECT o.payment_method, SUM(o.total_amount) AS revenue FROM orders o "
              "JOIN order_items i ON i.order_id = o.order_id GROUP BY 1")

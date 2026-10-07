@@ -960,6 +960,10 @@ class AskRequest(BaseModel):
     # SP-2 (§3.11) — the product screen the question was summoned from (see
     # ChatRequest.surface; same contract, same non-authority).
     surface: str = ""
+    # "Ask this briefing" — the range Briefing the user has open, by its period KEY only
+    # (`range:<preset>:<start>..<last day>`). The server reads that Briefing from its own
+    # cache; nothing about the brief is posted, and a key that is not a range key is ignored.
+    brief_period: str = Field(default="", max_length=80)
     # SP-15 — the OBJECT the question was summoned from, structurally: a held row's
     # "Ask Spotlight" hands its departure id here, never inside the prose, so the
     # conversation opens on that object's live state (`explain`) instead of parsing an
@@ -1620,6 +1624,7 @@ def _answer_core(
     persist_question: str = "",
     surface: str = "",
     frame_only: bool = False,
+    brief_period: str = "",
 ) -> "_AnswerCoreResult":
     """Answer one question, synchronously, reporting progress through ``emit``.
 
@@ -2201,8 +2206,10 @@ def _answer_core(
         # posted up by the client, so it can't drift from what's on screen or be spoofed).
         # Best-effort and empty when no brief is cached: no context beats invented context.
         try:
-            from aughor.knowledge.brief_context import brief_block_for_scope
-            _brief_sec = brief_block_for_scope(connection_id, canvas_scope_schema, canvas_id)
+            from aughor.knowledge.brief_context import BRIEFING_SURFACE, brief_block_for_scope
+            _brief_sec = brief_block_for_scope(connection_id, canvas_scope_schema, canvas_id,
+                                               period_key=brief_period,
+                                               from_briefing=surface == BRIEFING_SURFACE)
             if _brief_sec:
                 prompt = _brief_sec + "\n" + prompt
         except Exception as exc:
@@ -3492,6 +3499,7 @@ async def _stream_chat(
     schema_scope: Optional[str] = None,
     assumed_default: bool = False,
     surface: str = "",
+    brief_period: str = "",
 ) -> AsyncGenerator[str, None]:
     """The streaming half: run ``_answer_core`` on a worker thread and yield what it says.
 
@@ -3511,7 +3519,7 @@ async def _stream_chat(
             question, connection_id, history, emit=emit, cancelled=cancelled,
             session_id=session_id, canvas_id=canvas_id, skip_clarify=skip_clarify,
             purpose=purpose, schema_scope=schema_scope,
-            assumed_default=assumed_default, surface=surface,
+            assumed_default=assumed_default, surface=surface, brief_period=brief_period,
         )
 
     _bridge = _core_frames(_run)
@@ -3554,6 +3562,8 @@ async def _stream_converse(
     origin_prose: str = "",
     agent_id: str = "",
     surface: str = "",
+    schema_scope: Optional[str] = None,
+    brief_period: str = "",
 ) -> AsyncGenerator[str, None]:
     """Serve one `/ask` turn as a CONVERSATION (`ask.converse`, default on since SP-14).
 
@@ -3647,6 +3657,32 @@ async def _stream_converse(
                 _line = (f"ASKED FROM — the user summoned this question from the "
                          f"'{_surf}' screen of the product.")
                 _memory = _line + "\n\n" + _memory if _memory else _line
+        # The turn's scope, said, because the tools now keep to it: the quick body already
+        # answered inside the request's schema, and this body handed its tools the bare
+        # connection — `workspace` / `uber_ncr` answered from two other datasets (trace
+        # f6c0d51e). Empty with no scope, so every other prompt is byte-identical.
+        if schema_scope and not canvas_id:
+            _scope_line = (f"SCOPE — this conversation is pinned to schema '{schema_scope}'. Its "
+                           f"tools list and query only that schema's tables; a question its "
+                           f"tables cannot answer is said to be outside this schema, never "
+                           f"answered from another dataset on the connection.")
+            _memory = _scope_line + "\n\n" + _memory if _memory else _scope_line
+        # "Ask this briefing" — the Briefing the user has open, read server-side from the
+        # same entry it rendered (the RANGE entry when a period is open), with its period
+        # and its Key Metrics tiles. This body never read it: the brief block lived only in
+        # the quick body's prompt, behind a tool call that carried no schema.
+        from aughor.knowledge.brief_context import BRIEFING_SURFACE, brief_block_for_scope
+        if surface == BRIEFING_SURFACE:
+            try:
+                _brief_sec = brief_block_for_scope(connection_id, schema_scope, canvas_id,
+                                                   period_key=brief_period, from_briefing=True)
+            except Exception as _brief_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_brief_exc, "brief grounding is best-effort; answering without the brief",
+                         counter="converse.brief_section")
+                _brief_sec = ""
+            if _brief_sec:
+                _memory = _brief_sec + "\n" + _memory if _memory else _brief_sec
         # VA-9c — the agent record, so its GRANTS decide whether a write tool exists at
         # all on this turn. Resolved here rather than passed as an id: the tool roster is
         # bound by closure precisely so the model cannot name an agent it was not given.
@@ -3677,7 +3713,7 @@ async def _stream_converse(
                               extra_context=_memory,
                               on_step=_on_step, tool_emit=_forward,
                               session_id=session_id, canvas_id=canvas_id, agent=_agent_rec,
-                              trace_id=_decision_trace)
+                              trace_id=_decision_trace, schema_scope=schema_scope)
         except _CoreCancelled:
             raise
         except Exception as _exc:
@@ -3695,7 +3731,8 @@ async def _stream_converse(
                 "result_chars": 0,
             })
             return _answer_core(question, connection_id, history, emit=emit, cancelled=cancelled,
-                                session_id=session_id, canvas_id=canvas_id, surface=surface)
+                                session_id=session_id, canvas_id=canvas_id, surface=surface,
+                                schema_scope=schema_scope, brief_period=brief_period)
 
         answer = (result.answer or "").strip()
         if not answer:
@@ -5731,7 +5768,8 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         _body = (
             _stream_converse(req.question, conn_id, req.history, agent_id=req.agent_id or "",
                              session_id=req.session_id, canvas_id=req.canvas_id,
-                             surface=req.surface,
+                             surface=req.surface, schema_scope=req.schema_name,
+                             brief_period=req.brief_period,
                              # CI-4 — a seeded/dossier turn hands its finding to the
                              # conversation instead of bypassing it; SP-15 — a turn
                              # summoned from an object hands that object's live state.
@@ -5742,6 +5780,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
                          session_id=req.session_id, canvas_id=req.canvas_id,
                          skip_clarify=req.skip_clarify, purpose=req.purpose,
                          schema_scope=req.schema_name, surface=req.surface,
+                         brief_period=req.brief_period,
                          # "Answer anyway" = skipped WITHOUT supplying a reading. When a
                          # reading did come back the choice is recorded and crystallized,
                          # so there is nothing to disclose.
@@ -5926,6 +5965,21 @@ async def ask_resume_stream(session_id: str):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/ask/prior")
+def ask_prior_endpoint(
+    connection_id: str = Query(..., description="connection id"),
+    question: str = Query(..., max_length=2000, description="the question as typed"),
+    principal=Depends(get_principal),
+):
+    """What is already on record for this exact question here — how many times it was answered,
+    when first and last, and the newest answer's headline — so a person sees it BEFORE a run is
+    paid for (Home, "Ask, with memory"). A read: nothing runs and no model is called."""
+    from aughor.db.history import asked_before
+    from aughor.security.authz import check_owner
+    check_owner("connection", connection_id, principal)
+    return asked_before(question, connection_id)
 
 
 @router.get("/ask/context")

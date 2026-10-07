@@ -8,6 +8,7 @@ callers like any organisation-wide fact.
 """
 from __future__ import annotations
 
+import datetime as _dt
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -100,6 +101,54 @@ def get_record_claim_versions(claim_id: str) -> list[dict]:
     if c is None or not _visible(c.about.key if c.about.kind == "connection" else ""):
         raise HTTPException(status_code=404, detail="No such claim")
     return [_claim_view(v) for v in C.versions(c.key)]
+
+
+class SaidRequest(BaseModel):
+    connection_id: str
+    text: str = Field(min_length=1, max_length=600)   # what the person said, as they said it
+    about: str = Field(default="", max_length=200)    # the analysis or finding it answers
+    asked: str = Field(default="", max_length=600)    # the question it answers, as Home asked it
+    by: str = ""                                      # the person, when no sign-in names them
+
+
+@router.post("/record/claims/said", status_code=201)
+def book_record_said(req: SaidRequest, principal=Depends(get_principal)) -> dict:
+    """What a person told the platform, booked as theirs: kind and tier ``said``, dated, authored
+    by the person — Home's "A question for you". One answer per person per item; answering again
+    restates it, the earlier answer kept. Before this door a ``said`` claim came only from a filed
+    Slack reply (CB-8); a sentence typed into the product had nowhere to go."""
+    if not _visible(req.connection_id):
+        raise HTTPException(status_code=404, detail="No such connection")
+    who = _actor(principal, req.by)
+    if not who:
+        raise HTTPException(status_code=422, detail="name who is answering — nobody is signed in")
+    claim = C.Claim(kind="said", tier="said", author=who, author_kind="person",
+                    about=C.About(kind="connection", key=req.connection_id),
+                    statement=C.Statement(text=req.text.strip()),
+                    as_of=_dt.date.today().isoformat(),
+                    extra={"answers": req.asked.strip(), "about_ref": req.about.strip(), "surface": "home"})
+    key = C.claim_key("said", req.connection_id, req.about.strip() or "-", who)
+    try:
+        cid = C.restate(key, claim, conn_id=req.connection_id) if C.latest(key) else \
+            C.book(claim, key=key, conn_id=req.connection_id)
+    except C.ClaimRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    booked = C.get(cid)
+    return _claim_view(booked) if booked else {"id": cid}
+
+
+@router.get("/record/you")
+def read_record_you(by: str = "", principal=Depends(get_principal)) -> dict:
+    """Between you and the platform: what became of the entries the person reading wrote — the
+    signed-in caller, or the name this browser writes under. The principal's record, resolved
+    here so a page never has to guess whether its reader is a `user:` or a `person:`."""
+    who = _actor(principal, by)
+    if not who:
+        return {"principal": "", "n": 0, "by_kind": {}, "restated": 0, "hypotheses": {},
+                "predictions": {"scored": 0, "inside": 0, "coverage_observed": None, "by_method": []},
+                "note": "nobody named — answer a question on Home and give a name to start a record"}
+    from aughor.routers.ledger import read_principal_record
+    return read_principal_record(who)
 
 
 class MarkWrongRequest(BaseModel):

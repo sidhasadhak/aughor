@@ -107,6 +107,29 @@ def get_metrics(connection_id: Optional[str] = None):
 # below) declares `connection_id` as a QUERY parameter, and FastAPI refuses a name declared
 # both ways on one route. `connection_owner_guard` accepts either spelling, so DATA-06
 # ownership is enforced on these doors exactly as on the rest of the router.
+def _declared_schema(conn_id: str) -> Optional[str]:
+    """The schema a connection is registered on, or None.
+
+    The explorer keeps a connection's suggested metrics on its business profile, keyed by
+    (connection, schema). A caller that names no schema read the bare key, so a connection
+    registered on one schema showed none of them: theLook's Semantic Layer listed 0 explorer
+    metrics where its `thelook` profile holds 3 (2026-10-07). Only when that schema HAS a
+    profile of its own: a connection whose only profile is the bare one keeps reading it. A
+    connection with no declared schema (a multi-dataset workspace) is unchanged — its caller
+    must say which dataset."""
+    try:
+        from aughor.business_profile import store as profile_store
+        from aughor.db.registry import get_meta
+        declared = (get_meta(conn_id) or {}).get("schema_name") or None
+        if declared and profile_store.load_raw(conn_id, declared) is not None:
+            return declared
+    except Exception as exc:  # noqa: BLE001 — an unknown connection keeps the bare read
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the connection's declared schema could not be read; the catalogue reads the bare key",
+                 counter="metrics.catalogue_declared_schema")
+    return None
+
+
 @router.get("/metrics/catalogue/{conn_id}")
 def get_metric_catalogue(conn_id: str, schema: Optional[str] = None):
     """Every metric that APPLIES to this connection — defined, industry and explorer.
@@ -117,9 +140,11 @@ def get_metric_catalogue(conn_id: str, schema: Optional[str] = None):
     profile. Both are computed here and materialised only when someone edits one."""
     from aughor.semantic.metric_catalogue import catalogue_for
 
+    schema = schema or _declared_schema(conn_id)
     rows = catalogue_for(conn_id, schema)
     return {
         "connection_id": conn_id,
+        "schema": schema,
         "metrics": [r.as_dict() for r in rows],
         "counts": {
             "total": len(rows),
@@ -146,7 +171,7 @@ def materialise_metric(conn_id: str, name: str, schema: Optional[str] = None,
     from aughor.semantic.metric_catalogue import MaterialiseError, materialise
 
     try:
-        return materialise(conn_id, name, schema, actor=actor).model_dump()
+        return materialise(conn_id, name, schema or _declared_schema(conn_id), actor=actor).model_dump()
     except MaterialiseError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
