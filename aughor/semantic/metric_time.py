@@ -25,6 +25,8 @@ runs it through an injected ``run_sql(sql) -> (columns, rows, error)``.
 """
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from functools import reduce
@@ -563,9 +565,14 @@ def _num(v) -> Optional[float]:
     if v is None or (isinstance(v, str) and v.strip().upper() in ("", "NULL", "NONE")):
         return None
     try:
-        return float(str(v).replace(",", "")) if isinstance(v, str) else float(v)
+        f = float(str(v).replace(",", "")) if isinstance(v, str) else float(v)
     except (TypeError, ValueError):
         return None
+    # NaN and infinity are no figure. DuckDB answers a ratio over an empty range with NaN
+    # (`COUNT(...) * 1.0 / COUNT(...)` is 0.0 / 0), and one that reached a measured figure left
+    # the whole response unwritable as JSON — the Cockpit's "Failed to fetch" for every month
+    # after Uber's rides end in 2024 (2026-10-07).
+    return f if math.isfinite(f) else None
 
 
 def _as_date(v) -> Optional[date]:
