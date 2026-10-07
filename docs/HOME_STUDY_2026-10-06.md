@@ -1,6 +1,7 @@
 # Home — the one page that prepares for a person and trades with them
 
-**Status: DRAFTED 2026-10-06, extended 2026-10-07; NOT decided.** It began with the user's ask on 2026-10-05:
+**Status: DRAFTED 2026-10-06, extended 2026-10-07; BUILT (first version) 2026-10-07** — what is and is not
+built is in ROADMAP §3.54, and the defaults taken for the open calls in §6 item 45. It began with the user's ask on 2026-10-05:
 *"think of what Home page could deliver to improve its value.. make sure that it has distinct value and doesnt just
 copy stuff from other pages/tabs.. how do we enrich that page.. think outside the box"*. It was written down at
 *"lets write this down and push a branch"*.

@@ -11663,7 +11663,21 @@ The copies leave. The study also carries the live figures behind it:
   governed one.
 
 It also has each section's doors, what it costs (analyses record an organisation, not a person) and the build order.
-Not built.
+
+**BUILT 2026-10-07 (first version)** at the user's *"lets build the proposed home page restructing too"*
+(`web/components/home/`, `web/lib/home.ts`). The four copied blocks are gone, and every section is picked by code
+from records — no model fills the page.
+- New doors: `GET /ask/prior` (what is on record for a question, quick and deep answers both, exact match),
+  `POST /record/claims/said` (a person's answer, booked as theirs) and `GET /record/you` (their record).
+- Received live on a scratch pair seeded with the install's own headlines: the recall, the 27 Sep lead with its
+  run's summary, a booked answer (`said`, `person:<name>`), the week ahead and the counts.
+
+**Not built yet, said here so the page is not read as more than it is:**
+- the standing questions' morning re-run and "answer it every morning" — the list shows questions asked three or
+  more times, with their latest answer;
+- the lead's warning when its comparison day was measured differently before;
+- a count of how often the data agreed with what a person said;
+- attribution of asks to a person. "You" is the name a form carries while identity is off.
 
 ---
 
@@ -13732,7 +13746,15 @@ the browser** · **measure the premise before building.**
     now, 72 moved onto the shared Button, `Segmented` and `TabStrip`, and the 33 that remain are raw on purpose, each
     named in `PENDING.md`.
 
-45. ⏳ **OPEN 2026-10-06 — what Home is for** (§3.54, `docs/HOME_STUDY_2026-10-06.md`; proposed in chat 2026-10-05
+45. ✅ **DECIDED 2026-10-07 — build it** (the user: *"lets build the proposed home page restructing too"*). The open
+    calls below were built on the defaults recommended here, each changeable:
+    (b) the question is about the newest analysis whose headline credits a cause no person has spoken to;
+    (c) worded from that headline by code: "…. Did the team do anything that explains it?";
+    (d) "acted on" is dismissed, decided on, or answered here;
+    (e) standing questions are listed, with no re-run yet (nothing spends);
+    (f) "you" is the Record's typed name until sign-in is on.
+    As first asked:
+    ⏳ **OPEN 2026-10-06 — what Home is for** (§3.54, `docs/HOME_STUDY_2026-10-06.md`; proposed in chat 2026-10-05
     on the user's *"make sure that it has distinct value and doesnt just copy stuff from other pages/tabs"*, written
     down 2026-10-06, extended 2026-10-07 with the proactive sections). The user liked *"A question for you"* and
     *"Worth another look"* (2026-10-07). Waiting on the user:
@@ -13747,6 +13769,18 @@ the browser** · **measure the premise before building.**
     one thing to know and the week ahead; then standing questions; then A question for you, once (b) and (c) are
     settled.
     Also recorded in the study, not here: two Brain map redesigns were shown 2026-10-05 and not taken.
+
+46. ⏳ **Wanted, not built — every part of the Briefing can be asked about** (the user, 2026-10-07: *"each and every
+    component or the module on the briefing should become question ready… the graphs the charts the numbers
+    everything should be questionable by the user. Maybe it's too much at the moment, but sometime we will have to
+    do it"*).
+    What landed the same day is the ground it stands on. "Ask this briefing" now:
+    - keeps to the Briefing's schema (the converse tools had read the bare connection);
+    - reads the range Briefing the person has open, by its period key;
+    - knows each Key Metrics tile's definition.
+
+    A question about one component would name that component as the turn's `focus` — the field SP-15 already
+    carries on `/ask` — so the answer starts from that tile's or chart's own SQL and period. Not designed.
 
 ---
 
