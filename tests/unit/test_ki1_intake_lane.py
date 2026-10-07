@@ -31,6 +31,8 @@ def stores(tmp_path, monkeypatch):
     monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
     monkeypatch.setenv("AUGHOR_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
     monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocab"))
+    # Who imports and who accepts is the person signed in (2026-10-07), never the `actor` a body names.
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana@example.com")
     import aughor.semantic.connection_kb as kb
     monkeypatch.setattr(kb, "_DATA_DIR", tmp_path / "kb")
     monkeypatch.setattr(kb, "_index_entry", lambda e: None)

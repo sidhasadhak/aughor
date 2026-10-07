@@ -35,7 +35,15 @@ _KB_KIND = {"rule": "rule", "join": "join", "definition": "metric"}
 #: Fields a metric candidate may carry (subset of MetricDefinition, governance
 #: lifecycle excluded — lifecycle is the workflow's to assign, never the file's).
 _METRIC_FIELDS = ("name", "label", "sql", "tables", "dimensions", "filters", "unit",
-                  "caveats", "additivity", "owner", "lineage", "wrong_usage_examples")
+                  "caveats", "additivity", "owner", "lineage", "wrong_usage_examples",
+                  "schema_name", "time_column", "time_kind", "time_grain", "until_column",
+                  "outcome_column", "settles_after_days", "target_value", "warning_threshold",
+                  "critical_threshold", "target_period", "benchmark_source", "quality_tests",
+                  "freshness_sla", "freshness_check_sql")
+#: The fields a file sets about a metric's DATES — a person declared them, so they land confirmed
+#: by whoever imported the file.
+_TIME_DECLARED = ("time_column", "time_kind", "time_grain", "until_column", "outcome_column",
+                  "settles_after_days")
 
 
 def refusal(bundle: dict) -> str:
@@ -82,7 +90,8 @@ def _cand(kind: str, verdict: str, payload: dict, detail: str = "") -> dict:
 
 
 def _plan_metrics(connection_id: str, rows: list[dict], refused: list[str]) -> list[dict]:
-    from aughor.semantic.metrics import get_metric
+    from aughor.semantic.metric_checks import REFUSED, runs_on
+    from aughor.semantic.metrics import definition_at, get_metric, home_schema
 
     out = []
     for raw in rows:
@@ -98,24 +107,35 @@ def _plan_metrics(connection_id: str, rows: list[dict], refused: list[str]) -> l
         from aughor.semantic.metric_statement import as_statement
         payload["sql"] = as_statement(payload.get("sql"), list(payload.get("tables") or []),
                                       list(payload.get("filters") or []), name)
-        existing = get_metric(name, connection_id=payload["connection"])
+        # The engine's own verdict, the save door's check: the plan said `new` for a formula its
+        # warehouse cannot run, and the reviewer accepted a broken metric. Said here, beside the row
+        # — the reviewer can still edit it in the lane — and refused at accept if still broken.
+        verdict, why = runs_on(payload["sql"], payload["connection"], name,
+                               payload.get("tables") or [], payload.get("filters") or [])
+        broken = f"its SQL does not run here — {why}" if verdict == REFUSED else ""
+        # The definition this connection reads under that name IN THAT DATASET: its own, else the
+        # one it inherits (the house default, its organisation's) — overriding an approved one is
+        # a decision, so it plans as a conflict either way.
+        existing = (definition_at(name, payload["connection"], home_schema(payload))
+                    or get_metric(name, connection_id=payload["connection"],
+                                  schema_name=payload.get("schema_name") or None))
         if existing is None:
-            out.append(_cand("metric", "new", payload))
+            out.append(_cand("metric", "new", payload, broken))
             continue
         live = existing.model_dump()
         live["sql"] = as_statement(live.get("sql"), list(live.get("tables") or []),
                                    list(live.get("filters") or []), name)
         differs = [k for k in payload
                    if k != "connection" and payload.get(k) != live.get(k)]
+        def _said(text: str) -> str:
+            return "; ".join(t for t in (text, broken) if t)
         if not differs:
-            out.append(_cand("metric", "identical", payload))
+            out.append(_cand("metric", "identical", payload, broken))
         elif live.get("status") == "approved":
             out.append(_cand("metric", "conflict", payload,
-                             f"approved v{live.get('version')} differs on: "
-                             + ", ".join(differs)))
+                             _said(f"approved v{live.get('version')} differs on: " + ", ".join(differs))))
         else:
-            out.append(_cand("metric", "changed", payload,
-                             "differs on: " + ", ".join(differs)))
+            out.append(_cand("metric", "changed", payload, _said("differs on: " + ", ".join(differs))))
     return out
 
 
@@ -324,28 +344,41 @@ def _apply_metric(connection_id: str, payload: dict, actor: str) -> dict:
     from aughor.semantic.governance import apply_transition
     from aughor.semantic.metrics import MetricDefinition, get_metric, save_metric
 
+    from aughor.semantic.metrics import definition_at, home_schema
+
     name = str(payload.get("name") or "").strip()
     conn = str(payload.get("connection") or connection_id or "*")
     if not name or not str(payload.get("sql") or "").strip():
         raise ValueError("a metric candidate needs name and sql")
-    existing = get_metric(name, connection_id=conn)
+    existing = definition_at(name, conn, home_schema(payload)) if conn != "*" else get_metric(name, connection_id=conn)
     base = existing.model_dump() if existing else {}
     merged = {**base, **{k: v for k, v in payload.items() if k in _METRIC_FIELDS},
               "name": name, "connection": conn}
+    if any(payload.get(k) not in (None, "") for k in _TIME_DECLARED):
+        # Dates the file declared are a person's: confirmed by whoever imported it.
+        merged["time_confirmed_by"] = actor
+        merged["time_source"] = f"set in an imported file, confirmed by {actor}"
+    merged["lineage"] = list(merged.get("lineage") or []) or [f"imported by {actor}"]
     merged.setdefault("label", name.replace("_", " ").title())
     # A proposal is a statement (2026-09-26): an imported aggregate is wrapped over its
     # first table with its filters, so what the reviewer sees is what will run.
     from aughor.semantic.metric_statement import as_statement
     merged["sql"] = as_statement(merged.get("sql"), list(merged.get("tables") or []),
                                  list(merged.get("filters") or []), name)
+    from aughor.semantic.metric_checks import REFUSED, runs_on
+    verdict, why = runs_on(merged["sql"], conn, name, merged.get("tables") or [], merged.get("filters") or [])
+    if verdict == REFUSED:
+        raise ValueError(why)
     # An import NEVER carries lifecycle: it lands as a fresh draft and is proposed by
     # the accepting human — the metrics workflow's own approve stays the second act.
     merged["status"], merged["version"] = "draft", int(base.get("version") or 0)
     merged.pop("approved_by", None), merged.pop("approved_at", None)
     now = datetime.now(timezone.utc).isoformat()
     proposed, _audit = apply_transition({**merged, "name": name}, "propose", actor, now)
-    save_metric(MetricDefinition(**proposed))
-    return {"target_ref": f"metric:{conn}:{name}", "landed_as": "proposed"}
+    from aughor.semantic.metric_time import with_dates
+    metric = with_dates(conn, MetricDefinition(**proposed))
+    save_metric(metric)
+    return {"target_ref": f"metric:{conn}:{home_schema(metric)}:{name}", "landed_as": "proposed"}
 
 
 def _apply_synonym(connection_id: str, payload: dict, source: str) -> dict:

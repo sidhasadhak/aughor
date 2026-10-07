@@ -18,6 +18,8 @@ from aughor.org.context import current_org_id
 from aughor.security.authz import connection_owner_guard
 
 #: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+from aughor.security.authz import caller
+
 router = APIRouter(tags=["intake"], dependencies=[Depends(connection_owner_guard)])
 
 
@@ -49,7 +51,7 @@ def _summary(cands: list[dict]) -> dict:
 
 
 class BundleUpload(BaseModel):
-    actor: str
+    actor: str = ""   # IGNORED — what is imported is the signed-in person's (`caller`)
     source: str = ""                       # a label for where this file came from
     connection_id: str = ""                # falls back to the bundle's own
     bundle: Optional[dict] = None          # the bundle as JSON …
@@ -65,8 +67,6 @@ def upload_bundle(body: BundleUpload, request: Request):
     returns the existing bundle and stages nothing new."""
     from aughor.ontology.interchange import bundle_from_yaml
 
-    if not (body.actor or "").strip():
-        raise HTTPException(status_code=400, detail="actor is required")
     if (body.bundle is None) == (not body.yaml_text):
         raise HTTPException(status_code=400,
                             detail="exactly one of bundle or yaml_text is required")
@@ -88,7 +88,7 @@ def upload_bundle(body: BundleUpload, request: Request):
         # against its own stores rather than answered with the other's plan.
         bundle = {**bundle, "connection_id": conn_id}
     _check_conn_org(request, conn_id)
-    return _stage(bundle, conn_id, source=body.source, actor=body.actor)
+    return _stage(bundle, conn_id, source=body.source, actor=caller())
 
 
 def _stage(bundle: dict, conn_id: str, *, source: str, actor: str,
@@ -126,16 +126,16 @@ def _stage(bundle: dict, conn_id: str, *, source: str, actor: str,
 async def upload_file(request: Request,
                       file: UploadFile = File(...),
                       connection_id: str = Form(...),
-                      actor: str = Form(...),
-                      source: str = Form("")):
-    """KI-2 — the file door: a metric dictionary (CSV / TSV / XLSX with name,
-    definition, formula, unit, owner, aliases columns) or a dbt `manifest.json`
+                      actor: str = Form(default=""),
+                      source: str = Form(""),
+                      schema: str = Form("")):
+    """KI-2 — the file door: a metric file (CSV / TSV / XLSX in the columns of
+    `mappers.METRIC_COLUMNS` — `GET /intake/templates/metrics.csv`) or a dbt `manifest.json`
     becomes a bundle through a DETERMINISTIC mapper and enters the SAME lane.
-    The mapper judges nothing: every object still waits for a human verdict."""
+    The mapper judges nothing: every object still waits for a human verdict.
+    ``schema`` — the dataset in view: a row that names no dataset belongs to it."""
     from aughor.intake import mappers
 
-    if not (actor or "").strip():
-        raise HTTPException(status_code=400, detail="actor is required")
     if not (connection_id or "").strip():
         raise HTTPException(status_code=400, detail="connection_id is required")
     _check_conn_org(request, connection_id)
@@ -162,7 +162,7 @@ async def upload_file(request: Request,
         sections: dict = {"skills": [{"skill_md": text, "source": src}]}
         bundle = {"version": 1, "connection_id": connection_id,
                   "source_file": name, "sections": sections}
-        out = _stage(bundle, connection_id, source=src, actor=actor)
+        out = _stage(bundle, connection_id, source=src, actor=caller())
         out["mapped"] = {"file": name, "ignored_headers": []}
         return out
     if name.lower().endswith(".json"):
@@ -188,20 +188,40 @@ async def upload_file(request: Request,
         if not sections:
             raise HTTPException(status_code=422, detail="no usable rows — "
                                 + "; ".join(mapper_refused[:5]))
+        if (schema or "").strip() and schema.strip() != "*":
+            for m in sections.get("metrics") or []:
+                m.setdefault("schema_name", schema.strip())
 
     bundle = {"version": 1, "connection_id": connection_id,
               "source_file": name, "sections": sections}
-    out = _stage(bundle, connection_id, source=src, actor=actor,
+    out = _stage(bundle, connection_id, source=src, actor=caller(),
                  mapper_refused=mapper_refused)
     out["mapped"] = {"file": name, "ignored_headers": ignored}
     return out
+
+
+@router.get("/intake/templates/metrics.csv")
+def metric_template():
+    """The metric file's template — every column, and one example row to copy."""
+    from fastapi.responses import Response
+
+    from aughor.intake.mappers import metric_template_csv
+    return Response(content=metric_template_csv(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="aughor-metrics-template.csv"'})
+
+
+@router.get("/intake/metric-columns")
+def metric_columns():
+    """The metric file's columns, as the Import tab lists them: name, required, what it holds, example."""
+    from aughor.intake.mappers import METRIC_COLUMNS
+    return [{"column": c, "required": r, "meaning": m, "example": e} for c, r, m, e in METRIC_COLUMNS]
 
 
 class SheetIn(BaseModel):
     spreadsheet: str          # a spreadsheet id, or the full /spreadsheets/d/... URL
     sheet: str = ""           # worksheet name; empty = the first tab
     connection_id: str
-    actor: str
+    actor: str = ""   # IGNORED — what is imported is the signed-in person's (`caller`)
     source: str = ""
 
 
@@ -215,8 +235,6 @@ def upload_sheet(body: SheetIn, request: Request):
     exactly the claims the data connector makes."""
     from aughor.intake import mappers
 
-    if not (body.actor or "").strip():
-        raise HTTPException(status_code=400, detail="actor is required")
     _check_conn_org(request, body.connection_id)
     try:
         data = mappers.fetch_gsheet_csv(body.spreadsheet, body.sheet)
@@ -231,7 +249,7 @@ def upload_sheet(body: SheetIn, request: Request):
     bundle = {"version": 1, "connection_id": body.connection_id,
               "source_sheet": {"spreadsheet": body.spreadsheet, "sheet": body.sheet},
               "sections": sections}
-    out = _stage(bundle, body.connection_id, source=src, actor=body.actor,
+    out = _stage(bundle, body.connection_id, source=src, actor=caller(),
                  mapper_refused=mapper_refused)
     out["mapped"] = {"sheet": body.sheet or "(first tab)",
                      "ignored_headers": ignored}
@@ -241,7 +259,7 @@ def upload_sheet(body: SheetIn, request: Request):
 class MineIn(BaseModel):
     knowledge_connection_id: str   # the Confluence/Notion connection to walk
     connection_id: str             # the DATA connection the definitions belong to
-    actor: str
+    actor: str = ""   # IGNORED — what is imported is the signed-in person's (`caller`)
     source: str = ""               # optional label; defaults to each page's URL
 
 
@@ -257,8 +275,6 @@ def mine_knowledge(body: MineIn, request: Request):
     from aughor.db.registry import get_dsn, get_meta
     from aughor.intake import mining
 
-    if not (body.actor or "").strip():
-        raise HTTPException(status_code=400, detail="actor is required")
     _check_conn_org(request, body.connection_id)
     _check_conn_org(request, body.knowledge_connection_id)
     try:
@@ -297,7 +313,7 @@ def mine_knowledge(body: MineIn, request: Request):
                       "sections": page.sections}
             out = _stage(bundle, body.connection_id,
                          source=(body.source or "").strip() or page.url,
-                         actor=body.actor, mapper_refused=page.refused)
+                         actor=caller(), mapper_refused=page.refused)
             if out["duplicate"]:
                 duplicates += 1
             else:
@@ -318,7 +334,7 @@ def mine_knowledge(body: MineIn, request: Request):
 
 class ProseIn(BaseModel):
     connection_id: str
-    actor: str
+    actor: str = ""   # IGNORED — what is imported is the signed-in person's (`caller`)
     text: str                # markdown or plain prose; one model call per import
     source: str = ""         # a label for where the text came from
 
@@ -334,8 +350,6 @@ def upload_prose(body: ProseIn, request: Request):
     mapper parks and the deterministic doors remain."""
     from aughor.intake import prose, store
 
-    if not (body.actor or "").strip():
-        raise HTTPException(status_code=400, detail="actor is required")
     text = (body.text or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="text is required")
@@ -364,7 +378,7 @@ def upload_prose(body: ProseIn, request: Request):
               "mapped_by": "llm", "sections": sections}
     out = _stage(bundle, body.connection_id,
                  source=f"llm:{(body.source or '').strip() or 'prose'}",
-                 actor=body.actor)
+                 actor=caller())
     return {**out, "mined_at": _now(),
             "mapper_stats": {**store.llm_mapper_stats(org_id=_org()),
                              "threshold": prose.EDIT_RATE_THRESHOLD}}
@@ -383,7 +397,7 @@ def mapper_stats(bundle_id: str = ""):
 
 class SuggestIn(BaseModel):
     connection_id: str
-    actor: str
+    actor: str = ""   # IGNORED — what is imported is the signed-in person's (`caller`)
     min_fires: int = 3     # guard-cluster threshold; the populations report what it cut
     limit: int = 200       # cap on trusted-query proposals per pass
 
@@ -399,8 +413,6 @@ def suggest_from_usage(body: SuggestIn, request: Request):
     and proposes nothing."""
     from aughor.intake import suggestions
 
-    if not (body.actor or "").strip():
-        raise HTTPException(status_code=400, detail="actor is required")
     _check_conn_org(request, body.connection_id)
 
     bundle, populations, unresolved = suggestions.build_bundle(
@@ -411,7 +423,7 @@ def suggest_from_usage(body: SuggestIn, request: Request):
                 "unresolved": unresolved,
                 "note": "nothing minable yet — the populations above say why"}
     out = _stage(bundle, body.connection_id, source="usage-mining",
-                 actor=body.actor)
+                 actor=caller())
     return {"staged": not out["duplicate"], **out, "mined_at": _now(),
             "populations": populations, "unresolved": unresolved}
 
@@ -433,7 +445,7 @@ def bundle_plan(bundle_id: str):
 
 
 class ResolveIn(BaseModel):
-    actor: str
+    actor: str = ""   # IGNORED — what is imported is the signed-in person's (`caller`)
     accept: list[str] = Field(default_factory=list)     # candidate ids to apply
     dismiss: list[str] = Field(default_factory=list)    # candidate ids to drop
     edits: dict[str, dict] = Field(default_factory=dict)  # id → edited payload
@@ -449,8 +461,6 @@ def resolve_bundle(bundle_id: str, body: ResolveIn, request: Request):
     so the human can edit rather than lose it. Dismissed candidates write nothing."""
     from aughor.intake import engine, store
 
-    if not (body.actor or "").strip():
-        raise HTTPException(status_code=400, detail="actor is required")
     rec = store.get_bundle(bundle_id, org_id=_org())
     if rec is None:
         raise HTTPException(status_code=404, detail="No such bundle")
@@ -470,14 +480,14 @@ def resolve_bundle(bundle_id: str, body: ResolveIn, request: Request):
         payload = body.edits.get(cid) or cand["payload"]
         try:
             res = engine.apply_candidate(conn_id, cand["kind"], payload,
-                                         actor=body.actor, source=rec["source"])
+                                         actor=caller(), source=rec["source"])
         except KeyError:
             raise HTTPException(status_code=404, detail="Connection not found")
         except ValueError as e:
             failed += 1
             results.append({"id": cid, "outcome": "error", "reason": str(e)})
             continue
-        store.resolve_candidate(cid, status="accepted", actor=body.actor,
+        store.resolve_candidate(cid, status="accepted", actor=caller(),
                                 edited_payload=body.edits.get(cid),
                                 target_ref=res.get("target_ref", ""),
                                 apply_result=res, org_id=org)
@@ -489,12 +499,12 @@ def resolve_bundle(bundle_id: str, body: ResolveIn, request: Request):
             results.append({"id": cid, "outcome": "skipped",
                             "reason": "unknown id or not pending"})
             continue
-        store.resolve_candidate(cid, status="dismissed", actor=body.actor, org_id=org)
+        store.resolve_candidate(cid, status="dismissed", actor=caller(), org_id=org)
         dismissed += 1
         results.append({"id": cid, "outcome": "dismissed"})
 
     _emit({"action": "resolve", "bundle": bundle_id, "connection_id": conn_id,
-           "actor": body.actor, "accepted": applied, "dismissed": dismissed,
+           "actor": caller(), "accepted": applied, "dismissed": dismissed,
            "errors": failed, "at": _now()})
     return {"bundle": bundle_id, "accepted": applied, "dismissed": dismissed,
             "errors": failed, "results": results}
