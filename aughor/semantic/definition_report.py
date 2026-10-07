@@ -411,6 +411,19 @@ def population_of(db: Any, tables: Iterable[str], *, taken_at: str = "") -> Popu
         tables=names, taken_at=stamp)
 
 
+def _tables_read(metric: Any, db: Any) -> tuple[str, ...]:
+    """The tables the definition reads: a statement's own FROM, else its `tables` field.
+
+    A definition written as a whole statement names its tables in the statement and usually
+    leaves the field empty — read from the field alone, Ride Completion Rate (`… FROM
+    uber_ncr.ncr_ride_bookings`, 2026-10-07) was reported as naming no table at all."""
+    from aughor.semantic.metric_statement import is_statement, statement_tables
+
+    sql = str(getattr(metric, "sql", "") or "")
+    read = statement_tables(sql, str(getattr(db, "dialect", "") or "duckdb")) if is_statement(sql) else []
+    return tuple(read) or tuple(getattr(metric, "tables", ()) or ())
+
+
 def build_report(metric: Any, db: Any = None, *,
                  connection_id: str = "",
                  audit_events: Sequence[Mapping[str, Any]] = (),
@@ -424,7 +437,7 @@ def build_report(metric: Any, db: Any = None, *,
     check ``metric.connection`` will report on a formula belonging to someone else.
     """
     stamp = taken_at or _now()
-    tables = tuple(getattr(metric, "tables", ()) or ())
+    tables = _tables_read(metric, db)
     return DefinitionReport(
         metric=str(getattr(metric, "name", "") or ""),
         connection_id=connection_id or str(getattr(metric, "connection", "") or ""),

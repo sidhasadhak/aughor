@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -569,15 +569,24 @@ export function MetricsPanel({ connId, schema }: {
   const [materialising, setMaterialising] = useState<string | null>(null);
   const [rowError, setRowError] = useState<Record<string, string>>({});
 
+  // Only the newest load writes. The tab mounts before the scope bar knows its schema, so a
+  // read naming no schema and the schema's own read were in flight together and whichever
+  // answered LAST won: "Showing the metrics for amazon" over the two defined rows of the read
+  // that named none, until a tab switch remounted the panel with the schema known (2026-10-07).
+  const loadSeq = useRef(0);
   const load = async () => {
+    const seq = ++loadSeq.current;
+    const stale = () => seq !== loadSeq.current;
     // `metrics` still holds the raw registry: the governance section and the duplicate-name
     // warning read it, and both are about what is STORED, not about what applies.
-    try { setMetrics(await getMetrics(connId)); } catch {}
+    try { const stored = await getMetrics(connId); if (!stale()) setMetrics(stored); } catch {}
+    if (stale()) return;
     if (!connId) { setRows([]); setCounts({}); return; }
     try {
       const cat = await getMetricCatalogue(connId, schema);
+      if (stale()) return;
       setRows(cat.metrics); setCounts(cat.counts);
-    } catch { setRows([]); setCounts({}); }
+    } catch { if (!stale()) { setRows([]); setCounts({}); } }
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [connId, schema]);

@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
+import re
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
@@ -168,6 +169,33 @@ def _guarded(coro_factory, timeout_s: float, server: McpServer):
         # The message, not the type: a reader debugging "why can't Aughor reach my server"
         # needs "No such file or directory: 'npx'", and `FileNotFoundError` alone sends
         # them looking in the wrong place. The type name rides along for the log.
+        cause = _innermost(exc)
         logger.warning("mcp server %s (%s) unreachable: %s: %s",
-                       server.id, server.name, type(exc).__name__, exc)
-        raise McpUnreachable(f"{type(exc).__name__}: {exc}") from exc
+                       server.id, server.name, type(cause).__name__, cause)
+        raise McpUnreachable(_said(cause, server)) from exc
+
+
+def _innermost(exc: BaseException) -> BaseException:
+    """The failure itself, out of the task groups the SDK's transport runs in. The group's own
+    message — "unhandled errors in a TaskGroup (1 sub-exception)" — was all a reader saw when
+    Composio refused a key with a 401 (2026-10-07)."""
+    while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
+        exc = exc.exceptions[0]
+    return exc
+
+
+def _said(exc: BaseException, server: McpServer) -> str:
+    """An http refusal in the server's own terms: the status, the reason its `WWW-Authenticate`
+    challenge gives, and — for a header credential — the header it went in, because a misnamed
+    header is the refusal a reader can fix from this screen."""
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    if not status:
+        return f"{type(exc).__name__}: {exc}"
+    said = f"the server answered {status} {getattr(response, 'reason_phrase', '')}".rstrip()
+    challenge = re.search(r'error_description="([^"]*)"', response.headers.get("www-authenticate", ""))
+    if challenge:
+        said += f', saying "{challenge.group(1)}"'
+    if status in (401, 403) and server.auth_mode == "header" and server.auth_header:
+        said += f" — the credential went in the {server.auth_header_name or 'Authorization'} header"
+    return said

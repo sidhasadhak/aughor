@@ -15,7 +15,7 @@
  * are different claims, and a row that blurred them would be the confident-wrong report in
  * miniature.
  */
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -202,5 +202,29 @@ describe("a rejected formula is not a missing one", () => {
     render(<MetricsPanel connId="c1" />);
     const chip = await screen.findByText("Formula rejected");
     expect(chip).toHaveAttribute("title", expect.stringContaining("must be qualified"));
+  });
+});
+
+describe("only the newest read is shown", () => {
+  // 2026-10-07: the tab mounts before the scope bar knows its schema, so a read naming no schema
+  // and the schema's own read race. The page said "Showing the metrics for amazon" over the two
+  // defined rows of the read that named none — whichever answered last won.
+  it("a read naming no schema that answers last does not replace the schema's own list", async () => {
+    let answerUnscoped: (v: unknown) => void = () => {};
+    getMetricCatalogue.mockImplementation((_conn: string, schema?: string) => schema
+      ? Promise.resolve({ connection_id: "c1", metrics: [row({ name: "rides", label: "Ride Completion Rate" })],
+                          counts: { total: 1, explorer: 1 } })
+      : new Promise((resolve) => { answerUnscoped = resolve; }));
+    const { rerender } = render(<MetricsPanel connId="c1" />);
+    await waitFor(() => expect(getMetricCatalogue).toHaveBeenCalledWith("c1", undefined));
+    rerender(<MetricsPanel connId="c1" schema="uber_ncr" />);
+    await screen.findByText("Ride Completion Rate");
+
+    await act(async () => {
+      answerUnscoped({ connection_id: "c1", counts: { total: 1, defined: 1 },
+                       metrics: [row({ name: "daily", label: "Daily Gross Revenue", source: "defined", state: "defined" })] });
+    });
+    expect(screen.getByText("Ride Completion Rate")).toBeInTheDocument();
+    expect(screen.queryByText("Daily Gross Revenue")).not.toBeInTheDocument();
   });
 });
