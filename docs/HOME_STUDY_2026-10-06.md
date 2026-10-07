@@ -1,7 +1,7 @@
 # Home — the one page that prepares for a person and trades with them
 
 **Status: DRAFTED 2026-10-06, extended 2026-10-07; BUILT (first version) 2026-10-07** — what is and is not
-built is in ROADMAP §3.54, and the defaults taken for the open calls in §6 item 45. It began with the user's ask on 2026-10-05:
+built is in ROADMAP §3.55, and the defaults taken for the open calls in §6 item 45. It began with the user's ask on 2026-10-05:
 *"think of what Home page could deliver to improve its value.. make sure that it has distinct value and doesnt just
 copy stuff from other pages/tabs.. how do we enrich that page.. think outside the box"*. It was written down at
 *"lets write this down and push a branch"*.
@@ -12,7 +12,7 @@ current suggestions?"*. The user named two sections they liked: *"I actually lik
 you as well as the section named worth another look"*.
 
 Code was read on `origin/main` at `cb682fde`. Live figures were read over HTTP from the user's install on
-2026-10-05 and 2026-10-07. Nothing here is built. ROADMAP §3.54 is this study's pointer, and §6 item 45 lists the
+2026-10-05 and 2026-10-07. Nothing here is built. ROADMAP §3.55 is this study's pointer, and §6 item 45 lists the
 calls it waits on.
 
 ---

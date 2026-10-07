@@ -11632,7 +11632,7 @@ items carry no action or prediction of their own, and a Briefing is not signed a
 *(2026-10-05, later: the items of this paragraph that waited on a decision were all decided and built, or closed,
 under §6 item 42 — and "no action of their own" was wrong when written: cited items have carried one since CB-7.)*
 
-### 3.54 · Home — the one page that prepares for a person and trades with them (DRAFTED 2026-10-06 at the user's *"lets write this down and push a branch"*, extended 2026-10-07 at *"build the whole picture with the previous and the current suggestions"*; NOT decided — §6 item 45; `docs/HOME_STUDY_2026-10-06.md`)
+### 3.55 · Home — the one page that prepares for a person and trades with them (DRAFTED 2026-10-06 at the user's *"lets write this down and push a branch"*, extended 2026-10-07 at *"build the whole picture with the previous and the current suggestions"*; NOT decided — §6 item 45; `docs/HOME_STUDY_2026-10-06.md`)
 
 > **The fact it answers.** Five of Home's six blocks copy or link to a page that exists: the Get Started cards are
 > rail rows, the four stat tiles are Catalog, Ontology, Intelligence and Activity, the health scorecard is the Health
@@ -13754,7 +13754,7 @@ the browser** · **measure the premise before building.**
     (e) standing questions are listed, with no re-run yet (nothing spends);
     (f) "you" is the Record's typed name until sign-in is on.
     As first asked:
-    ⏳ **OPEN 2026-10-06 — what Home is for** (§3.54, `docs/HOME_STUDY_2026-10-06.md`; proposed in chat 2026-10-05
+    ⏳ **OPEN 2026-10-06 — what Home is for** (§3.55, `docs/HOME_STUDY_2026-10-06.md`; proposed in chat 2026-10-05
     on the user's *"make sure that it has distinct value and doesnt just copy stuff from other pages/tabs"*, written
     down 2026-10-06, extended 2026-10-07 with the proactive sections). The user liked *"A question for you"* and
     *"Worth another look"* (2026-10-07). Waiting on the user:

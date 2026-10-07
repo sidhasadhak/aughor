@@ -1,5 +1,5 @@
 /**
- * Home — the one page that prepares for a person and trades with them (ROADMAP §3.54,
+ * Home — the one page that prepares for a person and trades with them (ROADMAP §3.55,
  * `docs/HOME_STUDY_2026-10-06.md`). What each section shows is picked here, by code, from
  * records the install already keeps; no section calls a model. Every pick is deterministic, so
  * the same records give the same page.

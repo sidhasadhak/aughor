@@ -610,7 +610,7 @@ function HomeScreen({
           </div>
         )}
 
-        {/* Home's desk (ROADMAP §3.54): prepared before the person arrives, and traded with them.
+        {/* Home's desk (ROADMAP §3.55): prepared before the person arrives, and traded with them.
             It replaced four blocks that each copied another page — the rail's shortcuts, the
             Catalog's and Ontology's counts, the Health page and the Agent runs table. */}
         {recentInvs.length > 0 && (

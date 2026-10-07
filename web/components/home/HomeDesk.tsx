@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Home's desk — the sections of ROADMAP §3.54 (`docs/HOME_STUDY_2026-10-06.md`) below the ask box.
+ * Home's desk — the sections of ROADMAP §3.55 (`docs/HOME_STUDY_2026-10-06.md`) below the ask box.
  * Every other page reports to a person; this one prepares for them and trades with them. Each
  * section is picked by code (`lib/home.ts`) from records the install already keeps — no model is
  * called to fill it — and each says when it has nothing, rather than showing a copy of another page.
