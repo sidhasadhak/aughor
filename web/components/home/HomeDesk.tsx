@@ -73,7 +73,10 @@ export function HomeDesk({ connectionId, analyses, onOpenAnalysis, onDraft }: {
   const actorBy = actor.by;
   useEffect(() => { readYou(actorBy).then(setYou).catch(() => setYou(null)); }, [actorBy, said.length]);
 
-  const answered = useMemo(() => new Set(said.map(c => String(c.extra?.about_ref ?? "")).filter(Boolean)), [said]);
+  // A question answered during this visit stays on screen with its confirmation; it leaves on the next.
+  const [answeredNow, setAnsweredNow] = useState<ReadonlySet<string>>(new Set());
+  const answered = useMemo(() => new Set(said.map(c => String(c.extra?.about_ref ?? ""))
+    .filter(id => id && !answeredNow.has(id))), [said, answeredNow]);
   const decided = useMemo(() => {
     const text = JSON.stringify(decisions);
     return new Set((findings ?? []).filter(f => text.includes(f.id)).map(f => f.id));
@@ -98,7 +101,7 @@ export function HomeDesk({ connectionId, analyses, onOpenAnalysis, onDraft }: {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
         <QuestionCard key={question?.about.id ?? "none"} question={question} connectionId={connectionId}
-          actor={actor} onBooked={reloadRecord} />
+          actor={actor} onBooked={id => { setAnsweredNow(prev => new Set([...prev, id])); reloadRecord(); }} />
         <LookCard findings={findings} acted={new Set([...answered, ...decided])} connectionId={connectionId}
           actorBy={actor.by} onDecided={reloadRecord} />
       </div>
@@ -190,7 +193,7 @@ function QuestionCard({ question, connectionId, actor, onBooked }: {
   question: ReturnType<typeof pickQuestion>;
   connectionId: string;
   actor: ReturnType<typeof useActor>;
-  onBooked: () => void;
+  onBooked: (aboutId: string) => void;
 }) {
   const [kept, setKept] = useState("");
   const [error, setError] = useState("");
@@ -210,7 +213,7 @@ function QuestionCard({ question, connectionId, actor, onBooked }: {
     try {
       await bookSaid({ connection_id: connectionId, text, about: question.about.id, asked: question.text, by: actor.by });
       setKept(text);
-      onBooked();
+      onBooked(question.about.id);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   return (
