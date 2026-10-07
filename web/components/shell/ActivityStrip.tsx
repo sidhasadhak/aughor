@@ -47,7 +47,8 @@ export function ActivityStrip({ connectionId, onOpen }: {
       .catch(() => setLive(null));
     if (connectionId) {
       getExplorationStatus(connectionId)
-        .then(s => setPhase(!s.paused && !IDLE_PHASES.has(String(s.phase ?? "")) ? String(s.phase) : null))
+        // An interrupted run is not exploring: its phase is where it stopped (2026-10-07).
+        .then(s => setPhase(!s.paused && !s.interrupted && !IDLE_PHASES.has(String(s.phase ?? "")) ? String(s.phase) : null))
         .catch(() => setPhase(null));
     } else {
       setPhase(null);
