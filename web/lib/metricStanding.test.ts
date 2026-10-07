@@ -7,7 +7,7 @@ const row = (over: Partial<CatalogueMetric>): CatalogueMetric => ({
   name: "", label: "", source: "explorer", state: "proposed", sql: "", unit: "", definition: "",
   grain: "", dimensions: [], tables: [], anti_patterns: [], pack_id: "", required_roles: [],
   missing_roles: [], sane_range: null, why_it_matters: "", reason: "", status: "", version: 0,
-  owner: "", editable: false, ...over,
+  owner: "", editable: false, schema: "*", ...over,
 });
 
 describe("metricStanding", () => {

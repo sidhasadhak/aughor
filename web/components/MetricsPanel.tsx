@@ -17,7 +17,11 @@ import {
   getDefinitionReport,
   getMetricProposals,
   generateMetricSql,
+  promoteMetric,
+  removeProposal,
+  restoreProposal,
   type CatalogueMetric,
+  type RemovedProposal,
   type MetricProposals,
   type MetricStatementOption,
   type MetricSqlDraft,
@@ -32,6 +36,18 @@ import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { requestTab } from "@/lib/navigate";
+import { useMe } from "@/lib/useMe";
+
+/** "*" — every dataset of the connection. */
+const ALL = "*";
+/** The dataset a definition belongs to, as the server resolved it. */
+const homeOf = (m: Metric) => m.home_schema ?? m.schema_name ?? ALL;
+const sameDataset = (a?: string | null, b?: string | null) => (a || ALL).toLowerCase() === (b || ALL).toLowerCase();
+const datasetWords = (ds?: string | null) => (!ds || ds === ALL ? "every dataset" : ds);
+/** A catalogue row's identity: two datasets may each have their own metric of one name. */
+const rowKey = (r: CatalogueMetric) => `${r.source}:${r.schema ?? ALL}:${r.name}`;
+const GRAINS = ["day", "week", "month", "quarter", "year"] as const;
 
 // ── Governance lifecycle (B-8) ──────────────────────────────────────────────────
 const STATUS_STYLE: Record<string, string> = {
@@ -166,16 +182,17 @@ function DatesSection({ metric, proposals, onChanged }: {
   const [outcome, setOutcome] = useState(metric.outcome_column ?? "");
   const [until, setUntil] = useState(metric.until_column ?? "");
   const [settles, setSettles] = useState(metric.settles_after_days != null ? String(metric.settles_after_days) : "");
-  const [actor, setActor] = useState("");
+  const [grain, setGrain] = useState<string>(metric.time_grain ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const me = useMe();
 
+  // No name is asked: the confirmation is stamped by the server with the person signed in.
   const save = async (fields: Partial<Metric>) => {
     setErr("");
-    if (!actor.trim()) { setErr("Enter who is confirming this."); return; }
     setBusy(true);
     try {
-      await updateMetric(metric.name, { ...metric, ...fields, time_confirmed_by: actor.trim() });
+      await updateMetric(metric.name, { ...metric, ...fields }, homeOf(metric));
       setEditing(false);
       onChanged();
     } catch (e) {
@@ -194,18 +211,20 @@ function DatesSection({ metric, proposals, onChanged }: {
           </span>
         )}
       </div>
-      <p className="aug-fs-xs text-zinc-300">{datesSentence(metric)}</p>
+      <p className="aug-fs-xs text-zinc-300">
+        {datesSentence(metric)}
+        {metric.time_kind && metric.time_column && ` Reported by ${metric.time_grain ?? "month"}.`}
+      </p>
       {metric.time_kind && (
         <p className="aug-fs-xs text-zinc-500 mt-1">{KIND_WORDS[metric.time_kind] ?? ""}{metric.time_source ? ` · ${metric.time_source}` : ""}</p>
       )}
       {!editing ? (
         <div className="flex items-center gap-2 mt-2 flex-wrap">
-          <Input className="aug-fs-xs" placeholder="Who is confirming" value={actor}
-            onChange={e => setActor(e.target.value)} aria-label="Who is confirming the dates" />
           {metric.time_kind && !confirmed && (
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => save({})}>Confirm</Button>
           )}
           <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>Correct…</Button>
+          {me?.actor && <span className="aug-fs-xs text-zinc-500">as {me.actor}</span>}
         </div>
       ) : (
         <div className="grid gap-2 mt-2">
@@ -245,8 +264,12 @@ function DatesSection({ metric, proposals, onChanged }: {
             <Input className="aug-fs-xs" list={listed ? grainList : undefined} placeholder="Counts until, e.g. schema.table.sold_at" value={until}
               onChange={e => setUntil(e.target.value)} aria-label="Counts until column" />
           )}
-          <Input className="aug-fs-xs" placeholder="Who is confirming" value={actor}
-            onChange={e => setActor(e.target.value)} aria-label="Who is confirming the dates" />
+          <label className="aug-fs-xs text-zinc-400">Reported by
+            <SelectField className="ml-2" value={grain} onChange={e => setGrain(e.target.value)} aria-label="Date grain">
+              <option value="">month (the default)</option>
+              {GRAINS.map(g => <option key={g} value={g}>{g}</option>)}
+            </SelectField>
+          </label>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="secondary" disabled={busy || !shownColumn.trim()}
               onClick={() => save({
@@ -254,8 +277,10 @@ function DatesSection({ metric, proposals, onChanged }: {
                 outcome_column: kind === "cohort" ? outcome.trim() || null : null,
                 until_column: kind === "stock" ? until.trim() || null : null,
                 settles_after_days: kind === "cohort" && settles.trim() ? Number(settles) : null,
+                time_grain: (grain || null) as Metric["time_grain"],
               })}>Save dates</Button>
             <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+            {me?.actor && <span className="aug-fs-xs text-zinc-500">confirmed as {me.actor}</span>}
           </div>
         </div>
       )}
@@ -264,8 +289,11 @@ function DatesSection({ metric, proposals, onChanged }: {
   );
 }
 
-function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: () => void }) {
-  const [actor, setActor] = useState("");
+function GovernanceSection({ metric, datasets, onChanged }: {
+  metric: Metric; datasets: string[]; onChanged: (movedTo?: string) => void;
+}) {
+  const me = useMe();
+  const home = homeOf(metric);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [audit, setAudit] = useState<MetricAuditEntry[]>([]);
@@ -278,9 +306,9 @@ function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: (
 
   useEffect(() => {
     let alive = true;
-    getMetricAudit(metric.name).then(a => { if (alive) setAudit(a); }).catch(() => {});
+    getMetricAudit(metric.name, metric.connection, home).then(a => { if (alive) setAudit(a); }).catch(() => {});
     return () => { alive = false; };
-  }, [metric.name]);
+  }, [metric.name, metric.connection, home]);
 
   // A3 — fetched whenever there is a decision to take. A metric with no next action has nobody
   // to inform, so the call is not made at all rather than made and hidden. `wantReport` is
@@ -293,26 +321,38 @@ function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: (
   useEffect(() => {
     if (!wantReport || !reportConn) return;
     let alive = true;
-    getDefinitionReport(metric.name, reportConn)
+    getDefinitionReport(metric.name, reportConn, home)
       .then(r => { if (alive) { setReport(r); setReportErr(""); } })
       .catch(e => {
         if (alive) { setReport(null); setReportErr(e instanceof Error ? e.message : "unavailable"); }
       });
     return () => { alive = false; };
-  }, [metric.name, reportConn, metric.sql, status, wantReport]);
+  }, [metric.name, reportConn, home, metric.sql, status, wantReport]);
 
+  // No name is asked (the user, 2026-10-07): the server records the person signed in.
   const run = async (action: string) => {
     setErr("");
-    if (!actor.trim()) { setErr("Enter who's performing this (actor)."); return; }
     setBusy(action);
     try {
-      // The connection is SENT — without it the server looks for a global metric of this name
-      // and 404s every scoped one. See `transitionMetric`'s note.
-      await transitionMetric(metric.name, action, actor.trim(), metric.connection);
-      setAudit(await getMetricAudit(metric.name));
+      // The connection and the dataset are SENT — without them the server looked for a global
+      // metric of this name, or reached another dataset's. See `transitionMetric`'s note.
+      await transitionMetric(metric.name, action, metric.connection, home);
+      setAudit(await getMetricAudit(metric.name, metric.connection, home));
       onChanged();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Transition failed");
+    } finally { setBusy(null); }
+  };
+
+  const promote = async () => {
+    if (!metric.connection) return;
+    setErr("");
+    setBusy("promote");
+    try {
+      await promoteMetric(metric.name, metric.connection, home);
+      onChanged(ALL);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not promote it");
     } finally { setBusy(null); }
   };
 
@@ -330,6 +370,19 @@ function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: (
           <span className="aug-fs-xs text-zinc-500">proposed by {metric.proposed_by}</span>
         )}
       </div>
+      {datasets.length > 1 && (
+        <div className="flex items-center gap-2 mb-2 flex-wrap" data-testid="metric-dataset">
+          <span className="aug-fs-xs text-zinc-400">
+            {home === ALL ? "Belongs to every dataset of this connection" : <>Belongs to <strong className="text-zinc-300">{home}</strong></>}
+          </span>
+          {home !== ALL && metric.connection && metric.connection !== ALL && (
+            <Button size="xs" variant="ghost" disabled={!!busy} onClick={promote}
+              title="Every dataset of this connection reads this definition, except one that keeps its own of the same name.">
+              {busy === "promote" ? "…" : "Promote to the whole connection"}
+            </Button>
+          )}
+        </div>
+      )}
       {/* A3 — above the buttons on purpose. A report placed after the control that acts on it
           is read after the decision, which is the same as not being read. */}
       {wantReport && report && <div className="mb-2"><DefinitionReportBlock report={report} /></div>}
@@ -340,12 +393,6 @@ function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: (
       )}
       {actions.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap">
-          <Input
-            value={actor}
-            onChange={(e) => setActor(e.target.value)}
-            placeholder="actor (you / team)"
-            className="text-xs bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-zinc-200 w-36 outline-none focus:border-zinc-500"
-          />
           {actions.map(a => (
             <Button variant="ghost" size="xs"
               key={a}
@@ -359,6 +406,7 @@ function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: (
               {busy === a ? "…" : a}
             </Button>
           ))}
+          {me?.actor && <span className="aug-fs-xs text-zinc-500">as {me.actor}</span>}
         </div>
       )}
       {err && <div className="aug-fs-xs text-red-400 mt-1.5">{err}</div>}
@@ -409,7 +457,9 @@ interface FormState {
   quality_tests: string;   // newline-separated
   lineage: string;         // newline-separated
   wrong_usage_examples: string; // newline-separated
-  approved_by: string; approved_at: string;
+  /** The dataset it belongs to: "" — the one its SQL reads; "*" — every dataset. */
+  schema_name: string;
+  additivity: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -420,7 +470,7 @@ const EMPTY_FORM: FormState = {
   target_period: "", benchmark_source: "",
   owner: "", freshness_sla: "", freshness_check_sql: "",
   quality_tests: "", lineage: "", wrong_usage_examples: "",
-  approved_by: "", approved_at: "",
+  schema_name: "", additivity: "",
 };
 
 function parseList(val: string): string[] {
@@ -452,7 +502,8 @@ function metricToForm(m: Metric): FormState {
     quality_tests: joinLines(m.quality_tests),
     lineage: joinLines(m.lineage),
     wrong_usage_examples: joinLines(m.wrong_usage_examples),
-    approved_by: m.approved_by ?? "", approved_at: m.approved_at ?? "",
+    schema_name: m.schema_name || m.home_schema || "",
+    additivity: m.additivity ?? "",
   };
 }
 
@@ -473,21 +524,27 @@ function formToMetric(f: FormState): Metric {
     quality_tests: parseLines(f.quality_tests),
     lineage: parseLines(f.lineage),
     wrong_usage_examples: parseLines(f.wrong_usage_examples),
-    approved_by: f.approved_by.trim() || null,
-    approved_at: f.approved_at.trim() || null,
+    // Approval is stamped by the approve transition with the person signed in — never sent.
+    approved_by: null, approved_at: null,
+    schema_name: f.schema_name.trim() || null,
+    additivity: f.additivity.trim() || null,
   };
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function MetricsPanel({ connId, schema }: {
+export function MetricsPanel({ connId, schema, datasets = [] }: {
   connId?: string;
-  /** The dataset whose proposed metrics to list. The explorer proposes per schema, so on a
-   *  connection holding several datasets a catalogue asked for none lists none of them. */
+  /** The dataset whose metrics to list; "*" — every dataset of the connection at once, each row
+   *  saying which (the user, 2026-10-07). */
   schema?: string;
+  /** The connection's datasets — what a definition can belong to. */
+  datasets?: string[];
 }) {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  /** The dataset of the definition being edited — with `selected`, its identity. */
+  const [selectedSchema, setSelectedSchema] = useState<string>(ALL);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState("");
@@ -507,6 +564,13 @@ export function MetricsPanel({ connId, schema }: {
   // side and materialised only when someone edits one.
   const [rows, setRows] = useState<CatalogueMetric[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [removed, setRemoved] = useState<RemovedProposal[]>([]);
+  /** Whether the catalogue has answered — before it has, "nothing applies" would be a guess. */
+  const [loaded, setLoaded] = useState(false);
+  /** The stored definition behind a row: same name AND dataset. */
+  const storedOf = (name: string | null, ds: string) =>
+    name === null ? undefined : metrics.find((m) => m.name === name && sameDataset(homeOf(m), ds))
+      ?? (metrics.filter((m) => m.name === name).length === 1 ? metrics.find((m) => m.name === name) : undefined);
 
   // What the platform proposes for the definition being edited (the user, 2026-09-26: the
   // SQL field holds the whole runnable statement, and the dates are those of the table it
@@ -526,7 +590,7 @@ export function MetricsPanel({ connId, schema }: {
   const handleWriteSql = async () => {
     if (!connId) { setWriteError("Pick a connection first — the statement is written over its schema."); return; }
     if (!form.name.trim()) { setWriteError("Name the metric first — the name becomes the statement's column."); return; }
-    const row = rows.find((r) => r.name === form.name.trim());
+    const row = rows.find((r) => r.name === form.name.trim() && sameDataset(r.schema, selectedSchema));
     setWriting(true); setWriteError("");
     try {
       const draft = await generateMetricSql(connId, {
@@ -547,7 +611,7 @@ export function MetricsPanel({ connId, schema }: {
   } | null>(null);
   useEffect(() => {
     if (adding || !selected) { setProposals(null); setProposed(null); return; }
-    const stored = metrics.find((m) => m.name === selected);
+    const stored = storedOf(selected, selectedSchema);
     const sql = form.sql;
     let live = true;
     const timer = setTimeout(async () => {
@@ -564,7 +628,8 @@ export function MetricsPanel({ connId, schema }: {
       } catch { if (live) setProposals(null); }
     }, 250);
     return () => { live = false; clearTimeout(timer); };
-  }, [adding, selected, metrics, connId, form.sql, form.tables, form.filters, form.name]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adding, selected, selectedSchema, metrics, connId, form.sql, form.tables, form.filters, form.name]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [materialising, setMaterialising] = useState<string | null>(null);
   const [rowError, setRowError] = useState<Record<string, string>>({});
@@ -581,12 +646,13 @@ export function MetricsPanel({ connId, schema }: {
     // warning read it, and both are about what is STORED, not about what applies.
     try { const stored = await getMetrics(connId); if (!stale()) setMetrics(stored); } catch {}
     if (stale()) return;
-    if (!connId) { setRows([]); setCounts({}); return; }
+    if (!connId) { setRows([]); setCounts({}); setRemoved([]); return; }
     try {
       const cat = await getMetricCatalogue(connId, schema);
       if (stale()) return;
-      setRows(cat.metrics); setCounts(cat.counts);
-    } catch { if (!stale()) { setRows([]); setCounts({}); } }
+      setRows(cat.metrics); setCounts(cat.counts); setRemoved(cat.removed ?? []);
+    } catch { if (!stale()) { setRows([]); setCounts({}); setRemoved([]); } }
+    if (!stale()) setLoaded(true);
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [connId, schema]);
@@ -596,29 +662,53 @@ export function MetricsPanel({ connId, schema }: {
   // recipe is copied before it is changed — editing it in place would rewrite a definition
   // shared by every connection that reads the same package.
   const toggleRow = (row: CatalogueMetric) => {
-    if (expanded === row.name) { setExpanded(null); cancelForm(); return; }
-    setExpanded(row.name);
-    setRowError((prev) => ({ ...prev, [row.name]: "" }));
-    const stored = metrics.find((m) => m.name === row.name);
+    const key = rowKey(row);
+    if (expanded === key) { setExpanded(null); cancelForm(); return; }
+    setExpanded(key);
+    setRowError((prev) => ({ ...prev, [key]: "" }));
+    const stored = storedOf(row.name, row.schema);
     if (row.editable && stored) startEdit(stored);
     else { setAdding(false); setSelected(null); }
   };
 
   const customise = async (row: CatalogueMetric) => {
     if (!connId) return;
-    setMaterialising(row.name);
-    setRowError((prev) => ({ ...prev, [row.name]: "" }));
+    const key = rowKey(row);
+    setMaterialising(key);
+    setRowError((prev) => ({ ...prev, [key]: "" }));
     try {
-      const made = await materialiseMetric(connId, row.name, schema);
+      // The row's OWN dataset: in the every-dataset view two rows may share a name.
+      const made = await materialiseMetric(connId, row.name, row.schema || schema);
       await load();
       startEdit(made);
-      setExpanded(made.name);
+      setExpanded(`defined:${made.home_schema ?? made.schema_name ?? row.schema}:${made.name}`);
     } catch (e: unknown) {
       setRowError((prev) => ({
         ...prev,
-        [row.name]: e instanceof Error ? e.message : "Could not make this metric editable",
+        [key]: e instanceof Error ? e.message : "Could not make this metric editable",
       }));
     } finally { setMaterialising(null); }
+  };
+
+  // Removing a PROPOSAL (the user, 2026-10-07: "the right to remove the proposed Metric"): it is
+  // recorded, never proposed here again, and listed below the table to restore.
+  const removeRow = async (row: CatalogueMetric) => {
+    if (!connId) return;
+    const key = rowKey(row);
+    setMaterialising(key);
+    try {
+      await removeProposal(connId, row.name, row.schema);
+      setExpanded(null);
+      await load();
+    } catch (e: unknown) {
+      setRowError((prev) => ({ ...prev, [key]: e instanceof Error ? e.message : "Could not remove it" }));
+    } finally { setMaterialising(null); }
+  };
+
+  const restore = async (r: RemovedProposal) => {
+    if (!connId) return;
+    try { await restoreProposal(connId, r.name, r.schema_name); await load(); }
+    catch (e: unknown) { setError(e instanceof Error ? e.message : "Could not restore it"); }
   };
 
   const startAdd = () => {
@@ -628,7 +718,7 @@ export function MetricsPanel({ connId, schema }: {
   };
 
   const startEdit = (m: Metric) => {
-    setAdding(false); setSelected(m.name);
+    setAdding(false); setSelected(m.name); setSelectedSchema(homeOf(m));
     setForm(metricToForm(m)); setError(""); setWritten(null); setWriteError("");
     setValidationResult(null); setFreshnessResult(null);
   };
@@ -644,7 +734,9 @@ export function MetricsPanel({ connId, schema }: {
     const metric = formToMetric(form);
     if (!metric.name) { setError("Name is required"); return; }
     if (!metric.label) { setError("Label is required"); return; }
-    if (!metric.sql) { setError("SQL expression is required"); return; }
+    // A draft may be saved without SQL — a recipe opened to be written over this connection's
+    // columns is one — but a new definition needs its statement.
+    if (!metric.sql && adding) { setError("SQL statement is required"); return; }
     setSaving(true);
     try {
       // Scope every write to the connection this tab is showing. Without it the request
@@ -654,7 +746,7 @@ export function MetricsPanel({ connId, schema }: {
       // deliberate choice, not what an edit here means.
       const scoped = connId ? { ...metric, connection: connId } : metric;
       if (adding) { await createMetric(scoped); }
-      else { await updateMetric(selected!, scoped); }
+      else { await updateMetric(selected!, scoped, selectedSchema); }
       await load();
       cancelForm();
     } catch (e: unknown) {
@@ -663,15 +755,19 @@ export function MetricsPanel({ connId, schema }: {
   };
 
   const handleDelete = async (m: Metric) => {
+    if (!connId) return;
+    if (deleting !== `confirm:${m.name}`) { setDeleting(`confirm:${m.name}`); return; }
     setDeleting(m.name);
+    setError("");
     try {
-      // Pass the formula so only this grain is removed when a name has several
-      // definitions — not every same-named row.
-      await deleteMetric(m.name, m.sql);
+      // THIS connection's definition in THIS dataset — never every connection's of the name.
+      await deleteMetric(m.name, connId, homeOf(m));
       if (selected === m.name) cancelForm();
+      setExpanded(null);
       await load();
-    } catch {}
-    finally { setDeleting(null); }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Could not remove it");
+    } finally { setDeleting(null); }
   };
 
   const handleValidate = async () => {
@@ -700,15 +796,6 @@ export function MetricsPanel({ connId, schema }: {
     } finally { setCheckingFreshness(false); }
   };
 
-  // A metric name is its identity (save_metric upserts by name), so two rows
-  // sharing one is an unresolved conflict. The backend dedupes downstream
-  // (most-recent wins) and logs a WARNING; this list reads the RAW catalog by
-  // design so a human can see and fix it — surface the same signal right here.
-  const nameCounts = metrics.reduce<Record<string, number>>((acc, m) => {
-    acc[m.name] = (acc[m.name] ?? 0) + 1;
-    return acc;
-  }, {});
-
   const isEditing = adding || selected !== null;
 
   // The editor, unchanged. It used to be the right pane of a ResizableSplit; it now renders
@@ -730,15 +817,28 @@ export function MetricsPanel({ connId, schema }: {
             </h3>
 
             {/* ── Core fields ─────────────────────────────────────────────── */}
-            <Field label="Name (snake_case)" required>
-              <Input
-                className={inputCls}
-                placeholder="mrr"
-                value={form.name}
-                disabled={!adding}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-              />
-            </Field>
+            {/* Every field is editable (the user, 2026-10-07) — the name too: renaming moves the
+                definition, its governance and its trail with it. */}
+            <div className={datasets.length > 1 ? "grid grid-cols-2 gap-3" : ""}>
+              <Field label="Name (snake_case)" required hint={adding ? undefined : "renaming keeps its history"}>
+                <Input
+                  className={inputCls}
+                  placeholder="mrr"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              </Field>
+              {datasets.length > 1 && (
+                <Field label="Dataset" hint="which dataset's metric this is">
+                  <SelectField value={form.schema_name} aria-label="Dataset"
+                    onChange={(e) => setForm({ ...form, schema_name: e.target.value })}>
+                    {adding && <option value="">The one its SQL reads</option>}
+                    <option value={ALL}>Every dataset of this connection</option>
+                    {datasets.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </SelectField>
+                </Field>
+              )}
+            </div>
 
             <Field label="Label" required>
               <Input
@@ -836,14 +936,24 @@ export function MetricsPanel({ connId, schema }: {
               />
             </Field>
 
-            <Field label="Caveats">
-              <Input
-                className={inputCls}
-                placeholder="Finance-approved. Excludes internal test accounts."
-                value={form.caveats}
-                onChange={(e) => setForm({ ...form, caveats: e.target.value })}
-              />
-            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Caveats">
+                <Textarea
+                  className={`${inputCls} text-xs min-h-[56px] resize-y`}
+                  placeholder="Finance-approved. Excludes internal test accounts."
+                  value={form.caveats}
+                  onChange={(e) => setForm({ ...form, caveats: e.target.value })}
+                />
+              </Field>
+              <Field label="Additivity" hint="may period figures be summed">
+                <SelectField value={form.additivity} aria-label="Additivity"
+                  onChange={(e) => setForm({ ...form, additivity: e.target.value })}>
+                  <option value="">Not said</option>
+                  <option value="additive">Additive — periods sum (revenue, orders)</option>
+                  <option value="non_additive">Non-additive — they do not (a rate, an average)</option>
+                </SelectField>
+              </Field>
+            </div>
 
             {/* ── Health Scorecard ─────────────────────────────────────────── */}
             <SectionHeader label="Health Scorecard" />
@@ -890,36 +1000,21 @@ export function MetricsPanel({ connId, schema }: {
             {/* ── Governance (M21) ─────────────────────────────────────────── */}
             <SectionHeader label="Governance" />
 
+            {/* Who approved it, and when, are not typed: the approve transition stamps the person
+                signed in. The Governance panel beside the fields shows them. */}
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Owner">
+              <Field label="Owner" hint="the team or person who answers for it">
                 <Input
                   className={inputCls} placeholder="Revenue team"
                   value={form.owner}
                   onChange={(e) => setForm({ ...form, owner: e.target.value })}
                 />
               </Field>
-              <Field label="Approved by">
-                <Input
-                  className={inputCls} placeholder="Finance"
-                  value={form.approved_by}
-                  onChange={(e) => setForm({ ...form, approved_by: e.target.value })}
-                />
-              </Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
               <Field label="Freshness SLA" hint="human description">
                 <Input
                   className={inputCls} placeholder="daily by 6am UTC"
                   value={form.freshness_sla}
                   onChange={(e) => setForm({ ...form, freshness_sla: e.target.value })}
-                />
-              </Field>
-              <Field label="Approved at" hint="YYYY-MM-DD">
-                <Input
-                  className={inputCls} placeholder="2026-01-15"
-                  value={form.approved_at}
-                  onChange={(e) => setForm({ ...form, approved_at: e.target.value })}
                 />
               </Field>
             </div>
@@ -1001,6 +1096,23 @@ export function MetricsPanel({ connId, schema }: {
                   >
                     {checkingFreshness ? "Checking…" : "Check freshness"}
                   </Button>
+                  {(() => {
+                    const sm = storedOf(selected, selectedSchema);
+                    if (!sm) return null;
+                    // An approved definition is in use: it is retired (Deprecate, beside) first.
+                    if (sm.status === "approved") {
+                      return <span className="aug-fs-xs text-zinc-500 self-center">Deprecate it to remove it.</span>;
+                    }
+                    const confirming = deleting === `confirm:${sm.name}`;
+                    return (
+                      <Button size="sm" variant="ghost" disabled={deleting === sm.name}
+                        onClick={() => handleDelete(sm)}
+                        className="text-red-400 hover:text-red-300 border border-red-500/30"
+                        title="Removes this definition from this dataset; a proposal it came from is not proposed again.">
+                        {deleting === sm.name ? "Removing…" : confirming ? "Remove — sure?" : "Remove"}
+                      </Button>
+                    );
+                  })()}
                 </>
               )}
             </div>
@@ -1011,10 +1123,17 @@ export function MetricsPanel({ connId, schema }: {
                  field keeps the top of the row instead of sitting under a report. Under 1100 px
                  it stacks back above the fields, as it always did. */}
           {!adding && (() => {
-            const sm = metrics.find((m) => m.name === selected);
+            const sm = storedOf(selected, selectedSchema);
             return sm ? (
               <div className="aug-metric-governance">
-                <GovernanceSection metric={sm} onChanged={load} />
+                <GovernanceSection metric={sm} datasets={datasets} onChanged={async (movedTo) => {
+                  await load();
+                  if (movedTo) {
+                    // A promotion moves it to every dataset — the editor stays open on it there.
+                    setSelectedSchema(movedTo);
+                    setExpanded(`defined:${movedTo}:${sm.name}`);
+                  }
+                }} />
                 <DatesSection key={`${sm.name}:${sm.time_column ?? ""}:${sm.time_confirmed_by ?? ""}`}
                   metric={sm} proposals={proposals} onChanged={load} />
               </div>
@@ -1027,13 +1146,13 @@ export function MetricsPanel({ connId, schema }: {
 
   return (
     <div className="flex flex-col gap-3 h-full overflow-y-auto pr-1">
-      <CatalogueHeader counts={counts} connId={connId} onAdd={startAdd} />
+      <CatalogueHeader counts={counts} connId={connId} every={schema === ALL} onAdd={startAdd} />
 
       {adding && (
         <div className="rounded-md border border-violet-500/30 bg-violet-500/5 p-3">{editor}</div>
       )}
 
-      {rows.length === 0 && !adding && (
+      {rows.length === 0 && !adding && (loaded || !connId) && (
         <p className="aug-text-ui text-zinc-500 mt-2">
           {connId
             ? "Nothing applies to this connection yet. The explorer proposes metrics as it profiles the data, and an industry package contributes its own once its roles are bound to this connection."
@@ -1055,19 +1174,49 @@ export function MetricsPanel({ connId, schema }: {
           <TableBody>
             {rows.map((row) => (
               <MetricRow
-                key={`${row.source}:${row.name}`}
+                key={rowKey(row)}
                 row={row}
-                open={expanded === row.name}
+                every={schema === ALL}
+                open={expanded === rowKey(row)}
                 onToggle={() => toggleRow(row)}
                 onCustomise={() => customise(row)}
-                busy={materialising === row.name}
-                error={rowError[row.name] ?? ""}
-                duplicate={(nameCounts[row.name] ?? 0) > 1}
-                editor={selected === row.name ? editor : null}
+                onRemove={() => removeRow(row)}
+                busy={materialising === rowKey(row)}
+                error={rowError[rowKey(row)] ?? ""}
+                // A name is unique within its dataset, so two stored rows of one name in one dataset
+                // are an unresolved conflict the backend dedupes (most recent wins) — said here.
+                duplicate={metrics.filter((m) => m.name === row.name && sameDataset(homeOf(m), row.schema)).length > 1}
+                editor={row.source === "defined" && selected === row.name && sameDataset(row.schema, selectedSchema) ? editor : null}
               />
             ))}
           </TableBody>
         </Table>
+      )}
+
+      {removed.length > 0 && <RemovedList removed={removed} onRestore={restore} />}
+    </div>
+  );
+}
+
+/** The proposals a person removed — who, when, and a way back. A removal is a decision, so it is
+ *  listed, never just absent. */
+function RemovedList({ removed, onRestore }: { removed: RemovedProposal[]; onRestore: (r: RemovedProposal) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-1" data-testid="metrics-removed">
+      <Button variant="ghost" size="xs" onClick={() => setOpen((o) => !o)} className="aug-fs-xs">
+        {open ? "▾" : "▸"} Removed here ({removed.length})
+      </Button>
+      {open && (
+        <ul className="mt-1 flex flex-col gap-1">
+          {removed.map((r) => (
+            <li key={`${r.schema_name}:${r.name}`} className="flex items-center gap-2 aug-fs-xs text-zinc-400">
+              <span className="text-zinc-300">{r.label || r.name}</span>
+              <span className="text-zinc-500">· {datasetWords(r.schema_name)} · removed by {r.by} on {r.at.slice(0, 10)}</span>
+              <Button size="xs" variant="ghost" onClick={() => onRestore(r)}>Restore</Button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -1182,8 +1331,8 @@ const STATE_TEXT: Record<string, { label: string; cls: string; title: string }> 
                       title: "A formula was proposed and the audit could not trust it, so it was dropped. Hover the row for the reason." },
 };
 
-function CatalogueHeader({ counts, connId, onAdd }:
-    { counts: Record<string, number>; connId?: string; onAdd: () => void }) {
+function CatalogueHeader({ counts, connId, every, onAdd }:
+    { counts: Record<string, number>; connId?: string; every?: boolean; onAdd: () => void }) {
   const parts: string[] = [];
   if (counts.defined) parts.push(`${counts.defined} defined`);
   if (counts.industry) parts.push(`${counts.industry} from your industry`);
@@ -1197,7 +1346,7 @@ function CatalogueHeader({ counts, connId, onAdd }:
         <p className="aug-text-ui text-zinc-500 mt-1">
           {connId
             ? (parts.length
-                ? `${counts.total} apply here — ${parts.join(", ")}. Open one to edit it.`
+                ? `${counts.total} apply ${every ? "across every dataset of this connection" : "here"} — ${parts.join(", ")}. Open one to edit or remove it.`
                 : "")
             : "Select a connection."}
         </p>
@@ -1212,11 +1361,14 @@ function CatalogueHeader({ counts, connId, onAdd }:
   );
 }
 
-function MetricRow({ row, open, onToggle, onCustomise, busy, error, duplicate, editor }: {
+function MetricRow({ row, every, open, onToggle, onCustomise, onRemove, busy, error, duplicate, editor }: {
   row: CatalogueMetric;
+  /** The every-dataset view: the dataset is what tells two rows of one name apart. */
+  every: boolean;
   open: boolean;
   onToggle: () => void;
   onCustomise: () => void;
+  onRemove: () => void;
   busy: boolean;
   error: string;
   duplicate: boolean;
@@ -1224,7 +1376,9 @@ function MetricRow({ row, open, onToggle, onCustomise, busy, error, duplicate, e
 }) {
   const src = SOURCE_STYLE[row.source] ?? SOURCE_STYLE.defined;
   const st = STATE_TEXT[row.state] ?? STATE_TEXT.proposed;
-  const where = row.tables.length ? row.tables.join(", ") : (row.pack_id || "—");
+  const tables = row.tables.length ? row.tables.join(", ") : (row.pack_id || "");
+  const dataset = datasetWords(row.schema);
+  const where = every || row.schema === ALL ? dataset : (tables || "—");
   return (
     <>
       <tr
@@ -1257,14 +1411,18 @@ function MetricRow({ row, open, onToggle, onCustomise, busy, error, duplicate, e
             <span className="aug-fs-xs text-zinc-500"> · {row.status}</span>
           ) : null}
         </td>
-        <td className="py-2 pr-3 align-top aug-fs-xs text-zinc-500 font-mono truncate" title={where}>{where}</td>
+        <td className="py-2 pr-3 align-top aug-fs-xs text-zinc-500 truncate"
+          title={tables ? `${dataset} · ${tables}` : dataset}>
+          <span className={every ? "text-zinc-300" : "font-mono"}>{where}</span>
+          {every && tables && <div className="font-mono truncate">{tables}</div>}
+        </td>
       </tr>
 
       {open && (
         <tr className="border-b border-zinc-800 bg-zinc-900/40">
           <td colSpan={5} className="px-3 py-3">
             {editor ?? (
-              <MetricProvenance row={row} onCustomise={onCustomise} busy={busy} error={error} />
+              <MetricProvenance row={row} onCustomise={onCustomise} onRemove={onRemove} busy={busy} error={error} />
             )}
           </td>
         </tr>
@@ -1273,11 +1431,14 @@ function MetricRow({ row, open, onToggle, onCustomise, busy, error, duplicate, e
   );
 }
 
-/** What a computed row shows before it is copied: what it means, and what it would take. */
-function MetricProvenance({ row, onCustomise, busy, error }: {
-  row: CatalogueMetric; onCustomise: () => void; busy: boolean; error: string;
+/** What a computed row shows before it is copied: what it means, and every way forward — make it
+ *  this connection's, bind what it needs, or remove it. Never a dead end (the user, 2026-10-07: "no
+ *  'this requires binding' — that's a dead end with no action possible"). */
+function MetricProvenance({ row, onCustomise, onRemove, busy, error }: {
+  row: CatalogueMetric; onCustomise: () => void; onRemove: () => void; busy: boolean; error: string;
 }) {
-  const blocked = row.state === "needs_binding";
+  const unbound = row.state === "needs_binding";
+  const [removing, setRemoving] = useState(false);
   return (
     <div className="flex flex-col gap-3 max-w-3xl">
       {row.definition && <p className="aug-text-ui text-zinc-300">{row.definition}</p>}
@@ -1285,24 +1446,25 @@ function MetricProvenance({ row, onCustomise, busy, error }: {
 
       {row.sql ? (
         <div>
-          <SectionHeader label="Formula" />
+          <SectionHeader label={unbound ? "The package's formula" : "Formula"} />
           <pre className="aug-fs-xs font-mono text-zinc-300 whitespace-pre-wrap bg-zinc-900 rounded p-2 border border-zinc-800">
             {row.sql}
           </pre>
         </div>
       ) : (
         <p className="aug-text-ui text-amber-400">
-          No formula was proposed for this one — open it after customising and supply the SQL.
+          No formula was proposed for this one — make it this connection&apos;s and write the SQL.
         </p>
       )}
 
       {row.grain && <p className="aug-fs-xs text-zinc-500">Grain — {row.grain}</p>}
 
-      {blocked && (
-        <p className="aug-text-ui text-amber-400">
-          {`This connection has not bound ${row.missing_roles.join(", ") || "the roles"} that `
-            + `${row.label} is defined over, so it cannot be computed here yet. Its formula `
-            + `still names roles rather than your columns.`}
+      {unbound && (
+        <p className="aug-text-ui text-zinc-300" data-testid="metric-unbound">
+          {`Its formula names ${row.missing_roles.join(", ") || "roles"} — data this connection has not `
+            + `bound to the ${row.pack_id || "industry"} package. Write it over your own columns (the `
+            + `package's formula is kept beside it as a guide), bind those roles so the package resolves `
+            + `it, or remove it if it does not apply here.`}
         </p>
       )}
 
@@ -1330,18 +1492,28 @@ function MetricProvenance({ row, onCustomise, busy, error }: {
 
       {error && <p className="aug-text-ui text-red-400">{error}</p>}
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <Button
           onClick={onCustomise}
-          disabled={busy || blocked}
+          disabled={busy}
           className="bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-40"
         >
-          {busy ? "Copying…" : "Customise for this connection"}
+          {busy ? "Working…" : unbound ? "Write its SQL for this connection" : "Customise for this connection"}
+        </Button>
+        {unbound && (
+          <Button variant="ghost" onClick={() => requestTab("settings", { settings: "system" })}
+            title="Settings ▸ System ▸ Packages — bind the roles this package's formulas are written over.">
+            Bind its roles
+          </Button>
+        )}
+        <Button variant="ghost" disabled={busy}
+          onClick={() => (removing ? onRemove() : setRemoving(true))}
+          className="text-red-400 hover:text-red-300"
+          title="It is not proposed here again; it can be restored from the list below the table.">
+          {removing ? "Remove — sure?" : "Remove"}
         </Button>
         <span className="aug-fs-xs text-zinc-500">
-          {blocked
-            ? "Bind the roles first."
-            : "Takes a copy scoped to this connection, as a draft. The original is untouched."}
+          {`A copy for ${datasetWords(row.schema)} of this connection, as a draft. The original is untouched.`}
         </span>
       </div>
     </div>

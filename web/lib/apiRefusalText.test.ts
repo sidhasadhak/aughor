@@ -29,23 +29,23 @@ describe("a structured refusal is read, not stringified", () => {
   it("the approval gate's 428 says approval comes first, naming the action", async () => {
     refuse(428, { error: "approval_required", action: "metric.approve", scope: "rides", risk: "high",
                   hint: "High-risk action 'metric.approve' requires approval." });
-    const err = await failure(transitionMetric("rides", "approve", "user1", "workspace"));
+    const err = await failure(transitionMetric("rides", "approve", "workspace"));
     expect(err.message).not.toContain("[object Object]");
     expect(err.message).toBe('This needs approval first: approve "metric.approve" in the approval prompt, then try again.');
   });
 
   it("a {code, why} refusal shows its why", async () => {
     refuse(403, { code: "ORGANISATION_SCOPE_DENIED", why: "'org:b' is another organisation's scope" });
-    const err = await failure(transitionMetric("rides", "approve", "user1", "org:b"));
+    const err = await failure(transitionMetric("rides", "approve", "org:b"));
     expect(err.message).toBe("'org:b' is another organisation's scope");
   });
 
   it("a plain sentence and an unexplained refusal still read as before", async () => {
     refuse(404, "Metric 'rides' not found for connection 'workspace'.");
-    expect((await failure(transitionMetric("rides", "approve", "u"))).message)
+    expect((await failure(transitionMetric("rides", "approve"))).message)
       .toBe("Metric 'rides' not found for connection 'workspace'.");
     refuse(500, { unexpected: true });
-    expect((await failure(transitionMetric("rides", "approve", "u"))).message)
+    expect((await failure(transitionMetric("rides", "approve"))).message)
       .toBe("Changing the metric's state failed (500)");
   });
 });

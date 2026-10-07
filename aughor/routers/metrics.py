@@ -115,7 +115,11 @@ def get_metrics(connection_id: Optional[str] = None):
     caller's organisation's: the global rows, its `org:` rows and its visible connections' —
     never another organisation's (the 2027 study §E item 2)."""
     rows = list_metrics(connection_id=connection_id)
-    return [m.model_dump() for m in (rows if connection_id else organisation_visible(rows))]
+    # `home_schema` — the dataset each belongs to, resolved as the store resolves it (a definition
+    # that names none belongs to the one its SQL reads), so a client matches a catalogue row to its
+    # definition by dataset and name, never by name alone.
+    return [{**m.model_dump(), "home_schema": home_schema(m)}
+            for m in (rows if connection_id else organisation_visible(rows))]
 
 
 # The path parameter is `conn_id`, not `connection_id`: `require_capability` (the `gate`
@@ -481,6 +485,12 @@ def _stamp_time_edit(existing, req: MetricRequest) -> dict:
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+def _plain_unit(unit: Optional[str]) -> Optional[str]:
+    """A saved unit carries no figure measured once — see `metric_catalogue.plain_unit`."""
+    from aughor.semantic.metric_catalogue import plain_unit
+    return plain_unit(unit) or None
+
+
 def _dataset(value: Optional[str]) -> Optional[str]:
     v = (value or "").strip()
     return v or None
@@ -505,6 +515,7 @@ def create_metric(req: MetricRequest):
             f"'{req.name}' is already defined for {where}connection '{req.connection}' — open it "
             f"to change it, or choose another name."))
     data = {k: v for k, v in req.model_dump().items() if k not in _SERVER_OWNED}
+    data["unit"] = _plain_unit(data.get("unit"))
     data.update(_stamp_time_edit(None, req))
     from aughor.semantic.metric_time import with_dates
     m = with_dates(req.connection, MetricDefinition(**data))
@@ -552,7 +563,7 @@ def update_metric(name: str, req: MetricRequest, schema: Optional[str] = None):
             f"'{new_name}' is already defined in {where} connection '{req.connection}' — open that "
             f"one, or choose another name."))
     data = {k: v for k, v in req.model_dump().items() if k not in _SERVER_OWNED}
-    data.update({"name": new_name, "schema_name": target_ds})
+    data.update({"name": new_name, "schema_name": target_ds, "unit": _plain_unit(data.get("unit"))})
     data.update(_stamp_time_edit(existing, req))
     audit = None
     if existing is not None:

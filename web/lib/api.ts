@@ -951,6 +951,12 @@ export interface Metric {
    *  so every write fell back to "*" — and editing theLook's metric republished its
    *  SQL, over `inventory_items`, to connections with no such table. */
   connection?: string;
+  /** The dataset (schema) it belongs to; "*" — every dataset of its connection (promoted); null —
+   *  the one its SQL reads. `home_schema` is that resolved, as the server reads it. */
+  schema_name?: string | null;
+  home_schema?: string;
+  /** "additive" | "non_additive" — whether period figures may be summed. */
+  additivity?: string | null;
   proposed_by?: string | null;
   proposed_at?: string | null;
   /** Arc BR-2 — how the metric is measured for a date range: set automatically by rule
@@ -960,7 +966,10 @@ export interface Metric {
   outcome_column?: string | null;
   until_column?: string | null;
   settles_after_days?: number | null;
+  /** The period it is reported by: day, week, month, quarter or year. */
+  time_grain?: "day" | "week" | "month" | "quarter" | "year" | null;
   time_source?: string | null;
+  /** Stamped by the server with the person signed in — never sent. */
   time_confirmed_by?: string | null;
 }
 
@@ -1049,15 +1058,31 @@ export interface CatalogueMetric {
   owner: string;
   /** False until the row is materialised — a recipe is not edited in place. */
   editable: boolean;
+  /** The dataset it belongs to; "*" — every dataset of the connection. A row is (source, schema,
+   *  name): two datasets may each have their own metric of one name. */
+  schema: string;
+}
+
+/** A proposal a person removed — never proposed here again until it is restored. */
+export interface RemovedProposal {
+  connection: string;
+  schema_name: string;
+  name: string;
+  label: string;
+  source: string;
+  by: string;
+  at: string;
 }
 
 export interface MetricCatalogue {
   connection_id: string;
   metrics: CatalogueMetric[];
   counts: Record<string, number>;
+  removed?: RemovedProposal[];
 }
 
-/** Every metric that APPLIES to this connection: defined + industry + explorer. */
+/** Every metric that APPLIES to this connection: defined + industry + explorer. `schema` "*" — every
+ *  dataset of the connection at once, each row saying which. */
 export async function getMetricCatalogue(connectionId: string, schema?: string): Promise<MetricCatalogue> {
   const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
   const res = await fetch(`${getApiBase()}/metrics/catalogue/${encodeURIComponent(connectionId)}${q}`);
@@ -1076,6 +1101,34 @@ export async function materialiseMetric(connectionId: string, name: string, sche
     const body = await res.json().catch(() => null);
     throw new Error(fastApiError(body, "Could not make this metric editable"));
   }
+  return res.json();
+}
+
+/** Remove a PROPOSED metric (the explorer's, or an industry package's) from one dataset ("*": every
+ *  dataset). Recorded with who and when; never proposed there again until it is restored. */
+export async function removeProposal(connectionId: string, name: string, schema?: string): Promise<RemovedProposal> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(
+    `${getApiBase()}/metrics/catalogue/${encodeURIComponent(connectionId)}/${encodeURIComponent(name)}/remove${q}`,
+    { method: "POST" });
+  if (!res.ok) throw await refused(res, "Removing the proposal");
+  return res.json();
+}
+
+export async function restoreProposal(connectionId: string, name: string, schema?: string): Promise<void> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(
+    `${getApiBase()}/metrics/catalogue/${encodeURIComponent(connectionId)}/${encodeURIComponent(name)}/restore${q}`,
+    { method: "POST" });
+  if (!res.ok) throw await refused(res, "Restoring the proposal");
+}
+
+/** Promote one dataset's definition to its whole connection: every dataset reads it, except one that
+ *  keeps a definition of its own under the same name. */
+export async function promoteMetric(name: string, connectionId: string, schema: string): Promise<Metric> {
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/promote?connection_id=${
+    encodeURIComponent(connectionId)}&schema=${encodeURIComponent(schema)}`, { method: "POST" });
+  if (!res.ok) throw await refused(res, "Promoting the metric");
   return res.json();
 }
 
@@ -1171,8 +1224,11 @@ export async function generateMetricSql(connection: string, brief: MetricBrief):
   return res.json();
 }
 
-export async function updateMetric(name: string, m: Metric): Promise<Metric> {
-  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}`, {
+/** Save an edit. `schema` is the dataset of the definition being edited (`home_schema`); a different
+ *  `m.schema_name` or `m.name` moves it there. */
+export async function updateMetric(name: string, m: Metric, schema?: string): Promise<Metric> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}${q}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(m),
@@ -1184,11 +1240,14 @@ export async function updateMetric(name: string, m: Metric): Promise<Metric> {
   return res.json();
 }
 
-export async function deleteMetric(name: string, sql?: string): Promise<void> {
-  // Pass the formula to delete a single grain when a name has several definitions;
-  // omit it to remove every entry sharing the name.
-  const q = sql ? `?sql=${encodeURIComponent(sql)}` : "";
-  await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}${q}`, { method: "DELETE" });
+/** Remove ONE definition — this connection's, in this dataset. It used to send neither, so a delete
+ *  reached every connection's definition of that name, and it never read the answer, so a refusal
+ *  looked like success. */
+export async function deleteMetric(name: string, connection: string, schema?: string): Promise<void> {
+  const q = new URLSearchParams({ connection });
+  if (schema) q.set("schema", schema);
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}?${q}`, { method: "DELETE" });
+  if (!res.ok) throw await refused(res, "Removing the metric");
 }
 
 /** B-8 — drive a metric through its governance lifecycle (propose/approve/reject/deprecate).
@@ -1202,11 +1261,12 @@ export async function deleteMetric(name: string, sql?: string): Promise<void> {
  *  this failure happening live (an approve intended for theLook's draft was refused because the
  *  samples `revenue` was already approved) and fixing it server-side; the client was never
  *  updated, so the approve button has been dead for every scoped metric since. */
-export async function transitionMetric(name: string, action: string, actor: string,
-                                       connection?: string): Promise<{ metric: Metric; audit: MetricAuditEntry }> {
+export async function transitionMetric(name: string, action: string, connection?: string,
+                                       schema?: string): Promise<{ metric: Metric; audit: MetricAuditEntry }> {
+  // No actor: the transition is the signed-in person's, stamped by the server (2026-10-07).
   const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/transition`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(connection ? { action, actor, connection } : { action, actor }),
+    body: JSON.stringify({ action, ...(connection ? { connection } : {}), ...(schema ? { schema_name: schema } : {}) }),
   });
   if (!res.ok) throw await refused(res, "Changing the metric's state");
   return res.json();
@@ -1251,9 +1311,10 @@ export interface DefinitionReport {
 
 /** A3 — fetch the report for one metric on one connection. Spelled `conn_id` to match its
  *  siblings (`/value`, `/validate`, `/freshness`); see the route's own note for why. */
-export async function getDefinitionReport(name: string, connId: string): Promise<DefinitionReport> {
+export async function getDefinitionReport(name: string, connId: string, schema?: string): Promise<DefinitionReport> {
   const res = await fetch(
-    `${getApiBase()}/metrics/${encodeURIComponent(name)}/definition-report?conn_id=${encodeURIComponent(connId)}`);
+    `${getApiBase()}/metrics/${encodeURIComponent(name)}/definition-report?conn_id=${encodeURIComponent(connId)}${
+      schema ? `&schema=${encodeURIComponent(schema)}` : ""}`);
   if (!res.ok) {
     const detail = await res.json().then(d => d?.detail).catch(() => null);
     throw new Error(detail || "Could not build the definition report");
@@ -1262,8 +1323,11 @@ export async function getDefinitionReport(name: string, connId: string): Promise
 }
 
 /** B-8 — the governance audit trail for a metric (newest first). */
-export async function getMetricAudit(name: string): Promise<MetricAuditEntry[]> {
-  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/audit`);
+export async function getMetricAudit(name: string, connection?: string, schema?: string): Promise<MetricAuditEntry[]> {
+  const q = new URLSearchParams();
+  if (connection) q.set("connection_id", connection);
+  if (schema) q.set("schema", schema);
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/audit${q.size ? `?${q}` : ""}`);
   if (!res.ok) return [];
   return (await res.json()).audit ?? [];
 }
@@ -9891,16 +9955,39 @@ export async function uploadIntakeBundleYaml(args: {
 }
 
 export async function uploadIntakeFile(
-  file: File, connectionId: string, actor: string, source = "",
+  file: File, connectionId: string, actor: string, source = "", schema = "",
 ): Promise<IntakeStageResult> {
   const form = new FormData();
   form.append("file", file);
   form.append("connection_id", connectionId);
   form.append("actor", actor);
   form.append("source", source);
+  // The dataset in view: a row of a metric file that names no dataset belongs to it.
+  if (schema) form.append("schema", schema);
   const res = await fetch(`${getApiBase()}/intake/files`, { method: "POST", body: form });
   if (!res.ok) await intakeError(res);
   return res.json();
+}
+
+/** One column of the metric file — what it holds and an example (`intake.mappers.METRIC_COLUMNS`). */
+export interface MetricFileColumn { column: string; required: boolean; meaning: string; example: string }
+
+export async function getMetricFileColumns(): Promise<MetricFileColumn[]> {
+  const res = await fetch(`${getApiBase()}/intake/metric-columns`);
+  if (!res.ok) throw await refused(res, "Reading the metric file's columns");
+  return res.json();
+}
+
+/** The metric file's template, every column and one example row — saved by the browser. */
+export async function downloadMetricTemplate(): Promise<void> {
+  const res = await fetch(`${getApiBase()}/intake/templates/metrics.csv`);
+  if (!res.ok) throw await refused(res, "Downloading the template");
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "aughor-metrics-template.csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export async function uploadIntakeSheet(args: {

@@ -92,6 +92,17 @@ def normalize_name(text: str) -> str:
     return t.strip("_")
 
 
+_MEASURED = re.compile(r"\s*\(measured\s*≈[^)]*\)", re.IGNORECASE)
+
+
+def plain_unit(text) -> str:
+    """A unit without the figure the explorer measured once and wrote into it — "USD (measured ≈
+    508.18)" is "USD". That figure anchors the explorer's own magnitude check; as a metric's unit it
+    is a number frozen at profiling time, shown beside every figure since as if it were current
+    (the user, 2026-10-07: "no static or stale metrics")."""
+    return _MEASURED.sub("", str(text or "")).strip()
+
+
 @dataclass
 class CatalogueEntry:
     """One row of the connection's metric catalogue."""
@@ -145,7 +156,7 @@ def _defined_entries(connection_id: str, schema_name: Optional[str] = None) -> l
     for m in list_metrics(connection_id=connection_id, schema_name=scope):
         out.append(CatalogueEntry(
             name=m.name, label=m.label or m.name, source=SOURCE_DEFINED,
-            state=STATE_DEFINED, sql=m.sql or "", unit=m.unit or "",
+            state=STATE_DEFINED, sql=m.sql or "", unit=plain_unit(m.unit),
             definition=m.caveats or "", dimensions=list(m.dimensions or []),
             tables=list(m.tables or []), anti_patterns=list(m.wrong_usage_examples or []),
             status=m.status or "draft", version=int(m.version or 0),
@@ -274,7 +285,7 @@ def _explorer_entries(connection_id: str, schema_name: Optional[str]) -> list[Ca
         out.append(CatalogueEntry(
             name=normalize_name(m.name), label=m.name, source=SOURCE_EXPLORER,
             state=state, sql=value_sql, reason=reason,
-            unit=m.unit_or_range or "", definition=(m.definition or "").strip(),
+            unit=plain_unit(m.unit_or_range), definition=(m.definition or "").strip(),
             tables=tables, why_it_matters=(m.why_it_matters or "").strip(),
             editable=False, schema=schema_name or "*",
         ))

@@ -108,6 +108,13 @@ def local_operator() -> str:
     if named:
         return named
     try:
+        # The ACCOUNT the process runs under, not `getpass.getuser()`, which reads LOGNAME first:
+        # a launcher that sets LOGNAME=root recorded a person's approvals as root (2026-10-07).
+        import pwd
+        return pwd.getpwuid(os.getuid()).pw_name or "local operator"
+    except (ImportError, KeyError):
+        pass  # no passwd database (Windows) — the login name the session gives
+    try:
         import getpass
         return getpass.getuser() or "local operator"
     except Exception as exc:  # noqa: BLE001 — no login name on this host

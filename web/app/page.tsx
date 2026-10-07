@@ -755,7 +755,13 @@ function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme
   ];
 
   type SettingsTab = "organization" | "access" | "appearance" | "models" | "system";
-  const [sub, setSub] = useState<SettingsTab>("organization");
+  // `?settings=` opens a section — another screen links straight to one (the Metrics tab's "Bind its
+  // roles" opens System, where the packages are bound).
+  const [sub, setSub] = useState<SettingsTab>(() => {
+    if (typeof window === "undefined") return "organization";
+    const want = new URLSearchParams(window.location.search).get("settings");
+    return (["organization", "access", "appearance", "models", "system"] as const).find(t => t === want) ?? "organization";
+  });
   const SUBS: Array<{ id: SettingsTab; label: string }> = [
     { id: "organization", label: "Organization" },
     { id: "access",       label: "Access" },

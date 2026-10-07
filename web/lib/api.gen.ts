@@ -6164,8 +6164,8 @@ export interface paths {
         /**
          * Put Usage Cap
          * @description Declare (or replace) one cap. The author is the identified caller — a limit
-         *     nobody set is not a policy, so an unidentified localhost operator is recorded as
-         *     ``operator`` rather than blank.
+         *     nobody set is not a policy, so without a sign-in it is the person the request acts
+         *     for (`authz.caller`), never blank and never the word ``operator``.
          */
         put: operations["put_usage_cap_governance_caps_put"];
         post?: never;
@@ -6649,10 +6649,11 @@ export interface paths {
         put?: never;
         /**
          * Upload File
-         * @description KI-2 — the file door: a metric dictionary (CSV / TSV / XLSX with name,
-         *     definition, formula, unit, owner, aliases columns) or a dbt `manifest.json`
+         * @description KI-2 — the file door: a metric file (CSV / TSV / XLSX in the columns of
+         *     `mappers.METRIC_COLUMNS` — `GET /intake/templates/metrics.csv`) or a dbt `manifest.json`
          *     becomes a bundle through a DETERMINISTIC mapper and enters the SAME lane.
          *     The mapper judges nothing: every object still waits for a human verdict.
+         *     ``schema`` — the dataset in view: a row that names no dataset belongs to it.
          */
         post: operations["upload_file_intake_files_post"];
         delete?: never;
@@ -6676,6 +6677,26 @@ export interface paths {
          *     measurement instead of a vibe.
          */
         get: operations["mapper_stats_intake_mapper_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/metric-columns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Metric Columns
+         * @description The metric file's columns, as the Import tab lists them: name, required, what it holds, example.
+         */
+        get: operations["metric_columns_intake_metric_columns_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6801,6 +6822,26 @@ export interface paths {
          *     and proposes nothing.
          */
         post: operations["suggest_from_usage_intake_suggest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/templates/metrics.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Metric Template
+         * @description The metric file's template — every column, and one example row to copy.
+         */
+        get: operations["metric_template_intake_templates_metrics_csv_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -9219,12 +9260,55 @@ export interface paths {
         put?: never;
         /**
          * Materialise Metric
-         * @description Copy-on-write: turn a computed row into an editable, connection-scoped definition.
+         * @description Copy-on-write: turn a computed row into an editable definition of this connection and dataset.
          *
-         *     Lands as `draft` — see `metric_catalogue.materialise`. A row that needs a binding is
-         *     refused with the roles it is missing, rather than written as SQL that cannot run.
+         *     Lands as `draft` — see `metric_catalogue.materialise`. A recipe this connection has not bound
+         *     lands as a draft whose SQL is the person's to write, with the package's formula beside it.
+         *     ``actor`` is ignored: the draft is the signed-in person's.
          */
         post: operations["materialise_metric_metrics_catalogue__conn_id___name__materialise_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metrics/catalogue/{conn_id}/{name}/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove Proposal
+         * @description Remove a PROPOSED metric — an industry recipe or the explorer's — from this dataset (``*``:
+         *     every dataset). The user, 2026-10-07: *"user needs the right to remove the proposed Metric"*.
+         *     Recorded, with who and when, so a rebuild never proposes it again, and restorable.
+         */
+        post: operations["remove_proposal_metrics_catalogue__conn_id___name__remove_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metrics/catalogue/{conn_id}/{name}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Removed Proposal
+         * @description Undo a removal: the proposal is listed again.
+         */
+        post: operations["restore_removed_proposal_metrics_catalogue__conn_id___name__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9317,7 +9401,13 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Update Metric */
+        /**
+         * Update Metric
+         * @description Edit a definition — ANY field (the user, 2026-10-07): its name and its dataset too, which
+         *     move it. ``schema`` is the dataset of the definition being edited; ``req.schema_name`` is the
+         *     one it is saved in. Governance stays the transitions': a changed formula on an approved metric
+         *     returns it to `proposed` for review.
+         */
         put: operations["update_metric_metrics__name__put"];
         post?: never;
         /**
@@ -9331,14 +9421,17 @@ export interface paths {
          *     carrying `approved_by: Finance` — and nothing anywhere recorded it. The trail endpoint
          *     below would have shown a metric's whole history with its deletion missing.
          *
-         *     `metric.delete` is declared HIGH, so this now asks for approval like every other
-         *     destructive verb, and the deletion lands in the same `metric.governance` trail as the
-         *     transitions that preceded it.
+         *     `metric.delete` is declared HIGH, so a definition that was EVER approved asks for approval
+         *     like every other destructive verb. One nobody ever approved — a draft, a proposal — is
+         *     removed on the person's click (the user, 2026-10-07: *"the right to remove the proposed
+         *     Metric"*): nothing was ever measured or sent on it. Either way the removal lands in the same
+         *     `metric.governance` trail as the transitions that preceded it, stamped with who removed it.
          *
-         *     `connection` narrows it to ONE connection's definition. Omitted, the old behaviour
-         *     stands and every connection's metric of that name goes — which is what you want when
-         *     retiring a name outright, and emphatically not what you want when one warehouse
-         *     redefines its own `revenue`.
+         *     `connection` (and `schema`, its dataset) narrows it to ONE definition, and records the name as
+         *     removed there, so the explorer or a package that proposed it does not propose it again.
+         *     Omitted, the old behaviour stands and every connection's metric of that name goes — which is
+         *     what you want when retiring a name outright, and emphatically not what you want when one
+         *     warehouse redefines its own `revenue`.
          */
         delete: operations["remove_metric_metrics__name__delete"];
         options?: never;
@@ -9424,6 +9517,29 @@ export interface paths {
         get: operations["get_metric_freshness_metrics__name__freshness_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metrics/{name}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Promote Metric
+         * @description Promote one dataset's definition to its whole CONNECTION (the user, 2026-10-07: datasets
+         *     *"should be distinctly defined for each of the schema with a possibility of promoting it to the
+         *     connection level"*). Every dataset then reads it, except one that keeps a definition of its
+         *     own under the same name. Its governance state moves with it; the move is audited.
+         */
+        post: operations["promote_metric_metrics__name__promote_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13713,8 +13829,8 @@ export interface paths {
         /**
          * Read Record You
          * @description Between you and the platform: what became of the entries the person reading wrote — the
-         *     signed-in caller, or the name this browser writes under. The principal's record, resolved
-         *     here so a page never has to guess whether its reader is a `user:` or a `person:`.
+         *     one signed in (``by`` is ignored: a page reads its own reader's record, never a name it sends).
+         *     Resolved here so a page never has to guess whether its reader is a `user:` or a `person:`.
          */
         get: operations["read_record_you_record_you_get"];
         put?: never;
@@ -15670,12 +15786,20 @@ export interface components {
         };
         /** Body_upload_file_intake_files_post */
         Body_upload_file_intake_files_post: {
-            /** Actor */
+            /**
+             * Actor
+             * @default
+             */
             actor: string;
             /** Connection Id */
             connection_id: string;
             /** File */
             file: string;
+            /**
+             * Schema
+             * @default
+             */
+            schema: string;
             /**
              * Source
              * @default
@@ -15714,7 +15838,10 @@ export interface components {
         };
         /** BundleUpload */
         BundleUpload: {
-            /** Actor */
+            /**
+             * Actor
+             * @default
+             */
             actor: string;
             /** Bundle */
             bundle?: {
@@ -17643,6 +17770,8 @@ export interface components {
         };
         /** MetricRequest */
         MetricRequest: {
+            /** Additivity */
+            additivity?: string | null;
             /** Approved At */
             approved_at?: string | null;
             /** Approved By */
@@ -17690,9 +17819,14 @@ export interface components {
              * @default []
              */
             quality_tests: string[];
+            /** Schema Name */
+            schema_name?: string | null;
             /** Settles After Days */
             settles_after_days?: number | null;
-            /** Sql */
+            /**
+             * Sql
+             * @default
+             */
             sql: string;
             /**
              * Tables
@@ -17707,6 +17841,8 @@ export interface components {
             time_column?: string | null;
             /** Time Confirmed By */
             time_confirmed_by?: string | null;
+            /** Time Grain */
+            time_grain?: string | null;
             /** Time Kind */
             time_kind?: string | null;
             /** Unit */
@@ -17723,7 +17859,10 @@ export interface components {
         };
         /** MineIn */
         MineIn: {
-            /** Actor */
+            /**
+             * Actor
+             * @default
+             */
             actor: string;
             /** Connection Id */
             connection_id: string;
@@ -18400,7 +18539,10 @@ export interface components {
         };
         /** ProseIn */
         ProseIn: {
-            /** Actor */
+            /**
+             * Actor
+             * @default
+             */
             actor: string;
             /** Connection Id */
             connection_id: string;
@@ -18534,7 +18676,10 @@ export interface components {
         ResolveIn: {
             /** Accept */
             accept?: string[];
-            /** Actor */
+            /**
+             * Actor
+             * @default
+             */
             actor: string;
             /** Dismiss */
             dismiss?: string[];
@@ -18871,7 +19016,10 @@ export interface components {
         };
         /** SheetIn */
         SheetIn: {
-            /** Actor */
+            /**
+             * Actor
+             * @default
+             */
             actor: string;
             /** Connection Id */
             connection_id: string;
@@ -19126,7 +19274,10 @@ export interface components {
         };
         /** SuggestIn */
         SuggestIn: {
-            /** Actor */
+            /**
+             * Actor
+             * @default
+             */
             actor: string;
             /** Connection Id */
             connection_id: string;
@@ -19343,17 +19494,25 @@ export interface components {
         TransitionRequest: {
             /** Action */
             action: string;
-            /** Actor */
+            /**
+             * Actor
+             * @default
+             */
             actor: string;
             /**
              * Connection
              * @default *
              */
             connection: string;
+            /** Schema Name */
+            schema_name?: string | null;
         };
         /** TrustedQueryEdit */
         TrustedQueryEdit: {
-            /** Actor */
+            /**
+             * Actor
+             * @default
+             */
             actor: string;
             /** Note */
             note?: string | null;
@@ -19368,7 +19527,10 @@ export interface components {
         };
         /** TrustedQueryIn */
         TrustedQueryIn: {
-            /** Actor */
+            /**
+             * Actor
+             * @default
+             */
             actor: string;
             /** Connection Id */
             connection_id: string;
@@ -19395,7 +19557,10 @@ export interface components {
         TrustedTransitionIn: {
             /** Action */
             action: string;
-            /** Actor */
+            /**
+             * Actor
+             * @default
+             */
             actor: string;
         };
         /** UndoBody */
@@ -32372,6 +32537,26 @@ export interface operations {
             };
         };
     };
+    metric_columns_intake_metric_columns_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     mine_knowledge_intake_mine_post: {
         parameters: {
             query?: {
@@ -32539,6 +32724,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    metric_template_intake_templates_metrics_csv_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -36796,6 +37001,76 @@ export interface operations {
             };
         };
     };
+    remove_proposal_metrics_catalogue__conn_id___name__remove_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_removed_proposal_metrics_catalogue__conn_id___name__restore_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     metric_enforcement_rate_metrics_enforcement_rate_get: {
         parameters: {
             query?: {
@@ -36899,6 +37174,7 @@ export interface operations {
     update_metric_metrics__name__put: {
         parameters: {
             query?: {
+                schema?: string | null;
                 connection_id?: string | null;
             };
             header?: never;
@@ -36938,6 +37214,7 @@ export interface operations {
             query?: {
                 sql?: string | null;
                 connection?: string | null;
+                schema?: string | null;
                 connection_id?: string | null;
             };
             header?: never;
@@ -36972,6 +37249,8 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                connection_id?: string | null;
+                schema?: string | null;
             };
             header?: never;
             path: {
@@ -37005,6 +37284,7 @@ export interface operations {
         parameters: {
             query: {
                 conn_id: string;
+                schema?: string | null;
             };
             header?: never;
             path: {
@@ -37038,6 +37318,40 @@ export interface operations {
         parameters: {
             query: {
                 conn_id: string;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promote_metric_metrics__name__promote_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema: string;
             };
             header?: never;
             path: {
