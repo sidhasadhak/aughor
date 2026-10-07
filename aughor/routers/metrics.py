@@ -339,9 +339,11 @@ def metric_proposals(req: ProposalsRequest):
     in the table proposed in the SQL statement, only then the user may choose"*). Each empty
     list carries its reason."""
     from aughor.semantic.metric_statement import date_candidates, proposed_statements, statement_tables
-    from aughor.tools.profile_cache import latest_profile_entry
+    from aughor.tools.profile_cache import profile_entry_for
     try:
-        profile = latest_profile_entry(req.connection)
+        # The entry that describes THIS statement's tables — not merely the newest, which on a
+        # connection of several schemas describes whichever was profiled last.
+        profile = profile_entry_for(req.connection, statement_tables(req.sql) or req.tables)
     except Exception as exc:  # noqa: BLE001 — a failed read is said, not an empty list
         why = f"the profile could not be read ({type(exc).__name__})"
         return {"statements": [], "statement_note": why, "candidates": [], "note": why}
