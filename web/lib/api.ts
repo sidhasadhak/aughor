@@ -4919,6 +4919,8 @@ export interface McpOAuthState {
   signed_in: boolean;
   obtained_at: string;
   expires_at?: string;
+  /** The token set carries a refresh token, so the sign-in renews itself. */
+  refreshable?: boolean;
   /** A sign-in begun here is waiting for the browser to come back to the API's callback. */
   sign_in_pending?: boolean;
   note?: string;

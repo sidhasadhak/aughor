@@ -63,6 +63,10 @@ const server = (over: Partial<McpServerRow> = {}): McpServerRow => ({
   ...over,
 });
 
+/** A server's own controls open under its card's Manage — one card shape for every integration. */
+const openManage = async () =>
+  fireEvent.click(within(await screen.findByTestId("mcp-server-s1")).getByRole("button", { name: /^manage$/i }));
+
 beforeEach(() => {
   vi.clearAllMocks();
   api.listMcpServers.mockResolvedValue({ servers: [] });
@@ -211,7 +215,7 @@ describe("signing in", () => {
       const el = await screen.findByTestId(card);
       await waitFor(() => expect(within(el).getByText(/3 tools · 2 callable here/)).toBeInTheDocument());
       expect(within(el).getByText(/connected/)).toBeInTheDocument();
-      expect(within(el).queryByRole("button")).toBeNull();
+      expect(within(el).getAllByRole("button").map(b => b.textContent)).toEqual(["Manage"]);
     }
     expect(api.discoverMcpServer).toHaveBeenCalledTimes(1);
   });
@@ -227,6 +231,7 @@ describe("the roster", () => {
 
   it("LISTS a refused tool rather than hiding it, with the server's own sentence", async () => {
     render(<McpServersSection />);
+    await openManage();
     fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
 
     expect(await screen.findByText("unannotated_thing")).toBeInTheDocument();
@@ -235,12 +240,14 @@ describe("the roster", () => {
 
   it("never shows the roster without saying when it was read", async () => {
     render(<McpServersSection />);
+    await openManage();
     fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
     expect(await screen.findByText(/Read from the server at/)).toBeInTheDocument();
   });
 
   it("offers Discover, and Re-discover once a roster exists", async () => {
     render(<McpServersSection />);
+    await openManage();
     expect(await screen.findByRole("button", { name: /re-discover/i })).toBeInTheDocument();
   });
 
@@ -259,6 +266,7 @@ describe("errors", () => {
     api.discoverMcpServer.mockRejectedValue(
       new Error("Fixture tools could not be reached: No such file or directory: 'npx'"));
     render(<McpServersSection />);
+    await openManage();
     fireEvent.click(await screen.findByRole("button", { name: /re-discover/i }));
     expect(await screen.findByText(/No such file or directory/)).toBeInTheDocument();
   });
@@ -292,6 +300,7 @@ describe("the write slice — a grant is a person's ratification, drawn as one",
     });
     render(<McpServersSection />);
     // The roster lives behind the Tools toggle — the grant controls are ON it.
+    await openManage();
     fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
     // One Grant button, for the refused row. A read-only tool needs no ratification, and
     // offering one would invite a permission that authorizes nothing.
@@ -308,6 +317,7 @@ describe("the write slice — a grant is a person's ratification, drawn as one",
     });
     render(<McpServersSection />);
     // The roster lives behind the Tools toggle — the grant controls are ON it.
+    await openManage();
     fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
     // The property a reader most needs before putting this on a canvas that runs
     // unattended. A granted row that looked like a read would hide it.
@@ -330,6 +340,7 @@ describe("the write slice — a grant is a person's ratification, drawn as one",
     });
     render(<McpServersSection />);
     // The roster lives behind the Tools toggle — the grant controls are ON it.
+    await openManage();
     fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
     // "Somebody approved this and the server changed it" is a different situation from
     // "nobody has approved this", with a different next action. Flattening them is how a
@@ -345,6 +356,7 @@ describe("the write slice — a grant is a person's ratification, drawn as one",
     api.grantMcpTool.mockResolvedValue({ server: server() });
     render(<McpServersSection />);
     // The roster lives behind the Tools toggle — the grant controls are ON it.
+    await openManage();
     fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^grant$/i }));
     await waitFor(() => expect(api.grantMcpTool).toHaveBeenCalledWith("s1", MUTATING));
@@ -359,6 +371,7 @@ describe("the write slice — a grant is a person's ratification, drawn as one",
       new Error("'delete_everything' is not on this server's discovered roster."));
     render(<McpServersSection />);
     // The roster lives behind the Tools toggle — the grant controls are ON it.
+    await openManage();
     fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^grant$/i }));
     expect(await screen.findByText(/not on this server's discovered roster/))

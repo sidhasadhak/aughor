@@ -42,6 +42,8 @@ import {
   type McpServerRow, type McpToolRow,
 } from "@/lib/api";
 import { Input } from "@/components/ui/input";
+import { IntegrationCard } from "@/components/IntegrationCard";
+import { formatDateTime } from "@/lib/format";
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "7px 10px", borderRadius: "var(--r3)",
@@ -93,6 +95,8 @@ export function McpServersSection() {
   const [access, setAccess] = useState<"signin" | "key" | "none">("signin");
   // The sign-in page, for when the browser would not let a tab open on its own.
   const [signInLinks, setSignInLinks] = useState<Record<string, string>>({});
+  // Which card's controls are open — a server's or a one-click card's.
+  const [manageFor, setManageFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -200,6 +204,78 @@ export function McpServersSection() {
 
   const canAdd = name.trim() && (transport === "stdio" ? command.trim() : url.trim());
 
+  /** The few facts a card says of its server: how it is signed in to, and what it offers. */
+  const serverFacts = (s: McpServerRow): (string | null)[] => {
+    const oauth = s.oauth?.mode === "oauth_authorization_code";
+    return [
+      oauth ? (s.oauth?.signed_in ? `signed in ${formatDateTime(s.oauth.obtained_at)}` : null)
+        : s.has_auth ? `${s.auth_header_name || "Authorization"} header stored` : null,
+      oauth && s.oauth?.signed_in && s.oauth.refreshable ? "renews itself" : null,
+      // The number that surprises people: healthy, and offering this deployment nothing it may call.
+      s.discovered_at ? `${s.tool_count} tools · ${s.callable_count} callable here`
+        : !oauth || s.oauth?.signed_in ? "not discovered yet" : null,
+    ];
+  };
+
+  const pendingLine = (s: McpServerRow) => s.oauth?.sign_in_pending ? (
+    <div className="aug-fs-xs" style={{ marginTop: 4, color: "var(--t3)" }}>
+      Waiting for you to finish signing in on the server&apos;s page
+      {signInLinks[s.id]
+        ? <> — <a href={signInLinks[s.id]} target="_blank" rel="noreferrer">open it</a></>
+        : "…"}
+    </div>
+  ) : null;
+
+  /** What Manage opens: the server's own controls, its reachability, and its roster. */
+  const controls = (s: McpServerRow) => (
+    <div style={{ marginTop: 10, borderTop: "1px solid var(--b1)", paddingTop: 10 }}>
+      {health[s.id] && (
+        <div className="aug-fs-xs" style={{ marginBottom: 6,
+          color: health[s.id].startsWith("unreachable") ? "var(--red3)" : "var(--grn4)" }}>
+          {health[s.id]}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+        {s.oauth?.mode === "oauth_authorization_code" && s.oauth.signed_in && (
+          <Button variant="ghost" size="xs" disabled={busy === s.id}
+            onClick={() => void act(s.id, () => signOutMcpServer(s.id))}>
+            Sign out
+          </Button>
+        )}
+        <Button variant="ghost" size="xs" disabled={busy === s.id}
+          onClick={() => void act(s.id, () => discoverMcpServer(s.id))}>
+          {busy === s.id ? "…" : s.discovered_at ? "Re-discover" : "Discover"}
+        </Button>
+        <Button variant="ghost" size="xs" disabled={busy === s.id}
+          onClick={() => void checkHealth(s.id)}>
+          Check
+        </Button>
+        <Button variant="ghost" size="xs" disabled={busy === s.id}
+          onClick={() => void act(s.id, () => updateMcpServer(s.id, {
+            name: s.name, transport: s.transport, command: s.command,
+            args: s.args, url: s.url, enabled: !s.enabled,
+          }))}>
+          {s.enabled ? "Turn off" : "Turn on"}
+        </Button>
+        {s.tool_count > 0 && (
+          <Button variant="ghost" size="xs"
+            onClick={() => setExpanded(expanded === s.id ? null : s.id)}>
+            {expanded === s.id ? "Hide tools" : "Tools"}
+          </Button>
+        )}
+        <span style={{ flex: 1 }} />
+        <Button variant="ghost" size="xs" style={{ color: "var(--red3)" }} disabled={busy === s.id}
+          onClick={() => void act(s.id, () => deleteMcpServer(s.id))}>
+          Remove
+        </Button>
+      </div>
+      {expanded === s.id && (
+        <ToolRoster tools={s.tools} discoveredAt={s.discovered_at} serverId={s.id}
+          onChanged={() => void load()} />
+      )}
+    </div>
+  );
+
   return (
     <div style={{ marginBottom: 18 }}>
       <div className="aug-fs-xs" style={{ color: "var(--t3)", letterSpacing: "0.06em",
@@ -217,46 +293,68 @@ export function McpServersSection() {
         gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
         {ONE_CLICK.map(card => {
           const s = loaded ? servers.find(x => sameUrl(x.url, card.url)) : undefined;
-          const byKey = s && s.oauth?.mode !== "oauth_authorization_code";
+          const byKey = !!s && s.oauth?.mode !== "oauth_authorization_code";
           const signedIn = !!s?.oauth?.signed_in;
+          const managing = !!s && manageFor === card.id;
           return (
-            <div key={card.id} data-testid={`mcp-card-${card.id}`} style={{ border: "1px solid var(--b1)",
-              borderRadius: "var(--r3)", padding: 14, background: "var(--bg-1)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span className="aug-fs-ui" style={{ fontWeight: 600 }}>{card.name}</span>
-                {signedIn && (
-                  <span className="aug-fs-xs" style={{ color: "var(--grn4)" }}>● connected</span>
+            <IntegrationCard key={card.id} testId={`mcp-card-${card.id}`} name={card.name} blurb={card.blurb}
+              status={signedIn ? { tone: "ok", text: "connected" }
+                : byKey ? { tone: "muted", text: "added with a key" }
+                : s?.oauth?.sign_in_pending ? { tone: "muted", text: "waiting for the sign-in" } : null}
+              details={s ? serverFacts(s) : []}
+              actions={<>
+                {s && (
+                  <Button variant="ghost" size="xs"
+                    onClick={() => setManageFor(cur => cur === card.id ? null : card.id)}>
+                    {managing ? "Close" : "Manage"}
+                  </Button>
                 )}
-                {byKey && (
-                  <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>added with a key — below</span>
+                {loaded && !signedIn && !byKey && (
+                  <Button variant="default" size="xs" disabled={busy === card.id}
+                    onClick={() => connect(card)}>
+                    {busy === card.id ? "…" : s?.oauth?.sign_in_pending ? "Sign in again"
+                      : s ? "Sign in" : "Connect"}
+                  </Button>
                 )}
-                <span style={{ marginLeft: "auto" }}>
-                  {loaded && !signedIn && !byKey && (
-                    <Button variant="default" size="xs" disabled={busy === card.id}
-                      onClick={() => connect(card)}>
-                      {busy === card.id ? "…" : s?.oauth?.sign_in_pending ? "Sign in again"
-                        : s ? "Sign in" : "Connect"}
-                    </Button>
-                  )}
-                </span>
-              </div>
-              <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>{card.blurb}</div>
-              {s && signedIn && (
-                <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
-                  {s.discovered_at
-                    ? `${s.tool_count} tools · ${s.callable_count} callable here`
-                    : "Asking it what it offers…"}
-                </div>
-              )}
-              {s && !signedIn && s.oauth?.sign_in_pending && (
-                <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
-                  Waiting for you to finish signing in on {card.server}&apos;s page
-                  {signInLinks[s.id]
-                    ? <> — <a href={signInLinks[s.id]} target="_blank" rel="noreferrer">open it</a></>
-                    : "…"}
-                </div>
-              )}
-            </div>
+              </>}>
+              {s && pendingLine(s)}
+              {s && managing && controls(s)}
+            </IntegrationCard>
+          );
+        })}
+        {servers.filter(s => !ONE_CLICK.some(c => sameUrl(s.url, c.url))).map(s => {
+          const oauth = s.oauth?.mode === "oauth_authorization_code";
+          const managing = manageFor === s.id;
+          return (
+            <IntegrationCard key={s.id} testId={`mcp-server-${s.id}`} name={s.name || s.id}
+              blurb={<span style={{ fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>
+                {s.transport === "stdio" ? [s.command, ...(s.args || [])].join(" ") : s.url}
+              </span>}
+              status={!s.enabled ? { tone: "muted", text: "off" }
+                : oauth ? (s.oauth?.signed_in ? { tone: "ok", text: "connected" }
+                  : { tone: "warn", text: "not signed in" })
+                : null}
+              details={serverFacts(s)}
+              actions={<>
+                <Button variant="ghost" size="xs"
+                  onClick={() => setManageFor(cur => cur === s.id ? null : s.id)}>
+                  {managing ? "Close" : "Manage"}
+                </Button>
+                {oauth && !s.oauth?.signed_in ? (
+                  <Button variant="default" size="xs" disabled={busy === s.id}
+                    onClick={() => signIn(s.id, async () => s.id)}>
+                    {busy === s.id ? "…" : s.oauth?.sign_in_pending ? "Sign in again" : "Sign in"}
+                  </Button>
+                ) : !s.discovered_at && (
+                  <Button variant="default" size="xs" disabled={busy === s.id}
+                    onClick={() => void act(s.id, () => discoverMcpServer(s.id))}>
+                    {busy === s.id ? "…" : "Discover"}
+                  </Button>
+                )}
+              </>}>
+              {pendingLine(s)}
+              {managing && controls(s)}
+            </IntegrationCard>
           );
         })}
       </div>
@@ -270,110 +368,6 @@ export function McpServersSection() {
           become a step you can place on a workflow.
         </div>
       )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {servers.map(s => (
-          <div key={s.id} style={{ border: "1px solid var(--b1)",
-            borderRadius: "var(--r2)", background: "var(--bg-1)", padding: "10px 12px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: s.enabled ? "var(--t2)" : "var(--t3)" }}>
-                <Icon name="plug" size={15} />
-              </span>
-              <span className="aug-fs-ui" style={{ fontWeight: 600 }}>
-                {s.name || s.id}
-              </span>
-              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-                {s.transport === "stdio" ? "process" : "url"}
-              </span>
-              {!s.enabled && (
-                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>● off</span>
-              )}
-              <span style={{ flex: 1 }} />
-              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-                {/* The number that surprises people: healthy, and offering this
-                    deployment nothing it may call. */}
-                {s.discovered_at
-                  ? `${s.tool_count} tools · ${s.callable_count} callable here`
-                  : "not discovered yet"}
-              </span>
-            </div>
-
-            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4,
-              fontFamily: "var(--font-mono)", overflow: "hidden",
-              textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {s.transport === "stdio"
-                ? [s.command, ...(s.args || [])].join(" ")
-                : s.url}
-              {s.oauth?.mode === "oauth_authorization_code"
-                ? `  ·  ${s.oauth.signed_in ? "signed in" : "not signed in"}`
-                : s.has_auth ? `  ·  ${s.auth_header_name || "Authorization"} header stored` : ""}
-            </div>
-
-            {s.oauth?.sign_in_pending && (
-              <div className="aug-fs-xs" style={{ marginTop: 4, color: "var(--t3)" }}>
-                Waiting for you to finish signing in on the server&apos;s page
-                {signInLinks[s.id]
-                  ? <> — <a href={signInLinks[s.id]} target="_blank" rel="noreferrer">open it</a></>
-                  : "…"}
-              </div>
-            )}
-
-            {health[s.id] && (
-              <div className="aug-fs-xs" style={{ marginTop: 4,
-                color: health[s.id].startsWith("unreachable")
-                  ? "var(--red3)" : "var(--grn4)" }}>
-                {health[s.id]}
-              </div>
-            )}
-
-            <div style={{ display: "flex", gap: 2, marginTop: 6, flexWrap: "wrap" }}>
-              {s.oauth?.mode === "oauth_authorization_code" && (s.oauth.signed_in ? (
-                <Button variant="ghost" size="xs" className="aug-fs-xs" disabled={busy === s.id}
-                  onClick={() => void act(s.id, () => signOutMcpServer(s.id))}>
-                  Sign out
-                </Button>
-              ) : (
-                <Button size="xs" className="aug-fs-xs" disabled={busy === s.id}
-                  onClick={() => signIn(s.id, async () => s.id)}>
-                  {busy === s.id ? "…" : s.oauth.sign_in_pending ? "Sign in again" : "Sign in"}
-                </Button>
-              ))}
-              <Button variant="ghost" size="xs" className="aug-fs-xs" disabled={busy === s.id}
-                onClick={() => void act(s.id, () => discoverMcpServer(s.id))}>
-                {busy === s.id ? "…" : s.discovered_at ? "Re-discover" : "Discover"}
-              </Button>
-              <Button variant="ghost" size="xs" className="aug-fs-xs" disabled={busy === s.id}
-                onClick={() => void checkHealth(s.id)}>
-                Check
-              </Button>
-              <Button variant="ghost" size="xs" className="aug-fs-xs" disabled={busy === s.id}
-                onClick={() => void act(s.id, () => updateMcpServer(s.id, {
-                  name: s.name, transport: s.transport, command: s.command,
-                  args: s.args, url: s.url, enabled: !s.enabled,
-                }))}>
-                {s.enabled ? "Turn off" : "Turn on"}
-              </Button>
-              {s.tool_count > 0 && (
-                <Button variant="ghost" size="xs" className="aug-fs-xs"
-                  onClick={() => setExpanded(expanded === s.id ? null : s.id)}>
-                  {expanded === s.id ? "Hide tools" : "Tools"}
-                </Button>
-              )}
-              <span style={{ flex: 1 }} />
-              <Button variant="ghost" size="xs" className="aug-fs-xs"
-                style={{ color: "var(--red3)" }} disabled={busy === s.id}
-                onClick={() => void act(s.id, () => deleteMcpServer(s.id))}>
-                Remove
-              </Button>
-            </div>
-
-            {expanded === s.id && (
-              <ToolRoster tools={s.tools} discoveredAt={s.discovered_at} serverId={s.id}
-                onChanged={() => void load()} />
-            )}
-          </div>
-        ))}
-      </div>
 
       {adding ? (
         <div style={{ border: "1px solid var(--b1)", borderRadius: "var(--r2)",
