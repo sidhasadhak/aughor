@@ -156,7 +156,7 @@ export function ParamBar({
             </span>
 
             {def.widget === "dropdown" ? (
-              <SelectField
+              <SelectField bespoke
                 className="aug-fs-ui"
                 style={{ width: 140 }}
                 value={typeof value === "string" ? value : ""}
@@ -192,7 +192,7 @@ export function ParamBar({
                 <Icon name="bolt" size={11} /> {value}
               </Button>
             ) : (
-              <Input
+              <Input bespoke
                 className="aug-fs-ui"
                 style={{ width: def.widget === "date" ? 130 : 120 }}
                 type={def.widget === "number" ? "number" : def.widget === "date" ? "date" : "text"}
@@ -286,13 +286,13 @@ export function ParamBar({
                   <div className="aug-label" style={{ marginBottom: 6 }}>:{name}</div>
                   <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                     <span style={{ color: "var(--t3)", width: 64, flexShrink: 0 }}>Label</span>
-                    <Input className="aug-fs-ui" style={{ flex: 1 }}
+                    <Input bespoke className="aug-fs-ui" style={{ flex: 1 }}
                       value={def.label ?? ""} placeholder={`:${name}`}
                       onChange={e => patchDef(name, { label: e.target.value })} />
                   </label>
                   <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                     <span style={{ color: "var(--t3)", width: 64, flexShrink: 0 }}>Widget</span>
-                    <SelectField className="aug-fs-ui" style={{ flex: 1 }}
+                    <SelectField bespoke className="aug-fs-ui" style={{ flex: 1 }}
                       value={def.widget}
                       onChange={e => {
                         const widget = e.target.value as ParamDef["widget"];
@@ -311,7 +311,7 @@ export function ParamBar({
                         <span style={{ color: "var(--t3)", width: 64, flexShrink: 0, paddingTop: 3 }}>
                           {def.widget === "text" ? "Suggest" : "Choices"}
                         </span>
-                        <Textarea className="aug-fs-ui" rows={3} style={{ flex: 1, resize: "vertical" }}
+                        <Textarea bespoke className="aug-fs-ui" rows={3} style={{ flex: 1, resize: "vertical" }}
                           placeholder={"one per line"}
                           value={(def.options ?? []).join("\n")}
                           onChange={e => patchDef(name, {
@@ -321,7 +321,7 @@ export function ParamBar({
                       {def.widget !== "text" && (
                         <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                           <span style={{ color: "var(--t3)", width: 64, flexShrink: 0 }}>From query</span>
-                          <SelectField className="aug-fs-ui" style={{ flex: 1 }}
+                          <SelectField bespoke className="aug-fs-ui" style={{ flex: 1 }}
                             value={def.optionsQueryId ?? ""}
                             onChange={e => patchDef(name, { optionsQueryId: e.target.value || undefined })}>
                             <option value="">— typed choices above —</option>
@@ -334,7 +334,7 @@ export function ParamBar({
                   {def.widget !== "multiselect" && (
                     <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ color: "var(--t3)", width: 64, flexShrink: 0 }}>Default</span>
-                      <Input className="aug-fs-ui" style={{ flex: 1 }}
+                      <Input bespoke className="aug-fs-ui" style={{ flex: 1 }}
                         value={typeof def.default === "string" ? def.default : ""}
                         placeholder="none"
                         onChange={e => patchDef(name, { default: e.target.value || undefined })} />

@@ -306,7 +306,7 @@ export function SavedQueryBar({
             <p className="aug-fs-ui" style={{ color: "var(--t3)", fontWeight: 600, marginBottom: 8 }}>
               Save query as
             </p>
-            <Input
+            <Input bespoke
               autoFocus
               value={draftName}
               onChange={e => setDraftName(e.target.value)}

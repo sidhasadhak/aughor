@@ -119,7 +119,7 @@ export function ColumnValuePicker({
         padding: "0 8px 6px" }}>
         {source}
       </div>
-      <Input
+      <Input bespoke
         className="aug-fs-sm"
         value={search}
         onChange={e => setSearch(e.target.value)}

@@ -135,7 +135,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
       )}
 
       {/* Textarea row */}
-      <Textarea
+      <Textarea bespoke
         ref={textareaRef}
         rows={multiline ? 2 : 1}
         value={input}
@@ -166,7 +166,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
         {/* Agent picker — answer AS a saved user-defined persona.
             Hidden when the roster is empty (flag off → the list endpoint 404s → []). */}
         {(agents?.length ?? 0) > 0 && setAgentId && (
-          <SelectField
+          <SelectField bespoke
             value={agentId ?? ""}
             onChange={(e) => setAgentId(e.target.value)}
             title="Answer as a saved agent (its instructions, documents and connection apply)"

@@ -387,7 +387,7 @@ function WorkbenchInner({
      in SQL than in Visual and every button in it shifted on a mode switch. A control
      that exists in one mode belongs with that mode's own controls. */
   const schemaControl = schemas.length > 0 ? (
-    <SelectField
+    <SelectField bespoke
       style={controlStyle}
       value={defaultSchema}
       onChange={e => setDefaultSchema(e.target.value)}
@@ -414,7 +414,7 @@ function WorkbenchInner({
       ))}
 
       <span style={{ width: 1, height: 14, background: "var(--b1)", margin: "0 2px" }} />
-      <SelectField
+      <SelectField bespoke
         style={controlStyle}
         value={connId}
         onChange={e => setConnId(e.target.value)}

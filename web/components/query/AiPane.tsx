@@ -200,7 +200,7 @@ export function AiPane({
       </div>
 
       <div style={{ display: "flex", gap: 6, padding: "6px 10px 10px", borderTop: "1px solid var(--b0)", flexShrink: 0 }}>
-        <Input
+        <Input bespoke
           className="aug-fs-ui"
           style={{ flex: 1 }}
           placeholder="Ask, or /optimize · /explain · /fix"

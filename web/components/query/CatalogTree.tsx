@@ -242,7 +242,7 @@ export function CatalogTree({
       <div style={{ padding: "8px 10px 6px", flexShrink: 0 }}>
         <div className="flex items-center gap-2 rounded-md px-3 py-2" style={{ border: "1px solid var(--b1)", background: "var(--bg-2)" }}>
           <span style={{ color: "var(--t3)", display: "inline-flex" }}><Icon name="search" size={12} /></span>
-          <Input
+          <Input bespoke
             placeholder="Search tables &amp; columns…"
             value={search}
             onChange={e => setSearch(e.target.value)}
