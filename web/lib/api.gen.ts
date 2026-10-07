@@ -18774,6 +18774,11 @@ export interface components {
              */
             auth_header: string;
             /**
+             * Auth Header Name
+             * @default Authorization
+             */
+            auth_header_name: string;
+            /**
              * Auth Mode
              * @default header
              */

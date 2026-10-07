@@ -59,6 +59,10 @@ class ServerRequest(BaseModel):
     env: dict = Field(default_factory=dict)
     url: str = ""
     auth_header: str = ""
+    #: The header `auth_header` travels in (`McpServer.auth_header_name`). On update, a request
+    #: that does not send it keeps the stored name — a client written before the field existed
+    #: must not quietly move a credential back into `Authorization` on a rename.
+    auth_header_name: str = "Authorization"
     #: C9 — how an http server is authenticated to (`models.AUTH_MODES`) and the OAuth client this
     #: deployment presents. The client secret follows `auth_header`'s rule on update: empty leaves
     #: it alone, "-" clears it. The token set is never set through this request — a person signs in.
@@ -156,6 +160,8 @@ def update_server(server_id: str, body: ServerRequest) -> dict:
     """
     existing = _server_or_404(server_id)
     fields = body.model_dump()
+    if "auth_header_name" not in body.model_fields_set:
+        fields["auth_header_name"] = existing.auth_header_name
     for secret in ("auth_header", "oauth_client_secret"):
         if not fields.get(secret):
             fields[secret] = getattr(existing, secret)

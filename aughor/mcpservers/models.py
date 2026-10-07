@@ -41,6 +41,7 @@ advisory reading exists to blunt.
 """
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Literal, Optional
 
@@ -51,6 +52,13 @@ from aughor.util.time import now_iso_z
 #: Encrypted at rest, dropped (never masked) on the way out — `Connection`'s rule, for its
 #: reason: a mask still confirms a secret's length-class and invites a client to store the
 #: field, and nothing above the store has a use for even the shape of these.
+#: The header a credential travels in unless a server names another (`McpServer.auth_header_name`).
+DEFAULT_AUTH_HEADER = "Authorization"
+_HEADER_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*")
+#: Headers the streamable-HTTP connection sets for itself; a credential in one would clobber it.
+RESERVED_HEADERS = frozenset({"host", "content-length", "content-type", "accept", "connection",
+                              "transfer-encoding", "mcp-session-id", "mcp-protocol-version"})
+
 SERVER_SECRET_FIELDS = ("auth_header", "oauth_client_secret", "oauth_tokens", "oauth_client_info")
 
 #: How an http server is authenticated to (the 2027 study §Q; the close-out, C9). `header` is the
@@ -99,6 +107,10 @@ class McpServer(BaseModel):
     #: auth scheme, it forwards what the operator was given, so pretending to model
     #: "bearer vs basic" would be a taxonomy with no behaviour behind it.
     auth_header: str = ""
+    #: http only. The NAME of the header `auth_header` is sent in — `Authorization` unless the
+    #: server asks for another. Composio, for one, takes its key only as `x-api-key`; with this
+    #: fixed at `Authorization` the consumer could not reach it at all. Not secret: a read shows it.
+    auth_header_name: str = DEFAULT_AUTH_HEADER
 
     #: http only (C9). `header` forwards `auth_header`; an OAuth mode ignores it and authenticates
     #: through the SDK's provider instead. See `AUTH_MODES`.
@@ -125,6 +137,17 @@ class McpServer(BaseModel):
 
     created_at: str = Field(default_factory=now_iso_z)
     updated_at: str = Field(default_factory=now_iso_z)
+
+    @model_validator(mode="after")
+    def _auth_header_name_must_be_a_header(self) -> "McpServer":
+        """A header NAME, and not one the transport sets itself. Blank reads as the default."""
+        name = (self.auth_header_name or "").strip() or DEFAULT_AUTH_HEADER
+        if not _HEADER_TOKEN.fullmatch(name):
+            raise ValueError(f"`auth_header_name` must be a header name — letters, digits and '-' — not {name!r}")
+        if name.lower() in RESERVED_HEADERS:
+            raise ValueError(f"`{name}` is set by the connection itself; the credential needs a header of its own")
+        self.auth_header_name = name
+        return self
 
     @model_validator(mode="after")
     def _transport_fields_must_match(self) -> "McpServer":

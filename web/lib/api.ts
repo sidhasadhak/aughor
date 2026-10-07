@@ -4919,6 +4919,9 @@ export interface McpServerRow {
   env: Record<string, string>;
   url: string;
   has_auth: boolean;
+  /** The header the stored credential is sent in — `Authorization` unless the server names another
+   *  (Composio takes `x-api-key`). Not secret. Absent from a server older than the field. */
+  auth_header_name?: string;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -4940,6 +4943,8 @@ export interface McpServerInput {
   url?: string;
   /** Blank means "leave the stored one alone" on an update; "-" clears it. */
   auth_header?: string;
+  /** The header `auth_header` is sent in; omitted on an update keeps the stored name. */
+  auth_header_name?: string;
   enabled?: boolean;
 }
 

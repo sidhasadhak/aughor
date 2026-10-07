@@ -69,6 +69,7 @@ export function McpServersSection() {
   const [argsLine, setArgsLine] = useState("");
   const [url, setUrl] = useState("");
   const [authHeader, setAuthHeader] = useState("");
+  const [authHeaderName, setAuthHeaderName] = useState("Authorization");
 
   const load = useCallback(async () => {
     try {
@@ -98,7 +99,7 @@ export function McpServersSection() {
 
   const reset = () => {
     setAdding(false); setName(""); setCommand(""); setArgsLine("");
-    setUrl(""); setAuthHeader(""); setTransport("http");
+    setUrl(""); setAuthHeader(""); setAuthHeaderName("Authorization"); setTransport("http");
   };
 
   const add = () => act("new", async () => {
@@ -106,7 +107,8 @@ export function McpServersSection() {
       name: name.trim(), transport,
       ...(transport === "stdio"
         ? { command: command.trim(), args: splitArgs(argsLine) }
-        : { url: url.trim(), auth_header: authHeader.trim() }),
+        : { url: url.trim(), auth_header: authHeader.trim(),
+            auth_header_name: authHeaderName.trim() || "Authorization" }),
     });
     reset();
   });
@@ -177,7 +179,7 @@ export function McpServersSection() {
               {s.transport === "stdio"
                 ? [s.command, ...(s.args || [])].join(" ")
                 : s.url}
-              {s.has_auth ? "  ·  auth header stored" : ""}
+              {s.has_auth ? `  ·  ${s.auth_header_name || "Authorization"} header stored` : ""}
             </div>
 
             {health[s.id] && (
@@ -249,10 +251,17 @@ export function McpServersSection() {
               <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
                 placeholder="https://example.com/mcp" aria-label="Server URL"
                 value={url} onChange={e => setUrl(e.target.value)} />
+              {/* The header NAME the credential travels in. Most servers read `Authorization`;
+                  some name their own — Composio takes its key only as `x-api-key`. */}
               <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
                 autoComplete="off"
-                placeholder="Authorization header (optional) — e.g. Bearer …"
-                aria-label="Authorization header"
+                placeholder="Header name — Authorization, or the one your server names (e.g. x-api-key)"
+                aria-label="Auth header name"
+                value={authHeaderName} onChange={e => setAuthHeaderName(e.target.value)} />
+              <Input className="aug-fs-ui" style={inputStyle} spellCheck={false}
+                autoComplete="off"
+                placeholder="Header value (optional) — e.g. Bearer …, or an API key"
+                aria-label="Auth header value"
                 value={authHeader} onChange={e => setAuthHeader(e.target.value)} />
               <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                 <Icon name="lock" size={11} /> Stored encrypted, and never returned by any
