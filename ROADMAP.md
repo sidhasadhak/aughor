@@ -13786,6 +13786,21 @@ the browser** · **measure the premise before building.**
     A question about one component would name that component as the turn's `focus` — the field SP-15 already
     carries on `/ask` — so the answer starts from that tile's or chart's own SQL and period. Not designed.
 
+47. ✅ **DECIDED 2026-10-07 — exploration principles** (`docs/EXPLORATION_PRINCIPLES_2026-10-07.md`; the user:
+    *"How would the Explorer know which data set to explore and when? … when does it realise that all the
+    angles are now covered and it's only the time period as the only new factor?"*). Proposed in chat, amended
+    by the user (maturity shown per schema and table; a schema's name is a sign as well as a table's, whole
+    words as well as prefixes; exploration can be turned off per schema or table, and off means Investigation
+    and Quick analysis never query it either), then decided:
+    (a) three jobs, three triggers — learn the structure on a schema change, map the questions until mature,
+    watch over time on each settled period — and no fixed clock;
+    (b) the six dataset roles and their policies — **yes**;
+    (c) a role is proposed with its evidence and **a person confirms it**; a name never applies one by itself;
+    (d) the exploration budget — **both**, per organisation per month and per connection per month;
+    (e) stuck runs — **fixed now** (they read as interrupted and a person's Continue resumes them; restart
+    recovery resumes a dataset's own run); automatic re-runs wait for the build.
+    Not built beyond (e). The study's §11 names the five parts the build would be.
+
 ---
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)

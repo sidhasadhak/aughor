@@ -1,0 +1,206 @@
+# Exploration principles — what the Explorer explores, when, and when it is done
+
+*Study, 2026-10-07. Asked by the user after the hourly check was found to have re-armed nothing since
+2026-09-26: "How would the Explorer know which data set to explore and when? Should it be every hour,
+24 hours, 365 days? And when does it realise that all the angles are now covered and it's only the time
+period as the only new factor?" The principles below were proposed in chat and amended by the user the
+same day; the decisions in §9 are theirs. Nothing here is built except §8's honest status for stuck runs.*
+
+## 1 · What is true today (measured 2026-10-07)
+
+- **The check.** `explorer/continuous.py` wakes hourly (the first check an hour after the API starts, so a
+  restart resets it). It re-arms a connection only when the schema fingerprint changed, the last COMPLETE
+  run is older than 7 days (`AUGHOR_EXPLORER_REFRESH_DAYS`), or a run its own budget stopped is a day old.
+  The hourly part is the check; the work was meant to be about weekly.
+- **Nothing ran after 2026-09-26** because every connection sat in a state the check never touches:
+  theLook, DuckDB and spotify stuck mid-run (an API restart killed the run; the phase still reads as running);
+  six of the Workspace's eight datasets "failed" and failures are never retried, while the check read only
+  the first dataset; three runs ended "cancelled (budget exceeded or stopped)", wording that cannot tell a
+  budget stop from a person's, so they are treated as a person's.
+- **Coverage is measured per question already.** `explorer/frontier.py` tracks coverage per measure ×
+  dimension cut; `explorer/coverage_manifest.py` enumerates the questions the data supports — with time
+  axes that unlock at 4 periods (trend), 12 (seasonality) and 24 (year on year).
+- **A finding can already be re-read for a new range with SQL alone** (`briefing/reask.py`), no model.
+- **A second run is not shorter.** There is no incremental path: a re-run walks every phase again. The
+  model-free phases skip items already recorded (a join, a null meaning, a lifecycle) but re-query every
+  item that found nothing; the domain phase — the one that spends — resets its per-domain budget in the
+  question-list mode (`explorer/agent.py`, `used = 0 if self._manifest_driven`), so its model loop runs in
+  full every time, steered away from repeats only by the prompt. The question list's own reuse needs the
+  schema fingerprint, which is stamped only at COMPLETE, so it starts working on the third run, not the second.
+- **Excluding a table today excludes nothing.** `ontology/visibility.py` records exclusions, and only the
+  coverage denominator reads them; exploration, Investigation and Quick analysis all still query the table.
+- **Nothing knows what a dataset is for.** Staging, raw, mapping and uploaded tables are explored like the
+  business layer. The only related rule is a prompt line that strips "Stg", "Fact" and "Dim" from names.
+
+## 2 · Principle 1 — three jobs, three triggers
+
+The Explorer does three jobs, and each has its own trigger. None of them is a fixed clock.
+
+| Job | What | Runs when | Finishes? |
+|---|---|---|---|
+| **Learn the structure** | joins, grain, dates, what an empty value means, lifecycles | the schema fingerprint changes (a cheap check, no model) | yes — once per schema version |
+| **Map the questions** | measure × dimension cuts, cross-table questions | while coverage is incomplete — at most daily per dataset | yes — when the dataset is mature (§3) |
+| **Watch over time** | what moved, trends, seasonality, anomalies | a period has arrived **and settled**, at each metric's date grain | never — but it is SQL re-reads, cheap |
+
+The hourly heartbeat stays as a no-model check. Spend happens on events: the schema changed, data arrived
+and settled, a metric was approved, coverage has a gap, a person asked something it could not ground.
+
+## 3 · Principle 2 — maturity, per schema and per table, shown
+
+Every schema and every table carries a **maturity** reading the person can see — three levels, each a
+percentage, drawn as three short vertical bars with the number beside them, in the Catalog and the scope bar:
+
+| Bar | Means | 100% when |
+|---|---|---|
+| **Structure** | the platform knows its shape | every table profiled, joins verified, dates and empty values read |
+| **Questions** | the question space is explored | the coverage manifest's material cells are covered, or the last two runs found almost nothing new |
+| **Time** | it is being watched | its metrics have dates and the newest settled period has been read |
+
+A schema's maturity is its tables', weighted by role (§5): a staging schema's Questions bar is not expected
+to fill, and says "not explored — staging" instead of reading as 0%.
+
+**Mature → watch.** Once Questions reaches its threshold the dataset moves from *explore* to *watch*: time is
+the only new factor, and watching re-reads already-grounded questions. It **reopens** on a named event only:
+a new table or column, a newly approved metric, a new category value in a known dimension, a question the
+platform could not ground, or a real move in a watched figure.
+
+## 4 · Principle 3 — time detects, dimensions explain
+
+- **Time** runs on every settled period at each metric's date grain (a daily metric daily, a monthly one
+  monthly), and deepens as periods accumulate: trend at 4, seasonality at 12, year on year at 24.
+- **Dimensional analysis** is front-loaded (mapping the questions), then **targeted**: when a watched figure
+  moves, the move is decomposed along the dimensions already known — "revenue fell 8%, 6 points of it APAC" —
+  rather than re-exploring everything.
+
+## 5 · Principle 4 — what a dataset is for decides whether it is explored
+
+| Role | Policy |
+|---|---|
+| **Business / gold, marts, reporting** | explore fully, then watch |
+| **Integration / cleansed / silver, vault** | learn the structure only — no findings unless no gold exists |
+| **Raw / landing / bronze, ingestion (API, flat files)** | pipeline health only: arrival, row counts, schema drift, empty-value spikes |
+| **Reference / mapping** | profile once; used as dimensions by others, never explored alone |
+| **User uploads / sandbox** | explore only when a person asks, or marks it important |
+| **System / operational** | excluded |
+
+**The signs are read at both levels — schema and table — and as whole words as well as prefixes.** A
+schema called `stage_marketing`, `STAGE_API` or `raw_salesforce` says the role of every table in it; a table
+called `fct_orders` or `orders_fact` says its own. Matched case-insensitively, on word boundaries (`_`, `-`,
+`.`, case changes), never as a substring of another word:
+
+| Role | Whole words | Prefixes / suffixes |
+|---|---|---|
+| business, marts | fact, facts, dimension, dim, mart, marts, gold, presentation, reporting, report, analytics, business, semantic, curated | `fct_`, `fact_`, `dim_`, `mart_`, `rpt_`, `agg_`, `_fact`, `_dim` |
+| integration / silver | silver, integration, intermediate, cleansed, clean, conformed, core, vault, hub, link, satellite | `int_`, `hub_`, `lnk_`, `sat_`, `cln_` |
+| raw / ingestion | raw, landing, bronze, source, src, stage, staging, stg, ingest, ingestion, import, load, extract, api, feed, file, files, external, ext | `raw_`, `src_`, `stg_`, `lnd_`, `ext_`, `_raw`, `_stg` |
+| reference / mapping | mapping, map, lookup, lkp, reference, ref, xref, crosswalk, master, calendar, codes | `map_`, `lkp_`, `ref_`, `xref_`, `_map`, `_lookup` |
+| uploads / sandbox | upload, uploads, sandbox, scratch, temp, tmp, test, adhoc, personal, user | `tmp_`, `temp_`, `test_`, `_tmp`, `_bak` |
+| system | audit, log, logs, history, archive, backup, metadata, system, admin, etl, job, jobs | `_log`, `_audit`, `_hist`, `_archive`, `_backup` |
+
+Names are one witness. The others: column signs (`_loaded_at`, `_ingested_at`, `_file_name`, `_fivetran_*`,
+`_airbyte_*`, `_sdc_*`, every column text → raw; 2–4 columns of keys and codes → mapping), lineage (a dbt
+manifest's `staging` / `intermediate` / `marts` folders, a view selecting from another table), and use
+(metrics approved on it, what people query). **The role is proposed with its evidence and a person confirms
+it** (decision 2): "14 of 16 tables are `stg_*` and every column is text — staging?". Until confirmed, a
+dataset gets structure learning only, which spends no model call.
+
+**One entity, several layers.** Where lineage or matching structure links a raw, a cleansed and a gold copy
+of one entity, findings come from the gold copy only, so a finding is not made three times.
+
+## 6 · Principle 5 — excluded means excluded
+
+A person can turn exploration **off** for a schema or a table. Off means the platform never reads it on its
+own initiative or in an answer: **the Explorer never explores it, and neither Investigation nor Quick
+analysis — the canvas's two modes — ever queries it.** It is enforced where the schema handed to the agent
+and the SQL executor is assembled, not in each caller, so no path can forget it; a query that names an
+excluded table is refused with the reason ("`raw.events` is excluded from analysis — turn it back on in the
+Catalog"), never answered from it silently. A person may still open the table in the SQL editor: off is the
+platform's restraint, not a lock on the person.
+
+## 7 · Principle 6 — spend is a budget, set where the organisation wants it
+
+An exploration budget per **organisation per month** and per **connection per month** — both offered
+(decision 3); where both are set, the tighter one holds. Within it, spend goes to business-layer datasets
+first, ranked by approved metrics, what people ask about, and what changed. When a budget is spent the
+platform says so — on the dataset's maturity and in the Explorer status — and never stops silently.
+
+## 8 · Built now — stuck runs say what they are
+
+- **How they got stuck.** A restart inside a running job's lease reads the job as another process's, and
+  boot recovery skips it; two minutes later the supervisor sweeps it as stale and marks it interrupted —
+  without resuming it. The state stays at its last phase forever (theLook, `synthesis`, since 2026-09-28),
+  under a pulsing badge. And boot recovery resumed a per-dataset run by the BARE connection key — a fresh
+  connection-wide run — so a dataset's own run never resumed at all.
+- **Now:** a run that stopped mid-phase with nothing running it — no explorer in this process, no active
+  exploration job anywhere — reports **interrupted**, with which datasets and since when; the badge stops
+  pulsing; the activity bar offers **Continue**, which resumes each interrupted dataset from its saved
+  progress by its own key. Restart recovery now carries the dataset on the job and resumes it by its key.
+- **Not changed (held, decision 4):** nothing re-runs on its own. The continuous check still reads only a
+  connection's first dataset, still never retries a failure, and a budget stop enforced by the heartbeat
+  still writes the "… or stopped" wording it treats as a person's stop. Those belong to the build of §2–§7.
+
+## 9 · Decisions (the user, 2026-10-07)
+
+1. **The six roles and their policies — yes.**
+2. **A name convention never applies a role by itself — a person confirms.**
+3. **Budget — both: per organisation per month and per connection per month.**
+4. **Stuck runs — fixed now** (honest status, a person's Continue); automatic re-runs wait for the build.
+
+## 10 · The flow — a first run, and every run after it
+
+**Today.** Every trigger ends in `spawn_explorer`: a new connection (fans out one run per dataset), a file
+upload (that dataset), a manual start, the hourly check, a restart's recovery. A new table in a warehouse
+has no trigger of its own — only the hourly check's fingerprint comparison notices it. And every run, the
+first or the tenth, walks the same phases:
+
+```mermaid
+flowchart TD
+  T[New connection · upload · start · hourly check · restart] --> P[Profile tables<br/>cache hit if unchanged]
+  P --> S3[Null meanings · joins · lifecycles · distributions · cross-table<br/>no model — skips items already recorded]
+  S3 --> O{Ontology built?}
+  O -- no --> OB[Build + enrich ontology<br/>model]
+  O -- yes --> D
+  OB --> D[Domain intelligence<br/>business profile · KPIs · questions<br/>model — budget resets every run]
+  D --> Y[Synthesis<br/>model — skips pairs already seen]
+  Y --> C[Complete: stamp fingerprint]
+```
+
+**Proposed — the first run of anything new.** A role is proposed and a person confirms it; what is off is
+never read; the structure is learned without the model; only a business-layer dataset spends on questions;
+a mature dataset is watched.
+
+```mermaid
+flowchart TD
+  N[A connection, schema or table appears] --> R[Its role is proposed<br/>a person confirms it]
+  R -->|excluded or system| X[Never read — not explored, not queried by Investigation or Quick analysis]
+  R --> L[Learn the structure<br/>profile · joins · dates · no model]
+  L -->|raw · staging · mapping · upload| H[Structure and pipeline health only]
+  L -->|business layer| Q[Map the questions<br/>ontology · KPIs · cuts · model, within budget]
+  Q --> M[Mature → watch over time<br/>settled periods · SQL only]
+```
+
+**Proposed — every run after the first.** Nothing walks the whole pipeline again. An event names the job:
+
+```mermaid
+flowchart TD
+  E[An event arrives — the hourly check, no model] -->|tables or columns changed| A[Learn only the new parts<br/>no model]
+  E -->|metric approved · question it could not answer| G[Fill the question gaps<br/>uncovered cuts only · model]
+  E -->|a period has settled| W[Re-read the figures<br/>SQL only]
+  A --> G
+  W -->|a figure really moved| X[Explain the move<br/>known dimensions only · model]
+  G --> M[Mature again → back to watching]
+```
+
+## 11 · What building this means (not started — the user's word first)
+
+1. **Roles** — a role per schema and per table (declared by a person, proposed with evidence by §5's signs);
+   a store for it beside the connection, never in a model's output.
+2. **Exclusion** — enforced at the three choke points: the schema text every mode reads (`render_raw_schema`
+   → `get_schema_cached`, invalidated on change), the explorer's own table lists (`_load_profiler_data`,
+   `schemas_of_connection`), and the connectors' `_security_pre` — before its internal-statement early
+   return, so the explorer's own probes are refused too.
+3. **Maturity** — computed from what is stored (profiles, joins, the question list's coverage, the newest
+   settled period read), shown as three bars and a number per schema and table.
+4. **The event-driven runner** — the three jobs as separate runs with their own triggers; the domain phase's
+   budget no longer resets; the fingerprint stamped when it is known, not only at COMPLETE.
+5. **Budgets** — per organisation and per connection per month, ranked by value, said when spent.
