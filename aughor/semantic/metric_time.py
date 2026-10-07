@@ -111,7 +111,16 @@ def table_columns(profile_entry: dict, table: str) -> dict[str, str]:
 
 
 def primary_date(profile_entry: dict, table: str) -> str:
-    tp = ((profile_entry or {}).get("tables") or {}).get(table) or {}
+    """The profiler's main date of ``table`` (a bare name). An entry keys its tables bare or
+    schema-qualified depending on the run that wrote it — the Uber rides are in one entry as
+    ``ncr_ride_bookings`` and in the next as ``uber_ncr.ncr_ride_bookings`` — so a qualified key
+    is matched by its bare name, as `table_columns` matches columns; when two schemas' tables
+    share that name, nothing is guessed."""
+    tables = (profile_entry or {}).get("tables") or {}
+    tp = tables.get(table)
+    if tp is None:
+        matches = [v for k, v in tables.items() if bare_name(str(k).lower()) == table]
+        tp = matches[0] if len(matches) == 1 else {}
     return str(tp.get("primary_timestamp") or "").lower() if isinstance(tp, dict) else ""
 
 
@@ -627,7 +636,7 @@ def ensure_dates(connection_id: str, *, run_sql: Optional[RunSql] = None, dialec
     table's main date, and a fixed rule could not replace them). Returns ``{metric: what
     happened}``, in words, for the Briefing to say."""
     from aughor.semantic.metrics import MetricDefinition, list_metrics, save_metric
-    from aughor.tools.profile_cache import latest_profile_entry
+    from aughor.tools.profile_cache import profile_entry_for
 
     today = today or date.today()
     out: dict[str, str] = {}
@@ -638,13 +647,17 @@ def ensure_dates(connection_id: str, *, run_sql: Optional[RunSql] = None, dialec
         from aughor.kernel.errors import tolerate
         tolerate(exc, "an unreadable metric catalogue sets no dates", counter="metric_time.catalogue")
         return out
-    profile = None
+    profiles: dict[tuple, dict] = {}
     for m in metrics:
         if m.time_confirmed_by:
             out[m.name] = f"confirmed by {m.time_confirmed_by}"
             continue
-        if profile is None:
-            profile = latest_profile_entry(connection_id)
+        # Per metric: on a connection of several schemas the newest profile describes one of them,
+        # and a metric on another schema would find no date to set by rule. One read per table set.
+        tables_key = tuple(sorted(str(t) for t in (m.tables or [])))
+        if tables_key not in profiles:
+            profiles[tables_key] = profile_entry_for(connection_id, m.tables)
+        profile = profiles[tables_key]
         inf = infer(m, profile, dialect=dialect)
         if inf.fields is None:
             out[m.name] = ("set" if declared(m) else f"its dates cannot be set by rule: {inf.reason}")

@@ -151,6 +151,35 @@ def latest_profile_entry(connection_id: str) -> dict:
     return latest
 
 
+def profile_entry_for(connection_id: str, tables) -> dict:
+    """The profiler's newest entry for this connection that covers ``tables`` — every one of
+    them, else any of them — and the newest entry of all when none does or none are named.
+
+    A connection can hold several schemas — the workspace holds every uploaded dataset — and each
+    profiling run writes an entry of its own, so the NEWEST entry describes only the schema
+    profiled last. Reading it alone hid every other schema's tables: measured 2026-10-07, the
+    Uber rides were profiled at 21:50, the traffic data at 23:00, and from then on the metric
+    editor proposed no date for any Uber metric. Tables match by their bare name, since one run
+    writes an entry with bare names and another with schema-qualified ones."""
+    from aughor.semantic.metric_statement import bare
+
+    want = {bare(str(t)) for t in (tables or []) if str(t).strip()}
+    if not want:
+        return latest_profile_entry(connection_id)
+    prefix = f"{connection_id}:"
+    covers_all: dict = {}
+    covers_any: dict = {}
+    for key, entry in _load().items():                   # oldest first; the newest match wins
+        if not (key.startswith(prefix) and isinstance(entry, dict)):
+            continue
+        have = {bare(str(t)) for t in (entry.get("tables") or {})}
+        if want <= have:
+            covers_all = entry
+        elif want & have:
+            covers_any = entry
+    return covers_all or covers_any or latest_profile_entry(connection_id)
+
+
 def latest_profiled_tables(connection_id: str) -> list[str]:
     """CB-5 — every table the profiler saw on this connection, from its most recent cache entry
     (entries are keyed ``connection_id:fingerprint``; the last written wins). ``[]`` when the
