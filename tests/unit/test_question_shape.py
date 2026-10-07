@@ -219,7 +219,7 @@ def test_an_opener_that_does_not_answer_gives_way_to_the_ranked_rows(monkeypatch
 
 def test_run_sql_hands_the_model_code_computed_totals(monkeypatch):
     from aughor.agent import converse_tools as ct
-    monkeypatch.setattr(ct, "_connection", lambda cid: SimpleNamespace(get_schema=lambda: ""))
+    monkeypatch.setattr(ct, "_connection", lambda cid, **kw: SimpleNamespace(get_schema=lambda: ""))
     result = SimpleNamespace(sql="", columns=["centre", "revenue"], rows=[["a", "1200.5"], ["b", "800.25"]],
                              row_count=2, error=None, caveats=[])
     monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: result)
@@ -283,7 +283,7 @@ def test_run_sql_says_which_columns_do_not_add_up_and_why(monkeypatch):
     """Q4's re-run counted distinct orders per centre; the centres' counts add to 59,911 where the
     orders number 43,457, and the sentence carrying such a sum was withheld."""
     from aughor.agent import converse_tools as ct
-    monkeypatch.setattr(ct, "_connection", lambda cid: SimpleNamespace(get_schema=lambda: ""))
+    monkeypatch.setattr(ct, "_connection", lambda cid, **kw: SimpleNamespace(get_schema=lambda: ""))
     result = SimpleNamespace(sql="", columns=["distribution_center", "avg_days_placed_to_shipped", "order_count"],
                              rows=[["Houston TX", "1.488", "7502"], ["Memphis TN", "1.502", "7836"]],
                              row_count=2, error=None, caveats=[])

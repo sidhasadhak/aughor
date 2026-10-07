@@ -123,8 +123,10 @@ def _declared_schema(conn_id: str) -> Optional[str]:
         declared = (get_meta(conn_id) or {}).get("schema_name") or None
         if declared and profile_store.load_raw(conn_id, declared) is not None:
             return declared
-    except Exception:  # noqa: BLE001 — an unknown connection keeps the bare read
-        pass
+    except Exception as exc:  # noqa: BLE001 — an unknown connection keeps the bare read
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the connection's declared schema could not be read; the catalogue reads the bare key",
+                 counter="metrics.catalogue_declared_schema")
     return None
 
 
