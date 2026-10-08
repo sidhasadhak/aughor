@@ -60,6 +60,7 @@ const KIND_CHIP: Record<string, { hue: ChipHue; label: string }> = {
   outbound_send: { hue: "caution", label: "Slack post" },
   agent_limit: { hue: "accent", label: "agent limit" },
   cockpit_draft: { hue: "info", label: "cockpit" },
+  cockpit_publish: { hue: "info", label: "cockpit · publish" },
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -240,6 +241,17 @@ function keptWords(outcome: Record<string, unknown> | undefined): string {
 
 function CockpitBody({ p }: { p: StagedProposal }) {
   const d = p.detail ?? {};
+  // A publish (the canvas, B5): the cockpit as it stands, shared with the groups and roles named.
+  if (d.mode === "publish") {
+    const to = (Array.isArray(d.to) ? d.to : []) as string[];
+    return (
+      <div className="flex flex-col gap-1" data-testid="cockpit-publish">
+        <Row label="Cockpit">{String(d.title ?? "")}</Row>
+        <Row label="Publish to">{to.join(", ")}</Row>
+        <Row label="As it stands">version {String(d.replaces_version ?? "")} · read-only for its readers, under your name</Row>
+      </div>
+    );
+  }
   const outline = (Array.isArray(d.outline) ? d.outline : []) as CockpitTabOutline[];
   const made = (Array.isArray(p.params?.cards) ? p.params.cards : []) as CockpitNewCard[];
   const changes = (d.changes ?? {}) as { added?: string[]; removed?: string[]; changed?: string[] };
@@ -500,7 +512,7 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
           </span>
         </div>
       )}
-      {p.kind === "cockpit_draft" && <CockpitBody p={p} />}
+      {(p.kind === "cockpit_draft" || p.kind === "cockpit_publish") && <CockpitBody p={p} />}
       {(p.kind === "declared_action" || p.kind === "integration") && (
         <div className="flex flex-col gap-1">
           <Row label="Action" mono>{p.action_id}</Row>

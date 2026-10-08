@@ -13,8 +13,8 @@
  * The server reads it through the validator bundle; it keeps no copy.
  */
 import {
-  COMPONENT_NAMES, MAX_COLUMNS, MAX_LABEL, MAX_TITLE, MAY_BE_CONDITIONAL, MAY_HOLD, TONES,
-  type ComponentName,
+  COMPONENT_NAMES, MAX_CAPTION, MAX_COLUMNS, MAX_LABEL, MAX_NOTE, MAX_TITLE, MAY_BE_CONDITIONAL, MAY_HOLD, SIZES, SPAN,
+  STATIC, TONES, type ComponentName,
 } from "@/lib/cockpit/catalog";
 import { CARD_STATUSES, RANGE_STATUSES, RANGE_STATUS_PATH, TAB_PATH } from "@/lib/cockpit/hostState";
 import { MAX_PATCHES } from "@/lib/cockpit/patch";
@@ -49,9 +49,13 @@ const HOLDS: Record<ComponentName, string> = {
   Cockpit: "the root, one in a spec",
   Tabs: "the row of tabs",
   Tab: "one tab",
-  Section: "a titled group of cards",
+  Section: "a titled group of cards, notes and images",
   Card: "one card, by its id",
+  Note: "a person's own words, which they typed",
+  Image: "an image a person uploaded, by its object id",
 };
+
+const SIZE = `size (optional, one of: ${SIZES.join(", ")}; small when left out)`;
 
 const PROPS: Record<ComponentName, string> = {
   Cockpit: `title (text, up to ${MAX_TITLE} characters)`,
@@ -59,7 +63,9 @@ const PROPS: Record<ComponentName, string> = {
   Tab: `name (an identifier: lower-case letters, digits, "-" and "_", beginning with a letter), `
     + `label (text, up to ${MAX_LABEL} characters)`,
   Section: `title (text, up to ${MAX_TITLE} characters), columns (1 to ${MAX_COLUMNS}, optional)`,
-  Card: `card (a card id), tone (optional, one of: ${TONES.join(", ")})`,
+  Card: `card (a card id), tone (optional, one of: ${TONES.join(", ")}), ${SIZE}`,
+  Note: `text (the person's words, up to ${MAX_NOTE} characters), ${SIZE}; author and written_at are the server's`,
+  Image: `object (an uploaded object's id), caption (text, up to ${MAX_CAPTION} characters), ${SIZE}`,
 };
 
 function component(name: ComponentName): string {
@@ -93,6 +99,12 @@ export function grammar(): string {
     "",
     "Text. A title or a label names a thing. It never states a figure: no amount, no percentage. "
       + "A figure appears inside a card, where it is measured.",
+    "",
+    `Sizes. Every Card, Note and Image in a section has a size: ${SIZES.map(s => `${s} (${SPAN[s].w}×${SPAN[s].h})`).join(", ")} — `
+      + "columns across by rows down. A bigger size gives the same thing more room; it measures nothing new.",
+    "",
+    `A ${STATIC.join(" and an ")} are the person's own. You may move one, resize it or take it off, because that is arrangement. `
+      + "You may not add one, change a note's text or choose an image: an edit that does is refused. A new cockpit holds none.",
     "",
     `Size. At most ${MAX_ELEMENTS} elements, ${MAX_TABS} tabs, and ${MAX_CARDS} cards placed.`,
     "",

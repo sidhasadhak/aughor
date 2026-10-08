@@ -45,8 +45,9 @@ def list_volumes(catalog_id: str, org_id: Optional[str] = None) -> List[Volume]:
 
 
 def put_object(volume_id: str, name: str, data: bytes, mime_type: str = "",
-               org_id: Optional[str] = None) -> VolumeObject:
-    """Write an object's bytes to the tenant-pathed store + record its metadata."""
+               org_id: Optional[str] = None, created_by: str = "") -> VolumeObject:
+    """Write an object's bytes to the tenant-pathed store + record its metadata. ``created_by``
+    is who put it there, kept on the row — what a cockpit shows beside an image."""
     oid = org_id or current_org_id()
     vol = store.get_volume(volume_id, org_id=oid)
     if vol is None:
@@ -58,7 +59,7 @@ def put_object(volume_id: str, name: str, data: bytes, mime_type: str = "",
     dest.write_bytes(data)
     mt = mime_type or (mimetypes.guess_type(safe)[0] or "application/octet-stream")
     return store.add_object(volume_id, path=stored_name, name=name, mime_type=mt,
-                            size_bytes=len(data), org_id=oid)
+                            size_bytes=len(data), org_id=oid, created_by=created_by)
 
 
 def list_objects(volume_id: str, org_id: Optional[str] = None) -> List[VolumeObject]:

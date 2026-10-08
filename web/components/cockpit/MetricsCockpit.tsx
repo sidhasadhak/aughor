@@ -44,8 +44,10 @@ export function MetricsCockpit({ connectionId, schema, rangesOn, value, onChange
     () => (rangesOn && range ? measureRange(connectionId, range, schema) : Promise.resolve(null)),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
     [connectionId, schema, rangeKey, rangesOn]);
-  // A new period is being read while the one before it is still on screen: said, and the table
-  // it is about to replace is dimmed, so nobody reads the old figures as the new period's.
+  // A new period is being read while the one before it is still on screen: said once, under the
+  // picker (the user, 2026-10-08: one indicator), and the table it is about to replace is dimmed,
+  // so nobody reads the old figures as the new period's. The first read has no table yet; the
+  // gate below says it is loading, in the same place.
   const reading = load.loading && !!range && rangesOn === true;
 
   if (rangesOn === false) {
@@ -60,14 +62,15 @@ export function MetricsCockpit({ connectionId, schema, rangesOn, value, onChange
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
         <PeriodPicker value={value} onChange={onChange} reading={reading}
           showing={load.data && !reading ? showing(load.data.period) : null} />
-        {reading ? (
-          <Loading inline what={`the metrics for ${choiceName(value)}`} style={{ marginLeft: "auto" }} />
-        ) : load.data && (
+        {!reading && load.data && (
           <span className="aug-fs-sm" data-testid="metrics-measured-at" style={{ marginLeft: "auto", color: "var(--t3)" }}>
             {load.data.from_briefing ? "As the Briefing measured it" : "Measured"} {formatDateTime(load.data.measured_at)}
           </span>
         )}
       </div>
+      {reading && load.data !== null && (
+        <Loading what={`the metrics for ${choiceName(value)}`} style={{ padding: "12px 0" }} />
+      )}
       {!range ? (
         <Absent>“As written” is for cards. A metric is measured for a period — pick one above.</Absent>
       ) : rangesOn === null ? null : (

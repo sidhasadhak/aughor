@@ -195,6 +195,9 @@ class StagedProposal(BaseModel):
                   "automation_state", "agent_grant",
                   "automation_edit", "monitor_bundle", "brief_draft",
                   "outbound_send", "agent_limit", "cockpit_draft",
+                  # The canvas (B5, 2026-10-08): a cockpit published to a group or a role, asked
+                  # for in words; accept publishes it as a version under the owner's name.
+                  "cockpit_publish",
                   # AO-7e — a crystallised skill, staged by memory at L2+ autonomy; accept
                   # saves it through the governed door, never before.
                   "skill_draft"] = "declared_action"
@@ -585,6 +588,8 @@ def gov_action_of(p: StagedProposal) -> str:
         return "automations.outbound_send"
     if p.kind == "cockpit_draft":
         return "cockpit.draft"
+    if p.kind == "cockpit_publish":
+        return "cockpit.publish"
     return f"kinetic.{p.action_id}"
 
 
@@ -750,6 +755,8 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
         return _accept_agent_limit(p, actor=actor), ""
     if p.kind == "cockpit_draft":
         return _accept_cockpit_draft(p, actor=actor), ""
+    if p.kind == "cockpit_publish":
+        return _accept_cockpit_publish(p, actor=actor), ""
     if p.kind == "skill_draft":
         return _accept_skill_draft(p, actor=actor), ""
 
@@ -1199,6 +1206,24 @@ def _accept_cockpit_draft(p: StagedProposal, *, actor: str):
     made = len(out["cards_created"])
     said = (f"cockpit '{out['title']}' kept as version {out['version']} in the Briefing"
             + (f", with {made} new card{'s' if made != 1 else ''}" if made else ""))
+    _record_outcome(p.id, "executed", said, out)
+    return _Result("executed", True, p.action_id, message=said, outcome=out, detail=out)
+
+
+def _accept_cockpit_publish(p: StagedProposal, *, actor: str):
+    """Publish the cockpit a person approved sharing (the canvas, B5): a version under their
+    name, to the groups and roles the proposal names — or nothing, when it has moved on."""
+    _Result = _executor_result()
+    from aughor.cockpit import propose
+    from aughor.org.context import current_user_id
+
+    uid = current_user_id()
+    ok, out = propose.accept_publish(dict(p.params or {}), connection_id=p.connection_id,
+                                     approved_by=(f"user:{uid}" if uid else actor))
+    if not ok:
+        _record_outcome(p.id, "failed", str(out), {})
+        return _Result("dispatch_error", False, p.action_id, message=f"not published: {out}")
+    said = f"cockpit '{(p.detail or {}).get('title')}' published to {', '.join(out['to'])} as version {out['version']}"
     _record_outcome(p.id, "executed", said, out)
     return _Result("executed", True, p.action_id, message=said, outcome=out, detail=out)
 

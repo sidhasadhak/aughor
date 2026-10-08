@@ -237,7 +237,7 @@ def test_the_model_cannot_name_a_cockpit_a_person_a_connection_or_a_query(desk):
     text = json.dumps(tool.parameters)
     for never in ('"canvas_id"', '"canvas"', '"connection_id"', '"connection"', '"owner"', '"cockpit_id"', '"sql"'):
         assert never not in text
-    assert set(tool.parameters["properties"]) == {"op", "cards", "spec", "patches", "reasoning"}
+    assert set(tool.parameters["properties"]) == {"op", "cards", "spec", "patches", "reasoning", "to"}
 
 
 # ── options ──────────────────────────────────────────────────────────────────
@@ -365,17 +365,17 @@ def test_the_card_says_what_is_arranged_in_words(desk):
     assert d["outline"] == [
         {"tab": "Overview", "change": "", "sections": [
             {"title": "Needs a look", "change": "", "shown": '"Return rate" is over its limit', "cards": [
-                {"title": "Return rate", "new": True, "change": "", "tone": "bad", "shown": ""}]},
+                {"title": "Return rate", "new": True, "change": "", "tone": "bad", "shown": "", "size": "small"}]},
             {"title": "Headline", "change": "", "shown": "", "cards": [
-                {"title": "Return rate", "new": True, "change": "", "tone": "", "shown": ""},
+                {"title": "Return rate", "new": True, "change": "", "tone": "", "shown": "", "size": "small"},
                 {"title": "Net merchandise revenue", "new": False, "change": "", "tone": "",
-                 "shown": "the range is not to date"}]},
+                 "shown": "the range is not to date", "size": "small"}]},
         ]},
         {"tab": "Detail", "change": "", "sections": [
             {"title": "Where and when", "change": "", "shown": "", "cards": [
-                {"title": "Returned, by category", "new": True, "change": "", "tone": "", "shown": ""},
+                {"title": "Returned, by category", "new": True, "change": "", "tone": "", "shown": "", "size": "small"},
                 {"title": "Returns cluster in the first week after delivery", "new": True, "change": "",
-                 "tone": "", "shown": ""}]},
+                 "tone": "", "shown": "", "size": "small"}]},
         ]},
     ]
     assert d["counts"] == {"tabs": 2, "sections": 3, "cards": 4, "new": 3}
@@ -403,7 +403,7 @@ def test_sections_with_no_tabs(desk):
     p = staged(desk, spec=spec, cards=[])
     assert p.detail["outline"] == [{"tab": "", "change": "", "sections": [
         {"title": "Headline", "change": "", "shown": "", "cards": [
-            {"title": "Net merchandise revenue", "new": False, "change": "", "tone": "", "shown": ""}]}]}]
+            {"title": "Net merchandise revenue", "new": False, "change": "", "tone": "", "shown": "", "size": "small"}]}]}]
     assert p.params["cards"] == []
     out = draft_cockpit(desk.home, {"op": "new", "spec": {**spec, "elements": {
         **spec["elements"], "s": {**spec["elements"]["s"], "props": {"title": "At a glance"}}}}})
@@ -766,9 +766,9 @@ def test_the_tool_tells_the_writer_to_repair_and_try_again(desk):
     # `error` is the field the platform's record of a step keeps, always: a refused draft's
     # reasons are on the record of the run, and not only in the model's context.
     assert out["error"] == " ".join(out["refused"])
-    wrong = draft_cockpit(desk.home, {"op": "publish"})
-    assert wrong["summary"] == 'Nothing staged: "publish" is not one of options, new, edit.'
-    assert wrong["error"] == '"publish" is not one of: options, new, edit.'
+    wrong = draft_cockpit(desk.home, {"op": "retire"})
+    assert wrong["summary"] == 'Nothing staged: "retire" is not one of options, new, edit, publish.'
+    assert wrong["error"] == '"retire" is not one of: options, new, edit, publish.'
 
 
 def test_a_refused_drafts_reasons_are_kept_on_the_record_of_the_step(desk, monkeypatch):
@@ -1219,7 +1219,7 @@ def test_an_edit_may_make_a_card_and_place_it_by_the_name_it_gave(standing, monk
     headline = out.proposal.detail["outline"][0]["sections"][1]
     assert (headline["title"], headline["change"]) == ("Headline", "changed")
     assert headline["cards"][-1] == {"title": "Units returned", "new": True, "change": "added", "tone": "",
-                                     "shown": '"Units returned" is not withheld'}
+                                     "shown": '"Units returned" is not withheld', "size": "small"}
     [card] = out.proposal.params["cards"]
     el = out.proposal.params["spec"]["elements"]["c-units"]
     assert el["props"]["card"] == card["id"] != "units"

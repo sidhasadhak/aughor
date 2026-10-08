@@ -438,12 +438,18 @@ def best_action_for(ins: dict, *, industry=None) -> Optional[dict]:
         except Exception as exc:  # noqa: BLE001 — an action is additive; the brief never fails for one
             from aughor.kernel.errors import tolerate
             tolerate(exc, "the cited investigation could not be read for a brief action", counter="briefing.action")
-    labels = [str(x) for x in (ins.get("_priority"), ins.get("angle"), ins.get("domain")) if x]
+    # What the finding is about: the measures it reads and the metric it is of, before its angle
+    # and domain — a play is offered only when it FITS (`retriever.fits`: it names one of these in
+    # full, or two of its tags), never on a word its recommendation happens to share with the
+    # finding's domain. Eight citations of one Briefing carried the same proven play before this
+    # (2026-10-09); measured on theLook's 50 findings, 35 carried a play then, three plays between them.
+    measures = ins.get("measures") if isinstance(ins.get("measures"), list) else []
+    labels = [str(x) for x in (*measures, ins.get("metric"), ins.get("_priority"), ins.get("angle"), ins.get("domain")) if x]
     if not labels:
         return None
     try:
         from aughor.playbook.retriever import retrieve_for_metric_and_phases
-        plays = retrieve_for_metric_and_phases(labels, limit=1, learned_rates=True, industry=industry)
+        plays = retrieve_for_metric_and_phases(labels, limit=1, learned_rates=True, industry=industry, fit=True)
     except Exception as exc:  # noqa: BLE001
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the playbook could not be read for a brief action", counter="briefing.action")

@@ -1,13 +1,20 @@
 "use client";
 
 /**
- * ComposedCockpit — a cockpit drawn from a spec (Arc CT, CT-1 and CT-2; ROADMAP §3.50).
+ * ComposedCockpit — a cockpit drawn from a spec (Arc CT, CT-1 and CT-2; ROADMAP §3.50; the
+ * canvas, docs/COCKPIT_CANVAS_2026-10-08.md).
  *
  * The law of the arc: the spec arranges, the card store measures. This component draws tabs
  * and sections from the spec, and hands every card to `CockpitTile`, which draws the card's own
  * run at its metric's unit — nothing about what a card measures is decided in this file. (Until
  * the user's "make the cockpit look like the mockup", 2026-09-28, a card was drawn with the
  * Briefing's `PinnedCardBody` unchanged; the face changed, the law did not.)
+ *
+ * Since the canvas a section also holds a person's own Note and Image, drawn by `StaticTile`,
+ * and every element has a size from the catalog's closed set: a column span cut to what the
+ * section has, and a row span. The size changes the room, never the measurement. A person
+ * resizes by the corner of a tile or by its size pick; either lands as one kept version through
+ * `doors.onResize`, and a cockpit the reader may not change offers neither.
  *
  * Three things it will not do:
  *   - draw a spec the rules refuse. It says why instead, in the rules' own sentences.
@@ -21,7 +28,10 @@
  *
  * The Briefing draws a person's cockpits with it (`BriefingCockpits`), behind `cockpit.composed`.
  */
-import { Component, createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  Component, createContext, useContext, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent,
+  type ReactNode, type RefObject,
+} from "react";
 import { evaluateVisibility, type Spec, type VisibilityCondition } from "@json-render/core";
 import {
   JSONUIProvider, Renderer, createStateStore, useBoundProp, useStateStore,
@@ -29,21 +39,19 @@ import {
 } from "@json-render/react";
 
 import type { CardState } from "@/components/brief/PinnedCardBody";
-import { CockpitTile, SaidTile, WIDE, WithheldTile, tileShape } from "@/components/cockpit/CockpitTile";
+import { CockpitTile, SaidTile, WIDE, WithheldTile, tileShape, type TileDoors } from "@/components/cockpit/CockpitTile";
+import { ImageTile, NoteTile, type ImageStamp, type StaticDoors } from "@/components/cockpit/StaticTile";
 import { Icon } from "@/components/ui/icon";
 import { Refusal } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { CockpitCard } from "@/lib/api";
-import type { ComponentName, Tone } from "@/lib/cockpit/catalog";
+import type { BriefingRange, CockpitCard } from "@/lib/api";
+import { SPAN, sizeOf, type ComponentName, type Size, type Tone } from "@/lib/cockpit/catalog";
 import { stateModel, type CockpitHostState } from "@/lib/cockpit/hostState";
 import { checkCockpitSpec, openingTab } from "@/lib/cockpit/rules";
 
-export interface CockpitDoors {
-  onRemove: (id: string) => void;
-  onRefresh: (id: string) => void;
-  onOpenSource?: (iid: string) => void;
-  onEvidence?: (iid: string) => void;
-}
+/** What a cockpit may ask of the page that holds it. The static doors and `onResize` are absent
+ *  on a cockpit the reader may not change — a published one, a strip. */
+export interface CockpitDoors extends TileDoors, StaticDoors {}
 
 interface CockpitContextValue {
   elements: Spec["elements"];
@@ -51,17 +59,35 @@ interface CockpitContextValue {
   host: CockpitHostState;
   doors: CockpitDoors;
   sym: string;
+  images: Record<string, ImageStamp>;
+  range: BriefingRange | null;
+  schema?: string;
 }
 
 const CockpitContext = createContext<CockpitContextValue | null>(null);
 
-/** How many columns the section a card sits in draws — a wide tile takes two, where there are two. */
-const SectionColumns = createContext(1);
+/** The section an element is drawn in: its key, how many columns it draws, and the keys it
+ *  holds in order. The renderer hands a component its element and not its key, so the key of
+ *  what is drawn is found here, among the section's children, by what the element says. */
+const SectionKeys = createContext<{ key: string | null; columns: number; children: string[] }>({ key: null, columns: 1, children: [] });
 
 function useCockpit(): CockpitContextValue {
   const ctx = useContext(CockpitContext);
   if (!ctx) throw new Error("a cockpit component was drawn outside ComposedCockpit");
   return ctx;
+}
+
+function sameList(a: unknown, b: unknown): boolean {
+  return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/** The key of the element being drawn. Two elements that say exactly the same thing in one
+ *  section are one thing to a reader, and the first is it. */
+function useElementKey(type: ComponentName, props: unknown): string | null {
+  const { elements } = useCockpit();
+  const { children } = useContext(SectionKeys);
+  const said = JSON.stringify(props);
+  return children.find(k => elements[k]?.type === type && JSON.stringify(elements[k]?.props) === said) ?? null;
 }
 
 /** The rule down a card's left edge. A tone is emphasis; it never replaces the card's own frame. */
@@ -122,6 +148,8 @@ function CockpitTab({ element, children }: ComponentRenderProps<{ name: string; 
 const MIN_TILE = 200;
 const GAP = 12;
 const MAX_AUTO_COLUMNS = 4;
+/** The room a second row gives a tile when nothing beside it sets the row's height. */
+const TALL_MIN = 320;
 
 /** How many columns a section draws: the spec's, when it says, never more than fit. Width 0 is
  *  a section not yet measured (or a test's DOM), and draws as asked. */
@@ -141,8 +169,15 @@ function useColumns(asked: number | null | undefined): [RefObject<HTMLDivElement
 }
 
 function CockpitSection({ element, children }: ComponentRenderProps<{ title: string; columns?: number | null }>) {
+  const { elements } = useCockpit();
   const waiting = useWaiting(element.children);
   const [ref, columns] = useColumns(element.props.columns);
+  const held = element.children ?? [];
+  // A section's children are its own — each element is held by exactly one — so the list names it.
+  const key = useMemo(
+    () => Object.keys(elements).find(k => elements[k]?.type === "Section" && sameList(elements[k]?.children, held)) ?? null,
+    [elements, held]);
+  const keys = useMemo(() => ({ key, columns, children: held }), [key, columns, held]);
   return (
     <section data-testid="cockpit-section" style={{ marginTop: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
@@ -157,7 +192,7 @@ function CockpitSection({ element, children }: ComponentRenderProps<{ title: str
       <div ref={ref} data-columns={columns} style={{
         display: "grid", gap: GAP, alignItems: "stretch", gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
       }}>
-        <SectionColumns.Provider value={columns}>{children}</SectionColumns.Provider>
+        <SectionKeys.Provider value={keys}>{children}</SectionKeys.Provider>
       </div>
     </section>
   );
@@ -178,31 +213,143 @@ class CardBoundary extends Component<{ children: ReactNode }, { failed: string |
   }
 }
 
-function CockpitCard({ element }: ComponentRenderProps<{ card: string; tone?: Tone | null }>) {
-  const { cards, host, doors, sym } = useCockpit();
-  const columns = useContext(SectionColumns);
+const clamp = (lo: number, hi: number, v: number) => Math.max(lo, Math.min(hi, v));
+
+/** The corner a person drags to resize a tile. It snaps to whole columns and rows — never to
+ *  pixels — and lands once, on release, as one of the catalog's sizes. */
+function ResizeCorner({ cell, columns, from, onPreview, onDone }: {
+  cell: RefObject<HTMLDivElement | null>;
+  columns: number;
+  from: { w: number; h: number };
+  onPreview: (span: { w: number; h: number } | null) => void;
+  onDone: (w: number, h: number) => void;
+}) {
+  const down = (ev: ReactPointerEvent<HTMLSpanElement>) => {
+    const el = cell.current;
+    const grid = el?.parentElement;
+    if (!el || !grid) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const target = ev.currentTarget;
+    const colW = (grid.clientWidth - GAP * (columns - 1)) / columns;
+    const rowH = (el.getBoundingClientRect().height - GAP * (from.h - 1)) / from.h;
+    const x0 = ev.clientX, y0 = ev.clientY;
+    let w = from.w, h = from.h;
+    try { target.setPointerCapture(ev.pointerId); } catch { /* an engine without capture still gets the moves over the handle */ }
+    const move = (mv: PointerEvent) => {
+      const nw = clamp(1, Math.min(3, columns), from.w + Math.round((mv.clientX - x0) / (colW + GAP)));
+      const nh = clamp(1, 2, from.h + Math.round((mv.clientY - y0) / (rowH + GAP)));
+      if (nw !== w || nh !== h) { w = nw; h = nh; onPreview({ w, h }); }
+    };
+    const up = () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      onPreview(null);
+      if (w !== from.w || h !== from.h) onDone(w, h);
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
+  };
+  return (
+    <span data-testid="resize-corner" title="Drag to resize · snaps to the grid" aria-hidden="true" onPointerDown={down}
+      className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+      style={{ position: "absolute", right: 3, bottom: 2, width: 18, height: 18, display: "grid", placeItems: "center",
+        fontSize: 11, color: "var(--t3)", cursor: "nwse-resize", touchAction: "none", userSelect: "none", borderRadius: 4 }}>
+      ◢
+    </span>
+  );
+}
+
+/** The cell an element is drawn in: its place in the grid, by its size, and the corner that
+ *  changes it. `children` is handed the element's key, which only this cell knows. */
+function Cell({ type, props, size, testid, extra, children }: {
+  type: ComponentName;
+  props: Record<string, unknown>;
+  /** The size drawn: the element's own, or — for a card that says none — what its shape asks. */
+  size: Size;
+  testid: string;
+  extra?: { attrs?: Record<string, string | undefined>; style?: Record<string, unknown> };
+  children: (key: string | null) => ReactNode;
+}) {
+  const { doors } = useCockpit();
+  const { columns } = useContext(SectionKeys);
+  const key = useElementKey(type, props);
+  const ref = useRef<HTMLDivElement>(null);
+  const [preview, setPreview] = useState<{ w: number; h: number } | null>(null);
+  const span = preview ?? SPAN[size];
+  const w = Math.min(span.w, columns), h = span.h;
+  const resizable = !!doors.onResize && key !== null;
+  return (
+    <div ref={ref} className="group" data-testid={testid} data-element={key ?? undefined} data-size={size} {...extra?.attrs} style={{
+      position: "relative", borderRadius: "var(--r3)", minWidth: 0,
+      gridColumn: w > 1 ? `span ${w}` : undefined,
+      gridRow: h > 1 ? `span ${h}` : undefined,
+      minHeight: h > 1 ? TALL_MIN : undefined,
+      boxShadow: preview ? "0 0 0 2px var(--blue3) inset" : undefined,
+      ...extra?.style,
+    }}>
+      {children(key)}
+      {resizable && (
+        <ResizeCorner cell={ref} columns={columns} from={{ w: Math.min(SPAN[size].w, columns), h: SPAN[size].h }} onPreview={setPreview}
+          onDone={(nw, nh) => { const s = sizeOf(nw, nh); if (s && key) doors.onResize?.(key, s); }} />
+      )}
+    </div>
+  );
+}
+
+function CockpitCard({ element }: ComponentRenderProps<{ card: string; tone?: Tone | null; size?: Size | null }>) {
+  const { cards, host, doors, sym, range, schema } = useCockpit();
   const id = element.props.card;
   const tone = element.props.tone ?? null;
   const cs = cards.get(id);
   const status = host.cards[id]?.status ?? "unmeasured";
-  const wide = !!cs && WIDE[tileShape(cs)];
+  // A card that says no size takes what its shape asks, as it did before sizes: a chart or a
+  // table two columns, a figure one.
+  const size: Size = element.props.size ?? (!!cs && WIDE[tileShape(cs)] ? "wide" : "small");
   return (
-    <div data-testid="cockpit-card" data-card={id} data-tone={tone ?? undefined} style={{
-      position: "relative", borderRadius: "var(--r3)", minWidth: 0,
-      gridColumn: wide ? `span ${Math.min(2, columns)}` : undefined,
-      boxShadow: tone ? `inset 3px 0 0 ${TONE_RULE[tone]}` : undefined,
-      paddingLeft: tone ? 3 : 0,
-    }}>
-      {status === "withheld"
+    <Cell type="Card" props={element.props as Record<string, unknown>} size={size} testid="cockpit-card"
+      extra={{ attrs: { "data-card": id, "data-tone": tone ?? undefined },
+        style: { boxShadow: tone ? `inset 3px 0 0 ${TONE_RULE[tone]}` : undefined, paddingLeft: tone ? 3 : 0 } }}>
+      {key => status === "withheld"
         ? <WithheldTile />
         : !cs
           ? <SaidTile what="Not one of your cards">The cockpit places a card you do not have.</SaidTile>
           : (
             <CardBoundary key={`${id}:${cs.run ? JSON.stringify(cs.run.rows).length : 0}:${cs.failed ? 1 : 0}`}>
-              <CockpitTile cs={cs as CardState & { card: CockpitCard }} status={status} sym={sym} doors={doors} />
+              <CockpitTile cs={cs as CardState & { card: CockpitCard }} status={status} sym={sym} doors={doors}
+                place={{ elementKey: key, size, range, schema }} />
             </CardBoundary>
           )}
-    </div>
+    </Cell>
+  );
+}
+
+function CockpitNote({ element }: ComponentRenderProps<{ text: string; size?: Size | null; author?: string; written_at?: string }>) {
+  const { doors } = useCockpit();
+  const own = !!(doors.onTakeOff || doors.onEditNote || doors.onResize);
+  return (
+    <Cell type="Note" props={element.props as Record<string, unknown>} size={element.props.size ?? "small"} testid="cockpit-note-cell">
+      {key => (
+        <NoteTile elementKey={own ? key : null} text={element.props.text} author={element.props.author}
+          writtenAt={element.props.written_at} size={element.props.size ?? "small"} doors={doors} />
+      )}
+    </Cell>
+  );
+}
+
+function CockpitImage({ element }: ComponentRenderProps<{ object: string; caption: string; size?: Size | null }>) {
+  const { doors, images } = useCockpit();
+  const own = !!(doors.onTakeOff || doors.onRecaption || doors.onResize);
+  return (
+    <Cell type="Image" props={element.props as Record<string, unknown>} size={element.props.size ?? "small"} testid="cockpit-image-cell"
+      extra={{ attrs: { "data-object": element.props.object } }}>
+      {key => (
+        <ImageTile elementKey={own ? key : null} caption={element.props.caption} stamp={images[element.props.object]}
+          size={element.props.size ?? "small"} doors={doors} />
+      )}
+    </Cell>
   );
 }
 
@@ -213,15 +360,24 @@ const REGISTRY = {
   Tab: CockpitTab,
   Section: CockpitSection,
   Card: CockpitCard,
+  Note: CockpitNote,
+  Image: CockpitImage,
 } satisfies Record<ComponentName, unknown>;
 
-export function ComposedCockpit({ spec, cards, host, doors, sym = "$" }: {
+const NO_IMAGES: Record<string, ImageStamp> = {};
+
+export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = NO_IMAGES, range = null, schema }: {
   spec: unknown;
   cards: CardState[];
   host: CockpitHostState;
   doors: CockpitDoors;
   /** The symbol a money figure is written with (`currency_symbol` from the cockpit's read). */
   sym?: string;
+  /** What the cockpit's read says of each image it places, by object id. */
+  images?: Record<string, ImageStamp>;
+  /** The range the cockpit is read for; a bigger figure shows its metric's trend over it. */
+  range?: BriefingRange | null;
+  schema?: string;
 }) {
   // A spec is known by what it says, not by which object says it: a caller that parses the
   // same JSON again on every render hands over a new object each time, and that must not
@@ -241,14 +397,18 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$" }: {
     store.update({ "/range": { status: host.range.status }, "/cards": host.cards });
   }, [store, host]);
 
+  const rangeKey = JSON.stringify(range ?? null);
   const context = useMemo<CockpitContextValue>(() => ({
     elements: check.valid ? (spec as Spec).elements : {},
     cards: new Map(cards.map(c => [c.card.id, c])),
     host,
     doors,
     sym,
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what the spec says
-  }), [check.valid, written, cards, host, doors, sym]);
+    images,
+    range,
+    schema,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what the spec and the range say
+  }), [check.valid, written, cards, host, doors, sym, images, rangeKey, schema]);
 
   if (!check.valid) {
     return (
