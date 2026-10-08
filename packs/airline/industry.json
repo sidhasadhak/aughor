@@ -123,19 +123,26 @@
       "needs_concepts": ["block hours per leg", "aircraft (tail) identifier", "operating days / dates", "active fleet count"]
     }
   ],
+  "statement": [{"line": "gross_sales", "label": "Operating revenue (passenger, cargo, ancillary)"}, {"line": "cogs", "label": "Operating expenses (fuel, labour, maintenance, airports)"}, {"line": "opex", "label": "Other operating expenses"}, {"line": "profit", "label": "Operating income"}, {"line": "volume", "label": "Traffic and capacity"}, {"line": "rate", "label": "Unit revenue and unit cost"}, {"line": "operations", "label": "Operations"}],
   "reading_order": [
-    {"metric": "Passenger Revenue", "aliases": ["revenue", "total revenue"], "kind": "sales"},
+    {"metric": "Passenger Revenue", "aliases": ["total revenue", "operating revenue"], "kind": "gross_sales"},
+    {"metric": "Cargo Revenue", "aliases": ["freight revenue", "mail revenue"], "kind": "gross_sales"},
+    {"metric": "Ancillary Revenue", "aliases": ["bag fees", "loyalty revenue"], "kind": "gross_sales"},
+    {"metric": "Fuel Cost", "aliases": ["fuel expense", "jet fuel"], "kind": "cogs"},
+    {"metric": "Labour Cost", "aliases": ["wages", "salaries and benefits", "labor cost"], "kind": "cogs"},
+    {"metric": "Maintenance Cost", "aliases": ["maintenance materials and repairs"], "kind": "cogs"},
+    {"metric": "Landing Fees", "aliases": ["airport fees", "landing fees and rents"], "kind": "cogs"},
+    {"metric": "Operating Profit", "aliases": ["net income", "operating income", "operating margin"], "kind": "profit"},
     {"metric": "Passengers", "aliases": ["passengers carried", "pax"], "kind": "volume"},
     {"metric": "Flights", "aliases": ["departures"], "kind": "volume"},
-    {"metric": "RPK / ASK", "aliases": ["RPK", "RPM", "ASK", "ASM"], "kind": "volume"},
+    {"metric": "RPK / ASK", "aliases": ["RPK", "RPM", "ASK", "ASM", "revenue passenger kilometers", "revenue passenger miles", "available seat kilometers", "available seat miles"], "kind": "volume"},
     {"metric": "Load Factor", "aliases": ["passenger load factor", "seat occupancy"], "kind": "rate"},
-    {"metric": "Yield", "aliases": ["passenger yield", "revenue per RPK"], "kind": "rate"},
+    {"metric": "Yield", "aliases": ["passenger yield", "revenue per RPK", "passenger revenue per RPK", "passenger revenue per RPM"], "kind": "rate"},
     {"metric": "RASM", "aliases": ["unit revenue", "PRASM"], "kind": "rate"},
+    {"metric": "CASM", "aliases": ["unit cost"], "kind": "rate"},
     {"metric": "Ancillary Revenue per Passenger", "aliases": ["ancillary per pax"], "kind": "rate"},
-    {"metric": "CASM", "aliases": ["unit cost"], "kind": "cost"},
-    {"metric": "Cancellation Rate", "aliases": ["cancel rate"], "kind": "cost"},
     {"metric": "On-Time Performance", "aliases": ["OTP", "on-time arrival rate", "punctuality", "completion factor"], "kind": "operations"},
-    {"metric": "Aircraft Utilization", "aliases": ["fleet utilization", "block hours"], "kind": "operations"},
-    {"metric": "Operating Profit", "aliases": ["net income", "operating margin"], "kind": "profit"}
+    {"metric": "Cancellation Rate", "aliases": ["cancel rate"], "kind": "operations"},
+    {"metric": "Aircraft Utilization", "aliases": ["fleet utilization", "block hours"], "kind": "operations"}
   ]
 }

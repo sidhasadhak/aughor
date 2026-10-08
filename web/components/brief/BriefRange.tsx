@@ -9,10 +9,10 @@
  * column; a metric that is not measured says why. Values arrive formatted by the server, so
  * the tiles, the table and the narrative cannot disagree about a figure.
  */
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { STATUS_LABEL, changeOf, rangeOf, useOpenMetric, useShownMetric } from "@/components/brief/MetricDetail";
+import { STATUS_LABEL, changeOf, rangeOf, useFollowBlock, useOpenMetric, useShownMetric } from "@/components/brief/MetricDetail";
 import { StatTile, type StatDelta } from "@/components/brief/StatTile";
 import { Ledger, StatusMark, useLoad, type LedgerColumn } from "@/components/record/kit";
 import {
@@ -145,7 +145,8 @@ export function RangeMeasuresExpected({ connectionId, schema, workspaceId, block
 }) {
   const load = useLoad(() => readExpectedNext(connectionId, rangeOf(block), schema, workspaceId),
     [connectionId, schema, workspaceId, block.key]);
-  return <RangeMeasures block={block} expected={load.data} />;
+  // Bands read for the period before are not this period's: none shown until this one's arrive.
+  return <RangeMeasures block={block} expected={load.loading ? null : load.data} />;
 }
 
 /** The range's measured metrics. Under a page that offers the metric drawer (`MetricDetailHost`),
@@ -156,13 +157,28 @@ export function RangeMeasures({ block, expected }: { block: BriefingRangeBlock; 
   const open = useOpenMetric();
   const shown = useShownMetric(block.key);
   const bands = new Map((expected?.items ?? []).map(i => [i.metric, i]));
+  const expectedOf = useCallback((metric: string) => (expected?.target
+    ? { target: expected.target, item: (expected.items ?? []).find(i => i.metric === metric) } : undefined), [expected]);
+  useFollowBlock(block, expectedOf);
+  // An industry that declares an income statement reads its metrics as one: each line of it heads
+  // the metrics on it, top to bottom, as a profit and loss statement reads.
+  const byLine = block.measured.some(m => m.line);
   const columns: LedgerColumn<BriefingRangeMeasure>[] = [
     { head: "Metric", cell: m => <span title={m.time_source ?? undefined}>{m.name}</span> },
     { head: "This range", cell: m => m.current_text ?? "", num: true, width: 130 },
     { head: "Comparison", cell: m => m.previous_text ?? "", num: true, width: 130 },
-    { head: "Change", width: 190, cell: m => (m.current_partial || m.previous_partial
-        ? `no change stated: data covers only ${m.current_partial ?? m.previous_partial}`
-        : changeOf(m, "previous") || "no comparison rows") },
+    { head: "Change", width: 190, cell: m => {
+        if (m.current_partial || m.previous_partial) return `no change stated: data covers only ${m.current_partial ?? m.previous_partial}`;
+        const change = changeOf(m, "previous");
+        if (!change) return "no comparison rows";
+        if (!m.equal_age || m.equal_age.equal) return change;
+        // Said beside the number, as the cockpit's cards say it: part of this difference is age.
+        return (
+          <span title={m.equal_age.why}>
+            {change}<span data-testid="change-not-equal-age" style={{ color: "var(--amb4)" }}> · not at equal age</span>
+          </span>
+        );
+      } },
     ...(hasYear ? [{
       head: "A year earlier", width: 190,
       cell: (m: BriefingRangeMeasure) => {
@@ -186,6 +202,9 @@ export function RangeMeasures({ block, expected }: { block: BriefingRangeBlock; 
       <div className="aug-label" style={{ marginBottom: 6 }}>
         Measured for {block.covers} · against {block.compared_with}
       </div>
+      {block.edge_note && (
+        <div data-testid="range-edge-note" style={{ color: "var(--t2)", marginBottom: 6 }}>{block.edge_note}</div>
+      )}
       {block.lag_days > 1 && (
         <div style={{ color: "var(--t3)", marginBottom: 6 }}>
           {block.lag_source === "beyond_horizon"
@@ -198,6 +217,7 @@ export function RangeMeasures({ block, expected }: { block: BriefingRangeBlock; 
       {block.measured.length > 0 && (
         <Ledger name="measured-metrics" columns={columns} rows={block.measured} rowKey={m => m.metric}
           onOpen={open ? m => open({ measure: m, block, expected: expected?.target ? { target: expected.target, item: bands.get(m.metric) } : undefined }) : undefined}
+          group={byLine ? m => m.line?.label ?? "Other" : undefined}
           selected={shown} empty="No metric was measured for this range." />
       )}
       {block.measured.length > 0 && expected?.target && (

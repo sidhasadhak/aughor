@@ -631,6 +631,9 @@ class TransitionRequest(BaseModel):
     connection: str = GLOBAL_CONNECTION
     #: WHICH dataset's definition, when two datasets each define the name.
     schema_name: Optional[str] = None
+    #: Approve a definition that measures exactly what an approved one does. Refused without it
+    #: (409 `same_as_approved`); with it, the audit names the metric it measures the same as.
+    approve_anyway: bool = False
 
 
 @router.post("/metrics/{name}/transition", dependencies=[gate(Capability.METRICS_DEFINE)])
@@ -656,6 +659,14 @@ def transition_metric(name: str, req: TransitionRequest):
         from aughor import govern
         govern.guard(_action, name)
     now = datetime.now(timezone.utc).isoformat()
+    # One measure, one approved definition (the user, 2026-10-08: "Why should we have duplicates?").
+    # The name check at definition never saw two names for one figure; the approval is where a
+    # definition becomes authoritative, so it is checked here, by its figures.
+    twin = _twin_check(m, req.connection) if str(req.action or "").strip().lower() == "approve" else None
+    if twin and twin.get("twin") and not req.approve_anyway:
+        from aughor.semantic import metric_twins
+        raise HTTPException(status_code=409, detail={
+            "reason": "same_as_approved", "twin": twin["twin"], "message": metric_twins.said(m, twin)})
     try:
         updated, audit = apply_transition(m.model_dump(), req.action, caller(), now)
     except ValueError as e:
@@ -663,10 +674,40 @@ def transition_metric(name: str, req: TransitionRequest):
     save_metric(MetricDefinition(**updated))
     _restate_briefings(req.connection)
     audit = {**audit, "connection": req.connection, "schema_name": home_schema(m)}
+    if twin and twin.get("twin"):
+        audit["approved_though_same_as"] = twin["twin"]["name"]
+    elif twin and not twin.get("checked"):
+        audit["same_as_check"] = f"not read: {twin.get('why') or 'unknown'}"
     Ledger.default().emit("metric.governance", audit)
     if updated.get("status") == "approved":
         _reopen_questions(req.connection, home_schema(m), f"{m.label or name} was approved")
     return {"metric": updated, "audit": audit}
+
+
+def _twin_check(m: MetricDefinition, connection: str) -> dict:
+    """``metric_twins.twin_of`` against this connection's approved definitions in the metric's dataset
+    (and the ones every dataset reads), on the connection's own warehouse. A check that cannot run
+    says so; it never stops an approval by itself."""
+    from datetime import datetime, timezone
+
+    from aughor.knowledge import period_brief
+    from aughor.semantic import metric_twins
+
+    home = home_schema(m)
+    approved = [x for x in list_metrics(connection_id=connection, schema_name=None if home == ALL_DATASETS else home)
+                if x.status == "approved" and x.connection == connection]
+    if not metric_twins.candidates(m, approved):
+        return dict(metric_twins.NO_TWIN)               # nothing reads its tables: nothing to measure
+    try:
+        with period_brief.connection_runner(connection) as (run_sql, dialect):
+            return metric_twins.twin_of(m, approved, run_sql=run_sql, dialect=dialect,
+                                        today=datetime.now(timezone.utc).date())
+    except Exception as exc:  # noqa: BLE001 — not known is said in the audit, never taken for "no twin"
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "whether a metric measures the same as an approved one could not be read",
+                 counter="metrics.twin_check")
+        return {"twin": None, "months": 0, "checked": False,
+                "why": f"the connection could not be opened ({type(exc).__name__})"}
 
 
 def _reopen_questions(conn_id: Optional[str], schema: Optional[str], why: str) -> None:

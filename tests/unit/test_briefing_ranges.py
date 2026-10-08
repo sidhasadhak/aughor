@@ -35,17 +35,18 @@ def test_a_named_preset_is_exactly_the_period_section_3_27_reads(preset, period)
     assert spec.period == period
 
 
-def test_the_users_range_is_compared_with_the_same_weekdays():
-    """17–26 August 2026 (Monday to Wednesday), asked on 26 September."""
+def test_the_users_range_is_compared_with_the_days_just_before():
+    """17–26 August 2026 (Monday to Wednesday), asked on 26 September. Back to back (the user,
+    2026-10-08): the whole-week shift matched the weekday mix but left the days between unread."""
     spec, why = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26,
                                      lag_days=13)
     assert why == "" and spec.days == 10 and spec.key == "range:custom:2026-08-17..2026-08-26"
-    assert (spec.previous_start, spec.previous_end) == (date(2026, 8, 3), date(2026, 8, 13))
+    assert (spec.previous_start, spec.previous_end) == (date(2026, 8, 7), date(2026, 8, 17))
     assert (spec.last_year_start, spec.last_year_end) == (date(2025, 8, 18), date(2025, 8, 28))
-    assert spec.previous_start.weekday() == spec.start.weekday() == spec.last_year_start.weekday()
+    assert spec.last_year_start.weekday() == spec.start.weekday()      # a year earlier keeps its weekdays
     words = ranges.phrases(spec)
     assert words["covers"] == "2026-08-17 to 2026-08-26 (10 days)"
-    assert words["compared_with"] == "the same 10 days 2 weeks earlier, 2026-08-03 to 2026-08-12"
+    assert words["compared_with"] == "the 10 days before, 2026-08-07 to 2026-08-16"
     # a cohort's comparisons are read at the same age: 31 days after each window's last day
     w = {x.label: x for x in spec.windows()}
     assert {(x.as_of - x.last_day).days for x in w.values()} == {31}
@@ -151,7 +152,7 @@ def test_a_range_briefing_measures_the_approved_metrics_and_names_the_rest(con, 
                                         runner=_runner(con))
     block = brief["period"]
     [rev] = block["measured"]
-    assert (rev["name"], rev["current"], rev["previous"]) == ("Revenue", 215000.0, 75000.0)  # 17..26, 3..12 ×1,000
+    assert (rev["name"], rev["current"], rev["previous"]) == ("Revenue", 215000.0, 115000.0)  # 17..26, 7..16 ×1,000
     assert rev["status"] == "final" and rev["time_kind"] == "flow"
     assert rev["time_source"].startswith("set automatically: created_at is the main date of orders")
     assert {u["name"]: u["reason"] for u in block["unmeasured"]} == {
@@ -261,9 +262,9 @@ def test_measures_that_cannot_open_the_connection_say_so():
     ({"preset": "month_to_date"}, 3, [(date(2026, 7, 1), date(2026, 7, 14)), (date(2026, 8, 1), date(2026, 8, 14)),
                                       (date(2026, 9, 1), date(2026, 9, 14))]),
     ({"preset": "last_year"}, 2, [(date(2024, 1, 1), date(2025, 1, 1)), (date(2025, 1, 1), date(2026, 1, 1))]),
-    # a custom range steps by the whole weeks that clear it, as its comparison does
+    # a custom range steps back by its own length, back to back, as its comparison does
     ({"start": date(2026, 8, 17), "end": date(2026, 8, 26)}, 3,
-     [(date(2026, 7, 20), date(2026, 7, 30)), (date(2026, 8, 3), date(2026, 8, 13)),
+     [(date(2026, 7, 28), date(2026, 8, 7)), (date(2026, 8, 7), date(2026, 8, 17)),
       (date(2026, 8, 17), date(2026, 8, 27))]),
 ])
 def test_earlier_ranges_step_back_the_way_the_ranges_own_comparison_does(kw, n, expected):
@@ -285,7 +286,7 @@ def test_a_metric_opens_to_its_trend_oldest_first_with_how_it_is_defined(con, ap
     assert len(series) == ranges.TREND_RANGES and [p["current"] for p in series] == [False] * 7 + [True]
     assert [p["start"] for p in series] == sorted(p["start"] for p in series)
     # the last two points are the Briefing's own "this range" and "comparison"
-    assert (series[-1]["value"], series[-2]["value"]) == (215000.0, 75000.0)
+    assert (series[-1]["value"], series[-2]["value"]) == (215000.0, 115000.0)
     assert series[-1]["label"] == "2026-08-17 to 2026-08-26" and series[-1]["value_text"]
     assert all(p["value_text"] for p in series if p["value"] is not None)
 
@@ -456,3 +457,174 @@ def test_a_count_over_a_window_with_no_rows_is_not_a_reading(con, approved):
     band = {i["metric"]: i for i in expected.expected_next("c1", spec, runner=_runner(con), today=SEP26)["items"]}
     assert band["orders_placed"]["expected"] is None
     assert band["orders_placed"]["why"].startswith("only 2 earlier ranges held a reading")
+
+
+# ── the Cockpit's periods: current and last, read to where the data ends (2026-10-08) ───────
+
+OCT8 = date(2026, 10, 8)                     # a Thursday
+LOADING = {"through": OCT8, "held_by": ["orders"], "tables": {"orders": OCT8}}
+
+
+def _edge(preset, today=OCT8, edge=LOADING, **kw):
+    spec, why = ranges.resolve_range(preset, today=today, edge=edge, **kw)
+    assert spec is not None, why
+    return spec
+
+
+def test_a_current_day_is_the_newest_complete_day_and_today_still_loading_is_left_out():
+    """The user: most warehouses hold yesterday at best, and a current day read off the calendar is
+    empty. A day still loading is part of a day, and a part against a whole is no comparison."""
+    day = _edge("current_day")
+    assert (day.start, day.last_day, day.previous_start) == (date(2026, 10, 7), date(2026, 10, 7), date(2026, 9, 30))
+    assert day.edge_note.startswith("Today (2026-10-08) is still loading, so it is left out")
+    behind = _edge("current_day", edge={"through": date(2026, 10, 7)})
+    assert behind.last_day == date(2026, 10, 7)
+    assert behind.edge_note == "Data runs to 2026-10-07: today (2026-10-08) has no rows yet."
+
+
+def test_a_period_so_far_is_compared_with_the_same_days_of_the_one_before():
+    week = _edge("current_week")
+    assert (week.start, week.last_day) == (date(2026, 10, 5), date(2026, 10, 7)) and week.under_way
+    assert (week.previous_start, week.previous_end) == (date(2026, 9, 28), date(2026, 10, 1))
+    assert ranges.phrases(week)["compared_with"] == "the same days of the week before, 2026-09-28 to 2026-09-30"
+    month = _edge("current_month")
+    assert (month.start, month.last_day, month.previous_start, month.previous_end) == (
+        date(2026, 10, 1), date(2026, 10, 7), date(2026, 9, 1), date(2026, 9, 8))
+    assert ranges.phrases(month)["covers"] == "October 2026 so far, 2026-10-01 to 2026-10-07"
+    year = _edge("current_year")
+    assert (year.start, year.previous_start, year.last_year_start) == (date(2026, 1, 1), date(2025, 1, 1), None)
+    # its trend reads the same days of each month before; there is no "next" of a period so far
+    assert ranges.earlier_ranges(month, 3) == [(date(2026, 8, 1), date(2026, 8, 8)),
+                                               (date(2026, 9, 1), date(2026, 9, 8)),
+                                               (date(2026, 10, 1), date(2026, 10, 8))]
+    assert ranges.later_spec(month) is None
+    from aughor.cockpit.host import TO_DATE, status_of
+    assert status_of(month) == TO_DATE
+
+
+def test_a_last_period_is_the_calendar_one_before_the_one_under_way():
+    week, month, year = _edge("previous_week"), _edge("previous_month"), _edge("previous_year")
+    assert (week.start, week.last_day, week.previous_start) == (date(2026, 9, 28), date(2026, 10, 4), date(2026, 9, 21))
+    assert (month.start, month.end, month.previous_start) == (date(2026, 9, 1), date(2026, 10, 1), date(2026, 8, 1))
+    assert ranges.phrases(month)["covers"] == "September 2026" and not month.under_way
+    assert month.edge_note == ""                         # a whole month the data's edge left alone
+    behind = _edge("previous_week", edge={"through": date(2026, 10, 2)})
+    assert behind.last_day == date(2026, 10, 2) and behind.edge_note.startswith("Data runs to 2026-10-02")
+    assert (year.start, year.end) == (date(2025, 1, 1), date(2026, 1, 1))
+    nxt = ranges.later_spec(month)
+    assert (nxt.start, nxt.end) == (date(2026, 10, 1), date(2026, 11, 1))
+
+
+def test_a_current_period_with_no_data_yet_reads_the_newest_that_has_and_says_so():
+    monday = date(2026, 10, 12)
+    week = _edge("current_week", today=monday, edge={"through": date(2026, 10, 11)})
+    assert (week.start, week.last_day, week.under_way) == (date(2026, 10, 5), date(2026, 10, 11), False)
+    assert week.edge_note.startswith("The week of 2026-10-12 has no complete day yet, so this is the newest that has.")
+
+
+def test_the_table_that_holds_the_data_back_is_named():
+    held = {"through": date(2026, 10, 5), "held_by": ["returns"],
+            "tables": {"returns": date(2026, 10, 5), "orders": date(2026, 10, 7)}}
+    week = _edge("current_week", edge=held)
+    assert (week.start, week.last_day) == (date(2026, 10, 5), date(2026, 10, 5))
+    assert "returns has no rows after 2026-10-05; orders runs later." in week.edge_note
+
+
+def test_a_custom_range_past_the_data_is_cut_and_says_so_and_without_an_edge_reads_as_asked():
+    cut = _edge("custom", start=date(2026, 10, 1), end=OCT8)
+    assert (cut.last_day, cut.previous_start) == (date(2026, 10, 7), date(2026, 9, 24))
+    assert cut.edge_note.startswith("Asked to 2026-10-08, read to 2026-10-07.")
+    asked, _ = ranges.resolve_range("custom", start=date(2026, 10, 1), end=OCT8, today=OCT8)
+    assert (asked.last_day, asked.previous_start, asked.edge_note) == (OCT8, date(2026, 9, 23), "")
+
+
+def test_a_metric_whose_data_stopped_reads_the_same_kind_of_period_at_its_end():
+    moved = ranges.anchored_spec(_edge("current_month"), date(2024, 6, 15))
+    assert (moved.start, moved.last_day, moved.preset, moved.as_of) == (
+        date(2024, 6, 1), date(2024, 6, 15), "current_month", OCT8)
+
+
+def _dated(name, table, kind="flow"):
+    from types import SimpleNamespace as N
+    return N(name=name, label=name, time_kind=kind, time_column=f"{table}.created_at", until_column="x",
+             sql="COUNT(*)", tables=[table])
+
+
+def test_where_the_data_ends_is_the_earliest_live_table_read_once_each(monkeypatch):
+    ranges._EDGE_CACHE.clear()
+    c = duckdb.connect()
+    for table, last in (("orders", "2026-10-07"), ("returns", "2026-10-05"), ("legacy", "2024-03-01"),
+                        ("stock", "2026-10-01")):
+        c.execute(f"CREATE TABLE {table} AS SELECT TIMESTAMP '{last} 09:00' AS created_at")
+    metrics = [_dated("revenue", "orders"), _dated("aov", "orders"), _dated("returns", "returns"),
+               _dated("old", "legacy"), _dated("inventory", "stock", kind="stock")]
+    monkeypatch.setattr(ranges, "governed_metrics", lambda conn_id, schema=None: metrics)
+    seen: list[str] = []
+    base = _runner(c)
+
+    @contextlib.contextmanager
+    def counting():
+        with base() as (run_sql, d):
+            yield (lambda sql: (seen.append(sql), run_sql(sql))[1]), d
+    edge = ranges.data_edge("c1", today=OCT8, runner=counting)
+    # the table that stopped in 2024 is not holding today back, and a level does not count
+    assert edge == {"through": date(2026, 10, 5), "held_by": ["returns"], "why": "",
+                    "tables": {"orders": date(2026, 10, 7), "returns": date(2026, 10, 5)}}
+    assert len(seen) == 3                                       # orders once, though two metrics read it
+    # read again inside ten minutes, it is not read again
+    assert ranges.data_edge("c1", today=OCT8, runner=counting) == edge and len(seen) == 3
+    c.close()
+
+
+def test_where_the_data_ends_says_why_when_it_cannot_be_read(monkeypatch):
+    ranges._EDGE_CACHE.clear()
+    monkeypatch.setattr(ranges, "governed_metrics", lambda conn_id, schema=None: [])
+    assert ranges.data_edge("c1", today=OCT8)["why"] == "no approved metric names a date"
+
+    @contextlib.contextmanager
+    def closed():
+        raise ConnectionError("down")
+        yield  # pragma: no cover
+    monkeypatch.setattr(ranges, "governed_metrics", lambda conn_id, schema=None: [_dated("revenue", "orders")])
+    unread = ranges.data_edge("c1", today=OCT8, runner=closed)
+    assert unread["through"] is None and "could not be opened" in unread["why"]
+    # unread, a current day reads yesterday and says it did not know
+    day = _edge("current_day", edge=unread)
+    assert day.last_day == date(2026, 10, 7) and day.edge_note.startswith("Whether data has arrived after 2026-10-07 was not read")
+
+
+def test_only_the_current_and_last_periods_and_recent_custom_ranges_read_the_edge(monkeypatch):
+    asked: list[str] = []
+    monkeypatch.setattr(ranges, "data_edge", lambda conn_id, schema=None, today=None: asked.append(conn_id) or LOADING)
+    ranges.resolve_for("c1", "last_month", today=OCT8)
+    ranges.resolve_for("c1", "custom", start=date(2025, 1, 1), end=date(2025, 1, 31), today=OCT8)
+    assert asked == []
+    spec, _ = ranges.resolve_for("c1", "current_day", today=OCT8)
+    assert asked == ["c1"] and spec.last_day == date(2026, 10, 7)
+
+
+def test_a_flows_earlier_ranges_are_not_said_to_be_read_at_one_age(con, approved):
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    seen = ranges.metric_trend("c1", spec, "revenue", profile=_profile(), runner=_runner(con))
+    assert seen["same_age"] is False and seen["lag_days"] == 13
+    # the source settles 13 days back (by 13 September), so every range up to 26 August has settled
+    assert [p["settling"] for p in seen["series"]] == [False] * 7 + [False]
+    young, _ = ranges.resolve_range(start=date(2026, 9, 14), end=date(2026, 9, 24), today=SEP26, lag_days=13)
+    assert [p["settling"] for p in ranges.metric_trend("c1", young, "revenue", runner=_runner(con))["series"]][-2:] == [False, True]
+
+
+def test_a_north_star_whose_definition_was_deprecated_is_not_asked_for_again(con, approved):
+    """theLook's profile names Item Return Rate, deprecated as a second name for Return rate: "approve
+    one" would ask for the duplicate back (2026-10-08)."""
+    from aughor.business_profile.models import NorthStarMetric
+    from aughor.semantic.metrics import get_metric, save_metric
+    aov = get_metric("aov", connection_id="c1")
+    save_metric(aov.model_copy(update={"status": "deprecated"}))
+    stars = [NorthStarMetric(name=n, definition="-", maps_to="orders", why_it_matters="-", unit_or_range="$",
+                             chart_sql="") for n in ("AOV", "Gross margin")]
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    with _runner(con)() as (run_sql, dialect):
+        got = ranges.measure_range("c1", spec, run_sql=run_sql, dialect=dialect, north_stars=stars)
+    why = {u["name"]: u["reason"] for u in got["unmeasured"]}
+    assert why["AOV"] == "its definition was deprecated, so it is not measured under this name"
+    assert why["Gross margin"].startswith("no approved definition")

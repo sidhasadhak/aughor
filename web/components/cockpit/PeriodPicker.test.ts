@@ -16,7 +16,14 @@ describe("what the period menu says", () => {
   });
 
   it("is the choice's name until a range is read, and 'As written' with none", () => {
-    expect(periodWords({ preset: "last_week" }, null)).toBe("Latest week");
+    expect(periodWords({ preset: "previous_week" }, null)).toBe("Last week");
+    expect(periodWords({ preset: "current_day" }, null)).toBe("Current day");
     expect(periodWords({ preset: "standing" }, JULY)).toBe("As written");
+  });
+
+  it("while a new period is read, names it — never the period still on screen", () => {
+    expect(periodWords({ preset: "current_week" }, JULY, true)).toBe("Current week · reading…");
+    expect(periodWords({ preset: "custom", start: "2026-10-01", end: "2026-10-07" }, JULY, true))
+      .toBe("2026-10-01 to 2026-10-07 · reading…");
   });
 });

@@ -113,10 +113,22 @@
       "needs_concepts": ["ad spend by channel", "attributed revenue"]
     }
   ],
+  "statement": ["gross_sales", "deductions", "net_sales", "cogs", "gross_profit", "fulfilment", "marketing", "contribution", "opex", "profit", "volume", "rate", "operations"],
   "reading_order": [
-    {"metric": "Gross Merchandise Value", "aliases": ["GMV", "gross merchandise"], "kind": "sales"},
-    {"metric": "Revenue", "aliases": ["gross revenue", "gross sales", "sales"], "kind": "sales"},
-    {"metric": "Net Revenue", "aliases": ["net merchandise revenue", "net sales"], "kind": "sales"},
+    {"metric": "Gross Merchandise Value", "aliases": ["GMV", "gross merchandise"], "kind": "gross_sales"},
+    {"metric": "Revenue", "aliases": ["gross revenue", "gross sales", "sales"], "kind": "gross_sales"},
+    {"metric": "Discount Rate", "aliases": ["discount", "discounts"], "kind": "deductions"},
+    {"metric": "Return Rate", "aliases": ["item return rate", "returns rate", "returns", "refunds"], "kind": "deductions"},
+    {"metric": "Net Revenue", "aliases": ["net merchandise revenue", "net sales"], "kind": "net_sales"},
+    {"metric": "Cost of Goods Sold", "aliases": ["COGS", "landed cost", "product cost"], "kind": "cogs"},
+    {"metric": "Gross Margin", "aliases": ["gross profit", "product margin"], "kind": "gross_profit"},
+    {"metric": "Fulfilment Cost", "aliases": ["fulfillment cost", "shipping cost", "payment fees"], "kind": "fulfilment"},
+    {"metric": "Marketing Spend", "aliases": ["ad spend", "advertising spend"], "kind": "marketing"},
+    {"metric": "Customer Acquisition Cost", "aliases": ["CAC", "acquisition cost"], "kind": "marketing"},
+    {"metric": "ROAS", "aliases": ["return on ad spend"], "kind": "marketing"},
+    {"metric": "Contribution Margin", "aliases": ["contribution profit"], "kind": "contribution"},
+    {"metric": "Operating Expenses", "aliases": ["opex", "overhead"], "kind": "opex"},
+    {"metric": "Net Profit", "aliases": ["operating profit", "net income", "EBITDA"], "kind": "profit"},
     {"metric": "Orders", "aliases": ["order count", "number of orders"], "kind": "volume"},
     {"metric": "Units Sold", "aliases": ["units", "items sold"], "kind": "volume"},
     {"metric": "Customers", "aliases": ["buyers", "active customers"], "kind": "volume"},
@@ -125,12 +137,6 @@
     {"metric": "Repeat Purchase Rate", "aliases": ["repeat rate", "returning customer rate"], "kind": "rate"},
     {"metric": "Sell-Through Rate", "aliases": ["sell through"], "kind": "rate"},
     {"metric": "Inventory Turnover", "aliases": ["stock turn", "inventory turns"], "kind": "rate"},
-    {"metric": "ROAS", "aliases": ["return on ad spend"], "kind": "rate"},
-    {"metric": "Gross Margin", "aliases": ["product margin", "contribution margin"], "kind": "margin"},
-    {"metric": "Discount Rate", "aliases": ["discount"], "kind": "cost"},
-    {"metric": "Return Rate", "aliases": ["item return rate", "returns rate", "returns"], "kind": "cost"},
-    {"metric": "Customer Acquisition Cost", "aliases": ["CAC", "acquisition cost"], "kind": "cost"},
-    {"metric": "Lead Time", "aliases": ["delivery time", "ship to delivery", "fulfilment time", "fulfillment time"], "kind": "operations"},
-    {"metric": "Net Profit", "aliases": ["operating profit", "net income", "contribution profit"], "kind": "profit"}
+    {"metric": "Lead Time", "aliases": ["delivery time", "ship to delivery", "fulfilment time", "fulfillment time"], "kind": "operations"}
   ]
 }

@@ -201,6 +201,33 @@ def _write(key: str, connection_id: Optional[str], payload: dict, prior: Optiona
     return Kept(KEPT, version=int((prior or {}).get("version") or 0) + 1, artifact_id=art_id)
 
 
+def twin_cards(placed: Iterable[str], before: Iterable[str] = ()) -> list[str]:
+    """A sentence for each card this keep places a second time under another id — the same metric or
+    the same query (the user, 2026-10-08: the Executive Cockpit showed Revenue and Gross Margin Rate
+    twice and the return rate three times). Only copies this keep ADDS are refused: a cockpit kept
+    with copies before can still be kept, and is told nothing new."""
+    from aughor.cockpit.cards import same_card_key
+    from aughor.dashboard.store import get_card
+
+    def groups(ids: Iterable[str]) -> dict[str, list]:
+        out: dict[str, list] = {}
+        for card_id in dict.fromkeys(str(i) for i in ids):
+            card = get_card(card_id)
+            key = same_card_key(card) if card is not None else ""
+            if key:
+                out.setdefault(key, []).append(card)
+        return out
+
+    was = {k: len(v) for k, v in groups(before).items()}
+    said = []
+    for key, cards in groups(placed).items():
+        if len(cards) > 1 and len(cards) > was.get(key, 0):
+            title = cards[0].title or cards[0].id
+            said.append(f'"{title}" would be on this cockpit {len(cards)} times — cards '
+                        f'{", ".join(c.id for c in cards)} measure the same thing. Keep one.')
+    return said
+
+
 def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = "",
          also_known: Iterable[str] = (), written_by_model: bool = True,
          came_from: Iterable[tuple[str, str, str]] = ()) -> Kept:
@@ -225,6 +252,9 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
 
     prior = _latest_row(home.key)
     before = (prior or {}).get("payload") or {}
+    copies = twin_cards(verdict.cards, before.get("cards") or [])
+    if copies:
+        return Kept(REFUSED, sentences=tuple(copies))
     if prior and not before.get("retired") and _canonical(before.get("spec")) == _canonical(spec):
         return Kept(UNCHANGED, version=prior.get("version"), artifact_id=prior.get("id") or "")
 

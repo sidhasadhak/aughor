@@ -13821,6 +13821,35 @@ the browser** · **measure the premise before building.**
     number checked against the breakdown, no causal claim, withheld when it fails twice; a capped `explain_move`
     job under the Explorer's charter), and a person's own Start capped at what is left of the month — past it
     only on "run it anyway", recorded under their name. Decision (d) amended: the budget governs a person's run too.
+48. ✅ **DECIDED 2026-10-08 — the Cockpit's periods, and metrics read as an income statement** (the user, on
+    the Metrics cockpit). (a) The menu says **Current** day · week · month · year for the period under way and
+    **Last** week · month · year for the one before — "Latest" meant the newest *settled* period, which theLook's
+    29-day lag pushed into early September. (b) A current or last period is read **only over days whose data has
+    arrived**: where the data ends is read from the warehouse (the newest day every measured table has rows
+    for, one statement per table, kept ten minutes), a day still loading is left out, a current period with no
+    data yet reads the newest one that has, and each says so in words; a cut period is compared with the same
+    days of the one before. A custom range past the data is cut the same way. The Briefing's settled presets are
+    unchanged. (c) An industry may declare its **income statement** (`statement` in `industry.json`); its metrics
+    then read gross sales, discounts and returns, net sales, cost of goods sold, gross profit, fulfilment,
+    marketing, contribution, operating expenses, profit — then volume, rates and operations — each table headed
+    by its lines. Retail / E-commerce first; the other industries keep the shared backbone until theirs are written.
+    (d) **One measure, one approved definition** (the user: "Why should we have duplicates?"). theLook had approved
+    Return rate and Item Return Rate, and Gross Margin % and Gross Margin Rate — one figure each under two names,
+    because the only check compared names — and the Executive Cockpit carried copies. Item Return Rate and Gross
+    Margin Rate were deprecated (history kept) and two copy cards taken off (version 5). Approval now measures a
+    definition against the approved ones over the same tables: the same figure (or ×100) in each of the last six
+    months is refused with the other's name, unless the person approves it anyway, which the audit records
+    (`semantic/metric_twins.py`). A cockpit keep that adds a second copy of a card — the same approved metric,
+    or the same kind, title and query — is refused.
+    (e) **A custom range is compared back to back** (asked, chosen over the whole-week shift): the same number of
+    days just before it, and its "How it ran" history steps back by its own length — no unread days between
+    ranges. A year earlier still keeps its weekdays (364 days).
+    (f) **Income statements for SaaS, manufacturing, logistics, airline and food delivery** (asked, all four
+    groups), each in its own words — SaaS: recurring revenue, churn, revenue, cost of revenue (hosting, support),
+    gross profit, sales and marketing, R&D, G&A, operating income; logistics: operating revenue, cost of
+    transportation, overhead, operating income and operating ratio; airline: operating revenue, operating
+    expenses (fuel, labour, maintenance, airports), operating income; food delivery: gross order value, refunds,
+    revenue (take), courier costs, contribution, marketing, EBITDA — then each one's drivers.
 
 ---
 

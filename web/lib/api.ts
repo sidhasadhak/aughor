@@ -1267,13 +1267,33 @@ export async function deleteMetric(name: string, connection: string, schema?: st
 export async function transitionMetric(name: string, action: string, connection?: string,
                                        schema?: string): Promise<{ metric: Metric; audit: MetricAuditEntry }> {
   // No actor: the transition is the signed-in person's, stamped by the server (2026-10-07).
-  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/transition`, {
+  const post = (anyway: boolean) => fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/transition`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, ...(connection ? { connection } : {}), ...(schema ? { schema_name: schema } : {}) }),
+    body: JSON.stringify({ action, ...(connection ? { connection } : {}), ...(schema ? { schema_name: schema } : {}),
+      ...(anyway ? { approve_anyway: true } : {}) }),
   });
+  let res = await post(false);
+  // An approval of a definition that measures exactly what an approved one does is refused with the
+  // other's name (2026-10-08); only the person's yes approves it anyway, and the audit says so.
+  if (res.status === 409) {
+    const body = await res.clone().json().catch(() => ({}));
+    const d = (body as { detail?: { reason?: string; message?: string } })?.detail;
+    if (d?.reason === "same_as_approved") {
+      const message = d.message || "This measures exactly what an approved metric measures";
+      if (!askToApproveTwin(message)) throw new Error(`${message}.`);
+      res = await post(true);
+    }
+  }
   if (!res.ok) throw await refused(res, "Changing the metric's state");
   return res.json();
 }
+
+/** The question asked when an approval would make a second definition of one measure. Replaceable (tests). */
+export let askToApproveTwin = (message: string): boolean =>
+  typeof window !== "undefined" && typeof window.confirm === "function"
+    ? window.confirm(`${message}.\n\nApprove it anyway? The choice is recorded under your name.`)
+    : false;
+export function setApproveTwinQuestion(fn: (message: string) => boolean): void { askToApproveTwin = fn; }
 
 /** A3 — one section of the definition report. `outcome` travels as a WORD on purpose:
  *  "clean" (checked, nothing found) and "unavailable" (could not check) are different answers,
@@ -2399,7 +2419,9 @@ export interface DashboardCard {
   thresholds: Record<string, unknown>;
   /** `metric` and `metric_version` (Arc CT-3): the approved metric a card was made from, and the
    *  version it had then. Empty and 0 when the card was not made from a metric. */
-  provenance: { insight_id: string; origin_finding_id: string; receipt_ref: string; metric: string; metric_version: number };
+  provenance: { insight_id: string; origin_finding_id: string; receipt_ref: string; metric: string; metric_version: number;
+    /** The card that replaces this one: a duplicate is superseded, never deleted (2026-10-08). */
+    superseded_by?: string };
   links: string[];
   body: string;
   author: string;
@@ -2612,6 +2634,8 @@ export interface CockpitRange {
   as_of: string | null;
   lag_days: number | null;
   still_moving: string[];
+  data_through?: string | null;
+  edge_note?: string;
 }
 
 /** A card a cockpit may place: the person's own, or one pinned for the connection — with the
@@ -2619,6 +2643,9 @@ export interface CockpitRange {
  *  and, for a card made from a metric, the metric's unit and the range that unit states. */
 export type CockpitCard = DashboardCard & {
   own: boolean;
+  /** Why the cockpit does not offer this card back — superseded, made from a deprecated metric,
+   *  or a copy of one already placed; "" when it is offered. */
+  not_offered?: string;
   made_from?: "metric" | "trusted_query" | "finding" | "";
   unit?: string;
   stated_range?: StatedRange | null;
@@ -6936,7 +6963,10 @@ export interface BriefingPeriodBlock {
  *  settling lag; "custom" carries its first and last day (inclusive, ISO). */
 export type RangePreset =
   | "yesterday" | "last_week" | "last_month" | "last_year"
-  | "month_to_date" | "year_to_date" | "custom";
+  | "month_to_date" | "year_to_date" | "custom"
+  /** The Cockpit's periods: the one under way and the one before, read to where the data ends. */
+  | "current_day" | "current_week" | "current_month" | "current_year"
+  | "previous_week" | "previous_month" | "previous_year";
 
 export interface BriefingRange {
   preset: RangePreset;
@@ -6968,6 +6998,10 @@ export interface BriefingRangeMeasure {
   /** Month recipe: the metric's declared target, when it has one. */
   target?: number | null;
   vs_target?: number | null;
+  /** Whether its comparison is read at the same age as the figure; `why` when it is not. */
+  equal_age?: { equal: boolean; why: string };
+  /** The income-statement line it reads on, when the connection's industry declares a statement. */
+  line?: { line: string; label: string } | null;
 }
 
 /** Arc BR-4 — a segment's move inside a metric (what moved). */
@@ -7005,6 +7039,12 @@ export interface BriefingRangeBlock {
   covers: string;
   compared_with: string;
   last_year_label: string | null;
+  /** The newest day whose data has arrived, when it was read. */
+  data_through?: string | null;
+  /** What where the data ends did to the range, in words; "" when it did nothing. */
+  edge_note?: string;
+  /** The period holding the range goes on past it: a period so far. */
+  under_way?: boolean;
   measured: BriefingRangeMeasure[];
   unmeasured: { name: string; reason: string }[];
   /** Arc BR-4 — the recipe that wrote it, and its own sections. */
@@ -7128,10 +7168,13 @@ export interface MetricTrendPoint {
   value_text: string | null;
   partial: string | null;
   current: boolean;
+  /** Inside the days this source keeps changing: its figure may still move. */
+  settling?: boolean;
 }
 
-/** What a measured figure opens to: the metric over the range and the ranges before it, each
- *  read at the same age, with how it is defined and dated. `why` says what stopped a read. */
+/** What a measured figure opens to: the metric over the range and the ranges before it, with how
+ *  it is defined and dated. `same_age` — a cohort's ranges are read at one age; a flow's as their
+ *  rows stand today. `why` says what stopped a read. */
 export interface MetricTrend {
   metric: string;
   found: boolean;
@@ -7149,6 +7192,8 @@ export interface MetricTrend {
   confirmed: boolean;
   series: MetricTrendPoint[];
   why: string;
+  same_age?: boolean;
+  lag_days?: number;
   period: BriefingRangeBlock;
 }
 

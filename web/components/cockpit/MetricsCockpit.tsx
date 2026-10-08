@@ -10,8 +10,9 @@
  * arranged or retired. A person's own cockpits sit beside it, as before.
  */
 import { RangeMeasuresExpected, type RangeChoice } from "@/components/brief/BriefRange";
-import { PeriodPicker } from "@/components/cockpit/PeriodPicker";
+import { PeriodPicker, choiceName } from "@/components/cockpit/PeriodPicker";
 import { Absent, Gate, useLoad } from "@/components/record/kit";
+import { Loading } from "@/components/ui/states";
 import { measureRange, type BriefingRange, type BriefingRangeBlock, type CockpitRange } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 
@@ -21,7 +22,8 @@ export const METRICS_COCKPIT = "::metrics";
 /** The period as the picker says it: its words, and whether every figure in it has settled. */
 function showing(block: BriefingRangeBlock): CockpitRange {
   const statuses = new Set(block.measured.map(m => m.status));
-  const status = statuses.has("to_date") ? "to_date" : statuses.has("provisional") ? "provisional" : "final";
+  const status = block.under_way || statuses.has("to_date") ? "to_date"
+    : statuses.has("provisional") ? "provisional" : "final";
   return {
     status, preset: block.preset, start: block.start, last_day: block.last_day, covers: block.covers,
     as_of: block.as_of, lag_days: block.lag_days, still_moving: block.still_moving,
@@ -42,6 +44,9 @@ export function MetricsCockpit({ connectionId, schema, rangesOn, value, onChange
     () => (rangesOn && range ? measureRange(connectionId, range, schema) : Promise.resolve(null)),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
     [connectionId, schema, rangeKey, rangesOn]);
+  // A new period is being read while the one before it is still on screen: said, and the table
+  // it is about to replace is dimmed, so nobody reads the old figures as the new period's.
+  const reading = load.loading && !!range && rangesOn === true;
 
   if (rangesOn === false) {
     return (
@@ -53,8 +58,11 @@ export function MetricsCockpit({ connectionId, schema, rangesOn, value, onChange
   return (
     <div data-testid="metrics-cockpit">
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-        <PeriodPicker value={value} onChange={onChange} showing={load.data ? showing(load.data.period) : null} />
-        {load.data && (
+        <PeriodPicker value={value} onChange={onChange} reading={reading}
+          showing={load.data && !reading ? showing(load.data.period) : null} />
+        {reading ? (
+          <Loading inline what={`the metrics for ${choiceName(value)}`} style={{ marginLeft: "auto" }} />
+        ) : load.data && (
           <span className="aug-fs-sm" data-testid="metrics-measured-at" style={{ marginLeft: "auto", color: "var(--t3)" }}>
             {load.data.from_briefing ? "As the Briefing measured it" : "Measured"} {formatDateTime(load.data.measured_at)}
           </span>
@@ -63,11 +71,14 @@ export function MetricsCockpit({ connectionId, schema, rangesOn, value, onChange
       {!range ? (
         <Absent>“As written” is for cards. A metric is measured for a period — pick one above.</Absent>
       ) : rangesOn === null ? null : (
-        <Gate load={load} what="the metrics for this period">
-          {d => (d && (d.period.measured.length > 0 || d.period.unmeasured.length > 0)
-            ? <RangeMeasuresExpected connectionId={connectionId} schema={schema} block={d.period} />
-            : <Absent>No approved metric is on this connection yet. Approve one in the Semantic Layer and it is measured here.</Absent>)}
-        </Gate>
+        <div data-testid="metrics-body" aria-busy={reading || undefined}
+          style={{ opacity: reading ? 0.45 : 1, transition: "opacity 120ms ease-out", pointerEvents: reading ? "none" : undefined }}>
+          <Gate load={load} what={`the metrics for ${choiceName(value)}`}>
+            {d => (d && (d.period.measured.length > 0 || d.period.unmeasured.length > 0)
+              ? <RangeMeasuresExpected connectionId={connectionId} schema={schema} block={d.period} />
+              : <Absent>No approved metric is on this connection yet. Approve one in the Semantic Layer and it is measured here.</Absent>)}
+          </Gate>
+        </div>
       )}
     </div>
   );

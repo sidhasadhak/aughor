@@ -9,7 +9,7 @@
  * read, a read that failed says so with Retry, and an empty ledger says what would fill it.
  */
 import { Table } from "@radix-ui/themes";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { TableActions, tableFromElement } from "@/components/TableActions";
@@ -172,7 +172,7 @@ export interface LedgerColumn<T> {
  * taken away — Copy puts cells on the clipboard, CSV downloads them — because a table a reader
  * cannot leave with is a picture of a table.
  */
-export function Ledger<T>({ name, columns, rows, rowKey, onOpen, empty, selected }: {
+export function Ledger<T>({ name, columns, rows, rowKey, onOpen, empty, selected, group }: {
   name: string;
   columns: LedgerColumn<T>[];
   rows: T[];
@@ -181,6 +181,9 @@ export function Ledger<T>({ name, columns, rows, rowKey, onOpen, empty, selected
   /** What an empty ledger says: what it holds once it holds something. */
   empty: React.ReactNode;
   selected?: string;
+  /** The section a row belongs to; a heading row is drawn where the section changes. Copy and CSV
+   *  take the rows, not the headings. */
+  group?: (row: T) => string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   if (rows.length === 0) return <Absent>{empty}</Absent>;
@@ -195,10 +198,20 @@ export function Ledger<T>({ name, columns, rows, rowKey, onOpen, empty, selected
           ))}</Table.Row>
         </Table.Header>
         <Table.Body>
-          {rows.map(row => {
+          {rows.map((row, at) => {
             const key = rowKey(row);
+            const section = group?.(row);
+            const heads = section !== undefined && (at === 0 || group?.(rows[at - 1]) !== section);
             return (
-              <Table.Row key={key} align="center" aria-selected={selected === key || undefined}
+              <Fragment key={key}>
+              {heads && (
+                <Table.Row data-ledger-group="">
+                  <Table.Cell colSpan={columns.length} className="aug-label" style={{ color: "var(--t3)", paddingTop: at === 0 ? undefined : 14 }}>
+                    {section}
+                  </Table.Cell>
+                </Table.Row>
+              )}
+              <Table.Row align="center" aria-selected={selected === key || undefined}
                 onClick={onOpen ? () => onOpen(row) : undefined}
                 style={onOpen ? { cursor: "pointer" } : undefined}>
                 {columns.map((c, i) => (
@@ -210,6 +223,7 @@ export function Ledger<T>({ name, columns, rows, rowKey, onOpen, empty, selected
                   </Table.Cell>
                 ))}
               </Table.Row>
+              </Fragment>
             );
           })}
         </Table.Body>
@@ -218,7 +232,8 @@ export function Ledger<T>({ name, columns, rows, rowKey, onOpen, empty, selected
         <TableActions name={name} read={() => {
           const table = ref.current?.querySelector("table");
           if (!table) return null;
-          const t = tableFromElement(table);
+          const read = tableFromElement(table);
+          const t = group ? { ...read, rows: read.rows.filter(r => r.length === columns.length) } : read;
           const facts = columns.map((c, i) => (c.control ? -1 : i)).filter(i => i >= 0);
           return facts.length === columns.length
             ? t : { columns: facts.map(i => t.columns[i]), rows: t.rows.map(r => facts.map(i => r[i])) };

@@ -30,13 +30,13 @@ import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CockpitArrange, type CardLine } from "@/components/cockpit/CockpitArrange";
 import { ComposedCockpit } from "@/components/cockpit/ComposedCockpit";
 import { METRICS_COCKPIT, MetricsCockpit } from "@/components/cockpit/MetricsCockpit";
-import { PeriodPicker } from "@/components/cockpit/PeriodPicker";
+import { PeriodPicker, choiceName } from "@/components/cockpit/PeriodPicker";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { TabStrip } from "@/components/ui/tab-strip";
-import { ErrorState, Refusal } from "@/components/ui/states";
+import { ErrorState, Loading, Refusal } from "@/components/ui/states";
 import { toast } from "@/components/ui/toast";
 import {
   CockpitRefused, acceptProposal, draftCockpit, getCockpit, getProposalById, getSystemFlags, keepCockpit, listCockpits,
@@ -225,7 +225,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   // standing value for a view nobody asked for.
   const [rangesOn, setRangesOn] = useState<boolean | null>(null);
   const [picked, setChosenRange] = useState<RangeChoice | null>(null);
-  const chosenRange: RangeChoice = picked ?? (rangesOn ? { preset: "last_month" } : { preset: "standing" });
+  const chosenRange: RangeChoice = picked ?? (rangesOn ? { preset: "previous_month" } : { preset: "standing" });
   const range: BriefingRange | null = chosenRange.preset === "standing" ? null : chosenRange;
   const [list, setList] = useState<CockpitList | null | "off">(null);
   const [chosen, setChosen] = useState("");
@@ -239,6 +239,8 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [newOpen, setNewOpen] = useState(false);
   const [composing, setComposing] = useState(false);
   const [tick, setTick] = useState(0);
+  // The cockpit is being read for a period while the cards on screen are still the period before.
+  const [reading, setReading] = useState(false);
   const known = useRef<Set<string>>(new Set());
   const adopt = useRef(false);
 
@@ -275,6 +277,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     if (!chosen || chosen === METRICS_COCKPIT || list === "off") { setData(null); return; }
     if (rangesOn === null) return;
     let cancelled = false;
+    setReading(true);
     (async () => {
       try {
         const read = await getCockpit(connectionId, chosen, range);
@@ -299,6 +302,8 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
         setData(read); setCards(runs); setProblem("");
       } catch (e) {
         if (!cancelled) setProblem((e as Error).message || "The cockpit could not be read.");
+      } finally {
+        if (!cancelled) setReading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -361,7 +366,11 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const drawn = kept && !kept.retired && kept.spec != null;
   const pinned = list.shared_cards + list.own_cards;
   const lines = new Map<string, CardLine>((data?.cards ?? []).map(c => [c.id, { title: c.title }]));
-  const unplaced = arranging ? (data?.cards ?? []).filter(c => !cardsPlaced(arranging).includes(c.id)) : [];
+  const notPlaced = arranging ? (data?.cards ?? []).filter(c => !cardsPlaced(arranging).includes(c.id)) : [];
+  // A duplicate is not offered back — superseded, from a deprecated metric, or a copy — and the
+  // tray says how many it left out and why, so nothing reads as lost.
+  const unplaced = notPlaced.filter(c => !c.not_offered);
+  const withheld = notPlaced.filter(c => c.not_offered);
 
   const noneYet = (
         <EmptyState icon="gauge" variant="inline"
@@ -447,9 +456,10 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
             {data.ranges_on && (
-              <PeriodPicker value={chosenRange} onChange={setChosenRange} disabled={busy}
-                showing={data.range.status === "standing" ? null : data.range} />
+              <PeriodPicker value={chosenRange} onChange={setChosenRange} disabled={busy} reading={reading}
+                showing={data.range.status === "standing" || reading ? null : data.range} />
             )}
+            {reading && <Loading inline what={`the cards for ${choiceName(chosenRange)}`} />}
             <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
               {!arranging && (
                 <Button size="xs" variant="ghost" disabled={busy || composing} data-testid="cockpit-card-new"
@@ -516,6 +526,11 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                   </div>
                 </div>
               )}
+              {withheld.length > 0 && (
+                <div className="aug-fs-sm" data-testid="cockpit-tray-withheld" style={{ marginTop: 8, color: "var(--t3)" }}>
+                  Not offered: {withheld.map(c => `${c.title} — ${c.not_offered}`).join("; ")}.
+                </div>
+              )}
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                 <Button size="sm" disabled={busy || JSON.stringify(arranging) === JSON.stringify(kept.spec)}
                   onClick={async () => {
@@ -535,7 +550,13 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                     onCreated={() => { adopt.current = true; reload(); }} />
                 </div>
               )}
-              <ComposedCockpit spec={kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"} />
+              {!reading && data.range.edge_note && (
+                <div className="aug-fs-sm" data-testid="cockpit-edge-note" style={{ color: "var(--t2)", margin: "4px 0 8px" }}>{data.range.edge_note}</div>
+              )}
+              <div aria-busy={reading || undefined}
+                style={{ opacity: reading ? 0.45 : 1, transition: "opacity 120ms ease-out", pointerEvents: reading ? "none" : undefined }}>
+                <ComposedCockpit spec={kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"} />
+              </div>
             </>
           )}
         </>

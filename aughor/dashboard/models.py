@@ -44,6 +44,9 @@ class CardProvenance(BaseModel):
     # Stored inside `provenance_json`, so an older row reads with both at their defaults.
     metric: str = ""
     metric_version: int = 0
+    # The card that replaces this one (2026-10-08): a duplicate is superseded, never deleted, and a
+    # cockpit does not offer it again. Stored inside `provenance_json`, like the two above.
+    superseded_by: str = ""
 
 
 class DashboardCard(BaseModel):

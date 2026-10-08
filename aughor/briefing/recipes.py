@@ -30,7 +30,9 @@ from typing import Any, Callable, Optional
 
 RECIPE_OF_PRESET = {"yesterday": "day", "last_week": "week", "last_month": "month",
                     "last_year": "year", "month_to_date": "month", "year_to_date": "year",
-                    "custom": "custom"}
+                    "custom": "custom", "current_day": "day", "current_week": "week",
+                    "current_month": "month", "current_year": "year", "previous_week": "week",
+                    "previous_month": "month", "previous_year": "year"}
 
 SECTIONS = {
     "day": ("alerts", "what_moved", "early_read", "actions"),

@@ -12,7 +12,7 @@ A card placed in a cockpit is not moved by being placed: the spec points at it.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 from aughor.cockpit.home import Home
 from aughor.dashboard.models import DashboardCard
@@ -77,6 +77,47 @@ def place(home: Home, card: DashboardCard, *, metric: Optional[Any] = None) -> D
     return upsert_card(card.model_copy(update={
         "scope": OWN, "scope_ref": home.owner, "connection_id": home.connection_id,
         "provenance": provenance}))
+
+
+def same_card_key(card: Any) -> str:
+    """What makes two cards one: the approved metric each was made from; else the same kind, title
+    and query, spaced and cased alike — a copy. Two definitions of one figure under different names
+    are the metric approval's to catch (``semantic/metric_twins.py``), by their figures."""
+    metric = str(getattr(getattr(card, "provenance", None), "metric", "") or "")
+    if metric:
+        return f"metric:{metric}"
+    sql = " ".join(str(getattr(card, "sql", "") or "").lower().split()).rstrip("; ")
+    title = " ".join(str(getattr(card, "title", "") or "").lower().split())
+    return f"copy:{getattr(card, 'kind', '')}|{title}|{sql}" if sql else ""
+
+
+def not_offered(home: Home, held: list, placed: Iterable[str]) -> dict[str, str]:
+    """Why each card the cockpit does NOT place is not offered back to it, by card id (the user,
+    2026-10-08: duplicates removed "from all places"): superseded by another card, made from a
+    metric that was deprecated, or a copy of a card already on the cockpit. Said beside the list,
+    never silently dropped."""
+    from aughor.semantic.metrics import list_metrics
+
+    on = set(placed)
+    by_id = {c.id: c for c in held}
+    placed_keys = {same_card_key(by_id[i]): by_id[i] for i in on if i in by_id and same_card_key(by_id[i])}
+    deprecated = {m.name for m in list_metrics(connection_id=home.connection_id)
+                  if m.status == "deprecated" and m.connection == home.connection_id}
+    out: dict[str, str] = {}
+    for c in held:
+        if c.id in on:
+            continue
+        superseded = str(getattr(c.provenance, "superseded_by", "") or "")
+        metric = str(getattr(c.provenance, "metric", "") or "")
+        twin = placed_keys.get(same_card_key(c)) if same_card_key(c) else None
+        if superseded:
+            other = by_id.get(superseded)
+            out[c.id] = f"superseded by “{other.title if other else superseded}”"
+        elif metric and metric in deprecated:
+            out[c.id] = f"made from {metric}, which was deprecated"
+        elif twin is not None:
+            out[c.id] = f"a copy of “{twin.title or twin.id}”, already on this cockpit"
+    return out
 
 
 def take_over(home: Home, card: DashboardCard) -> DashboardCard:
