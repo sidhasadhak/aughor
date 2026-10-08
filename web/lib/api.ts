@@ -2651,6 +2651,20 @@ export type CockpitCard = DashboardCard & {
   stated_range?: StatedRange | null;
 };
 
+/** What the cockpit's read says of an image it places: its stamps from the volume's own row, and
+ *  whether this reader may see its bytes. An image that is gone, or not this connection's,
+ *  stands as its caption with `why`. */
+export interface CockpitImageStamp {
+  object: string;
+  file_name: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  content_type: string;
+  bytes: number;
+  readable: boolean;
+  why: string;
+}
+
 export interface PersonCockpit {
   connection_id: string;
   owner: string;
@@ -2662,6 +2676,26 @@ export interface PersonCockpit {
   history: CockpitVersion[];
   /** The symbol a money figure is written with, as the Briefing resolves it. */
   currency_symbol?: string;
+  /** The images the spec places, by object id (the canvas, 2026-10-08). */
+  images?: Record<string, CockpitImageStamp>;
+}
+
+/** Where an image placed on a cockpit is read from: the API, with the reader's own access. */
+export function cockpitImageUrl(connectionId: string, objectId: string): string {
+  return `${getApiBase()}/cockpits/images/${encodeURIComponent(objectId)}?connection_id=${encodeURIComponent(connectionId)}`;
+}
+
+/** Upload an image into this connection's cockpit volume, to be placed on a cockpit by its object
+ *  id. PNG, JPEG, SVG, GIF or WebP up to 5 MB; a refusal says which it failed. */
+export async function uploadCockpitImage(connectionId: string, file: File): Promise<CockpitImageStamp> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(cockpitUrl("/cockpits/images", connectionId), { method: "POST", body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The image could not be uploaded"));
+  }
+  return res.json();
 }
 
 /** What a write answered: kept, unchanged — or a refusal, which arrives as an error. */

@@ -20,7 +20,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from aughor.security.authz import connection_owner_guard
@@ -147,7 +148,7 @@ def read_cockpit(request: Request, cockpit_id: str, connection_id: str, preset: 
     """One of the asker's cockpits as it stands: its newest version with its spec, every card
     it may place (theirs and the connection's), the range it is read for, and its history."""
     _on()
-    from aughor.cockpit import cards, host, versions
+    from aughor.cockpit import cards, host, images, versions
     from aughor.kernel.flags import flag_enabled
     from aughor.routers.investigations import resolve_currency_symbol
     home = _home(request, connection_id, cockpit_id)
@@ -171,7 +172,41 @@ def read_cockpit(request: Request, cockpit_id: str, connection_id: str, preset: 
         "ranges_on": ranges_on,
         "history": versions.history(home),
         "currency_symbol": resolve_currency_symbol(connection_id, None),
+        # What the spec's images are, from the volume's own rows; one the cockpit may not show says why.
+        "images": images.stamps_for(connection_id, kept.get("spec")),
     }
+
+
+@router.post("/cockpits/images")
+async def upload_image(request: Request, connection_id: str, file: UploadFile) -> dict:
+    """Take an image into this connection's cockpit volume — PNG, JPEG, GIF, WebP or SVG, up to
+    5 MB, read from its bytes — to be placed on a cockpit by the object id this answers with.
+    By hand only: no model uploads an image."""
+    _on()
+    from aughor.cockpit import images
+    data = await file.read()
+    try:
+        return images.put_image(connection_id, file.filename or "image", data, file.content_type or "",
+                                uploaded_by=_approved_by(request))
+    except images.Refused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/cockpits/images/{object_id}")
+def read_image(request: Request, object_id: str, connection_id: str) -> Response:
+    """An image a cockpit on this connection places, as bytes, with the reader's own access."""
+    _on()
+    from aughor.cockpit import images
+    try:
+        data, content_type = images.read_image(connection_id, object_id)
+    except images.Refused as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    headers = {"Content-Disposition": "inline", "X-Content-Type-Options": "nosniff",
+               "Cache-Control": "private, max-age=3600"}
+    if content_type == "image/svg+xml":
+        # Drawn in an <img>, nothing in it runs; opened on its own, this says the same.
+        headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    return Response(content=data, media_type=content_type, headers=headers)
 
 
 @router.put("/cockpits/{cockpit_id}")

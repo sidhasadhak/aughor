@@ -56,6 +56,11 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
         )
     """)
     c.execute("CREATE INDEX IF NOT EXISTS volobj_volume ON volume_objects(org_id, volume_id)")
+    # Who uploaded an object (the canvas, 2026-10-08). Added in place: a store born before the
+    # column keeps its rows, which say "" for it.
+    held = {row[1] for row in c.execute("PRAGMA table_info(volume_objects)").fetchall()}
+    if "created_by" not in held:
+        c.execute("ALTER TABLE volume_objects ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
     c.commit()
 
 
@@ -69,6 +74,7 @@ def _row_to_object(r: sqlite3.Row) -> VolumeObject:
         id=r["id"], org_id=r["org_id"], volume_id=r["volume_id"], path=r["path"],
         name=r["name"], mime_type=r["mime_type"], size_bytes=r["size_bytes"],
         extracted_text=r["extracted_text"], created_at=r["created_at"],
+        created_by=(r["created_by"] or "") if "created_by" in r.keys() else "",
     )
 
 
@@ -124,20 +130,20 @@ def list_volumes(catalog_id: str, org_id: Optional[str] = None) -> List[Volume]:
 
 def add_object(volume_id: str, path: str, name: str, mime_type: str = "",
                size_bytes: int = 0, extracted_text: Optional[str] = None,
-               org_id: Optional[str] = None) -> VolumeObject:
+               org_id: Optional[str] = None, created_by: str = "") -> VolumeObject:
     oid = org_id or current_org_id()
     obj_id = uuid.uuid4().hex[:12]
     now = _now()
     c = _conn()
     c.execute(
         "INSERT INTO volume_objects (id, org_id, volume_id, path, name, mime_type, "
-        "size_bytes, extracted_text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (obj_id, oid, volume_id, path, name, mime_type, size_bytes, extracted_text, now),
+        "size_bytes, extracted_text, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (obj_id, oid, volume_id, path, name, mime_type, size_bytes, extracted_text, now, created_by or ""),
     )
     c.commit()
     c.close()
     return VolumeObject(id=obj_id, org_id=oid, volume_id=volume_id, path=path, name=name,
-                        mime_type=mime_type, size_bytes=size_bytes,
+                        mime_type=mime_type, size_bytes=size_bytes, created_by=created_by or "",
                         extracted_text=extracted_text, created_at=now)
 
 

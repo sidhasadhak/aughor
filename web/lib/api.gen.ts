@@ -2983,6 +2983,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cockpits/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Image
+         * @description Take an image into this connection's cockpit volume — PNG, JPEG, GIF, WebP or SVG, up to
+         *     5 MB, read from its bytes — to be placed on a cockpit by the object id this answers with.
+         *     By hand only: no model uploads an image.
+         */
+        post: operations["upload_image_cockpits_images_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/images/{object_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Image
+         * @description An image a cockpit on this connection places, as bytes, with the reader's own access.
+         */
+        get: operations["read_image_cockpits_images__object_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cockpits/move": {
         parameters: {
             query?: never;
@@ -15887,6 +15929,11 @@ export interface components {
             /** Table Name */
             table_name?: string | null;
         };
+        /** Body_upload_image_cockpits_images_post */
+        Body_upload_image_cockpits_images_post: {
+            /** File */
+            file: string;
+        };
         /** BudgetIn */
         BudgetIn: {
             /** Authority Ceiling */
@@ -26706,6 +26753,76 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_image_cockpits_images_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_image_cockpits_images_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_image_cockpits_images__object_id__get: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                object_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

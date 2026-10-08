@@ -88,6 +88,7 @@ def desk() -> Desk:
     ("post", "/cockpits/move", {"canvas_id": "cv1"}),
     ("post", "/cockpits/{id}/restore", {"version": 1}),
     ("post", "/cockpits/{id}/retire", {}),
+    ("get", "/cockpits/images/abc", None),
 ])
 def test_off_every_route_answers_404_and_nothing_is_kept(client, desk, method, path, body):
     r = getattr(client, method)(path.format(id=desk.cockpit_id), params=desk.q,

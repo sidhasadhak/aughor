@@ -27,6 +27,7 @@ retired when it moves (``canvas_*``); nothing new is kept under a canvas.
 """
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional
@@ -228,9 +229,40 @@ def twin_cards(placed: Iterable[str], before: Iterable[str] = ()) -> list[str]:
     return said
 
 
+def stamp_notes(spec: Any, before: Any, approved_by: str, *, now: Optional[str] = None,
+                stamps_are_ours: bool = False) -> Any:
+    """A note's author and date are the server's to write (the canvas, 2026-10-08): whatever a
+    client sent in their place is replaced. A note whose words are the version before's keeps
+    that version's stamps; one that is new, or whose words changed, is stamped with the person
+    keeping it, now. ``stamps_are_ours`` is for a restore, whose spec was read back from the
+    Ledger with stamps this server wrote: they are carried as they are."""
+    if not isinstance(spec, dict) or not isinstance(spec.get("elements"), dict):
+        return spec
+    from aughor.util.time import now_iso_z
+    stamp = now or now_iso_z()
+    prior = before.get("elements") if isinstance(before, dict) and isinstance(before.get("elements"), dict) else {}
+    out = copy.deepcopy(spec)
+    for key, el in out["elements"].items():
+        if not isinstance(el, dict) or el.get("type") != "Note" or not isinstance(el.get("props"), dict):
+            continue
+        props = el["props"]
+        was = prior.get(key) if isinstance(prior.get(key), dict) else None
+        kept = (was is not None and was.get("type") == "Note" and isinstance(was.get("props"), dict)
+                and was["props"].get("text") == props.get("text") and was["props"].get("author"))
+        if kept:
+            props["author"] = str(was["props"]["author"])
+            props["written_at"] = str(was["props"].get("written_at") or stamp)
+        elif stamps_are_ours and props.get("author"):
+            props["written_at"] = str(props.get("written_at") or stamp)
+        else:
+            props["author"] = approved_by.strip()
+            props["written_at"] = stamp
+    return out
+
+
 def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = "",
          also_known: Iterable[str] = (), written_by_model: bool = True,
-         came_from: Iterable[tuple[str, str, str]] = ()) -> Kept:
+         came_from: Iterable[tuple[str, str, str]] = (), stamps_are_ours: bool = False) -> Kept:
     """Keep ``spec`` as this person's cockpit: the next version, or nothing at all.
 
     ``approved_by`` is the person who approved it; ``source`` is where it came from.
@@ -243,6 +275,10 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
     if missing:
         return missing
 
+    prior = _latest_row(home.key)
+    before = (prior or {}).get("payload") or {}
+    spec = stamp_notes(spec, before.get("spec"), approved_by, stamps_are_ours=stamps_are_ours)
+
     verdict = _validate.check_spec_for_home(spec, home, also_known=also_known,
                                             model_written=written_by_model)
     if verdict.status == _validate.NOT_CHECKED:
@@ -250,8 +286,10 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
     if not verdict.accepted:
         return Kept(REFUSED, sentences=verdict.sentences)
 
-    prior = _latest_row(home.key)
-    before = (prior or {}).get("payload") or {}
+    from aughor.cockpit import images
+    not_held = images.not_held(home.connection_id, spec)
+    if not_held:
+        return Kept(REFUSED, sentences=tuple(not_held))
     copies = twin_cards(verdict.cards, before.get("cards") or [])
     if copies:
         return Kept(REFUSED, sentences=tuple(copies))
@@ -282,7 +320,7 @@ def restore(home: Home, number: int, *, approved_by: str) -> Kept:
             f"Version {number} is the one that retired the cockpit; it holds no spec to go back to.",))
     return keep(home, earlier["spec"], approved_by=approved_by,
                 source=f"restored from version {number}",
-                written_by_model=earlier["written_by_model"])
+                written_by_model=earlier["written_by_model"], stamps_are_ours=True)
 
 
 def _retired_payload(before: dict, approved_by: str, note: str) -> dict:

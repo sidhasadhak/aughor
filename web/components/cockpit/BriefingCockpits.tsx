@@ -28,23 +28,30 @@ import { NewCardComposer } from "@/components/brief/NewCardComposer";
 import type { RangeChoice } from "@/components/brief/BriefRange";
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CockpitArrange, type CardLine } from "@/components/cockpit/CockpitArrange";
-import { ComposedCockpit } from "@/components/cockpit/ComposedCockpit";
+import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/ComposedCockpit";
 import { METRICS_COCKPIT, MetricsCockpit } from "@/components/cockpit/MetricsCockpit";
 import { PeriodPicker, choiceName } from "@/components/cockpit/PeriodPicker";
+import type { ImageStamp } from "@/components/cockpit/StaticTile";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { TabStrip } from "@/components/ui/tab-strip";
 import { ErrorState, Loading, Refusal } from "@/components/ui/states";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import {
-  CockpitRefused, acceptProposal, draftCockpit, getCockpit, getProposalById, getSystemFlags, keepCockpit, listCockpits,
-  moveCanvasCockpit, rejectProposal, restoreCockpit, retireCockpit, runDashboardCard, startMyCockpit,
+  CockpitRefused, acceptProposal, cockpitImageUrl, draftCockpit, getCockpit, getProposalById, getSystemFlags, keepCockpit,
+  listCockpits, moveCanvasCockpit, rejectProposal, restoreCockpit, retireCockpit, runDashboardCard, startMyCockpit,
+  uploadCockpitImage,
   type BriefingRange, type CockpitDrafted, type CockpitKept, type CockpitList, type CockpitVersion,
   type PersonCockpit, type StagedProposal,
 } from "@/lib/api";
-import { cardsPlaced, placeCard, sectionsOf, takeOffCard, type CockpitSpec } from "@/lib/cockpit/edit";
+import { MAX_CAPTION, MAX_NOTE, type Size } from "@/lib/cockpit/catalog";
+import {
+  cardsPlaced, editNote, placeCard, placeImage, placeNote, recaption, resize, sectionsOf, takeOff, takeOffCard,
+  type CockpitSpec,
+} from "@/lib/cockpit/edit";
 import { hostStateOf } from "@/lib/cockpit/hostStatus";
 import { formatDateTime } from "@/lib/format";
 
@@ -91,6 +98,66 @@ function Refused({ outcome }: { outcome: CockpitKept }) {
           </ul>
         }
       />
+    </div>
+  );
+}
+
+/** A note, typed by the person — the one element of a cockpit a model never writes (the canvas,
+ *  2026-10-08). Its author and date are the server's to stamp when it is kept. */
+function NoteComposer({ busy, onPlace, onClose }: { busy: boolean; onPlace: (text: string) => void; onClose: () => void }) {
+  const [text, setText] = useState("");
+  return (
+    <div data-testid="cockpit-note-composer" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+        Your words, as a reminder to yourself or your readers: bold, italics, lists and links, up to {MAX_NOTE} characters.
+        Aughor never reads a note, cites it or learns from it; a model may move it, never write it.
+      </div>
+      <Textarea aria-label="The note's words" placeholder="Target for Q4: return rate under **10%**…" value={text} maxLength={MAX_NOTE}
+        autoFocus disabled={busy} onChange={e => setText(e.target.value)} style={{ minHeight: 96 }} />
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <Button size="sm" disabled={busy || !text.trim()} onClick={() => onPlace(text)}>Place the note</Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onClose}>Cancel</Button>
+        <span className="aug-fs-xs" style={{ marginLeft: "auto", color: "var(--t3)", fontVariantNumeric: "tabular-nums" }}>{text.length} / {MAX_NOTE}</span>
+      </div>
+    </div>
+  );
+}
+
+/** An image, chosen and uploaded by the person — the other element a model never makes. */
+function ImageComposer({ connectionId, busy, onPlace, onClose }: {
+  connectionId: string; busy: boolean; onPlace: (objectId: string, caption: string) => void; onClose: () => void;
+}) {
+  const [caption, setCaption] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [refused, setRefused] = useState("");
+  const upload = async () => {
+    if (!file) return;
+    setUploading(true); setRefused("");
+    try {
+      const stamp = await uploadCockpitImage(connectionId, file);
+      onPlace(stamp.object, caption.trim() || file.name);
+    } catch (e) {
+      setRefused((e as Error).message);
+    } finally { setUploading(false); }
+  };
+  return (
+    <div data-testid="cockpit-image-composer" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+        PNG, JPEG, GIF, WebP or SVG, up to 5 MB, into this connection's cockpit volume. It shows who uploaded it and when,
+        and no period or comparison: a static thing says it is static.
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <input type="file" aria-label="The image file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+          disabled={busy || uploading} onChange={e => { setFile(e.target.files?.[0] ?? null); setRefused(""); }} />
+        <Input aria-label="Caption" placeholder="Caption" value={caption} maxLength={MAX_CAPTION} disabled={busy || uploading}
+          onChange={e => setCaption(e.target.value)} style={{ maxWidth: 320, flex: 1 }} />
+      </div>
+      {refused && <div className="aug-fs-sm" data-testid="cockpit-image-refused" style={{ color: "var(--red4)" }}>{refused}</div>}
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <Button size="sm" disabled={busy || uploading || !file} onClick={() => void upload()}>{uploading ? "Uploading…" : "Upload and place"}</Button>
+        <Button size="sm" variant="ghost" disabled={busy || uploading} onClick={onClose}>Cancel</Button>
+      </div>
     </div>
   );
 }
@@ -238,6 +305,9 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [arranging, setArranging] = useState<CockpitSpec | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [composing, setComposing] = useState(false);
+  // The two doors by hand only: a note's words and an image are the person's, never a model's.
+  const [noting, setNoting] = useState(false);
+  const [imaging, setImaging] = useState(false);
   const [tick, setTick] = useState(0);
   // The cockpit is being read for a period while the cards on screen are still the period before.
   const [reading, setReading] = useState(false);
@@ -344,9 +414,25 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
       () => "Taken off this cockpit. The card is kept.");
   }, [connectionId, data, write]);
 
-  const doors = useMemo(() => ({ onRemove: takeOffOne, onRefresh: refreshOne, onOpenSource, onEvidence }),
-    [takeOffOne, refreshOne, onOpenSource, onEvidence]);
+  // One edit of the spec by hand, kept as the next version: what every door on a tile comes to.
+  const edit = useCallback((change: (s: CockpitSpec) => CockpitSpec, note: string, said: string) => {
+    if (!data?.cockpit.spec) return;
+    void write(() => keepCockpit(connectionId, data.cockpit_id, change(data.cockpit.spec as CockpitSpec), note), () => said);
+  }, [connectionId, data, write]);
+
+  const doors = useMemo<CockpitDoors>(() => ({
+    onRemove: takeOffOne, onRefresh: refreshOne, onOpenSource, onEvidence,
+    onTakeOff: (key: string) => edit(s => takeOff(s, key), "taken off by hand", "Taken off. The version before keeps it."),
+    onResize: (key: string, size: Size) => edit(s => resize(s, key, size), `resized to ${size} by hand`,
+      "Resized. The same thing, with more or less room; nothing was re-measured."),
+    onEditNote: (key: string, text: string) => edit(s => editNote(s, key, text), "a note's words changed by hand", "Kept, and stamped with your name and today."),
+    onRecaption: (key: string, caption: string) => edit(s => recaption(s, key, caption), "an image's caption changed by hand", "Kept."),
+  }), [takeOffOne, refreshOne, onOpenSource, onEvidence, edit]);
   const host = useMemo(() => hostStateOf(data?.range.status ?? "standing", cards), [data?.range.status, cards]);
+  // Where each image's bytes are read from: the API, with this reader's own access.
+  const images = useMemo<Record<string, ImageStamp>>(() => Object.fromEntries(
+    Object.entries(data?.images ?? {}).map(([id, s]) => [id, { ...s, url: cockpitImageUrl(connectionId, id) }])),
+  [data?.images, connectionId]);
 
   if (list === "off") {
     return (
@@ -462,8 +548,22 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
             <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
               {!arranging && (
                 <Button size="xs" variant="ghost" disabled={busy || composing} data-testid="cockpit-card-new"
-                  onClick={() => setComposing(true)}>
+                  onClick={() => { setComposing(true); setNoting(false); setImaging(false); }}>
                   <Icon name="plus" /> Card
+                </Button>
+              )}
+              {!arranging && (
+                <Button size="xs" variant="ghost" disabled={busy || noting} data-testid="cockpit-note-new"
+                  title="Your own words on this cockpit. By hand only: a model never writes a note."
+                  onClick={() => { setNoting(true); setComposing(false); setImaging(false); }}>
+                  <Icon name="plus" /> Note
+                </Button>
+              )}
+              {!arranging && (
+                <Button size="xs" variant="ghost" disabled={busy || imaging} data-testid="cockpit-image-new"
+                  title="An image of your own on this cockpit. By hand only: a model never chooses one."
+                  onClick={() => { setImaging(true); setComposing(false); setNoting(false); }}>
+                  <Icon name="plus" /> Image
                 </Button>
               )}
               {!arranging && (
@@ -549,13 +649,22 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                     onCreated={() => { adopt.current = true; reload(); }} />
                 </div>
               )}
+              {noting && (
+                <NoteComposer busy={busy} onClose={() => setNoting(false)}
+                  onPlace={text => { edit(s => placeNote(s, text), "a note written by hand", "Placed. Its author and date are stamped as it is kept."); setNoting(false); }} />
+              )}
+              {imaging && (
+                <ImageComposer connectionId={connectionId} busy={busy} onClose={() => setImaging(false)}
+                  onPlace={(objectId, caption) => { edit(s => placeImage(s, objectId, caption), "an image uploaded by hand", "Placed. The upload is stamped with your name and the date."); setImaging(false); }} />
+              )}
               {reading && <Loading what={`the cards for ${choiceName(chosenRange)}`} style={{ padding: "12px 0" }} />}
               {!reading && data.range.edge_note && (
                 <div className="aug-fs-sm" data-testid="cockpit-edge-note" style={{ color: "var(--t2)", margin: "4px 0 8px" }}>{data.range.edge_note}</div>
               )}
               <div aria-busy={reading || undefined}
                 style={{ opacity: reading ? 0.45 : 1, transition: "opacity 120ms ease-out", pointerEvents: reading ? "none" : undefined }}>
-                <ComposedCockpit spec={kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"} />
+                <ComposedCockpit spec={kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}
+                  images={images} range={range} schema={schema} />
               </div>
             </>
           )}

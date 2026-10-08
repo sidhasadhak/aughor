@@ -3,9 +3,10 @@
 /**
  * CockpitArrange — a cockpit's outline, arranged by hand (Arc CT, CT-8; ROADMAP §3.50).
  *
- * Tabs, their sections and the cards in each, as lines a person can move, rename and take off.
- * No card is drawn here and no query runs: arranging is about where things go, and a card's
- * figure is the card's own business, drawn on the cockpit itself.
+ * Tabs, their sections and the cards, notes and images in each, as lines a person can move,
+ * size, rename and take off. No card is drawn here and no query runs: arranging is about where
+ * things go and how much room they take, and a card's figure is the card's own business, drawn
+ * on the cockpit itself.
  *
  * Every change goes through the pure edits in `lib/cockpit/edit.ts`, so what this screen holds
  * is always a spec, and the caller keeps it — as the next version of a cockpit, or, for a draft
@@ -13,12 +14,14 @@
  */
 import { useState } from "react";
 
+import { SizePick } from "@/components/cockpit/SizePick";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { Size } from "@/lib/cockpit/catalog";
 import {
-  moveCardTo, moveCardToNewSection, moveSectionTo, moveSectionToNewTab, moveWithin, rename,
+  moveCardTo, moveCardToNewSection, moveSectionTo, moveSectionToNewTab, moveWithin, rename, resize,
   sectionsOf, tabsOf, takeOff, type CockpitSpec,
 } from "@/lib/cockpit/edit";
 
@@ -80,21 +83,35 @@ export function CockpitArrange({ spec, lines, onChange, disabled }: {
   const tabs = tabsOf(spec);
   const root = spec.elements[spec.root];
 
+  /** What a line says of what it places: a card by its title, a note by its first words, an image by its caption. */
+  const named = (key: string): { title: string; kind: "card" | "note" | "image"; id: string } => {
+    const el = spec.elements[key];
+    if (el.type === "Note") {
+      const words = String(el.props.text ?? "").replace(/\s+/g, " ").trim();
+      return { kind: "note", id: "", title: `Note · ${words.length > 60 ? `${words.slice(0, 60)}…` : words}` };
+    }
+    if (el.type === "Image") return { kind: "image", id: "", title: `Image · ${String(el.props.caption ?? "")}` };
+    const id = String(el.props.card ?? "");
+    return { kind: "card", id, title: lines.get(id)?.title || id };
+  };
+
   const cardRow = (key: string, sectionKey: string, i: number, n: number) => {
     const el = spec.elements[key];
-    const id = String(el.props.card ?? "");
-    const line = lines.get(id);
+    const what = named(key);
+    const line = what.kind === "card" ? lines.get(what.id) : undefined;
+    const size = (el.props.size as Size | null | undefined) ?? "small";
     const elsewhere = sections.filter(s => s.key !== sectionKey).map(s => ({
       v: s.key, t: s.tabLabel ? `${s.tabLabel} · ${s.title}` : s.title,
     }));
     return (
-      <li key={key} data-testid="arrange-card" data-card={id} style={{
+      <li key={key} data-testid="arrange-card" data-card={what.id || undefined} data-kind={what.kind} style={{
         display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--b1)",
       }}>
         <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {line?.title || id}
+          {what.title}
           {line?.isNew && <Badge variant="outline" style={{ marginLeft: 8 }}>new</Badge>}
           {line?.shows && <span className="aug-fs-sm" style={{ color: "var(--t3)", marginLeft: 8 }}>{line.shows}</span>}
+          {what.kind !== "card" && <span className="aug-fs-sm" style={{ color: "var(--t3)", marginLeft: 8 }}>· yours, not measured</span>}
           {el.visible !== undefined && <span className="aug-fs-sm" style={{ color: "var(--t3)", marginLeft: 8 }}>· shown on a condition</span>}
         </span>
         {asking?.kind === "section" && asking.key === key ? (
@@ -104,6 +121,8 @@ export function CockpitArrange({ spec, lines, onChange, disabled }: {
           }} />
         ) : (
           <>
+            <SizePick value={size} label={`Size of ${what.title}`} disabled={disabled}
+              onPick={s => onChange(resize(spec, key, s))} />
             <Button size="xs" variant="ghost" disabled={disabled || i === 0} aria-label="Move earlier"
               onClick={() => onChange(moveWithin(spec, key, -1))}>↑</Button>
             <Button size="xs" variant="ghost" disabled={disabled || i === n - 1} aria-label="Move later"

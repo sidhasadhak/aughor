@@ -83,6 +83,21 @@ addressees a published cockpit has.
    section", "add the finding about returns by category to my cockpit", "move my note to the top",
    "share this with the sales team" are all one door: the model proposes, the person approves.
    "Write me a note saying…" is not: a note is the person's words, typed by the person.
+6. **Every element has a size, from a closed set** (the user, after a clickable mock of all of the
+   above, 2026-10-08: *"make each component size adjustable… without losing the elegance and
+   robustness"*). A size is one more fixed prop on a placed element — a column span of 1 to 3
+   and a row span of 1 or 2, six named sizes — never free pixels. Dragging a tile's corner snaps
+   to one of them; the size pick in the tile's doors names them; "make the net sales card bigger"
+   proposes one. A bigger tile shows the same thing with more room: a figure draws larger and
+   gains its trend; nothing is re-measured. The validator counts a size as it counts a column; a
+   version keeps it; the platform's own tiles (the Metrics cockpit, the Briefing's Key Metrics)
+   have one size whatever a person set on their own cockpit.
+
+The three questions §6 opened were answered the same day, with the build: a Note is a **Markdown
+subset up to 2,000 characters** (bold, italics, lists, links; no images, no raw HTML); an Image is
+**PNG, JPEG, SVG, GIF or WebP up to 5 MB**; **any member may publish to a group they belong to, and
+a role needs the role's own permission**. The build goes on one branch and reaches `main` as one
+PR, its steps as separate commits.
 
 ## 3 · Laws for a static element
 
@@ -162,9 +177,9 @@ may not read stands and says so. The period a reader sees is the reader's own ch
   is a published cockpit, not a changed default.
 - A cockpit send (CT-6) — the laws above say what it must do when it comes.
 
-## 6 · Open for the user
+## 6 · Open for the user — answered 2026-10-08 (see the end of §2)
 
-- Note length and whether plain text is enough (no Markdown proposed).
-- Image size cap and types (proposed: PNG, JPEG, SVG, 2 MB).
-- Who may publish: any member, or a capability. Proposed: any member may publish to a group they
-  belong to; a role needs the role's own permission.
+- Note length and format: a Markdown subset, up to 2,000 characters. (Proposed: plain, ~600.)
+- Image cap and types: PNG, JPEG, SVG, GIF, WebP, up to 5 MB. (Proposed: PNG, JPEG, SVG, 2 MB.)
+- Who may publish: any member to a group they belong to; a role needs the role's own permission.
+  (As proposed.)

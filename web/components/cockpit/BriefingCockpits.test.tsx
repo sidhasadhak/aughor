@@ -18,7 +18,7 @@ import type { BriefingRangeBlock, CockpitList, PersonCockpit } from "@/lib/api";
 
 const api = vi.hoisted(() => ({
   listCockpits: vi.fn(), getCockpit: vi.fn(), runDashboardCard: vi.fn(), keepCockpit: vi.fn(),
-  startMyCockpit: vi.fn(), draftCockpit: vi.fn(), getProposalById: vi.fn(), acceptProposal: vi.fn(),
+  startMyCockpit: vi.fn(), draftCockpit: vi.fn(), getProposalById: vi.fn(), acceptProposal: vi.fn(), uploadCockpitImage: vi.fn(),
   rejectProposal: vi.fn(), moveCanvasCockpit: vi.fn(), restoreCockpit: vi.fn(), retireCockpit: vi.fn(),
   getSystemFlags: vi.fn(), measureRange: vi.fn(), readExpectedNext: vi.fn(),
 }));
@@ -357,5 +357,71 @@ describe("the metrics, the cockpit a person opens on", () => {
     show();
     expect(await screen.findByTestId("metrics-cockpit")).toBeInTheDocument();
     expect(screen.getByText(/You have no cockpits yet/)).toBeInTheDocument();
+  });
+});
+
+describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => {
+  it("a note typed here is placed in the first section and kept as the next version, its stamps the server's", async () => {
+    show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByTestId("cockpit-note-new"));
+    fireEvent.change(screen.getByRole("textbox", { name: "The note's words" }), { target: { value: "Check **ops** before the 15th." } });
+    fireEvent.click(screen.getByRole("button", { name: "Place the note" }));
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalled());
+    const [conn, id, spec, note] = api.keepCockpit.mock.calls[0] as [string, string, { elements: Record<string, { type: string; props: Record<string, unknown> }> }, string];
+    expect([conn, id, note]).toEqual(["thelook", "returns-1", "a note written by hand"]);
+    const placed = Object.values(spec.elements).find(e => e.type === "Note")!;
+    expect(placed.props).toEqual({ text: "Check **ops** before the 15th." });     // no author: the server stamps it
+    expect(spec.elements["sec-headline"]).toBeDefined();
+    expect(screen.queryByTestId("cockpit-note-composer")).toBeNull();
+  });
+
+  it("an image is uploaded first, then placed by the object id the upload answered with", async () => {
+    api.uploadCockpitImage.mockResolvedValue({ object: "ab12cd34ef56", file_name: "promo.png", uploaded_by: "user:default",
+      uploaded_at: "2026-10-08T09:00:00Z", content_type: "image/png", bytes: 72, readable: true, why: "" });
+    show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByTestId("cockpit-image-new"));
+    const file = new File([new Uint8Array([137, 80, 78, 71])], "promo.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("The image file"), { target: { files: [file] } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Caption" }), { target: { value: "Promo calendar" } });
+    fireEvent.click(screen.getByRole("button", { name: "Upload and place" }));
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalled());
+    expect(api.uploadCockpitImage).toHaveBeenCalledWith("thelook", file);
+    const spec = api.keepCockpit.mock.calls[0][2] as { elements: Record<string, { type: string; props: Record<string, unknown> }> };
+    const placed = Object.values(spec.elements).find(e => e.type === "Image")!;
+    expect(placed.props).toEqual({ object: "ab12cd34ef56", caption: "Promo calendar" });
+    expect(api.keepCockpit.mock.calls[0][3]).toBe("an image uploaded by hand");
+  });
+
+  it("an upload the server refuses is said where the file was chosen, and nothing is kept", async () => {
+    api.uploadCockpitImage.mockRejectedValue(new Error("The file is not a PNG, JPEG, GIF, WebP or SVG image (it was sent as text/html)."));
+    show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByTestId("cockpit-image-new"));
+    fireEvent.change(screen.getByLabelText("The image file"), { target: { files: [new File(["<html>"], "page.html", { type: "text/html" })] } });
+    fireEvent.click(screen.getByRole("button", { name: "Upload and place" }));
+    expect(await screen.findByTestId("cockpit-image-refused")).toHaveTextContent("sent as text/html");
+    expect(api.keepCockpit).not.toHaveBeenCalled();
+  });
+
+  it("the doors a tile has land as one kept version each: take off, resize, a note's words", async () => {
+    show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    const doors = drawn.props.at(-1)!.doors as { onTakeOff: (k: string) => void; onResize: (k: string, s: string) => void; onEditNote: (k: string, t: string) => void };
+    doors.onResize("card-net", "large");
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1));
+    const resized = api.keepCockpit.mock.calls[0][2] as { elements: Record<string, { props: Record<string, unknown> }> };
+    expect(resized.elements["card-net"].props.size).toBe("large");
+    expect(api.keepCockpit.mock.calls[0][3]).toBe("resized to large by hand");
+
+    doors.onTakeOff("card-net");
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(2));
+    const without = api.keepCockpit.mock.calls[1][2] as { elements: Record<string, unknown> };
+    expect(without.elements["card-net"]).toBeUndefined();
+    expect(api.keepCockpit.mock.calls[1][3]).toBe("taken off by hand");
+
+    // The images the read answered with reach the drawing with where to read each from.
+    expect(drawn.props.at(-1)!.images).toEqual({});
   });
 });

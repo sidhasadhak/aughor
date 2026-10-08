@@ -19,7 +19,7 @@ import { validateSpec, type Spec } from "@json-render/core";
 import type { z } from "zod";
 
 import {
-  COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, MAY_BE_CONDITIONAL, MAY_HOLD, READER_TEXT, TONES,
+  COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, MAY_BE_CONDITIONAL, MAY_HOLD, PLACED, READER_TEXT, SIZES, TONES,
   cockpitCatalog, type ComponentName,
 } from "@/lib/cockpit/catalog";
 import { CARD_STATUSES, RANGE_STATUSES, TAB_PATH, publishedPath } from "@/lib/cockpit/hostState";
@@ -62,6 +62,7 @@ export interface CockpitVocabulary {
   version: number;
   components: readonly string[];
   tones: readonly string[];
+  sizes: readonly string[];
   range_statuses: readonly string[];
   card_statuses: readonly string[];
   limits: { elements: number; tabs: number; cards: number };
@@ -72,6 +73,7 @@ export function vocabulary(): CockpitVocabulary {
     version: COCKPIT_VOCABULARY_VERSION,
     components: COMPONENT_NAMES,
     tones: TONES,
+    sizes: SIZES,
     range_statuses: RANGE_STATUSES,
     card_statuses: CARD_STATUSES,
     limits: { elements: MAX_ELEMENTS, tabs: MAX_TABS, cards: MAX_CARDS },
@@ -314,7 +316,7 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
     } else if (el.type === "Cockpit" && kinds.filter(k => k === "Tabs").length > 1) {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The cockpit ${q(key)} holds more than one Tabs. It holds one.` });
-    } else if (el.type !== "Card" && !el.children.length) {
+    } else if (!PLACED.includes(el.type) && !el.children.length) {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The ${el.type.toLowerCase()} ${q(key)} holds nothing. An empty ${el.type} is refused.` });
     }

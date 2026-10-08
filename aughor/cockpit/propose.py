@@ -81,6 +81,8 @@ HOW_TO_DRAFT = (
     "choose the ones that matter most, and say that more can follow in an edit. "
     'A limit goes on a card, as "limit", only when the user named it; a limit you choose is refused. '
     'Leave "visible" out of an element that is always shown. '
+    "A Note and an Image on the cockpit are the person's own: an edit may move one, give it a size or take "
+    "it off, and may not add one, change a note's text or choose an image; a new cockpit holds none. "
     "A card shows what its record measures and no more: a metric is one figure for the whole connection, "
     "and a trusted query or a finding shows its own rows. When the user asks for what no record "
     "measures, such as a breakdown no record gives, say so in your answer rather than drafting "
@@ -404,19 +406,25 @@ def outline(spec: dict, titles: dict[str, str], new_ids: set[str],
     def moved(key: str) -> str:
         return "added" if key in added else "changed" if key in changed else ""
 
+    def placed(c: str) -> dict:
+        props = els[c]["props"]
+        line = {"change": moved(c), "size": props.get("size") or "small",
+                "shown": _said(els[c].get("visible"), titles) if "visible" in els[c] else ""}
+        kind = els[c]["type"]
+        if kind == "Note":
+            return {**line, "title": static_title(els[c]), "new": False, "tone": "", "static": "note"}
+        if kind == "Image":
+            return {**line, "title": static_title(els[c]), "new": False, "tone": "", "static": "image"}
+        return {**line, "title": titles.get(props["card"]) or props["card"], "new": props["card"] in new_ids,
+                "tone": props.get("tone") or ""}
+
     def section(key: str) -> dict:
         el = els[key]
         return {
             "title": el["props"]["title"],
             "change": moved(key),
             "shown": _said(el.get("visible"), titles) if "visible" in el else "",
-            "cards": [{
-                "title": titles.get(els[c]["props"]["card"]) or els[c]["props"]["card"],
-                "new": els[c]["props"]["card"] in new_ids,
-                "change": moved(c),
-                "tone": els[c]["props"].get("tone") or "",
-                "shown": _said(els[c].get("visible"), titles) if "visible" in els[c] else "",
-            } for c in el["children"]],
+            "cards": [placed(c) for c in el["children"]],
         }
 
     root = els[spec["root"]]
@@ -428,10 +436,19 @@ def outline(spec: dict, titles: dict[str, str], new_ids: set[str],
     return [{"tab": "", "change": "", "sections": [section(s) for s in root["children"]]}]
 
 
+def static_title(el: dict) -> str:
+    """A note by its first words, an image by its caption — how a line names what measures nothing."""
+    props = el.get("props") or {}
+    if el.get("type") == "Note":
+        words = " ".join(str(props.get("text") or "").split())
+        return f"Note · {words[:60]}{'…' if len(words) > 60 else ''}"
+    return f"Image · {props.get('caption') or props.get('object') or ''}"
+
+
 def taken_off(before: Optional[dict], removed: list[str], titles: dict[str, str]) -> list[dict]:
-    """What an edit takes off the cockpit, as a person reads it: each card, section and tab by
-    its own name, and where it was. The outline says what the cockpit will be, so what is no
-    longer in it is said here or nowhere."""
+    """What an edit takes off the cockpit, as a person reads it: each card, note, image, section
+    and tab by its own name, and where it was. The outline says what the cockpit will be, so
+    what is no longer in it is said here or nowhere."""
     els = (before or {}).get("elements") or {}
     holder = {c: k for k, el in els.items() if isinstance(el, dict) for c in el.get("children") or []}
     out = []
@@ -441,6 +458,8 @@ def taken_off(before: Optional[dict], removed: list[str], titles: dict[str, str]
         kind = el.get("type")
         if kind == "Card":
             title = titles.get(props.get("card")) or str(props.get("card") or key)
+        elif kind in ("Note", "Image"):
+            title = static_title(el)
         elif kind == "Tab":
             title = str(props.get("label") or key)
         elif kind == "Section":
@@ -470,9 +489,48 @@ def _replaced(before: dict, placed_after: set[str], removed: list[str], titles: 
         if card is not None and card not in placed_after and card not in told:
             told.add(card)
             keys.append(key)
-        elif el.get("type") in ("Tab", "Section") and key in removed:
+        elif el.get("type") in ("Tab", "Section", "Note", "Image") and key in removed:
             keys.append(key)
     return taken_off(before, keys, titles)
+
+
+# ── what a model may not do to a note or an image ────────────────────────────────────────────
+
+def _statics(spec: Any) -> dict[str, tuple[str, str]]:
+    """Each note and image a spec holds, by key: ``(kind, what it says)`` — a note's words, an
+    image's object."""
+    out: dict[str, tuple[str, str]] = {}
+    elements = spec.get("elements") if isinstance(spec, dict) else None
+    for key, el in (elements or {}).items():
+        if not isinstance(el, dict) or not isinstance(el.get("props"), dict):
+            continue
+        if el.get("type") == "Note":
+            out[key] = ("note", str(el["props"].get("text") or ""))
+        elif el.get("type") == "Image":
+            out[key] = ("image", str(el["props"].get("object") or ""))
+    return out
+
+
+def statics_written(before: Any, after: Any, mode: str) -> list[str]:
+    """The sentences for what a draft did to a person's own elements that only the person may do
+    (the canvas, 2026-10-08): a model arranges a note or an image — moves it, resizes it, takes
+    it off — and never makes one, writes a note's words or chooses an image. A new cockpit holds
+    none; an edit may carry each one only as it stands."""
+    was = _statics(before) if mode == MODE_EDIT else {}
+    said = []
+    for key, (kind, says) in _statics(after).items():
+        if mode == MODE_NEW:
+            said.append(f'The cockpit holds the {kind} "{key}". A new cockpit holds no note and no image: '
+                        "those are the person's to add, by hand.")
+        elif key not in was:
+            said.append(f'The edit adds the {kind} "{key}". A note is the person\'s words and an image is '
+                        "the person's choice: you may move one they placed, resize it or take it off, never add one.")
+        elif was[key][1] != says:
+            said.append(f'The edit changes the {kind} "{key}". ' + (
+                "A note's words are the person's: move it, resize it or take it off, never write it."
+                if kind == "note" else
+                "Which image it shows is the person's choice: move it, resize it or take it off, never choose one."))
+    return said
 
 
 def _canonical(spec: Any) -> str:
@@ -611,6 +669,7 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
     final = _with_ids(spec, ids) if spec is not None else None
     verdict = None
     if final is not None:
+        refusals.extend(statics_written(live["spec"] if live else None, final, mode))
         # A card that was refused is still a name the spec places. It is counted as known
         # here, or the rules would call it a card the cockpit may not place — a second
         # sentence for a fault already told in its own.
