@@ -459,7 +459,6 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               <PeriodPicker value={chosenRange} onChange={setChosenRange} disabled={busy} reading={reading}
                 showing={data.range.status === "standing" || reading ? null : data.range} />
             )}
-            {reading && <Loading inline what={`the cards for ${choiceName(chosenRange)}`} />}
             <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
               {!arranging && (
                 <Button size="xs" variant="ghost" disabled={busy || composing} data-testid="cockpit-card-new"
@@ -550,6 +549,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                     onCreated={() => { adopt.current = true; reload(); }} />
                 </div>
               )}
+              {reading && <Loading what={`the cards for ${choiceName(chosenRange)}`} style={{ padding: "12px 0" }} />}
               {!reading && data.range.edge_note && (
                 <div className="aug-fs-sm" data-testid="cockpit-edge-note" style={{ color: "var(--t2)", margin: "4px 0 8px" }}>{data.range.edge_note}</div>
               )}
