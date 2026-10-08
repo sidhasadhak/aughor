@@ -7392,7 +7392,12 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   quarterly sales growth target [1]"* — from the DECLARED PRIORITIES block. The per-citation `priority` tag stayed empty on
   all eight: the findings say *revenue* and *AOV*, never *total sales*, and the tag holds the north-star word rule on
   purpose (a tag that guessed would be worse than none). The explorer was stopped after the brief to cap the spend.
-- ✅ **CB-7 · One action beside each Briefing item** (idea 20) — **BUILT 2026-09-23**. `briefing.best_action_for`: the cited
+- ✅ **CB-7 · One action beside each Briefing item** (idea 20) — **BUILT 2026-09-23**; ⛔ **its line under the
+  Full synthesis TAKEN OFF 2026-10-09** (the user, reading eight identical playbook lines there: "those 8 points
+  should not be a part of the Full synthesis at all"). The synthesis is the narrative and its citations; a next step
+  belongs with the finding — in the ledger's row or the analysis it came from. `best_action_for` still stamps an
+  action on each citation (the fit rule of the same day keeps it honest), and nothing on the page reads it now.
+  CB-6's "bears on the goal" line went with it. `briefing.best_action_for`: the cited
   investigation's own first recommendation when the item came from one (executable through the inbox's gated door —
   the brief links to it), else the playbook's best play for the finding's labels by learned success rate, read for the
   brief's industry only (`industry_scope`) — a suggestion, never fired on its own; an item with neither carries none.
