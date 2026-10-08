@@ -2419,7 +2419,9 @@ export interface DashboardCard {
   thresholds: Record<string, unknown>;
   /** `metric` and `metric_version` (Arc CT-3): the approved metric a card was made from, and the
    *  version it had then. Empty and 0 when the card was not made from a metric. */
-  provenance: { insight_id: string; origin_finding_id: string; receipt_ref: string; metric: string; metric_version: number };
+  provenance: { insight_id: string; origin_finding_id: string; receipt_ref: string; metric: string; metric_version: number;
+    /** The card that replaces this one: a duplicate is superseded, never deleted (2026-10-08). */
+    superseded_by?: string };
   links: string[];
   body: string;
   author: string;
@@ -2641,6 +2643,9 @@ export interface CockpitRange {
  *  and, for a card made from a metric, the metric's unit and the range that unit states. */
 export type CockpitCard = DashboardCard & {
   own: boolean;
+  /** Why the cockpit does not offer this card back — superseded, made from a deprecated metric,
+   *  or a copy of one already placed; "" when it is offered. */
+  not_offered?: string;
   made_from?: "metric" | "trusted_query" | "finding" | "";
   unit?: string;
   stated_range?: StatedRange | null;

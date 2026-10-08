@@ -201,30 +201,19 @@ def _write(key: str, connection_id: Optional[str], payload: dict, prior: Optiona
     return Kept(KEPT, version=int((prior or {}).get("version") or 0) + 1, artifact_id=art_id)
 
 
-def _same_card_key(card: Any) -> str:
-    """What makes two cards one: the approved metric each was made from; else the same kind, title
-    and query, spaced and cased alike — a copy. Two definitions of one figure under different names
-    are the metric approval's to catch (``semantic/metric_twins.py``), by their figures."""
-    metric = str(getattr(getattr(card, "provenance", None), "metric", "") or "")
-    if metric:
-        return f"metric:{metric}"
-    sql = " ".join(str(getattr(card, "sql", "") or "").lower().split()).rstrip("; ")
-    title = " ".join(str(getattr(card, "title", "") or "").lower().split())
-    return f"copy:{getattr(card, 'kind', '')}|{title}|{sql}" if sql else ""
-
-
 def twin_cards(placed: Iterable[str], before: Iterable[str] = ()) -> list[str]:
     """A sentence for each card this keep places a second time under another id — the same metric or
     the same query (the user, 2026-10-08: the Executive Cockpit showed Revenue and Gross Margin Rate
     twice and the return rate three times). Only copies this keep ADDS are refused: a cockpit kept
     with copies before can still be kept, and is told nothing new."""
+    from aughor.cockpit.cards import same_card_key
     from aughor.dashboard.store import get_card
 
     def groups(ids: Iterable[str]) -> dict[str, list]:
         out: dict[str, list] = {}
         for card_id in dict.fromkeys(str(i) for i in ids):
             card = get_card(card_id)
-            key = _same_card_key(card) if card is not None else ""
+            key = same_card_key(card) if card is not None else ""
             if key:
                 out.setdefault(key, []).append(card)
         return out

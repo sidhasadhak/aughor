@@ -216,6 +216,17 @@ describe("arranging by hand", () => {
     expect([id, note]).toEqual(["returns-1", "arranged by hand"]);
     expect(JSON.stringify(spec)).toContain("cafe0003");
   });
+
+  it("does not offer back a duplicate, and says which it left out and why", async () => {
+    api.getCockpit.mockResolvedValue({ ...READ, cards: [...READ.cards,
+      { ...card("dup00004", "Item Return Rate"), not_offered: "superseded by “Return rate”" }] });
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-arrange-open"));
+    const tray = screen.getByTestId("cockpit-tray");
+    expect(within(tray).getAllByRole("button").map(b => b.textContent)).toEqual(["+ Pinned for everyone"]);
+    expect(screen.getByTestId("cockpit-tray-withheld").textContent)
+      .toBe("Not offered: Item Return Rate — superseded by “Return rate”.");
+  });
 });
 
 describe("with no cockpits yet", () => {

@@ -485,3 +485,26 @@ def test_two_cards_of_one_approved_metric_are_one_card_whatever_their_titles(des
         card_store.upsert_card(card.model_copy(update={
             "provenance": card.provenance.model_copy(update={"metric": "return_rate"})}))
     assert len(versions.twin_cards([desk.rate, desk.net])) == 1
+
+
+def test_a_cockpit_does_not_offer_back_a_superseded_card_a_deprecated_metrics_or_a_copy(desk, monkeypatch):
+    """Removed "from all places" (the user, 2026-10-08): a duplicate taken off a cockpit is not offered
+    back by Arrange — and the cockpit says which and why."""
+    from types import SimpleNamespace as N
+    tag = uuid.uuid4().hex[:6]
+    copy = cards.place(desk.home, DashboardCard(id=f"copy{tag}", kind="kpi", title="Return rate", sql="SELECT 1"))
+    old = cards.place(desk.home, DashboardCard(id=f"old{tag}", kind="kpi", title="Item return rate", sql="SELECT 2"))
+    card_store.upsert_card(old.model_copy(update={"provenance": old.provenance.model_copy(
+        update={"superseded_by": desk.rate})}))
+    dep = cards.place(desk.home, DashboardCard(id=f"dep{tag}", kind="kpi", title="Gross margin rate", sql="SELECT 3"))
+    card_store.upsert_card(dep.model_copy(update={"provenance": dep.provenance.model_copy(
+        update={"metric": "gross_margin_rate", "metric_version": 1})}))
+    keep = cards.place(desk.home, DashboardCard(id=f"keep{tag}", kind="kpi", title="Units", sql="SELECT 4"))
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None, **k: [
+        N(name="gross_margin_rate", status="deprecated", connection=desk.connection)])
+
+    why = cards.not_offered(desk.home, cards.cards_of(desk.home), [desk.rate, desk.net])
+    assert why[copy.id] == "a copy of “Return rate”, already on this cockpit"
+    assert why[old.id] == "superseded by “Return rate”"
+    assert why[dep.id] == "made from gross_margin_rate, which was deprecated"
+    assert keep.id not in why and desk.rate not in why        # a card of its own, and a placed one

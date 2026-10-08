@@ -161,10 +161,12 @@ def read_cockpit(request: Request, cockpit_id: str, connection_id: str, preset: 
                                   workspace_id=workspace_id)
     if block is None:
         raise HTTPException(status_code=422, detail=why)
+    held = cards.cards_of(home)
+    withheld = cards.not_offered(home, held, kept.get("cards") or [])
     return {
         **home.as_params(),
         "cockpit": kept,
-        "cards": [_as_read(c, connection_id) for c in cards.cards_of(home)],
+        "cards": [{**_as_read(c, connection_id), "not_offered": withheld.get(c.id, "")} for c in held],
         "range": block,
         "ranges_on": ranges_on,
         "history": versions.history(home),

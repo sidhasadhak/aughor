@@ -15995,6 +15995,11 @@ export interface components {
              * @default
              */
             receipt_ref: string;
+            /**
+             * Superseded By
+             * @default
+             */
+            superseded_by: string;
         };
         /**
          * CardRefresh
@@ -19609,6 +19614,11 @@ export interface components {
              * @default
              */
             actor: string;
+            /**
+             * Approve Anyway
+             * @default false
+             */
+            approve_anyway: boolean;
             /**
              * Connection
              * @default *

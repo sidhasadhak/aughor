@@ -366,7 +366,11 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const drawn = kept && !kept.retired && kept.spec != null;
   const pinned = list.shared_cards + list.own_cards;
   const lines = new Map<string, CardLine>((data?.cards ?? []).map(c => [c.id, { title: c.title }]));
-  const unplaced = arranging ? (data?.cards ?? []).filter(c => !cardsPlaced(arranging).includes(c.id)) : [];
+  const notPlaced = arranging ? (data?.cards ?? []).filter(c => !cardsPlaced(arranging).includes(c.id)) : [];
+  // A duplicate is not offered back — superseded, from a deprecated metric, or a copy — and the
+  // tray says how many it left out and why, so nothing reads as lost.
+  const unplaced = notPlaced.filter(c => !c.not_offered);
+  const withheld = notPlaced.filter(c => c.not_offered);
 
   const noneYet = (
         <EmptyState icon="gauge" variant="inline"
@@ -520,6 +524,11 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                       </Button>
                     ))}
                   </div>
+                </div>
+              )}
+              {withheld.length > 0 && (
+                <div className="aug-fs-sm" data-testid="cockpit-tray-withheld" style={{ marginTop: 8, color: "var(--t3)" }}>
+                  Not offered: {withheld.map(c => `${c.title} — ${c.not_offered}`).join("; ")}.
                 </div>
               )}
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
