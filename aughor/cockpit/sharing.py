@@ -117,7 +117,7 @@ def shared_with(connection_id: str, user_id: str) -> list[dict]:
     out = []
     for row in Ledger.default().artifacts_of_kind(versions.KIND, conn_id=connection_id, limit=1000):
         key = str(row.get("natural_key") or "")
-        if not key.startswith(f"cockpit:person:{connection_id}:") or not versions._mine(row):
+        if not key.startswith(f"cockpit:person:{connection_id}:") or not versions.is_mine(row):
             continue
         payload = row["payload"]
         if payload.get("retired") or not payload.get("published_to") or not payload.get("spec"):
@@ -151,7 +151,7 @@ def copy_for(connection_id: str, owner: str, cockpit_id: str, *, reader: str, ap
     Returns ``{"kept": Kept, "cockpit_id", "title"}``; a refusal is in ``kept``."""
     from aughor.cockpit import cards as _cards
     from aughor.cockpit import versions
-    from aughor.cockpit.propose import _with_ids
+    from aughor.cockpit.propose import with_card_ids
     from aughor.dashboard.store import delete_card, upsert_card
     from aughor.kernel.errors import tolerate
 
@@ -189,7 +189,7 @@ def copy_for(connection_id: str, owner: str, cockpit_id: str, *, reader: str, ap
         return {"kept": versions.Kept(versions.FAILED, sentences=(f"The cockpit could not be copied: {exc}. Nothing was kept.",)),
                 "cockpit_id": "", "title": title}
 
-    kept = versions.keep(mine, _with_ids(spec, ids), approved_by=approved_by,
+    kept = versions.keep(mine, with_card_ids(spec, ids), approved_by=approved_by,
                          source=f'started from "{title}", published by {kept_src.get("published_by") or owner} (version {kept_src["version"]})',
                          written_by_model=False, stamps_are_ours=True,
                          came_from=[("copied_from", kept_src["artifact_id"], "a published cockpit")])

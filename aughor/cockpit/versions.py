@@ -96,6 +96,11 @@ def _mine(row: Optional[dict]) -> Optional[dict]:
     return row if isinstance(row.get("payload"), dict) else None
 
 
+def is_mine(row: Optional[dict]) -> bool:
+    """Whether a Ledger row is a cockpit version of this tenant's — the read every lister makes."""
+    return _mine(row) is not None
+
+
 def title_of(spec: Any) -> str:
     try:
         return str(spec["elements"][spec["root"]]["props"]["title"])

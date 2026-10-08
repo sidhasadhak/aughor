@@ -335,7 +335,7 @@ def _draft_cards(home: Home, schema: Optional[str], asked: Any,
 
 # ── the spec ─────────────────────────────────────────────────────────────────────────────────
 
-def _with_ids(spec: Any, ids: dict[str, str]) -> Any:
+def with_card_ids(spec: Any, ids: dict[str, str]) -> Any:
     """``spec`` with each new card's name replaced by the id it will be created with — where a
     ``Card`` places it, and where a condition reads its status."""
     if not ids or not isinstance(spec, dict) or not isinstance(spec.get("elements"), dict):
@@ -672,7 +672,7 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
     refusals.extend(card_refusals)
 
     ids = {c["key"]: c["id"] for c in made}
-    final = _with_ids(spec, ids) if spec is not None else None
+    final = with_card_ids(spec, ids) if spec is not None else None
     verdict = None
     if final is not None:
         refusals.extend(statics_written(live["spec"] if live else None, final, mode))
