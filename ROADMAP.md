@@ -13850,6 +13850,22 @@ the browser** · **measure the premise before building.**
     transportation, overhead, operating income and operating ratio; airline: operating revenue, operating
     expenses (fuel, labour, maintenance, airports), operating income; food delivery: gross order value, refunds,
     revenue (take), courier costs, contribution, marketing, EBITDA — then each one's drivers.
+    (g) **The Briefing's measured table, its segment breakdown and the early read come off** (asked with the four
+    metric blocks as options): they are the Metrics cockpit's, and the narrative cites the figures it needs. The
+    Key Metrics tiles and the hero's largest moves stay. Item 43 had kept the table on both pages.
+49. ✅ **DECIDED 2026-10-08 — the cockpit as a canvas, the Briefing as a reading**
+    (`docs/COCKPIT_CANVAS_2026-10-08.md`; the user: *"this makes briefing and the custom cockpit more like a canvas
+    on which user can place literally anything.. this is more of a product design decision that we need to really
+    think through"*). Asked with options, decided: (a) **the Cockpit is the canvas; the Briefing gets switches** —
+    a person shows, hides and orders the Briefing's sections and chooses the cockpit strip that rides with it, never
+    its content; the default Metrics cockpit stays the product's; (b) a person may place **text notes, images and
+    any finding from the ledger** — cards from other connections declined (one period over two data edges is two
+    periods); (c) **personal, plus publish to a group or role**, kept as a version under the publisher's name. The
+    (d) **every change can be asked for in natural language, except uploading an image and adding a text note** —
+    the existing proposal door (CT-5: the model proposes, the person keeps whole or not at all); a model arranges a
+    note or image, never writes one. The laws (a static thing says it is static; the platform never speaks a
+    person's words as its own; a send strips what was not measured) and the build order (B1 switches · B2 Note ·
+    B3 ledger findings · B4 Image · B5 publish) are in the doc. Nothing built yet.
 
 ---
 
