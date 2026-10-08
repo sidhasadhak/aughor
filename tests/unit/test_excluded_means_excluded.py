@@ -119,3 +119,19 @@ def test_a_connector_that_renders_its_own_schema_text_hands_it_out_without_them(
     assert "secrets" not in text and "ssn" not in text and "orders" in text
     assert db.execute("chat", "SELECT * FROM secrets").error.startswith("[EXCLUDED]")
     V._cache.pop(conn_id, None)
+
+
+def test_a_cached_result_for_a_turned_off_table_is_never_served():
+    """Found live 2026-10-08: the Cockpit measured Uber's three metrics from `ncr_ride_bookings` after it
+    was turned off — every statement was answered from the result cache, which sits in front of the door."""
+    from aughor.control_plane.contracts.execution import QueryResult
+    from aughor.db import matcache
+    conn_id = f"mc-{uuid.uuid4().hex[:8]}"
+    sql = "SELECT COUNT(*) FROM uber.rides"
+    matcache.put_cache(conn_id, sql, QueryResult(hypothesis_id="h", sql=sql, columns=["n"], rows=[[7]], row_count=1))
+    assert matcache.get_cached(conn_id, sql).rows == [[7]]
+    V.declare_exclusion(conn_id, "uber", "rides", "other", declared_by="user:amit")
+    assert matcache.get_cached(conn_id, sql) is None, "a turned-off table's cached rows were served"
+    assert V.withdraw_exclusion(conn_id, "uber", "rides")
+    assert matcache.get_cached(conn_id, sql).rows == [[7]]
+    V._cache.pop(conn_id, None)
