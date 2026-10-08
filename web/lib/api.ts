@@ -7216,7 +7216,11 @@ export interface FindingReask {
   domain: string;
   grain: string;
   measure: string;
-  how: "value" | "total" | "mean" | "";
+  /** "value": one row · "row": the labelled row the finding's statement names (`row`) ·
+   *  "total"/"mean": a series of dates over the range. */
+  how: "value" | "row" | "total" | "mean" | "";
+  /** The labels of the row the finding names ("Shipped"), when its rows are labelled. */
+  row?: string[] | null;
   current: number | null;
   previous: number | null;
   rel: number | null;

@@ -870,6 +870,10 @@ export function viewSql(view: FindingView, recorded: string, fig: RangeFigure | 
   return recorded;
 }
 
+/** The row a re-asked figure is read from, as a reader names it ("Shipped"); "" when the figure
+ *  is not one row's. */
+export const rowWords = (r: FindingReask | null | undefined): string => (r?.how === "row" && r.row?.length ? r.row.join(" · ") : "");
+
 /** A measure is named only when it IS a name: the re-ask reports whatever the finding's SQL called
  *  the column, and an anonymous alias ("f0_") tells a reader nothing. */
 const anonymous = (measure: string) => !measure.trim() || /^[a-z]*\d+_?$/i.test(measure.trim());
@@ -891,8 +895,16 @@ export function figureNote(view: FindingView, fig: RangeFigure | null | undefine
   const n     = current ? r.rows_current : r.rows_previous;
   const what  = anonymous(r.measure) ? "its figure" : r.measure;
   const tail  = current ? " The statement above is the finding as it was recorded, over all history." : "";
-  if (value === null || n === 0) return `For ${when}, the finding's query returns nothing to read a figure from.${tail}`;
   const shown = drawn != null && drawn < n ? ` The first ${drawn} are drawn.` : "";
+  const row   = rowWords(r);
+  if (row) {
+    const rows = n === 1 ? "one row" : `the ${n} rows below`;
+    if (n === 0) return `For ${when}, the finding's query returns no rows, so none for ${row}, the row the finding names.${tail}`;
+    if (value === null) return `For ${when}, the finding's query returns ${rows}, and none is ${row}, the row the finding names.${shown}${tail}`;
+    return `For ${when}, the finding's query returns ${rows}; ${fmtReask(value, r.measure)} is ${what} for ${row}, `
+      + `the row the finding names.${shown}${tail}`;
+  }
+  if (value === null || n === 0) return `For ${when}, the finding's query returns nothing to read a figure from.${tail}`;
   if (r.how === "value" || n === 1) {
     return `For ${when}, the finding's query returns one row, and ${what} is ${fmtReask(value, r.measure)}.${tail}`;
   }
@@ -1672,7 +1684,10 @@ function VerdictHero({
                        the ledger below (it was printing twice), so the link had nothing left to
                        jump to — and the tile already opens the same detail in place on click. */
                     <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.domain}</span>
+                      {/* Under a range the figure is one row's — "Shipped" — and the tile says whose. */}
+                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {rowWords(d.range?.reask) ? `${rowWords(d.range?.reask)} · ${d.domain}` : d.domain}
+                      </span>
                     </div>
                   }
                 />
@@ -1899,7 +1914,7 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
             </div>
             <div className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
               title={`${reask.grain} · ${reask.rows_current} row(s) in the range, ${reask.rows_previous} before`}>
-              {reask.rel !== null ? `${formatVariance(reask.rel, 0)} · ` : ""}{reask.how === "value" ? "" : `${reask.how} of `}{reask.measure} · for the range
+              {reask.rel !== null ? `${formatVariance(reask.rel, 0)} · ` : ""}{reask.how === "value" ? "" : reask.how === "row" ? `${rowWords(reask)} · ` : `${reask.how} of `}{reask.measure} · for the range
             </div>
           </>) : fig && (<>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 15, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -2984,7 +2999,7 @@ export function BriefingPanel({
           ...m,
           value: fmtReask(r.current, r.measure),
           secondary: r.previous !== null ? ` vs ${fmtReask(r.previous, r.measure)}` : undefined,
-          sublabel: r.how === "value" ? r.measure : `${r.how} of ${r.measure}`,
+          sublabel: r.how === "value" ? r.measure : r.how === "row" ? `${rowWords(r)} · ${r.measure}` : `${r.how} of ${r.measure}`,
           range: { reask: r, covers: reask.covers, comparedWith: reask.compared_with },
         },
       });
