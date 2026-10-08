@@ -2068,7 +2068,11 @@ export interface ExplorationStatus {
 // ── The exploration principles: each dataset's layer, off switch, maturity and budget (2026-10-08) ──
 
 /** One of the three maturity readings: a share 0–1, or null with the reason it does not apply. */
-export interface MaturityBar { share: number | null; note: string }
+export interface MaturityBar {
+  share: number | null; note: string;
+  /** It applies and has not been read yet — the number beside the bars is then withheld ("—"). */
+  unmeasured?: boolean;
+}
 export interface Maturity {
   structure: MaturityBar;
   questions: MaturityBar;

@@ -155,3 +155,14 @@ def test_a_budget_is_set_in_the_organisations_settings_and_the_connections(monke
     monkeypatch.setattr("aughor.orgsettings.load_org_settings", lambda: OrgSettings(exploration_monthly_tokens=900))
     monkeypatch.setattr("aughor.db.registry.get_connection_settings", lambda c: {"exploration_monthly_tokens": 0})
     assert B.limits("wh") == (900, None), "0 clears a connection's budget"
+
+
+def test_a_reading_that_applies_but_was_never_read_withholds_the_number():
+    """Measured live 2026-10-08: the Workspace's `amazon` read 100% — its structure learned, its questions
+    explored before the question list was kept, so only Structure was averaged."""
+    state = {"structure_learned": {"at": "x"}, "domain_coverage": {"Sales": ["trend"]}}
+    m = M.maturity(state, {}, [], layer="", explored_layers=BUSINESS)
+    assert m["questions"]["share"] is None and m["questions"].get("unmeasured")
+    assert m["percent"] is None
+    raw = M.maturity(state, {}, [], layer="raw", explored_layers=BUSINESS)
+    assert raw["percent"] == 100, "a reading that does not apply is left out, not withheld"

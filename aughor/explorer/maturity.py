@@ -33,8 +33,13 @@ STRUCTURE_STEPS = ("profiled", "null_meaning", "join_verification", "lifecycle_m
 _GRAIN_DAYS = {"day": 2, "week": 8, "month": 32, "quarter": 93, "year": 367}
 
 
-def _bar(share: Optional[float], note: str) -> dict:
-    return {"share": None if share is None else round(max(0.0, min(1.0, share)), 3), "note": note}
+def _bar(share: Optional[float], note: str, *, measured: bool = True) -> dict:
+    """One reading. ``share`` None with ``measured`` True means the reading does not apply (a raw dataset's
+    questions); with ``measured`` False it applies and has not been read yet — which the number says."""
+    out = {"share": None if share is None else round(max(0.0, min(1.0, share)), 3), "note": note}
+    if share is None and not measured:
+        out["unmeasured"] = True
+    return out
 
 
 def structure_bar(state: dict) -> dict:
@@ -81,7 +86,8 @@ def questions_bar(state: dict, program: dict, *, layer: str, explored_layers: fr
         total = int(total_by_table.get(bare) or 0)
         n = sum(1 for c in covered if str(c[1]).split(".")[-1].lower() == bare)
         if not total:
-            return _bar(None, "no question on its own") if total_by_table else _bar(None, "not measured yet")
+            return (_bar(None, "no question on its own") if total_by_table
+                    else _bar(None, "not measured yet", measured=False))
         return _bar(n / total, f"{min(n, total)} of {total} questions asked")
     if saturated(program):
         return _bar(1.0, "the last two runs found almost nothing new")
@@ -93,7 +99,7 @@ def questions_bar(state: dict, program: dict, *, layer: str, explored_layers: fr
             note += " — the rest wait for its layer to be set"
         return _bar(n / total, note)
     if state.get("domain_coverage"):
-        return _bar(None, "explored before the question list was kept — the next run measures it")
+        return _bar(None, "explored before the question list was kept — the next run measures it", measured=False)
     return _bar(0.0, "its questions wait for its layer to be set" if not layer else "not explored yet")
 
 
@@ -139,7 +145,11 @@ def time_bar(metrics: list, program: dict, *, table: str = "", now: Optional[dat
 
 
 def overall(bars: dict) -> Optional[int]:
-    """The number beside the bars: the mean of the readings that apply, as a percentage."""
+    """The number beside the bars: the mean of the readings that apply, as a percentage — or None when a
+    reading that applies has not been read yet: a dataset whose questions were never counted is not 100%
+    mature because its structure is."""
+    if any(b.get("unmeasured") for b in bars.values()):
+        return None
     shares = [b["share"] for b in bars.values() if b.get("share") is not None]
     return round(100 * sum(shares) / len(shares)) if shares else None
 
