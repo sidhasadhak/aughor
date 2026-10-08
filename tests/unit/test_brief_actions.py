@@ -23,14 +23,18 @@ class TestTheBestAction:
     def test_the_playbooks_best_play_by_learned_rate_when_no_investigation(self, monkeypatch):
         calls = {}
 
-        def retrieve(labels, limit=6, *, learned_rates=True, industry=None, **k):
-            calls.update(labels=labels, learned_rates=learned_rates, industry=industry, limit=limit)
+        def retrieve(labels, limit=6, *, learned_rates=True, industry=None, fit=False, **k):
+            calls.update(labels=labels, learned_rates=learned_rates, industry=industry, limit=limit, fit=fit)
             return [_play()]
         monkeypatch.setattr("aughor.playbook.retriever.retrieve_for_metric_and_phases", retrieve)
-        a = best_action_for({"angle": "returns", "domain": "ops", "_priority": "return rate"}, industry="retail")
+        a = best_action_for({"angle": "returns", "domain": "ops", "_priority": "return rate", "measures": ["return_rate"]}, industry="retail")
         assert a == {"kind": "play", "id": "p1", "text": "Pause the two lowest-margin carriers", "when": "return_rate above target",
                      "success_rate": 0.8, "executable": False, "why": "the playbook's best play for this finding, by learned success rate"}
-        assert calls == {"labels": ["return rate", "returns", "ops"], "learned_rates": True, "industry": "retail", "limit": 1}
+        # The finding's measures lead the labels, and a play must FIT them — name the finding's metric
+        # in full, or two of its tags — before its learned rate counts: eight citations once carried
+        # one proven play on a word their domain shared with its text (2026-10-09).
+        assert calls == {"labels": ["return_rate", "return rate", "returns", "ops"], "learned_rates": True, "industry": "retail",
+                         "limit": 1, "fit": True}
 
     def test_the_investigations_own_first_recommendation_wins_and_is_executable(self, monkeypatch):
         monkeypatch.setattr("aughor.db.history.get_investigation",
