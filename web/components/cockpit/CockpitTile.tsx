@@ -59,7 +59,8 @@ export function tileShape(cs: CardState): TileShape {
 export const WIDE: Record<TileShape, boolean> = { figure: false, trend: true, rows: true };
 
 export interface TileDoors {
-  onRemove: (id: string) => void;
+  /** Take the card off this cockpit. Absent where the reader may not change it — a strip, a published one. */
+  onRemove?: (id: string) => void;
   onRefresh: (id: string) => void;
   onOpenSource?: (iid: string) => void;
   onEvidence?: (iid: string) => void;
@@ -192,8 +193,10 @@ function Doors({ card, doors, onAlert, place }: { card: CockpitCard; doors: Tile
       )}
       <Button variant="ghost" size="icon-xs" aria-label="Refresh" title="Run this card again"
         onClick={() => doors.onRefresh(card.id)}><Icon name="refresh" /></Button>
-      <Button variant="ghost" size="icon-xs" aria-label="Take off this cockpit" title="Take it off this cockpit. The card is kept."
-        onClick={() => doors.onRemove(card.id)}><Icon name="close" /></Button>
+      {doors.onRemove && (
+        <Button variant="ghost" size="icon-xs" aria-label="Take off this cockpit" title="Take it off this cockpit. The card is kept."
+          onClick={() => doors.onRemove?.(card.id)}><Icon name="close" /></Button>
+      )}
     </div>
   );
 }

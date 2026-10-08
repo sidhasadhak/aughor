@@ -89,7 +89,13 @@ import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
 import { GroundedNumber, withGroundedNumbers } from "@/components/brief/GroundedNumber";
 import { BriefAskPanel } from "@/components/brief/BriefAskPanel";
+import { BriefingSections, HiddenSection } from "@/components/brief/BriefingSections";
+import { BriefingStrip } from "@/components/brief/BriefingStrip";
 import { NewCardComposer } from "@/components/brief/NewCardComposer";
+import { getMyPreferences, listCockpits, putMyPreference } from "@/lib/api";
+import {
+  DEFAULT_SECTIONS, normalizeSections, toggled, type BriefingSectionsPref, type CockpitChoice, type SectionId,
+} from "@/lib/briefingSections";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 
@@ -2354,6 +2360,38 @@ export function BriefingPanel({
   // no such tab and keeps the layer. Until the flags answer, and when they cannot, it is off.
   const [cockpitFlag, setCockpitFlag]       = useState(false);
   const cockpitsOn = cockpitFlag && !canvasId;
+  // The canvas (B1) — the Briefing's switches: which sections this person shows, in what order,
+  // and which cockpit of theirs rides with it. A preference, kept on the server; the content of
+  // a section is never theirs to change. Until the store answers, the product's order.
+  const [sections, setSections]             = useState<BriefingSectionsPref>(DEFAULT_SECTIONS);
+  const [sectionsOpen, setSectionsOpen]     = useState(false);
+  const [sectionsBusy, setSectionsBusy]     = useState(false);
+  const [myCockpits, setMyCockpits]         = useState<CockpitChoice[]>([]);
+  useEffect(() => {
+    let alive = true;
+    getMyPreferences().then(p => { if (alive) setSections(normalizeSections(p.preferences.briefing_sections)); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => {
+    if (!cockpitsOn) { setMyCockpits([]); return; }
+    let alive = true;
+    listCockpits(connectionId).then(l => {
+      if (alive && l) setMyCockpits(l.cockpits.filter(c => !c.retired).map(c => ({ id: c.cockpit_id, title: c.title || c.cockpit_id })));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [connectionId, cockpitsOn]);
+  const saveSections = useCallback(async (next: BriefingSectionsPref, said: string) => {
+    const before = sections;
+    setSections(next);
+    setSectionsBusy(true);
+    try {
+      await putMyPreference("briefing_sections", next);
+      toast.success(said);
+    } catch (e) {
+      setSections(before);
+      toast.error("Your Briefing's switches were not kept", { description: (e as Error).message.slice(0, 160) });
+    } finally { setSectionsBusy(false); }
+  }, [sections]);
   // The ask side panel. Closed by default — the brief is the page; asking is a mode
   // you enter, and an always-mounted panel would cost every reader ~420px of width.
   const [askOpen, setAskOpen]               = useState(false);
@@ -3023,10 +3061,17 @@ export function BriefingPanel({
           {/* PX-6 — the scheduled-delivery door (five wrappers, zero callers until now). */}
           <Button variant={showSchedule ? "secondary" : "ghost"} size="xs"
             onClick={() => setShowSchedule(s => !s)}>Schedule</Button>
+          {/* The canvas (B1) — the Briefing's switches: a person's own view of the platform's Briefing. */}
+          <Button variant={sectionsOpen ? "secondary" : "ghost"} size="xs" data-testid="briefing-sections-open"
+            aria-expanded={sectionsOpen} onClick={() => setSectionsOpen(s => !s)}>Sections</Button>
         </div>
       </div>
 
       {showSchedule && <BriefSchedule connId={connectionId} />}
+      {sectionsOpen && (
+        <BriefingSections pref={sections} onChange={(next, said) => void saveSections(next, said)}
+          cockpits={myCockpits} cockpitsOn={cockpitsOn} busy={sectionsBusy} />
+      )}
 
       {isEmpty ? (
         <BriefingEmpty
@@ -3040,8 +3085,38 @@ export function BriefingPanel({
           canvasId={canvasId}
         />
       ) : (
-        <>
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          {/* The canvas (B1): the sections in the person's order, each shown or hidden by their
+              switches. A hidden one leaves a line saying so. What each section HOLDS is the
+              platform's, written below exactly as before the switches. */}
+          {sections.sections.map(s => (s.on
+            ? <div key={s.id} data-testid={`briefing-section-${s.id}`}>{section(s.id)}</div>
+            : <HiddenSection key={s.id} id={s.id} onShow={() => void saveSections(toggled(sections, s.id, true), `Shown: ${s.id.replace("_", " ")}.`)} />))}
+        </div>
+      )}
 
+          </div>
+
+      {askOpen && (
+        <BriefAskPanel
+          connectionId={connectionId}
+          schema={schema}
+          canvasId={canvasId}
+          periodKey={rangeBlock?.key}
+          periodCovers={rangeBlock?.covers}
+          onClose={() => setAskOpen(false)}
+          onOpenInAsk={onInvestigate}
+        />
+      )}
+    </div>
+  );
+
+  /** One of the Briefing's sections, as the product writes it. */
+  function section(id: SectionId): ReactNode {
+    if (!briefing) return null;          // the sections are drawn only once the brief is read
+    switch (id) {
+      case "verdict": return (
+        <>
       {/* ── Verdict hero ── conclusion-first lede: the synthesized verdict + the top
           finding + proof stats + the primary action, ahead of the full prose. */}
       <VerdictHero
@@ -3110,29 +3185,31 @@ export function BriefingPanel({
           Below: what we know — every finding the platform has recorded, not only {rangeBlock.covers}.
         </div>
       )}
-
-      <div style={{ display: "flex", flexDirection: "column" as const, gap: 18, marginTop: 16 }}>
-        {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live; click a
+        </>
+      );
+      case "key_metrics": return (
+        /* ── Industry key metrics ── the vertical's north-star KPIs, computed live; click a
               card to expand its trend. Under the brief and above its findings. Renders a
-              define-CTA (not nothing) when none are set. */}
+              define-CTA (not nothing) when none are set. */
         <IndustryKpiStrip connectionId={connectionId} schema={schema} scopeKey={narrativeScope}
           rangeBlock={rangeBlock} note={scopeNote} />
-
-        {/* ── Findings ── the bulletin ledger: one scannable row per finding, chart on expand,
+      );
+      case "findings": return (
+        /* ── Findings ── the bulletin ledger: one scannable row per finding, chart on expand,
             impact-ordered; the scope chips (focus signals + patterns on one domain) share its
-            line. Keyed by scope so it resets on a scope change. */}
+            line. Keyed by scope so it resets on a scope change. */
         <FindingsLedger key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId} note={scopeNote} reask={reask}
           // Nothing to scope when the brief spans a single domain.
-          filter={briefing.domains.length > 1
-            ? <ScopeChips domains={briefing.domains} total={briefing.totalInsights} active={scopeDomain} onChange={setScope} />
+          filter={briefing!.domains.length > 1
+            ? <ScopeChips domains={briefing!.domains} total={briefing!.totalInsights} active={scopeDomain} onChange={setScope} />
             : undefined}
           onInvestigate={onInvestigate} onEvidence={openEvidence} scrollRef={scrollRef}
           vizConfigFor={vizConfigFor} onVizConfigChange={saveVizConfigFor} />
-      </div>
-
-      {/* ── Full synthesis ── the multi-paragraph narrative + interactive citations.
-          The hero above already carries the conclusion, so this card hides its header. */}
-      {(hasNarrative || narrativeLoading || narrativeError || periodNote) && (
+      );
+      case "synthesis": return (
+      /* ── Full synthesis ── the multi-paragraph narrative + interactive citations.
+          The hero above already carries the conclusion, so this card hides its header. */
+      (hasNarrative || narrativeLoading || narrativeError || periodNote) && (
         <div>
           <div className="aug-label" style={{ marginBottom: 10 }}>Full synthesis</div>
           {narrativeLoading && <SynthesisSkeleton />}
@@ -3155,7 +3232,7 @@ export function BriefingPanel({
               hideHeadline
               collapsible
               ctx={{
-                insightById:    briefing.insightById,
+                insightById:    briefing!.insightById,
                 connectionId,
                 canvasId,
                 schema,
@@ -3168,17 +3245,32 @@ export function BriefingPanel({
             />
           )}
         </div>
-      )}
-
+      )
+      );
+      case "cockpit": return (
+        <>
       {/* ── Standing layer ── the cockpit, marked off from this cycle's narrative by a
             single violet rule (violet = user/pinned, already the system's semantic). The layer
             is ALWAYS present now — even with no pins — so the cockpit teaches itself (empty
             state) instead of vanishing. The cycle's findings read above in the ledger; the
             cockpit is the surface the user curates, not a dump of the brief. */}
       {/* Arc CT-7 — with `cockpit.composed` on, a person's cockpits have a tab of their own
-          beside the Briefing, and this layer is not drawn here. Off, it is drawn as it always was. */}
+          beside the Briefing, and this layer is not drawn here. Off, it is drawn as it always was.
+          The canvas (B1): on, the cockpit of theirs they chose under Sections rides here, read for
+          the Briefing's range and arranged in its own tab. */}
+      {cockpitsOn && sections.strip && (
+        <div style={{ marginTop: 16, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
+          <BriefingStrip connectionId={connectionId} schema={schema} cockpitId={sections.strip}
+            range={rangeSelected ? range : null} />
+        </div>
+      )}
+      {cockpitsOn && !sections.strip && (
+        <div className="aug-fs-sm" data-testid="briefing-strip-none" style={{ color: "var(--t3)", borderTop: "1px solid var(--vio2)", paddingTop: 12 }}>
+          No cockpit rides with your Briefing. Choose one of yours under Sections; it is arranged in the Cockpit tab.
+        </div>
+      )}
       {!cockpitsOn && (
-        <div style={{ marginTop: 34, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
+        <div style={{ marginTop: 16, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
           <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 12 }}>
             Your cockpit
             {/* BR-9 — under a range each card runs cut to it and says what it covers (or that it
@@ -3192,15 +3284,14 @@ export function BriefingPanel({
             suggestions={movers.slice(0, 3).map(m => ({ insightId: m.insightId, value: m.value, label: m.sublabel || m.domain }))}
             onPinned={() => setPinnedRefresh(n => n + 1)}
             onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)}
-            onEvidence={(iid) => { const sig = briefing.insightById.get(iid); if (sig) openEvidence(sig.insight, sig.domain); }} />
+            onEvidence={(iid) => { const sig = briefing!.insightById.get(iid); if (sig) openEvidence(sig.insight, sig.domain); }} />
         </div>
       )}
-
-      {/* ── The findings now render as chart/table cards in the cockpit above (PinnedCards),
-          replacing the old text "Dashboard" section — one unified, arrangeable card surface. ── */}
-
-      {/* ── Top patterns ── a full-width row below the cockpit. */}
-      {hasPatterns && (
+        </>
+      );
+      case "patterns": return (
+      /* ── Top patterns ── a full-width row below the cockpit. */
+      hasPatterns && (
         <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 280px", minWidth: 240 }}>
             <div className="aug-label" style={{ marginBottom: 10 }}>Top Patterns</div>
@@ -3211,23 +3302,8 @@ export function BriefingPanel({
             </div>
           </div>
         </div>
-      )}
-    </>
-  )}
-
-          </div>
-
-      {askOpen && (
-        <BriefAskPanel
-          connectionId={connectionId}
-          schema={schema}
-          canvasId={canvasId}
-          periodKey={rangeBlock?.key}
-          periodCovers={rangeBlock?.covers}
-          onClose={() => setAskOpen(false)}
-          onOpenInAsk={onInvestigate}
-        />
-      )}
-    </div>
-  );
+      )
+      );
+    }
+  }
 }
