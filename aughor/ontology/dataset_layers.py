@@ -123,6 +123,11 @@ _LOADER_COLUMNS = {"_loaded_at", "_ingested_at", "_file_name", "_source_file", "
 _KEYISH = re.compile(r"(^id$|_id$|^code$|_code$|_key$|^key$|^name$|_name$|^label$|_label$|"
                      r"^description$|_description$|_desc$|^value$)", re.I)
 _TEXT_TYPES = re.compile(r"char|text|string|varchar|utf8", re.I)
+#: Column names that hold a number or a date — text there is a value a loader landed untyped. A table of
+#: names and codes is all text legitimately; a raw landing table has text where numbers and dates belong.
+_TYPED_WORDS = {"date", "at", "on", "time", "timestamp", "ts", "amount", "price", "qty", "quantity", "count",
+                "total", "cost", "revenue", "rate", "pct", "percent", "number", "num", "weight", "score",
+                "balance", "dt"}
 
 #: Weights: lineage is what the warehouse's own builders declared; a prefix or suffix is a convention
 #: somebody chose; a whole word is a hint.
@@ -165,8 +170,8 @@ def name_signs(name: str, *, level: str) -> list[Sign]:
 
 
 def column_signs(columns: Iterable[tuple[str, str]]) -> list[Sign]:
-    """What a table's COLUMNS say: loader columns or every column text → raw; two to four
-    columns, all keys, codes or labels → reference."""
+    """What a table's COLUMNS say: loader columns, or every column text where numbers and dates belong →
+    raw; two to four columns, all keys, codes or labels → reference."""
     cols = [(str(n or ""), str(t or "")) for n, t in columns if str(n or "").strip()]
     if not cols:
         return []
@@ -174,8 +179,11 @@ def column_signs(columns: Iterable[tuple[str, str]]) -> list[Sign]:
     loader = [n for n, _ in cols if n.lower() in _LOADER_COLUMNS or n.lower().startswith(_LOADER_PREFIXES)]
     if loader:
         out.append(Sign("raw", _W_COLUMNS + 1, f"it carries the loader column `{loader[0]}`"))
-    elif len(cols) >= 3 and all(_TEXT_TYPES.search(t) for _, t in cols if t) and all(t for _, t in cols):
-        out.append(Sign("raw", _W_COLUMNS, f"all {len(cols)} of its columns are text"))
+    elif len(cols) >= 3 and all(t and _TEXT_TYPES.search(t) for _, t in cols):
+        typed = [n for n, _ in cols if set(name_words(n)) & _TYPED_WORDS]
+        if typed:
+            out.append(Sign("raw", _W_COLUMNS, f"all {len(cols)} of its columns are text, "
+                                               f"`{'`, `'.join(typed[:2])}` included"))
     if 2 <= len(cols) <= 4 and all(_KEYISH.search(n) for n, _ in cols):
         out.append(Sign("reference", _W_COLUMNS, f"its {len(cols)} columns are all keys, codes or labels"))
     return out

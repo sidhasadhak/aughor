@@ -47,8 +47,12 @@ def test_a_tables_prefix_suffix_and_columns_say_its_layer():
     assert L.propose_table("stg_orders").layer == "raw"
     loaded = L.propose_table("orders", [("id", "INTEGER"), ("_fivetran_synced", "TIMESTAMP")])
     assert loaded.layer == "raw" and "_fivetran_synced" in loaded.evidence[0]
-    texts = L.propose_table("events", [("a", "VARCHAR"), ("b", "VARCHAR"), ("c", "TEXT")])
-    assert texts.layer == "raw" and "text" in texts.evidence[0]
+    texts = L.propose_table("events", [("event_id", "VARCHAR"), ("amount", "VARCHAR"), ("created_at", "TEXT")])
+    assert texts.layer == "raw" and "`amount`, `created_at` included" in texts.evidence[0]
+    # a table of names and codes is all text legitimately (LuxExperience's brands, measured 2026-10-08)
+    names = L.propose_table("brands", [("brand_id", "VARCHAR"), ("name", "VARCHAR"), ("country", "VARCHAR"),
+                                       ("segment", "VARCHAR"), ("website", "VARCHAR")])
+    assert names.layer == ""
     narrow = L.propose_table("country", [("country_code", "VARCHAR"), ("country_name", "VARCHAR")])
     assert narrow.layer == "reference"
 
