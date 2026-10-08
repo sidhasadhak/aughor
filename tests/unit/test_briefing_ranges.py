@@ -610,3 +610,20 @@ def test_a_flows_earlier_ranges_are_not_said_to_be_read_at_one_age(con, approved
     assert [p["settling"] for p in seen["series"]] == [False] * 7 + [False]
     young, _ = ranges.resolve_range(start=date(2026, 9, 17), end=date(2026, 9, 24), today=SEP26, lag_days=13)
     assert [p["settling"] for p in ranges.metric_trend("c1", young, "revenue", runner=_runner(con))["series"]][-2:] == [False, True]
+
+
+def test_a_north_star_whose_definition_was_deprecated_is_not_asked_for_again(con, approved):
+    """theLook's profile names Item Return Rate, deprecated as a second name for Return rate: "approve
+    one" would ask for the duplicate back (2026-10-08)."""
+    from aughor.business_profile.models import NorthStarMetric
+    from aughor.semantic.metrics import get_metric, save_metric
+    aov = get_metric("aov", connection_id="c1")
+    save_metric(aov.model_copy(update={"status": "deprecated"}))
+    stars = [NorthStarMetric(name=n, definition="-", maps_to="orders", why_it_matters="-", unit_or_range="$",
+                             chart_sql="") for n in ("AOV", "Gross margin")]
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    with _runner(con)() as (run_sql, dialect):
+        got = ranges.measure_range("c1", spec, run_sql=run_sql, dialect=dialect, north_stars=stars)
+    why = {u["name"]: u["reason"] for u in got["unmeasured"]}
+    assert why["AOV"] == "its definition was deprecated, so it is not measured under this name"
+    assert why["Gross margin"].startswith("no approved definition")

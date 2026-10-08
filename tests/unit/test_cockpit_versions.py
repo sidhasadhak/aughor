@@ -453,3 +453,35 @@ def test_a_card_written_before_this_reads_with_no_metric(desk):
     old = card_store.get_card(desk.rate)
     assert (old.provenance.origin_finding_id, old.provenance.receipt_ref) == ("f_9", "r_1")
     assert (old.provenance.metric, old.provenance.metric_version) == ("", 0)
+
+
+# ── one card once (2026-10-08) ─────────────────────────────────────────────────────────────
+
+def _copy_of_rate(desk: Desk) -> None:
+    """The desk's second card becomes a copy of its first: the same kind, title and query."""
+    card_store.upsert_card(card_store.get_card(desk.net).model_copy(update={"title": "Return rate"}))
+
+
+@needs_rules
+def test_a_copy_of_a_card_is_refused_and_nothing_is_kept(desk):
+    """The Executive Cockpit carried Revenue and Gross Margin Rate twice — copies made by a later
+    draft — and nothing refused them."""
+    _copy_of_rate(desk)
+    out = desk.keep()
+    assert out.status == versions.REFUSED, said(out)
+    assert '"Return rate" would be on this cockpit 2 times' in said(out) and desk.rate in said(out)
+    assert versions.latest(desk.home) is None
+
+
+def test_copies_a_cockpit_already_had_are_not_refused_again(desk):
+    _copy_of_rate(desk)
+    assert versions.twin_cards([desk.rate, desk.net], before=[desk.rate, desk.net]) == []
+    assert len(versions.twin_cards([desk.rate, desk.net], before=[desk.rate])) == 1
+
+
+def test_two_cards_of_one_approved_metric_are_one_card_whatever_their_titles(desk):
+    for cid in (desk.rate, desk.net):
+        card = card_store.get_card(cid)
+        card_store.upsert_card(card.model_copy(update={
+            "provenance": card.provenance.model_copy(update={"metric": "return_rate"})}))
+    assert len(versions.twin_cards([desk.rate, desk.net])) == 1

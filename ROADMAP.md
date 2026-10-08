@@ -13833,6 +13833,14 @@ the browser** · **measure the premise before building.**
     then read gross sales, discounts and returns, net sales, cost of goods sold, gross profit, fulfilment,
     marketing, contribution, operating expenses, profit — then volume, rates and operations — each table headed
     by its lines. Retail / E-commerce first; the other industries keep the shared backbone until theirs are written.
+    (d) **One measure, one approved definition** (the user: "Why should we have duplicates?"). theLook had approved
+    Return rate and Item Return Rate, and Gross Margin % and Gross Margin Rate — one figure each under two names,
+    because the only check compared names — and the Executive Cockpit carried copies. Item Return Rate and Gross
+    Margin Rate were deprecated (history kept) and two copy cards taken off (version 5). Approval now measures a
+    definition against the approved ones over the same tables: the same figure (or ×100) in each of the last six
+    months is refused with the other's name, unless the person approves it anyway, which the audit records
+    (`semantic/metric_twins.py`). A cockpit keep that adds a second copy of a card — the same approved metric,
+    or the same kind, title and query — is refused.
 
 ---
 

@@ -1267,13 +1267,33 @@ export async function deleteMetric(name: string, connection: string, schema?: st
 export async function transitionMetric(name: string, action: string, connection?: string,
                                        schema?: string): Promise<{ metric: Metric; audit: MetricAuditEntry }> {
   // No actor: the transition is the signed-in person's, stamped by the server (2026-10-07).
-  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/transition`, {
+  const post = (anyway: boolean) => fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/transition`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, ...(connection ? { connection } : {}), ...(schema ? { schema_name: schema } : {}) }),
+    body: JSON.stringify({ action, ...(connection ? { connection } : {}), ...(schema ? { schema_name: schema } : {}),
+      ...(anyway ? { approve_anyway: true } : {}) }),
   });
+  let res = await post(false);
+  // An approval of a definition that measures exactly what an approved one does is refused with the
+  // other's name (2026-10-08); only the person's yes approves it anyway, and the audit says so.
+  if (res.status === 409) {
+    const body = await res.clone().json().catch(() => ({}));
+    const d = (body as { detail?: { reason?: string; message?: string } })?.detail;
+    if (d?.reason === "same_as_approved") {
+      const message = d.message || "This measures exactly what an approved metric measures";
+      if (!askToApproveTwin(message)) throw new Error(`${message}.`);
+      res = await post(true);
+    }
+  }
   if (!res.ok) throw await refused(res, "Changing the metric's state");
   return res.json();
 }
+
+/** The question asked when an approval would make a second definition of one measure. Replaceable (tests). */
+export let askToApproveTwin = (message: string): boolean =>
+  typeof window !== "undefined" && typeof window.confirm === "function"
+    ? window.confirm(`${message}.\n\nApprove it anyway? The choice is recorded under your name.`)
+    : false;
+export function setApproveTwinQuestion(fn: (message: string) => boolean): void { askToApproveTwin = fn; }
 
 /** A3 — one section of the definition report. `outcome` travels as a WORD on purpose:
  *  "clean" (checked, nothing found) and "unavailable" (could not check) are different answers,

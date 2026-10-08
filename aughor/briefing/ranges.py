@@ -466,6 +466,12 @@ def governed_metrics(conn_id: str, schema: Optional[str] = None) -> list:
                    order, statement)
 
 
+def _deprecated(conn_id: str, schema: Optional[str] = None) -> list:
+    from aughor.semantic.metrics import list_metrics
+    return [m for m in list_metrics(connection_id=conn_id, schema_name=schema or None)
+            if m.status == "deprecated" and m.connection == conn_id]
+
+
 def statement_lines(conn_id: str) -> Callable[[Any], Optional[dict]]:
     """The income-statement line a governed metric reads on, as ``{"line", "label"}`` — or None for
     every metric when the connection's industry declares no statement."""
@@ -705,11 +711,15 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
                                       "raised, not a definition")})
     # `seen` reads the WHOLE governed set, not the capped slice, for the same reason.
     seen = {_norm(m.name) for m in governed} | {_norm(m.label) for m in governed}
+    # A north star whose definition was deprecated — theLook's Item Return Rate, a second name for
+    # Return rate (2026-10-08) — is not missing one: "approve one" would ask for the duplicate back.
+    retired = {_norm(x) for m in _deprecated(conn_id, schema) for x in (m.name, m.label)}
     for ns in north_stars or []:
         ns_name = ns.get("name") if isinstance(ns, dict) else getattr(ns, "name", "")
         if ns_name and _norm(ns_name) not in seen:
-            unmeasured.append({"name": ns_name, "reason": "no approved definition; approve one in the "
-                                                          "Semantic Layer to measure it"})
+            unmeasured.append({"name": ns_name, "reason": (
+                "its definition was deprecated, so it is not measured under this name" if _norm(ns_name) in retired
+                else "no approved definition; approve one in the Semantic Layer to measure it")})
     return {"measured": measured, "unmeasured": unmeasured}
 
 
