@@ -135,3 +135,16 @@ def test_a_cached_result_for_a_turned_off_table_is_never_served():
     assert V.withdraw_exclusion(conn_id, "uber", "rides")
     assert matcache.get_cached(conn_id, sql).rows == [[7]]
     V._cache.pop(conn_id, None)
+
+
+def test_a_metric_reading_a_turned_off_table_says_so_whole_never_that_its_query_failed():
+    from datetime import date
+    from types import SimpleNamespace
+
+    from aughor.semantic import metric_time as mt
+    m = SimpleNamespace(sql="SUM(amount)", tables=["uber.rides"], time_kind="flow", time_column="uber.rides.day",
+                        until_column="", outcome_column="", filters=[])
+    why = "[EXCLUDED] uber.rides is turned off for analysis — it is excluded (other, by amit). Turn it back on in the Catalog to use it."
+    rows, said = mt.run_measure(m, [mt.Window("current", date(2026, 1, 1), date(2026, 1, 2))],
+                                lambda sql: ([], [], why))
+    assert rows == [] and said.startswith("uber.rides is turned off") and said.endswith("to use it.")
