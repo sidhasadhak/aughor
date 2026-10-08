@@ -169,9 +169,9 @@ def test_a_figure_from_a_table_that_has_not_settled_is_provisional_whatever_its_
 def test_a_move_on_a_thin_comparison_is_too_few_to_call(con, revenue):
     """theLook's Day, 2026-09-26: Shorts 7 → 31 led the narrative on a comparison of 7 rows."""
     # the comparison window keeps five 'north' orders; the range keeps its 400
-    con.execute("DELETE FROM orders WHERE region = 'north' AND created_at >= TIMESTAMP '2026-08-03' "
-                "AND created_at < TIMESTAMP '2026-08-13'")
-    con.execute("INSERT INTO orders SELECT TIMESTAMP '2026-08-05 09:00', 'north', 10.0, 'done', NULL "
+    con.execute("DELETE FROM orders WHERE region = 'north' AND created_at >= TIMESTAMP '2026-08-07' "
+                "AND created_at < TIMESTAMP '2026-08-17'")
+    con.execute("INSERT INTO orders SELECT TIMESTAMP '2026-08-09 09:00', 'north', 10.0, 'done', NULL "
                 "FROM range(5)")
     spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
     got = recipes.what_moved([revenue], spec, _run(con), dialect="duckdb", profile_entry=PROFILE)

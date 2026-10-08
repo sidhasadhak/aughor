@@ -27,7 +27,7 @@ can say which part of the statement it is.
 from __future__ import annotations
 
 import re
-from typing import Iterable, Optional, Sequence, TypeVar
+from typing import Any, Iterable, Optional, Sequence, TypeVar
 
 #: The backbone, top to bottom. An industry's `reading_order` names one of these per entry.
 KINDS: tuple[str, ...] = ("sales", "volume", "rate", "margin", "cost", "operations", "profit")
@@ -57,41 +57,60 @@ _WORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 #: The lines of an income statement, top to bottom, then what drives it — the words a table shows.
-#: An industry's `statement` orders the ones it uses.
+#: An industry's `statement` orders the ones it uses, and may name a line in its own words
+#: (``{"line": "cogs", "label": "Cost of revenue"}``): SaaS calls it hosting and support, an airline
+#: fuel, labour and airports.
 STATEMENT_LINES: dict[str, str] = {
     "gross_sales": "Gross sales", "deductions": "Discounts and returns", "net_sales": "Net sales",
     "cogs": "Cost of goods sold", "gross_profit": "Gross profit", "fulfilment": "Fulfilment and payment",
-    "marketing": "Marketing", "contribution": "Contribution", "opex": "Operating expenses",
-    "profit": "Profit", "volume": "Volume", "rate": "Rates and averages", "operations": "Operations",
+    "marketing": "Marketing", "contribution": "Contribution", "rd": "Research and development",
+    "opex": "Operating expenses", "profit": "Profit", "volume": "Volume", "rate": "Rates and averages",
+    "operations": "Operations",
 }
 
 #: Words that place a metric on a statement line. Checked in THIS order: "Return on Ad Spend" is
 #: marketing before "return" makes it a deduction; "Gross Margin Rate" a gross profit before "rate"
-#: makes it a ratio; "Net Merchandise Revenue" net sales before "revenue" makes it gross; and a
-#: "Ship-to-Delivery Lead Time" an operations figure before "ship" makes it a fulfilment cost.
+#: makes it a ratio; "Net Merchandise Revenue" net sales before "revenue" makes it gross, while "Net
+#: Revenue Retention" is a rate before either; a unit figure — "Cost per Mile", CASM — is a rate before
+#: "cost" makes it a cost; and a "Ship-to-Delivery Lead Time" an operations figure before "ship" makes
+#: it a fulfilment cost.
 _STATEMENT_WORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("contribution", ("contribution",)),
     ("gross_profit", ("gross margin", "gross profit", "product margin", "margin")),
-    ("profit", ("net profit", "net income", "operating income", "operating profit", "ebitda", "ebit",
-                "earnings", "profit")),
+    ("profit", ("net profit", "net income", "operating income", "operating profit", "operating ratio",
+                "ebitda", "ebit", "earnings", "profit")),
+    ("rate", ("revenue retention", "dollar retention", "nrr", "ndr", "grr")),
     ("net_sales", ("net revenue", "net sales", "net merchandise")),
     ("marketing", ("return on ad spend", "roas", "ad spend", "advertising", "marketing", "cac",
                    "acquisition cost", "cost per acquisition", "cpa", "cpc", "cpm")),
+    ("rate", ("cost per", "revenue per", "per available", "casm", "rasm", "prasm", "trasm", "yield",
+              "load factor", "take rate", "payback")),
+    ("gross_sales", ("passenger revenue", "freight revenue", "cargo revenue", "ancillary revenue",
+                     "subscription revenue", "surcharge")),
     ("deductions", ("discount", "discounts", "refund", "refunds", "return", "returns", "cancellation",
                     "cancellations", "cancel", "chargeback", "chargebacks", "allowance")),
-    ("operations", ("lead time", "delivery time", "transit", "dwell", "cycle time", "downtime",
-                    "utilization", "days", "hours")),
-    ("fulfilment", ("shipping", "fulfilment", "fulfillment", "freight", "postage", "packaging",
-                    "payment fee", "payment fees", "processing fee", "transaction fee", "marketplace fee",
-                    "3pl", "warehousing")),
-    ("cogs", ("cogs", "cost of goods", "cost of sales", "landed cost", "product cost", "unit cost", "cost")),
-    ("opex", ("operating expense", "operating expenses", "opex", "overhead", "salaries", "payroll", "rent",
-              "expense", "expenses")),
-    ("rate", ("average", "avg", "aov", "per ", "conversion", "repeat", "retention", "sell through",
-              "rate", "ratio", "share", "yield", "frequency", "arpu", "arpa", "turnover", "turns")),
-    ("gross_sales", ("revenue", "sales", "gmv", "gross merchandise", "bookings")),
+    ("operations", ("lead time", "delivery time", "transit", "dwell", "cycle time", "takt", "downtime",
+                    "utilization", "on time", "otp", "otif", "uptime", "days", "hours")),
+    ("fulfilment", ("shipping", "fulfilment", "fulfillment", "postage", "packaging", "payment fee",
+                    "payment fees", "processing fee", "transaction fee", "marketplace fee", "3pl",
+                    "warehousing", "courier", "rider", "dasher", "last mile", "delivery cost")),
+    ("rd", ("r&d", "r d", "research", "engineering", "product development")),
+    ("cogs", ("cogs", "cost of goods", "cost of sales", "cost of revenue", "cost of transportation",
+              "landed cost", "product cost", "unit cost", "hosting", "infrastructure", "fuel",
+              "direct material", "materials", "direct labor", "direct labour", "manufacturing overhead",
+              "linehaul", "purchased transportation", "driver pay", "driver wages", "maintenance",
+              "landing fees", "cost")),
+    ("opex", ("sg&a", "sg a", "g&a", "g a", "general and administrative", "operating expense",
+              "operating expenses", "opex", "overhead", "salaries", "payroll", "rent", "expense", "expenses")),
+    ("rate", ("average", "avg", "aov", "per ", "conversion", "repeat", "retention", "churn",
+              "sell through", "rate", "ratio", "share", "frequency", "arpu", "arpa", "ltv", "lifetime value",
+              "turnover", "turns", "oee", "first pass")),
+    ("gross_sales", ("revenue", "sales", "gmv", "gross merchandise", "gross order value", "gov", "bookings",
+                     "arr", "mrr", "recurring")),
     ("volume", ("orders", "order count", "units", "items sold", "transactions", "customers", "users",
-                "accounts", "sessions", "visits", "shipments", "volume", "count", "number of")),
+                "accounts", "logos", "subscribers", "seats", "sessions", "visits", "shipments", "loads",
+                "deliveries", "miles", "tonnage", "passengers", "pax", "flights", "departures", "rpk", "rpm",
+                "ask", "asm", "throughput", "output", "volume", "count", "number of")),
 )
 
 
@@ -143,14 +162,27 @@ def _declared(order: Sequence[dict], name: str, label: str,
 T = TypeVar("T")
 
 
-def _lines(statement: Sequence[str]) -> dict[str, int]:
+def line_id(entry: Any) -> str:
+    """A statement entry's line: the id itself, or a ``{"line", "label"}`` entry's."""
+    return str(entry.get("line") if isinstance(entry, dict) else entry or "")
+
+
+def line_label(line: str, statement: Sequence[Any] = ()) -> str:
+    """The words a line is shown in: the industry's own, else the shared ones."""
+    for entry in statement:
+        if isinstance(entry, dict) and line_id(entry) == line and entry.get("label"):
+            return str(entry["label"])
+    return STATEMENT_LINES.get(line, line)
+
+
+def _lines(statement: Sequence[Any]) -> dict[str, int]:
     """An industry's statement as line → rank, keeping only lines the platform knows."""
-    known = [line for line in statement if line in STATEMENT_LINES]
+    known = [line_id(e) for e in statement if line_id(e) in STATEMENT_LINES]
     return {line: i for i, line in enumerate(dict.fromkeys(known))}
 
 
 def line_of(name: str, label: str, industry_order: Sequence[dict] = (),
-            statement: Sequence[str] = ()) -> Optional[str]:
+            statement: Sequence[Any] = ()) -> Optional[str]:
     """The statement line a metric reads on — the industry's declared one, else its words — or None
     when the industry declares no statement (or the metric's name places it on no line it has)."""
     lines = _lines(statement)
@@ -162,7 +194,7 @@ def line_of(name: str, label: str, industry_order: Sequence[dict] = (),
 
 
 def ordered(metrics: Iterable[T], industry_order: Sequence[dict] = (),
-            statement: Sequence[str] = ()) -> list[T]:
+            statement: Sequence[Any] = ()) -> list[T]:
     """``metrics`` in reading order. Each item needs ``name`` and ``label`` attributes (a
     governed metric). Stable: equal keys keep their incoming order. With ``statement``, the
     industry's income statement is the order; a metric on no line of it sits after the statement,
@@ -192,7 +224,7 @@ def industry_order(connection_id: str) -> list[dict]:
     return industry_reading(connection_id)[0]
 
 
-def industry_reading(connection_id: str) -> tuple[list[dict], list[str]]:
+def industry_reading(connection_id: str) -> tuple[list[dict], list]:
     """The industry's `reading_order` and its `statement` (its income statement's lines, in order;
     [] when it declares none). Best-effort: a profile that cannot be read leaves the words to place
     every metric."""
@@ -203,7 +235,7 @@ def industry_reading(connection_id: str) -> tuple[list[dict], list[str]]:
             return [], []
         kb = match_industry(scope) or {}
         return ([e for e in (kb.get("reading_order") or []) if isinstance(e, dict)],
-                [str(x) for x in (kb.get("statement") or []) if isinstance(x, str)])
+                [x for x in (kb.get("statement") or []) if isinstance(x, (str, dict))])
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "reading order falls back to the words in each metric's name",

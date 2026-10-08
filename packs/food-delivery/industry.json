@@ -126,20 +126,24 @@
       "needs_concepts": ["delivery offers / dispatches", "offer outcome (accepted / declined / expired)", "couriers"]
     }
   ],
+  "statement": [{"line": "gross_sales", "label": "Gross order value"}, {"line": "deductions", "label": "Refunds and promotions"}, {"line": "net_sales", "label": "Revenue (take)"}, {"line": "fulfilment", "label": "Courier and delivery costs"}, {"line": "contribution", "label": "Contribution"}, {"line": "marketing", "label": "Sales and marketing"}, "opex", {"line": "profit", "label": "Adjusted EBITDA and profit"}, {"line": "volume", "label": "Orders and active users"}, {"line": "rate", "label": "Take rate, frequency and order value"}, {"line": "operations", "label": "Delivery"}],
   "reading_order": [
-    {"metric": "Gross Merchandise Value", "aliases": ["GMV"], "kind": "sales"},
-    {"metric": "Revenue", "aliases": ["net revenue"], "kind": "sales"},
+    {"metric": "Gross Merchandise Value", "aliases": ["GMV", "gross order value", "GOV"], "kind": "gross_sales"},
+    {"metric": "Refunds", "aliases": ["promotions", "discounts", "credits"], "kind": "deductions"},
+    {"metric": "Revenue", "aliases": ["net revenue"], "kind": "net_sales"},
+    {"metric": "Courier Cost", "aliases": ["delivery cost", "rider cost", "dasher pay"], "kind": "fulfilment"},
+    {"metric": "Contribution Margin", "aliases": ["contribution profit", "contribution per order", "gross margin"], "kind": "contribution"},
+    {"metric": "Sales and Marketing", "aliases": ["marketing spend", "CAC"], "kind": "marketing"},
+    {"metric": "Net Profit", "aliases": ["operating profit", "EBITDA", "adjusted EBITDA"], "kind": "profit"},
     {"metric": "Orders", "aliases": ["order count"], "kind": "volume"},
     {"metric": "Active Users", "aliases": ["active customers"], "kind": "volume"},
+    {"metric": "Take Rate", "aliases": ["commission rate"], "kind": "rate"},
     {"metric": "Average Order Value", "aliases": ["AOV", "basket size"], "kind": "rate"},
     {"metric": "Orders per Active User", "aliases": ["order frequency", "purchase frequency"], "kind": "rate"},
-    {"metric": "Take Rate", "aliases": ["commission rate"], "kind": "rate"},
     {"metric": "Retention Rate", "aliases": ["repeat rate", "cohort retention"], "kind": "rate"},
     {"metric": "Courier Acceptance Rate", "aliases": ["acceptance rate"], "kind": "rate"},
-    {"metric": "Contribution Margin", "aliases": ["gross margin"], "kind": "margin"},
-    {"metric": "Cancellation Rate", "aliases": ["cancel rate", "failed order rate"], "kind": "cost"},
+    {"metric": "Cancellation Rate", "aliases": ["cancel rate", "failed order rate"], "kind": "rate"},
     {"metric": "Delivery Time", "aliases": ["average delivery time", "order to door time"], "kind": "operations"},
-    {"metric": "Courier Utilization", "aliases": ["deliveries per online hour"], "kind": "operations"},
-    {"metric": "Net Profit", "aliases": ["operating profit", "EBITDA"], "kind": "profit"}
+    {"metric": "Courier Utilization", "aliases": ["deliveries per online hour"], "kind": "operations"}
   ]
 }

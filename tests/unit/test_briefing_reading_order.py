@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace as N
 
+import pytest
+
 from aughor.briefing import reading_order as RO
 
 PACKS = Path(__file__).resolve().parents[2] / "packs"
@@ -103,10 +105,11 @@ def test_every_shipped_industry_order_names_a_known_kind():
         pack = json.loads(f.read_text(encoding="utf-8"))
         order, statement = pack.get("reading_order"), pack.get("statement")
         assert order, f"{f.parent.name} declares no reading order"
+        lines = [RO.line_id(x) for x in statement or []]
         if statement:
-            assert all(line in RO.STATEMENT_LINES for line in statement), (f.parent.name, statement)
+            assert all(line in RO.STATEMENT_LINES for line in lines), (f.parent.name, statement)
         for e in order:
-            assert e["kind"] in (statement or RO.KINDS) and e["metric"], (f.parent.name, e)
+            assert e["kind"] in (lines or RO.KINDS) and e["metric"], (f.parent.name, e)
 
 
 def test_the_cap_keeps_the_headline_end(monkeypatch):
@@ -119,3 +122,66 @@ def test_the_cap_keeps_the_headline_end(monkeypatch):
     monkeypatch.setattr(RO, "industry_reading", lambda conn_id: ([], []))
     got = R.governed_metrics("c1")
     assert got[0].name == "revenue" and len(got[:R.MAX_METRICS]) == R.MAX_METRICS
+
+
+# ── every industry's income statement (2026-10-08: SaaS, manufacturing, logistics, airline, delivery) ──
+
+STATEMENT_PACKS = sorted(f.parent.name for f in PACKS.glob("*/industry.json")
+                         if json.loads(f.read_text(encoding="utf-8")).get("statement"))
+
+
+def test_every_industry_with_a_reading_order_reads_as_an_income_statement():
+    with_order = sorted(f.parent.name for f in PACKS.glob("*/industry.json")
+                        if json.loads(f.read_text(encoding="utf-8")).get("reading_order"))
+    assert STATEMENT_PACKS == with_order == ["airline", "food-delivery", "logistics", "manufacturing", "retail", "saas"]
+
+
+@pytest.mark.parametrize("pack", STATEMENT_PACKS)
+def test_a_statement_runs_revenue_to_profit_then_what_drives_it(pack):
+    """Revenue first, profit before the drivers, and every metric the pack knows on one of its lines."""
+    d = _pack(pack)
+    lines = [RO.line_id(x) for x in d["statement"]]
+    assert lines[0] == "gross_sales" and "profit" in lines
+    assert lines.index("profit") < min(lines.index(x) for x in ("volume", "rate", "operations") if x in lines)
+    for m in d.get("metrics", []):
+        assert RO.line_of(m["name"], m["name"], d["reading_order"], d["statement"]), (pack, m["name"])
+
+
+@pytest.mark.parametrize("pack, names, lines", [
+    ("saas", ["Operating Income", "Customers", "MRR", "Net Revenue Retention", "R&D Spend", "Hosting Cost",
+              "Sales and Marketing Spend", "Gross Margin"],
+     ["gross_sales", "cogs", "gross_profit", "marketing", "rd", "profit", "volume", "rate"]),
+    ("manufacturing", ["Units Produced", "Operating Income", "Material Cost", "Net Sales", "SG&A", "Scrap Rate"],
+     ["net_sales", "cogs", "opex", "profit", "volume", "rate"]),
+    ("logistics", ["Cost per Mile", "Operating Ratio", "Fuel Surcharge Revenue", "Driver Wages", "Loads",
+                   "On-Time Delivery Rate"],
+     ["gross_sales", "cogs", "profit", "volume", "rate", "operations"]),
+    ("airline", ["CASM", "Passengers", "Fuel Cost", "Passenger Revenue", "Operating Income", "On-Time Performance",
+                 "Yield (Passenger Revenue per RPK/RPM)"],
+     ["gross_sales", "cogs", "profit", "volume", "rate", "rate", "operations"]),
+    ("food-delivery", ["Orders", "Courier Cost", "Gross Order Value", "Adjusted EBITDA", "Take Rate", "Revenue",
+                       "Contribution per Order"],
+     ["gross_sales", "net_sales", "fulfilment", "contribution", "profit", "volume", "rate"]),
+])
+def test_each_industry_reads_its_own_statement(pack, names, lines):
+    d = _pack(pack)
+    got = RO.ordered(_metrics([(n.lower().replace(" ", "_"), n) for n in names]), d["reading_order"], d["statement"])
+    assert [RO.line_of(m.name, m.label, d["reading_order"], d["statement"]) for m in got] == lines
+
+
+def test_an_industry_names_its_own_lines():
+    assert RO.line_label("cogs", _pack("saas")["statement"]) == "Cost of revenue (hosting, support)"
+    assert RO.line_label("cogs", _pack("retail")["statement"]) == "Cost of goods sold"
+    assert RO.line_label("rd") == "Research and development"
+
+
+@pytest.mark.parametrize("name, line", [
+    ("Net Revenue Retention", "rate"),          # a rate before "net revenue" makes it net sales
+    ("Cost per Mile", "rate"), ("CASM", "rate"),  # a unit figure before "cost" makes it a cost
+    ("Fuel Surcharge Revenue", "gross_sales"),  # revenue before "fuel" makes it a cost
+    ("R&D Spend", "rd"), ("Hosting Cost", "cogs"), ("Driver Wages", "cogs"),
+    ("Courier Cost", "fulfilment"), ("Operating Ratio", "profit"), ("G&A Expense", "opex"),
+])
+def test_the_words_place_a_metric_no_industry_names(name, line):
+    """With no declaration to lean on, a metric's own words put it on its line."""
+    assert RO.line_by_words(name.lower().replace(" ", "_"), name) == line

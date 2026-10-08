@@ -35,17 +35,18 @@ def test_a_named_preset_is_exactly_the_period_section_3_27_reads(preset, period)
     assert spec.period == period
 
 
-def test_the_users_range_is_compared_with_the_same_weekdays():
-    """17–26 August 2026 (Monday to Wednesday), asked on 26 September."""
+def test_the_users_range_is_compared_with_the_days_just_before():
+    """17–26 August 2026 (Monday to Wednesday), asked on 26 September. Back to back (the user,
+    2026-10-08): the whole-week shift matched the weekday mix but left the days between unread."""
     spec, why = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26,
                                      lag_days=13)
     assert why == "" and spec.days == 10 and spec.key == "range:custom:2026-08-17..2026-08-26"
-    assert (spec.previous_start, spec.previous_end) == (date(2026, 8, 3), date(2026, 8, 13))
+    assert (spec.previous_start, spec.previous_end) == (date(2026, 8, 7), date(2026, 8, 17))
     assert (spec.last_year_start, spec.last_year_end) == (date(2025, 8, 18), date(2025, 8, 28))
-    assert spec.previous_start.weekday() == spec.start.weekday() == spec.last_year_start.weekday()
+    assert spec.last_year_start.weekday() == spec.start.weekday()      # a year earlier keeps its weekdays
     words = ranges.phrases(spec)
     assert words["covers"] == "2026-08-17 to 2026-08-26 (10 days)"
-    assert words["compared_with"] == "the same 10 days 2 weeks earlier, 2026-08-03 to 2026-08-12"
+    assert words["compared_with"] == "the 10 days before, 2026-08-07 to 2026-08-16"
     # a cohort's comparisons are read at the same age: 31 days after each window's last day
     w = {x.label: x for x in spec.windows()}
     assert {(x.as_of - x.last_day).days for x in w.values()} == {31}
@@ -151,7 +152,7 @@ def test_a_range_briefing_measures_the_approved_metrics_and_names_the_rest(con, 
                                         runner=_runner(con))
     block = brief["period"]
     [rev] = block["measured"]
-    assert (rev["name"], rev["current"], rev["previous"]) == ("Revenue", 215000.0, 75000.0)  # 17..26, 3..12 ×1,000
+    assert (rev["name"], rev["current"], rev["previous"]) == ("Revenue", 215000.0, 115000.0)  # 17..26, 7..16 ×1,000
     assert rev["status"] == "final" and rev["time_kind"] == "flow"
     assert rev["time_source"].startswith("set automatically: created_at is the main date of orders")
     assert {u["name"]: u["reason"] for u in block["unmeasured"]} == {
@@ -261,9 +262,9 @@ def test_measures_that_cannot_open_the_connection_say_so():
     ({"preset": "month_to_date"}, 3, [(date(2026, 7, 1), date(2026, 7, 14)), (date(2026, 8, 1), date(2026, 8, 14)),
                                       (date(2026, 9, 1), date(2026, 9, 14))]),
     ({"preset": "last_year"}, 2, [(date(2024, 1, 1), date(2025, 1, 1)), (date(2025, 1, 1), date(2026, 1, 1))]),
-    # a custom range steps by the whole weeks that clear it, as its comparison does
+    # a custom range steps back by its own length, back to back, as its comparison does
     ({"start": date(2026, 8, 17), "end": date(2026, 8, 26)}, 3,
-     [(date(2026, 7, 20), date(2026, 7, 30)), (date(2026, 8, 3), date(2026, 8, 13)),
+     [(date(2026, 7, 28), date(2026, 8, 7)), (date(2026, 8, 7), date(2026, 8, 17)),
       (date(2026, 8, 17), date(2026, 8, 27))]),
 ])
 def test_earlier_ranges_step_back_the_way_the_ranges_own_comparison_does(kw, n, expected):
@@ -285,7 +286,7 @@ def test_a_metric_opens_to_its_trend_oldest_first_with_how_it_is_defined(con, ap
     assert len(series) == ranges.TREND_RANGES and [p["current"] for p in series] == [False] * 7 + [True]
     assert [p["start"] for p in series] == sorted(p["start"] for p in series)
     # the last two points are the Briefing's own "this range" and "comparison"
-    assert (series[-1]["value"], series[-2]["value"]) == (215000.0, 75000.0)
+    assert (series[-1]["value"], series[-2]["value"]) == (215000.0, 115000.0)
     assert series[-1]["label"] == "2026-08-17 to 2026-08-26" and series[-1]["value_text"]
     assert all(p["value_text"] for p in series if p["value"] is not None)
 
@@ -534,7 +535,7 @@ def test_a_custom_range_past_the_data_is_cut_and_says_so_and_without_an_edge_rea
     assert (cut.last_day, cut.previous_start) == (date(2026, 10, 7), date(2026, 9, 24))
     assert cut.edge_note.startswith("Asked to 2026-10-08, read to 2026-10-07.")
     asked, _ = ranges.resolve_range("custom", start=date(2026, 10, 1), end=OCT8, today=OCT8)
-    assert (asked.last_day, asked.previous_start, asked.edge_note) == (OCT8, date(2026, 9, 17), "")
+    assert (asked.last_day, asked.previous_start, asked.edge_note) == (OCT8, date(2026, 9, 23), "")
 
 
 def test_a_metric_whose_data_stopped_reads_the_same_kind_of_period_at_its_end():
@@ -608,7 +609,7 @@ def test_a_flows_earlier_ranges_are_not_said_to_be_read_at_one_age(con, approved
     assert seen["same_age"] is False and seen["lag_days"] == 13
     # the source settles 13 days back (by 13 September), so every range up to 26 August has settled
     assert [p["settling"] for p in seen["series"]] == [False] * 7 + [False]
-    young, _ = ranges.resolve_range(start=date(2026, 9, 17), end=date(2026, 9, 24), today=SEP26, lag_days=13)
+    young, _ = ranges.resolve_range(start=date(2026, 9, 14), end=date(2026, 9, 24), today=SEP26, lag_days=13)
     assert [p["settling"] for p in ranges.metric_trend("c1", young, "revenue", runner=_runner(con))["series"]][-2:] == [False, True]
 
 

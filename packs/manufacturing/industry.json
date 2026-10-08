@@ -122,18 +122,23 @@
       "needs_concepts": ["orders/jobs with due date and quantity", "actual delivery/completion date and quantity"]
     }
   ],
+  "statement": [{"line": "gross_sales", "label": "Sales"}, {"line": "deductions", "label": "Returns and discounts"}, "net_sales", {"line": "cogs", "label": "Cost of goods sold (materials, labour, overhead)"}, "gross_profit", "rd", {"line": "opex", "label": "Selling, general and administrative"}, {"line": "profit", "label": "Operating income"}, {"line": "volume", "label": "Production and orders"}, {"line": "rate", "label": "Yield, quality and cost per unit"}, "operations"],
   "reading_order": [
-    {"metric": "Revenue", "aliases": ["net sales"], "kind": "sales"},
+    {"metric": "Revenue", "aliases": ["sales", "gross sales"], "kind": "gross_sales"},
+    {"metric": "Returns", "aliases": ["returns and allowances", "customer returns"], "kind": "deductions"},
+    {"metric": "Net Sales", "aliases": ["net revenue"], "kind": "net_sales"},
+    {"metric": "Cost of Goods Sold", "aliases": ["COGS", "cost of sales", "materials cost", "direct labour", "manufacturing overhead"], "kind": "cogs"},
+    {"metric": "Gross Margin", "aliases": ["gross profit"], "kind": "gross_profit"},
+    {"metric": "SG&A", "aliases": ["selling general and administrative", "overhead"], "kind": "opex"},
+    {"metric": "Net Profit", "aliases": ["operating profit", "operating income", "EBITDA"], "kind": "profit"},
     {"metric": "Throughput", "aliases": ["output", "units produced"], "kind": "volume"},
     {"metric": "Overall Equipment Effectiveness", "aliases": ["OEE"], "kind": "rate"},
     {"metric": "First Pass Yield", "aliases": ["FPY", "quality rate"], "kind": "rate"},
+    {"metric": "Scrap Rate", "aliases": ["defect rate", "reject rate", "PPM"], "kind": "rate"},
+    {"metric": "Cost per Unit", "aliases": ["unit cost"], "kind": "rate"},
     {"metric": "Capacity Utilization", "aliases": ["plant utilization"], "kind": "rate"},
-    {"metric": "OTIF", "aliases": ["on time in full", "schedule adherence"], "kind": "rate"},
-    {"metric": "Gross Margin", "aliases": [], "kind": "margin"},
-    {"metric": "Scrap Rate", "aliases": ["defect rate", "reject rate", "PPM"], "kind": "cost"},
-    {"metric": "Cost per Unit", "aliases": ["unit cost"], "kind": "cost"},
+    {"metric": "OTIF", "aliases": ["on time in full", "schedule adherence"], "kind": "operations"},
     {"metric": "Cycle Time", "aliases": ["takt time"], "kind": "operations"},
-    {"metric": "Unplanned Downtime", "aliases": ["downtime", "MTBF", "MTTR"], "kind": "operations"},
-    {"metric": "Net Profit", "aliases": ["operating profit"], "kind": "profit"}
+    {"metric": "Unplanned Downtime", "aliases": ["downtime", "MTBF", "MTTR"], "kind": "operations"}
   ]
 }

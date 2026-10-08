@@ -132,19 +132,24 @@
       "needs_concepts": ["routes or drivers", "deliveries/stops with outcome", "date (for per-day productivity)"]
     }
   ],
+  "statement": [{"line": "gross_sales", "label": "Operating revenue (freight, surcharges, accessorials)"}, {"line": "cogs", "label": "Cost of transportation (drivers, fuel, purchased transportation, equipment)"}, {"line": "gross_profit", "label": "Gross margin"}, {"line": "opex", "label": "Overhead (SG&A)"}, {"line": "profit", "label": "Operating income and operating ratio"}, {"line": "volume", "label": "Shipments and miles"}, {"line": "rate", "label": "Unit revenue, unit cost and utilization"}, {"line": "operations", "label": "Service"}],
   "reading_order": [
-    {"metric": "Revenue", "aliases": ["freight revenue"], "kind": "sales"},
+    {"metric": "Revenue", "aliases": ["freight revenue", "operating revenue"], "kind": "gross_sales"},
+    {"metric": "Cost of Transportation", "aliases": ["purchased transportation", "linehaul cost", "fuel cost", "driver wages"], "kind": "cogs"},
+    {"metric": "Gross Margin", "aliases": [], "kind": "gross_profit"},
+    {"metric": "Overhead", "aliases": ["SG&A", "general and administrative"], "kind": "opex"},
+    {"metric": "Operating Ratio", "aliases": ["OR"], "kind": "profit"},
+    {"metric": "Net Profit", "aliases": ["operating profit", "operating income", "operating margin"], "kind": "profit"},
     {"metric": "Shipments", "aliases": ["deliveries", "loads"], "kind": "volume"},
-    {"metric": "Deliveries per Route", "aliases": ["stops per route", "deliveries per driver"], "kind": "volume"},
-    {"metric": "On-Time Delivery Rate", "aliases": ["OTD", "on-time delivery", "service level"], "kind": "rate"},
-    {"metric": "OTIF", "aliases": ["on-time in-full", "perfect order rate"], "kind": "rate"},
-    {"metric": "First-Attempt Delivery Success", "aliases": ["first attempt success", "first-time delivery rate"], "kind": "rate"},
+    {"metric": "Deliveries per Route", "aliases": ["stops per route", "deliveries per driver"], "kind": "rate"},
+    {"metric": "Cost per Shipment", "aliases": ["cost per mile", "cost per km"], "kind": "rate"},
+    {"metric": "Revenue per Mile", "aliases": ["revenue per shipment", "revenue per km"], "kind": "rate"},
     {"metric": "Capacity Utilization", "aliases": ["load factor", "fill rate"], "kind": "rate"},
-    {"metric": "Gross Margin", "aliases": ["operating margin"], "kind": "margin"},
-    {"metric": "Cost per Shipment", "aliases": ["cost per mile", "cost per km"], "kind": "cost"},
-    {"metric": "Damage and Loss Rate", "aliases": ["damage rate", "exception rate", "loss rate", "claims rate"], "kind": "cost"},
+    {"metric": "Damage and Loss Rate", "aliases": ["damage rate", "exception rate", "loss rate", "claims rate"], "kind": "rate"},
+    {"metric": "On-Time Delivery Rate", "aliases": ["OTD", "on-time delivery", "service level"], "kind": "operations"},
+    {"metric": "OTIF", "aliases": ["on-time in-full", "perfect order rate"], "kind": "operations"},
+    {"metric": "First-Attempt Delivery Success", "aliases": ["first attempt success", "first-time delivery rate"], "kind": "operations"},
     {"metric": "Transit Time", "aliases": ["average transit time", "lead time"], "kind": "operations"},
-    {"metric": "Dwell Time", "aliases": ["detention time", "turnaround time"], "kind": "operations"},
-    {"metric": "Net Profit", "aliases": ["operating profit"], "kind": "profit"}
+    {"metric": "Dwell Time", "aliases": ["detention time", "turnaround time"], "kind": "operations"}
   ]
 }

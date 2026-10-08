@@ -9,9 +9,11 @@ and three of them could not be asked. A range is now a start and an end, read as
   last SETTLED day, week, month or (fiscal) year exactly as ``complete_period`` does; the
   ``*_to_date`` presets end at the last settled day, never today; ``custom`` is any range;
 * **comparisons** — a named period against the one before (§3.27's rule), a custom range
-  against the same number of days shifted back by WHOLE WEEKS so the weekday mix matches, and
-  every range against the same weekdays 52 weeks earlier (364 days) — or the same month or
-  span a year earlier for a month or a to-date range;
+  against the same number of days just before it (the user, 2026-10-08: back to back — the
+  whole-week shift it replaced matched the weekday mix but left days between ranges unread, and
+  a history of an 8-day range read 8 days in every 14), and every range against the same
+  weekdays 52 weeks earlier (364 days) — or the same month or span a year earlier for a month
+  or a to-date range;
 * **as of** — the day it is read. A cohort's comparisons are read at the SAME AGE (their
   as-of shifted by the same distance), because a young cohort against a matured one always
   reads as an improvement (§3.48 BR-6).
@@ -278,10 +280,9 @@ def phrases(spec: RangeSpec) -> dict:
         covers = f"the year to date, {_span(spec.start, spec.end)}"
         against = f"the same span a year earlier, {_span(spec.previous_start, spec.previous_end)}"
     else:
-        weeks = (spec.start - spec.previous_start).days // 7
-        covers = f"{_span(spec.start, spec.end)} ({spec.days} day{'s' if spec.days != 1 else ''})"
-        against = (f"the same {spec.days} days {weeks} week{'s' if weeks != 1 else ''} earlier, "
-                   f"{_span(spec.previous_start, spec.previous_end)}")
+        days = f"{spec.days} day{'s' if spec.days != 1 else ''}"
+        covers = f"{_span(spec.start, spec.end)} ({days})"
+        against = f"the {days} before, {_span(spec.previous_start, spec.previous_end)}"
     last_year = (f"a year earlier, {_span(spec.last_year_start, spec.last_year_end)}"
                  if spec.last_year_start and spec.last_year_end else None)
     return {"covers": covers, "compared_with": against, "last_year": last_year}
@@ -378,8 +379,7 @@ def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
                               held_by=tuple(edge.get("held_by") or ()), tables=dict(edge.get("tables") or {}),
                               fell_back=None, asked_to=end)
             e = complete + timedelta(days=1)
-    weeks = max(1, -(-(e - start).days // 7))      # ceil: the whole weeks that clear the range
-    shift = timedelta(days=7 * weeks)
+    shift = e - start                               # back to back: the same days just before
     year = timedelta(days=364)
     return RangeSpec("custom", start, e, start - shift, e - shift, start - year, e - year,
                      data_through=through, edge_note=note, **common), ""
@@ -475,13 +475,13 @@ def _deprecated(conn_id: str, schema: Optional[str] = None) -> list:
 def statement_lines(conn_id: str) -> Callable[[Any], Optional[dict]]:
     """The income-statement line a governed metric reads on, as ``{"line", "label"}`` — or None for
     every metric when the connection's industry declares no statement."""
-    from aughor.briefing.reading_order import STATEMENT_LINES, industry_reading, line_of
+    from aughor.briefing.reading_order import industry_reading, line_label, line_of
 
     order, statement = industry_reading(conn_id)
 
     def line(m: Any) -> Optional[dict]:
         got = line_of(getattr(m, "name", "") or "", getattr(m, "label", "") or "", order, statement)
-        return {"line": got, "label": STATEMENT_LINES[got]} if got else None
+        return {"line": got, "label": line_label(got, statement)} if got else None
     return line
 
 
@@ -841,8 +841,8 @@ TREND_YEARS = 4
 def earlier_ranges(spec: RangeSpec, n: int) -> list[tuple[date, date]]:
     """The range and the ``n - 1`` before it, oldest first, as ``(start, end)`` with ``end`` exclusive.
     Each is stepped back the way the range's own comparison is: a month by a calendar month, a year
-    by a year, anything else by the whole weeks between the range and its comparison — so a day is
-    read against the same weekday."""
+    by a year, anything else by the step between the range and its comparison — a day by a week, so
+    it is read against the same weekday; a custom range by its own length, back to back."""
     monthly = spec.period == "month" or spec.preset == "month_to_date"
     yearly = spec.period == "year" or spec.preset == "year_to_date"
     whole_month = spec.period == "month" and not spec.under_way

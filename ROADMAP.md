@@ -13841,6 +13841,15 @@ the browser** · **measure the premise before building.**
     months is refused with the other's name, unless the person approves it anyway, which the audit records
     (`semantic/metric_twins.py`). A cockpit keep that adds a second copy of a card — the same approved metric,
     or the same kind, title and query — is refused.
+    (e) **A custom range is compared back to back** (asked, chosen over the whole-week shift): the same number of
+    days just before it, and its "How it ran" history steps back by its own length — no unread days between
+    ranges. A year earlier still keeps its weekdays (364 days).
+    (f) **Income statements for SaaS, manufacturing, logistics, airline and food delivery** (asked, all four
+    groups), each in its own words — SaaS: recurring revenue, churn, revenue, cost of revenue (hosting, support),
+    gross profit, sales and marketing, R&D, G&A, operating income; logistics: operating revenue, cost of
+    transportation, overhead, operating income and operating ratio; airline: operating revenue, operating
+    expenses (fuel, labour, maintenance, airports), operating income; food delivery: gross order value, refunds,
+    revenue (take), courier costs, contribution, marketing, EBITDA — then each one's drivers.
 
 ---
 
