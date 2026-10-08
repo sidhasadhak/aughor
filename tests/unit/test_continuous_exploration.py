@@ -134,9 +134,10 @@ def _planner(monkeypatch, states, *, layers, spent_out=False, fps=None):
     monkeypatch.setattr(P, "load", lambda key: _prog(_ran(ended=_NOW - timedelta(days=2))))
     monkeypatch.setattr(cont, "dataset_fingerprint", lambda cid, sch: (fps or {}).get(sch, "abc"))
     monkeypatch.setattr(cont, "_approved_count", lambda cid, sch: {"marts": 4, "sales": 1}.get(sch, 0))
+    monkeypatch.setattr(cont, "_asked_counts", lambda cid, now: {})
     held: list = []
     monkeypatch.setattr(P, "hold", lambda key, why: held.append((key, why)))
-    monkeypatch.setattr(B, "standing", lambda cid, now=None: {"spent_out": spent_out, "sentence": "spent"})
+    monkeypatch.setattr(B, "standing", lambda cid, now=None: {"spent_out": spent_out, "sentence": "spent", "remaining": None})
     return held
 
 
@@ -151,7 +152,9 @@ def test_the_planner_judges_every_dataset_and_spends_on_the_most_valuable_first(
     model = [r["schema"] for r in runs if r["uses_model"]]
     assert model == ["marts", "sales"], "ranked by the approved metrics that read them"
     assert "uploads" not in by, "an unset layer that already learned its structure waits for a person"
-    assert {w["schema"] for w in watches} == {"marts", "sales"}
+    assert {w["schema"]: (w["time"], w["layer"]) for w in watches} == {
+        "marts": (True, "business"), "sales": (True, "business"),
+        "stage": (False, "raw")}, "a raw dataset is read for its pipeline health, not its periods"
 
 
 def test_a_spent_budget_holds_the_model_runs_and_says_so(monkeypatch):

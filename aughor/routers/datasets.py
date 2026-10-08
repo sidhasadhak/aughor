@@ -32,6 +32,9 @@ class LayerRequest(BaseModel):
 class AcceptRequest(BaseModel):
     #: The schemas whose proposed layer a person accepts; empty = every schema not set yet.
     schemas: list[str] = []
+    #: Also accept the proposals of the tables inside them that read differently from their schema —
+    #: a `stg_` copy inside a business schema — so its findings come from the business copy only.
+    tables: bool = True
 
 
 class OffRequest(BaseModel):
@@ -79,9 +82,17 @@ def datasets(conn_id: str) -> dict:
 
     schemas = _schemas_of(conn_id)
     cols = _columns_by_table(conn_id)
+    copies = L.copies_of({s["name"]: [t["name"] for t in s.get("tables") or []] for s in schemas})
+    lineage = L.configured_lineage()
     has_business = connection_has_business(conn_id)
     explored = frozenset(x for x in L.LAYERS if "questions" in L.auto_jobs(x, connection_has_business=has_business))
     profiled = set(cols)
+    business_schemas = set()
+    for sch in schemas:
+        d = L.load_declared(conn_id, sch["name"])
+        set_layer = (d["schema"] or {}).get("layer")
+        if set_layer == "business" or (not set_layer and L.propose_schema(sch["name"], {}).layer == "business"):
+            business_schemas.add(sch["name"])
     out = []
     for sch in schemas:
         name = sch["name"]
@@ -93,13 +104,20 @@ def datasets(conn_id: str) -> dict:
         metrics = governed_metrics(conn_id, name if len(schemas) >= 2 else None)
         own_set = declared["schema"]
         table_cols = {t: cols.get(t.lower(), []) for t in tables}
-        proposed = L.propose_schema(name, table_cols, approved_metrics=len(metrics))
+        own_lineage = {t: sg for (sc, t), sg in lineage.items() if sc == name.lower()}
+        proposed = L.propose_schema(name, table_cols, approved_metrics=len(metrics), lineage=own_lineage)
         layer = (own_set or {}).get("layer", "")
         off = excluded(conn_id, name)
         rows = []
         for t in tables:
             t_set = declared["tables"].get(t.lower())
-            t_prop = L.propose_table(t, table_cols.get(t, []))
+            t_prop = L.propose_table(t, table_cols.get(t, []), lineage=own_lineage.get(t.lower()))
+            t_copies = copies.get((name, t), [])
+            if t_copies and t_prop.layer and t_prop.layer != "business":
+                business = [c for c in t_copies if L.propose_table(c.split(".")[-1]).layer == "business"
+                            or c.split(".")[0] in business_schemas]
+                if business:
+                    t_prop.evidence.append(f"the same entity as {', '.join(business[:2])} — findings come from that copy")
             t_layer = (t_set or {}).get("layer") or layer
             t_off = None if off is not None else excluded(conn_id, name, t)
             rows.append({
@@ -107,6 +125,7 @@ def datasets(conn_id: str) -> dict:
                 "layer": {"set": t_set, "proposed": t_prop.to_dict() if t_prop.layer and t_prop.layer != (layer or proposed.layer) else None,
                           "effective": t_layer},
                 "off": t_off.to_dict() if t_off is not None else None,
+                "copies": t_copies,
                 "maturity": M.maturity(state, prog, metrics, layer=t_layer, explored_layers=explored,
                                        table=t, profiled=t.lower() in profiled),
             })
@@ -121,7 +140,11 @@ def datasets(conn_id: str) -> dict:
             "off": off.to_dict() if off is not None and off.table == SCHEMA_WIDE else None,
             "maturity": M.maturity(state, prog, metrics, layer=layer, explored_layers=explored),
             "program": {"held": prog.get("held"), "reopened": prog.get("reopened"), "last_run": last,
-                        "watch": prog.get("watch") or {}, "failures": prog.get("failures", 0)},
+                        "watch": prog.get("watch") or {}, "failures": prog.get("failures", 0),
+                        "unanswered": len(prog.get("unanswered") or []),
+                        "health": {"read_at": (prog.get("health") or {}).get("read_at"),
+                                   "notes": (prog.get("health") or {}).get("notes") or []},
+                        "news": ((prog.get("values") or {}).get("_read") or {}).get("news") or []},
             "tables": rows,
         })
     return {"connection_id": conn_id, "schemas": out, "budget": B.standing(conn_id),
@@ -158,7 +181,8 @@ def _questions_on_layer(conn_id: str, schema: str, n_schemas: int) -> Optional[s
     from aughor.routers._shared import spawn_explorer
     learned = bool(state.get("structure_learned")) or state.get("phase") == "complete"
     spawn(spawn_explorer(conn_id, schema_name=sch, domain_intel_only=learned,
-                         reason="its layer was set — its first questions"), name=f"layer-{key}")
+                         reason="its layer was set — its first questions",
+                         token_cap=standing["remaining"]), name=f"layer-{key}")
     return "its questions have started"
 
 
@@ -214,6 +238,12 @@ async def accept_layers(conn_id: str, req: AcceptRequest):
             declare_exclusion(conn_id, sch["name"], SCHEMA_WIDE, "system_table",
                               note="set to the system layer", declared_by=by)
         accepted.append({"schema": sch["name"], "layer": layer})
+        if req.tables:
+            for t in sch["tables"]:
+                prop = (t["layer"] or {}).get("proposed")
+                if prop and prop.get("layer") and not (t["layer"] or {}).get("set"):
+                    L.set_layer(conn_id, sch["name"], prop["layer"], table=t["name"], set_by=by)
+                    accepted.append({"schema": sch["name"], "table": t["name"], "layer": prop["layer"]})
         said = _questions_on_layer(conn_id, sch["name"], n)
         if said:
             started[sch["name"]] = said

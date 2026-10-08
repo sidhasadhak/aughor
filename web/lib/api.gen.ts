@@ -21362,6 +21362,11 @@ export interface components {
              * @default []
              */
             schemas: string[];
+            /**
+             * Tables
+             * @default true
+             */
+            tables: boolean;
         };
         /** GrantRequest */
         aughor__routers__groups__GrantRequest: {

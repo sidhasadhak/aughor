@@ -258,6 +258,7 @@ def plan_jobs(*, now: Optional[datetime] = None) -> tuple[list[dict], list[dict]
             has_business = connection_has_business(conn_id)
             explored = frozenset(l for l in LAYERS if "questions" in auto_jobs(l, connection_has_business=has_business))
             standing = None
+            popularity = None
             for sch in datasets:
                 if sch and excluded(conn_id, sch) is not None:
                     continue
@@ -283,22 +284,71 @@ def plan_jobs(*, now: Optional[datetime] = None) -> tuple[list[dict], list[dict]
                         P.hold(key, standing["sentence"])
                         plan = (_plan("structure", plan["reason"]) if plan["reason"] in (SCHEMA_CHANGED, NEW_DATASET)
                                 else None)
+                    elif plan is not None:
+                        plan["budget_left"] = standing.get("remaining")
                 if plan is not None:
-                    metrics = _approved_count(conn_id, sch)
-                    runs.append({**plan, "conn_id": conn_id, "schema": sch, "key": key, "value": metrics,
+                    if popularity is None:
+                        popularity = _asked_counts(conn_id, now)
+                    runs.append({**plan, "conn_id": conn_id, "schema": sch, "key": key,
+                                 "value": _approved_count(conn_id, sch),
+                                 "asked": sum(popularity.get(t, 0) for t in _tables_of(state)),
                                  "failures": prog.get("failures", 0)})
-                if "time" in jobs and str(state.get("phase") or "") == "complete":
-                    watches.append({"conn_id": conn_id, "schema": sch, "key": key,
-                                    "reopen": "questions" in jobs})
+                if str(state.get("phase") or "") == "complete" and ("time" in jobs or layer == "raw"):
+                    # business: its settled periods and its dimensions' new values; raw: its pipeline health
+                    watches.append({"conn_id": conn_id, "schema": sch, "key": key, "layer": layer,
+                                    "time": "time" in jobs, "reopen": "questions" in jobs})
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "continuous-exploration planning is best-effort per connection",
                      counter="explorer.continuous_plan", conn_id=conn_id)
-    # Spend goes to the most valuable first (§7): the reason, then the approved metrics that read it.
+    # Spend goes to the most valuable first (§7): the reason, then the approved metrics that read the dataset,
+    # then how often people query its tables.
     model = sorted((r for r in runs if r["uses_model"]),
-                   key=lambda r: (_PRIORITY.get(r.get("priority_reason") or r["reason"], 9), -r["value"]))
+                   key=lambda r: (_PRIORITY.get(r.get("priority_reason") or r["reason"], 9), -r["value"],
+                                  -r.get("asked", 0)))[:MODEL_RUNS_PER_TICK]
+    # Each run is capped at its share of what is left of the month, so the runs one check starts cannot
+    # together overshoot the budget (the kernel enforces the cap like any run budget).
+    per_conn: dict[str, int] = {}
+    for r in model:
+        per_conn[r["conn_id"]] = per_conn.get(r["conn_id"], 0) + 1
+    for r in model:
+        left = r.get("budget_left")
+        if left is not None:
+            r["token_cap"] = max(1, int(left) // per_conn[r["conn_id"]])
     rest = [r for r in runs if not r["uses_model"]]
-    return rest + model[:MODEL_RUNS_PER_TICK], watches[:WATCHES_PER_TICK]
+    return rest + model, watches[:WATCHES_PER_TICK]
+
+
+#: When each connection's query popularity was last mined by this process — refreshed at most daily.
+_ASKED_MINED: dict[str, float] = {}
+ASKED_REFRESH_SECONDS = 86_400.0
+
+
+def _asked_counts(conn_id: str, now: datetime) -> dict[str, int]:
+    """How often people have queried each table of the connection (`sql/popularity.py`, by bare name),
+    mined from the query history at most once a day. {} when nothing was mined."""
+    from aughor.sql.popularity import load_popularity, refresh_popularity
+    stamp = now.timestamp()
+    if stamp - _ASKED_MINED.get(conn_id, 0.0) >= ASKED_REFRESH_SECONDS:
+        _ASKED_MINED[conn_id] = stamp
+        try:
+            from aughor.db.connection import connection_traits
+            from aughor.db.registry import get_conn_type
+            refresh_popularity(conn_id, dialect=connection_traits(get_conn_type(conn_id)).get("dialect") or "duckdb")
+        except Exception as exc:  # noqa: BLE001 — the ranking falls back to approved metrics
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "query popularity could not be mined for the ranking", counter="explorer.asked",
+                     conn_id=conn_id)
+    return {str(t).lower(): int(n) for t, n in (load_popularity(conn_id).get("table") or {}).items()}
+
+
+def _tables_of(state: dict) -> set[str]:
+    """The tables a dataset's runs have read, by bare name — from what its structure job recorded."""
+    out: set[str] = set()
+    for k in list((state.get("distributions") or {})) + list((state.get("null_meanings") or {})):
+        out.add(str(k).split(":")[0].split(".")[-1].lower())
+    out.update(str(t).split(".")[-1].lower() for t in (state.get("lifecycle_maps") or {}))
+    return out
 
 
 def _approved_count(conn_id: str, schema: Optional[str]) -> int:
@@ -326,7 +376,7 @@ async def run_continuous_tick() -> int:
             res = await spawn_explorer(
                 r["conn_id"], schema_name=r["schema"], structure_only=r["job"] == "structure",
                 domain_intel_only=r["job"] == "questions", gaps_only=bool(r.get("gaps_only")),
-                reason=f"started on its own: {r['reason']}")
+                reason=f"started on its own: {r['reason']}", token_cap=r.get("token_cap"))
             if not res.get("ok"):
                 logger.info("continuous: %s not started (%s): %s", r["key"], r["reason"], res.get("reason"))
                 continue
@@ -344,13 +394,18 @@ async def run_continuous_tick() -> int:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "continuous-exploration start is best-effort per dataset",
                      counter="explorer.continuous_rearm", conn_id=r.get("conn_id"))
+    from aughor.explorer import health as H
     for w in watches:
         try:
-            got = await loop.run_in_executor(None, lambda w=w: W.read_due(
-                w["conn_id"], w["schema"], reopen_questions=w["reopen"]))
-            if got:
+            got = (await loop.run_in_executor(None, lambda w=w: W.read_due(
+                w["conn_id"], w["schema"], reopen_questions=w["reopen"]))) if w.get("time", True) else []
+            daily = await loop.run_in_executor(None, lambda w=w: H.read_dataset(
+                w["conn_id"], w["schema"], layer="raw" if w.get("layer") == "raw" else "business",
+                reopen_questions=w["reopen"]))
+            if got or daily:
                 _emit("exploration.watched", {"connection_id": w["conn_id"], "schema": w["schema"],
-                                              "grains": [g["grain"] for g in got]}, w["conn_id"])
+                                              "grains": [g["grain"] for g in got],
+                                              "daily": (daily or {}).get("kind", "")}, w["conn_id"])
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "the watch job is best-effort per dataset", counter="explorer.watch",

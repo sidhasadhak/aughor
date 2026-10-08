@@ -92,3 +92,36 @@ describe("ConnectionProgram", () => {
     await waitFor(() => expect(acceptDatasetLayers).toHaveBeenCalledWith("wh"));
   });
 });
+
+describe("what the daily readings found", () => {
+  it("says a raw dataset's health, a move's segment, unanswered questions and new values", () => {
+    const ds: DatasetSchema = {
+      ...stage,
+      program: {
+        held: null, reopened: { at: "", reason: "revenue moved -12% — most of it country = US" }, last_run: null,
+        watch: { day: { through: "2026-10-07", read_at: "", measured: 2, moved: [{ name: "revenue", rel: -0.12 }],
+                        explained: [{ metric: "revenue", name: "revenue", dimension: "country", group: "US", change: -4200, share: false }] } },
+        failures: 0, unanswered: 2,
+        health: { read_at: "2026-10-08T00:00:00Z", notes: ["events: no new rows since the last reading (40)"] },
+        news: ["a new value in orders.status: 'returned'"],
+      },
+    };
+    render(<SchemaProgram connId="wh" ds={ds} view={view} onChanged={() => {}} />);
+    const text = screen.getByTestId("schema-program").textContent ?? "";
+    expect(text).toContain("revenue -12% (most of it country = US)");
+    expect(text).toContain("2 questions it could not answer this week");
+    expect(text).toContain("Health: events: no new rows since the last reading (40)");
+    expect(text).toContain("New: a new value in orders.status: 'returned'");
+  });
+
+  it("names a table's copies and lists the table proposals the accept will set", async () => {
+    const { TableProgram } = await import("@/components/DatasetProgram");
+    const t = { name: "stg_orders", layer: { set: null, proposed: { layer: "raw", label: "Raw", evidence: ["its name has `stg` as a prefix"] }, effective: "" },
+                off: null, maturity, copies: ["public.orders"] };
+    render(<TableProgram connId="wh" schema="public" t={t} view={view} schemaOff={false} onChanged={() => {}} />);
+    expect(screen.getByTestId("table-copies").textContent).toContain("public.orders");
+    const withTable: DatasetsView = { ...view, schemas: [{ ...stage, tables: [t] }] };
+    render(<ConnectionProgram connId="wh" view={withTable} onChanged={() => {}} />);
+    expect(screen.getByTestId("table-proposals").textContent).toContain("stage_marketing.stg_orders → Raw");
+  });
+});

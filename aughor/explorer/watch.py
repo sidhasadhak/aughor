@@ -79,8 +79,68 @@ def moved_figures(measured: list[dict], grain_metrics: set[str]) -> list[dict]:
     return out
 
 
+def _fallback_dimensions(m: Any, profile_entry: dict) -> list[str]:
+    """A metric with no declared dimension is broken down by the low-cardinality columns the profiler knows
+    on its own table — not a key, not a date — so a move is still explained, by what is known of its table."""
+    from aughor.semantic.metric_statement import split_grain
+    from aughor.semantic.metric_time import bare_name
+    grain = split_grain(getattr(m, "time_column", "") or "")[0] or ((getattr(m, "tables", None) or [""])[0])
+    table = bare_name(str(grain or ""))
+    out = []
+    for prof in ((profile_entry or {}).get("columns") or {}).values():
+        if not isinstance(prof, dict) or bare_name(str(prof.get("table") or "")) != table:
+            continue
+        dtype = str(prof.get("dtype") or "").lower()
+        if prof.get("is_fk") or not prof.get("is_low_cardinality") or "date" in dtype or "time" in dtype:
+            continue
+        out.append(str(prof.get("column") or ""))
+    return sorted(c for c in out if c)[:3]
+
+
+def explain_moves(conn_id: str, moved: list[Any], spec: Any, *, runner: Optional[Callable] = None,
+                  profile_entry: Optional[dict] = None) -> list[dict]:
+    """§4 — time detects, dimensions explain: each moved figure broken down by its dimensions — declared,
+    else the profiler's on its table — for the period and the one before, the segments ranked by how much
+    of the move they carry (`briefing.recipes.what_moved`, the Briefing's own breakdown). SQL only.
+    ``[{"metric", "name", "dimension", "group", "change", "current", "previous", "share"}]``, at most two a
+    metric; a segment of too few rows to call is never one of them."""
+    from aughor.briefing.recipes import breakdown_dimensions, what_moved
+    from aughor.knowledge import period_brief
+    if not moved:
+        return []
+    if profile_entry is None:
+        from aughor.tools.profile_cache import merged_profile_entry
+        profile_entry = merged_profile_entry(conn_id) or {}
+    metrics = []
+    for m in moved:
+        if not breakdown_dimensions(m, profile_entry):
+            dims = _fallback_dimensions(m, profile_entry)
+            if dims and hasattr(m, "model_copy"):
+                m = m.model_copy(update={"dimensions": dims})
+        metrics.append(m)
+    with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
+        got = what_moved(metrics, spec, run_sql, dialect=dialect, profile_entry=profile_entry)
+    out: list[dict] = []
+    per: dict[str, int] = {}
+    for c in got.get("moves") or []:
+        if per.get(c["metric"], 0) >= 2:
+            continue
+        per[c["metric"]] = per.get(c["metric"], 0) + 1
+        out.append({k: c.get(k) for k in ("metric", "name", "dimension", "group", "change", "current",
+                                           "previous", "share")})
+    return out
+
+
+def explanation_line(e: dict) -> str:
+    """One segment's part of a move, said plainly: "most of it country = US (-4,200)"."""
+    change = e.get("change")
+    amount = (f"{change:+.1f} pts" if e.get("share") and change is not None
+              else f"{change:+,.0f}" if isinstance(change, (int, float)) else "")
+    return f"{e.get('dimension')} = {e.get('group')}" + (f" ({amount})" if amount else "")
+
+
 def read_due(conn_id: str, schema: Optional[str], *, reopen_questions: bool, today: Optional[date] = None,
-             measure: Optional[Callable] = None) -> list[dict]:
+             measure: Optional[Callable] = None, explain: Optional[Callable] = None) -> list[dict]:
     """Read every due grain of one dataset; record each reading; reopen on a real move. Returns the
     readings made. SQL only — never a model."""
     from aughor.briefing import ranges as R
@@ -99,12 +159,23 @@ def read_due(conn_id: str, schema: Optional[str], *, reopen_questions: bool, tod
         unmeasured = [u for u in (block.get("unmeasured") or [])
                       if u.get("metric") in names or u.get("name") in labels]
         moved = moved_figures(measured, names)
+        explained: list[dict] = []
+        if moved:
+            try:
+                explained = (explain or (lambda ms, sp: explain_moves(conn_id, ms, sp)))(
+                    [m for m in metrics if m.name in {x["metric"] for x in moved}], spec)
+            except Exception as exc:  # noqa: BLE001 — the move stands, said without its segments
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "a moved figure could not be broken down", counter="explorer.explain_move",
+                         conn_id=conn_id)
         reading = {"through": spec.last_day.isoformat(), "from": spec.start.isoformat(),
                    "measured": len(measured), "unmeasured": [u.get("name") for u in unmeasured][:12],
-                   "moved": moved}
+                   "moved": moved, "explained": explained}
         P.record_watch(key, grain, reading)
         if moved and reopen_questions:
             top = max(moved, key=lambda m: abs(m["rel"]))
-            P.reopen(key, f"{top['name']} moved {top['rel']:+.0%} in the {grain} to {reading['through']}")
+            why = next((e for e in explained if e.get("metric") == top.get("metric")), None)
+            P.reopen(key, f"{top['name']} moved {top['rel']:+.0%} in the {grain} to {reading['through']}"
+                          + (f" — most of it {explanation_line(why)}" if why else ""))
         readings.append({"grain": grain, **reading})
     return readings

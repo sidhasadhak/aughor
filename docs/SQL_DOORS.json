@@ -82,6 +82,7 @@
   "aughor/explorer/revalidate_live.py::_revalidate_one_run::execute::__revalidate__": {"dialect": "native", "author": "stored", "note": "a finding's SQL"},
   "aughor/explorer/verify.py::unparsed_numeric_diagnosis::execute::_verify_costume": {"dialect": "declared", "author": "platform"},
   "aughor/govern/departure_basis.py::rerun_queries::execute::{RERUN_LABEL}": {"dialect": "native", "author": "stored", "note": "the analysis's own SQL"},
+  "aughor/explorer/health.py::read_dataset.run_sql::execute::__health__": {"dialect": "portable", "author": "platform", "note": "the exploration principles: a dataset's daily pipeline health and new dimension values — COUNT, MAX, COUNT(col) and DISTINCT over identifiers quoted for the connector (db.quoting), a date literal compared as a string"},
   "aughor/knowledge/period_brief.py::connection_runner.run_sql::execute::__brief_period__": {"dialect": "generated", "author": "stored", "note": "sqlglot renders the governed statement in db.dialect; GM-5: audited — a governed metric's statement, rendered by sqlglot"},
   "aughor/lifecycle/mapper.py::build_process_map::execute::process_map_edges": {"dialect": "declared", "author": "platform"},
   "aughor/lifecycle/mapper.py::build_process_map::execute::process_map_nodes": {"dialect": "declared", "author": "platform"},

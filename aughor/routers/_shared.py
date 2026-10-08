@@ -114,6 +114,7 @@ async def spawn_explorer(
     structure_only: bool = False,
     gaps_only: bool = False,
     reason: str = "",
+    token_cap: int | None = None,
 ) -> dict:
     """THE explorer spawn path — every surface (start, resume, restart, extend,
     trigger-intel, canvas start/restart, boot recovery) goes through here, so an
@@ -200,7 +201,9 @@ async def spawn_explorer(
                  "tables_filter": tables_filter or None,
                  "schema_name": schema_name or None,
                  # the job rides the payload too, so a restart resumes the same job (§2)
-                 "structure_only": structure_only, "gaps_only": gaps_only, "reason": reason or ""},
+                 "structure_only": structure_only, "gaps_only": gaps_only, "reason": reason or "",
+                 # an automatic run is capped at what is left of the month's budget (kernel reads it)
+                 **({"token_cap": int(token_cap)} if token_cap else {})},
         on_finish=_cleanup,
     )
     # The kernel task is the cancellation handle — stop endpoints keep working.

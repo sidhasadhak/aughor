@@ -74,7 +74,7 @@ CATALOGUE: dict[str, dict[str, Any]] = {
     "explorer.resumed": {"what": "the explorer resumed on a connection", "payload": ["connection_id"], "emitted_by": "explorer"},
     "exploration.skipped": {"what": "exploration was skipped on a connection, with the reason", "payload": ["reason", "connection_id"], "emitted_by": "routers/_shared"},
     "exploration.rearmed": {"what": "the continuous loop started one of a dataset's jobs (structure, questions or both), with why", "payload": ["reason", "job", "connection_id", "schema"], "emitted_by": "explorer/continuous"},
-    "exploration.watched": {"what": "a dataset's metrics were read for a newly settled period, SQL only", "payload": ["connection_id", "schema", "grains"], "emitted_by": "explorer/continuous"},
+    "exploration.watched": {"what": "a dataset's metrics were read for a newly settled period, SQL only", "payload": ["connection_id", "schema", "grains", "daily"], "emitted_by": "explorer/continuous"},
     "exploration.first_insight": {"what": "an exploration found its first finding", "payload": ["insight"], "emitted_by": "explorer/agent"},
     "exploration.insight": {"what": "an exploration booked a finding", "payload": ["insight"], "emitted_by": "explorer/agent"},
     "exploration.phase": {"what": "an exploration moved to a phase", "payload": ["phase"], "emitted_by": "explorer/agent"},

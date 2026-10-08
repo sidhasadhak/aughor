@@ -156,3 +156,24 @@ def test_a_heartbeats_budget_kill_is_a_budget_stop_not_a_persons(monkeypatch):
     persons = run("")
     assert persons._status.error == "cancelled (budget exceeded or stopped) — progress saved"
     assert not persons._state.get("stopped_on_budget_at")
+
+
+def test_a_staging_copy_inside_a_business_schema_says_whose_copy_it_is_and_goes_quiet_on_accept(monkeypatch):
+    from aughor.routers import datasets as D
+    monkeypatch.setattr(D, "_schemas_of", lambda conn_id: [
+        {"name": "public", "tables": [{"name": "stg_orders"}, {"name": "orders"}, {"name": "customers"}]}])
+    monkeypatch.setattr("aughor.routers.datasets._questions_on_layer", lambda *a: None)
+    monkeypatch.setenv("AUGHOR_LOCAL_USER", "amit")
+    app = FastAPI()
+    app.include_router(D.router)
+    c = TestClient(app)
+    conn = f"c-{uuid.uuid4().hex[:6]}"
+    body = c.get(f"/exploration/{conn}/datasets").json()
+    rows = {t["name"]: t for t in body["schemas"][0]["tables"]}
+    assert rows["stg_orders"]["copies"] == ["public.orders"]
+    assert rows["stg_orders"]["layer"]["proposed"]["layer"] == "raw"
+    assert any("the same entity as public.orders" in e for e in rows["stg_orders"]["layer"]["proposed"]["evidence"])
+    acc = c.post(f"/exploration/{conn}/datasets/layers/accept", json={}).json()
+    assert {"schema": "public", "table": "stg_orders", "layer": "raw"} in acc["accepted"]
+    from aughor.ontology.dataset_layers import layer_of
+    assert layer_of(conn, "public", "stg_orders") == "raw" and layer_of(conn, "public", "orders") == "business"

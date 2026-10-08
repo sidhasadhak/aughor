@@ -252,13 +252,45 @@ The user: "start and finish the principles build end to end." Branch `claude/exp
    valuable first: a reopen, first questions, a new dataset, a schema change, then gaps, each ranked by the
    approved metrics that read the dataset; at most two model-spending runs start per check.
 
-**Not built**, said rather than implied:
-- Lineage as a sign (a dbt manifest's folders, a view over another table) and use beyond approved metrics.
-- "One entity, several layers": findings are not yet restricted to the gold copy of an entity that also has
-  raw and cleansed copies.
-- Explaining a move along the known dimensions: a real move reopens the dataset's questions instead.
-- Two reopen events: a new category value in a known dimension, and a question the platform could not ground.
-- Raw's pipeline health is its structure job (profiles, row counts, the fingerprint); no health findings yet.
-- A run is not capped at what is left of the month: the check holds a run once the budget is spent, so one run
-  can overshoot by up to its own run budget (the Scout charter's, 200,000 tokens by default).
-- Ranking by what people ask about.
+**Not built in the first round** — each built in the second (§13).
+
+## 13 · Built, second round (2026-10-08, "keep building")
+
+- **An automatic re-run never reaches the model's free curiosity** — the choice of the next question is
+  its own method (`SchemaExplorer._next_question`): a cell of the question list first, then the grounded
+  probe, then free-form generation; with ``gaps_only`` and no cell left it answers "no more questions" and
+  calls no model. Tested where the rule lives.
+- **Table layers inside a schema; one entity, several layers.** A table a person set to Raw, Integration,
+  Uploads or System is never offered to Phase 8's question generator, nor as a joinable neighbour; a
+  Reference table stays a dimension others join to but is never asked about on its own. Tables holding
+  the same entity once their layer affixes are taken off (`stg_orders`, `orders_raw`, `fct_orders`,
+  `orders`) are shown as copies of each other, and a non-business copy's proposal says whose copy it is —
+  "findings come from that copy". "Accept the proposed layers" now sets those table proposals too.
+- **Lineage is a sign** — the dbt manifest the install names (`AUGHOR_DBT_MANIFEST`, the file
+  `semantic/dbt.py` already reads descriptions from): a source is Raw, a seed Reference, a snapshot
+  Integration, a model takes its folder's layer (staging Raw, intermediate Integration, marts Business).
+  It outweighs a name: it is what the warehouse's own builders declared. Views need no sign — the Explorer
+  reads base tables only.
+- **A run is capped at what is left of its month.** A job may carry ``token_cap``; the kernel enforces the
+  tighter of it and the agent's own budget (heartbeat and in-context alike). The hourly check splits what
+  is left between the model-spending runs it starts together; setting a layer that asks questions caps
+  that run the same way.
+- **Ranking by what people query** — the query-popularity store (`sql/popularity.py`, mined from the
+  query history), refreshed at most daily by the check, breaks ties after approved metrics.
+- **A question it could not answer reopens** — a quick answer whose query failed, or an analytical
+  question that came back empty, counts against the dataset it was asked of; two in a week reopen its
+  questions. A refusal is not a gap (a table turned off, a statement the guard blocked).
+- **A new value in a known dimension reopens** — each day a business dataset's low-cardinality dimension
+  columns (at most six) are read for their distinct values; a value never seen reopens the questions. The
+  first reading is the baseline.
+- **Raw pipeline health** — each day, per table (at most twenty): rows against the last reading, the
+  newest date it holds, and each column's empty share, read over the newest week where the table has a
+  date (whole only under a million rows). What changed is said: no new rows, rows fell, a column's empty
+  share jumped ten points. Shown on the dataset's strip.
+- **A move explained by its segments** — a settled figure that moved 10% is broken down by its dimensions
+  (declared, else the profiler's low-cardinality columns of its table) through the Briefing's own
+  `what_moved`; the top segments are kept with the reading and named in the reopen ("revenue moved −12% —
+  most of it country = US"), and the reopened run starts from that move.
+
+**Still not built:** a model-written explanation of a move (the breakdown is SQL; the reopened run is
+where the model looks for why) and a per-run token cap for a person's own Start (never held, by decision).

@@ -124,8 +124,9 @@ _KEYISH = re.compile(r"(^id$|_id$|^code$|_code$|_key$|^key$|^name$|_name$|^label
                      r"^description$|_description$|_desc$|^value$)", re.I)
 _TEXT_TYPES = re.compile(r"char|text|string|varchar|utf8", re.I)
 
-#: Weights: a prefix or suffix is a convention somebody chose; a whole word is a hint.
-_W_AFFIX, _W_WORD, _W_COLUMNS = 3, 2, 2
+#: Weights: lineage is what the warehouse's own builders declared; a prefix or suffix is a convention
+#: somebody chose; a whole word is a hint.
+_W_LINEAGE, _W_AFFIX, _W_WORD, _W_COLUMNS = 4, 3, 2, 2
 
 
 def name_words(name: str) -> list[str]:
@@ -199,9 +200,10 @@ def _strongest(signs: list[Sign]) -> Optional[Sign]:
     return best
 
 
-def propose_table(name: str, columns: Iterable[tuple[str, str]] = ()) -> Proposal:
-    """A table's layer by its own signs, or no proposal (it then reads its schema's)."""
-    signs = name_signs(name, level="table") + column_signs(columns)
+def propose_table(name: str, columns: Iterable[tuple[str, str]] = (), *, lineage: Optional[Sign] = None) -> Proposal:
+    """A table's layer by its own signs, or no proposal (it then reads its schema's). ``lineage`` is what
+    a dbt manifest says of it (`lineage_signs`), the strongest sign there is."""
+    signs = ([lineage] if lineage else []) + name_signs(name, level="table") + column_signs(columns)
     best = _strongest(signs)
     if best is None:
         return Proposal()
@@ -213,7 +215,7 @@ _MAJORITY = 0.6
 
 
 def propose_schema(name: str, tables: dict[str, Iterable[tuple[str, str]]], *,
-                   approved_metrics: int = 0) -> Proposal:
+                   approved_metrics: int = 0, lineage: Optional[dict[str, Sign]] = None) -> Proposal:
     """A schema's layer: its own name first; else what most of its tables say; else the business
     layer, said as such — a dataset with no sign of anything else reads as business data, and a
     person still sets it."""
@@ -225,7 +227,7 @@ def propose_schema(name: str, tables: dict[str, Iterable[tuple[str, str]]], *,
     total = 0
     for t, cols in (tables or {}).items():
         total += 1
-        p = propose_table(t, cols)
+        p = propose_table(t, cols, lineage=(lineage or {}).get(str(t).lower()))
         if p.layer:
             votes[p.layer] = votes.get(p.layer, 0) + 1
     if total and votes:
@@ -327,3 +329,109 @@ def auto_jobs(layer: str, *, connection_has_business: bool = True) -> frozenset[
         # §5: "no findings unless no gold exists" — with no business layer, integration is the best there is
         return _AUTO_JOBS["business"]
     return _AUTO_JOBS.get(layer, UNSET_JOBS)
+
+
+# ── one entity, several layers (§5) ──────────────────────────────────────────
+
+_ALL_PREFIXES = tuple(sorted({p for ps in _PREFIXES.values() for p in ps}, key=len, reverse=True))
+_ALL_SUFFIXES = tuple(sorted({s for ss in _SUFFIXES.values() for s in ss}, key=len, reverse=True))
+
+
+def entity_key(name: str) -> str:
+    """What a table holds, its layer's affixes taken off: `stg_orders`, `orders_raw`, `fct_orders` and
+    `orders` are one entity, `orders`. A trailing plural `s` goes too (`order` and `orders`)."""
+    bare = str(name or "").strip().split(".")[-1].lower()
+    for p in _ALL_PREFIXES:
+        if bare.startswith(p) and len(bare) > len(p):
+            bare = bare[len(p):]
+            break
+    for s in _ALL_SUFFIXES:
+        if bare.endswith(s) and len(bare) > len(s):
+            bare = bare[: -len(s)]
+            break
+    return bare[:-1] if len(bare) > 3 and bare.endswith("s") and not bare.endswith("ss") else bare
+
+
+def copies_of(tables_by_schema: dict[str, list[str]]) -> dict[tuple[str, str], list[str]]:
+    """``{(schema, table): ["other_schema.other_table", …]}`` for every table that holds the same entity
+    as another table of the connection — the raw, cleansed and business copies of one thing."""
+    by_key: dict[str, list[tuple[str, str]]] = {}
+    for schema, tables in (tables_by_schema or {}).items():
+        for t in tables or []:
+            k = entity_key(t)
+            if k:
+                by_key.setdefault(k, []).append((schema, t))
+    out: dict[tuple[str, str], list[str]] = {}
+    for members in by_key.values():
+        if len(members) < 2:
+            continue
+        for sch, t in members:
+            out[(sch, t)] = [f"{s}.{o}" for s, o in members if (s, o) != (sch, t)]
+    return out
+
+
+# ── lineage: what a dbt manifest says (§5's third witness) ───────────────────
+
+_DBT_FOLDERS = (
+    ("business", {"marts", "mart", "reporting", "presentation", "gold", "core_marts"}),
+    ("integration", {"intermediate", "int", "integration", "silver"}),
+    ("raw", {"staging", "stg", "stage", "base", "bronze", "raw"}),
+)
+
+
+def lineage_signs(manifest: dict) -> dict[tuple[str, str], Sign]:
+    """``{(schema, table): Sign}`` from a dbt ``manifest.json``: a source is raw, a seed reference, a
+    snapshot integration, and a model takes its folder's layer — `models/staging/…` raw,
+    `models/intermediate/…` integration, `models/marts/…` business. Names are lower-cased."""
+    out: dict[tuple[str, str], Sign] = {}
+
+    def put(node: dict, layer: str, why: str) -> None:
+        schema = str(node.get("schema") or "").lower()
+        table = str(node.get("alias") or node.get("identifier") or node.get("name") or "").lower()
+        if schema and table:
+            out[(schema, table)] = Sign(layer, _W_LINEAGE, why)
+
+    for src in ((manifest or {}).get("sources") or {}).values():
+        if isinstance(src, dict):
+            put(src, "raw", "dbt declares it a source")
+    for node in ((manifest or {}).get("nodes") or {}).values():
+        if not isinstance(node, dict):
+            continue
+        kind = node.get("resource_type")
+        if kind == "seed":
+            put(node, "reference", "dbt loads it as a seed")
+        elif kind == "snapshot":
+            put(node, "integration", "dbt snapshots it")
+        elif kind == "model":
+            folders = [str(f).lower() for f in (node.get("fqn") or [])[1:-1]]
+            for layer, words in _DBT_FOLDERS:
+                hit = next((f for f in folders if f in words or any(w in words for w in name_words(f))), None)
+                if hit:
+                    put(node, layer, f"dbt builds it under models/{'/'.join(folders)}")
+                    break
+    return out
+
+
+_lineage_cache: dict[str, tuple[float, dict]] = {}
+
+
+def configured_lineage() -> dict[tuple[str, str], Sign]:
+    """The lineage signs of the dbt manifest this install names (``AUGHOR_DBT_MANIFEST``, the same
+    file `semantic/dbt.py` reads descriptions from), re-read when the file changes; {} without one."""
+    import json
+    import os
+    path = os.getenv("AUGHOR_DBT_MANIFEST") or ""
+    if not path or not Path(path).is_file():
+        return {}
+    mtime = Path(path).stat().st_mtime
+    hit = _lineage_cache.get(path)
+    if hit and hit[0] == mtime:
+        return hit[1]
+    try:
+        signs = lineage_signs(json.loads(Path(path).read_text()))
+    except Exception as exc:  # noqa: BLE001 — an unreadable manifest is no witness, with a trace
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the dbt manifest could not be read for lineage signs", counter="dataset_layers.lineage")
+        signs = {}
+    _lineage_cache[path] = (mtime, signs)
+    return signs

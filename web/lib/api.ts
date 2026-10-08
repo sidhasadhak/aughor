@@ -2085,6 +2085,8 @@ export interface DatasetTable {
   layer: { set: LayerSet | null; proposed: LayerProposal | null; effective: string };
   off: DatasetOff | null;
   maturity: Maturity;
+  /** The same entity in another table of the connection — its raw, cleansed or business copy. */
+  copies?: string[];
 }
 export interface DatasetSchema {
   name: string;
@@ -2096,8 +2098,18 @@ export interface DatasetSchema {
     held: { at: string; why: string } | null;
     reopened: { at: string; reason: string } | null;
     last_run: { job: string; outcome: string; new_findings: number; ended_at: string; reason: string } | null;
-    watch: Record<string, { through: string; read_at: string; measured: number; moved: { name: string; rel: number }[] }>;
+    watch: Record<string, {
+      through: string; read_at: string; measured: number; moved: { name: string; rel: number }[];
+      /** The segments that carry each move — its dimensions, the Briefing's own breakdown. */
+      explained?: { metric: string; name: string; dimension: string; group: string; change: number | null; share: boolean }[];
+    }>;
     failures: number;
+    /** Questions asked of it this week that it could not answer. */
+    unanswered?: number;
+    /** A raw dataset's daily pipeline health — what changed, said. */
+    health?: { read_at: string | null; notes: string[] };
+    /** New values the last reading found in its dimensions. */
+    news?: string[];
   };
   tables: DatasetTable[];
 }

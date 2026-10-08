@@ -205,9 +205,18 @@ function programLine(ds: DatasetSchema): string[] {
     out.push(`Last run: ${job}, ${p.last_run.outcome}${p.last_run.new_findings ? ` · ${p.last_run.new_findings} new finding${p.last_run.new_findings === 1 ? "" : "s"}` : ""}${p.last_run.ended_at ? ` · ${formatTimestamp(p.last_run.ended_at, "short")}` : ""}`);
   }
   for (const [grain, w] of Object.entries(p.watch || {})) {
-    const moved = (w.moved || []).map(m => `${m.name} ${m.rel > 0 ? "+" : ""}${Math.round(m.rel * 100)}%`).join(", ");
+    const moved = (w.moved || []).map(m => {
+      const why = (w.explained || []).find(e => e.name === m.name);
+      const part = why ? ` (most of it ${why.dimension} = ${why.group})` : "";
+      return `${m.name} ${m.rel > 0 ? "+" : ""}${Math.round(m.rel * 100)}%${part}`;
+    }).join(", ");
     out.push(`Watched ${grain}: read to ${w.through}${moved ? ` · moved: ${moved}` : ""}`);
   }
+  if (p.unanswered) out.push(`${p.unanswered} question${p.unanswered === 1 ? "" : "s"} it could not answer this week`);
+  if (p.health?.read_at) {
+    out.push(p.health.notes.length ? `Health: ${p.health.notes.join("; ")}` : "Health: nothing changed since the last reading");
+  }
+  for (const n of p.news || []) out.push(`New: ${n}`);
   return out;
 }
 
@@ -247,8 +256,15 @@ export function TableProgram({ connId, schema, t, view, schemaOff, onChanged }: 
         <MaturityBars m={t.maturity} size="md" />
         <MaturityLines m={t.maturity} />
       </div>
-      <LayerControl connId={connId} schema={schema} table={t.name} layer={t.layer.set?.layer ?? ""}
-        proposed={t.layer.proposed} setBy={t.layer.set} layers={view.layers} onChanged={onChanged} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <LayerControl connId={connId} schema={schema} table={t.name} layer={t.layer.set?.layer ?? ""}
+          proposed={t.layer.proposed} setBy={t.layer.set} layers={view.layers} onChanged={onChanged} />
+        {(t.copies?.length ?? 0) > 0 && (
+          <span className="aug-fs-xs" style={muted} data-testid="table-copies">
+            The same entity as {t.copies!.join(", ")}
+          </span>
+        )}
+      </div>
       {schemaOff
         ? <span className="aug-fs-xs" style={muted}>Off with its schema</span>
         : <OffSwitch connId={connId} schema={schema} table={t.name} off={t.off} reasons={view.exclusion_reasons} onChanged={onChanged} />}
@@ -271,6 +287,10 @@ export function ConnectionProgram({ connId, view, onChanged }: { connId: string;
   }, [connId]);
   if (!view) return null;
   const waiting = view.schemas.filter(s => !s.layer.set && !s.off && s.layer.proposed.layer);
+  // tables inside them whose own signs read differently — a `stg_` copy inside a business schema
+  const tableProposals = waiting.flatMap(s => s.tables
+    .filter(t => t.layer.proposed?.layer && !t.layer.set && !t.off)
+    .map(t => ({ key: `${s.key}:${t.name}`, text: `${s.name}.${t.name} → ${t.layer.proposed!.label}` })));
   const accept = async () => {
     setBusy(true); setErr("");
     try { await acceptDatasetLayers(connId); onChanged(); }
@@ -298,6 +318,12 @@ export function ConnectionProgram({ connId, view, onChanged }: { connId: string;
               {s.name} → {s.layer.proposed.label} ({s.layer.proposed.evidence.join("; ")})
             </span>
           ))}
+          {tableProposals.length > 0 && (
+            <span className="aug-fs-xs" style={muted} data-testid="table-proposals">
+              and {tableProposals.length} table{tableProposals.length === 1 ? "" : "s"} inside them read differently:{" "}
+              {tableProposals.slice(0, 4).map(t => t.text).join(", ")}{tableProposals.length > 4 ? ", …" : ""}
+            </span>
+          )}
           <div><Button variant="secondary" size="sm" disabled={busy} onClick={accept} data-testid="accept-all-layers">Accept the proposed layers</Button></div>
         </div>
       ) : (

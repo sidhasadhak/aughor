@@ -77,6 +77,12 @@ _DOMAIN_LEASE_S = float(os.environ.get("AUGHOR_DOMAIN_LEASE_S", "900") or 900)
 _RATE_SECONDS_SCHEMA = 0.0   # schema phases (3-7) run as fast as the DB allows
 _RATE_SECONDS_INTEL  = 5.0   # domain intel phase runs at 1 query per 5 seconds
 _COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate aggregates
+#: Table layers whose tables are never offered to the question generator — raw and integration copies
+#: (findings come from the business copy), uploads (only when a person asks) and system. A reference table
+#: stays: it is a dimension others join to, though never explored alone (the exploration principles §5).
+_QUIET_LAYERS = frozenset({"raw", "integration", "uploads", "system"})
+#: What `_next_question` answers when an automatic re-run has asked every uncovered cell it may.
+_NO_MORE_QUESTIONS = object()
 SYNTH_RESERVE_FRACTION = 0.80  # stop Phase 8 at this share of the token budget, leaving the rest for Phase 9 synthesis
 # (0.80 not 0.85: a single Phase-8 iteration can overshoot the threshold by a few %, and
 #  the now-higher-yield Phase 8 + synthesis was crossing 100% and getting heartbeat-cancelled
@@ -1334,6 +1340,68 @@ class SchemaExplorer:
             self._record_program("failed")
             logger.error(f"[explorer:{self.connection_id}] Error: {e}", exc_info=True)
 
+    async def _next_question(self, domain, domain_table_cols, cp, NQ, llm, steer_of, system: str, user: str):
+        """The domain loop's next question, cheapest source first: a cell of the question list,
+        synthesised with no generation call (Tier-1 #4); else the grounded probe, where the model picks
+        columns from the real schema and the SQL is compiled; else free-form generation, for probes the
+        compiler cannot express. An automatic re-run (``_gaps_only``) asks the question list's uncovered
+        cells only — the model's free curiosity runs when a person starts a run, on a dataset's first
+        questions, or when a named event reopens it (the exploration principles §2) — so with no cell
+        left it returns ``_NO_MORE_QUESTIONS`` and calls no model."""
+        nq = self._manifest_nq(domain_table_cols, NQ) if self._manifest_driven else None
+        if nq is not None:
+            return nq
+        if getattr(self, "_gaps_only", False):
+            return _NO_MORE_QUESTIONS
+        # Phase 8 INVENTS the question, so retrieval cannot key on one — the steer keys on the domain
+        # and its tables, which are known before generation.
+        nq = await self._grounded_probe_nq(domain, domain_table_cols, cp, NQ, llm, steer_of())
+        if nq is not None:
+            from aughor.stats import stats as _s
+            _s.inc("explorer.grounded_probe")
+            return nq
+        from aughor.stats import stats as _s
+        _s.inc("explorer.grounded_fallback")
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: llm.complete(system=system, user=user, response_model=NQ))
+
+    def _table_layer(self, table: str) -> str:
+        """The layer a person SET for this table itself ("" when none) — a proposal never applies
+        (decision 2). Read once per schema per run."""
+        cache = self.__dict__.setdefault("_table_layer_cache", {})
+        if "__any__" not in cache:
+            # a connection where no person set any layer reads nothing more (the common case, and a test's)
+            try:
+                from aughor.ontology.dataset_layers import LAYERS_FILE
+                from aughor.ontology.recommendations import recommendations_root, safe_name
+                root = recommendations_root() / safe_name(self.connection_id)
+                cache["__any__"] = root.is_dir() and any(root.glob(f"*/{LAYERS_FILE}"))
+            except Exception:  # noqa: BLE001
+                cache["__any__"] = False
+        if not cache["__any__"]:
+            return ""
+        name = str(table or "")
+        schema = name.rsplit(".", 1)[0].split(".")[-1] if "." in name else getattr(self, "schema_name", None)
+        if not schema:
+            # the scope a person set it under in the Catalog: the connection's one schema (`layer_scope`)
+            if "__scope__" not in cache:
+                try:
+                    from aughor.routers._shared import layer_scope
+                    cache["__scope__"] = layer_scope(self.connection_id, None)
+                except Exception:  # noqa: BLE001
+                    cache["__scope__"] = "default"
+            schema = cache["__scope__"]
+        if schema not in cache:
+            try:
+                from aughor.ontology.dataset_layers import load_declared
+                cache[schema] = {t: d["layer"] for t, d in load_declared(self.connection_id, schema)["tables"].items()}
+            except Exception as exc:  # noqa: BLE001 — no layer read, no layer applied
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "table layers unreadable for a run; every table is asked about",
+                         counter="explorer.table_layers")
+                cache[schema] = {}
+        return cache[schema].get(name.split(".")[-1].lower(), "")
+
     def _findings_made(self) -> int:
         """How many findings this dataset's state holds — what a run's new findings are counted against."""
         return len(self._state.get("insights") or [])
@@ -2213,6 +2281,8 @@ class SchemaExplorer:
             key = (cell.metric, cell.table, cell.axis, cell.cut)
             if key in self._manifest_attempted:
                 continue
+            if getattr(cell, "sql", None) is None and self._table_layer(str(cell.table)) not in ("", "business"):
+                continue   # a table a person set to another layer is never asked about on its own (§5)
             # KPI cells (pre-validated value_sql) are connection-level — run regardless of which
             # domain is active; synthesised cells must be scoped to this domain's tables.
             if getattr(cell, "sql", None) is None and _tbls and str(cell.table).split(".")[-1].lower() not in _tbls:
@@ -2896,6 +2966,10 @@ class SchemaExplorer:
 
             _dup_streak = 0   # consecutive structural-duplicate findings → stop a looping domain
             _followup_hint = ""   # Layer 3: drill instruction carried to the next iteration
+            if "moved" in str(getattr(self, "_job_reason", "") or "") and not getattr(self, "_gaps_only", False):
+                # a run a watched figure's move reopened starts from the move (the exploration principles §4)
+                _followup_hint = (f"A WATCHED FIGURE MOVED — {self._job_reason}. If this domain's tables can "
+                                  "explain that move, ask the question that would.\n\n")
             _drill_parent = None  # id of the finding the current drill is explaining (observability)
             _chain_depth = 0      # consecutive drills, bounded so a thread deepens but never runs away
             while used < budgets.get(f"{domain}__cap", HARD_BUDGET):
@@ -3054,6 +3128,8 @@ class SchemaExplorer:
                 _wkeys = sql_writer.table_cols
                 _bare = lambda s: str(s).split(".")[-1].lower()
                 for tbl in sorted(domain_tables):
+                    if self._table_layer(tbl) in _QUIET_LAYERS:
+                        continue   # a person set this table to a layer that is never questioned (§5)
                     # Resolve the ontology's BARE table name (`order_payments`) to the SQL
                     # writer's QUALIFIED schema key (`missimi.order_payments`) — they never
                     # matched before, so domain_table_cols came back EMPTY for every domain
@@ -3088,7 +3164,7 @@ class SchemaExplorer:
                         if _a in domain_tables and _b and _b not in domain_tables and _ds(_b) == _ds(_a):
                             _nbr_tables.add(_b)
                 _nbr_lines: list[str] = []
-                for nt in sorted(_nbr_tables)[:4]:    # cap — keep the prompt tight
+                for nt in sorted(t for t in _nbr_tables if self._table_layer(t) not in _QUIET_LAYERS)[:4]:  # cap
                     cols = (sql_writer.table_cols.get(nt)
                             or next((v for k, v in sql_writer.table_cols.items() if k.lower() == nt.lower()), None))
                     if cols:
@@ -3407,33 +3483,17 @@ class SchemaExplorer:
                     # (no generation LLM call) when manifest-driven; the entire downstream pipeline
                     # (bind-check, guards, execute, interpret) is unchanged. Fall back to the LLM
                     # generator when no manifest cell applies (deeper/cross-cutting tail).
-                    nq = self._manifest_nq(domain_table_cols, _NextQuestion) if self._manifest_driven else None
-                    if nq is None and getattr(self, "_gaps_only", False):
-                        # An automatic re-run fills the uncovered cells of the question list only (§2):
-                        # the model's free curiosity runs when a person starts it or an event reopens it.
-                        break
-                    if nq is None:
-                        # PRIMARY: grounded generation — the LLM picks columns from the real
-                        # schema and we COMPILE the SQL, so a non-existent column can't be
-                        # emitted (kills the line_total invention class + its ~40% token waste).
-                        # Phase 8 INVENTS the question, so retrieval cannot key on one —
-                        # key on the domain + its tables, which are known before generation.
+                    def _steer_of() -> str:
+                        # read only when the model is to invent the question (a cell of the question list
+                        # needs no steer): Phase 8 INVENTS it, so retrieval keys on the domain and its tables
                         _kb_steer = self._kb_context(
                             f"{domain} " + " ".join(list(domain_table_cols)[:8]))
-                        _steer = (f"DOMAIN: {domain}\n\n{_kb_steer}{frontier_block}{playbook_block}{_followup_hint}"
-                                  f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n")
-                        nq = await self._grounded_probe_nq(domain, domain_table_cols, cp,
-                                                           _NextQuestion, llm, _steer)
-                        if nq is not None:
-                            from aughor.stats import stats as _s; _s.inc("explorer.grounded_probe")
-                    if nq is None:
-                        # FALLBACK: free-form generation for probes the compiler can't express
-                        # (rare cross-table composites). Bounded by the same downstream guards.
-                        from aughor.stats import stats as _s; _s.inc("explorer.grounded_fallback")
-                        nq = await _loop.run_in_executor(
-                            None,
-                            lambda: llm.complete(system=_sys1, user=_usr1, response_model=_NextQuestion),
-                        )
+                        return (f"DOMAIN: {domain}\n\n{_kb_steer}{frontier_block}{playbook_block}{_followup_hint}"
+                                f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n")
+                    nq = await self._next_question(domain, domain_table_cols, cp, _NextQuestion, llm,
+                                                   _steer_of, _sys1, _usr1)
+                    if nq is _NO_MORE_QUESTIONS:
+                        break
                 except Exception as e:
                     logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM question gen failed for {domain}: {e}")
                     break

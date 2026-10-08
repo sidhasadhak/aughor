@@ -13812,6 +13812,11 @@ the browser** · **measure the premise before building.**
     backoff, a heartbeat's budget kill told from a person's stop; an automatic re-run fills only the question
     list's gaps; the dataset fingerprint stamped at profiling); **budgets** (`explorer/budget.py` — per
     organisation and per connection per month, in model tokens, the tighter holding, a held run said).
+    ✅ **Second round 2026-10-08** ("keep building") — every item §12 listed as not built, now §13: table layers
+    enforced inside a schema and one entity's copies shown (findings from the business copy), dbt lineage as
+    a layer sign, a run capped at the month's remainder (`token_cap`, kernel-enforced), ranking by what people
+    query, a question it could not answer and a new dimension value as reopen events, raw pipeline health,
+    and a move explained by its segments (the Briefing's `what_moved`).
 
 ---
 

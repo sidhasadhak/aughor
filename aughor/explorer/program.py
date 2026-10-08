@@ -45,7 +45,9 @@ def load(key: str) -> dict:
     got = _store().get(key) or {}
     return {"runs": list(got.get("runs") or []), "reopened": got.get("reopened"),
             "watch": dict(got.get("watch") or {}), "failures": int(got.get("failures") or 0),
-            "next_retry_at": got.get("next_retry_at"), "held": got.get("held")}
+            "next_retry_at": got.get("next_retry_at"), "held": got.get("held"),
+            "unanswered": list(got.get("unanswered") or []), "health": dict(got.get("health") or {}),
+            "values": dict(got.get("values") or {})}
 
 
 def _update(key: str, fn) -> dict:
@@ -119,4 +121,51 @@ def hold(key: str, why: str) -> None:
 def clear_hold(key: str) -> None:
     def _do(d: dict) -> None:
         d["held"] = None
+    _update(key, _do)
+
+
+def dataset_key(conn_id: str, schema: Optional[str]) -> str:
+    """The program key a question asked against ``schema`` belongs to: the dataset's own key on a
+    connection explored per dataset, else the connection's."""
+    from aughor.explorer import store as expl_store
+    if schema and expl_store.schema_run_keys(conn_id):
+        return f"{conn_id}__{schema}"
+    return conn_id
+
+
+#: Questions a dataset could not answer that reopen its questions, within this many days (§3's event).
+UNANSWERED_REOPEN = 2
+UNANSWERED_DAYS = 7
+
+
+def note_unanswered(key: str, why: str) -> bool:
+    """A question asked of this dataset that it could not answer — the query failed, or an analytical
+    question came back empty. Two in a week reopen the dataset's questions. Returns whether it reopened."""
+    from datetime import timedelta
+    reopened: dict = {}
+
+    def _do(d: dict) -> None:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=UNANSWERED_DAYS)).isoformat()
+        recent = [x for x in (d.get("unanswered") or []) if str(x.get("at") or "") >= cutoff]
+        recent.append({"at": _now(), "why": str(why)[:200]})
+        d["unanswered"] = recent[-20:]
+        if len(recent) >= UNANSWERED_REOPEN and not d.get("reopened"):
+            d["reopened"] = {"at": _now(), "reason": f"{len(recent)} questions it could not answer "
+                                                     f"in the last {UNANSWERED_DAYS} days"}
+            reopened["yes"] = True
+    _update(key, _do)
+    return bool(reopened)
+
+
+def record_health(key: str, reading: dict) -> None:
+    """A raw dataset's daily pipeline-health reading (`explorer/health.py`): per table, and what changed."""
+    def _do(d: dict) -> None:
+        d["health"] = {**reading, "read_at": _now()}
+    _update(key, _do)
+
+
+def record_values(key: str, values: dict, news: list[str]) -> None:
+    """A business dataset's known dimension values, and the new ones the last reading found."""
+    def _do(d: dict) -> None:
+        d["values"] = {**values, "_read": {"read_at": _now(), "news": list(news)}}
     _update(key, _do)

@@ -752,6 +752,7 @@ async def _kernel_boot_recovery() -> None:
                     structure_only=bool(payload.get("structure_only")),
                     gaps_only=bool(payload.get("gaps_only")),
                     reason=str(payload.get("reason") or ""),
+                    token_cap=payload.get("token_cap") if isinstance(payload.get("token_cap"), int) else None,
                 )
             logger.info(
                 "Boot recovery: exploration %s for %s — %s",
