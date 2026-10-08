@@ -562,6 +562,8 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
   const [stopping, setStopping]   = useState(false);
   const [resuming, setResuming]   = useState(false);
   const [restarting, setRestarting] = useState(false);
+  // why a Continue or Restart did not run — a spent monthly budget the person chose not to run past
+  const [runError, setRunError] = useState("");
   const [filterDate, setFilterDate]     = useState<DateFilter>("all");
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
   const [showAll, setShowAll]           = useState(false);
@@ -611,19 +613,23 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
     } finally { setStopping(false); }
   }
   async function handleResume() {
-    setResuming(true);
+    setResuming(true); setRunError("");
     try {
       if (canvasId) await resumeCanvasExploration(canvasId);
       else await resumeExploration(connectionId);
       setStopped(false);
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : "The run did not continue");
     } finally { setResuming(false); }
   }
   async function handleRestart() {
-    setRestarting(true);
+    setRestarting(true); setRunError("");
     try {
       if (canvasId) await restartCanvasExploration(canvasId);
       else await restartExploration(connectionId);
       setStopped(false); setEpisodes([]);
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : "The run did not restart");
     } finally { setRestarting(false); }
   }
 
@@ -670,6 +676,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
     return (
       <div className="h-full flex flex-col">
         <StatusBar status={status} stopped={stopped} onStop={handleStop} onResume={handleResume} onRestart={handleRestart} stopping={stopping} resuming={resuming} restarting={restarting} />
+        {runError && <div className="aug-fs-xs px-4 py-1" data-testid="run-error" style={{ color: "var(--amb4)" }}>{runError}</div>}
         <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: "var(--t3)" }}>
           <p className="aug-fs-sm">No activity recorded yet.</p>
           <p className="aug-fs-xs" style={{ color: "var(--t3)" }}>Activity appears here as background exploration runs.</p>
@@ -681,6 +688,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <StatusBar status={status} stopped={stopped} onStop={handleStop} onResume={handleResume} onRestart={handleRestart} stopping={stopping} resuming={resuming} restarting={restarting} />
+        {runError && <div className="aug-fs-xs px-4 py-1" data-testid="run-error" style={{ color: "var(--amb4)" }}>{runError}</div>}
 
       {/* Filter + controls bar */}
       <div className="flex items-center gap-2.5 px-4 py-2 border-b shrink-0 flex-wrap"

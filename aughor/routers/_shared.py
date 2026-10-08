@@ -275,6 +275,7 @@ async def run_birth(
     schema_name: str | None = None,
     canvas_id: str | None = None,
     tables_filter: list | None = None,
+    token_cap: int | None = None,
 ) -> dict:
     """R12 — the "understand this data" job body (the knowledge/start-mining analog).
 
@@ -375,7 +376,8 @@ async def run_birth(
         _emit("exploration", "started")
         try:
             res = await spawn_explorer(conn_id, canvas_id=canvas_id,
-                                       tables_filter=tables_filter, schema_name=schema_name)
+                                       tables_filter=tables_filter, schema_name=schema_name,
+                                       token_cap=token_cap)
             ok = bool(res.get("ok"))
             # "already running" / "connection not ready" are handoff declines, not crashes.
             _emit("exploration", "done" if ok else "skipped",
@@ -450,6 +452,7 @@ async def spawn_birth(
     schema_name: str | None = None,
     canvas_id: str | None = None,
     tables_filter: list | None = None,
+    token_cap: int | None = None,
 ) -> dict:
     """R12 — submit the birth rite as ONE supervised kernel job (kind ``profile``,
     the Curator charter): persisted state machine, heartbeats, budget governance,
@@ -463,13 +466,16 @@ async def spawn_birth(
     from aughor.kernel.jobs import kernel
     job_id = await kernel().submit(
         "profile",
+        # A person's capped run (`explorer.budget.person_run`): the rite's intelligence build and its
+        # exploration run side by side, so each is capped at half of what is left.
         lambda: run_birth(conn_id, schema_name=schema_name, canvas_id=canvas_id,
-                          tables_filter=tables_filter),
+                          tables_filter=tables_filter, token_cap=(max(1, token_cap // 2) if token_cap else None)),
         conn_id=conn_id,
         canvas_id=canvas_id,
         idempotency_key=f"birth:{key}",
         payload={"schema_name": schema_name, "canvas_id": canvas_id,
-                 "tables_filter": tables_filter or None},
+                 "tables_filter": tables_filter or None,
+                 **({"token_cap": max(1, token_cap // 2)} if token_cap else {})},
     )
     return {"ok": True, "job_id": job_id}
 
@@ -516,7 +522,8 @@ def canonical_schema(conn_id: str, schema: str | None) -> str | None:
     return None if len(schemas) <= 1 else schema
 
 
-def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: bool = False) -> bool:
+def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: bool = False,
+                        token_cap: int | None = None) -> bool:
     """Schedule background schema-exploration, unless already active. Returns True if any run
     was scheduled. An explicit schema_name explores just that schema; otherwise a MULTI-schema
     connection fans out into one run PER schema (the 'every schema gets understood' guarantee),
@@ -589,6 +596,8 @@ def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: b
     except Exception:
         birth = True   # governance lookup hiccup → run the rite rather than skip it
 
+    # A person's capped run (`token_cap`) fanned out over several datasets shares the cap between them.
+    each_cap = max(1, token_cap // max(1, len(targets))) if token_cap else None
     started = False
     for sch in targets:
         key = f"{conn_id}__{sch}" if sch else conn_id
@@ -612,9 +621,9 @@ def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: b
                                  reason=structure_only_reason(conn_id, sch)),
                   name=f"kickoff-{key}")
         elif birth:
-            spawn(spawn_birth(conn_id, schema_name=sch), name=f"birth-{key}")
+            spawn(spawn_birth(conn_id, schema_name=sch, token_cap=each_cap), name=f"birth-{key}")
         else:
-            spawn(spawn_explorer(conn_id, schema_name=sch), name=f"kickoff-{key}")
+            spawn(spawn_explorer(conn_id, schema_name=sch, token_cap=each_cap), name=f"kickoff-{key}")
         started = True
     return started
 

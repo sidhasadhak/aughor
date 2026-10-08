@@ -402,6 +402,9 @@ async def run_continuous_tick() -> int:
             daily = await loop.run_in_executor(None, lambda w=w: H.read_dataset(
                 w["conn_id"], w["schema"], layer="raw" if w.get("layer") == "raw" else "business",
                 reopen_questions=w["reopen"]))
+            for g in got:
+                if g.get("moved") and w["reopen"]:
+                    await explain_move(w["conn_id"], w["schema"], g["grain"], through=str(g.get("through") or ""))
             if got or daily:
                 _emit("exploration.watched", {"connection_id": w["conn_id"], "schema": w["schema"],
                                               "grains": [g["grain"] for g in got],
@@ -411,3 +414,28 @@ async def run_continuous_tick() -> int:
             tolerate(exc, "the watch job is best-effort per dataset", counter="explorer.watch",
                      conn_id=w.get("conn_id"))
     return started
+
+
+async def explain_move(conn_id: str, schema: Optional[str], grain: str, *, through: str = "") -> Optional[str]:
+    """Have the model write the explanation of a reading's move (`explorer/move_story.py`) as a supervised job
+    under the Explorer's charter — its tokens count against the month's budget, capped at what is left. A
+    spent budget withholds the explanation and says why. Returns the job id, or None."""
+    import asyncio
+    from aughor.explorer import budget as B
+    from aughor.explorer import move_story as S
+    from aughor.explorer import program as P
+    key = P.key_for(conn_id, schema)
+    standing = B.standing(conn_id)
+    if standing["spent_out"]:
+        P.record_story(key, grain, {"text": "", "withheld": f"not written — {standing['sentence']}"})
+        return None
+    from aughor.kernel.jobs import kernel
+
+    async def _run():
+        # to_thread copies the job's context into the thread, so the model call is metered on this job
+        return await asyncio.to_thread(S.explain_reading, conn_id, schema, grain)
+
+    return await kernel().submit(
+        S.JOB_KIND, _run, conn_id=conn_id, idempotency_key=f"{S.JOB_KIND}:{key}:{grain}:{through}",
+        payload={"schema_name": schema, "grain": grain,
+                 **({"token_cap": max(1, int(standing["remaining"]))} if standing.get("remaining") else {})})

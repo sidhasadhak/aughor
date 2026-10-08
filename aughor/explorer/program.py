@@ -169,3 +169,11 @@ def record_values(key: str, values: dict, news: list[str]) -> None:
     def _do(d: dict) -> None:
         d["values"] = {**values, "_read": {"read_at": _now(), "news": list(news)}}
     _update(key, _do)
+
+
+def record_story(key: str, grain: str, story: dict) -> None:
+    """The model-written explanation of a grain's newest move (`explorer/move_story.py`), or why it was withheld."""
+    def _do(d: dict) -> None:
+        if grain in d["watch"]:
+            d["watch"][grain] = {**d["watch"][grain], "story": story}
+    _update(key, _do)

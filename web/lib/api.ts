@@ -2106,6 +2106,8 @@ export interface DatasetSchema {
       through: string; read_at: string; measured: number; moved: { name: string; rel: number }[];
       /** The segments that carry each move — its dimensions, the Briefing's own breakdown. */
       explained?: { metric: string; name: string; dimension: string; group: string; change: number | null; share: boolean }[];
+      /** The model's explanation of the move, every number in it checked against the breakdown — or why it was withheld. */
+      story?: { text: string; withheld?: string; model?: string; at?: string; metric?: string };
     }>;
     failures: number;
     /** Questions asked of it this week that it could not answer. */
@@ -2297,12 +2299,45 @@ export async function getDomainInsights(connectionId: string, schema?: string): 
   return res.json();
 }
 
+// ── A run a person starts: capped at the month's exploration budget (2026-10-08) ──────────────
+
+/** The month's exploration budget is spent and the person chose not to run past it. */
+export class BudgetSpentError extends Error {
+  constructor(message: string) { super(message); this.name = "BudgetSpentError"; }
+}
+
+/** The question asked when a person's run would spend past the month's budget. Replaceable (tests). */
+export let askToRunPastBudget = (message: string): boolean =>
+  typeof window !== "undefined" && typeof window.confirm === "function"
+    ? window.confirm(`${message}.\n\nRun it anyway? The choice is recorded under your name.`)
+    : false;
+export function setRunPastBudgetQuestion(fn: (message: string) => boolean): void { askToRunPastBudget = fn; }
+
+/** POST a run a person starts. The server caps it at what is left of the month's exploration budget; when
+ *  nothing is left it refuses with the reason (409 budget_spent), the person is asked, and only a yes runs
+ *  it anyway (`run_anyway`, recorded under their name). A no throws `BudgetSpentError`. */
+async function personRun(url: string, failed: string): Promise<Response> {
+  let res = await fetch(url, { method: "POST" });
+  if (res.status === 409) {
+    const body = await res.clone().json().catch(() => ({}));
+    const d = (body as { detail?: { reason?: string; message?: string } })?.detail;
+    if (d?.reason === "budget_spent") {
+      const message = d.message || "The monthly exploration budget is spent";
+      if (!askToRunPastBudget(message)) throw new BudgetSpentError(message);
+      res = await fetch(`${url}${url.includes("?") ? "&" : "?"}run_anyway=true`, { method: "POST" });
+    }
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, failed));
+  }
+  return res;
+}
+
 export async function extendDomainBudget(connectionId: string, domain: string): Promise<{ ok: boolean }> {
-  const res = await fetch(
+  const res = await personRun(
     `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/domains/${encodeURIComponent(domain)}/extend`,
-    { method: "POST" }
-  );
-  if (!res.ok) throw new Error("Failed to extend domain budget");
+    "Failed to extend domain budget");
   return res.json();
 }
 
@@ -2813,8 +2848,8 @@ export async function dismissConnectionInsight(connectionId: string, insightId: 
 }
 
 export async function resumeCanvasExploration(canvasId: string): Promise<{ status: string }> {
-  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/resume`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to resume canvas exploration");
+  const res = await personRun(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/resume`,
+    "Failed to resume canvas exploration");
   return res.json();
 }
 
@@ -2825,8 +2860,8 @@ export async function stopCanvasExploration(canvasId: string): Promise<{ status:
 }
 
 export async function restartCanvasExploration(canvasId: string): Promise<{ status: string }> {
-  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/restart`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to restart canvas exploration");
+  const res = await personRun(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/restart`,
+    "Failed to restart canvas exploration");
   return res.json();
 }
 
@@ -2837,8 +2872,8 @@ export async function getCanvasExplorationStatus(canvasId: string): Promise<Expl
 }
 
 export async function triggerCanvasDomainIntelligence(canvasId: string): Promise<{ ok: boolean; reason?: string }> {
-  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/trigger-intel`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to trigger canvas domain intelligence");
+  const res = await personRun(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/trigger-intel`,
+    "Failed to trigger canvas domain intelligence");
   return res.json();
 }
 
@@ -2887,14 +2922,14 @@ export async function stopExploration(connectionId: string): Promise<{ ok: boole
 }
 
 export async function resumeExploration(connectionId: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/resume`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to resume exploration");
+  const res = await personRun(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/resume`,
+    "Failed to resume exploration");
   return res.json();
 }
 
 export async function restartExploration(connectionId: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/restart`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to restart exploration");
+  const res = await personRun(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/restart`,
+    "Failed to restart exploration");
   return res.json();
 }
 
@@ -7508,8 +7543,8 @@ export async function getExplorerStatus(connectionId: string, schema?: string): 
 
 export async function startExplorer(connectionId: string, schema?: string): Promise<{ ok: boolean; reason?: string }> {
   const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
-  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/start${q}`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to start explorer");
+  const res = await personRun(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/start${q}`,
+    "Failed to start explorer");
   return res.json();
 }
 
@@ -7520,8 +7555,8 @@ export async function stopExplorer(connectionId: string): Promise<{ ok: boolean 
 }
 
 export async function restartExplorer(connectionId: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/restart`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to restart explorer");
+  const res = await personRun(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/restart`,
+    "Failed to restart explorer");
   return res.json();
 }
 
@@ -7532,8 +7567,8 @@ export async function triggerDomainIntelligence(connectionId: string): Promise<{
    *  and a refused schema carries its reason here (the top-level `ok` is any-schema-ok). */
   results?: { schema?: string | null; ok: boolean; reason?: string }[];
 }> {
-  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/trigger-intel`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to trigger domain intelligence");
+  const res = await personRun(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/trigger-intel`,
+    "Failed to trigger domain intelligence");
   return res.json();
 }
 

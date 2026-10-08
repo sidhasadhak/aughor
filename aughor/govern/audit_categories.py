@@ -95,6 +95,9 @@ KIND_CATEGORY: dict[str, str] = {
     # allow-AND-block trail, of which the feed carries the BLOCKS only (the reader says why).
     "govern.cap": "enforcement",
     "budget.exceeded": "enforcement",
+    # The exploration principles (2026-10-08): a person running an exploration past a spent monthly budget —
+    # the one way past the cap, so it is on the record with who chose it.
+    "exploration.budget_override": "enforcement",
     "metric.enforcement": "enforcement",
     "guardrail": "enforcement",
     # The 2027 study's phases 4 and 5 — what an action did on its own authority. The L5 agent
@@ -319,6 +322,9 @@ def _summarize(kind: str, p: dict) -> str:
     if kind == "budget.exceeded":
         return (f"job cancelled for {p.get('agent') or 'an agent'}: "
                 f"{p.get('reason') or 'a governed cap was exceeded'}")
+    if kind == "exploration.budget_override":
+        return (f"{p.get('by') or 'a person'} ran {p.get('what') or 'an exploration'} past the spent "
+                f"exploration budget on {p.get('connection_id') or '?'}")
     if kind == "metric.enforcement":
         drift = [str(d) for d in (p.get("drift") or [])]
         used = p.get("enforced")
@@ -525,6 +531,7 @@ _SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
     # Phase 0 (2026-10-04) — the enforcement trail, one sink per kind.
     ("enforcement", lambda n: _from_ledger("govern.cap", n)),
     ("enforcement", lambda n: _from_ledger("budget.exceeded", n)),
+    ("enforcement", lambda n: _from_ledger("exploration.budget_override", n)),
     ("enforcement", lambda n: _from_ledger("metric.enforcement", n)),
     ("enforcement", _from_session_guardrails),
 ]

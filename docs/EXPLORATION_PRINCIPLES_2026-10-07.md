@@ -247,7 +247,8 @@ The user: "start and finish the principles build end to end." Branch `claude/exp
    Approving a metric reopens its dataset.
 5. **Budgets** — `aughor/explorer/budget.py`: the organisation's (Settings ▸ Organization ▸ Exploration) and
    the connection's (Catalog ▸ the connection), per calendar month, in the model tokens the exploration jobs
-   recorded; the tighter holds. It governs the platform's own initiative only — a person's Start always runs.
+   recorded; the tighter holds. It governs the platform's own initiative — and, since the third round (§14), a
+   person's Start too, which is capped at what is left and asks before running past it.
    A held run says so on the dataset, in the Explorer status and in the Catalog. Spend goes to the most
    valuable first: a reopen, first questions, a new dataset, a schema change, then gaps, each ranked by the
    approved metrics that read the dataset; at most two model-spending runs start per check.
@@ -292,5 +293,27 @@ The user: "start and finish the principles build end to end." Branch `claude/exp
   `what_moved`; the top segments are kept with the reading and named in the reopen ("revenue moved −12% —
   most of it country = US"), and the reopened run starts from that move.
 
-**Still not built:** a model-written explanation of a move (the breakdown is SQL; the reopened run is
-where the model looks for why) and a per-run token cap for a person's own Start (never held, by decision).
+**Not built in the second round** — both built in the third (§14): a model-written explanation of a move,
+and a cap on a person's own Start.
+
+## 14 · Built, third round (2026-10-08)
+
+The user: "Let's build: a model-written explanation of a move … and any cap on your own Start."
+
+- **A move explained in words** (`explorer/move_story.py`). When a watch reading finds a real move and its
+  segments, a supervised job under the Explorer's charter (`explain_move`, its tokens counted against the
+  month's budget and capped at what is left) hands the model exactly the numbers — the figure for the period
+  and the one before, each segment's values, change and share of the move worked out in advance, and what
+  the platform already found about a moving segment — and the model writes two or three sentences. Held to
+  account as a message is before it leaves: every number in it must be one it was handed, at the precision
+  written; a causal, associational or forecast sentence is refused (a breakdown shows where a change sits,
+  not why). A draft that breaks a rule is sent back once with what it broke; a second failure is withheld,
+  said. A spent budget withholds it too, said. Shown on the dataset's strip as "The move, in words".
+- **A person's own Start is capped** (`explorer/budget.person_run`). Start, Restart, Continue, run its
+  questions and Explore 5 more — and their canvas counterparts — are capped at what is left of the month
+  under the tighter budget, shared between the datasets one Start fans out to (and, for a first run's setup,
+  between its intelligence build and its exploration). When nothing is left the API answers 409 with the
+  reason; the screen asks "Run it anyway?", and only a yes runs it, at the agent's own budget, recorded under
+  the person's name (`exploration.budget_override`). With no budget set, nothing changes.
+
+Decision 3 is amended accordingly: the budget governs a person's run too, which asks before it spends past it.

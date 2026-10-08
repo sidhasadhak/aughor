@@ -5828,7 +5828,8 @@ export interface paths {
          * Resume Exploration
          * @description A person's Continue. An INTERRUPTED run resumes each of its datasets from saved progress —
          *     the per-dataset runs of a multi-dataset connection each by its own key; a connection-level
-         *     resume there would start a fresh connection-wide run instead.
+         *     resume there would start a fresh connection-wide run instead. Capped at what is left of the
+         *     month's budget, shared between the datasets it resumes.
          */
         post: operations["resume_exploration_exploration__conn_id__resume_post"];
         delete?: never;
@@ -18263,7 +18264,7 @@ export interface components {
             date_format: string;
             /**
              * Exploration Monthly Tokens
-             * @description The organisation's monthly budget for what the Explorer spends on its own initiative, in model tokens; 0 = none. A connection may set its own; the tighter holds. A person's own Start is never held by it.
+             * @description The organisation's monthly budget for what the Explorer spends on its own initiative, in model tokens; 0 = none. A connection may set its own; the tighter holds. A person's own Start is capped at what is left, and past it runs only when they say to run it anyway.
              * @default 0
              */
             exploration_monthly_tokens: number;
@@ -30353,6 +30354,7 @@ export interface operations {
     restart_canvas_exploration_exploration_canvas__canvas_id__restart_post: {
         parameters: {
             query?: {
+                run_anyway?: boolean;
                 connection_id?: string | null;
             };
             header?: never;
@@ -30386,6 +30388,7 @@ export interface operations {
     resume_canvas_exploration_exploration_canvas__canvas_id__resume_post: {
         parameters: {
             query?: {
+                run_anyway?: boolean;
                 connection_id?: string | null;
             };
             header?: never;
@@ -30481,6 +30484,7 @@ export interface operations {
     trigger_canvas_domain_intelligence_exploration_canvas__canvas_id__trigger_intel_post: {
         parameters: {
             query?: {
+                run_anyway?: boolean;
                 connection_id?: string | null;
             };
             header?: never;
@@ -31003,6 +31007,7 @@ export interface operations {
     extend_domain_budget_exploration__conn_id__domains__domain__extend_post: {
         parameters: {
             query?: {
+                run_anyway?: boolean;
                 connection_id?: string | null;
             };
             header?: never;
@@ -31281,6 +31286,7 @@ export interface operations {
     restart_exploration_exploration__conn_id__restart_post: {
         parameters: {
             query?: {
+                run_anyway?: boolean;
                 connection_id?: string | null;
             };
             header?: never;
@@ -31314,6 +31320,7 @@ export interface operations {
     resume_exploration_exploration__conn_id__resume_post: {
         parameters: {
             query?: {
+                run_anyway?: boolean;
                 connection_id?: string | null;
             };
             header?: never;
@@ -31383,6 +31390,7 @@ export interface operations {
         parameters: {
             query?: {
                 schema?: string | null;
+                run_anyway?: boolean;
                 connection_id?: string | null;
             };
             header?: never;
@@ -31481,6 +31489,7 @@ export interface operations {
         parameters: {
             query?: {
                 schema?: string | null;
+                run_anyway?: boolean;
                 connection_id?: string | null;
             };
             header?: never;

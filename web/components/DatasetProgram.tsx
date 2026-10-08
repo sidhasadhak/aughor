@@ -211,6 +211,8 @@ function programLine(ds: DatasetSchema): string[] {
       return `${m.name} ${m.rel > 0 ? "+" : ""}${Math.round(m.rel * 100)}%${part}`;
     }).join(", ");
     out.push(`Watched ${grain}: read to ${w.through}${moved ? ` · moved: ${moved}` : ""}`);
+    if (w.story?.text) out.push(`The move, in words: ${w.story.text}`);
+    else if (w.story?.withheld) out.push(`Its explanation: ${w.story.withheld}`);
   }
   if (p.unanswered) out.push(`${p.unanswered} question${p.unanswered === 1 ? "" : "s"} it could not answer this week`);
   if (p.health?.read_at) {

@@ -13817,6 +13817,10 @@ the browser** · **measure the premise before building.**
     a layer sign, a run capped at the month's remainder (`token_cap`, kernel-enforced), ranking by what people
     query, a question it could not answer and a new dimension value as reopen events, raw pipeline health,
     and a move explained by its segments (the Briefing's `what_moved`).
+    ✅ **Third round 2026-10-08** — §14: a move explained in words by the model (`explorer/move_story.py`, every
+    number checked against the breakdown, no causal claim, withheld when it fails twice; a capped `explain_move`
+    job under the Explorer's charter), and a person's own Start capped at what is left of the month — past it
+    only on "run it anyway", recorded under their name. Decision (d) amended: the budget governs a person's run too.
 
 ---
 

@@ -102,7 +102,7 @@ def test_a_grain_is_read_once_per_settled_period_and_a_real_move_reopens(monkeyp
 
     got = W.read_due(conn, "marts", reopen_questions=True, measure=measure)
     assert [g["grain"] for g in got] == ["day"] and got[0]["moved"] == [
-        {"name": "revenue", "metric": "revenue", "rel": -0.12}]
+        {"name": "revenue", "metric": "revenue", "rel": -0.12, "current": None, "previous": None, "unit": ""}]
     prog = P.load(f"{conn}__marts")
     assert prog["watch"]["day"]["through"] == "2026-10-07"
     assert "revenue moved -12%" in prog["reopened"]["reason"]
@@ -143,7 +143,7 @@ def test_the_tighter_budget_holds_and_says_so(monkeypatch):
     s = B.standing("wh")
     assert s["held_by"] == "connection" and s["spent_out"] and s["remaining"] == -10_000
     assert "connection's monthly exploration budget of 50,000 tokens is spent" in s["sentence"]
-    assert "a person's Start still runs" in s["sentence"]
+    assert "a person's Start asks first" in s["sentence"]
     monkeypatch.setattr(B, "limits", lambda c: (None, None))
     open_ = B.standing("wh")
     assert open_["held_by"] is None and not open_["spent_out"] and "no monthly exploration budget" in open_["sentence"]

@@ -75,7 +75,8 @@ def moved_figures(measured: list[dict], grain_metrics: set[str]) -> list[dict]:
         if rel is None or f.get("status") not in ("final", None):
             continue
         if abs(float(rel)) >= MOVED:
-            out.append({"name": f.get("name"), "metric": f.get("metric"), "rel": round(float(rel), 4)})
+            out.append({"name": f.get("name"), "metric": f.get("metric"), "rel": round(float(rel), 4),
+                        "current": f.get("current"), "previous": f.get("previous"), "unit": f.get("unit") or ""})
     return out
 
 

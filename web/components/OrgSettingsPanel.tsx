@@ -279,8 +279,8 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
           </div>
           <div style={hintStyle}>
             What the Explorer spends on its own initiative each month, across every connection. A connection may
-            set its own in the Catalog; the tighter holds, and a held run says so. A person&apos;s own Start is never
-            held. Empty = no budget.
+            set its own in the Catalog; the tighter holds, and a held run says so. A person&apos;s own Start is capped
+            at what is left, and once it is spent asks before it runs. Empty = no budget.
           </div>
         </div>
       )}
