@@ -27,7 +27,28 @@ def register_agent_plugins() -> None:
     _register_value_sample_loader()
     _register_readings_loader()
     _register_guard_receipt_forwarder()
+    _register_exclusions()
     _REGISTERED = True
+
+
+def _register_exclusions() -> None:
+    """The exploration principles §6 — what a person turned off, readable by the platform's SQL door and schema text
+    through the registry seam (no Platform→Agent import). Unregistered, nothing is turned off."""
+    from aughor.kernel.registries.exclusions import register_exclusions
+
+    def _refusal(connection_id, sql, dialect, default_schema):
+        from aughor.ontology.visibility import refusal_for
+        return refusal_for(connection_id, sql, dialect, default_schema=default_schema)
+
+    def _schema_text(connection_id, schema_text, default_schema):
+        from aughor.ontology.visibility import without_excluded
+        return without_excluded(connection_id, schema_text, default_schema=default_schema)
+
+    def _table_off(connection_id, schema, table):
+        from aughor.ontology.visibility import is_table_off
+        return is_table_off(connection_id, schema, table)
+
+    register_exclusions(refusal=_refusal, schema_text=_schema_text, table_off=_table_off)
 
 
 def _register_readings_loader() -> None:

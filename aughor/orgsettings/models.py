@@ -85,6 +85,16 @@ class OrgSettings(BaseModel):
     )
 
 
+    # ── Exploration (the exploration principles §7, 2026-10-08) ──
+    exploration_monthly_tokens: int = Field(
+        default=0, ge=0,
+        description=(
+            "The organisation's monthly budget for what the Explorer spends on its own initiative, "
+            "in model tokens; 0 = none. A connection may set its own; the tighter holds. A person's "
+            "own Start is capped at what is left, and past it runs only when they say to run it anyway."
+        ),
+    )
+
     # ── Working memory (CB-6) ──
     priorities: list[Priority] = Field(
         default_factory=list,

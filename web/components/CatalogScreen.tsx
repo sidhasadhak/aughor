@@ -37,6 +37,8 @@ import { SchemaShape } from "@/components/SchemaShape";
 import { VolumesPanel, PermissionsPanel } from "@/components/catalog/MetastorePanels";
 import { GlossaryPanel } from "@/components/catalog/GlossaryPanel";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
+import { ConnectionProgram, MaturityBars, SchemaProgram, TableProgram } from "@/components/DatasetProgram";
+import { getDatasets, type DatasetsView } from "@/lib/api";
 import { SchemaPanel } from "@/components/SchemaPanel";
 import { listDocuments, getKnowledgeStatus, type DocumentEntry, type KnowledgeStatus } from "@/lib/api";
 import { AddDataPanel } from "@/components/AddDataPanel";
@@ -558,10 +560,12 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
 
 type TableTab = "overview" | "sample" | "distribution" | "comments";
 
-function TableDetailPanel({ sel, onAsk, onRemoved }: {
+function TableDetailPanel({ sel, onAsk, onRemoved, view, onProgramChanged }: {
   sel:   Extract<Sel, { level: "table" }>;
   onAsk?: (table: string, connId: string) => void;
   onRemoved?: () => void;
+  view?: DatasetsView | null;
+  onProgramChanged?: () => void;
 }) {
   const [tab, setTab]           = useState<TableTab>("overview");
   const [colFilter, setColFilter] = useState("");
@@ -674,6 +678,11 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
         breadcrumb={`${sel.connId}  ›  ${sel.schemaName}`}
         meta={`${fmtRows(sel.table.row_count)} rows · ${cols.length || "…"} columns${fkCount ? ` · ${fkCount} FK` : ""}`}
       />
+      {(() => {
+        const ds = view?.schemas.find(s => s.name === sel.schemaName);
+        return <TableProgram connId={sel.connId} schema={sel.schemaName} t={ds?.tables.find(t => t.name === sel.table.name)}
+          view={view ?? null} schemaOff={!!ds?.off} onChanged={() => onProgramChanged?.()} />;
+      })()}
 
       <TabBar
         tabs={[{ id: "overview", label: "Overview" }, { id: "sample", label: "Sample Data" }, { id: "distribution", label: "Distribution" }, { id: "comments", label: "Comments" }]}
@@ -831,12 +840,14 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
 
 type SchemaTab = "tables" | "erd" | "shape";
 
-function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
+function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved, view, onProgramChanged }: {
   sel:           Extract<Sel, { level: "schema" }>;
   onSelectTable: (table: CatalogTableInfo) => void;
   onAsk?:        (table: string, connId: string) => void;
   connName?:     string;
   onRemoved?:    () => void;
+  view?:         DatasetsView | null;
+  onProgramChanged?: () => void;
 }) {
   const [filter, setFilter] = useState("");
   const [tab, setTab]       = useState<SchemaTab>("tables");
@@ -891,6 +902,8 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
         breadcrumb={sel.connId}
         meta={`${entry.tables.length} table${entry.tables.length !== 1 ? "s" : ""}`}
       />
+      <SchemaProgram connId={sel.connId} ds={view?.schemas.find(s => s.name === entry.name)} view={view ?? null}
+        onChanged={() => onProgramChanged?.()} />
 
       <TabBar
         tabs={[
@@ -962,6 +975,7 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                   <IcoTable size={12} />
                   <span style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                  <TableMark view={view} schema={entry.name} table={t.name} />
                 </div>
                 <span style={{ fontSize: 11, color: "var(--t3)", textAlign: "right" }}>{fmtRows(t.row_count)}</span>
                 {onAsk && (
@@ -999,7 +1013,9 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
 
 type CatalogTab = "schemas";
 
-function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testing, testResult, onOpenDocuments }: {
+function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testing, testResult, onOpenDocuments, view, onProgramChanged }: {
+  view?:          DatasetsView | null;
+  onProgramChanged?: () => void;
   sel:            Extract<Sel, { level: "catalog" }>;
   onSelectSchema: (schema: CatalogSchemaInfo) => void;
   conn?:          Connection;
@@ -1083,7 +1099,10 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
                   <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     <IcoSchema color="var(--blue3)" size={14} />
                     <div>
-                      <p style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)" }}>{sc.name}</p>
+                      <p style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)", display: "flex", alignItems: "center", gap: 8 }}>
+                        {sc.name}
+                        <SchemaMark view={view} schema={sc.name} />
+                      </p>
                       <p style={{ fontSize: 11, color: "var(--t3)", marginTop: 1 }}>{schRows > 0 ? fmtRows(schRows) + " rows" : ""}</p>
                     </div>
                   </div>
@@ -1100,6 +1119,7 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
         {/* Footer: briefings opt-in (all real connections) + connector actions + management */}
         {entry.conn_id !== "samples" && (
           <div style={{ flexShrink: 0, background: "var(--bg-0)" }}>
+          <ConnectionProgram connId={entry.conn_id} view={view ?? null} onChanged={() => onProgramChanged?.()} />
           <BriefingsToggle connId={entry.conn_id} />
           {!entry.builtin && (
           <>
@@ -1346,6 +1366,29 @@ function EmptyDetail() {
   );
 }
 
+// ── Maturity marks (the exploration principles, 2026-10-08) ──────────────────
+
+/** "off" said beside a name — a schema or table a person turned off for analysis. */
+function OffMark() {
+  return <span className="aug-fs-xs" title="Turned off for analysis — never explored, never queried by Investigation or Quick analysis"
+    style={{ color: "var(--t3)", border: "0.5px solid var(--b2)", padding: "0 4px", flexShrink: 0 }}>off</span>;
+}
+
+/** A schema's maturity bars and number, or "off". */
+function SchemaMark({ view, schema }: { view?: DatasetsView | null; schema: string }) {
+  const ds = view?.schemas.find(s => s.name === schema);
+  if (!ds) return null;
+  return ds.off ? <OffMark /> : <MaturityBars m={ds.maturity} />;
+}
+
+/** A table's maturity bars (no number — the schema carries it), or "off". */
+function TableMark({ view, schema, table }: { view?: DatasetsView | null; schema: string; table: string }) {
+  const ds = view?.schemas.find(s => s.name === schema);
+  const t = ds?.tables.find(x => x.name === table);
+  if (!ds || !t) return null;
+  return ds.off || t.off ? <OffMark /> : <MaturityBars m={t.maturity} showNumber={false} />;
+}
+
 // ── Tree node ─────────────────────────────────────────────────────────────────
 
 function TreeRow({
@@ -1534,6 +1577,14 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
   const [testRes, setTestRes]   = useState<Record<string, boolean>>({});
   const q = search.toLowerCase();
   const selConn = connections.find(c => c.id === selectedConn);
+  // Each open catalog's datasets — layer, off, maturity, budget — read once it is opened.
+  const [datasets, setDatasets] = useState<Record<string, DatasetsView | null>>({});
+  const loadDatasets = (connId: string) => {
+    if (connId === "samples") return;
+    getDatasets(connId)
+      .then(v => setDatasets(prev => ({ ...prev, [connId]: v })))
+      .catch(err => { console.error("[CatalogScreen] datasets read failed:", err); setDatasets(prev => ({ ...prev, [connId]: null })); });
+  };
 
   const loadTree = () => {
     setTreeL(true);
@@ -1569,6 +1620,11 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
 
   const toggle = (key: string) => setExpanded(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   const isOpen = (key: string) => expanded.has(key);
+  useEffect(() => {
+    const open = [...expanded].filter(k => k.startsWith("catalog:")).map(k => k.slice("catalog:".length));
+    if (sel?.connId) open.push(sel.connId);
+    for (const id of new Set(open)) if (!(id in datasets)) loadDatasets(id);
+  }, [expanded, sel?.connId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDelete = (id: string) => {
     const conn = connections.find(c => c.id === id);
@@ -1650,6 +1706,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
             <TreeRow key={schemaKey} depth={1}
               icon={<IcoSchema color="var(--blue3)" />}
               label={schema.name}
+              badge={<SchemaMark view={datasets[entry.conn_id]} schema={schema.name} />}
               count={schema.tables.length}
               isOpen={schOpen}
               isSelected={sel?.level === "schema" && sel.connId === entry.conn_id && sel.schemaName === schema.name}
@@ -1670,6 +1727,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
               <TreeRow key={tableKey} depth={2}
                 icon={<IcoTable active={isSel} />}
                 label={table.name}
+                badge={<TableMark view={datasets[entry.conn_id]} schema={schema.name} table={table.name} />}
                 isSelected={isSel}
                 hasChildren={false}
                 onClick={() => { pushRecent(`${entry.conn_id}:${schema.name}:${table.name}`); setSel({ level: "table", connId: entry.conn_id, schemaName: schema.name, table }); }}
@@ -1704,6 +1762,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
     if (sel.level === "table") return (
       <TableDetailPanel sel={sel} onAsk={onChatWithTable}
         onRemoved={() => { setSel(null); loadTree(); refreshSchema(); }}
+        view={datasets[sel.connId]} onProgramChanged={() => loadDatasets(sel.connId)}
       />
     );
     if (sel.level === "schema") return (
@@ -1712,10 +1771,12 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         onSelectTable={t => setSel({ level: "table", connId: sel.connId, schemaName: sel.schemaName, table: t })}
         onAsk={onChatWithTable}
         onRemoved={() => { setSel(null); loadTree(); refreshSchema(); }}
+        view={datasets[sel.connId]} onProgramChanged={() => loadDatasets(sel.connId)}
       />
     );
     if (sel.level === "catalog") return (
       <CatalogDetailPanel sel={sel}
+        view={datasets[sel.connId]} onProgramChanged={() => loadDatasets(sel.connId)}
         onOpenDocuments={onOpenDocuments}
         conn={connections.find(c => c.id === sel.connId)}
         onTest={handleTest}

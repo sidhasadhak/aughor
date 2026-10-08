@@ -287,7 +287,7 @@ def test_explore_wrapper_runs_under_semaphore(monkeypatch):
     ex.connection_id = "c"
     seen = {}
 
-    async def fake_run(domain_intel_only=False):
+    async def fake_run(domain_intel_only=False, **_job):
         sem = _get_explorer_semaphore()
         seen["held_during_run"] = sem.locked()      # slot taken while running
         seen["domain_intel_only"] = domain_intel_only

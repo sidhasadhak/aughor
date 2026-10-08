@@ -77,6 +77,12 @@ _DOMAIN_LEASE_S = float(os.environ.get("AUGHOR_DOMAIN_LEASE_S", "900") or 900)
 _RATE_SECONDS_SCHEMA = 0.0   # schema phases (3-7) run as fast as the DB allows
 _RATE_SECONDS_INTEL  = 5.0   # domain intel phase runs at 1 query per 5 seconds
 _COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate aggregates
+#: Table layers whose tables are never offered to the question generator — raw and integration copies
+#: (findings come from the business copy), uploads (only when a person asks) and system. A reference table
+#: stays: it is a dimension others join to, though never explored alone (the exploration principles §5).
+_QUIET_LAYERS = frozenset({"raw", "integration", "uploads", "system"})
+#: What `_next_question` answers when an automatic re-run has asked every uncovered cell it may.
+_NO_MORE_QUESTIONS = object()
 SYNTH_RESERVE_FRACTION = 0.80  # stop Phase 8 at this share of the token budget, leaving the rest for Phase 9 synthesis
 # (0.80 not 0.85: a single Phase-8 iteration can overshoot the threshold by a few %, and
 #  the now-higher-yield Phase 8 + synthesis was crossing 100% and getting heartbeat-cancelled
@@ -1032,7 +1038,8 @@ class SchemaExplorer:
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 
-    async def explore(self, domain_intel_only: bool = False) -> None:
+    async def explore(self, domain_intel_only: bool = False, *, structure_only: bool = False,
+                      gaps_only: bool = False, reason: str = "") -> None:
         """Concurrency-bounded entry point for an exploration run (scheduled as an
         asyncio.Task by the kernel). Acquires a shared slot so at most
         AUGHOR_MAX_CONCURRENT_EXPLORERS run their phases at once; excess explorers wait
@@ -1049,14 +1056,28 @@ class SchemaExplorer:
         lane = lane_for_connection(self.connection_id)
         async with sem:
             async with lane.gate():
-                await self._explore_run(domain_intel_only=domain_intel_only)
+                await self._explore_run(domain_intel_only=domain_intel_only, structure_only=structure_only,
+                                        gaps_only=gaps_only, reason=reason)
 
-    async def _explore_run(self, domain_intel_only: bool = False) -> None:
+    async def _explore_run(self, domain_intel_only: bool = False, *, structure_only: bool = False,
+                           gaps_only: bool = False, reason: str = "") -> None:
         """Full exploration run.
 
         If domain_intel_only=True (triggered by "Explore 5 more") skips phases 3-7
         and runs only Phase 8, consuming the extended budget.
+
+        The exploration principles' three jobs (§2, 2026-10-08): ``structure_only`` learns the
+        structure — profiles, empty-value meanings, joins, lifecycles, distributions, cross-table
+        patterns — and stops before anything that calls a model; ``domain_intel_only`` maps the
+        questions on a structure already learned; neither is both. ``gaps_only`` is an automatic
+        re-run's questions: the uncovered cells of the question list, never the model's free
+        curiosity loop, which runs when a person starts it or a named event reopens the dataset.
         """
+        self._structure_only = bool(structure_only)
+        self._gaps_only = bool(gaps_only)
+        self._job = "structure" if structure_only else ("questions" if domain_intel_only else "full")
+        self._job_reason = reason
+        self._findings_at_start = self._findings_made()
         logger.info(f"[explorer:{self.connection_id}] Starting (domain_intel_only={domain_intel_only})")
         _loop = asyncio.get_running_loop()
         # A new run is not the stopped one: only THIS run's own budget stop may re-stamp it,
@@ -1070,17 +1091,34 @@ class SchemaExplorer:
                 # at pending forever, with 0 queries and 0 insights. Absent input is a
                 # failure the user can see, never a success with nothing in it.
                 self._status.phase = ExplorationPhase.FAILED
-                self._status.error = ("no profiler data for this connection — the schema "
-                                      "profiler has not produced table profiles here "
-                                      "(it may not support this engine yet)")
+                self._status.error = (
+                    f"every table here is turned off for analysis ({self._turned_off} of them) — "
+                    "turn one back on in the Catalog to explore it" if getattr(self, "_turned_off", 0)
+                    else ("no profiler data for this connection — the schema "
+                          "profiler has not produced table profiles here "
+                          "(it may not support this engine yet)"))
                 self._journal("exploration.phase", {"phase": "failed", "reason": "no_profiler_data"})
                 self._save_state()
+                self._record_program("failed")
                 logger.warning(f"[explorer:{self.connection_id}] No profiler data — marking failed")
                 return
 
             self._status.tables_total = len(tp)
             self._status.columns_total = sum(len(v) for v in cp.values())
             self._status.joins_total = len(jmap.get("joins", []))
+            # The dataset's fingerprint, stamped as soon as it is known — not only at COMPLETE, where a
+            # run that stopped never stamped it and the question list's reuse waited for a third run.
+            if not getattr(self, "canvas_id", None):
+                try:
+                    from aughor.db.connection import unfiltered_schema
+                    from aughor.explorer.continuous import fingerprint_of
+                    _dfp = await _loop.run_in_executor(None, lambda: fingerprint_of(unfiltered_schema(self._conn)))
+                    if _dfp:
+                        self._state["dataset_fingerprint"] = _dfp
+                except Exception as _dfp_exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_dfp_exc, "the dataset fingerprint stamp is best-effort; the next run stamps it",
+                             counter="explorer.dataset_fingerprint")
 
             # Compute the 12-month window — recency anchored on activity (fact) tables,
             # not the calendar spine (Tier 0; docs/ADAPTIVE_TEMPORAL_SCOPE.md §3).
@@ -1157,52 +1195,61 @@ class SchemaExplorer:
                 self._status.phase = ExplorationPhase.CROSS_TABLE
                 self._journal("exploration.phase", {"phase": "cross_table"})
                 await self._phase7_patterns(cp, jmap, tp)
+                self._state["structure_learned"] = {"at": datetime.now(timezone.utc).isoformat(),
+                                                    "fp": self._state.get("dataset_fingerprint")}
+                self._save_state()
 
-            # ── Ontology gate: Phase 8 needs the ontology; build it now if it
-            # hasn't been created yet.  On a fresh connection, phases 3-7 can
-            # finish in <10 s while the ontology build (triggered by the first
-            # /ontology API request) may not have happened yet.  get_schema()
-            # is idempotent + cached — instant on the second call.
-            from aughor.ontology.store import load_latest_ontology as _load_onto
-            if not _load_onto(self.connection_id, self.schema_name):
-                logger.info(
-                    "[explorer:%s] Ontology not found before Phase 8 — building now…",
-                    self.connection_id,
-                )
-                try:
-                    await _loop.run_in_executor(None, self._conn.build_intelligence)
+            if self._structure_only:
+                # The structure job ends here: nothing below it may call a model (§2, decision 2).
+                self._status.domain_intel_skipped = True
+                self._status.domain_intel_note = (self._job_reason or
+                    "structure learned; its questions wait for this dataset's layer to be set")
+            else:
+                # ── Ontology gate: Phase 8 needs the ontology; build it now if it
+                # hasn't been created yet.  On a fresh connection, phases 3-7 can
+                # finish in <10 s while the ontology build (triggered by the first
+                # /ontology API request) may not have happened yet.  get_schema()
+                # is idempotent + cached — instant on the second call.
+                from aughor.ontology.store import load_latest_ontology as _load_onto
+                if not _load_onto(self.connection_id, self.schema_name):
                     logger.info(
-                        "[explorer:%s] Ontology build complete, proceeding to Phase 8",
+                        "[explorer:%s] Ontology not found before Phase 8 — building now…",
                         self.connection_id,
                     )
-                except Exception as _onto_exc:
-                    logger.warning(
-                        "[explorer:%s] Ontology build failed — Phase 8 will be skipped: %s",
-                        self.connection_id, _onto_exc,
-                    )
+                    try:
+                        await _loop.run_in_executor(None, self._conn.build_intelligence)
+                        logger.info(
+                            "[explorer:%s] Ontology build complete, proceeding to Phase 8",
+                            self.connection_id,
+                        )
+                    except Exception as _onto_exc:
+                        logger.warning(
+                            "[explorer:%s] Ontology build failed — Phase 8 will be skipped: %s",
+                            self.connection_id, _onto_exc,
+                        )
 
-            # Phase 8 — Domain intelligence: slow down to avoid overloading the DB
-            # and to allow the user to stop between queries if needed
-            self._rate_seconds = _RATE_SECONDS_INTEL
-            self._status.phase = ExplorationPhase.DOMAIN_INTEL
-            self._journal("exploration.phase", {"phase": "domain_intel"})
-            self._status.domain_intel_skipped = False   # cleared; set by Phase 8 if it bails
-            self._status.domain_intel_note = None
-            await self._phase8_domain_intelligence(cp, tp)
+                # Phase 8 — Domain intelligence: slow down to avoid overloading the DB
+                # and to allow the user to stop between queries if needed
+                self._rate_seconds = _RATE_SECONDS_INTEL
+                self._status.phase = ExplorationPhase.DOMAIN_INTEL
+                self._journal("exploration.phase", {"phase": "domain_intel"})
+                self._status.domain_intel_skipped = False   # cleared; set by Phase 8 if it bails
+                self._status.domain_intel_note = None
+                await self._phase8_domain_intelligence(cp, tp)
 
-            # Phase 9 — Synthesis: compose pairs of existing findings into emergent
-            # insights neither parent holds (build on what we know; zero new scans for
-            # discovery). Runs at end-of-run over the full ledger. Best-effort — a
-            # synthesis failure must never fail the run or block COMPLETE.
-            try:
-                self._status.phase = ExplorationPhase.SYNTHESIS
-                self._journal("exploration.phase", {"phase": "synthesis"})
-                await self._phase9_synthesis(cp, tp)
-            except asyncio.CancelledError:
-                raise
-            except Exception as _se:
-                logger.warning("[explorer:%s] Phase 9 synthesis failed (non-fatal): %s",
-                               self.connection_id, _se)
+                # Phase 9 — Synthesis: compose pairs of existing findings into emergent
+                # insights neither parent holds (build on what we know; zero new scans for
+                # discovery). Runs at end-of-run over the full ledger. Best-effort — a
+                # synthesis failure must never fail the run or block COMPLETE.
+                try:
+                    self._status.phase = ExplorationPhase.SYNTHESIS
+                    self._journal("exploration.phase", {"phase": "synthesis"})
+                    await self._phase9_synthesis(cp, tp)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as _se:
+                    logger.warning("[explorer:%s] Phase 9 synthesis failed (non-fatal): %s",
+                                   self.connection_id, _se)
 
             # Done — persist runtime counters so the status fallback can restore them
             self._status.phase = ExplorationPhase.COMPLETE
@@ -1233,6 +1280,7 @@ class SchemaExplorer:
                                   "falls back to the staleness refresh for this connection",
                          counter="explorer.fingerprint_stamp")
             self._save_state()
+            self._record_program("complete")
             self._rebuild_context_graph()
             # Idea 2 — the alerts worth having, proposed the moment the map is fresh: the
             # Watcher's job, keyed on the schema fingerprint so an unchanged schema
@@ -1264,16 +1312,24 @@ class SchemaExplorer:
             # start/spawn doesn't see a stale "still running" explorer and refuse — the
             # budget-cancel WEDGE (Tier-0 #1). Both paths save progress the same way.
             self._status.phase = ExplorationPhase.FAILED
+            # The kernel says why it cancelled: a heartbeat that enforced the run's budget is a budget
+            # stop, said as one and continued like one. It arrived as a bare cancel and was written
+            # "budget exceeded or stopped", which the continuous loop must read as a person's stop.
+            from aughor.kernel.jobs import stop_reason
+            _why = stop_reason()
+            _budget_kill = _why.startswith("budget exceeded: ")
             if not self._status.error:
                 self._status.error = (
                     f"cancelled ({_stop.reason} exceeded) — progress saved"
                     if isinstance(_stop, _BudgetExceeded)
+                    else f"cancelled ({_why[len('budget exceeded: '):]} exceeded) — progress saved" if _budget_kill
                     else "cancelled (budget exceeded or stopped) — progress saved")
-            if isinstance(_stop, _BudgetExceeded):
+            if isinstance(_stop, _BudgetExceeded) or _budget_kill:
                 # the continuous loop continues a budget stop a day later (explorer/continuous.py)
                 self._state["stopped_on_budget_at"] = datetime.now(timezone.utc).isoformat()
             self._journal("exploration.phase", {"phase": "failed", "reason": "cancelled"})
             self._save_state()
+            self._record_program("stopped")
             logger.info(f"[explorer:{self.connection_id}] Cancelled, progress saved")
             raise
         except Exception as e:
@@ -1281,7 +1337,88 @@ class SchemaExplorer:
             self._journal("exploration.phase", {"phase": "failed"})
             self._status.error = str(e)
             self._save_state()
+            self._record_program("failed")
             logger.error(f"[explorer:{self.connection_id}] Error: {e}", exc_info=True)
+
+    async def _next_question(self, domain, domain_table_cols, cp, NQ, llm, steer_of, system: str, user: str):
+        """The domain loop's next question, cheapest source first: a cell of the question list,
+        synthesised with no generation call (Tier-1 #4); else the grounded probe, where the model picks
+        columns from the real schema and the SQL is compiled; else free-form generation, for probes the
+        compiler cannot express. An automatic re-run (``_gaps_only``) asks the question list's uncovered
+        cells only — the model's free curiosity runs when a person starts a run, on a dataset's first
+        questions, or when a named event reopens it (the exploration principles §2) — so with no cell
+        left it returns ``_NO_MORE_QUESTIONS`` and calls no model."""
+        nq = self._manifest_nq(domain_table_cols, NQ) if self._manifest_driven else None
+        if nq is not None:
+            return nq
+        if getattr(self, "_gaps_only", False):
+            return _NO_MORE_QUESTIONS
+        # Phase 8 INVENTS the question, so retrieval cannot key on one — the steer keys on the domain
+        # and its tables, which are known before generation.
+        nq = await self._grounded_probe_nq(domain, domain_table_cols, cp, NQ, llm, steer_of())
+        if nq is not None:
+            from aughor.stats import stats as _s
+            _s.inc("explorer.grounded_probe")
+            return nq
+        from aughor.stats import stats as _s
+        _s.inc("explorer.grounded_fallback")
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: llm.complete(system=system, user=user, response_model=NQ))
+
+    def _table_layer(self, table: str) -> str:
+        """The layer a person SET for this table itself ("" when none) — a proposal never applies
+        (decision 2). Read once per schema per run."""
+        cache = self.__dict__.setdefault("_table_layer_cache", {})
+        if "__any__" not in cache:
+            # a connection where no person set any layer reads nothing more (the common case, and a test's)
+            try:
+                from aughor.ontology.dataset_layers import LAYERS_FILE
+                from aughor.ontology.recommendations import recommendations_root, safe_name
+                root = recommendations_root() / safe_name(self.connection_id)
+                cache["__any__"] = root.is_dir() and any(root.glob(f"*/{LAYERS_FILE}"))
+            except Exception:  # noqa: BLE001
+                cache["__any__"] = False
+        if not cache["__any__"]:
+            return ""
+        name = str(table or "")
+        schema = name.rsplit(".", 1)[0].split(".")[-1] if "." in name else getattr(self, "schema_name", None)
+        if not schema:
+            # the scope a person set it under in the Catalog: the connection's one schema (`layer_scope`)
+            if "__scope__" not in cache:
+                try:
+                    from aughor.routers._shared import layer_scope
+                    cache["__scope__"] = layer_scope(self.connection_id, None)
+                except Exception:  # noqa: BLE001
+                    cache["__scope__"] = "default"
+            schema = cache["__scope__"]
+        if schema not in cache:
+            try:
+                from aughor.ontology.dataset_layers import load_declared
+                cache[schema] = {t: d["layer"] for t, d in load_declared(self.connection_id, schema)["tables"].items()}
+            except Exception as exc:  # noqa: BLE001 — no layer read, no layer applied
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "table layers unreadable for a run; every table is asked about",
+                         counter="explorer.table_layers")
+                cache[schema] = {}
+        return cache[schema].get(name.split(".")[-1].lower(), "")
+
+    def _findings_made(self) -> int:
+        """How many findings this dataset's state holds — what a run's new findings are counted against."""
+        return len(self._state.get("insights") or [])
+
+    def _record_program(self, outcome: str) -> None:
+        """This run in the dataset's program (`explorer/program.py`): which job, how it ended, how many
+        new findings it made — two runs that found almost nothing new is maturity (§3)."""
+        if getattr(self, "canvas_id", None) or not hasattr(self, "_job") or not hasattr(self, "_store_key"):
+            return
+        try:
+            from aughor.explorer import program
+            program.record_run(self._store_key, job=self._job, outcome=outcome,
+                               new_findings=self._findings_made() - self._findings_at_start,
+                               started_at=self._status.started_at or "", reason=self._job_reason or "")
+        except Exception as exc:  # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the run's program record is best-effort", counter="explorer.program_record")
 
     # ── Profiler data loader ──────────────────────────────────────────────────
 
@@ -1317,6 +1454,11 @@ class SchemaExplorer:
                 sql_dialect="duckdb",
              internal=True)
             raw_tables = [(row[0], row[1]) for row in (r.rows or [])] if not r.error else []
+            # Exploration principles §6 — a table or schema a person turned off is never explored.
+            from aughor.ontology.visibility import is_table_off
+            _listed = len(raw_tables)
+            raw_tables = [(s, t) for s, t in raw_tables if not is_table_off(self.connection_id, s, t)]
+            self._turned_off = _listed - len(raw_tables)
             # When multiple schemas exist, fully-qualify table names so generated
             # SQL resolves correctly (e.g. bakehouse.sales_franchises).
             schemas_seen = {s for s, _ in raw_tables}
@@ -2139,13 +2281,15 @@ class SchemaExplorer:
             key = (cell.metric, cell.table, cell.axis, cell.cut)
             if key in self._manifest_attempted:
                 continue
+            if getattr(cell, "sql", None) is None and self._table_layer(str(cell.table)) not in ("", "business"):
+                continue   # a table a person set to another layer is never asked about on its own (§5)
             # KPI cells (pre-validated value_sql) are connection-level — run regardless of which
             # domain is active; synthesised cells must be scoped to this domain's tables.
             if getattr(cell, "sql", None) is None and _tbls and str(cell.table).split(".")[-1].lower() not in _tbls:
                 continue
             self._manifest_attempted.add(key)            # one attempt per cell, persisted across runs
             self._state["manifest_covered"] = {          # so re-runs skip it (Tier-2 coverage tracker)
-                "fp": self._state.get("schema_fingerprint"),
+                "fp": self._state.get("dataset_fingerprint") or self._state.get("schema_fingerprint"),
                 "cells": [list(k) for k in self._manifest_attempted],
             }
             _st = self._state.setdefault("manifest_status", {})
@@ -2328,11 +2472,15 @@ class SchemaExplorer:
                 self._manifest_cells = [c for c in build_manifest(tp or {}, _cpf)
                                         if c.source == "profiled_measure"]
                 # Coverage tracker (Tier-2): seed `attempted` from the cells a prior run already
-                # covered on the SAME data, so re-runs skip them and only advance the frontier.
-                # Reset when the schema fingerprint changed (new/changed data → re-cover).
+                # covered, so re-runs skip them and only advance the frontier. It was reset whenever
+                # the CONNECTION's fingerprint changed — stamped only at COMPLETE, so the second run
+                # re-covered every cell (§1), and a new table anywhere re-asked every question of every
+                # dataset. Exploration principles §2 (2026-10-08): a schema change is learned as its new
+                # parts — the new tables' and columns' cells are new keys; a question already asked of
+                # a table that has not changed is not asked again. What moves over time is the watch
+                # job's to read (`explorer/watch.py`), not a reason to re-ask the structure's questions.
                 _cov = self._state.get("manifest_covered") or {}
-                _fp = self._state.get("schema_fingerprint")
-                if isinstance(_cov, dict) and _fp is not None and _cov.get("fp") == _fp:
+                if isinstance(_cov, dict):
                     self._manifest_attempted = {tuple(k) for k in _cov.get("cells", [])}
                 logger.info("[explorer:%s] Phase 8 manifest-driven ON — %d baseline cells (%d already covered)",
                             self.connection_id, len(self._manifest_cells), len(self._manifest_attempted))
@@ -2343,8 +2491,13 @@ class SchemaExplorer:
                 self._manifest_driven = False
         # Observability (Tier-5): persist whether the manifest path is live + its size, so a
         # post-run state read tells us if it actually engaged (driven/cells) and ran (attempts).
+        _by_table: dict[str, int] = {}
+        for _c in self._manifest_cells:
+            _t = str(getattr(_c, "table", "") or "").split(".")[-1].lower()
+            _by_table[_t] = _by_table.get(_t, 0) + 1
         self._state["manifest_status"] = {"driven": bool(self._manifest_driven),
-                                          "cells": len(self._manifest_cells), "attempts": 0}
+                                          "cells": len(self._manifest_cells), "attempts": 0,
+                                          "by_table": _by_table}
 
         ontology = load_latest_ontology(self.connection_id, self.schema_name)
         if not ontology:
@@ -2813,6 +2966,10 @@ class SchemaExplorer:
 
             _dup_streak = 0   # consecutive structural-duplicate findings → stop a looping domain
             _followup_hint = ""   # Layer 3: drill instruction carried to the next iteration
+            if "moved" in str(getattr(self, "_job_reason", "") or "") and not getattr(self, "_gaps_only", False):
+                # a run a watched figure's move reopened starts from the move (the exploration principles §4)
+                _followup_hint = (f"A WATCHED FIGURE MOVED — {self._job_reason}. If this domain's tables can "
+                                  "explain that move, ask the question that would.\n\n")
             _drill_parent = None  # id of the finding the current drill is explaining (observability)
             _chain_depth = 0      # consecutive drills, bounded so a thread deepens but never runs away
             while used < budgets.get(f"{domain}__cap", HARD_BUDGET):
@@ -2971,6 +3128,8 @@ class SchemaExplorer:
                 _wkeys = sql_writer.table_cols
                 _bare = lambda s: str(s).split(".")[-1].lower()
                 for tbl in sorted(domain_tables):
+                    if self._table_layer(tbl) in _QUIET_LAYERS:
+                        continue   # a person set this table to a layer that is never questioned (§5)
                     # Resolve the ontology's BARE table name (`order_payments`) to the SQL
                     # writer's QUALIFIED schema key (`missimi.order_payments`) — they never
                     # matched before, so domain_table_cols came back EMPTY for every domain
@@ -3005,7 +3164,7 @@ class SchemaExplorer:
                         if _a in domain_tables and _b and _b not in domain_tables and _ds(_b) == _ds(_a):
                             _nbr_tables.add(_b)
                 _nbr_lines: list[str] = []
-                for nt in sorted(_nbr_tables)[:4]:    # cap — keep the prompt tight
+                for nt in sorted(t for t in _nbr_tables if self._table_layer(t) not in _QUIET_LAYERS)[:4]:  # cap
                     cols = (sql_writer.table_cols.get(nt)
                             or next((v for k, v in sql_writer.table_cols.items() if k.lower() == nt.lower()), None))
                     if cols:
@@ -3324,29 +3483,17 @@ class SchemaExplorer:
                     # (no generation LLM call) when manifest-driven; the entire downstream pipeline
                     # (bind-check, guards, execute, interpret) is unchanged. Fall back to the LLM
                     # generator when no manifest cell applies (deeper/cross-cutting tail).
-                    nq = self._manifest_nq(domain_table_cols, _NextQuestion) if self._manifest_driven else None
-                    if nq is None:
-                        # PRIMARY: grounded generation — the LLM picks columns from the real
-                        # schema and we COMPILE the SQL, so a non-existent column can't be
-                        # emitted (kills the line_total invention class + its ~40% token waste).
-                        # Phase 8 INVENTS the question, so retrieval cannot key on one —
-                        # key on the domain + its tables, which are known before generation.
+                    def _steer_of() -> str:
+                        # read only when the model is to invent the question (a cell of the question list
+                        # needs no steer): Phase 8 INVENTS it, so retrieval keys on the domain and its tables
                         _kb_steer = self._kb_context(
                             f"{domain} " + " ".join(list(domain_table_cols)[:8]))
-                        _steer = (f"DOMAIN: {domain}\n\n{_kb_steer}{frontier_block}{playbook_block}{_followup_hint}"
-                                  f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n")
-                        nq = await self._grounded_probe_nq(domain, domain_table_cols, cp,
-                                                           _NextQuestion, llm, _steer)
-                        if nq is not None:
-                            from aughor.stats import stats as _s; _s.inc("explorer.grounded_probe")
-                    if nq is None:
-                        # FALLBACK: free-form generation for probes the compiler can't express
-                        # (rare cross-table composites). Bounded by the same downstream guards.
-                        from aughor.stats import stats as _s; _s.inc("explorer.grounded_fallback")
-                        nq = await _loop.run_in_executor(
-                            None,
-                            lambda: llm.complete(system=_sys1, user=_usr1, response_model=_NextQuestion),
-                        )
+                        return (f"DOMAIN: {domain}\n\n{_kb_steer}{frontier_block}{playbook_block}{_followup_hint}"
+                                f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n")
+                    nq = await self._next_question(domain, domain_table_cols, cp, _NextQuestion, llm,
+                                                   _steer_of, _sys1, _usr1)
+                    if nq is _NO_MORE_QUESTIONS:
+                        break
                 except Exception as e:
                     logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM question gen failed for {domain}: {e}")
                     break

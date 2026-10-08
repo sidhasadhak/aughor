@@ -110,7 +110,7 @@ AGENTS: tuple[AgentCharter, ...] = (
         # only `name`/`role`/`goal` are display copy.
         id="scout", name="Explorer", role="Autonomous data explorer",
         goal="Continuously explore connected data and surface findings — no prompts, no dashboards.",
-        lane="background", job_kinds=("exploration",),
+        lane="background", job_kinds=("exploration", "explain_move"),
         tools=("schema profiling", "grounded SQL", "finding synthesis"),
         icon="telescope",
         # runs continuously at volume, so the budget is the lever that matters

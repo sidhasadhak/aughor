@@ -68,6 +68,13 @@ def current_charter_id() -> Optional[str]:
     return _current_charter.get()
 
 
+def stop_reason(job_id: Optional[str] = None) -> str:
+    """Why the kernel cancelled this job (the current one by default), or "" — readable inside the run
+    while it unwinds, so a heartbeat's budget kill is not filed as somebody's stop."""
+    jid = job_id or _current_job.get()
+    return _stop_reasons.get(jid, "") if jid else ""
+
+
 def run_attribution() -> tuple[str, str]:
     """``(job_id, charter_id)`` for the run this code is executing under, ('','') outside
     one. Degrades to empty rather than raising — attribution must never break a run."""
@@ -340,7 +347,17 @@ class JobKernel:
             ws = workspace_for_connection(job.get("conn_id"))
         except Exception:
             ws = None
-        return effective_governance(charter.id, ws), charter.id
+        gov = effective_governance(charter.id, ws)
+        # A job may carry a tighter token cap of its own (`payload.token_cap`) — the exploration principles §7:
+        # an automatic run is capped at what is left of its month's budget, so one run cannot overshoot it.
+        # The tighter of the two holds; the cap never raises the agent's own budget.
+        payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+        cap = payload.get("token_cap")
+        if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0 and (
+                not gov.token_budget or cap < gov.token_budget):
+            from dataclasses import replace
+            gov = replace(gov, token_budget=cap)
+        return gov, charter.id
 
     def _set_run_model(self, job_id: str):
         """Pin this run's LLM model to the agent's per-agent override (governance,

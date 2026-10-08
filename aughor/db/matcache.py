@@ -112,6 +112,11 @@ def get_cached_entry(
 ) -> Optional[tuple[QueryResult, dict]]:
     """A fresh cache entry as ``(result, extras)``, else None.
 
+    A statement that names a table or schema a person turned off is a miss, never a hit (the exploration
+    principles §6, found live 2026-10-08): the cache sits in front of the SQL door, so a result stored
+    before the table was turned off was served after it — the Cockpit measured Uber's metrics from a table
+    that was off. As a miss the caller runs the statement, and the door refuses it with the reason.
+
     ``extras`` is the format-specific payload stored alongside the rows — typed columns and the
     truncation flag — and is ``{}`` for entries that carry none. It is returned BESIDE the
     QueryResult rather than on it: QueryResult is the execution contract, shared far beyond this
@@ -125,6 +130,9 @@ def get_cached_entry(
     ``variant`` partitions it per REQUEST SHAPE (row cap + response format) — pass the same value
     to both sides. A caller whose stored rows depend on a cap it chose MUST pass one, or it reads
     back a different caller's differently-sized answer. See the module docstring."""
+    from aughor.kernel.registries.exclusions import refusal_for
+    if refusal_for(conn_id, "", sql, None):
+        return None
     try:
         c = _db()
         key = _cache_key(conn_id, sql, tenancy, variant)

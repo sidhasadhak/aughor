@@ -1608,6 +1608,26 @@ class _CoreCancelled(BaseException):
     """
 
 
+def _note_unanswered(connection_id: str, schema: Optional[str], sql: str, signal: str, error: str) -> None:
+    """A quick answer that could not answer — its query failed, or an analytical question came back empty —
+    is counted against the dataset it was asked of; two in a week reopen that dataset's questions (the
+    exploration principles §3). A refusal is not a gap: a table turned off, a statement the guard blocked."""
+    if signal not in ("error", "no_rows") or str(error or "").lstrip().startswith(("[EXCLUDED]", "[BLOCKED]")):
+        return
+    try:
+        from aughor.explorer import program
+        if not schema:
+            from aughor.sql.tables import extract_tables
+            schema = next((r.schema for r in sorted(extract_tables(sql or ""), key=lambda r: r.qualified())
+                           if r.schema), None)
+        program.note_unanswered(program.dataset_key(connection_id, schema),
+                                "the query failed" if signal == "error" else "an analytical question came back empty")
+    except Exception as exc:  # noqa: BLE001 — counting a miss never breaks the answer
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an unanswered question could not be counted", counter="explorer.unanswered",
+                 conn_id=connection_id or None)
+
+
 def _answer_core(
     question: str,
     connection_id: str,
@@ -2889,6 +2909,7 @@ def _answer_core(
             from aughor.agent.escalate import assess_escalation
             _esc = assess_escalation(question, columns=result.columns, rows=result.rows, error=result.error)
             _esc_event = _esc.to_event() if _esc.should_offer else None
+            _note_unanswered(connection_id, canvas_scope_eff_schema, final_sql, _esc.signal, result.error)
             if _esc_event is not None:
                 emit("escalate", _esc_event)
             emit("error", _error_event(message=result.error, reason="query_failed"))
@@ -3036,6 +3057,7 @@ def _answer_core(
         _esc_event = _esc.to_event() if _esc.should_offer else None
         if _esc_event is not None:
             emit("escalate", _esc_event)
+        _note_unanswered(connection_id, canvas_scope_eff_schema, final_sql, _esc.signal, "")
 
         # Persist, then mark DONE the moment the answer is ready — so the
         # "Completed in …" time reflects when the user got their answer, not when

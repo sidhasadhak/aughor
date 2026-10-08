@@ -234,6 +234,17 @@ FINGERPRINTS: dict[str, FingerprintSpec] = {
             "per-entity structural hashes, so a PARTIAL verdict can name which tables moved.",
         ),
         FingerprintSpec(
+            "dataset_structure", "aughor.explorer.continuous", "fingerprint_of", "staleness",
+            "the exploration principles' structure trigger (2026-10-08): one dataset's tables and their "
+            "column counts by BARE name, through profile_cache's hash — so a run that qualifies its names "
+            "and the hourly check that does not read the same value. Stamped by a run when profiling ends.",
+        ),
+        FingerprintSpec(
+            "dataset_structure_live", "aughor.explorer.continuous", "dataset_fingerprint", "staleness",
+            "the same fingerprint read live from the dataset's schema text (the tables a person turned off "
+            "included) — what the hourly check compares with the one a run stamped.",
+        ),
+        FingerprintSpec(
             "package_receipt", "aughor.packs.gate4", "package_fingerprint", "staleness",
             "IP-3 — a package's gate 4 receipt: SHA-256 over its anatomy files (paths and bytes). "
             "A receipt whose fingerprint differs describes a package that has since changed, and CI fails it.",

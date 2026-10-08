@@ -152,8 +152,10 @@ interface StatusBarProps {
 
 function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, resuming, restarting }: StatusBarProps) {
   if (!status) return null;
-  const isRunning = !stopped && !["complete", "failed", "pending"].includes(status.phase);
-  const isStopped = stopped || status.paused || status.phase === "pending";
+  // A run a restart killed reads as stopped, with its reason, never as running (2026-10-07).
+  const interrupted = !!status.interrupted;
+  const isRunning = !stopped && !interrupted && !["complete", "failed", "pending"].includes(status.phase);
+  const isStopped = stopped || interrupted || status.paused || status.phase === "pending";
   const meta = phaseMeta(status.phase);
   // Per-schema runs: one labelled chip per run, so a dead OLD run's "failed"
   // can never masquerade as the run the user just started on another schema.
@@ -163,7 +165,8 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
       {perSchema.length > 0 ? (
         perSchema.map(([sch, ph]) => {
           const m = phaseMeta(ph);
-          const running = !stopped && !["complete", "failed", "pending"].includes(ph);
+          const cut = (status.interrupted_schemas ?? []).includes(sch);
+          const running = !stopped && !cut && !["complete", "failed", "pending"].includes(ph);
           const stoppedChip = !running && (ph === "pending" || ph === "failed" || ph === "complete");
           return (
             <span key={sch} className="flex items-center gap-1.5 aug-fs-xs px-2 py-0.5 rounded font-medium"
@@ -174,7 +177,8 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
               {running && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] aug-pulse-dot" style={{ background: m.color }} />}
               <span style={{ opacity: 0.75 }}>{sch}</span>
               {" · "}
-              {ph === "complete" ? "complete" : ph === "pending" ? "idle" : ph === "failed" ? "failed" : m.label}
+              {ph === "complete" ? "complete" : ph === "pending" ? "idle" : ph === "failed" ? "failed"
+                : cut ? `interrupted at ${m.label}` : m.label}
             </span>
           );
         })
@@ -182,13 +186,19 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
         <span className="flex items-center gap-1.5 aug-fs-xs px-2 py-0.5 rounded font-medium"
           style={isStopped && !isRunning ? { background: "var(--bg-3)", color: "var(--t3)" } : { background: meta.bg, color: meta.color }}>
           {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] aug-pulse-dot" style={{ background: meta.color }} />}
-          {isStopped && !isRunning ? "stopped" : status.phase === "complete" ? "complete" : status.phase === "pending" ? "idle" : meta.label}
+          {interrupted ? `interrupted at ${meta.label}` : isStopped && !isRunning ? "stopped" : status.phase === "complete" ? "complete" : status.phase === "pending" ? "idle" : meta.label}
         </span>
       )}
       <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
         {status.queries_executed > 0 && `${status.queries_executed} queries`}
         {status.facts_discovered > 0 && ` · ${status.facts_discovered} facts`}
         {status.insights_found    > 0 && ` · ${status.insights_found} findings`}
+        {interrupted && status.interrupted_note && <span title={status.interrupted_note}> · {status.interrupted_note}</span>}
+        {/* the exploration principles — a run held on a spent budget, or questions waiting for a layer, said */}
+        {status.held_note && <span title={status.held_note} style={{ color: "var(--amb4)" }}> · held: {status.held_note}</span>}
+        {status.phase === "complete" && status.domain_intel_skipped && status.domain_intel_note && (
+          <span title={status.domain_intel_note}> · {status.domain_intel_note}</span>
+        )}
       </span>
       <div className="ml-auto flex items-center gap-2">
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
@@ -206,7 +216,7 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
           <Button variant="ghost" size="xs" onClick={onResume} disabled={resuming || restarting}
             className="aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
             style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
-            {resuming ? "resuming…" : "Resume"}
+            {resuming ? "resuming…" : interrupted ? "Continue" : "Resume"}
           </Button>
           <Button variant="ghost" size="xs" onClick={onRestart} disabled={resuming || restarting}
             className="aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
@@ -552,6 +562,8 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
   const [stopping, setStopping]   = useState(false);
   const [resuming, setResuming]   = useState(false);
   const [restarting, setRestarting] = useState(false);
+  // why a Continue or Restart did not run — a spent monthly budget the person chose not to run past
+  const [runError, setRunError] = useState("");
   const [filterDate, setFilterDate]     = useState<DateFilter>("all");
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
   const [showAll, setShowAll]           = useState(false);
@@ -601,19 +613,23 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
     } finally { setStopping(false); }
   }
   async function handleResume() {
-    setResuming(true);
+    setResuming(true); setRunError("");
     try {
       if (canvasId) await resumeCanvasExploration(canvasId);
       else await resumeExploration(connectionId);
       setStopped(false);
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : "The run did not continue");
     } finally { setResuming(false); }
   }
   async function handleRestart() {
-    setRestarting(true);
+    setRestarting(true); setRunError("");
     try {
       if (canvasId) await restartCanvasExploration(canvasId);
       else await restartExploration(connectionId);
       setStopped(false); setEpisodes([]);
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : "The run did not restart");
     } finally { setRestarting(false); }
   }
 
@@ -660,6 +676,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
     return (
       <div className="h-full flex flex-col">
         <StatusBar status={status} stopped={stopped} onStop={handleStop} onResume={handleResume} onRestart={handleRestart} stopping={stopping} resuming={resuming} restarting={restarting} />
+        {runError && <div className="aug-fs-xs px-4 py-1" data-testid="run-error" style={{ color: "var(--amb4)" }}>{runError}</div>}
         <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: "var(--t3)" }}>
           <p className="aug-fs-sm">No activity recorded yet.</p>
           <p className="aug-fs-xs" style={{ color: "var(--t3)" }}>Activity appears here as background exploration runs.</p>
@@ -671,6 +688,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <StatusBar status={status} stopped={stopped} onStop={handleStop} onResume={handleResume} onRestart={handleRestart} stopping={stopping} resuming={resuming} restarting={restarting} />
+        {runError && <div className="aug-fs-xs px-4 py-1" data-testid="run-error" style={{ color: "var(--amb4)" }}>{runError}</div>}
 
       {/* Filter + controls bar */}
       <div className="flex items-center gap-2.5 px-4 py-2 border-b shrink-0 flex-wrap"

@@ -29,6 +29,8 @@ import yaml
 from aughor.ontology.declarations import EXCLUSION_REASONS, Coverage, Exclusion, coverage, exclusion_from
 
 EXCLUSIONS_FILE = "table_exclusions.yaml"
+#: An exclusion of this "table" turns off the WHOLE schema (exploration principles §6, 2026-10-08).
+SCHEMA_WIDE = "*"
 HELD_STATES = ("held", "held_probation", "held_owner")
 _UNAPPROVED_RE = re.compile(r"(?:^|; )(.+?) is stated with a number and its definition is [\w ]+, not approved")
 _UNDEFINED_RE = re.compile(r"'(.+?)' is stated with a number and no approved metric defines it")
@@ -73,6 +75,7 @@ def declare_exclusion(conn: str, schema: str, table: str, reason: str, *, note: 
     p = _exclusions_path(conn, schema)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(yaml.safe_dump([e.to_dict() for e in rows], sort_keys=False, allow_unicode=True))
+    _changed(conn)
     return new
 
 
@@ -84,7 +87,120 @@ def withdraw_exclusion(conn: str, schema: str, table: str) -> bool:
     p = _exclusions_path(conn, schema)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(yaml.safe_dump([e.to_dict() for e in kept], sort_keys=False, allow_unicode=True))
+    _changed(conn)
     return True
+
+
+# ── excluded means excluded (exploration principles §6, 2026-10-08) ───────────
+#
+# A table or schema a person turned off is never read on the platform's own initiative or in an
+# answer: the Explorer does not explore it, and neither Investigation nor Quick analysis queries
+# it. Enforced at the door every statement passes (`db.connection._security_pre`), at the schema
+# text every mode reads (`open_connection` / `render_raw_schema`), and at the explorer's own table
+# lists. A person may still read it themselves: the SQL editor and the Catalog's own reads (the labels
+# `kernel/registries/exclusions.PERSON_LABELS` names). The platform reads these through that seam; the
+# agent registers them there at bootstrap (`agent/bootstrap._register_exclusions`).
+
+_CACHE_SECONDS = 5.0
+_cache: dict[str, tuple[float, dict[str, dict[str, Exclusion]]]] = {}
+
+
+def _changed(conn: str) -> None:
+    """A declaration changed: drop the lookup and the cached schema text that still lists the table."""
+    _cache.pop(conn, None)
+    try:
+        from aughor.routers._shared import invalidate_schema_cache
+        invalidate_schema_cache(conn)
+    except Exception as exc:  # noqa: BLE001 — the text expires on its own within minutes
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the schema cache could not be dropped after an exclusion changed",
+                 counter="visibility.exclusion_cache")
+
+
+def connection_exclusions(conn: str) -> dict[str, dict[str, Exclusion]]:
+    """Every exclusion of a connection: ``{schema dir: {bare table or "*": Exclusion}}``. Read on
+    every statement, so held for a few seconds; a write in this process drops it at once."""
+    import time
+    now = time.monotonic()
+    hit = _cache.get(conn)
+    if hit and hit[0] > now:
+        return hit[1]
+    out: dict[str, dict[str, Exclusion]] = {}
+    try:
+        from aughor.ontology.recommendations import recommendations_root, safe_name
+        root = recommendations_root() / safe_name(conn)
+        if root.is_dir():
+            for f in root.glob(f"*/{EXCLUSIONS_FILE}"):
+                rows = load_exclusions(conn, f.parent.name)
+                if rows:
+                    out[f.parent.name] = {e.table.split(".")[-1].lower(): e for e in rows}
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "exclusions could not be listed; none applied", counter="visibility.exclusions_list")
+    _cache[conn] = (now + _CACHE_SECONDS, out)
+    return out
+
+
+def excluded(conn: str, schema: Optional[str], table: str = "") -> Optional[Exclusion]:
+    """The exclusion that turns this table (or, with no table, this schema) off, or None.
+    ``schema`` None means the statement did not say and the door did not know: any schema of the
+    connection that turned a table of that name off answers — a refusal the reader can see beats a
+    read they were promised would not happen — but a schema turned off wholesale cannot claim a
+    table it may not hold. ``default`` is where a single-schema connection's declarations were
+    filed before schemas were named, so it is read beside the schema's own."""
+    every = connection_exclusions(conn)
+    if not every:
+        return None
+    from aughor.ontology.recommendations import safe_name
+    bare = str(table or "").split(".")[-1].lower()
+    if not schema:
+        for rows in every.values():
+            if bare and bare in rows:
+                return rows[bare]
+        return None
+    for d in dict.fromkeys([safe_name(schema), "default"]):
+        rows = every.get(d) or {}
+        hit = rows.get(SCHEMA_WIDE) or (rows.get(bare) if bare else None)
+        if hit is not None:
+            return hit
+    return None
+
+
+def without_excluded(conn: str, schema_text: str, *, default_schema: Optional[str] = None) -> str:
+    """The schema text with every table a person turned off taken out; unchanged, byte for byte,
+    when the connection turned nothing off."""
+    if not schema_text or not connection_exclusions(conn):
+        return schema_text
+    from aughor.db.schema_render import without_tables
+
+    def _off(name: str) -> bool:
+        parts = str(name).split(".")
+        schema = parts[-2] if len(parts) >= 2 else default_schema
+        return excluded(conn, schema, parts[-1]) is not None
+
+    return without_tables(schema_text, _off)
+
+
+def is_table_off(conn: str, schema: Optional[str], table: str) -> bool:
+    """Whether a person turned this table — or its schema — off."""
+    return excluded(conn, schema, table) is not None
+
+
+def refusal_for(conn: str, sql: str, dialect: Optional[str], *, default_schema: Optional[str] = None) -> str:
+    """The sentence a statement naming an excluded table is refused with, or "" when it names none."""
+    if not connection_exclusions(conn):
+        return ""
+    from aughor.sql.tables import extract_tables
+    for ref in sorted(extract_tables(sql, dialect), key=lambda r: r.qualified()):
+        schema = ref.schema or default_schema
+        hit = excluded(conn, schema, ref.table)
+        if hit is not None:
+            name = ref.qualified() if ref.schema else (f"{schema}.{ref.table}" if schema else ref.table)
+            what = "its schema is" if hit.table == SCHEMA_WIDE else "it is"
+            return (f"[EXCLUDED] {name} is turned off for analysis — {what} excluded "
+                    f"({hit.reason.replace('_', ' ')}{', by ' + hit.declared_by if hit.declared_by else ''}). "
+                    "Turn it back on in the Catalog to use it.")
+    return ""
 
 
 # ── tables: the share the ontology maps ────────────────────────────────────────
@@ -107,6 +223,11 @@ def table_coverage(conn: str, schema: str, graph, *, universe: Optional[list[str
         universe = latest_profiled_tables(conn)
     mapped = mapped_tables(graph) if graph is not None else []
     exclusions = load_exclusions(conn, schema)
+    if any(e.table == SCHEMA_WIDE for e in exclusions):
+        # the whole schema is turned off: every table of it is out of the denominator
+        whole = next(e for e in exclusions if e.table == SCHEMA_WIDE)
+        exclusions = [Exclusion(table=str(t), reason=whole.reason, note=whole.note, declared_by=whole.declared_by)
+                      for t in (universe or [])] + [e for e in exclusions if e.table != SCHEMA_WIDE]
     if not universe:
         cov = Coverage(total=len(mapped), mapped=len(mapped), excluded=0)
         return {**cov.to_dict(), "basis": "unknown", "share": None, "band": "unknown",

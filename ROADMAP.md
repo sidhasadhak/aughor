@@ -13786,6 +13786,42 @@ the browser** · **measure the premise before building.**
     A question about one component would name that component as the turn's `focus` — the field SP-15 already
     carries on `/ask` — so the answer starts from that tile's or chart's own SQL and period. Not designed.
 
+47. ✅ **DECIDED 2026-10-07 — exploration principles** (`docs/EXPLORATION_PRINCIPLES_2026-10-07.md`; the user:
+    *"How would the Explorer know which data set to explore and when? … when does it realise that all the
+    angles are now covered and it's only the time period as the only new factor?"*). Proposed in chat, amended
+    by the user (maturity shown per schema and table; a schema's name is a sign as well as a table's, whole
+    words as well as prefixes; exploration can be turned off per schema or table, and off means Investigation
+    and Quick analysis never query it either), then decided:
+    (a) three jobs, three triggers — learn the structure on a schema change, map the questions until mature,
+    watch over time on each settled period — and no fixed clock;
+    (b) the six dataset roles and their policies — **yes**;
+    (c) a role is proposed with its evidence and **a person confirms it**; a name never applies one by itself;
+    (d) the exploration budget — **both**, per organisation per month and per connection per month;
+    (e) stuck runs — **fixed now** (they read as interrupted and a person's Continue resumes them; restart
+    recovery resumes a dataset's own run); automatic re-runs wait for the build.
+    ✅ **BUILT 2026-10-08** (the user: "start and finish the principles build end to end"), branch
+    `claude/exploration-principles` — all five parts of the study's §11, and §12 there says what each is and
+    what is NOT built: **layers** (`ontology/dataset_layers.py` — six, proposed from schema and table names as
+    whole words and affixes, column signs and approved metrics, set by a person; unset = structure only);
+    **off means off** (an exclusion per table or a whole schema, refused at the SQL door before its internal
+    early return, dropped from every connector's schema text where connectors are built, never listed by the
+    explorer; the SQL editor and the Catalog's own reads pass); **maturity** (`explorer/maturity.py`, three
+    bars and a number in the Catalog tree, on each schema and table, and in the scope bar); **the runner**
+    (`explorer/continuous.py` — every dataset judged on its own: structure on a fingerprint change, questions
+    daily until mature and then only on a named event, a watch on each settled period, failures retried with
+    backoff, a heartbeat's budget kill told from a person's stop; an automatic re-run fills only the question
+    list's gaps; the dataset fingerprint stamped at profiling); **budgets** (`explorer/budget.py` — per
+    organisation and per connection per month, in model tokens, the tighter holding, a held run said).
+    ✅ **Second round 2026-10-08** ("keep building") — every item §12 listed as not built, now §13: table layers
+    enforced inside a schema and one entity's copies shown (findings from the business copy), dbt lineage as
+    a layer sign, a run capped at the month's remainder (`token_cap`, kernel-enforced), ranking by what people
+    query, a question it could not answer and a new dimension value as reopen events, raw pipeline health,
+    and a move explained by its segments (the Briefing's `what_moved`).
+    ✅ **Third round 2026-10-08** — §14: a move explained in words by the model (`explorer/move_story.py`, every
+    number checked against the breakdown, no causal claim, withheld when it fails twice; a capped `explain_move`
+    job under the Explorer's charter), and a person's own Start capped at what is left of the month — past it
+    only on "run it anyway", recorded under their name. Decision (d) amended: the budget governs a person's run too.
+
 ---
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)

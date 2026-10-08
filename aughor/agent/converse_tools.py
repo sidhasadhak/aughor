@@ -239,6 +239,12 @@ def route_error(error: str, sql: str = "", dialect: str = "") -> dict:
         classify_error_type, classify_sql_error, error_class_guidance,
     )
     e = (error or "").lower()
+    if error.lstrip().startswith("[EXCLUDED]"):
+        # exploration principles §6 — a person turned the table off; another table may still answer
+        return {"retryable": True, "kind": "excluded",
+                "instruction": ("A person turned this table off for analysis. Do not read it: answer "
+                                "from the other tables if they can, and tell the user it was left out "
+                                "and why.")}
     if error.lstrip().startswith("[BLOCKED]"):
         return {"retryable": False, "kind": "blocked",
                 "instruction": ("This statement is disallowed by the read-only guard, not "

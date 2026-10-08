@@ -326,12 +326,85 @@ def _continues_at(state: dict) -> str | None:
     return continues_at(state)
 
 
+#: Phases a run is IN while it runs. `pending` is not one: a run that never started was never
+#: interrupted, it was never explored.
+_MID_RUN = {p.value for p in ExplorationPhase} - {
+    ExplorationPhase.PENDING.value, ExplorationPhase.COMPLETE.value, ExplorationPhase.FAILED.value}
+
+
+def _exploration_jobs(conn_id: str, *, active: bool) -> list[dict]:
+    """This connection's exploration jobs in the kernel ledger, newest first — the ACTIVE ones
+    (another process may own a run) or all of them."""
+    try:
+        from aughor.kernel.jobs import JobState
+        from aughor.kernel.ledger import Ledger
+        return Ledger.default().jobs_where(states=list(JobState.ACTIVE) if active else None,
+                                           conn_id=conn_id, kinds=["exploration"], limit=20)
+    except Exception as exc:  # noqa: BLE001 — an unreadable ledger cannot prove a run is dead
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the job ledger could not be read; no exploration is called interrupted",
+                 counter="explorer.liveness")
+        return [{"state": "UNKNOWN"}] if active else []
+
+
+def interrupted_runs(conn_id: str) -> list[str]:
+    """The store keys of this connection's runs that stopped MID-PHASE with nothing running them —
+    no explorer in this process and no active exploration job anywhere. A restart kills a run
+    between checkpoints; boot recovery resumes it only if its job is still ACTIVE when the next
+    process starts, and a restart inside the job's lease window reads it as another process's
+    and skips it (2026-09-28: theLook, left at `synthesis` ever since, under a pulsing badge).
+    Such a run is not running and must not say it is."""
+    from aughor.explorer import store as expl_store
+    keys = expl_store.schema_run_keys(conn_id) or [conn_id]
+    mid = [k for k in keys if str(expl_store.load(k).get("phase") or "") in _MID_RUN]
+    if not mid:
+        return []
+    live = {k for k in mid if (e := _explorers.get(k)) is not None and getattr(
+        getattr(e, "status", None), "phase", None) not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED)}
+    if _exploration_jobs(conn_id, active=True):
+        return []          # some process holds a run of this connection — not ours to call dead
+    return [k for k in mid if k not in live]
+
+
+def _interruption(conn_id: str, keys: list[str]) -> dict:
+    """What the status says about interrupted runs: which datasets, since when, and that a person's
+    Continue resumes them from their saved progress. The hourly check resumes one on its own only
+    where the dataset's layer lets the platform ask its questions (exploration principles §5)."""
+    if not keys:
+        return {"interrupted": False}
+    last = next((j for j in _exploration_jobs(conn_id, active=False)), {}) or {}
+    since = last.get("ended_at") or last.get("heartbeat_at") or last.get("started_at")
+    schemas = [k.split("__", 1)[1] for k in keys if "__" in k]
+    where = f" ({', '.join(schemas)})" if schemas else ""
+    return {"interrupted": True, "interrupted_at": since,
+            "interrupted_schemas": schemas,
+            "interrupted_note": (f"Interrupted{where} — the run stopped when the platform restarted"
+                                 f"{f' ({str(since)[:16]} UTC)' if since else ''} and nothing is running it. "
+                                 f"Its progress is saved: Continue resumes it.")}
+
+
+def _held_note(conn_id: str, schema: str | None) -> str | None:
+    """Why the platform is holding a run it wanted to start — a spent monthly budget — said, never
+    implied by a run that simply does not come (exploration principles §7)."""
+    from aughor.explorer import program
+    from aughor.explorer import store as expl_store
+    keys = ([_store_key(conn_id, schema)] if schema else (expl_store.schema_run_keys(conn_id) or [conn_id]))
+    for k in keys:
+        held = program.load(k).get("held")
+        if held:
+            return str(held.get("why") or "") or None
+    return None
+
+
 @router.get("/exploration/{conn_id}/status")
 def get_exploration_status(conn_id: str, schema: str | None = None):
     explorer = _explorer_for(conn_id, schema)
     if explorer:
-        return explorer._status.to_dict()
+        return {**explorer._status.to_dict(), "interrupted": False}
     state = _load_state(conn_id, schema)
+    stuck = interrupted_runs(conn_id)
+    if schema:
+        stuck = [k for k in stuck if k == _store_key(conn_id, schema)]
     # Restore counters persisted at completion time (survive server restarts)
     return {
         "connection_id": conn_id,
@@ -358,6 +431,8 @@ def get_exploration_status(conn_id: str, schema: str | None = None):
         "domain_intel_note": state.get("domain_intel_note"),
         # {schema: phase} for the 'All schemas' aggregate — lets the UI show per-schema progress.
         "per_schema": state.get("per_schema"),
+        "held_note": _held_note(conn_id, schema),
+        **_interruption(conn_id, stuck),
     }
 
 
@@ -1029,15 +1104,29 @@ def generate_canvas_briefing(canvas_id: str, refresh: bool = False, workspace_id
     }
 
 
+def _person_cap(conn_id: str, run_anyway: bool, what: str) -> int | None:
+    """The token cap of a run a person starts here — what is left of the month's exploration budget — or
+    409 with the reason when nothing is left and they did not say to run it anyway (the user, 2026-10-08:
+    "any cap on your own Start"). With no budget set, None: the run goes at its agent's own budget."""
+    from aughor.explorer.budget import BudgetSpent, person_run
+    from aughor.security.authz import caller
+    try:
+        return person_run(conn_id, run_anyway=run_anyway, by=caller(), what=what)
+    except BudgetSpent as exc:
+        raise HTTPException(status_code=409, detail=exc.detail())
+
+
 @router.post("/exploration/{conn_id}/domains/{domain}/extend", dependencies=[gate(Capability.AUTO_EXPLORATION)])
-async def extend_domain_budget(conn_id: str, domain: str):
+async def extend_domain_budget(conn_id: str, domain: str, run_anyway: bool = False):
     from aughor.explorer import store as _expl_store
-    new_cap = _expl_store.extend_domain_budget(conn_id, domain, extra=5)
     existing = _explorers.get(conn_id)
-    if existing is not None and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
+    running = existing is not None and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED)
+    cap = None if running else _person_cap(conn_id, run_anyway, "explore 5 more")
+    new_cap = _expl_store.extend_domain_budget(conn_id, domain, extra=5)
+    if running:
         existing._state.setdefault("domain_budgets", {})[f"{domain}__cap"] = new_cap
     else:
-        res = await spawn_explorer(conn_id, domain_intel_only=True)
+        res = await spawn_explorer(conn_id, domain_intel_only=True, token_cap=cap)
         if not res["ok"]:
             logger.warning("Could not restart explorer for %s after extend: %s", conn_id, res["reason"])
     return {"ok": True, "domain": domain, "extra": 5}
@@ -1087,12 +1176,25 @@ def stop_exploration(conn_id: str):
 
 
 @router.post("/exploration/{conn_id}/resume", dependencies=[gate(Capability.AUTO_EXPLORATION)])
-async def resume_exploration(conn_id: str):
+async def resume_exploration(conn_id: str, run_anyway: bool = False):
+    """A person's Continue. An INTERRUPTED run resumes each of its datasets from saved progress —
+    the per-dataset runs of a multi-dataset connection each by its own key; a connection-level
+    resume there would start a fresh connection-wide run instead. Capped at what is left of the
+    month's budget, shared between the datasets it resumes."""
+    stuck = interrupted_runs(conn_id)
+    cap = _person_cap(conn_id, run_anyway, "continue")
+    if any("__" in k for k in stuck):
+        keys = [k for k in stuck if "__" in k]
+        each = max(1, cap // len(keys)) if cap else None
+        results = [await spawn_explorer(conn_id, schema_name=k.split("__", 1)[1], token_cap=each) for k in keys]
+        refused = [r["reason"] for r in results if not r["ok"] and r.get("reason")]
+        return {"ok": any(r["ok"] for r in results), "resumed": sum(1 for r in results if r["ok"]),
+                **({"reason": "; ".join(sorted(set(refused)))} if refused else {})}
     existing = _explorers.get(conn_id)
     if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
         return {"ok": False, "reason": "already running"}
 
-    res = await spawn_explorer(conn_id)
+    res = await spawn_explorer(conn_id, token_cap=cap)
     if not res["ok"]:
         logger.warning("Resume: failed for %s — %s", conn_id, res["reason"])
     return {"ok": res["ok"], **({"reason": res["reason"]} if res["reason"] else {})}
@@ -1154,15 +1256,16 @@ def _purge_exploration_state(conn_id: str) -> list[str]:
 
 
 @router.post("/exploration/{conn_id}/restart", dependencies=[gate(Capability.AUTO_EXPLORATION)])
-async def restart_exploration(conn_id: str):
+async def restart_exploration(conn_id: str, run_anyway: bool = False):
     """Wipe ALL exploration state for the connection (connection-level + every per-schema run)
     and start fresh — fanning out one run PER schema for a multi-schema connection."""
     from aughor.routers._shared import explorer_refusal
     refusal = explorer_refusal(conn_id)
     if refusal:   # refused before anything is wiped: a restart that cannot start must not purge
         return {"ok": False, "reason": refusal}        # answered as start answers a refusal, so the web shows why
+    cap = _person_cap(conn_id, run_anyway, "restart")   # a spent budget refuses before anything is wiped too
     deleted = _purge_exploration_state(conn_id)
-    started = kickoff_exploration(conn_id)   # fans out per schema (or connection-level if single)
+    started = kickoff_exploration(conn_id, token_cap=cap)   # fans out per schema (or connection-level if single)
     if not started:
         raise HTTPException(status_code=500, detail="could not start explorer after reset")
     return {"ok": True, "purged": deleted}
@@ -1250,7 +1353,7 @@ def fix_all(conn_id: str, body: FixAllRequest):
 # ── Explorer control ─────────────────────────────────────────────────────────
 
 @router.post("/exploration/{conn_id}/start", dependencies=[gate(Capability.AUTO_EXPLORATION)])
-async def start_exploration(conn_id: str, schema: str | None = None):
+async def start_exploration(conn_id: str, schema: str | None = None, run_anyway: bool = False):
     """Start a fresh explorer run if none is active. With ?schema=, explores just that
     schema; without it, a multi-schema connection fans out into one run per schema."""
     from aughor.routers._shared import canonical_schema
@@ -1265,13 +1368,14 @@ async def start_exploration(conn_id: str, schema: str | None = None):
     refusal = explorer_refusal(conn_id)
     if refusal:
         return {"ok": False, "reason": refusal}
+    cap = _person_cap(conn_id, run_anyway, "start")
     # Same background open+test+explore path used by connection auto-onboarding.
-    started = kickoff_exploration(conn_id, schema)
+    started = kickoff_exploration(conn_id, schema, token_cap=cap)
     return {"ok": started}
 
 
 @router.post("/exploration/{conn_id}/trigger-intel", dependencies=[gate(Capability.DOMAIN_INTEL)])
-async def trigger_domain_intelligence(conn_id: str, schema: str | None = None):
+async def trigger_domain_intelligence(conn_id: str, schema: str | None = None, run_anyway: bool = False):
     """Run only Phase 8 (domain intelligence) where phases 3-7 are already complete.
 
     A multi-schema connection's runs live under per-schema keys (``{conn}__{schema}``), so
@@ -1287,6 +1391,8 @@ async def trigger_domain_intelligence(conn_id: str, schema: str | None = None):
         _schemas = schemas_of_connection(conn_id)
         targets = list(_schemas) if len(_schemas) >= 2 else [None]
 
+    cap = _person_cap(conn_id, run_anyway, "run its questions")
+    each = max(1, cap // len(targets)) if cap else None
     results: list[dict] = []
     for sch in targets:
         key = f"{conn_id}__{sch}" if sch else conn_id
@@ -1305,7 +1411,7 @@ async def trigger_domain_intelligence(conn_id: str, schema: str | None = None):
         if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
             results.append({"schema": sch, "ok": False, "reason": "explorer already running"})
             continue
-        res = await spawn_explorer(conn_id, schema_name=sch, domain_intel_only=True)
+        res = await spawn_explorer(conn_id, schema_name=sch, domain_intel_only=True, token_cap=each)
         if not res["ok"]:
             logger.warning("Trigger-intel: failed for %s (schema=%s) — %s", conn_id, sch, res["reason"])
         results.append({"schema": sch, **res})
@@ -1416,7 +1522,7 @@ def get_canvas_exploration_episodes(canvas_id: str, phase: str = "", limit: int 
 
 
 @router.post("/exploration/canvas/{canvas_id}/resume", dependencies=[gate(Capability.AUTO_EXPLORATION)])
-async def resume_canvas_exploration(canvas_id: str):
+async def resume_canvas_exploration(canvas_id: str, run_anyway: bool = False):
     from aughor.canvas.store import get_canvas
     canvas = get_canvas(canvas_id)
     if not canvas or not canvas.scopes:
@@ -1431,8 +1537,9 @@ async def resume_canvas_exploration(canvas_id: str):
     if existing and not existing._stopped:
         existing.resume()
         return {"status": "resumed"}
+    cap = _person_cap(conn_id, run_anyway, "canvas continue")
     _canvas_explorers.pop(canvas_id, None)   # stopped husk would trip the spawn guard
-    res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables)
+    res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables, token_cap=cap)
     if not res["ok"]:
         raise HTTPException(status_code=500, detail=res["reason"] or "could not start canvas explorer")
     return {"status": "started"}
@@ -1448,7 +1555,7 @@ def stop_canvas_exploration(canvas_id: str):
 
 
 @router.post("/exploration/canvas/{canvas_id}/restart", dependencies=[gate(Capability.AUTO_EXPLORATION)])
-async def restart_canvas_exploration(canvas_id: str):
+async def restart_canvas_exploration(canvas_id: str, run_anyway: bool = False):
     from aughor.canvas.store import get_canvas
     from aughor.explorer.store import save_canvas, _empty
     canvas = get_canvas(canvas_id)
@@ -1460,6 +1567,7 @@ async def restart_canvas_exploration(canvas_id: str):
     refusal = explorer_refusal(conn_id)
     if refusal:   # refused before the canvas's state is wiped: a restart that cannot start must not purge
         return {"ok": False, "reason": refusal}
+    cap = _person_cap(conn_id, run_anyway, "canvas restart")
     old = _canvas_explorers.pop(canvas_id, None)
     if old:
         old.stop()
@@ -1470,14 +1578,14 @@ async def restart_canvas_exploration(canvas_id: str):
     ep_path = episodes_dir() / f"episodes_canvas_{canvas_id}.jsonl"
     if ep_path.exists():
         ep_path.unlink()
-    res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables)
+    res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables, token_cap=cap)
     if not res["ok"]:
         raise HTTPException(status_code=500, detail=res["reason"] or "could not restart canvas explorer")
     return {"status": "restarted"}
 
 
 @router.post("/exploration/canvas/{canvas_id}/trigger-intel", dependencies=[gate(Capability.DOMAIN_INTEL)])
-async def trigger_canvas_domain_intelligence(canvas_id: str):
+async def trigger_canvas_domain_intelligence(canvas_id: str, run_anyway: bool = False):
     """Run only Phase 8 (domain intelligence) for a Canvas if phases 3-7 are already
     complete — the canvas-scoped counterpart to the connection `trigger-intel`. Drives
     the *canvas* explorer (scoped to the canvas's curated tables), not the connection.
@@ -1494,7 +1602,9 @@ async def trigger_canvas_domain_intelligence(canvas_id: str):
 
     conn_id = canvas.scopes[0].connection_id
     tables  = canvas.scopes[0].tables or None
-    res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables, domain_intel_only=True)
+    cap = _person_cap(conn_id, run_anyway, "canvas questions")
+    res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables, domain_intel_only=True,
+                               token_cap=cap)
     if not res["ok"]:
         logger.warning("Canvas trigger-intel: failed for %s — %s", canvas_id, res["reason"])
     return {"ok": res["ok"], **({"reason": res["reason"]} if res["reason"] else {})}

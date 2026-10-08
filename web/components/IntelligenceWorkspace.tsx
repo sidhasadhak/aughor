@@ -11,6 +11,7 @@ import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { MetricDetailHost } from "@/components/brief/MetricDetail";
 import { SelectField } from "@/components/ui/select";
+import { ScopeMaturity } from "@/components/DatasetProgram";
 import { defaultSchema, rememberSchema } from "@/lib/schemaChoice";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
@@ -196,8 +197,10 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
 
   const showConnPicker = !canvasId && !!onConnectionChange && (connections?.length ?? 0) > 1;
   const showSchema = !canvasId && schemas.length > 1;
+  // The exploration principles: the scope's maturity, beside the picker that chose it.
+  const showMaturity = !canvasId && !!connectionId && schemaResolved;
 
-  const headerControls = (showConnPicker || showSchema) ? (
+  const headerControls = (showConnPicker || showSchema || showMaturity) ? (
     <>
       {/* Connection picker — lists only briefings-enabled connections (Catalog opt-in). */}
       {showConnPicker && (
@@ -234,6 +237,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
           </SelectField>
         </label>
       )}
+      {showMaturity && <ScopeMaturity connId={connectionId} schema={selectedSchema} />}
     </>
   ) : undefined;
 

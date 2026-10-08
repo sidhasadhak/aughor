@@ -621,6 +621,9 @@ def run_measure(metric: Any, windows: list[Window], run_sql: RunSql, *, dialect:
     except Exception as exc:  # noqa: BLE001
         rows, error = [], type(exc).__name__
     if error:
+        if str(error).startswith("[EXCLUDED]"):
+            # a refusal, not a failure: a person turned a table it reads off — said whole (§6)
+            return [], str(error)[len("[EXCLUDED] "):]
         return [], f"its query failed: {str(error)[:160]}"
     out = []
     for r in rows or []:

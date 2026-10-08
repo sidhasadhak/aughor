@@ -107,6 +107,11 @@ def render_raw_schema(
             tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
     else:
         tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
+    if connection_id:
+        # Exploration principles §6 — a table a person turned off is neither counted nor described: this reads the
+        # engine directly, past the door that would refuse it.
+        from aughor.kernel.registries.exclusions import is_table_off
+        tables = [t for t in tables if not is_table_off(connection_id, schema_name, t)]
     parts: list[str] = []
 
     # Use fully-qualified names when schema is known so queries work even if
@@ -418,6 +423,40 @@ def parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
     """Public alias for the schema → {table: [columns]} parser (a stable interface
     callers can import without reaching into the module's internals)."""
     return _parse_schema_tables(schema_str)
+
+
+def without_tables(schema_str: str, is_off) -> str:
+    """The schema string with every table ``is_off(name)`` says is off taken out — its ``TABLE:``
+    block (header, columns, samples) or its Data Catalog section — and the rest byte for byte as
+    it was. The exploration principles' §6: a table a person turned off is not offered to a model."""
+    if not schema_str:
+        return schema_str
+    out: list[str] = []
+    off_names: list[str] = []
+    skipping, catalog = False, False
+    for line in schema_str.splitlines(keepends=True):
+        m = re.match(r"^TABLE:\s+([\w.]+)", line) or _CATALOG_TABLE.match(line.rstrip("\n"))
+        if m:
+            catalog = line.startswith("##")
+            skipping = bool(is_off(m.group(1)))
+            if skipping:
+                off_names.append(m.group(1))
+            else:
+                out.append(line)
+            continue
+        if skipping:
+            ended = (bool(re.match(r"^#{1,6}\s", line)) if catalog
+                     else ends_column_block(line.rstrip("\n")))
+            if not ended:
+                continue
+            skipping = False
+        out.append(line)
+    if not off_names:
+        return "".join(out)
+    # A join hint or a key note elsewhere that names an off table ("orders ↔ secrets") goes too — matched
+    # as its header wrote it, so `marts.orders` stays when `stage.orders` is off.
+    named = re.compile(r"(?<![\w.])(?:" + "|".join(re.escape(n) for n in off_names) + r")(?!\w)")
+    return "".join(line for line in out if line.startswith("TABLE:") or not named.search(line))
 
 
 def sqlglot_schema(schema_str: str) -> dict:
