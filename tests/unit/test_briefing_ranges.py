@@ -506,6 +506,9 @@ def test_a_last_period_is_the_calendar_one_before_the_one_under_way():
     assert (week.start, week.last_day, week.previous_start) == (date(2026, 9, 28), date(2026, 10, 4), date(2026, 9, 21))
     assert (month.start, month.end, month.previous_start) == (date(2026, 9, 1), date(2026, 10, 1), date(2026, 8, 1))
     assert ranges.phrases(month)["covers"] == "September 2026" and not month.under_way
+    assert month.edge_note == ""                         # a whole month the data's edge left alone
+    behind = _edge("previous_week", edge={"through": date(2026, 10, 2)})
+    assert behind.last_day == date(2026, 10, 2) and behind.edge_note.startswith("Data runs to 2026-10-02")
     assert (year.start, year.end) == (date(2025, 1, 1), date(2026, 1, 1))
     nxt = ranges.later_spec(month)
     assert (nxt.start, nxt.end) == (date(2026, 10, 1), date(2026, 11, 1))

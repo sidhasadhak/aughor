@@ -242,8 +242,11 @@ def _edge_range(preset: str, *, today: date, through: Optional[date], held_by: t
         ly_s, ly_e = _year_back(s), _year_back(e)
     else:
         ly_s, ly_e = None, None                  # the comparison already is the year before
+    # Said where the data's edge shaped the period — a current one, or one it cut or moved — and not
+    # beside a whole September it left alone.
+    shaped = preset in CURRENT_PRESETS or fell_back is not None or e < whole
     note = _edge_note(today=today, through=through, complete=complete, held_by=held_by, tables=tables,
-                      fell_back=fell_back, asked_to=None)
+                      fell_back=fell_back, asked_to=None) if shaped else ""
     return RangeSpec(preset, s, e, ps, pe, ly_s, ly_e, period=unit, data_through=through, edge_note=note,
                      under_way=e < whole, fiscal_start_month=fiscal, **common)
 
