@@ -2319,6 +2319,27 @@ export async function getDomainInsights(connectionId: string, schema?: string): 
   return res.json();
 }
 
+/** A finding the explorer recorded, by the glossary's word: the wire keeps its older name. */
+export type RecordedFinding = ExplorationInsight;
+
+/** The connection's recorded findings, by domain, as the cockpit's ledger picker reads them
+ *  (the canvas, 2026-10-08): every domain that has one, in name order. */
+export async function listFindingsByDomain(connectionId: string, schema?: string): Promise<{ domain: string; findings: RecordedFinding[] }[]> {
+  const by = await getDomainInsights(connectionId, schema);
+  return Object.entries(by).map(([domain, d]) => ({ domain, findings: d.insights ?? [] }))
+    .filter(g => g.findings.length).sort((a, b) => a.domain.localeCompare(b.domain));
+}
+
+/** Pin a recorded finding as a card — Door 1, by the glossary's word. */
+export function pinFinding(connectionId: string, findingId: string, opts: { scope?: string; scopeRef?: string; schema?: string } = {}) {
+  return pinInsightToDashboard(connectionId, findingId, opts);
+}
+
+/** The finding a card was made from, or "" for a card made from nothing recorded. */
+export function findingOfCard(card: DashboardCard): string {
+  return card.provenance?.insight_id || "";
+}
+
 // ── A run a person starts: capped at the month's exploration budget (2026-10-08) ──────────────
 
 /** The month's exploration budget is spent and the person chose not to run past it. */

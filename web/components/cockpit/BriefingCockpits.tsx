@@ -43,8 +43,8 @@ import { ErrorState, Loading, Refusal } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import {
-  CockpitRefused, acceptProposal, askCockpit, cockpitAudiences, cockpitImageUrl, copySharedCockpit, draftCockpit, getCockpit,
-  getProposalById, getSharedCockpit, getSystemFlags, keepCockpit, listCockpits, listSharedCockpits, moveCanvasCockpit,
+  CockpitRefused, acceptProposal, askCockpit, cockpitAudiences, cockpitImageUrl, copySharedCockpit, draftCockpit, findingOfCard,
+  getCockpit, getProposalById, getSharedCockpit, getSystemFlags, keepCockpit, listCockpits, listSharedCockpits, moveCanvasCockpit,
   publishCockpit, rejectProposal, restoreCockpit, retireCockpit, runDashboardCard, startMyCockpit, unpublishCockpit,
   uploadCockpitImage,
   type BriefingRange, type CockpitAudience, type CockpitDrafted, type CockpitKept, type CockpitList, type CockpitVersion,
@@ -912,7 +912,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               )}
               {picking && (
                 <FindingPicker connectionId={connectionId} schema={schema} busy={busy}
-                  placed={new Set(cards.map(c => c.card.provenance?.insight_id || "").filter(Boolean))}
+                  placed={new Set(cards.map(c => findingOfCard(c.card)).filter(Boolean))}
                   onPlaced={() => { adopt.current = true; reload(); }} onClose={() => setPicking(false)} />
               )}
               {publishing && (

@@ -20,7 +20,7 @@ const api = vi.hoisted(() => ({
   listCockpits: vi.fn(), getCockpit: vi.fn(), runDashboardCard: vi.fn(), keepCockpit: vi.fn(),
   startMyCockpit: vi.fn(), draftCockpit: vi.fn(), getProposalById: vi.fn(), acceptProposal: vi.fn(), uploadCockpitImage: vi.fn(),
   listSharedCockpits: vi.fn(), getSharedCockpit: vi.fn(), copySharedCockpit: vi.fn(), cockpitAudiences: vi.fn(),
-  publishCockpit: vi.fn(), unpublishCockpit: vi.fn(), askCockpit: vi.fn(), getDomainInsights: vi.fn(), pinInsightToDashboard: vi.fn(),
+  publishCockpit: vi.fn(), unpublishCockpit: vi.fn(), askCockpit: vi.fn(), listFindingsByDomain: vi.fn(), pinFinding: vi.fn(),
   rejectProposal: vi.fn(), moveCanvasCockpit: vi.fn(), restoreCockpit: vi.fn(), retireCockpit: vi.fn(),
   getSystemFlags: vi.fn(), measureRange: vi.fn(), readExpectedNext: vi.fn(),
 }));
@@ -431,13 +431,13 @@ describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => 
 
 describe("the canvas: a finding from the ledger, a change in words, publishing (2026-10-08)", () => {
   it("places any recorded finding through the pin door, and says which has no query", async () => {
-    api.getDomainInsights.mockResolvedValue({
-      returns: { insights: [
+    api.listFindingsByDomain.mockResolvedValue([
+      { domain: "returns", findings: [
         { id: "returns__cat__1", domain: "returns", angle: "by category", finding: "Jeans return at twice the rate of Tops", sql: "SELECT 1" },
         { id: "supply__stock__2", domain: "returns", angle: "stock", finding: "Stockouts in Outerwear", sql: "" },
-      ], queries_used: 2, budget_cap: 10, angles_covered: [] },
-    });
-    api.pinInsightToDashboard.mockResolvedValue({ card: { id: "newcard" }, preview: { columns: [], rows: [], row_count: 0 }, caveats: [] });
+      ] },
+    ]);
+    api.pinFinding.mockResolvedValue({ card: { id: "newcard" }, preview: { columns: [], rows: [], row_count: 0 }, caveats: [] });
     show();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
     fireEvent.click(screen.getByTestId("cockpit-finding-new"));
@@ -446,7 +446,7 @@ describe("the canvas: a finding from the ledger, a change in words, publishing (
     expect(rows[1]).toHaveTextContent("no query — nothing to measure");
     expect(within(rows[1]).getByRole("button", { name: "Place" })).toBeDisabled();
     fireEvent.click(within(rows[0]).getByRole("button", { name: "Place" }));
-    await waitFor(() => expect(api.pinInsightToDashboard).toHaveBeenCalledWith("thelook", "returns__cat__1", { scope: "connection", scopeRef: "thelook", schema: "thelook" }));
+    await waitFor(() => expect(api.pinFinding).toHaveBeenCalledWith("thelook", "returns__cat__1", { scope: "connection", scopeRef: "thelook", schema: "thelook" }));
     // The card pinned lands on the cockpit in view, as a pin from the Briefing does.
     await waitFor(() => expect(api.getCockpit).toHaveBeenCalledTimes(2));
   });

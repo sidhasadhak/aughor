@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loading } from "@/components/ui/states";
 import { toast } from "@/components/ui/toast";
-import { getDomainInsights, pinInsightToDashboard, type ExplorationInsight } from "@/lib/api";
+import { listFindingsByDomain, pinFinding, type RecordedFinding } from "@/lib/api";
 
 const SHOWN = 60;
 
@@ -30,19 +30,15 @@ export function FindingPicker({ connectionId, schema, placed, busy, onPlaced, on
   onPlaced: () => void;
   onClose: () => void;
 }) {
-  const [ledger, setLedger] = useState<{ domain: string; findings: ExplorationInsight[] }[] | null>(null);
+  const [ledger, setLedger] = useState<{ domain: string; findings: RecordedFinding[] }[] | null>(null);
   const [problem, setProblem] = useState("");
   const [q, setQ] = useState("");
   const [pinning, setPinning] = useState("");
 
   useEffect(() => {
     let alive = true;
-    getDomainInsights(connectionId, schema).then(by => {
-      if (!alive) return;
-      const groups = Object.entries(by).map(([domain, d]) => ({ domain, findings: d.insights ?? [] }))
-        .filter(g => g.findings.length).sort((a, b) => a.domain.localeCompare(b.domain));
-      setLedger(groups);
-    }).catch(e => { if (alive) setProblem((e as Error).message); });
+    listFindingsByDomain(connectionId, schema).then(groups => { if (alive) setLedger(groups); })
+      .catch(e => { if (alive) setProblem((e as Error).message); });
     return () => { alive = false; };
   }, [connectionId, schema]);
 
@@ -57,10 +53,10 @@ export function FindingPicker({ connectionId, schema, placed, busy, onPlaced, on
   }, [ledger, q]);
   const total = (ledger ?? []).reduce((s, g) => s + g.findings.length, 0);
 
-  const place = async (f: ExplorationInsight) => {
+  const place = async (f: RecordedFinding) => {
     setPinning(f.id);
     try {
-      await pinInsightToDashboard(connectionId, f.id, { scope: "connection", scopeRef: connectionId, schema });
+      await pinFinding(connectionId, f.id, { scope: "connection", scopeRef: connectionId, schema });
       toast.success("Placed. Its query ran through the guards before the card was made.");
       onPlaced();
     } catch (e) {

@@ -53,7 +53,7 @@ function card(id: string, title: string, value: number, extra: Partial<Dashboard
   const c: DashboardCard = {
     id, connection_id: "thelook", scope: "user", scope_ref: "default", source: "authored", kind: "kpi",
     title, sql: "SELECT 1", query_ref: null, render: {}, refresh, thresholds: {},
-    provenance: { insight_id: "", origin_finding_id: "", receipt_ref: "", metric: "", metric_version: 0 } as DashboardCard["provenance"],
+    provenance: { origin_finding_id: "", receipt_ref: "", metric: "", metric_version: 0 } as DashboardCard["provenance"],
     links: [], body: "", author: "", created_at: "", updated_at: "", ...extra,
   };
   return { card: c, run: { columns: ["v"], rows: [[value]], row_count: 1, caveats: [], error: null, refresh } };
