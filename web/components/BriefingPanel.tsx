@@ -74,7 +74,6 @@ import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
 import { RangeControl, RangeFigures, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
-import { BriefDeliveries } from "@/components/brief/BriefDeliveries";
 import { buildRangeBriefing, isRangeBlock, readRangeBriefing, type BriefingRange, type BriefingRangeBlock } from "@/lib/api";
 import { StatTile } from "@/components/brief/StatTile";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
@@ -3225,11 +3224,9 @@ export function BriefingPanel({
             <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>{periodNote}</div>
           )}
           {/* The measured table, its segment breakdown and the early read are the Metrics cockpit's
-              (the user, 2026-10-08: "remove it"); the narrative cites the figures it needs. What
-              stays under the synthesis is where it was sent. */}
-          {!narrativeLoading && hasNarrative && narrative?.period && isRangeBlock(narrative.period) && connectionId && (
-            <BriefDeliveries connectionId={connectionId} scopeKey={narrative.scope_key || connectionId} block={narrative.period} />
-          )}
+              (the user, 2026-10-08: "remove it"); the narrative cites the figures it needs. Where it
+              was sent went too (2026-10-09: "the delivered part doesn't need to be here — the
+              departures is enough"): every send stands in Agent Ops › Departures, with its receipt. */}
           {!narrativeLoading && hasNarrative && narrative && (
             <NarrativeCard
               narrative={narrative}

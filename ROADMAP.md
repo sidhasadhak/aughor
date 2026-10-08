@@ -13646,9 +13646,10 @@ the browser** · **measure the premise before building.**
     (c) **The Briefing gains all three**: signed and dated as a delivery, an action on an item, a prediction on an
     item. *Built so far — signed and dated:* a send that leaves books one ledger entry (`briefing_delivery`) citing
     the kept version it delivered and the departure that carried it — to whom, when, under which receipt
-    (`aughor/briefing/deliveries.py`). The Briefing lists its deliveries under its measured table, each saying
-    whether the version sent is still the one on the page, and "Open what was sent" reads that version by its id,
-    never the latest. A send the gate held or a channel refused books nothing; the standing Briefing, which keeps no
+    (`aughor/briefing/deliveries.py`). The Briefing listed its deliveries under its measured table, each saying
+    whether the version sent is still the one on the page, and "Open what was sent" read that version by its id,
+    never the latest — ⛔ **that table left the Briefing 2026-10-09** (the user: "the delivered part doesn't need
+    to be here — the departures is enough"): the ledger entry stands, and a send is read in Agent Ops › Departures. A send the gate held or a channel refused books nothing; the standing Briefing, which keeps no
     version, books nothing. The entry is in the ledger's export. Not seen on a real send yet: the scratch install has
     no channel, so the first scheduled send is its receipt.
     *Built — a prediction on each measured item:* for every approved metric, the band its own past puts on the

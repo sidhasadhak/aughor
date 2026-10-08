@@ -47,7 +47,8 @@ is made from and is run through the guard battery before it is offered. This is 
 door, and it is a proposal door: words never write, a person's approval does.
 
 **The Briefing is one fixed reading.** Verdict and its largest moves, the Key Metrics tiles, the
-findings ledger, the full synthesis, where it was sent, the person's pinned-cards strip. Its layout
+findings ledger, the full synthesis, where it was sent (taken off 2026-10-09: a send stands in Agent
+Ops › Departures, and the synthesis is the narrative and its citations), the person's pinned-cards strip. Its layout
 is code — which is why today's edits to it are the builder's and nobody else's. The per-person
 part is the pinned strip. A per-user preferences store exists already (`GET/PUT /me/preferences`,
 `aughor/db/user_prefs`; a cosmetic, self-scoped write with no capability gate) and holds nothing
