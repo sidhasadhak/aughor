@@ -7222,7 +7222,11 @@ export interface FindingReask {
   rel: number | null;
   rows_current: number;
   rows_previous: number;
+  /** The finding's own statement cut to the range: the rows `current` is read from. */
   sql: string;
+  /** The same, cut to the compared range: the rows `previous` is read from. Absent from a
+   *  re-ask cached before it was carried. */
+  sql_previous?: string;
 }
 export interface FindingApart { id: string; domain: string; why: string }
 export interface FindingsReask {

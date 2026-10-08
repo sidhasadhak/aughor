@@ -95,6 +95,7 @@ import {
   DEFAULT_SECTIONS, isPart, normalizeSections, toggled, type BriefingSectionsPref, type CockpitChoice, type SectionId,
 } from "@/lib/briefingSections";
 import { Button } from "@/components/ui/button";
+import { Segmented } from "@/components/ui/segmented";
 import { Icon } from "@/components/ui/icon";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -849,6 +850,56 @@ export function fmtReask(v: number | null, measure: string): string {
   return Math.abs(v) >= 100000 ? compactNumber(v, 1) : formatMetricValue(v);
 }
 
+/** A finding re-asked for the range on screen, with the words for the two ranges it was read over. */
+export interface RangeFigure {
+  reask:        FindingReask;
+  covers:       string;
+  comparedWith: string;
+}
+
+/** Which rows a finding's open detail draws under a range: the range's own (the figure on the
+ *  tile or row is read from them), the compared range's (its "vs" figure), or the finding's
+ *  evidence as it was recorded, over all history (what its statement reads). */
+export type FindingView = "range" | "compared" | "history";
+
+/** The statement a view runs: the re-ask's own cut of the finding's SQL for either range, the
+ *  finding's recorded SQL for all history. "" when the view has none to run. */
+export function viewSql(view: FindingView, recorded: string, fig: RangeFigure | null | undefined): string {
+  if (view === "range") return fig?.reask.sql ?? "";
+  if (view === "compared") return fig?.reask.sql_previous ?? "";
+  return recorded;
+}
+
+/** A measure is named only when it IS a name: the re-ask reports whatever the finding's SQL called
+ *  the column, and an anonymous alias ("f0_") tells a reader nothing. */
+const anonymous = (measure: string) => !measure.trim() || /^[a-z]*\d+_?$/i.test(measure.trim());
+
+/** The sentence over a view's rows, saying how the figure the reader clicked is read from them —
+ *  so "217 vs 184" sits over the rows that add up to 217, or to 184, and says so (the user,
+ *  2026-10-09: the cards' numbers and the charts under them had no relation they could see).
+ *  ``drawn`` is how many rows the chart holds, when it holds fewer than the query returned. */
+export function figureNote(view: FindingView, fig: RangeFigure | null | undefined, drawn?: number | null): string {
+  if (view === "history" || !fig) {
+    return fig
+      ? "The finding's own evidence, as it was recorded: all history. The statement above reads these rows."
+      : "";
+  }
+  const r = fig.reask;
+  const current = view === "range";
+  const when  = current ? fig.covers : fig.comparedWith;
+  const value = current ? r.current : r.previous;
+  const n     = current ? r.rows_current : r.rows_previous;
+  const what  = anonymous(r.measure) ? "its figure" : r.measure;
+  const tail  = current ? " The statement above is the finding as it was recorded, over all history." : "";
+  if (value === null || n === 0) return `For ${when}, the finding's query returns nothing to read a figure from.${tail}`;
+  const shown = drawn != null && drawn < n ? ` The first ${drawn} are drawn.` : "";
+  if (r.how === "value" || n === 1) {
+    return `For ${when}, the finding's query returns one row, and ${what} is ${fmtReask(value, r.measure)}.${tail}`;
+  }
+  return `For ${when}, the finding's query returns the ${n} rows below; ${fmtReask(value, r.measure)} is the `
+    + `${r.how} of ${what} across them.${shown}${tail}`;
+}
+
 export function isDegenerateFinding(insight: ExplorationInsight): boolean {
   const f = (insight.finding || "").trim();
   if (!f) return true;
@@ -1482,9 +1533,9 @@ interface MoverTile {
   /** The finding itself, so a tile can open the same detail its ledger row does — the chart,
    *  the untruncated statement, Evidence/Investigate — without a round-trip to find it. */
   insight:    ExplorationInsight;
-  /** Under a range: one sentence naming the figure this tile shows and saying that the chart
-   *  in its detail is the finding's own all-history evidence. Absent on the standing view. */
-  rangeNote?: string;
+  /** Under a range: the finding re-asked for it — the tile's figure — so its detail draws the
+   *  rows that figure is read from. Absent on the standing view. */
+  range?:     RangeFigure;
 }
 
 function VerdictHero({
@@ -1522,7 +1573,6 @@ function VerdictHero({
   // rather than only deep-linking down to the ledger. One open at a time, like the ledger.
   const [openIdent, setOpenIdent] = useState<string | null>(null);
   const openTile = movers?.find(d => d.ident === openIdent) ?? null;
-  const openNote = openTile?.rangeNote ?? "";
   // Both are grounded prose quoted verbatim — normalise float noise, never the wording.
   const theme   = normalizeNumberPrecision(narrative?.headline_theme?.trim());
   const finding = normalizeNumberPrecision(headline?.insight.finding?.trim());
@@ -1649,16 +1699,13 @@ function VerdictHero({
                     ×
                   </Button>
                 </div>
-                {openNote && (
-                  /* The tile above carries THIS RANGE's figure; the chart below is the
-                     finding's own stored evidence, which is all-history. Printed together
-                     with nothing said they read as two answers to one question — the user,
-                     2026-09-28: *"the numbers dont match in the dropdown"*. So both are named.
-                     The sentence is built where the re-ask is, and rides on the tile. */
-                  <div className="aug-fs-xs" style={{ marginBottom: 10, color: "var(--t3)" }}>{openNote}</div>
-                )}
+                {/* Under a range the tile carries THIS RANGE's figure, and the detail opens on
+                    the rows it is read from. It used to open on the finding's all-history
+                    evidence with a sentence saying so (2026-09-28), and a reader still could
+                    not connect "217 vs 184" to a chart of 37,483 shipped orders (2026-10-09). */}
                 <FindingDetail
                   key={openTile.ident}
+                  range={openTile.range ?? null}
                   insight={openTile.insight}
                   domain={openTile.domain}
                   connectionId={connectionId}
@@ -1711,10 +1758,14 @@ function renderFigures(text: string): ReactNode[] {
  * row are two entry points to one finding, and they were never going to stay in step as two
  * copies. Display edits persist through `vizConfig`/`onVizConfigChange`, keyed by the insight.
  */
-function FindingDetail({
+export function FindingDetail({
   insight, domain, connectionId, chartHeight, onInvestigate, onEvidence,
-  vizConfig, onVizConfigChange,
+  vizConfig, onVizConfigChange, range,
 }: {
+  /** Under a range: the finding re-asked for it. The detail then opens on the range's own rows
+   *  — the ones the figure the reader clicked is read from — with the compared range's and the
+   *  recorded evidence one switch away. Absent on the standing view: the recorded evidence. */
+  range?:        RangeFigure | null;
   insight:       ExplorationInsight;
   domain:        string;
   connectionId:  string;
@@ -1724,41 +1775,56 @@ function FindingDetail({
   vizConfig?:      VizConfig | null;
   onVizConfigChange?: (c: VizConfig) => void;
 }) {
-  // The finding's own grounded result — fetched LAZILY on first mount of the detail
-  // (server-cached, same query the explorer ran). A single scalar shows as the big figure;
-  // anything richer renders through the chart card; error/empty → text only.
-  const [run, setRun]     = useState<{ columns: string[]; rows: unknown[][] } | null>(null);
-  const [phase, setPhase] = useState<"idle" | "loading" | "chart" | "text">("idle");
-  // `phase` is deliberately NOT a dependency: including it makes the effect re-run the instant
-  // it flips to "loading", and that re-run's cleanup sets alive=false on the fetch just kicked
-  // off — so it never reaches "chart" and the body sticks on the shimmer. Guard on `run` so a
-  // re-render doesn't refetch; StrictMode's remount simply starts a fresh (server-cached) call.
+  // The rows of the view on screen — fetched LAZILY when a view is first shown (server-cached;
+  // the recorded view is the same query the explorer ran). A single scalar shows as the big
+  // figure; anything richer renders through the chart card; error/empty → text only.
+  const views: FindingView[] = range
+    ? ["range", ...(range.reask.sql_previous && range.reask.previous !== null ? ["compared" as const] : []), "history"]
+    : ["history"];
+  const [view, setView] = useState<FindingView>(range ? "range" : "history");
+  const sql = viewSql(view, insight.sql || "", range).trim();
+  // Keyed by statement: switching back to a view shows what it already drew. `null` = nothing
+  // chartable came back. The ref, not the state, says what was asked — a dependency on the
+  // results would re-run the effect when an answer lands (StrictMode's second run included).
+  const [results, setResults] = useState<Record<string, { columns: string[]; rows: unknown[][] } | null>>({});
+  const asked = useRef(new Set<string>());
   useEffect(() => {
-    if (run) return;
-    const sql = (insight.sql || "").trim();
-    if (!sql || !connectionId) { setPhase("text"); return; }
-    setPhase("loading");
-    let alive = true;
+    if (!sql || !connectionId || asked.current.has(sql)) return;
+    asked.current.add(sql);
     runDirectQuery(connectionId, sql, 200, { useCache: true })
-      .then(r => {
-        if (!alive) return;
-        if (r.error || !r.columns?.length || !r.rows?.length) { setPhase("text"); return; }
-        setRun({ columns: r.columns, rows: r.rows as unknown[][] });
-        setPhase("chart");
-      })
-      .catch(() => { if (alive) setPhase("text"); });
-    return () => { alive = false; };
-  }, [run, connectionId, insight.sql]);
+      .then(r => setResults(m => ({
+        ...m,
+        [sql]: r.error || !r.columns?.length || !r.rows?.length ? null : { columns: r.columns, rows: r.rows as unknown[][] },
+      })))
+      .catch(() => setResults(m => ({ ...m, [sql]: null })));
+  }, [sql, connectionId]);
+  const fetched = sql ? results[sql] : null;
+  const phase: "loading" | "chart" | "text" = !sql || !connectionId ? "text" : fetched === undefined ? "loading" : fetched === null ? "text" : "chart";
+  const run = fetched ?? null;
+  const note = figureNote(view, range, run?.rows.length ?? null);
 
   const scalar = run && run.rows.length === 1 && run.columns.length === 1 && !isNaN(Number(run.rows[0][0]))
     ? Number(run.rows[0][0]) : null;
 
   return (
     <div style={{ background: "var(--bg-1)", border: "1px solid var(--b0)", borderRadius: "var(--r2)", padding: 12 }}>
+      {range && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" as const }}>
+          <Segmented<FindingView> label="Which rows the chart draws" value={view} onChange={setView}
+            options={views.map(v => v === "range"
+              ? { value: v, label: "This range", title: range.covers }
+              : v === "compared"
+                ? { value: v, label: "Compared range", title: range.comparedWith }
+                : { value: v, label: "All history", title: "The finding's evidence, as it was recorded" })} />
+          <span data-testid="finding-figure-note" className="aug-fs-xs" style={{ color: "var(--t3)", flex: "1 1 320px", minWidth: 0 }}>{note}</span>
+        </div>
+      )}
       {phase === "loading" && <Shimmer h={chartHeight} r="var(--r2)" />}
       {phase === "text" && (
         <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "8px 2px" }}>
-          No chartable result for this finding — the statement above is the finding.
+          {view === "history"
+            ? "No chartable result for this finding — the statement above is the finding."
+            : "Nothing to draw for this range."}
         </div>
       )}
       {phase === "chart" && run && (scalar != null ? (
@@ -1788,10 +1854,11 @@ function FindingDetail({
   );
 }
 
-function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, onEvidence, rowRef, vizConfig, onVizConfigChange, reask, apart }: {
+function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, onEvidence, rowRef, vizConfig, onVizConfigChange, range, apart }: {
   signal:        SynthesisSignal;
-  /** BR-7 — this finding's figure for the range on screen, when it was re-asked. */
-  reask?:        FindingReask | null;
+  /** BR-7 — this finding's figure for the range on screen, when it was re-asked; its detail
+   *  then opens on the rows that figure is read from. */
+  range?:        RangeFigure | null;
   /** BR-7 — why it could not be re-asked; the row then says it is about all history. */
   apart?:        string;
   connectionId:  string;
@@ -1804,6 +1871,7 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
   onVizConfigChange?: (c: VizConfig) => void;
 }) {
   const { insight, domain } = signal;
+  const reask = range?.reask ?? null;
   const fig = extractKeyFigure(insight.finding);
   const [hover, setHover] = useState(false);
 
@@ -1851,7 +1919,7 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
 
       {expanded && (
         <div style={{ padding: "0 18px 16px" }}>
-          <FindingDetail insight={insight} domain={domain} connectionId={connectionId}
+          <FindingDetail insight={insight} domain={domain} connectionId={connectionId} range={range}
             chartHeight={LEDGER_CHART_H} onInvestigate={onInvestigate} onEvidence={onEvidence}
             vizConfig={vizConfig} onVizConfigChange={onVizConfigChange} />
         </div>
@@ -1884,6 +1952,8 @@ function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, o
   onVizConfigChange?: (insightId: string, c: VizConfig) => void;
 }) {
   const reaskById  = useMemo(() => new Map((reask?.reasked ?? []).map(r => [r.id, r] as const)), [reask]);
+  const rangeFigure = (r: FindingReask | undefined): RangeFigure | null =>
+    r && reask ? { reask: r, covers: reask.covers, comparedWith: reask.compared_with } : null;
   // An id two schemas share can be re-asked in one and apart in the other; the page keys by
   // id, so the re-asked figure wins and the row never says both.
   const apartById  = useMemo(() => new Map((reask?.apart ?? []).filter(a => !reaskById.has(a.id)).map(a => [a.id, a.why] as const)), [reask, reaskById]);
@@ -1952,7 +2022,7 @@ function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, o
                 rowRef={el => { if (el) rowRefs.current.set(ident, el); else rowRefs.current.delete(ident); }}
                 vizConfig={vizConfigFor?.(findingId(sig)) ?? null}
                 onVizConfigChange={onVizConfigChange ? c => onVizConfigChange(findingId(sig), c) : undefined}
-                reask={reaskById.get(findingId(sig)) ?? null} apart={apartById.get(findingId(sig))} />
+                range={rangeFigure(reaskById.get(findingId(sig)))} apart={apartById.get(findingId(sig))} />
             );
           })}
           {/* footer — Show next N · count · jump to domain (replaces the removed sticky nav rail) */}
@@ -2915,15 +2985,7 @@ export function BriefingPanel({
           value: fmtReask(r.current, r.measure),
           secondary: r.previous !== null ? ` vs ${fmtReask(r.previous, r.measure)}` : undefined,
           sublabel: r.how === "value" ? r.measure : `${r.how} of ${r.measure}`,
-          // The measure is named only when it IS a name: the re-ask reports whatever the
-          // finding's SQL called the column, and an anonymous alias ("f0_") told a reader
-          // nothing while looking like a term they were expected to know.
-          rangeNote: `${fmtReask(r.current, r.measure)}`
-            + (r.previous !== null ? ` vs ${fmtReask(r.previous, r.measure)}` : "")
-            + (/^[a-z]*\d+_?$/i.test(r.measure.trim()) || !r.measure.trim()
-                ? "" : ` — ${r.how === "value" ? "" : `${r.how} of `}${r.measure}`)
-            + `, measured for ${reask.covers}. The chart below is this finding's own `
-            + `evidence, as it was recorded — all history, not this range.`,
+          range: { reask: r, covers: reask.covers, comparedWith: reask.compared_with },
         },
       });
     }

@@ -147,6 +147,10 @@ def reask_findings(findings: list[dict], spec: Any, *, run_sql: Callable[[str], 
             "id": fid, "domain": domain, "grain": f"{table}.{col}", "measure": measure, "how": how,
             "current": cur, "previous": prev, "rel": _rel(cur, prev),
             "rows_current": n_cur, "rows_previous": n_prev, "sql": got["current"][2],
+            # Both statements the figures were read from, so a reader can be shown the rows
+            # behind each: "217 vs 184" over the finding's all-history chart could not be
+            # connected to either (the user, 2026-10-09).
+            "sql_previous": got["previous"][2],
         })
     reasked.sort(key=lambda r: (r["rel"] is None, -abs(r["rel"] or 0.0)))
     return {"covers": words["covers"], "compared_with": words["compared_with"], "key": spec.key,

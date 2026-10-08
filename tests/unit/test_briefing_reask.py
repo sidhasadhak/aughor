@@ -78,6 +78,9 @@ def test_findings_are_re_asked_for_both_ranges_and_ranked_by_the_change():
     assert got["f1"]["current"] == 10.0 and got["f1"]["previous"] == 8.0 and got["f1"]["how"] == "total"
     assert got["f1"]["rel"] == 0.25 and got["f1"]["grain"] == "orders.created_at" and got["f1"]["rows_current"] == 2
     assert "2026-08-17" in got["f1"]["sql"] and "orders" in got["f1"]["sql"]
+    # The compared range's statement rides too, cut on its own window: the rows behind "vs 8".
+    assert got["f1"]["sql_previous"] != got["f1"]["sql"] and "orders" in got["f1"]["sql_previous"]
+    assert calls[1] == got["f1"]["sql_previous"]
     # f2's one-row answer reads the same fake rows: the first numeric column of a two-column result.
     assert [r["id"] for r in out["reasked"]] == ["f1", "f2"] or [r["id"] for r in out["reasked"]] == ["f2", "f1"]
     apart = {a["id"]: a["why"] for a in out["apart"]}
