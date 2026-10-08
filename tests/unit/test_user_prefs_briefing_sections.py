@@ -27,8 +27,8 @@ def test_the_key_is_in_the_registry_and_says_what_it_is():
 
 def test_every_section_once_in_the_kept_order_and_one_left_out_is_appended_shown():
     got = check({"sections": [{"id": "synthesis", "on": True}, {"id": "findings", "on": False}], "strip": "growth-review-1a2b"})
-    assert [s["id"] for s in got["sections"]] == ["synthesis", "findings", "verdict", "key_metrics", "cockpit", "patterns"]
-    assert [s["on"] for s in got["sections"]] == [True, False, True, True, True, True]
+    assert [s["id"] for s in got["sections"]] == ["synthesis", "findings", "verdict", "measured", "moves", "key_metrics", "cockpit", "patterns"]
+    assert [s["on"] for s in got["sections"]] == [True, False, True, True, True, True, True, True]
     assert got["strip"] == "growth-review-1a2b"
     assert check({})["sections"] == [{"id": s, "on": True} for s in BRIEFING_SECTIONS]
     assert check({"strip": None})["strip"] == ""
@@ -46,6 +46,6 @@ def test_a_value_the_shape_refuses_is_said(value, said):
         check(value)
 
 
-def test_the_web_names_the_same_six_sections():
+def test_the_web_names_the_same_sections():
     ids = re.findall(r'\{ id: "([a-z_]+)", label:', WEB.read_text())
     assert tuple(ids) == BRIEFING_SECTIONS

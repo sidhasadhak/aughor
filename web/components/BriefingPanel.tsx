@@ -94,7 +94,7 @@ import { BriefingStrip } from "@/components/brief/BriefingStrip";
 import { NewCardComposer } from "@/components/brief/NewCardComposer";
 import { getMyPreferences, listCockpits, putMyPreference } from "@/lib/api";
 import {
-  DEFAULT_SECTIONS, normalizeSections, toggled, type BriefingSectionsPref, type CockpitChoice, type SectionId,
+  DEFAULT_SECTIONS, isPart, normalizeSections, toggled, type BriefingSectionsPref, type CockpitChoice, type SectionId,
 } from "@/lib/briefingSections";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -3089,7 +3089,7 @@ export function BriefingPanel({
           {/* The canvas (B1): the sections in the person's order, each shown or hidden by their
               switches. A hidden one leaves a line saying so. What each section HOLDS is the
               platform's, written below exactly as before the switches. */}
-          {sections.sections.map(s => (s.on
+          {sections.sections.filter(s => !isPart(s.id)).map(s => (s.on
             ? <div key={s.id} data-testid={`briefing-section-${s.id}`}>{section(s.id)}</div>
             : <HiddenSection key={s.id} id={s.id} onShow={() => void saveSections(toggled(sections, s.id, true), `Shown: ${s.id.replace("_", " ")}.`)} />))}
         </div>
@@ -3114,6 +3114,9 @@ export function BriefingPanel({
   /** One of the Briefing's sections, as the product writes it. */
   function section(id: SectionId): ReactNode {
     if (!briefing) return null;          // the sections are drawn only once the brief is read
+    // The verdict's two parts — its measured figures and what the findings found — are switches
+    // of their own (the user, 2026-10-08): each can be hidden under the headline.
+    const partOn = (part: SectionId) => sections.sections.find(s => s.id === part)?.on !== false;
     switch (id) {
       case "verdict": return (
         <>
@@ -3130,8 +3133,8 @@ export function BriefingPanel({
         // Under a range the tiles are the RE-ASKED findings, whose values belong to THAT range;
         // the standing view keeps its own movers. While a range's re-ask is still in flight the
         // row stays empty rather than showing all-history numbers under a range heading.
-        movers={rangePending ? [] : (rangeSelected ? rangeMovers : movers)}
-        figures={rangeBlock ? <RangeFigures block={rangeBlock} /> : undefined}
+        movers={rangePending || !partOn("moves") ? [] : (rangeSelected ? rangeMovers : movers)}
+        figures={rangeBlock && partOn("measured") ? <RangeFigures block={rangeBlock} /> : undefined}
         stats={rangeBlock ? rangeStats(rangeBlock)
           : rangePending ? (narrativeLoading ? "measuring this range…" : "this range has no briefing yet")
           : undefined}

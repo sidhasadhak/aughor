@@ -96,7 +96,9 @@ def _map_layout(v: Any) -> dict:
 #: The Briefing's sections, in the order the product draws them (the canvas,
 #: docs/COCKPIT_CANVAS_2026-10-08.md, B1). A person shows, hides and orders these and chooses the
 #: cockpit of theirs that rides with the Briefing; the content of a section is never theirs to change.
-BRIEFING_SECTIONS = ("verdict", "key_metrics", "findings", "synthesis", "cockpit", "patterns")
+#: ``measured`` and ``moves`` are the two parts of the verdict — the day's measured figures and the
+#: row of what the findings found — each hidden on its own, moved with the verdict.
+BRIEFING_SECTIONS = ("verdict", "measured", "moves", "key_metrics", "findings", "synthesis", "cockpit", "patterns")
 _COCKPIT_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 
 

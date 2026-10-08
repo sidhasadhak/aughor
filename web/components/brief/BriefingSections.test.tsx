@@ -21,22 +21,31 @@ function show(pref = DEFAULT_SECTIONS, cockpitsOn = true) {
 }
 
 describe("the switches", () => {
-  it("lists the six sections in order, each with its switch, and hides one on a click", () => {
+  it("lists the sections in order, the verdict's two parts under it, each with its switch, and hides one on a click", () => {
     const onChange = show();
     const rows = screen.getAllByTestId("briefing-section-switch");
-    expect(rows.map(r => r.dataset.section)).toEqual(["verdict", "key_metrics", "findings", "synthesis", "cockpit", "patterns"]);
-    fireEvent.click(within(rows[2]).getByRole("checkbox", { name: "Show Findings" }));
+    expect(rows.map(r => r.dataset.section)).toEqual(["verdict", "measured", "moves", "key_metrics", "findings", "synthesis", "cockpit", "patterns"]);
+    expect(rows.filter(r => r.dataset.part === "true").map(r => r.dataset.section)).toEqual(["measured", "moves"]);
+    fireEvent.click(within(rows[4]).getByRole("checkbox", { name: "Show Findings" }));
     const [next, said] = onChange.mock.calls[0] as [BriefingSectionsPref, string];
-    expect(order(next)).toEqual(["verdict", "key_metrics", "findings:off", "synthesis", "cockpit", "patterns"]);
+    expect(order(next)).toEqual(["verdict", "measured", "moves", "key_metrics", "findings:off", "synthesis", "cockpit", "patterns"]);
     expect(said).toBe("Hidden: Findings.");
+  });
+
+  it("hides the measured figures under the headline on their own; a part has no arrows", () => {
+    const onChange = show();
+    const rows = screen.getAllByTestId("briefing-section-switch");
+    expect(within(rows[1]).queryByRole("button")).toBeNull();
+    fireEvent.click(within(rows[1]).getByRole("checkbox", { name: "Show Measured figures — the tiles under the headline" }));
+    expect(order(onChange.mock.calls[0][0] as BriefingSectionsPref)).toEqual(["verdict", "measured:off", "moves", "key_metrics", "findings", "synthesis", "cockpit", "patterns"]);
   });
 
   it("moves a section, and the first cannot go up", () => {
     const onChange = show();
     const rows = screen.getAllByTestId("briefing-section-switch");
-    expect(within(rows[0]).getByRole("button", { name: "Move Verdict and largest moves up" })).toBeDisabled();
-    fireEvent.click(within(rows[3]).getByRole("button", { name: "Move Full synthesis up" }));
-    expect(order(onChange.mock.calls[0][0] as BriefingSectionsPref)).toEqual(["verdict", "key_metrics", "synthesis", "findings", "cockpit", "patterns"]);
+    expect(within(rows[0]).getByRole("button", { name: "Move Verdict — the headline up" })).toBeDisabled();
+    fireEvent.click(within(rows[5]).getByRole("button", { name: "Move Full synthesis up" }));
+    expect(order(onChange.mock.calls[0][0] as BriefingSectionsPref)).toEqual(["verdict", "measured", "moves", "key_metrics", "synthesis", "findings", "cockpit", "patterns"]);
   });
 
   it("names the cockpit that rides with the Briefing, only where cockpits are on", () => {
@@ -62,7 +71,7 @@ describe("in words", () => {
     expect(proposal).toHaveTextContent("Put “Full synthesis” first");
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.click(within(proposal).getByRole("button", { name: "Keep it" }));
-    expect(order(onChange.mock.calls[0][0] as BriefingSectionsPref)).toEqual(["synthesis", "verdict", "key_metrics", "findings:off", "cockpit", "patterns"]);
+    expect(order(onChange.mock.calls[0][0] as BriefingSectionsPref)).toEqual(["synthesis", "verdict", "measured", "moves", "key_metrics", "findings:off", "cockpit", "patterns"]);
     expect(screen.queryByTestId("briefing-switch-proposal")).toBeNull();
   });
 

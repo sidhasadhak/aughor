@@ -13869,7 +13869,9 @@ the browser** · **measure the premise before building.**
     the doc. ✅ **BUILT 2026-10-08** on `claude/cockpit-canvas`, one branch, one PR: vocabulary 2 (Note, Image,
     `size`; the validator bundle rebuilt); notes stamped by the server; images in a per-connection cockpit
     volume with the uploader on the row, sniffed from the bytes, SVG with script refused; the Briefing's
-    switches as the `briefing_sections` preference, readable in words without a model; any recorded finding
+    switches as the `briefing_sections` preference — six sections, and the verdict's measured figures and
+    "what the findings found" as parts that hide on their own (the user, seeing the tiles under the headline:
+    "I do not wish to see the key metrics located inside the briefing") — readable in words without a model; any recorded finding
     placed through the pin door; publish to a group one belongs to or a role one holds (a version, as is
     unpublishing), "Shared with you" read-only with "Start my cockpit from this"; and the words door for a
     cockpit that stands (`POST /cockpits/{id}/ask`, ⚑ one model run) — edits and publishes as proposals, a

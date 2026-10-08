@@ -19,7 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  labelOf, moved, proposeFromWords, toggled, type BriefingSectionsPref, type CockpitChoice, type SectionId, type SwitchProposal,
+  isPart, labelOf, moved, proposeFromWords, toggled, type BriefingSectionsPref, type CockpitChoice, type SectionId, type SwitchProposal,
 } from "@/lib/briefingSections";
 
 const NONE = "__none__";
@@ -48,18 +48,33 @@ export function BriefingSections({ pref, onChange, cockpits, cockpitsOn, busy }:
     <div data-testid="briefing-sections" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "12px 14px", marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
       <div className="aug-label">Your Briefing</div>
       <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-        {pref.sections.map((s, i) => (
-          <li key={s.id} data-testid="briefing-section-switch" data-section={s.id} data-on={s.on ? "true" : "false"}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
-            <Checkbox checked={s.on} disabled={busy} aria-label={`Show ${labelOf(s.id)}`}
-              onChange={e => { const on = e.target.checked; onChange(toggled(pref, s.id, on), `${on ? "Shown" : "Hidden"}: ${labelOf(s.id)}.`); }} />
-            <span style={{ flex: 1, minWidth: 0 }}>{labelOf(s.id)}</span>
-            <Button size="xs" variant="ghost" disabled={busy || i === 0} aria-label={`Move ${labelOf(s.id)} up`}
-              onClick={() => onChange(moved(pref, s.id, i - 1), `Moved ${labelOf(s.id)} up.`)}>↑</Button>
-            <Button size="xs" variant="ghost" disabled={busy || i === pref.sections.length - 1} aria-label={`Move ${labelOf(s.id)} down`}
-              onClick={() => onChange(moved(pref, s.id, i + 1), `Moved ${labelOf(s.id)} down.`)}>↓</Button>
-          </li>
-        ))}
+        {pref.sections.map(s => {
+          // A part of the verdict is shown or hidden on its own; it moves with the verdict and has no
+          // arrows. The others are ordered among themselves.
+          const part = isPart(s.id);
+          const ordered = pref.sections.filter(x => !isPart(x.id));
+          const i = ordered.findIndex(x => x.id === s.id);
+          const verdictOn = pref.sections.find(x => x.id === "verdict")?.on !== false;
+          return (
+            <li key={s.id} data-testid="briefing-section-switch" data-section={s.id} data-on={s.on ? "true" : "false"} data-part={part ? "true" : undefined}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", paddingLeft: part ? 26 : 0 }}>
+              <Checkbox checked={s.on} disabled={busy || (part && !verdictOn)} aria-label={`Show ${labelOf(s.id)}`}
+                onChange={e => { const on = e.target.checked; onChange(toggled(pref, s.id, on), `${on ? "Shown" : "Hidden"}: ${labelOf(s.id)}.`); }} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                {labelOf(s.id)}
+                {part && <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: 8 }}>inside the verdict · moves with it</span>}
+              </span>
+              {!part && (
+                <>
+                  <Button size="xs" variant="ghost" disabled={busy || i === 0} aria-label={`Move ${labelOf(s.id)} up`}
+                    onClick={() => onChange(moved(pref, s.id, i - 1), `Moved ${labelOf(s.id)} up.`)}>↑</Button>
+                  <Button size="xs" variant="ghost" disabled={busy || i === ordered.length - 1} aria-label={`Move ${labelOf(s.id)} down`}
+                    onClick={() => onChange(moved(pref, s.id, i + 1), `Moved ${labelOf(s.id)} down.`)}>↓</Button>
+                </>
+              )}
+            </li>
+          );
+        })}
       </ul>
       {cockpitsOn && (
         <label style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -77,7 +92,7 @@ export function BriefingSections({ pref, onChange, cockpits, cockpitsOn, busy }:
         </label>
       )}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <Input aria-label="Ask for a change in words" placeholder="In words: “hide the findings, put the synthesis first”" value={words}
+        <Input aria-label="Ask for a change in words" placeholder="In words: “hide the measured figures”, “put the synthesis first”" value={words}
           disabled={busy} onChange={e => setWords(e.target.value)} onKeyDown={e => { if (e.key === "Enter") propose(); }}
           style={{ flex: 1, minWidth: 240, maxWidth: 520 }} />
         <Button size="sm" variant="secondary" disabled={busy || !words.trim()} onClick={propose}>Propose</Button>
