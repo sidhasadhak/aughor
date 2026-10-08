@@ -112,7 +112,9 @@ def expected_next(conn_id: str, spec: R.RangeSpec, *, profile: Any = None, works
         band = (f"{R._figure_text(low, name, unit, currency)} to {R._figure_text(high, name, unit, currency)}"
                 if low != high else str(R._figure_text(mu, name, unit, currency)))
         bt = S.backtest(read, coverage=S.HISTORY_COVERAGE)
-        must_say = [f"{len(read)} earlier ranges, each read at the same age: {band} at "
+        # only a cohort's earlier ranges are read at one age; a flow's as their rows stand today
+        aged = "each read at the same age" if m.time_kind == "cohort" else "each read as its rows stand today"
+        must_say = [f"{len(read)} earlier ranges, {aged}: {band} at "
                     f"{int(S.HISTORY_COVERAGE * 100)}% stated coverage",
                     (f"on this metric the interval held {bt['held']} of {bt['cases']} times" if bt.get("cases")
                      else "too few ranges to test the interval")]

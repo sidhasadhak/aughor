@@ -5522,8 +5522,8 @@ export interface paths {
         put?: never;
         /**
          * Read Metric Trend
-         * @description What a measured figure opens to: the metric over the range and the ranges before it, each read at
-         *     the same age, with how it is defined and dated. One warehouse statement, no model call; a metric
+         * @description What a measured figure opens to: the metric over the range and the ranges before it, each saying
+         *     whether it is still settling, with how it is defined and dated. One warehouse statement, no model call; a metric
          *     that cannot be read says why.
          */
         post: operations["read_metric_trend_exploration__conn_id__briefing_metric__metric__post"];

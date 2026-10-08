@@ -753,7 +753,7 @@ def _refuse_unless_period_allowed(period: str) -> None:
 
 
 def _range_spec_or_refuse(conn_id: str, period: str | None, preset: str | None, start: str | None,
-                          end: str | None, workspace_id: str | None):
+                          end: str | None, workspace_id: str | None, schema: str | None = None):
     """The range a request asks for, or None when it asks for none (or for a period while
     ``briefing.ranges`` is off, which §3.27's path answers). A range asked for while the flag
     is off is refused (404), and a range that cannot be read is refused with why (422) —
@@ -783,7 +783,8 @@ def _range_spec_or_refuse(conn_id: str, period: str | None, preset: str | None, 
         last = _date.fromisoformat(end) if end else None
     except ValueError:
         raise HTTPException(status_code=422, detail="start and end are ISO days, e.g. 2026-08-17")
-    spec, why = ranges.resolve_for(conn_id, preset, start=first, end=last, workspace_id=workspace_id)
+    spec, why = ranges.resolve_for(conn_id, preset, start=first, end=last, workspace_id=workspace_id,
+                                   schema=schema)
     if spec is None:
         raise HTTPException(status_code=422, detail=why)
     return spec
@@ -822,7 +823,7 @@ def reask_findings_for_range(conn_id: str, preset: str | None = None, start: str
     from aughor.knowledge import period_brief
     from aughor.tools.profile_cache import merged_profile_entry
 
-    spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id)
+    spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id, schema)
     if spec is None:
         raise HTTPException(status_code=422, detail="a range is required: preset=…, or start=… and end=…")
     key = (conn_id, schema or "", spec.key, spec.as_of.isoformat())
@@ -849,7 +850,7 @@ def read_briefing(conn_id: str, schema: str | None = None, workspace_id: str | N
     """A READ never builds (Arc BR-3): the range's Briefing as it was last built, or
     ``{"available": false, "built": false}`` with the range it would cover. Building is the
     POST door's, or the schedule's."""
-    spec = _range_spec_or_refuse(conn_id, period, preset, start, end, workspace_id)
+    spec = _range_spec_or_refuse(conn_id, period, preset, start, end, workspace_id, schema)
     if spec is None:
         raise HTTPException(status_code=422, detail="name a range: a preset, or a start and an end")
     from aughor.briefing import ranges
@@ -877,7 +878,7 @@ def measure_range_metrics(conn_id: str, schema: str | None = None, workspace_id:
     from aughor.briefing import ranges
     from aughor.knowledge import briefing as built
 
-    spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id)
+    spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id, schema)
     if spec is None:
         raise HTTPException(status_code=422, detail="name a range: a preset, or a start and an end")
     scope_key = f"{conn_id}:{schema}" if schema else conn_id
@@ -898,12 +899,12 @@ def measure_range_metrics(conn_id: str, schema: str | None = None, workspace_id:
 @router.post("/exploration/{conn_id}/briefing/metric/{metric}")
 def read_metric_trend(conn_id: str, metric: str, schema: str | None = None, workspace_id: str | None = None,
                       preset: str | None = None, start: str | None = None, end: str | None = None):
-    """What a measured figure opens to: the metric over the range and the ranges before it, each read at
-    the same age, with how it is defined and dated. One warehouse statement, no model call; a metric
+    """What a measured figure opens to: the metric over the range and the ranges before it, each saying
+    whether it is still settling, with how it is defined and dated. One warehouse statement, no model call; a metric
     that cannot be read says why."""
     from aughor.briefing import ranges
 
-    spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id)
+    spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id, schema)
     if spec is None:
         raise HTTPException(status_code=422, detail="name a range: a preset, or a start and an end")
     seen = ranges.metric_trend(conn_id, spec, metric, profile=_load_business_profile(conn_id, schema),
@@ -921,7 +922,7 @@ def read_expected_next(conn_id: str, schema: str | None = None, workspace_id: st
     statement per metric not yet predicted, no model call. Each is scored once its range has settled."""
     from aughor.briefing import expected
 
-    spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id)
+    spec = _range_spec_or_refuse(conn_id, None, preset, start, end, workspace_id, schema)
     if spec is None:
         raise HTTPException(status_code=422, detail="name a range: a preset, or a start and an end")
     return expected.expected_next(conn_id, spec, profile=_load_business_profile(conn_id, schema),
@@ -957,7 +958,7 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     Briefing, exactly as before. With ``briefing.ranges`` on (Arc BR-3), ``preset`` (or
     ``start`` and ``end``, both inclusive ISO days) asks for the Briefing of any range, and a
     named ``period`` is read as its preset."""
-    spec = _range_spec_or_refuse(conn_id, period, preset, start, end, workspace_id)
+    spec = _range_spec_or_refuse(conn_id, period, preset, start, end, workspace_id, schema)
     # ⚠ The REQUESTED schema owns `scope_key` (stamped below): it is the client's proof
     # that a narrative belongs to the scope it is about to paint it under. Canonicalization
     # applies to the DATA LOOKUPS only — collapsing it into the stamp answered "workspace"

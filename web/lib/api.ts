@@ -2612,6 +2612,8 @@ export interface CockpitRange {
   as_of: string | null;
   lag_days: number | null;
   still_moving: string[];
+  data_through?: string | null;
+  edge_note?: string;
 }
 
 /** A card a cockpit may place: the person's own, or one pinned for the connection — with the
@@ -6936,7 +6938,10 @@ export interface BriefingPeriodBlock {
  *  settling lag; "custom" carries its first and last day (inclusive, ISO). */
 export type RangePreset =
   | "yesterday" | "last_week" | "last_month" | "last_year"
-  | "month_to_date" | "year_to_date" | "custom";
+  | "month_to_date" | "year_to_date" | "custom"
+  /** The Cockpit's periods: the one under way and the one before, read to where the data ends. */
+  | "current_day" | "current_week" | "current_month" | "current_year"
+  | "previous_week" | "previous_month" | "previous_year";
 
 export interface BriefingRange {
   preset: RangePreset;
@@ -6968,6 +6973,10 @@ export interface BriefingRangeMeasure {
   /** Month recipe: the metric's declared target, when it has one. */
   target?: number | null;
   vs_target?: number | null;
+  /** Whether its comparison is read at the same age as the figure; `why` when it is not. */
+  equal_age?: { equal: boolean; why: string };
+  /** The income-statement line it reads on, when the connection's industry declares a statement. */
+  line?: { line: string; label: string } | null;
 }
 
 /** Arc BR-4 — a segment's move inside a metric (what moved). */
@@ -7005,6 +7014,12 @@ export interface BriefingRangeBlock {
   covers: string;
   compared_with: string;
   last_year_label: string | null;
+  /** The newest day whose data has arrived, when it was read. */
+  data_through?: string | null;
+  /** What where the data ends did to the range, in words; "" when it did nothing. */
+  edge_note?: string;
+  /** The period holding the range goes on past it: a period so far. */
+  under_way?: boolean;
   measured: BriefingRangeMeasure[];
   unmeasured: { name: string; reason: string }[];
   /** Arc BR-4 — the recipe that wrote it, and its own sections. */
@@ -7128,10 +7143,13 @@ export interface MetricTrendPoint {
   value_text: string | null;
   partial: string | null;
   current: boolean;
+  /** Inside the days this source keeps changing: its figure may still move. */
+  settling?: boolean;
 }
 
-/** What a measured figure opens to: the metric over the range and the ranges before it, each
- *  read at the same age, with how it is defined and dated. `why` says what stopped a read. */
+/** What a measured figure opens to: the metric over the range and the ranges before it, with how
+ *  it is defined and dated. `same_age` — a cohort's ranges are read at one age; a flow's as their
+ *  rows stand today. `why` says what stopped a read. */
 export interface MetricTrend {
   metric: string;
   found: boolean;
@@ -7149,6 +7167,8 @@ export interface MetricTrend {
   confirmed: boolean;
   series: MetricTrendPoint[];
   why: string;
+  same_age?: boolean;
+  lag_days?: number;
   period: BriefingRangeBlock;
 }
 

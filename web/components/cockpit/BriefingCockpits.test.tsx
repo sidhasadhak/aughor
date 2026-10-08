@@ -63,7 +63,7 @@ const READ: PersonCockpit = {
 };
 
 const MEASURED = {
-  period: "month", key: "range:last_month:2026-08-01..2026-08-31", preset: "last_month", label: "Monthly",
+  period: "month", key: "range:previous_month:2026-08-01..2026-08-31", preset: "previous_month", label: "Last month",
   start: "2026-08-01", end: "2026-09-01", last_day: "2026-08-31", previous_start: "2026-07-01", previous_end: "2026-08-01",
   last_year_start: null, last_year_end: null, as_of: "2026-10-05", lag_days: 1, lag_source: "default", still_moving: [],
   covers: "August 2026", compared_with: "July 2026", last_year_label: null, unmeasured: [],
@@ -124,13 +124,13 @@ describe("a person's cockpits", () => {
     expect(screen.getByTestId("cockpit-version")).toHaveTextContent("Version 3 · kept by person");
   });
 
-  it("with ranges on, opens on the latest month and asks each card how it moved against the one before", async () => {
+  it("with ranges on, opens on last month and asks each card how it moved against the one before", async () => {
     api.getSystemFlags.mockResolvedValue({ "briefing.ranges": { value: true } });
     api.getCockpit.mockResolvedValue({ ...READ, currency_symbol: "€",
       range: { ...READ.range, status: "final", preset: "last_month", covers: "July 2026" } });
     show();
-    await waitFor(() => expect(api.getCockpit).toHaveBeenCalledWith("thelook", "returns-1", { preset: "last_month" }));
-    await waitFor(() => expect(api.runDashboardCard).toHaveBeenCalledWith("c7f3a001", { preset: "last_month" }, { compare: true }));
+    await waitFor(() => expect(api.getCockpit).toHaveBeenCalledWith("thelook", "returns-1", { preset: "previous_month" }));
+    await waitFor(() => expect(api.runDashboardCard).toHaveBeenCalledWith("c7f3a001", { preset: "previous_month" }, { compare: true }));
     // Never first read as written: that run would roll every card's standing value.
     expect(api.getCockpit).not.toHaveBeenCalledWith("thelook", "returns-1", null);
     expect(await screen.findByTestId("cockpit-range")).toHaveTextContent("July 2026 · final");
@@ -321,17 +321,17 @@ describe("the metrics, the cockpit a person opens on", () => {
     const metrics = await screen.findByRole("tab", { name: "Metrics" });
     expect(metrics).toHaveAttribute("aria-selected", "true");
     // measured for the latest month, as a cockpit is read — and the Briefing's own table shows it
-    await waitFor(() => expect(api.measureRange).toHaveBeenCalledWith("thelook", { preset: "last_month" }, "thelook"));
+    await waitFor(() => expect(api.measureRange).toHaveBeenCalledWith("thelook", { preset: "previous_month" }, "thelook"));
     expect(await screen.findByText("Measured for August 2026 · against July 2026")).toBeInTheDocument();
     expect(screen.getByText("$110")).toBeInTheDocument();
     // and what the metric's own past expects of the range after it
     expect(await screen.findByText("$100 to $116")).toBeInTheDocument();
-    expect(api.readExpectedNext).toHaveBeenCalledWith("thelook", { preset: "last_month" }, "thelook", undefined);
+    expect(api.readExpectedNext).toHaveBeenCalledWith("thelook", { preset: "previous_month" }, "thelook", undefined);
     expect(screen.getByTestId("cockpit-range")).toHaveTextContent("August 2026 · final");
     expect(api.getCockpit).not.toHaveBeenCalled();
     // the person's own cockpits are still there, one click away, and that choice is remembered
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Returns" }));   // a Radix tab opens on mouseDown
-    await waitFor(() => expect(api.getCockpit).toHaveBeenCalledWith("thelook", "returns-1", { preset: "last_month" }));
+    await waitFor(() => expect(api.getCockpit).toHaveBeenCalledWith("thelook", "returns-1", { preset: "previous_month" }));
     expect(localStorage.getItem("aughor:cockpit:thelook")).toBe("returns-1");
   });
 

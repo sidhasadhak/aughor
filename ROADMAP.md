@@ -13821,6 +13821,18 @@ the browser** · **measure the premise before building.**
     number checked against the breakdown, no causal claim, withheld when it fails twice; a capped `explain_move`
     job under the Explorer's charter), and a person's own Start capped at what is left of the month — past it
     only on "run it anyway", recorded under their name. Decision (d) amended: the budget governs a person's run too.
+48. ✅ **DECIDED 2026-10-08 — the Cockpit's periods, and metrics read as an income statement** (the user, on
+    the Metrics cockpit). (a) The menu says **Current** day · week · month · year for the period under way and
+    **Last** week · month · year for the one before — "Latest" meant the newest *settled* period, which theLook's
+    29-day lag pushed into early September. (b) A current or last period is read **only over days whose data has
+    arrived**: where the data ends is read from the warehouse (the newest day every measured table has rows
+    for, one statement per table, kept ten minutes), a day still loading is left out, a current period with no
+    data yet reads the newest one that has, and each says so in words; a cut period is compared with the same
+    days of the one before. A custom range past the data is cut the same way. The Briefing's settled presets are
+    unchanged. (c) An industry may declare its **income statement** (`statement` in `industry.json`); its metrics
+    then read gross sales, discounts and returns, net sales, cost of goods sold, gross profit, fulfilment,
+    marketing, contribution, operating expenses, profit — then volume, rates and operations — each table headed
+    by its lines. Retail / E-commerce first; the other industries keep the shared backbone until theirs are written.
 
 ---
 

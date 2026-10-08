@@ -14,14 +14,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import type { CockpitRange } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 
+// "Current" is the period under way and "last" the one before (the user, 2026-10-08). Each is read
+// only over days whose data has arrived: the server reads where the data ends, so a current day on
+// a source a day behind is yesterday, and the range says so.
 const CHOICES: { v: string; t: string }[] = [
   { v: "standing", t: "As written" },
-  { v: "yesterday", t: "Latest day" },
-  { v: "last_week", t: "Latest week" },
-  { v: "last_month", t: "Latest month" },
-  { v: "last_year", t: "Latest year" },
-  { v: "month_to_date", t: "Month to date" },
-  { v: "year_to_date", t: "Year to date" },
+  { v: "current_day", t: "Current day" },
+  { v: "current_week", t: "Current week" },
+  { v: "current_month", t: "Current month" },
+  { v: "current_year", t: "Current year" },
+  { v: "previous_week", t: "Last week" },
+  { v: "previous_month", t: "Last month" },
+  { v: "previous_year", t: "Last year" },
   { v: "custom", t: "Custom range…" },
 ];
 
@@ -29,19 +33,30 @@ const STATUS: Record<CockpitRange["status"], string> = {
   standing: "", final: "final", provisional: "provisional", to_date: "to date",
 };
 
-/** What the trigger says: the period as the server resolved it, and whether it has settled. */
-export function periodWords(value: RangeChoice, showing: CockpitRange | null): string {
-  if (value.preset === "standing") return "As written";
-  if (showing && showing.status !== "standing" && showing.covers) return `${showing.covers} · ${STATUS[showing.status]}`;
-  return CHOICES.find(c => c.v === value.preset)?.t ?? "";
+/** The chosen period's name — "Current week", or a custom range's days. */
+export function choiceName(value: RangeChoice): string {
+  if (value.preset === "custom" && value.start && value.end) return `${value.start} to ${value.end}`;
+  return CHOICES.find(c => c.v === value.preset)?.t ?? "Custom range";
 }
 
-export function PeriodPicker({ value, onChange, showing, disabled }: {
+/** What the trigger says: the period as the server resolved it, and whether it has settled. While
+ *  the chosen period is still being read, its name — never the period read before it. */
+export function periodWords(value: RangeChoice, showing: CockpitRange | null, reading = false): string {
+  if (value.preset === "standing") return "As written";
+  const name = choiceName(value);
+  if (reading) return `${name} · reading…`;
+  if (showing && showing.status !== "standing" && showing.covers) return `${showing.covers} · ${STATUS[showing.status]}`;
+  return name;
+}
+
+export function PeriodPicker({ value, onChange, showing, disabled, reading = false }: {
   value: RangeChoice;
   onChange: (c: RangeChoice) => void;
   /** The range the cards on screen were read for; null while none is read. */
   showing: CockpitRange | null;
   disabled?: boolean;
+  /** The chosen period is being read: what is on screen is still the period before it. */
+  reading?: boolean;
 }) {
   const [custom, setCustom] = useState(value.preset === "custom");
   const [start, setStart] = useState(value.preset === "custom" ? value.start ?? "" : "");
@@ -59,7 +74,7 @@ export function PeriodPicker({ value, onChange, showing, disabled }: {
           onChange({ preset: next } as RangeChoice);
         }}>
         <SelectTrigger aria-label="Cockpit period" style={{ minWidth: 180 }}>
-          <span data-testid="cockpit-range">{custom && value.preset !== "custom" ? "Custom range…" : periodWords(value, showing)}</span>
+          <span data-testid="cockpit-range">{custom && value.preset !== "custom" ? "Custom range…" : periodWords(value, showing, reading)}</span>
         </SelectTrigger>
         <SelectContent>
           {CHOICES.map(c => <SelectItem key={c.v} value={c.v}>{c.t}</SelectItem>)}

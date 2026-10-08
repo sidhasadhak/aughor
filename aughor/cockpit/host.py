@@ -30,7 +30,7 @@ _TO_DATE_PRESETS = ("month_to_date", "year_to_date")
 
 def status_of(spec: Any) -> str:
     """The status of a resolved range (a ``RangeSpec``), from its own dates."""
-    if spec.preset in _TO_DATE_PRESETS:
+    if spec.preset in _TO_DATE_PRESETS or getattr(spec, "under_way", False):
         return TO_DATE
     settled = spec.as_of - timedelta(days=int(spec.lag_days or 0))   # the newest settled day
     if spec.last_day >= spec.as_of:
@@ -43,7 +43,8 @@ def status_of(spec: Any) -> str:
 def standing() -> dict:
     """The range block when no range was chosen."""
     return {"status": STANDING, "preset": None, "start": None, "last_day": None,
-            "covers": "", "as_of": None, "lag_days": None, "still_moving": []}
+            "covers": "", "as_of": None, "lag_days": None, "still_moving": [],
+            "data_through": None, "edge_note": ""}
 
 
 def range_state(conn_id: str, preset: Optional[str] = None, *, start: Optional[date] = None,
@@ -60,4 +61,6 @@ def range_state(conn_id: str, preset: Optional[str] = None, *, start: Optional[d
     return {"status": status_of(spec), "preset": spec.preset,
             "start": spec.start.isoformat(), "last_day": spec.last_day.isoformat(),
             "covers": ranges.phrases(spec)["covers"], "as_of": spec.as_of.isoformat(),
-            "lag_days": spec.lag_days, "still_moving": list(spec.still_moving)}, ""
+            "lag_days": spec.lag_days, "still_moving": list(spec.still_moving),
+            "data_through": spec.data_through.isoformat() if spec.data_through else None,
+            "edge_note": spec.edge_note}, ""

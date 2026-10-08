@@ -35,6 +35,29 @@ const BLOCK: BriefingRangeBlock = {
 };
 
 describe("RangeMeasures", () => {
+  it("reads as an income statement where the industry declares one: each line heads its metrics", () => {
+    const line = (l: string, label: string) => ({ line: l, label });
+    const block = { ...BLOCK, measured: [
+      { ...BLOCK.measured[0], line: line("gross_sales", "Gross sales") },
+      { ...BLOCK.measured[1], line: line("deductions", "Discounts and returns") },
+      { ...BLOCK.measured[0], metric: "net", name: "Net Merchandise Revenue", line: line("net_sales", "Net sales") },
+      { ...BLOCK.measured[0], metric: "units", name: "Units Sold", line: line("volume", "Volume") },
+      { ...BLOCK.measured[0], metric: "dau", name: "Daily Active Users", line: line("volume", "Volume") },
+    ] };
+    const { container } = render(<RangeMeasures block={block} />);
+    const heads = [...container.querySelectorAll("[data-ledger-group]")].map(r => r.textContent);
+    expect(heads).toEqual(["Gross sales", "Discounts and returns", "Net sales", "Volume"]);
+  });
+
+  it("says beside a change when it is not at equal age, and where the data ends", () => {
+    const why = "Revenue is still provisional, and what it is compared with has settled";
+    render(<RangeMeasures block={{ ...BLOCK, edge_note: "Data runs to 2026-10-07: today (2026-10-08) has no rows yet.",
+      measured: [{ ...BLOCK.measured[0], equal_age: { equal: false, why } }] }} />);
+    expect(screen.getByTestId("change-not-equal-age").textContent).toBe(" · not at equal age");
+    expect(screen.getByTestId("change-not-equal-age").parentElement?.getAttribute("title")).toBe(why);
+    expect(screen.getByTestId("range-edge-note").textContent).toContain("today (2026-10-08) has no rows yet");
+  });
+
   it("states a share's change in points, the status, and one line per reason", () => {
     render(<RangeMeasures block={BLOCK} />);
     expect(screen.getByText("-0.8 pts")).toBeTruthy();
@@ -139,6 +162,45 @@ describe("a metric opens beside the page", () => {
     expect(asked).toEqual([whyQuestion(MOVED.measured[0], MOVED)]);
     expect(asked[0]).toContain("Why did Revenue change by +10%");
     expect(screen.queryByTestId("metric-detail")).toBeNull();
+  });
+
+  it("follows the table to a new period: the same metric's new figure, or closed when it is not measured", async () => {
+    const view = render(
+      <MetricDetailHost connectionId="thelook" pageKey="cockpit">
+        <RangeMeasures block={BLOCK} />
+      </MetricDetailHost>);
+    fireEvent.click(screen.getByRole("button", { name: "Revenue" }));
+    expect((await screen.findByTestId("metric-detail")).textContent).toContain("$136,923");
+    const WEEK: BriefingRangeBlock = { ...BLOCK, key: "range:custom:2026-08-20..2026-08-26", covers: "2026-08-20 to 2026-08-26 (7 days)",
+      measured: [{ ...BLOCK.measured[0], current: 99000, current_text: "$99,000" }] };
+    view.rerender(
+      <MetricDetailHost connectionId="thelook" pageKey="cockpit">
+        <RangeMeasures block={WEEK} />
+      </MetricDetailHost>);
+    await waitFor(() => expect(screen.getByTestId("metric-detail").textContent).toContain("$99,000"));
+    expect(screen.getByTestId("metric-detail").textContent).toContain("Measured for 2026-08-20 to 2026-08-26 (7 days)");
+    expect(api.readMetricTrend).toHaveBeenLastCalledWith("thelook", "revenue",
+      { preset: "custom", start: "2026-08-17", end: "2026-08-26" }, undefined, undefined);
+    view.rerender(
+      <MetricDetailHost connectionId="thelook" pageKey="cockpit">
+        <RangeMeasures block={{ ...WEEK, key: "range:custom:2026-08-21..2026-08-26", measured: [BLOCK.measured[1]] }} />
+      </MetricDetailHost>);
+    await waitFor(() => expect(screen.queryByTestId("metric-detail")).toBeNull());
+  });
+
+  it("says a flow's earlier ranges are read as they stand today, and which are still settling", async () => {
+    api.readMetricTrend.mockResolvedValue({ ...TREND, same_age: false, lag_days: 15,
+      series: [{ ...TREND.series[0], settling: false }, { ...TREND.series[1], settling: true }] });
+    render(
+      <MetricDetailHost connectionId="thelook" pageKey="briefing">
+        <RangeMeasures block={BLOCK} />
+      </MetricDetailHost>);
+    fireEvent.click(screen.getByRole("button", { name: "Revenue" }));
+    const drawer = await screen.findByTestId("metric-detail");
+    await waitFor(() => expect(drawer.textContent).toContain("each read as its rows stand today"));
+    expect(drawer.textContent).toContain("The newest is inside the 15 days this source keeps changing");
+    expect(drawer.textContent).toContain("2026-08-17 to 2026-08-26 (this range) · still settling");
+    expect(drawer.textContent).not.toContain("each read at the same age");
   });
 
   it("says why when the earlier ranges could not be read, and Esc puts it away", async () => {

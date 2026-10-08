@@ -10,12 +10,13 @@
  * the metric is defined and dated. The drawer only reads. "Ask why it moved" hands the question
  * to the Agent as a deep analysis — a run the reader starts, never one the drawer starts.
  */
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { Sparkline } from "@/components/brief/Sparkline";
 import { Beside, Box, Part, Title, useEscape } from "@/components/record/beside";
 import { Absent, Gate, Ledger, StatusMark, useLoad, type LedgerColumn } from "@/components/record/kit";
 import { Button } from "@/components/ui/button";
+import { Loading } from "@/components/ui/states";
 import {
   readMetricTrend,
   type BriefingRange, type BriefingRangeBlock, type BriefingRangeMeasure, type ExpectedNext, type MetricTrend,
@@ -31,11 +32,32 @@ export interface MetricOpened {
 }
 type OpenMetric = (what: MetricOpened) => void;
 
-const Opener = createContext<{ open: OpenMetric; shown: MetricOpened | null } | null>(null);
+const Opener = createContext<{ open: OpenMetric; close: () => void; shown: MetricOpened | null } | null>(null);
 
 /** The function that opens a metric beside the page, or null where no page offers the drawer. */
 export function useOpenMetric(): OpenMetric | null {
   return useContext(Opener)?.open ?? null;
+}
+
+/**
+ * Keeps an open drawer on the table's period. When the table is read for another period, the drawer
+ * shows the same metric for the new one — or closes, when the new period does not measure it. It
+ * stayed on the period it was opened from, beside a table of another (2026-10-08).
+ */
+export function useFollowBlock(block: BriefingRangeBlock, expectedOf?: (metric: string) => MetricOpened["expected"]) {
+  const ctx = useContext(Opener);
+  const was = useRef(block.key);
+  useEffect(() => {
+    const before = was.current;
+    was.current = block.key;
+    const shown = ctx?.shown;
+    if (!ctx || !shown || (shown.block.key !== block.key && shown.block.key !== before)) return;
+    const m = block.measured.find(x => x.metric === shown.measure.metric);
+    if (!m) { if (shown.block.key !== block.key) ctx.close(); return; }
+    const expected = expectedOf?.(m.metric);
+    if (shown.block !== block || shown.measure !== m || !!expected !== !!shown.expected) ctx.open({ measure: m, block, expected });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- followed on a new block or new bands only
+  }, [block, expectedOf]);
 }
 
 /** The metric open beside the page when it was opened from this range's table, else undefined. */
@@ -80,7 +102,7 @@ export function MetricDetailHost({ connectionId, schema, workspaceId, pageKey, t
   const openMetric = useCallback<OpenMetric>(what => setOpen({ what, on: pageKey }), [pageKey]);
   const close = useCallback(() => setOpen(null), []);
   useEscape(!!shown, close);
-  const offered = useMemo(() => ({ open: openMetric, shown }), [openMetric, shown]);
+  const offered = useMemo(() => ({ open: openMetric, close, shown }), [openMetric, close, shown]);
   return (
     <Opener.Provider value={offered}>
       <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0 }}>
@@ -130,7 +152,9 @@ function MetricDetail({ what, connectionId, schema, workspaceId, top, onClose, o
       <Part label={`Measured for ${block.covers}`}>
         <Box foot={partial
           ? `No change stated: its data covers only ${partial}.`
-          : change ? `${change} against ${block.compared_with}` : `No comparison rows for ${block.compared_with}.`}>
+          : change
+            ? `${change} against ${block.compared_with}${m.equal_age && !m.equal_age.equal ? ` — not at equal age: ${m.equal_age.why}` : ""}`
+            : `No comparison rows for ${block.compared_with}.`}>
           {m.current_text ?? "no figure"}
         </Box>
         {m.previous_text && <Box foot={`The comparison: ${block.compared_with}`}>{m.previous_text}</Box>}
@@ -140,9 +164,13 @@ function MetricDetail({ what, connectionId, schema, workspaceId, top, onClose, o
       </Part>
 
       <Part label="How it ran">
-        <Gate load={load} what="this metric's earlier ranges">
-          {t => <Trend trend={t} />}
-        </Gate>
+        {load.loading && load.data && <Loading inline what={`how it ran up to ${block.covers}`} />}
+        <div aria-busy={(load.loading && !!load.data) || undefined}
+          style={{ opacity: load.loading && load.data ? 0.45 : 1, transition: "opacity 120ms ease-out" }}>
+          <Gate load={load} what="this metric's earlier ranges">
+            {t => <Trend trend={t} />}
+          </Gate>
+        </div>
       </Part>
 
       {expected && (
@@ -178,10 +206,12 @@ function Trend({ trend }: { trend: MetricTrend }) {
   const read = trend.series.filter(p => p.value !== null);
   if (read.length === 0) return <Absent>No range before this one has rows.</Absent>;
   const columns: LedgerColumn<MetricTrendPoint>[] = [
-    { head: "Range", cell: p => (p.current ? `${p.label} (this range)` : p.label), width: 210 },
+    { head: "Range", width: 210,
+      cell: p => `${p.label}${p.current ? " (this range)" : ""}${p.settling && !trend.same_age ? " · still settling" : ""}` },
     { head: "Value", cell: p => p.value_text ?? "no rows", num: true },
   ];
   const short = trend.series.filter(p => p.partial);
+  const settling = trend.series.filter(p => p.settling && p.value !== null).length;
   return (
     <div style={{ display: "grid", gap: 8 }}>
       {read.length > 1 && (
@@ -192,7 +222,12 @@ function Trend({ trend }: { trend: MetricTrend }) {
       <Ledger name={`trend-${trend.metric}`} columns={columns} rows={trend.series} rowKey={p => p.start}
         empty="No earlier range was read." />
       <Absent>
-        {countNoun(trend.series.length, "range")}, oldest first, each read at the same age as this one.
+        {countNoun(trend.series.length, "range")}, oldest first,{" "}
+        {trend.same_age
+          ? "each read at the same age as this one."
+          : <>each read as its rows stand today.{settling > 0
+              ? ` ${settling === 1 ? "The newest is" : `The newest ${settling} are`} inside the ${trend.lag_days ?? ""} days this source keeps changing, so ${settling === 1 ? "it is" : "they are"} not at the age of the ones before — part of any difference is age, not a move.`
+              : ""}</>}
         {short.length > 0 ? ` ${countNoun(short.length, "range")} had rows for only part of its days: ${short.map(p => p.label).join("; ")}.` : ""}
       </Absent>
     </div>
