@@ -51,9 +51,16 @@ _CARD = {
 _PARAMS = {
     "type": "object",
     "properties": {
-        "op": {"type": "string", "enum": ["options", "new", "edit"], "description": (
+        "op": {"type": "string", "enum": ["options", "new", "edit", "publish"], "description": (
             "options: what a cockpit here may be made of, the cockpit as it stands, and how one is written. "
-            "new: draft a whole cockpit. edit: draft a change to the one that stands.")},
+            "new: draft a whole cockpit. edit: draft a change to the one that stands. "
+            "publish: propose to share the cockpit that stands with a group or a role, named in \"to\".")},
+        "to": {"type": "array", "items": {"type": "object", "properties": {
+            "kind": {"type": "string", "enum": ["group", "role"]},
+            "name": {"type": "string", "description": "The group's or the role's name, as options lists them."}},
+            "required": ["kind", "name"]}, "description": (
+            "publish: who the cockpit is shared with. Only a group the person belongs to, or a role options "
+            "says they may publish to.")},
         "cards": {"type": "array", "items": _CARD, "maxItems": MAX_NEW_CARDS, "description": (
             f"new or edit: the cards to CREATE, at most {MAX_NEW_CARDS} to a draft, each made from exactly one "
             "of metric, trusted_query or finding. Every name the spec places that is not the id of a card the "
@@ -103,10 +110,21 @@ def draft_cockpit(home: Home, args: dict, *, emit: Optional[Emit] = None, said: 
     op = str((args or {}).get("op") or "options")
     if op == "options":
         return propose.options(home, schema)
+    if op == "publish":
+        published = propose.propose_publish(home, args.get("to"))
+        if not published.staged:
+            told = " ".join(published.refusals)
+            return {"staged": False, "refused": list(published.refusals), "error": told,
+                    "summary": "Nothing staged. Name a group the person belongs to, or a role they may publish to."}
+        _announce(emit, published.proposal)
+        to = ", ".join(t["name"] for t in (published.proposal.params or {}).get("to") or [])
+        return {"staged": True, "proposal_id": published.proposal.id, "expires_at": published.proposal.expires_at,
+                "summary": (f'Proposed to publish the cockpit "{(published.proposal.detail or {}).get("title")}" to {to} '
+                            f"(proposal {published.proposal.id}). Nothing is shared yet: the person keeps it or not.")}
     if op not in (propose.MODE_NEW, propose.MODE_EDIT):
-        told = f'"{op}" is not one of: options, new, edit.'
+        told = f'"{op}" is not one of: options, new, edit, publish.'
         return {"staged": False, "refused": [told], "error": told,
-                "summary": f'Nothing staged: "{op}" is not one of options, new, edit.'}
+                "summary": f'Nothing staged: "{op}" is not one of options, new, edit, publish.'}
 
     drafted = propose.draft(
         home, mode=op, spec=args.get("spec"), patches=args.get("patches"),

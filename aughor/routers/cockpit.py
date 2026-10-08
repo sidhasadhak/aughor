@@ -54,6 +54,16 @@ class MoveRequest(BaseModel):
     canvas_id: str
 
 
+class AskRequest(BaseModel):
+    words: str
+    schema_name: Optional[str] = None
+
+
+class PublishRequest(BaseModel):
+    """Who the cockpit is published to: groups and roles, each by kind and id or name."""
+    to: list[dict[str, Any]]
+
+
 def _on() -> None:
     from aughor.kernel.flags import flag_enabled
     if not flag_enabled("cockpit.composed"):
@@ -139,6 +149,75 @@ def list_cockpits(request: Request, connection_id: str) -> dict:
         "own_cards": len(cards.own(home)),
         "from_canvases": versions.canvas_cockpits(connection_id),
     }
+
+
+@router.get("/cockpits/audiences")
+def audiences(request: Request, connection_id: str) -> dict:
+    """The groups the asker belongs to and the roles they hold: who they may publish a cockpit to
+    (the canvas, B5). Declared before the cockpit-by-id read, which would take the word for an id."""
+    _on()
+    from aughor.cockpit import sharing
+    from aughor.cockpit.home import person_of
+    return sharing.audience_of(person_of(request))
+
+
+@router.get("/cockpits/shared")
+def shared_cockpits(request: Request, connection_id: str) -> dict:
+    """The cockpits others published to a group the asker is in or a role they hold."""
+    _on()
+    from aughor.cockpit import sharing
+    from aughor.cockpit.home import person_of
+    return {"cockpits": sharing.shared_with(connection_id, person_of(request))}
+
+
+@router.get("/cockpits/shared/{owner}/{cockpit_id}")
+def read_shared_cockpit(request: Request, owner: str, cockpit_id: str, connection_id: str,
+                        preset: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None,
+                        workspace_id: Optional[str] = None) -> dict:
+    """A published cockpit as it stands, for a reader it reaches: read-only, for the reader's own
+    period; a card the reader may not read stands and says so."""
+    _on()
+    from aughor.cockpit import cards, host, images, sharing
+    from aughor.cockpit.home import person_of
+    from aughor.kernel.flags import flag_enabled
+    from aughor.routers.investigations import resolve_currency_symbol
+    try:
+        got = sharing.read_shared(connection_id, owner, cockpit_id, reader=person_of(request))
+    except sharing.Refused as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    home, kept = got["home"], got["cockpit"]
+    ranges_on = flag_enabled("briefing.ranges")
+    block, why = host.range_state(connection_id, preset if ranges_on else None,
+                                  start=_day(start, "start") if ranges_on else None,
+                                  end=_day(end, "end") if ranges_on else None, workspace_id=workspace_id)
+    if block is None:
+        raise HTTPException(status_code=422, detail=why)
+    return {
+        **home.as_params(),
+        "cockpit": kept,
+        "cards": [_as_read(c, connection_id) for c in cards.cards_of(home)],
+        "range": block,
+        "ranges_on": ranges_on,
+        "currency_symbol": resolve_currency_symbol(connection_id, None),
+        "images": images.stamps_for(connection_id, kept.get("spec")),
+        "published_by": kept.get("published_by") or "",
+        "published_to": kept.get("published_to") or [],
+    }
+
+
+@router.post("/cockpits/shared/{owner}/{cockpit_id}/copy")
+def copy_shared_cockpit(request: Request, owner: str, cockpit_id: str, connection_id: str) -> dict:
+    """Start a cockpit of the asker's own from a published one: the publisher's cards copied into
+    theirs, the spec kept as the new cockpit's first version. The publisher's is untouched."""
+    _on()
+    from aughor.cockpit import sharing
+    from aughor.cockpit.home import person_of
+    try:
+        out = sharing.copy_for(connection_id, owner, cockpit_id, reader=person_of(request),
+                               approved_by=_approved_by(request))
+    except sharing.Refused as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return _answer(out["kept"], cockpit_id=out["cockpit_id"], title=out["title"])
 
 
 @router.get("/cockpits/{cockpit_id}")
@@ -267,6 +346,49 @@ def move_cockpit(request: Request, connection_id: str, req: MoveRequest) -> dict
     if not out["moved"]:
         raise HTTPException(status_code=422, detail=out)
     return out
+
+
+@router.post("/cockpits/{cockpit_id}/ask")
+def ask_cockpit(request: Request, cockpit_id: str, connection_id: str, req: AskRequest) -> dict:
+    """⚑ Spends model calls. A change to one of the asker's cockpits, asked for in words — add a
+    finding, move or resize an element, take a note off, share it with a team. One short model
+    run with the drafting tool alone; what comes back is a proposal to keep or not."""
+    _on()
+    from aughor.cockpit.ask import edit_in_words
+    from aughor.cockpit.home import person_of
+    home = _home(request, connection_id, cockpit_id)
+    return edit_in_words(connection_id, person_of(request), home.cockpit_id, req.words, schema=req.schema_name)
+
+
+@router.post("/cockpits/{cockpit_id}/publish")
+def publish_cockpit(request: Request, cockpit_id: str, connection_id: str, req: PublishRequest) -> dict:
+    """Publish the cockpit as it stands to groups the asker belongs to and roles they may publish
+    to. A version, under their name; a reader sees it under "Shared with you"."""
+    _on()
+    from aughor.cockpit import sharing, versions
+    from aughor.cockpit.home import person_of
+    home = _home(request, connection_id, cockpit_id)
+    targets: list[dict] = []
+    for raw in req.to:
+        hit, why = sharing.may_publish_to(person_of(request), raw)
+        if hit is None:
+            raise HTTPException(status_code=422, detail={"status": "refused", "kept": False, "version": None,
+                                                         "artifact_id": "", "sentences": [why]})
+        if hit not in targets:
+            targets.append(hit)
+    if not targets:
+        raise HTTPException(status_code=422, detail={"status": "refused", "kept": False, "version": None,
+                                                     "artifact_id": "", "sentences": ["Name a group or a role to publish to."]})
+    return _answer(versions.publish(home, targets, approved_by=_approved_by(request)), cockpit_id=home.cockpit_id)
+
+
+@router.post("/cockpits/{cockpit_id}/unpublish")
+def unpublish_cockpit(request: Request, cockpit_id: str, connection_id: str) -> dict:
+    """Stop sharing a cockpit. A version too: its history says when it reached whom."""
+    _on()
+    from aughor.cockpit import versions
+    home = _home(request, connection_id, cockpit_id)
+    return _answer(versions.publish(home, [], approved_by=_approved_by(request)), cockpit_id=home.cockpit_id)
 
 
 @router.post("/cockpits/{cockpit_id}/restore")

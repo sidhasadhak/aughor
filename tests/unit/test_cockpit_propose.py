@@ -237,7 +237,7 @@ def test_the_model_cannot_name_a_cockpit_a_person_a_connection_or_a_query(desk):
     text = json.dumps(tool.parameters)
     for never in ('"canvas_id"', '"canvas"', '"connection_id"', '"connection"', '"owner"', '"cockpit_id"', '"sql"'):
         assert never not in text
-    assert set(tool.parameters["properties"]) == {"op", "cards", "spec", "patches", "reasoning"}
+    assert set(tool.parameters["properties"]) == {"op", "cards", "spec", "patches", "reasoning", "to"}
 
 
 # ── options ──────────────────────────────────────────────────────────────────
@@ -766,9 +766,9 @@ def test_the_tool_tells_the_writer_to_repair_and_try_again(desk):
     # `error` is the field the platform's record of a step keeps, always: a refused draft's
     # reasons are on the record of the run, and not only in the model's context.
     assert out["error"] == " ".join(out["refused"])
-    wrong = draft_cockpit(desk.home, {"op": "publish"})
-    assert wrong["summary"] == 'Nothing staged: "publish" is not one of options, new, edit.'
-    assert wrong["error"] == '"publish" is not one of: options, new, edit.'
+    wrong = draft_cockpit(desk.home, {"op": "retire"})
+    assert wrong["summary"] == 'Nothing staged: "retire" is not one of options, new, edit, publish.'
+    assert wrong["error"] == '"retire" is not one of: options, new, edit, publish.'
 
 
 def test_a_refused_drafts_reasons_are_kept_on_the_record_of_the_step(desk, monkeypatch):

@@ -2961,6 +2961,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cockpits/audiences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audiences
+         * @description The groups the asker belongs to and the roles they hold: who they may publish a cockpit to
+         *     (the canvas, B5). Declared before the cockpit-by-id read, which would take the word for an id.
+         */
+        get: operations["audiences_cockpits_audiences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cockpits/draft": {
         parameters: {
             query?: never;
@@ -3046,6 +3067,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cockpits/shared": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Shared Cockpits
+         * @description The cockpits others published to a group the asker is in or a role they hold.
+         */
+        get: operations["shared_cockpits_cockpits_shared_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/shared/{owner}/{cockpit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Shared Cockpit
+         * @description A published cockpit as it stands, for a reader it reaches: read-only, for the reader's own
+         *     period; a card the reader may not read stands and says so.
+         */
+        get: operations["read_shared_cockpit_cockpits_shared__owner___cockpit_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/shared/{owner}/{cockpit_id}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy Shared Cockpit
+         * @description Start a cockpit of the asker's own from a published one: the publisher's cards copied into
+         *     theirs, the spec kept as the new cockpit's first version. The publisher's is untouched.
+         */
+        post: operations["copy_shared_cockpit_cockpits_shared__owner___cockpit_id__copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cockpits/start": {
         parameters: {
             query?: never;
@@ -3093,6 +3176,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cockpits/{cockpit_id}/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask Cockpit
+         * @description ⚑ Spends model calls. A change to one of the asker's cockpits, asked for in words — add a
+         *     finding, move or resize an element, take a note off, share it with a team. One short model
+         *     run with the drafting tool alone; what comes back is a proposal to keep or not.
+         */
+        post: operations["ask_cockpit_cockpits__cockpit_id__ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/{cockpit_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Cockpit
+         * @description Publish the cockpit as it stands to groups the asker belongs to and roles they may publish
+         *     to. A version, under their name; a reader sees it under "Shared with you".
+         */
+        post: operations["publish_cockpit_cockpits__cockpit_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cockpits/{cockpit_id}/restore": {
         parameters: {
             query?: never;
@@ -3128,6 +3254,26 @@ export interface paths {
          * @description Retire a cockpit. Its history stays.
          */
         post: operations["retire_cockpit_cockpits__cockpit_id__retire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/{cockpit_id}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unpublish Cockpit
+         * @description Stop sharing a cockpit. A version too: its history says when it reached whom.
+         */
+        post: operations["unpublish_cockpit_cockpits__cockpit_id__unpublish_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -15564,115 +15710,6 @@ export interface components {
              */
             kind: "departure" | "automation" | "metric";
         };
-        /**
-         * AskRequest
-         * @description The unified entry (Phase 0 of the Insight+Deep merge, docs/UNIFIED_ANSWER_PATH.md).
-         *
-         *     A superset of ChatRequest + the investigate pass-throughs. `depth` defaults to
-         *     `auto` (the router decides); `quick`/`deep` are the auto+transparency re-run
-         *     overrides. The legacy `deep`/`insight_id` flags keep the dossier-drill and
-         *     "Investigate deeper" escalations working through the one door.
-         */
-        AskRequest: {
-            /** Agent Id */
-            agent_id?: string | null;
-            /**
-             * Allow Clarify
-             * @default true
-             */
-            allow_clarify: boolean;
-            /**
-             * Brief Period
-             * @default
-             */
-            brief_period: string;
-            /** Canvas Id */
-            canvas_id?: string | null;
-            /**
-             * Clarify Reading
-             * @default
-             */
-            clarify_reading: string;
-            /**
-             * Clarify Source
-             * @default
-             */
-            clarify_source: string;
-            /**
-             * Clarify Subject
-             * @default
-             */
-            clarify_subject: string;
-            /**
-             * Connection Id
-             * @default fixture
-             */
-            connection_id: string;
-            /**
-             * Deep
-             * @default false
-             */
-            deep: boolean;
-            /**
-             * Depth
-             * @default auto
-             * @enum {string}
-             */
-            depth: "auto" | "quick" | "deep";
-            focus?: components["schemas"]["AskFocus"] | null;
-            /**
-             * History
-             * @default []
-             */
-            history: components["schemas"]["ChatHistoryTurn"][];
-            /**
-             * Hitl
-             * @default false
-             */
-            hitl: boolean;
-            /** Insight Id */
-            insight_id?: string | null;
-            /** Mode */
-            mode?: ("investigate" | "explore") | null;
-            /** Principal Ref */
-            principal_ref?: string | null;
-            /**
-             * Purpose
-             * @default
-             */
-            purpose: string;
-            /** Question */
-            question: string;
-            /** Schema */
-            schema?: string | null;
-            /**
-             * Seed Context
-             * @default
-             */
-            seed_context: string;
-            /** Seed Sql */
-            seed_sql?: string | null;
-            /**
-             * Session Id
-             * @default
-             */
-            session_id: string;
-            /**
-             * Skip Cache
-             * @default false
-             */
-            skip_cache: boolean;
-            /**
-             * Skip Clarify
-             * @default false
-             */
-            skip_clarify: boolean;
-            /**
-             * Surface
-             * @default
-             */
-            surface: string;
-        };
         /** AssignRoleRequest */
         AssignRoleRequest: {
             /** Role */
@@ -18717,6 +18754,16 @@ export interface components {
             text: string;
         };
         /**
+         * PublishRequest
+         * @description Who the cockpit is published to: groups and roles, each by kind and id or name.
+         */
+        PublishRequest: {
+            /** To */
+            to: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
          * QueryTemplate
          * @description A reusable, governed SQL template over one entity — read-only, never a write.
          *
@@ -21399,6 +21446,13 @@ export interface components {
              */
             outcome: string;
         };
+        /** AskRequest */
+        aughor__routers__cockpit__AskRequest: {
+            /** Schema Name */
+            schema_name?: string | null;
+            /** Words */
+            words: string;
+        };
         /** RestoreRequest */
         aughor__routers__cockpit__RestoreRequest: {
             /** Version */
@@ -21434,6 +21488,115 @@ export interface components {
             principal: string;
             /** Securable */
             securable: string;
+        };
+        /**
+         * AskRequest
+         * @description The unified entry (Phase 0 of the Insight+Deep merge, docs/UNIFIED_ANSWER_PATH.md).
+         *
+         *     A superset of ChatRequest + the investigate pass-throughs. `depth` defaults to
+         *     `auto` (the router decides); `quick`/`deep` are the auto+transparency re-run
+         *     overrides. The legacy `deep`/`insight_id` flags keep the dossier-drill and
+         *     "Investigate deeper" escalations working through the one door.
+         */
+        aughor__routers__investigations__AskRequest: {
+            /** Agent Id */
+            agent_id?: string | null;
+            /**
+             * Allow Clarify
+             * @default true
+             */
+            allow_clarify: boolean;
+            /**
+             * Brief Period
+             * @default
+             */
+            brief_period: string;
+            /** Canvas Id */
+            canvas_id?: string | null;
+            /**
+             * Clarify Reading
+             * @default
+             */
+            clarify_reading: string;
+            /**
+             * Clarify Source
+             * @default
+             */
+            clarify_source: string;
+            /**
+             * Clarify Subject
+             * @default
+             */
+            clarify_subject: string;
+            /**
+             * Connection Id
+             * @default fixture
+             */
+            connection_id: string;
+            /**
+             * Deep
+             * @default false
+             */
+            deep: boolean;
+            /**
+             * Depth
+             * @default auto
+             * @enum {string}
+             */
+            depth: "auto" | "quick" | "deep";
+            focus?: components["schemas"]["AskFocus"] | null;
+            /**
+             * History
+             * @default []
+             */
+            history: components["schemas"]["ChatHistoryTurn"][];
+            /**
+             * Hitl
+             * @default false
+             */
+            hitl: boolean;
+            /** Insight Id */
+            insight_id?: string | null;
+            /** Mode */
+            mode?: ("investigate" | "explore") | null;
+            /** Principal Ref */
+            principal_ref?: string | null;
+            /**
+             * Purpose
+             * @default
+             */
+            purpose: string;
+            /** Question */
+            question: string;
+            /** Schema */
+            schema?: string | null;
+            /**
+             * Seed Context
+             * @default
+             */
+            seed_context: string;
+            /** Seed Sql */
+            seed_sql?: string | null;
+            /**
+             * Session Id
+             * @default
+             */
+            session_id: string;
+            /**
+             * Skip Cache
+             * @default false
+             */
+            skip_cache: boolean;
+            /**
+             * Skip Clarify
+             * @default false
+             */
+            skip_clarify: boolean;
+            /**
+             * Surface
+             * @default
+             */
+            surface: string;
         };
         /** AcceptRequest */
         aughor__routers__kinetic__AcceptRequest: {
@@ -23432,7 +23595,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AskRequest"];
+                "application/json": components["schemas"]["aughor__routers__investigations__AskRequest"];
             };
         };
         responses: {
@@ -26729,6 +26892,39 @@ export interface operations {
             };
         };
     };
+    audiences_cockpits_audiences_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     draft_cockpit_cockpits_draft_post: {
         parameters: {
             query: {
@@ -26873,6 +27069,115 @@ export interface operations {
             };
         };
     };
+    shared_cockpits_cockpits_shared_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_shared_cockpit_cockpits_shared__owner___cockpit_id__get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+                workspace_id?: string | null;
+            };
+            header?: never;
+            path: {
+                owner: string;
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    copy_shared_cockpit_cockpits_shared__owner___cockpit_id__copy_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                owner: string;
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     start_first_cockpits_start_post: {
         parameters: {
             query: {
@@ -26984,6 +27289,84 @@ export interface operations {
             };
         };
     };
+    ask_cockpit_cockpits__cockpit_id__ask_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["aughor__routers__cockpit__AskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_cockpit_cockpits__cockpit_id__publish_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     restore_cockpit_cockpits__cockpit_id__restore_post: {
         parameters: {
             query: {
@@ -27039,6 +27422,41 @@ export interface operations {
                 "application/json": components["schemas"]["RetireRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unpublish_cockpit_cockpits__cockpit_id__unpublish_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

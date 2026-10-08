@@ -133,10 +133,16 @@ These extend the invariants in `AGENTS.md`; none is new in kind.
   Images travel marked as the person's, or not at all; the departure gate judges only the measured
   cards. A Briefing send is unaffected by a person's switches: it carries the platform's Briefing.
 
-## 4 · Build order
+## 4 · Build order — built 2026-10-08, the same day, on one branch
 
-Each step is its own PR, each behind nothing: none changes what exists for a person who uses none
-of it.
+Each step is a commit on `claude/cockpit-canvas`, each behind nothing: none changes what exists for
+a person who uses none of it. What was built differs from the plan below in three places, each the
+user's call or a measurement: a Note is a Markdown subset up to 2,000 characters (not ~600 plain);
+an Image may be PNG, JPEG, SVG, GIF or WebP up to 5 MB (not 2 MB); and every element has a size
+(§2.6). The Briefing's switches read words without a model, because their vocabulary is six
+sections and three verbs; a cockpit's words go to the model, as planned, through
+`POST /cockpits/{id}/ask`. Door 1 already read the connection's whole recorded ledger, not one
+cycle's — B3 is the picker, by domain, searchable.
 
 **B1 · Briefing switches** (small). A `briefing.sections` preference per person: the named sections
 in order, each shown or hidden, and which cockpit strip rides with the Briefing. One "Sections"

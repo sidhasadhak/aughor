@@ -13863,9 +13863,18 @@ the browser** · **measure the premise before building.**
     periods); (c) **personal, plus publish to a group or role**, kept as a version under the publisher's name. The
     (d) **every change can be asked for in natural language, except uploading an image and adding a text note** —
     the existing proposal door (CT-5: the model proposes, the person keeps whole or not at all); a model arranges a
-    note or image, never writes one. The laws (a static thing says it is static; the platform never speaks a
-    person's words as its own; a send strips what was not measured) and the build order (B1 switches · B2 Note ·
-    B3 ledger findings · B4 Image · B5 publish) are in the doc. Nothing built yet.
+    note or image, never writes one; (e) **every element has a size from a closed set** (six names, a span of
+    1–3 by 1–2, never pixels; asked for after a clickable mock the same day). The laws (a static thing says it is
+    static; the platform never speaks a person's words as its own; a send strips what was not measured) are in
+    the doc. ✅ **BUILT 2026-10-08** on `claude/cockpit-canvas`, one branch, one PR: vocabulary 2 (Note, Image,
+    `size`; the validator bundle rebuilt); notes stamped by the server; images in a per-connection cockpit
+    volume with the uploader on the row, sniffed from the bytes, SVG with script refused; the Briefing's
+    switches as the `briefing_sections` preference, readable in words without a model; any recorded finding
+    placed through the pin door; publish to a group one belongs to or a role one holds (a version, as is
+    unpublishing), "Shared with you" read-only with "Start my cockpit from this"; and the words door for a
+    cockpit that stands (`POST /cockpits/{id}/ask`, ⚑ one model run) — edits and publishes as proposals, a
+    note or an image never written or chosen by it. The user's three answers: Markdown subset up to 2,000;
+    PNG/JPEG/SVG/GIF/WebP up to 5 MB; any member to their group, a role needs the role.
 
 ---
 

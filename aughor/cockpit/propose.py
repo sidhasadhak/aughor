@@ -44,8 +44,9 @@ from aughor.cockpit import versions as _versions
 from aughor.cockpit.home import NOBODY_IN_PARTICULAR, Home, approver
 from aughor.kernel.errors import tolerate
 
-#: The inbox's kind for a cockpit proposal.
+#: The inbox's kind for a cockpit proposal, and for a proposal to publish one (the canvas, B5).
 KIND = "cockpit_draft"
+PUBLISH_KIND = "cockpit_publish"
 
 #: What a new card may be made from.
 FROM_METRIC = "metric"
@@ -557,9 +558,14 @@ def options(home: Home, schema: Optional[str] = None) -> dict:
     shown = [f for f in findings(home.connection_id, schema) if (f.get("sql") or "").strip()]
     current = _versions.latest(home)
     live = current if current and not current["retired"] and current.get("spec") else None
+    from aughor.cockpit import sharing
+    audience = sharing.audience_of(home.owner)
     return {
         "available": True,
-        "cockpit": ({"version": live["version"], "spec": live["spec"]} if live else None),
+        "cockpit": ({"version": live["version"], "spec": live["spec"],
+                     "published_to": [t["name"] for t in live.get("published_to") or []]} if live else None),
+        "may_publish_to": {"groups": [g["name"] for g in audience["groups"]],
+                           "roles": [r["name"] for r in audience["roles"]]},
         "cards_you_have": [{"id": c.id, "title": c.title, "kind": c.kind,
                             "has_limit": bool(_limit_key(c.thresholds)),
                             **({"made_from": dict([made_from(c)])} if made_from(c) else {})}
@@ -727,6 +733,62 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
         params=params, detail=detail, reasoning=reasoning,
         proposer="cockpit", source="agent"))
     return Drafted(proposal=p, replaced=_retire_pending(home, p.id))
+
+
+def propose_publish(home: Home, to: Any) -> Drafted:
+    """Stage ONE proposal to publish the cockpit that stands to the groups and roles ``to`` names
+    (each ``{"kind", "name"}``), or refuse with every reason. Kept, it publishes; nothing is shared
+    before that (the canvas, B5)."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.cockpit import sharing
+    from aughor.org.context import current_org_id
+
+    current = _versions.latest(home)
+    live = current if current and not current["retired"] and current.get("spec") else None
+    if live is None:
+        return Drafted(refusals=("There is no cockpit here to publish.",))
+    if not isinstance(to, list) or not to:
+        return Drafted(refusals=('"to" names at least one group or role, each as {"kind", "name"}.',))
+    targets: list[dict] = []
+    refusals: list[str] = []
+    for raw in to:
+        hit, why = sharing.may_publish_to(home.owner, raw)
+        if hit is None:
+            refusals.append(why)
+        elif hit not in targets:
+            targets.append(hit)
+    if refusals:
+        return Drafted(refusals=tuple(refusals))
+    if targets == list(live.get("published_to") or []):
+        return Drafted(refusals=(f"The cockpit is already published to {', '.join(t['name'] for t in targets)}.",))
+    title = str(live["spec"]["elements"][live["spec"]["root"]]["props"]["title"])
+    p = stage_proposal(StagedProposal(
+        kind=PUBLISH_KIND, org_id=current_org_id() or "", connection_id=home.connection_id,
+        schema_name="", action_id=f"cockpit:{title}:publish",
+        params={"home": home.as_params(), "base_version": live["version"], "to": targets},
+        detail={"title": title, "mode": "publish", "replaces_version": live["version"],
+                "to": [t["name"] for t in targets], "outline": [], "counts": {}, "changes": {}, "taken_off": []},
+        reasoning="", proposer="cockpit", source="agent"))
+    return Drafted(proposal=p)
+
+
+def accept_publish(params: dict, *, connection_id: str, approved_by: str) -> tuple[bool, Any]:
+    """Publish what an approved proposal names — or nothing, when the cockpit has moved on."""
+    home = Home.of((params or {}).get("home"))
+    if home is None or home.connection_id != connection_id:
+        return False, "This proposal names no cockpit of this connection to publish. Nothing was shared."
+    if home.owner != NOBODY_IN_PARTICULAR and approved_by.strip() != approver(home.owner):
+        return False, "This cockpit is someone else's, and only they can publish it. Nothing was shared."
+    current = _versions.latest(home)
+    now = current["version"] if current else None
+    if now != params.get("base_version"):
+        return False, (f"The cockpit has changed since this was proposed: it was version {params.get('base_version')} "
+                       f"and is now version {now}. Ask for it again.")
+    kept = _versions.publish(home, list(params.get("to") or []), approved_by=approved_by)
+    if not kept.kept:
+        return False, " ".join(kept.sentences) or "The cockpit already reads this way."
+    return True, {**home.as_params(), "version": kept.version, "artifact_id": kept.artifact_id,
+                  "to": [t["name"] for t in params.get("to") or []]}
 
 
 def _limits_asked(cards: Any) -> list[float]:

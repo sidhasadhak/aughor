@@ -29,10 +29,12 @@ import type { RangeChoice } from "@/components/brief/BriefRange";
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CockpitArrange, type CardLine } from "@/components/cockpit/CockpitArrange";
 import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/ComposedCockpit";
+import { FindingPicker } from "@/components/cockpit/FindingPicker";
 import { METRICS_COCKPIT, MetricsCockpit } from "@/components/cockpit/MetricsCockpit";
 import { PeriodPicker, choiceName } from "@/components/cockpit/PeriodPicker";
-import type { ImageStamp } from "@/components/cockpit/StaticTile";
+import { person as personName, type ImageStamp } from "@/components/cockpit/StaticTile";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -41,11 +43,12 @@ import { ErrorState, Loading, Refusal } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import {
-  CockpitRefused, acceptProposal, cockpitImageUrl, draftCockpit, getCockpit, getProposalById, getSystemFlags, keepCockpit,
-  listCockpits, moveCanvasCockpit, rejectProposal, restoreCockpit, retireCockpit, runDashboardCard, startMyCockpit,
+  CockpitRefused, acceptProposal, askCockpit, cockpitAudiences, cockpitImageUrl, copySharedCockpit, draftCockpit, getCockpit,
+  getProposalById, getSharedCockpit, getSystemFlags, keepCockpit, listCockpits, listSharedCockpits, moveCanvasCockpit,
+  publishCockpit, rejectProposal, restoreCockpit, retireCockpit, runDashboardCard, startMyCockpit, unpublishCockpit,
   uploadCockpitImage,
-  type BriefingRange, type CockpitDrafted, type CockpitKept, type CockpitList, type CockpitVersion,
-  type PersonCockpit, type StagedProposal,
+  type BriefingRange, type CockpitAudience, type CockpitDrafted, type CockpitKept, type CockpitList, type CockpitVersion,
+  type PersonCockpit, type SharedCockpit, type SharedCockpitListed, type StagedProposal,
 } from "@/lib/api";
 import { MAX_CAPTION, MAX_NOTE, type Size } from "@/lib/cockpit/catalog";
 import {
@@ -162,6 +165,100 @@ function ImageComposer({ connectionId, busy, onPlace, onClose }: {
   );
 }
 
+/** What a staged proposal places, by card id — the titles of cards the person already has, read
+ *  from the draft's outline, and the cards it would create. */
+function linesOf(proposal: StagedProposal | null, held: Map<string, CardLine> = new Map()): Map<string, CardLine> {
+  const m = new Map<string, CardLine>(held);
+  const drafted = proposal?.params?.spec as CockpitSpec | undefined;
+  // The draft's outline names every element it places, in the order its spec places them: the
+  // titles of cards the person already has are read from it, one section at a time.
+  const outlined = ((proposal?.detail?.outline ?? []) as { sections: { cards: { title: string; static?: string }[] }[] }[])
+    .flatMap(t => t.sections);
+  if (drafted) {
+    sectionsOf(drafted).forEach((sec, i) => {
+      drafted.elements[sec.key].children.forEach((k, j) => {
+        const id = String(drafted.elements[k]?.props.card ?? "");
+        const line = outlined[i]?.cards[j];
+        if (id && line?.title && !line.static) m.set(id, { title: line.title });
+      });
+    });
+  }
+  for (const c of ((proposal?.params?.cards ?? []) as { id: string; title: string; kind?: string; from?: string }[])) {
+    m.set(c.id, { title: c.title, shows: shows(c), isNew: true });
+  }
+  return m;
+}
+
+/** A staged proposal, read before it is kept: a draft or an edit as its outline, which the person
+ *  may adjust by hand first; a publish as who it reaches. Kept whole or discarded whole. */
+function DraftReview({ connectionId, cockpitId, result, proposal, held, onKept, onDiscarded }: {
+  connectionId: string;
+  /** The cockpit the proposal is for: a new one's id from the draft, or the one that stands. */
+  cockpitId: string;
+  result: CockpitDrafted;
+  proposal: StagedProposal;
+  held?: Map<string, CardLine>;
+  onKept: (cockpitId: string) => void;
+  onDiscarded: () => void;
+}) {
+  const proposed = proposal.params?.spec as CockpitSpec | undefined;
+  const [spec, setSpec] = useState<CockpitSpec | null>(proposed ? structuredClone(proposed) : null);
+  const [busy, setBusy] = useState(false);
+  const detail = (proposal.detail ?? {}) as { mode?: string; to?: string[]; taken_off?: { what: string; title: string; from: string }[] };
+  const publish = detail.mode === "publish";
+  const adjusted = spec !== null && proposed !== undefined && JSON.stringify(spec) !== JSON.stringify(proposed);
+  const lines = useMemo(() => linesOf(proposal, held), [proposal, held]);
+
+  const keep = async () => {
+    setBusy(true);
+    try {
+      await acceptProposal(proposal.id, ACTOR);
+      // Adjusted before keeping: the draft is one version, the person's changes the next — one act,
+      // and the history says which was whose (§6 item 36, the builder's third choice).
+      if (adjusted && spec) await keepCockpit(connectionId, cockpitId, spec, "adjusted before keeping");
+      toast.success(publish ? "Published." : adjusted ? "Kept, with your changes." : "Kept.");
+      onKept(cockpitId);
+    } catch (e) {
+      const why = e instanceof CockpitRefused ? e.outcome.sentences.join(" ") : (e as Error).message;
+      toast.error("It was not kept", { description: why.slice(0, 200) });
+    } finally { setBusy(false); }
+  };
+
+  const discard = async () => {
+    setBusy(true);
+    try { await rejectProposal(proposal.id, ACTOR); } finally { setBusy(false); }
+    onDiscarded();
+  };
+
+  return (
+    <div data-testid="cockpit-draft" style={{ marginTop: 14 }}>
+      <div className="aug-fs-sm" style={{ color: "var(--t2)", marginBottom: 8 }}>{result.summary}</div>
+      {proposal.reasoning && (
+        <div className="aug-fs-sm" style={{ color: "var(--t3)", marginBottom: 8 }}>Why it is arranged this way: {proposal.reasoning}</div>
+      )}
+      {publish ? (
+        <div className="aug-fs-sm" data-testid="cockpit-publish-proposal" style={{ color: "var(--t1)" }}>
+          Publish this cockpit, as it stands, to {(detail.to ?? []).join(", ")} — read-only for its readers, under your name.
+          Your notes and images travel marked as yours.
+        </div>
+      ) : spec ? (
+        <CockpitArrange spec={spec} lines={lines} onChange={setSpec} disabled={busy} />
+      ) : null}
+      {!!detail.taken_off?.length && (
+        <div className="aug-fs-sm" data-testid="cockpit-taken-off" style={{ color: "var(--t2)", marginTop: 8 }}>
+          Taken off: {detail.taken_off.map(t => `${t.title}${t.from ? ` (from ${t.from})` : ""}`).join("; ")}.
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <Button size="sm" disabled={busy} onClick={() => void keep()}>{adjusted ? "Keep, with my changes" : "Keep it"}</Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void discard()}>Discard</Button>
+        {adjusted && <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Kept as proposed, then your changes as the next version.</span>}
+        <span className="aug-fs-xs" style={{ marginLeft: "auto", color: "var(--t3)" }}>Words never write: kept whole or discarded whole, against the version on screen.</span>
+      </div>
+    </div>
+  );
+}
+
 /** A new cockpit for an area: the one door here that asks a model. */
 function NewCockpit({ connectionId, schema, onKept, onClose }: {
   connectionId: string; schema?: string; onKept: (cockpitId: string) => void; onClose: () => void;
@@ -170,82 +267,29 @@ function NewCockpit({ connectionId, schema, onKept, onClose }: {
   const [drafting, setDrafting] = useState(false);
   const [result, setResult] = useState<CockpitDrafted | null>(null);
   const [proposal, setProposal] = useState<StagedProposal | null>(null);
-  const [spec, setSpec] = useState<CockpitSpec | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const draft = async () => {
-    setDrafting(true); setResult(null); setProposal(null); setSpec(null);
+    setDrafting(true); setResult(null); setProposal(null);
     try {
       const out = await draftCockpit(connectionId, area, schema);
       setResult(out);
-      if (out.staged) {
-        const p = await getProposalById(out.proposal_id);
-        setProposal(p);
-        const draftedSpec = p?.params?.spec as CockpitSpec | undefined;
-        setSpec(draftedSpec ? structuredClone(draftedSpec) : null);
-      }
+      if (out.staged) setProposal(await getProposalById(out.proposal_id));
     } catch (e) {
       toast.error("The draft did not go through", { description: (e as Error).message.slice(0, 160) });
     } finally { setDrafting(false); }
-  };
-
-  // The spec as the model drafted it, to tell the person's changes from the draft.
-  const draftedSpec = proposal?.params?.spec as CockpitSpec | undefined;
-  const adjusted = spec !== null && draftedSpec !== undefined && JSON.stringify(spec) !== JSON.stringify(draftedSpec);
-  const lines = useMemo(() => {
-    const m = new Map<string, CardLine>();
-    const drafted = proposal?.params?.spec as CockpitSpec | undefined;
-    // The draft's outline names every card it places, in the order its spec places them: the
-    // titles of cards the person already has are read from it, one section at a time.
-    const outlined = ((proposal?.detail?.outline ?? []) as { sections: { cards: { title: string }[] }[] }[])
-      .flatMap(t => t.sections);
-    if (drafted) {
-      sectionsOf(drafted).forEach((sec, i) => {
-        drafted.elements[sec.key].children.forEach((k, j) => {
-          const id = String(drafted.elements[k]?.props.card ?? "");
-          const title = outlined[i]?.cards[j]?.title;
-          if (id && title) m.set(id, { title });
-        });
-      });
-    }
-    for (const c of ((proposal?.params?.cards ?? []) as { id: string; title: string; kind?: string; from?: string }[])) {
-      m.set(c.id, { title: c.title, shows: shows(c), isNew: true });
-    }
-    return m;
-  }, [proposal]);
-
-  const keep = async () => {
-    if (!proposal || !result) return;
-    setBusy(true);
-    try {
-      await acceptProposal(proposal.id, ACTOR);
-      // Adjusted before keeping: the draft is version 1, the person's changes version 2 — one act,
-      // and the history says which was whose (§6 item 36, the builder's third choice).
-      if (adjusted && spec) await keepCockpit(connectionId, result.cockpit_id, spec, "adjusted before keeping");
-      toast.success(adjusted ? "Kept, with your changes." : "Kept.");
-      onKept(result.cockpit_id);
-    } catch (e) {
-      const why = e instanceof CockpitRefused ? e.outcome.sentences.join(" ") : (e as Error).message;
-      toast.error("It was not kept", { description: why.slice(0, 200) });
-    } finally { setBusy(false); }
-  };
-
-  const discard = async () => {
-    if (proposal) { setBusy(true); try { await rejectProposal(proposal.id, ACTOR); } finally { setBusy(false); } }
-    setResult(null); setProposal(null); setSpec(null);
   };
 
   return (
     <div data-testid="cockpit-new" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <Input aria-label="What this cockpit is for" placeholder="What is it for? Returns, pricing, marketing…"
-          value={area} onChange={e => setArea(e.target.value)} disabled={drafting || busy || !!proposal}
+          value={area} onChange={e => setArea(e.target.value)} disabled={drafting || !!proposal}
           onKeyDown={e => { if (e.key === "Enter" && area.trim() && !drafting) void draft(); }}
           style={{ maxWidth: 420, flex: 1 }} />
-        <Button size="sm" disabled={!area.trim() || drafting || busy || !!proposal} onClick={() => void draft()}>
+        <Button size="sm" disabled={!area.trim() || drafting || !!proposal} onClick={() => void draft()}>
           {drafting ? "Drafting…" : "Draft it"}
         </Button>
-        <Button size="sm" variant="ghost" disabled={drafting || busy} onClick={onClose}>Close</Button>
+        <Button size="sm" variant="ghost" disabled={drafting} onClick={onClose}>Close</Button>
       </div>
       <div className="aug-fs-sm" style={{ color: "var(--t3)", marginTop: 6 }}>
         {drafting
@@ -262,20 +306,197 @@ function NewCockpit({ connectionId, schema, onKept, onClose }: {
         </div>
       )}
 
-      {result?.staged && proposal && spec && (
-        <div data-testid="cockpit-draft" style={{ marginTop: 14 }}>
-          <div className="aug-fs-sm" style={{ color: "var(--t2)", marginBottom: 8 }}>{result.summary}</div>
-          {proposal.reasoning && (
-            <div className="aug-fs-sm" style={{ color: "var(--t3)", marginBottom: 8 }}>Why it is arranged this way: {proposal.reasoning}</div>
-          )}
-          <CockpitArrange spec={spec} lines={lines} onChange={setSpec} disabled={busy} />
-          <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
-            <Button size="sm" disabled={busy} onClick={() => void keep()}>{adjusted ? "Keep, with my changes" : "Keep it"}</Button>
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => void discard()}>Discard</Button>
-            {adjusted && <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Kept as the draft, then your changes as the next version.</span>}
-          </div>
+      {result?.staged && proposal && (
+        <DraftReview connectionId={connectionId} cockpitId={result.cockpit_id} result={result} proposal={proposal}
+          onKept={onKept} onDiscarded={() => { setResult(null); setProposal(null); }} />
+      )}
+    </div>
+  );
+}
+
+/** A change to the cockpit that stands, asked for in words (the canvas, §2.5): one short model
+ *  run, bound to this cockpit; what comes back is a proposal to keep or not. Writing a note or
+ *  choosing an image is never asked of it — those doors are by hand. */
+function AskChange({ connectionId, cockpitId, schema, held, onKept }: {
+  connectionId: string; cockpitId: string; schema?: string; held: Map<string, CardLine>; onKept: () => void;
+}) {
+  const [words, setWords] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [result, setResult] = useState<CockpitDrafted | null>(null);
+  const [proposal, setProposal] = useState<StagedProposal | null>(null);
+
+  const ask = async () => {
+    if (!words.trim()) return;
+    setAsking(true); setResult(null); setProposal(null);
+    try {
+      const out = await askCockpit(connectionId, cockpitId, words, schema);
+      setResult(out);
+      if (out.staged) setProposal(await getProposalById(out.proposal_id));
+    } catch (e) {
+      toast.error("The change could not be drafted", { description: (e as Error).message.slice(0, 160) });
+    } finally { setAsking(false); }
+  };
+
+  return (
+    <div data-testid="cockpit-ask" style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <Input aria-label="Ask for a change in words" placeholder="In words: “add the finding about returns by category”, “make the net sales card bigger”, “share this with the sales team”"
+          value={words} onChange={e => setWords(e.target.value)} disabled={asking || !!proposal}
+          onKeyDown={e => { if (e.key === "Enter" && words.trim() && !asking) void ask(); }}
+          style={{ flex: 1, minWidth: 280 }} />
+        <Button size="sm" variant="secondary" disabled={!words.trim() || asking || !!proposal} onClick={() => void ask()}>
+          {asking ? "Drafting…" : "Propose"}
+        </Button>
+      </div>
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
+        {asking ? "A model is reading the cockpit and drafting the change. This can take a minute."
+          : "Asks a model once; it may arrange, add a finding or share — never write a note or pick an image. Nothing changes until you keep it."}
+      </div>
+      {result && !result.staged && (
+        <div style={{ marginTop: 10 }}>
+          <Refusal kind="Not proposed" claim="No change was drafted for this."
+            detail={<ul data-testid="cockpit-not-proposed" style={{ margin: 0, paddingLeft: 18 }}>
+              {result.sentences.map((s, i) => <li key={`${i}-${s.slice(0, 24)}`}>{s}</li>)}
+            </ul>} />
         </div>
       )}
+      {result?.staged && proposal && (
+        <DraftReview connectionId={connectionId} cockpitId={cockpitId} result={result} proposal={proposal} held={held}
+          onKept={() => { setResult(null); setProposal(null); setWords(""); onKept(); }}
+          onDiscarded={() => { setResult(null); setProposal(null); }} />
+      )}
+    </div>
+  );
+}
+
+/** Who a cockpit is published to (the canvas, B5): the groups the person belongs to and the roles
+ *  they may publish to, picked by hand; publishing and unpublishing are each a version. */
+function PublishPanel({ connectionId, cockpitId, publishedTo, busy, onDone, onClose }: {
+  connectionId: string; cockpitId: string; publishedTo: CockpitAudience[]; busy: boolean;
+  onDone: (act: () => Promise<CockpitKept>, said: (k: CockpitKept) => string) => Promise<boolean>; onClose: () => void;
+}) {
+  const [audiences, setAudiences] = useState<{ groups: CockpitAudience[]; roles: CockpitAudience[] } | null>(null);
+  const [problem, setProblem] = useState("");
+  const [chosen, setChosen] = useState<CockpitAudience[]>(publishedTo);
+  useEffect(() => {
+    let alive = true;
+    cockpitAudiences(connectionId).then(a => { if (alive) setAudiences(a); }).catch(e => { if (alive) setProblem((e as Error).message); });
+    return () => { alive = false; };
+  }, [connectionId]);
+  const same = JSON.stringify(chosen.map(c => `${c.kind}:${c.id}`).sort()) === JSON.stringify(publishedTo.map(c => `${c.kind}:${c.id}`).sort());
+  const toggle = (a: CockpitAudience, on: boolean) =>
+    setChosen(cs => (on ? [...cs.filter(c => !(c.kind === a.kind && c.id === a.id)), a] : cs.filter(c => !(c.kind === a.kind && c.id === a.id))));
+  const all = [...(audiences?.groups ?? []), ...(audiences?.roles ?? [])];
+  return (
+    <div data-testid="cockpit-publish" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="aug-label">Publish to</div>
+      {problem ? <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>Who you may publish to could not be read: {problem}</div>
+        : !audiences ? <Loading what="who you may publish to" style={{ padding: "4px 0" }} />
+        : !all.length ? <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>You belong to no group and hold no role a cockpit can be published to.</div>
+        : (
+          <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+            {all.map(a => (
+              <li key={`${a.kind}:${a.id}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Checkbox checked={chosen.some(c => c.kind === a.kind && c.id === a.id)} disabled={busy}
+                  aria-label={`Publish to ${a.name}`} onChange={e => toggle(a, e.target.checked)} />
+                <span>{a.name}</span>
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{a.kind === "group" ? "a group you belong to" : "a role you hold"}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+        Readers see it under “Shared with you”, read-only, under your name, for the period they choose. A card they may not read stands and says so.
+        Your notes and images travel marked as yours. Publishing is a version; so is unpublishing.
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <Button size="sm" disabled={busy || same || !chosen.length} data-testid="cockpit-publish-go"
+          onClick={() => void onDone(() => publishCockpit(connectionId, cockpitId, chosen), k => `Published, as version ${k.version}.`).then(ok => { if (ok) onClose(); })}>
+          Publish
+        </Button>
+        {publishedTo.length > 0 && (
+          <Button size="sm" variant="secondary" disabled={busy}
+            onClick={() => void onDone(() => unpublishCockpit(connectionId, cockpitId), k => `Unpublished, as version ${k.version}.`).then(ok => { if (ok) onClose(); })}>
+            Unpublish
+          </Button>
+        )}
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onClose}>Close</Button>
+      </div>
+    </div>
+  );
+}
+
+/** A cockpit someone else published to a group the person is in or a role they hold: read as it
+ *  stands, for the reader's own period, with no door that changes it — and a door to start a
+ *  cockpit of their own from it. */
+function SharedCockpitView({ connectionId, schema, owner, cockpitId, range, chosenRange, onRange, rangesOn, onStarted }: {
+  connectionId: string; schema?: string; owner: string; cockpitId: string;
+  range: BriefingRange | null; chosenRange: RangeChoice; onRange: (c: RangeChoice) => void; rangesOn: boolean | null;
+  onStarted: (cockpitId: string) => void;
+}) {
+  const [data, setData] = useState<SharedCockpit | null>(null);
+  const [cards, setCards] = useState<CardState[]>([]);
+  const [problem, setProblem] = useState("");
+  const [busy, setBusy] = useState(false);
+  const rangeKey = JSON.stringify(range ?? null);
+  useEffect(() => {
+    let cancelled = false;
+    setProblem("");
+    (async () => {
+      try {
+        const read = await getSharedCockpit(connectionId, owner, cockpitId, range);
+        const placed = new Set(read.cockpit.spec ? cardsPlaced(read.cockpit.spec) : []);
+        const runs = await Promise.all(read.cards.filter(c => placed.has(c.id)).map(async (card): Promise<CardState> => {
+          try { return { card, run: await runDashboardCard(card.id, range, { compare: true }) }; }
+          catch { return { card, failed: true }; }
+        }));
+        if (cancelled) return;
+        setData(read); setCards(runs);
+      } catch (e) {
+        if (!cancelled) setProblem((e as Error).message || "The cockpit could not be read.");
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
+  }, [connectionId, owner, cockpitId, rangeKey]);
+  const doors = useMemo<CockpitDoors>(() => ({
+    onRefresh: async (id: string) => {
+      try { const run = await runDashboardCard(id, range, { compare: true }); setCards(cs => cs.map(c => (c.card.id === id ? { ...c, run, failed: false } : c))); }
+      catch { setCards(cs => cs.map(c => (c.card.id === id ? { ...c, failed: true } : c))); }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
+  }), [rangeKey]);
+  const host = useMemo(() => hostStateOf(data?.range.status ?? "standing", cards), [data?.range.status, cards]);
+  const images = useMemo<Record<string, ImageStamp>>(() => Object.fromEntries(
+    Object.entries(data?.images ?? {}).map(([id, s]) => [id, { ...s, url: cockpitImageUrl(connectionId, id) }])), [data?.images, connectionId]);
+  const start = async () => {
+    setBusy(true);
+    try {
+      const out = await copySharedCockpit(connectionId, owner, cockpitId);
+      toast.success(`“${out.title ?? "The cockpit"}” is yours now, as version ${out.version}. The published one is unchanged.`);
+      if (out.cockpit_id) onStarted(out.cockpit_id);
+    } catch (e) {
+      const why = e instanceof CockpitRefused ? e.outcome.sentences.join(" ") : (e as Error).message;
+      toast.error("No cockpit was started", { description: why.slice(0, 200) });
+    } finally { setBusy(false); }
+  };
+  if (problem) return <ErrorState kind="Not read" what="This shared cockpit could not be read." means={problem} />;
+  if (!data) return <div className="aug-fs-sm" data-testid="cockpit-loading" style={{ color: "var(--t3)" }}>Reading the shared cockpit…</div>;
+  return (
+    <div data-testid="cockpit-shared" data-owner={owner} data-cockpit={cockpitId}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+        {data.ranges_on && rangesOn && (
+          <PeriodPicker value={chosenRange} onChange={onRange} showing={data.range.status === "standing" ? null : data.range} />
+        )}
+        <span className="aug-fs-sm" data-testid="cockpit-shared-by" style={{ color: "var(--t2)" }}>
+          Published by {personName(data.published_by)} to {data.published_to.map(t => t.name).join(", ")} · version {data.cockpit.version} · read-only
+        </span>
+        <Button size="xs" variant="secondary" disabled={busy} style={{ marginLeft: "auto" }} onClick={() => void start()}>
+          Start my cockpit from this
+        </Button>
+      </div>
+      <ComposedCockpit spec={data.cockpit.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}
+        images={images} range={range} schema={schema} />
     </div>
   );
 }
@@ -308,6 +529,10 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   // The two doors by hand only: a note's words and an image are the person's, never a model's.
   const [noting, setNoting] = useState(false);
   const [imaging, setImaging] = useState(false);
+  // Any recorded finding of the connection, as a card (B3); who the cockpit is published to (B5).
+  const [picking, setPicking] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [shared, setShared] = useState<SharedCockpitListed[]>([]);
   const [tick, setTick] = useState(0);
   // The cockpit is being read for a period while the cards on screen are still the period before.
   const [reading, setReading] = useState(false);
@@ -336,15 +561,18 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
       // opened when it is where they left off.
       setChosen(prev => {
         const want = prev || remembered(connectionId);
-        return live.some(c => c.cockpit_id === want) ? want : METRICS_COCKPIT;
+        return live.some(c => c.cockpit_id === want) || want.startsWith("shared:") ? want : METRICS_COCKPIT;
       });
     }).catch(e => { if (!cancelled) setProblem((e as Error).message); });
+    // What others published to a group the person is in or a role they hold (B5). Nothing to
+    // show is nothing to say: the strip simply has no such heading.
+    listSharedCockpits(connectionId).then(s => { if (!cancelled) setShared(s); }).catch(() => { if (!cancelled) setShared([]); });
     return () => { cancelled = true; };
   }, [connectionId, tick]);
 
   // The chosen cockpit, read for the page's range, each card it places run through the guards.
   useEffect(() => {
-    if (!chosen || chosen === METRICS_COCKPIT || list === "off") { setData(null); return; }
+    if (!chosen || chosen === METRICS_COCKPIT || chosen.startsWith("shared:") || list === "off") { setData(null); return; }
     if (rangesOn === null) return;
     let cancelled = false;
     setReading(true);
@@ -394,7 +622,10 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     } finally { setBusy(false); }
   }, [reload]);
 
-  const choose = (id: string) => { setChosen(id); remember(connectionId, id); setArranging(null); setShowHistory(false); setRefusal(null); setProblem(""); };
+  const choose = (id: string) => {
+    setChosen(id); remember(connectionId, id); setArranging(null); setShowHistory(false); setRefusal(null); setProblem("");
+    setPicking(false); setPublishing(false); setNoting(false); setImaging(false); setComposing(false);
+  };
 
   const refreshOne = useCallback(async (id: string) => {
     try {
@@ -484,6 +715,9 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           { id: METRICS_COCKPIT, label: "Metrics" },
           { heading: <span className="aug-label" style={{ color: "var(--vio4)" }}>Your cockpits</span> },
           ...live.map(c => ({ id: c.cockpit_id, label: c.title || c.cockpit_id })),
+          // Published to a group the person is in or a role they hold: read-only, under the publisher's name.
+          ...(shared.length ? [{ heading: <span className="aug-label" style={{ color: "var(--t3)" }}>Shared with you</span> }] : []),
+          ...shared.map(s => ({ id: `shared:${s.owner}/${s.cockpit_id}`, label: `${s.title || s.cockpit_id} · ${person(s.published_by || s.owner)}` })),
         ]}
         trailing={<Button size="xs" variant="ghost" data-testid="cockpit-new-open" onClick={() => setNewOpen(o => !o)}>+ New cockpit</Button>} />
 
@@ -538,6 +772,11 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
             value={chosenRange} onChange={setChosenRange} />
           {live.length === 0 && <div style={{ marginTop: 20 }}>{noneYet}</div>}
         </>
+      ) : chosen.startsWith("shared:") ? (
+        <SharedCockpitView connectionId={connectionId} schema={schema}
+          owner={chosen.slice("shared:".length, chosen.lastIndexOf("/"))} cockpitId={chosen.slice(chosen.lastIndexOf("/") + 1)}
+          range={range} chosenRange={chosenRange} onRange={setChosenRange} rangesOn={rangesOn}
+          onStarted={id => { choose(id); reload(); }} />
       ) : live.length === 0 ? noneYet : drawn && data ? (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
@@ -562,8 +801,22 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               {!arranging && (
                 <Button size="xs" variant="ghost" disabled={busy || imaging} data-testid="cockpit-image-new"
                   title="An image of your own on this cockpit. By hand only: a model never chooses one."
-                  onClick={() => { setImaging(true); setComposing(false); setNoting(false); }}>
+                  onClick={() => { setImaging(true); setComposing(false); setNoting(false); setPicking(false); }}>
                   <Icon name="plus" /> Image
+                </Button>
+              )}
+              {!arranging && (
+                <Button size="xs" variant="ghost" disabled={busy || picking} data-testid="cockpit-finding-new"
+                  title="Any finding the explorer has recorded on this connection, as a card: its query re-run through the guards."
+                  onClick={() => { setPicking(true); setComposing(false); setNoting(false); setImaging(false); }}>
+                  <Icon name="plus" /> Finding
+                </Button>
+              )}
+              {!arranging && (
+                <Button size="xs" variant={kept.published_to?.length ? "secondary" : "ghost"} disabled={busy} data-testid="cockpit-publish-open"
+                  aria-expanded={publishing} title="Share this cockpit, as it stands, with a group you belong to or a role you hold."
+                  onClick={() => setPublishing(p => !p)}>
+                  <Icon name="send" /> {kept.published_to?.length ? `Published to ${kept.published_to.map(t => t.name).join(", ")}` : "Publish"}
                 </Button>
               )}
               {!arranging && (
@@ -657,6 +910,18 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                 <ImageComposer connectionId={connectionId} busy={busy} onClose={() => setImaging(false)}
                   onPlace={(objectId, caption) => { edit(s => placeImage(s, objectId, caption), "an image uploaded by hand", "Placed. The upload is stamped with your name and the date."); setImaging(false); }} />
               )}
+              {picking && (
+                <FindingPicker connectionId={connectionId} schema={schema} busy={busy}
+                  placed={new Set(cards.map(c => c.card.provenance?.insight_id || "").filter(Boolean))}
+                  onPlaced={() => { adopt.current = true; reload(); }} onClose={() => setPicking(false)} />
+              )}
+              {publishing && (
+                <PublishPanel connectionId={connectionId} cockpitId={data.cockpit_id} busy={busy}
+                  publishedTo={(kept.published_to ?? []) as CockpitAudience[]}
+                  onDone={write} onClose={() => setPublishing(false)} />
+              )}
+              <AskChange connectionId={connectionId} cockpitId={data.cockpit_id} schema={schema} held={lines}
+                onKept={() => { setPublishing(false); reload(); }} />
               {reading && <Loading what={`the cards for ${choiceName(chosenRange)}`} style={{ padding: "12px 0" }} />}
               {!reading && data.range.edge_note && (
                 <div className="aug-fs-sm" data-testid="cockpit-edge-note" style={{ color: "var(--t2)", margin: "4px 0 8px" }}>{data.range.edge_note}</div>

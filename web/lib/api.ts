@@ -2601,6 +2601,9 @@ export interface CockpitVersion {
   cards: string[];
   changes: { added: string[]; removed: string[]; changed: string[] };
   spec?: unknown;
+  /** Who this version reaches beyond its owner, and who published it (the canvas, B5). */
+  published_to?: { kind: "group" | "role"; id: string; name: string }[];
+  published_by?: string;
 }
 
 /** One of a person's cockpits, as the strip lists it. */
@@ -2837,6 +2840,98 @@ export async function restoreCockpit(connectionId: string, cockpitId: string, ve
     body: JSON.stringify({ version }),
   });
   return cockpitWrite(res, "Failed to go back");
+}
+
+/** ⚑ Spends model calls. A change to one of the asker's cockpits, asked for in words: a proposal
+ *  to keep or not — an edit against the version on screen, or a publish. */
+export async function askCockpit(connectionId: string, cockpitId: string, words: string, schema?: string): Promise<CockpitDrafted> {
+  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/ask`, connectionId), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ words, schema_name: schema ?? null }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The change could not be drafted"));
+  }
+  return res.json();
+}
+
+/** A group or a role a cockpit may be published to, or is. */
+export interface CockpitAudience { kind: "group" | "role"; id: string; name: string }
+
+/** The groups the asker belongs to and the roles they hold: who they may publish to. */
+export async function cockpitAudiences(connectionId: string): Promise<{ groups: CockpitAudience[]; roles: CockpitAudience[] }> {
+  const res = await fetch(cockpitUrl("/cockpits/audiences", connectionId));
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read who you may publish to"));
+  }
+  return res.json();
+}
+
+/** Publish the cockpit as it stands to groups and roles. A version, under the asker's name. */
+export async function publishCockpit(connectionId: string, cockpitId: string, to: CockpitAudience[]): Promise<CockpitKept> {
+  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/publish`, connectionId), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to }),
+  });
+  return cockpitWrite(res, "Failed to publish the cockpit");
+}
+
+/** Stop sharing a cockpit. A version too. */
+export async function unpublishCockpit(connectionId: string, cockpitId: string): Promise<CockpitKept> {
+  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/unpublish`, connectionId), { method: "POST" });
+  return cockpitWrite(res, "Failed to unpublish the cockpit");
+}
+
+/** A cockpit someone else published to a group the asker is in or a role they hold. */
+export interface SharedCockpitListed {
+  owner: string;
+  cockpit_id: string;
+  title: string;
+  version: number;
+  kept_at: string;
+  published_by: string;
+  published_to: CockpitAudience[];
+}
+
+export async function listSharedCockpits(connectionId: string): Promise<SharedCockpitListed[]> {
+  const res = await fetch(cockpitUrl("/cockpits/shared", connectionId));
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read the cockpits shared with you"));
+  }
+  return (await res.json()).cockpits as SharedCockpitListed[];
+}
+
+export interface SharedCockpit {
+  connection_id: string;
+  owner: string;
+  cockpit_id: string;
+  cockpit: CockpitVersion;
+  cards: CockpitCard[];
+  range: CockpitRange;
+  ranges_on: boolean;
+  currency_symbol?: string;
+  images?: Record<string, CockpitImageStamp>;
+  published_by: string;
+  published_to: CockpitAudience[];
+}
+
+/** A published cockpit as it stands, read for the asker's own range. */
+export async function getSharedCockpit(connectionId: string, owner: string, cockpitId: string, range?: BriefingRange | null): Promise<SharedCockpit> {
+  const res = await fetch(cockpitUrl(`/cockpits/shared/${encodeURIComponent(owner)}/${encodeURIComponent(cockpitId)}`, connectionId, rangeParams(range)));
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read the shared cockpit"));
+  }
+  return res.json();
+}
+
+/** Start a cockpit of the asker's own from a published one. */
+export async function copySharedCockpit(connectionId: string, owner: string, cockpitId: string): Promise<CockpitKept & { title?: string }> {
+  const res = await fetch(cockpitUrl(`/cockpits/shared/${encodeURIComponent(owner)}/${encodeURIComponent(cockpitId)}/copy`, connectionId), { method: "POST" });
+  return cockpitWrite(res, "Failed to start a cockpit from this one");
 }
 
 /** Retire a cockpit. Its history stays. */
@@ -6449,7 +6544,7 @@ export interface StagedProposal {
   kind: "declared_action" | "integration" | "agent_draft" | "automation_draft"
       | "agent_bundle" | "automation_state" | "agent_grant"
       | "automation_edit" | "monitor_bundle" | "brief_draft" | "outbound_send"
-      | "agent_limit" | "cockpit_draft";
+      | "agent_limit" | "cockpit_draft" | "cockpit_publish";
   /** The connected account an `integration` proposal would act as. "" otherwise. */
   grant_id: string;
   action_id: string;

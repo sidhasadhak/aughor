@@ -118,6 +118,9 @@ def _entry(row: dict, *, with_spec: bool) -> dict[str, Any]:
         "written_by_model": bool(p.get("written_by_model", True)),
         "cards": list(p.get("cards") or []),
         "changes": p.get("changes") or {"added": [], "removed": [], "changed": []},
+        # Who this version reaches beyond its owner, and who published it (the canvas, B5).
+        "published_to": list(p.get("published_to") or []),
+        "published_by": p.get("published_by") or "",
     }
     if with_spec:
         out["spec"] = p.get("spec")
@@ -304,8 +307,40 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
         "written_by_model": bool(written_by_model),
         "cards": list(verdict.cards),
         "changes": changes(before.get("spec"), spec),
+        # An edit does not unpublish: who the cockpit reaches carries to the next version.
+        "published_to": list(before.get("published_to") or []) if not before.get("retired") else [],
+        "published_by": (before.get("published_by") or "") if not before.get("retired") else "",
     }
     return _write(home.key, home.connection_id, payload, prior, "the spec changed", also=came_from)
+
+
+def publish(home: Home, to: list[dict], *, approved_by: str) -> Kept:
+    """Publish the cockpit as it stands to ``to`` — groups and roles, each ``{"kind", "id", "name"}``
+    as :mod:`aughor.cockpit.sharing` resolved them — or, with an empty ``to``, unpublish it.
+    Either is a version: the spec is the same, and who it reaches changed."""
+    missing = _provenance_missing(approved_by, "published")
+    if missing:
+        return missing
+    prior = _latest_row(home.key)
+    if prior is None:
+        return Kept(REFUSED, sentences=("There is no such cockpit to publish.",))
+    before = prior["payload"]
+    if before.get("retired") or not before.get("spec"):
+        return Kept(REFUSED, sentences=("A retired cockpit is not published. Bring it back first.",))
+    targets = [{"kind": str(t["kind"]), "id": str(t["id"]), "name": str(t.get("name") or t["id"])} for t in to]
+    if targets == list(before.get("published_to") or []):
+        return Kept(UNCHANGED, version=prior.get("version"), artifact_id=prior.get("id") or "")
+    names = ", ".join(t["name"] for t in targets)
+    payload = {
+        **before,
+        "approved_by": approved_by.strip(),
+        "source": f"published to {names}" if targets else "unpublished",
+        "note": "",
+        "changes": {"added": [], "removed": [], "changed": []},
+        "published_to": targets,
+        "published_by": approved_by.strip() if targets else "",
+    }
+    return _write(home.key, home.connection_id, payload, prior, "published" if targets else "unpublished")
 
 
 def restore(home: Home, number: int, *, approved_by: str) -> Kept:
@@ -331,6 +366,9 @@ def _retired_payload(before: dict, approved_by: str, note: str) -> dict:
         "written_by_model": False,
         "cards": [],
         "changes": changes(before.get("spec"), None),
+        # A retired cockpit reaches nobody.
+        "published_to": [],
+        "published_by": "",
     }
 
 
