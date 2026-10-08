@@ -194,6 +194,11 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
         {status.facts_discovered > 0 && ` · ${status.facts_discovered} facts`}
         {status.insights_found    > 0 && ` · ${status.insights_found} findings`}
         {interrupted && status.interrupted_note && <span title={status.interrupted_note}> · {status.interrupted_note}</span>}
+        {/* the exploration principles — a run held on a spent budget, or questions waiting for a layer, said */}
+        {status.held_note && <span title={status.held_note} style={{ color: "var(--amb4)" }}> · held: {status.held_note}</span>}
+        {status.phase === "complete" && status.domain_intel_skipped && status.domain_intel_note && (
+          <span title={status.domain_intel_note}> · {status.domain_intel_note}</span>
+        )}
       </span>
       <div className="ml-auto flex items-center gap-2">
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>

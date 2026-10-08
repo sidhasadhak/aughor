@@ -28,6 +28,9 @@ _INTERNAL: ContextVar[bool] = ContextVar("aughor_door_internal", default=False)
 #: None outside a door. The parse step (`db.connection._security_pre`) reads it, so a statement is parsed as one
 #: read-only statement in the dialect of the engine that will run it, whichever connector's door it came through.
 _DIALECT: ContextVar[Optional[str]] = ContextVar("aughor_door_dialect", default=None)
+#: The schema an unqualified table name resolves to behind the door in flight (the connection's own, when it names
+#: one), or None. The exclusion step reads it: `orders` behind a door scoped to `stage` is `stage.orders`.
+_SCHEMA: ContextVar[Optional[str]] = ContextVar("aughor_door_schema", default=None)
 
 #: Each door word, in plain words. ``{d}`` is the detail after the colon.
 WORDS: dict[str, str] = {
@@ -107,6 +110,12 @@ def door_dialect() -> Optional[str]:
     return _DIALECT.get()
 
 
+def door_schema() -> Optional[str]:
+    """The schema an unqualified name resolves to behind the door in flight, or None (outside a door, or a
+    connection that names none)."""
+    return _SCHEMA.get()
+
+
 def mark_lost(conn: Any) -> None:
     """Record that ``conn``'s engine connection was lost (DE-3d). The pool closes a marked connection instead of
     returning it to its idle bucket, and never hands one out."""
@@ -149,6 +158,8 @@ def through_door(conn: Any, sql: str, sql_dialect: Optional[str], run: Callable[
     token = _TRAIL.set([])
     internal_token = _INTERNAL.set(bool(internal))
     dialect_token = _DIALECT.set(str(getattr(conn, "dialect", "") or "duckdb"))
+    _own = getattr(conn, "_schema_name", None) or getattr(conn, "schema_name", None)
+    schema_token = _SCHEMA.set(_own if isinstance(_own, str) and _own else None)
     try:
         statement = sql_for_engine(conn, sql, sql_dialect)
         if statement != sql:
@@ -175,6 +186,7 @@ def through_door(conn: Any, sql: str, sql_dialect: Optional[str], run: Callable[
             add(result, _TRAIL.get() or [], first=True)
         return result
     finally:
+        _SCHEMA.reset(schema_token)
         _DIALECT.reset(dialect_token)
         _INTERNAL.reset(internal_token)
         _TRAIL.reset(token)

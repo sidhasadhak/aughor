@@ -5533,6 +5533,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/{conn_id}/datasets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Datasets
+         * @description Every schema and table of the connection: its layer (set, or proposed with evidence), whether it is
+         *     off, its maturity, and the month's exploration budget.
+         */
+        get: operations["get_datasets_exploration__conn_id__datasets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{conn_id}/datasets/layer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Layer
+         * @description A person sets a schema's layer, or one table's. The system layer is never read, so setting it turns
+         *     the dataset off too.
+         */
+        put: operations["put_layer_exploration__conn_id__datasets_layer_put"];
+        post?: never;
+        /** Delete Layer */
+        delete: operations["delete_layer_exploration__conn_id__datasets_layer_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{conn_id}/datasets/layers/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Layers
+         * @description A person accepts the proposed layer of each named schema (or of every schema not set yet).
+         */
+        post: operations["accept_layers_exploration__conn_id__datasets_layers_accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/exploration/{conn_id}/datasets/off": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Off
+         * @description A person turns a schema or a table off for analysis — never explored, never queried by Investigation
+         *     or Quick analysis — or back on. A person may still read it in the SQL editor.
+         */
+        put: operations["put_off_exploration__conn_id__datasets_off_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/{conn_id}/domains": {
         parameters: {
             query?: never;
@@ -5740,7 +5824,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Resume Exploration */
+        /**
+         * Resume Exploration
+         * @description A person's Continue. An INTERRUPTED run resumes each of its datasets from saved progress —
+         *     the per-dataset runs of a multi-dataset connection each by its own key; a connection-level
+         *     resume there would start a fresh connection-wide run instead.
+         */
         post: operations["resume_exploration_exploration__conn_id__resume_post"];
         delete?: never;
         options?: never;
@@ -15142,26 +15231,6 @@ export interface components {
              */
             kind: string;
         };
-        /** AcceptRequest */
-        AcceptRequest: {
-            /**
-             * Actor
-             * @default
-             */
-            actor: string;
-            /**
-             * Fills
-             * @default {}
-             */
-            fills: {
-                [key: string]: string;
-            };
-            /**
-             * Mint Grant
-             * @default false
-             */
-            mint_grant: boolean;
-        };
         /**
          * ActionParameter
          * @description A typed, named input to a QueryTemplate *or* to a declared, governed write action.
@@ -17697,6 +17766,18 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** LayerRequest */
+        LayerRequest: {
+            /** Layer */
+            layer: string;
+            /** Schema Name */
+            schema_name: string;
+            /**
+             * Table
+             * @default
+             */
+            table: string;
+        };
         /** MarkWrongRequest */
         MarkWrongRequest: {
             /**
@@ -18122,6 +18203,28 @@ export interface components {
              */
             unit: string;
         };
+        /** OffRequest */
+        OffRequest: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Off */
+            off: boolean;
+            /**
+             * Reason
+             * @default out_of_domain
+             */
+            reason: string;
+            /** Schema Name */
+            schema_name: string;
+            /**
+             * Table
+             * @default
+             */
+            table: string;
+        };
         /**
          * OrgSettings
          * @description App-wide organization settings (the singleton) and the shape of a
@@ -18158,6 +18261,12 @@ export interface components {
              * @default
              */
             date_format: string;
+            /**
+             * Exploration Monthly Tokens
+             * @description The organisation's monthly budget for what the Explorer spends on its own initiative, in model tokens; 0 = none. A connection may set its own; the tighter holds. A person's own Start is never held by it.
+             * @default 0
+             */
+            exploration_monthly_tokens: number;
             /**
              * Fiscal Year Start Month
              * @description Month the fiscal year starts (1=January)
@@ -20244,6 +20353,8 @@ export interface components {
         _ConnectionSettings: {
             /** Briefings Enabled */
             briefings_enabled?: boolean | null;
+            /** Exploration Monthly Tokens */
+            exploration_monthly_tokens?: number | null;
             /** Ontology Refresh Hours */
             ontology_refresh_hours?: number | null;
             /** Scope Key */
@@ -21244,6 +21355,14 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** AcceptRequest */
+        aughor__routers__datasets__AcceptRequest: {
+            /**
+             * Schemas
+             * @default []
+             */
+            schemas: string[];
+        };
         /** GrantRequest */
         aughor__routers__groups__GrantRequest: {
             /** Level */
@@ -21252,6 +21371,26 @@ export interface components {
             principal: string;
             /** Securable */
             securable: string;
+        };
+        /** AcceptRequest */
+        aughor__routers__kinetic__AcceptRequest: {
+            /**
+             * Actor
+             * @default
+             */
+            actor: string;
+            /**
+             * Fills
+             * @default {}
+             */
+            fills: {
+                [key: string]: string;
+            };
+            /**
+             * Mint Grant
+             * @default false
+             */
+            mint_grant: boolean;
         };
         /** ProposeRequest */
         aughor__routers__kinetic__ProposeRequest: {
@@ -30653,6 +30792,176 @@ export interface operations {
             };
         };
     };
+    get_datasets_exploration__conn_id__datasets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_layer_exploration__conn_id__datasets_layer_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LayerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_layer_exploration__conn_id__datasets_layer_delete: {
+        parameters: {
+            query: {
+                schema_name: string;
+                table?: string;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_layers_exploration__conn_id__datasets_layers_accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["aughor__routers__datasets__AcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_off_exploration__conn_id__datasets_off_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OffRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_domain_insights_exploration__conn_id__domains_get: {
         parameters: {
             query?: {
@@ -33962,7 +34271,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AcceptRequest"];
+                "application/json": components["schemas"]["aughor__routers__kinetic__AcceptRequest"];
             };
         };
         responses: {

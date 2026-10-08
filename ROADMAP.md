@@ -13799,7 +13799,19 @@ the browser** · **measure the premise before building.**
     (d) the exploration budget — **both**, per organisation per month and per connection per month;
     (e) stuck runs — **fixed now** (they read as interrupted and a person's Continue resumes them; restart
     recovery resumes a dataset's own run); automatic re-runs wait for the build.
-    Not built beyond (e). The study's §11 names the five parts the build would be.
+    ✅ **BUILT 2026-10-08** (the user: "start and finish the principles build end to end"), branch
+    `claude/exploration-principles` — all five parts of the study's §11, and §12 there says what each is and
+    what is NOT built: **layers** (`ontology/dataset_layers.py` — six, proposed from schema and table names as
+    whole words and affixes, column signs and approved metrics, set by a person; unset = structure only);
+    **off means off** (an exclusion per table or a whole schema, refused at the SQL door before its internal
+    early return, dropped from every connector's schema text where connectors are built, never listed by the
+    explorer; the SQL editor and the Catalog's own reads pass); **maturity** (`explorer/maturity.py`, three
+    bars and a number in the Catalog tree, on each schema and table, and in the scope bar); **the runner**
+    (`explorer/continuous.py` — every dataset judged on its own: structure on a fingerprint change, questions
+    daily until mature and then only on a named event, a watch on each settled period, failures retried with
+    backoff, a heartbeat's budget kill told from a person's stop; an automatic re-run fills only the question
+    list's gaps; the dataset fingerprint stamped at profiling); **budgets** (`explorer/budget.py` — per
+    organisation and per connection per month, in model tokens, the tighter holding, a held run said).
 
 ---
 

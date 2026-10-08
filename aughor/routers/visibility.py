@@ -29,12 +29,9 @@ class ExclusionRequest(BaseModel):
 
 
 def _by(request: Request) -> str:
-    principal = getattr(request.state, "principal", None)
-    for attr in ("user_id", "email", "id"):
-        v = getattr(principal, attr, "") if principal is not None else ""
-        if v:
-            return str(v)
-    return ""
+    """Who declared it: the person signed in, else this install's operator — never empty (#582's rule)."""
+    from aughor.security.authz import caller
+    return caller()
 
 
 @router.get("/visibility")

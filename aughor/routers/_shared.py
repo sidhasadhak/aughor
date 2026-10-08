@@ -111,6 +111,9 @@ async def spawn_explorer(
     tables_filter: list | None = None,
     domain_intel_only: bool = False,
     schema_name: str | None = None,
+    structure_only: bool = False,
+    gaps_only: bool = False,
+    reason: str = "",
 ) -> dict:
     """THE explorer spawn path — every surface (start, resume, restart, extend,
     trigger-intel, canvas start/restart, boot recovery) goes through here, so an
@@ -185,7 +188,8 @@ async def spawn_explorer(
     from aughor.kernel.jobs import kernel
     job_id = await kernel().submit(
         "exploration",
-        lambda: explorer.explore(domain_intel_only=domain_intel_only),
+        lambda: explorer.explore(domain_intel_only=domain_intel_only, structure_only=structure_only,
+                                 gaps_only=gaps_only, reason=reason),
         conn_id=conn_id,
         canvas_id=canvas_id,
         idempotency_key=f"explore:{'canvas:' + canvas_id if canvas_id else key}",
@@ -194,7 +198,9 @@ async def spawn_explorer(
         # run, and the dataset's own run stayed mid-phase for good.
         payload={"domain_intel_only": domain_intel_only,
                  "tables_filter": tables_filter or None,
-                 "schema_name": schema_name or None},
+                 "schema_name": schema_name or None,
+                 # the job rides the payload too, so a restart resumes the same job (§2)
+                 "structure_only": structure_only, "gaps_only": gaps_only, "reason": reason or ""},
         on_finish=_cleanup,
     )
     # The kernel task is the cancellation handle — stop endpoints keep working.
@@ -557,6 +563,17 @@ def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: b
     else:
         _schemas = schemas_of_connection(conn_id)
         targets = list(_schemas) if len(_schemas) >= 2 else [None]
+    # Exploration principles §6 — a schema a person turned off is never explored. Filtered HERE, not in
+    # `schemas_of_connection`: that list also decides a connection's canonical keys, and a schema turned off must not
+    # turn a two-schema connection into a one-schema one.
+    from aughor.ontology.visibility import excluded as _excluded
+    _off = [t for t in targets if t and _excluded(conn_id, t) is not None]
+    if _off:
+        import logging
+        logging.getLogger(__name__).info("kickoff_exploration: %s turned off on %s — not explored", _off, conn_id)
+        targets = [t for t in targets if t not in _off]
+        if not targets:
+            return False
 
     # R12 — when the Curator agent is enabled for this workspace, a kick elevates to
     # the full birth rite: eager intelligence first, then the exploration handoff,
@@ -581,9 +598,65 @@ def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: b
         # reference to the task, and a kick whose reference is dropped can be collected
         # mid-exploration. It also gives a test a way to end what it started.
         from aughor.kernel.concurrency import spawn
-        if birth:
+        jobs = automatic_jobs(conn_id, sch) if auto else None
+        if jobs is not None and not jobs:
+            continue          # a system dataset is never read
+        if jobs is not None and "questions" not in jobs:
+            # Exploration principles §5, decision 2 — on its own the platform learns this dataset's structure only:
+            # its layer is unset (a person sets it) or says it is not explored. Nothing below calls a model, so no
+            # birth rite either (its eager intelligence build is one).
+            spawn(spawn_explorer(conn_id, schema_name=sch, structure_only=True,
+                                 reason=structure_only_reason(conn_id, sch)),
+                  name=f"kickoff-{key}")
+        elif birth:
             spawn(spawn_birth(conn_id, schema_name=sch), name=f"birth-{key}")
         else:
             spawn(spawn_explorer(conn_id, schema_name=sch), name=f"kickoff-{key}")
         started = True
     return started
+
+
+def layer_scope(conn_id: str, schema: str | None) -> str:
+    """The schema a dataset's layer is filed under: its own, else the connection's one schema."""
+    if schema:
+        return schema
+    try:
+        from aughor.db.registry import get_meta
+        named = get_meta(conn_id).get("schema_name")
+        if named:
+            return str(named)
+        only = schemas_of_connection(conn_id)
+        return only[0] if len(only) == 1 else "default"
+    except Exception:  # noqa: BLE001 — "default" is where an unnamed scope is filed
+        return "default"
+
+
+def connection_has_business(conn_id: str) -> bool:
+    """Whether a person set any dataset of this connection to the business layer."""
+    from aughor.ontology.dataset_layers import LAYERS_FILE, load_declared
+    from aughor.ontology.recommendations import recommendations_root, safe_name
+    root = recommendations_root() / safe_name(conn_id)
+    if not root.is_dir():
+        return False
+    for f in root.glob(f"*/{LAYERS_FILE}"):
+        d = load_declared(conn_id, f.parent.name)
+        if (d["schema"] or {}).get("layer") == "business" or any(
+                t.get("layer") == "business" for t in d["tables"].values()):
+            return True
+    return False
+
+
+def automatic_jobs(conn_id: str, schema: str | None) -> frozenset:
+    """The jobs the platform runs on its own for this dataset, by the layer a person set (§5)."""
+    from aughor.ontology.dataset_layers import auto_jobs, layer_of
+    layer = layer_of(conn_id, layer_scope(conn_id, schema))
+    return auto_jobs(layer, connection_has_business=connection_has_business(conn_id))
+
+
+def structure_only_reason(conn_id: str, schema: str | None) -> str:
+    """What a structure-only run says about the questions it did not ask."""
+    from aughor.ontology.dataset_layers import LABEL, POLICY, layer_of
+    layer = layer_of(conn_id, layer_scope(conn_id, schema))
+    if not layer:
+        return "structure learned; its questions wait for a person to set this dataset's layer"
+    return f"structure learned; a {LABEL[layer].lower()} dataset is {POLICY[layer]}"

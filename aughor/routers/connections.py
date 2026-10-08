@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from aughor.db.connection import open_connection, open_connection_for
 from aughor.db.registry import (
@@ -56,6 +56,9 @@ class InstructionsRequest(BaseModel):
 class _ConnectionSettings(BaseModel):
     ontology_refresh_hours: Optional[int] = None
     briefings_enabled: Optional[bool] = None
+    #: The exploration principles §7 — this connection's monthly budget for what the Explorer spends on its own
+    #: initiative, in model tokens; 0 clears it. The organisation's may also hold; the tighter does.
+    exploration_monthly_tokens: Optional[int] = Field(default=None, ge=0)
     #: PENDING item 14 — the stable name shipped declarations are filed under
     #: (`data/shipped/ontology_overrides/key=<scope_key>/…`); "" clears it.
     scope_key: Optional[str] = None

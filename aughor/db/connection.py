@@ -20,7 +20,7 @@ import duckdb
 import sqlglot
 
 from aughor.db.dialects import known_dialect, sql_for_engine
-from aughor.db.doors import add as _add_doors, door_dialect, passed as _passed, statement_is_internal, through_door
+from aughor.db.doors import add as _add_doors, door_dialect, door_schema, passed as _passed, statement_is_internal, through_door
 from aughor.db.errors import classify_error
 from aughor.db.single_flight import single_flight_build
 from aughor.control_plane.contracts.execution import QueryResult
@@ -55,6 +55,12 @@ def _security_pre(connection_id: str, hypothesis_id: str, sql: str) -> QueryResu
             _passed("blocked:validation")
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
         _passed(f"validated:{dialect}")
+    # Exploration principles §6 — a table a person turned off is never read by the platform, its own probes included,
+    # so this runs BEFORE the internal declaration is read. A person's own reads (the SQL editor, the Catalog) pass.
+    refused = _exclusion_refusal(connection_id, hypothesis_id, sql, dialect)
+    if refused:
+        _passed("blocked:exclusion")
+        return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=refused)
     if statement_is_internal():
         _passed("internal")
         _count_internal(connection_id)
@@ -184,6 +190,14 @@ def _count_internal(connection_id: str) -> None:
     except Exception as exc:  # noqa: BLE001
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the internal-statement count is best-effort; the statement runs", counter="audit.internal_count")
+
+
+def _exclusion_refusal(connection_id: str, label: str, sql: str, dialect: Optional[str]) -> str:
+    """The sentence a statement is refused with because it names a table or schema a person turned off, or "" —
+    read through the kernel's seam (`kernel/registries/exclusions.py`), which the agent's declarations store fills.
+    An unreadable declaration refuses nothing, with a trace — the lookup is a restraint, not the safety gate."""
+    from aughor.kernel.registries.exclusions import refusal_for
+    return refusal_for(connection_id, label, sql, dialect, door_schema())
 
 
 def gate_user_sql(connection_id: str, label: str, sql: str) -> QueryResult | None:
@@ -2035,7 +2049,51 @@ class PostgresConnection(DatabaseConnection):
 
 # ── Factory ───────────────────────────────────────────────────────────────────
 
+def _schema_without_excluded(db, connection_id: str):
+    """Every connection's schema text with the tables a person turned off taken out (exploration principles §6) —
+    here, where every connector is built, so no mode's schema can list one: chat, Quick analysis, Investigation, the
+    explorer and the SQL writer all read ``get_schema()``. Unchanged, byte for byte, when nothing is turned off."""
+    own = getattr(db, "get_schema", None)
+    if not connection_id or own is None or getattr(own, "_without_excluded", False):
+        return db
+
+    def get_schema(*args, **kwargs):
+        from aughor.kernel.registries.exclusions import without_excluded
+        text = own(*args, **kwargs)
+        schema = getattr(db, "_schema_name", None) or getattr(db, "schema_name", None)
+        return without_excluded(connection_id, text, schema if isinstance(schema, str) else None)
+
+    get_schema._without_excluded = True  # type: ignore[attr-defined]
+    get_schema.__wrapped__ = own  # type: ignore[attr-defined]
+    try:
+        db.get_schema = get_schema
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "this connector cannot carry the excluded-tables filter; the door still refuses them",
+                 counter="schema.without_excluded_attach")
+    return db
+
+
+def unfiltered_schema(db) -> str:
+    """The connection's schema text with every table in it, the ones a person turned off included — for the
+    platform's fingerprint of what a dataset holds, never for a model or an answer."""
+    own = getattr(db.get_schema, "__wrapped__", None) or db.get_schema
+    return own()
+
+
 def open_connection(
+    conn_type: str,
+    dsn: str,
+    schema_name: str | None = None,
+    connection_id: str = "",
+    meta: dict | None = None,
+) -> DatabaseConnection:
+    return _schema_without_excluded(
+        _open_connection(conn_type, dsn, schema_name=schema_name, connection_id=connection_id, meta=meta),
+        connection_id)
+
+
+def _open_connection(
     conn_type: str,
     dsn: str,
     schema_name: str | None = None,

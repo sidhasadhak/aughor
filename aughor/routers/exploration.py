@@ -368,7 +368,8 @@ def interrupted_runs(conn_id: str) -> list[str]:
 
 def _interruption(conn_id: str, keys: list[str]) -> dict:
     """What the status says about interrupted runs: which datasets, since when, and that a person's
-    Continue resumes them from their saved progress (nothing resumes them on its own)."""
+    Continue resumes them from their saved progress. The hourly check resumes one on its own only
+    where the dataset's layer lets the platform ask its questions (exploration principles §5)."""
     if not keys:
         return {"interrupted": False}
     last = next((j for j in _exploration_jobs(conn_id, active=False)), {}) or {}
@@ -380,6 +381,19 @@ def _interruption(conn_id: str, keys: list[str]) -> dict:
             "interrupted_note": (f"Interrupted{where} — the run stopped when the platform restarted"
                                  f"{f' ({str(since)[:16]} UTC)' if since else ''} and nothing is running it. "
                                  f"Its progress is saved: Continue resumes it.")}
+
+
+def _held_note(conn_id: str, schema: str | None) -> str | None:
+    """Why the platform is holding a run it wanted to start — a spent monthly budget — said, never
+    implied by a run that simply does not come (exploration principles §7)."""
+    from aughor.explorer import program
+    from aughor.explorer import store as expl_store
+    keys = ([_store_key(conn_id, schema)] if schema else (expl_store.schema_run_keys(conn_id) or [conn_id]))
+    for k in keys:
+        held = program.load(k).get("held")
+        if held:
+            return str(held.get("why") or "") or None
+    return None
 
 
 @router.get("/exploration/{conn_id}/status")
@@ -417,6 +431,7 @@ def get_exploration_status(conn_id: str, schema: str | None = None):
         "domain_intel_note": state.get("domain_intel_note"),
         # {schema: phase} for the 'All schemas' aggregate — lets the UI show per-schema progress.
         "per_schema": state.get("per_schema"),
+        "held_note": _held_note(conn_id, schema),
         **_interruption(conn_id, stuck),
     }
 

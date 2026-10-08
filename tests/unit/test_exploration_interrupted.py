@@ -20,7 +20,7 @@ from aughor.routers import exploration as X
 @pytest.fixture
 def stuck(monkeypatch):
     """`wh` ran per dataset: `sales` stopped mid-run, `ops` finished. Nothing is running either."""
-    expl_store.save("wh__sales", {**expl_store._empty(), "phase": "synthesis", "insights": [{"id": "i1"}]})
+    expl_store.save("wh__sales", {**expl_store._empty(), "phase": "synthesis"})
     expl_store.save("wh__ops", {**expl_store._empty(), "phase": "complete"})
     monkeypatch.setattr(X, "_exploration_jobs", lambda conn, active: [] if active else [
         {"state": "INTERRUPTED", "ended_at": "2026-09-28T01:23:43+00:00"}])

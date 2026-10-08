@@ -195,6 +195,9 @@ export interface OrgSettings {
   chat_first_home: boolean;
   /** CB-6 — what the organisation is trying to do this quarter, written by people. */
   priorities: Priority[];
+  /** The exploration principles §7 — the organisation's monthly budget, in model tokens, for what the
+   *  Explorer spends on its own initiative; 0 = none. */
+  exploration_monthly_tokens?: number;
 }
 
 /** CB-6 — one declared priority: the metric it names, the target, which way is good, by when. */
@@ -1446,6 +1449,8 @@ export interface OntologyEntity {
 export interface ConnectionSettings {
   ontology_refresh_hours: number | null;
   briefings_enabled?: boolean | null;
+  /** This connection's monthly exploration budget, in model tokens; 0 clears it. */
+  exploration_monthly_tokens?: number | null;
 }
 
 export async function getConnectionSettings(id: string): Promise<ConnectionSettings> {
@@ -2048,11 +2053,112 @@ export interface ExplorationStatus {
    *  Activity strip say WHICH run each phase belongs to. */
   per_schema?: Record<string, string> | null;
   /** The run stopped mid-phase (a restart killed it) and nothing is running it — its phase is
-   *  where it stopped, not where it is. A person's Continue resumes it; nothing does on its own. */
+   *  where it stopped, not where it is. A person's Continue resumes it; the hourly check does only
+   *  where the dataset's layer lets the platform ask its questions. */
   interrupted?: boolean;
   interrupted_at?: string | null;
   interrupted_schemas?: string[];
   interrupted_note?: string;
+  /** Why the platform is holding a run it wanted to start — a spent monthly budget. */
+  held_note?: string | null;
+  domain_intel_skipped?: boolean;
+  domain_intel_note?: string | null;
+}
+
+// ── The exploration principles: each dataset's layer, off switch, maturity and budget (2026-10-08) ──
+
+/** One of the three maturity readings: a share 0–1, or null with the reason it does not apply. */
+export interface MaturityBar { share: number | null; note: string }
+export interface Maturity {
+  structure: MaturityBar;
+  questions: MaturityBar;
+  time: MaturityBar;
+  /** The number beside the bars — the mean of the readings that apply. */
+  percent: number | null;
+  stage: "learning" | "exploring" | "watching";
+}
+export interface LayerProposal { layer: string; label: string; evidence: string[] }
+export interface LayerSet { layer: string; set_by: string; set_at: string }
+export interface DatasetOff { table: string; reason: string; note: string; declared_by: string }
+export interface DatasetTable {
+  name: string;
+  layer: { set: LayerSet | null; proposed: LayerProposal | null; effective: string };
+  off: DatasetOff | null;
+  maturity: Maturity;
+}
+export interface DatasetSchema {
+  name: string;
+  key: string;
+  layer: { set: LayerSet | null; proposed: LayerProposal; effective: string; policy: string; jobs: string[] };
+  off: DatasetOff | null;
+  maturity: Maturity;
+  program: {
+    held: { at: string; why: string } | null;
+    reopened: { at: string; reason: string } | null;
+    last_run: { job: string; outcome: string; new_findings: number; ended_at: string; reason: string } | null;
+    watch: Record<string, { through: string; read_at: string; measured: number; moved: { name: string; rel: number }[] }>;
+    failures: number;
+  };
+  tables: DatasetTable[];
+}
+export interface ExplorationBudget {
+  organisation: { limit: number | null; spent: number | null };
+  connection: { limit: number | null; spent: number };
+  remaining: number | null;
+  held_by: "organisation" | "connection" | null;
+  spent_out: boolean;
+  sentence: string;
+}
+export interface DatasetsView {
+  connection_id: string;
+  schemas: DatasetSchema[];
+  budget: ExplorationBudget;
+  layers: { id: string; label: string; policy: string }[];
+  exclusion_reasons: string[];
+}
+
+export async function getDatasets(connId: string): Promise<DatasetsView> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connId)}/datasets`);
+  if (!res.ok) throw await refused(res, "Reading the datasets");
+  return res.json();
+}
+
+/** A person sets a schema's layer (or one table's). Setting one that asks questions starts them. */
+export async function setDatasetLayer(connId: string, schema: string, layer: string, table = ""):
+  Promise<LayerSet & { started: string | null }> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connId)}/datasets/layer`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ schema_name: schema, table, layer }),
+  });
+  if (!res.ok) throw await refused(res, "Setting the layer");
+  return res.json();
+}
+
+export async function clearDatasetLayer(connId: string, schema: string, table = ""): Promise<void> {
+  const q = new URLSearchParams({ schema_name: schema, ...(table ? { table } : {}) });
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connId)}/datasets/layer?${q}`, { method: "DELETE" });
+  if (!res.ok) throw await refused(res, "Clearing the layer");
+}
+
+/** A person accepts the proposed layers — of the named schemas, or of every schema not set yet. */
+export async function acceptDatasetLayers(connId: string, schemas: string[] = []):
+  Promise<{ accepted: { schema: string; layer: string }[]; started: Record<string, string> }> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connId)}/datasets/layers/accept`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ schemas }),
+  });
+  if (!res.ok) throw await refused(res, "Accepting the proposed layers");
+  return res.json();
+}
+
+/** A person turns a schema (no table) or a table off for analysis, or back on. */
+export async function setDatasetOff(connId: string, schema: string, off: boolean, opts: { table?: string; reason?: string; note?: string } = {}):
+  Promise<{ ok: boolean; off: DatasetOff | null }> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connId)}/datasets/off`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ schema_name: schema, table: opts.table ?? "", off, reason: opts.reason ?? "out_of_domain", note: opts.note ?? "" }),
+  });
+  if (!res.ok) throw await refused(res, off ? "Turning it off" : "Turning it back on");
+  return res.json();
 }
 
 export async function getExplorationStatus(connectionId: string): Promise<ExplorationStatus> {

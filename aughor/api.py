@@ -749,6 +749,9 @@ async def _kernel_boot_recovery() -> None:
                     conn_id,
                     domain_intel_only=bool(payload.get("domain_intel_only")),
                     schema_name=schema,
+                    structure_only=bool(payload.get("structure_only")),
+                    gaps_only=bool(payload.get("gaps_only")),
+                    reason=str(payload.get("reason") or ""),
                 )
             logger.info(
                 "Boot recovery: exploration %s for %s — %s",
@@ -1048,6 +1051,7 @@ from aughor.routers import (
     groups as groups_router,
     owners as owners_router,
     visibility as visibility_router,
+    datasets as datasets_router,
     departures as departures_router,
     links as links_router,
     arrivals as arrivals_router,
@@ -1120,6 +1124,7 @@ app.include_router(roles_router.router)
 app.include_router(groups_router.router)  # HB-1 — groups, level grants, explain + route (the routing half)
 app.include_router(owners_router.router)  # CB-3 — owners the platform can reach: inventory + links
 app.include_router(visibility_router.router)  # CB-5 — how much the platform can see + the definition holding sends
+app.include_router(datasets_router.router)  # exploration principles — each dataset's layer, off switch, maturity, budget
 app.include_router(departures_router.router)  # HB-2 — the departures ledger, verdicts, graduation
 app.include_router(links_router.router)  # HB-3 — the manifest: tickets/threads filed on objects, outcomes
 app.include_router(arrivals_router.router)  # HB-5 — arrivals: a Slack sentence becomes a staged note with provenance

@@ -4,7 +4,8 @@
 2026-09-26: "How would the Explorer know which data set to explore and when? Should it be every hour,
 24 hours, 365 days? And when does it realise that all the angles are now covered and it's only the time
 period as the only new factor?" The principles below were proposed in chat and amended by the user the
-same day; the decisions in §9 are theirs. Nothing here is built except §8's honest status for stuck runs.*
+same day; the decisions in §9 are theirs. §8's honest status for stuck runs was built the same day; the rest
+— §11's five parts — was built on 2026-10-08, and §12 says what each part is and what is not built.*
 
 ## 1 · What is true today (measured 2026-10-07)
 
@@ -191,7 +192,7 @@ flowchart TD
   G --> M[Mature again → back to watching]
 ```
 
-## 11 · What building this means (not started — the user's word first)
+## 11 · What building this means (built 2026-10-08 — see §12)
 
 1. **Roles** — a role per schema and per table (declared by a person, proposed with evidence by §5's signs);
    a store for it beside the connection, never in a model's output.
@@ -204,3 +205,60 @@ flowchart TD
 4. **The event-driven runner** — the three jobs as separate runs with their own triggers; the domain phase's
    budget no longer resets; the fingerprint stamped when it is known, not only at COMPLETE.
 5. **Budgets** — per organisation and per connection per month, ranked by value, said when spent.
+
+## 12 · Built (2026-10-08)
+
+The user: "start and finish the principles build end to end." Branch `claude/exploration-principles`.
+
+1. **Layers** — `aughor/ontology/dataset_layers.py`. The six layers and their policies; the signs read at the
+   schema level (every §5 word, whole words on `_ - .` and case boundaries, plus the prefixes and suffixes) and
+   at the table level (the affixes, and only the words that never name a business thing — `user_sessions`,
+   `order_history` and `jobs` are business tables, so `user`, `history` and `job` say nothing of a table);
+   column signs (loader columns, all-text tables, narrow key-and-code tables); approved metrics as evidence. A
+   schema with no sign is proposed **business**, said as such. A person sets a layer — one at a time or by
+   accepting every proposal — stored beside the table exclusions, recorded under the person signed in. Until
+   one is set, the platform learns the dataset's structure only; the System layer also turns the dataset off.
+2. **Off means off** — the existing exclusion store (`ontology/visibility.py`), now with a whole-schema entry.
+   Enforced at three places, not in callers: the SQL door (`db.connection._security_pre`) refuses any
+   statement naming an excluded table — CTEs included, the platform's own internal probes included, before
+   their early return — with the reason, and the agent's repair loop is told to answer without it; every
+   connector built by `open_connection` hands out schema text without the excluded tables (and
+   `render_raw_schema` never counts or describes them); the explorer never lists them and never fans out to an
+   excluded schema. A person's own reads pass: the SQL editor, the query builder, the Catalog's sample and
+   column reads. Turning one off drops the cached schema text at once.
+3. **Maturity** — `aughor/explorer/maturity.py`, from stores only. Structure: how far the structure job got.
+   Questions: the question list's cells asked, or 100% when the last two runs found almost nothing new; "not
+   explored — raw" for a layer the platform does not explore. Time: half for approved metrics having dates,
+   half for each date grain's newest settled period read. Drawn as three bars and a number in the Catalog
+   tree (each schema and table), on each schema's and table's strip, and beside the scope picker.
+4. **The runner** — `aughor/explorer/continuous.py` plans every dataset of every connection on its own
+   (`next_job`, pure): a new dataset; a changed fingerprint (structure, then the gaps it opened); an
+   interrupted run (resumed on its own only where the layer asks questions); a run its budget stopped (a day
+   later — and a heartbeat's budget kill is now told from a person's stop by the kernel's own stop reason);
+   a failure (retried after 1, 2, 4, 8 days, then left to a person); first questions once a layer that asks is
+   set; a reopen; the question list's gaps, at most daily, until mature. An automatic re-run asks only the
+   uncovered cells (`gaps_only`), never the model's free curiosity loop, which runs on a person's Start, a
+   first run and a reopen. The structure job (`structure_only`) stops before anything that calls a model —
+   tested with every model door refusing. The dataset fingerprint is stamped at profiling, and asked
+   questions are kept across schema changes, so a second run is shorter. **Watch** — `explorer/watch.py`
+   reads each due grain's newest settled period through the Briefing's own measurement, SQL only; a settled
+   figure that moved 10% or more reopens the questions. Reopens are kept per dataset in
+   `explorer/program.py`, apart from the run's own state, which a running explorer writes back whole.
+   Approving a metric reopens its dataset.
+5. **Budgets** — `aughor/explorer/budget.py`: the organisation's (Settings ▸ Organization ▸ Exploration) and
+   the connection's (Catalog ▸ the connection), per calendar month, in the model tokens the exploration jobs
+   recorded; the tighter holds. It governs the platform's own initiative only — a person's Start always runs.
+   A held run says so on the dataset, in the Explorer status and in the Catalog. Spend goes to the most
+   valuable first: a reopen, first questions, a new dataset, a schema change, then gaps, each ranked by the
+   approved metrics that read the dataset; at most two model-spending runs start per check.
+
+**Not built**, said rather than implied:
+- Lineage as a sign (a dbt manifest's folders, a view over another table) and use beyond approved metrics.
+- "One entity, several layers": findings are not yet restricted to the gold copy of an entity that also has
+  raw and cleansed copies.
+- Explaining a move along the known dimensions: a real move reopens the dataset's questions instead.
+- Two reopen events: a new category value in a known dimension, and a question the platform could not ground.
+- Raw's pipeline health is its structure job (profiles, row counts, the fingerprint); no health findings yet.
+- A run is not capped at what is left of the month: the check holds a run once the budget is spent, so one run
+  can overshoot by up to its own run budget (the Scout charter's, 200,000 tokens by default).
+- Ranking by what people ask about.

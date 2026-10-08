@@ -85,6 +85,9 @@ keep it; frontend identifiers and every user-visible string do not.
 | **Run** | One execution of anything | session, episode (a step *inside* a run is a **step**) |
 | **Trace** | The telemetry kept ABOUT one run — the `session_events` it wrote, reconstructed | run (a trace is the record, not the execution) |
 | **Trajectory** | One run's trace with its steps' tool, arguments and results, its answer, and the reward attached to it — the one record the exporters read (Arc TJ, ROADMAP §3.47). A trace without a reward is not a trajectory | episode; rollout (a rollout is the act of producing one or more trajectories for one problem, not the record) |
+| **Layer** | What a dataset — a schema or a table — is for: Business, Integration, Raw, Reference, Uploads or System. Proposed from its signs with the evidence, set by a person; it decides what the Explorer does with the dataset on its own initiative (`aughor/ontology/dataset_layers.py`; the exploration principles §5) | role (a metric binding's and a person's access), tier, zone, "medallion" |
+| **Maturity** | Three readings of a dataset — Structure, Questions, Time — each a share or "does not apply" with the reason, drawn as three vertical bars and a number (`aughor/explorer/maturity.py`) | coverage (the ontology's mapped share of tables), freshness |
+| **Off (for analysis)** | A schema or table a person turned off: never explored, never queried by Investigation or Quick analysis; the SQL editor still reads it. Stored as an exclusion with its reason (`ontology/visibility.py`) | hidden, disabled, deleted |
 | **Segment** | A saved, named filter over an entity's rows | ObjectSet |
 | **Query template** | A reusable governed SQL template | OntologyAction |
 

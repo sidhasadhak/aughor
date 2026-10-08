@@ -664,7 +664,33 @@ def transition_metric(name: str, req: TransitionRequest):
     _restate_briefings(req.connection)
     audit = {**audit, "connection": req.connection, "schema_name": home_schema(m)}
     Ledger.default().emit("metric.governance", audit)
+    if updated.get("status") == "approved":
+        _reopen_questions(req.connection, home_schema(m), f"{m.label or name} was approved")
     return {"metric": updated, "audit": audit}
+
+
+def _reopen_questions(conn_id: Optional[str], schema: Optional[str], why: str) -> None:
+    """A newly approved metric is a named event that reopens its dataset's questions (exploration
+    principles §3): the next check asks them, the model's curiosity included, within the budget. A
+    metric promoted to the connection reopens every dataset of it."""
+    if not conn_id:
+        return
+    try:
+        from aughor.explorer import program
+        from aughor.explorer import store as expl_store
+        from aughor.semantic.metrics import ALL_DATASETS
+        keys = expl_store.schema_run_keys(conn_id)
+        if not keys:
+            targets = [conn_id]
+        elif schema and schema != ALL_DATASETS:
+            targets = [k for k in keys if k == f"{conn_id}__{schema}"] or [conn_id]
+        else:
+            targets = keys
+        for k in targets:
+            program.reopen(k, why)
+    except Exception as exc:  # noqa: BLE001 — the approval stands; the reopen is the explorer's to miss
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an approved metric could not reopen its dataset's questions", counter="metrics.reopen")
 
 
 def _trail(name: str, connection: Optional[str] = None, schema: Optional[str] = None) -> list[dict]:

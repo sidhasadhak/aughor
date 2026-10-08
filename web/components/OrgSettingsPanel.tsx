@@ -260,6 +260,31 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
           be two places to set the same three fields, one of which cannot differ. */}
       {scope === "app" && multiTenant && <OrgByokSection />}
 
+      {/* The exploration principles §7 — the organisation's monthly budget for what the Explorer spends on its
+          own initiative. A connection may set its own in the Catalog; the tighter holds. */}
+      {scope === "app" && (
+        <div>
+          <div className="aug-label" style={{ marginBottom: 10 }}>Exploration</div>
+          <div style={gridStyle}>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <label style={labelStyle} htmlFor="org-exploration-budget">Monthly budget (model tokens)</label>
+              <Input id="org-exploration-budget" inputMode="numeric" placeholder="none"
+                value={s.exploration_monthly_tokens ? String(s.exploration_monthly_tokens) : ""}
+                onChange={(e) => {
+                  setSaved(false);
+                  const n = Number(e.target.value.replace(/[, ]/g, ""));
+                  setS((prev) => ({ ...prev, exploration_monthly_tokens: Number.isFinite(n) && n > 0 ? Math.round(n) : 0 }));
+                }} />
+            </div>
+          </div>
+          <div style={hintStyle}>
+            What the Explorer spends on its own initiative each month, across every connection. A connection may
+            set its own in the Catalog; the tighter holds, and a held run says so. A person&apos;s own Start is never
+            held. Empty = no budget.
+          </div>
+        </div>
+      )}
+
       {/* DE-2b — what an outside agent (MCP) may do here. Every install has the policy, so it is not
           gated on multi-tenancy; it saves itself, like the BYOK block, because it is its own row. */}
       {scope === "app" && <AgentPolicySection />}

@@ -68,6 +68,13 @@ def current_charter_id() -> Optional[str]:
     return _current_charter.get()
 
 
+def stop_reason(job_id: Optional[str] = None) -> str:
+    """Why the kernel cancelled this job (the current one by default), or "" — readable inside the run
+    while it unwinds, so a heartbeat's budget kill is not filed as somebody's stop."""
+    jid = job_id or _current_job.get()
+    return _stop_reasons.get(jid, "") if jid else ""
+
+
 def run_attribution() -> tuple[str, str]:
     """``(job_id, charter_id)`` for the run this code is executing under, ('','') outside
     one. Degrades to empty rather than raising — attribution must never break a run."""
