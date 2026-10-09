@@ -298,6 +298,10 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
     not_held = images.not_held(home.connection_id, spec)
     if not_held:
         return Kept(REFUSED, sentences=tuple(not_held))
+    from aughor.cockpit import pieces
+    unresolved = pieces.not_resolved(home.connection_id, spec)
+    if unresolved:
+        return Kept(REFUSED, sentences=tuple(unresolved))
     copies = twin_cards(verdict.cards, before.get("cards") or [])
     if copies:
         return Kept(REFUSED, sentences=tuple(copies))

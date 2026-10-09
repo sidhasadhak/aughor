@@ -7980,8 +7980,10 @@ export interface paths {
         /**
          * Execute Action
          * @description Run one declared action. A criterion failure returns 422 with the authored message; a
-         *     high-risk action needing approval returns 428 (approve via POST /approvals/allow, then retry);
-         *     success returns 200 with the dispatch outcome.
+         *     high-risk action needing approval returns 428 (approve via POST /approvals/allow, then retry) —
+         *     or, asked with ``propose_if_gated`` while `ontology.cockpit_pieces` is on, is staged for a person
+         *     and returns 200 with ``status: proposed`` and the proposal's id (Arc OC-4); success returns 200
+         *     with the dispatch outcome.
          */
         post: operations["execute_action_kinetic_actions__action_id__execute_post"];
         delete?: never;
@@ -10245,6 +10247,29 @@ export interface paths {
         get: operations["get_object_catalog_objects_catalog_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/objects/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Object Listing
+         * @description Arc OC-4 — one page of objects (ROADMAP §3.56): an entity, or a segment of it, with the columns asked for, sorted
+         *     with the key breaking ties, from `offset`, at most 200 — and `total`, the objects the set holds. Compiled by the
+         *     object door's own compiler over the SERVED ontology, an accepted edit read like a column, and run through the guard
+         *     battery. `path` is `listed`, or `refused` with the reason and the names that exist. No model call.
+         */
+        post: operations["post_object_listing_objects_list_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -17270,6 +17295,16 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             };
+            /**
+             * Propose If Gated
+             * @default false
+             */
+            propose_if_gated: boolean;
+            /**
+             * Reasoning
+             * @default
+             */
+            reasoning: string;
         };
         /**
          * ExhibitTableRequest
@@ -18358,6 +18393,45 @@ export interface components {
             value_path: string;
             /** Values */
             values?: unknown[];
+        };
+        /**
+         * ObjectListing
+         * @description Arc OC-4 — `objects(entity).filter(segment, filters).list(columns).sort(order_by).page(offset, limit)`: one
+         *     row per object, its key first, compiled by the same compiler as every object read — the segment, the filters, an
+         *     accepted edit read as a property — with the total the object set holds.
+         */
+        ObjectListing: {
+            /** Columns */
+            columns?: string[];
+            /**
+             * Descending
+             * @default false
+             */
+            descending: boolean;
+            /** Entity */
+            entity: string;
+            /** Filters */
+            filters?: components["schemas"]["ObjectFilter"][];
+            /**
+             * Limit
+             * @default 50
+             */
+            limit: number;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /**
+             * Order By
+             * @default
+             */
+            order_by: string;
+            /**
+             * Segment
+             * @default
+             */
+            segment: string;
         };
         /** ObjectMeasure */
         ObjectMeasure: {
@@ -39217,6 +39291,44 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_object_listing_objects_list_post: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+                /** @description False returns the compiled SQL and plan without running it */
+                execute?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObjectListing"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

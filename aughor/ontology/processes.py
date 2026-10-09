@@ -36,6 +36,7 @@ from aughor.ontology.derived import (
     lag_name,
     late_name,
     overdue_filters,
+    overdue_name,
     process_derivations,
     promise_filters,
     promise_noun,
@@ -748,6 +749,11 @@ def measure_override_processes(connection_id: str, schema_name: Optional[str], d
 # ── what a person and an agent read ─────────────────────────────────────────────────────────
 
 
+def _pieces_on() -> bool:
+    from aughor.kernel.flags import flag_enabled
+    return flag_enabled("ontology.cockpit_pieces")
+
+
 def describe_process(graph: OntologyGraph, process: Process) -> dict:
     """One process as the map's panel and the API show it: each stage with its anchor and how many objects reach it,
     each transition timed, each promise with its counts, flags and the names it derives."""
@@ -781,6 +787,9 @@ def describe_process(graph: OntologyGraph, process: Process) -> dict:
                               "breach_rate": promise.breach_rate, "as_of": promise.as_of, "verified": promise.verified,
                               "flags": list(promise.flags), "note": promise.note,
                               "segment": late_name(stage), "metric": rate_name(stage)}
+            if _pieces_on():
+                # Arc OC-4 — the segment a process board's open-and-overdue count lists (`overdue_<noun>`).
+                row["promise"]["overdue_segment"] = overdue_name(stage)
         stages.append(row)
     return {"id": process.id, "display_name": process.display_name or process.id, "description": process.description,
             "entity": entity.api_name if entity is not None else process.entity, "entity_id": process.entity,

@@ -30,6 +30,7 @@ import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CockpitArrange, type CardLine } from "@/components/cockpit/CockpitArrange";
 import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/ComposedCockpit";
 import { FindingPicker } from "@/components/cockpit/FindingPicker";
+import { OntologyPieceComposer } from "@/components/cockpit/OntologyPieceComposer";
 import { METRICS_COCKPIT, MetricsCockpit } from "@/components/cockpit/MetricsCockpit";
 import { PeriodPicker, choiceName } from "@/components/cockpit/PeriodPicker";
 import { person as personName, type ImageStamp } from "@/components/cockpit/StaticTile";
@@ -52,7 +53,7 @@ import {
 } from "@/lib/api";
 import { MAX_CAPTION, MAX_NOTE, type Size } from "@/lib/cockpit/catalog";
 import {
-  cardsPlaced, editNote, placeCard, placeImage, placeNote, recaption, resize, sectionsOf, takeOff, takeOffCard,
+  cardsPlaced, editNote, placeCard, placeImage, placeNote, placePiece, recaption, resize, sectionsOf, takeOff, takeOffCard,
   type CockpitSpec,
 } from "@/lib/cockpit/edit";
 import { hostStateOf } from "@/lib/cockpit/hostStatus";
@@ -496,7 +497,7 @@ function SharedCockpitView({ connectionId, schema, owner, cockpitId, range, chos
         </Button>
       </div>
       <ComposedCockpit spec={data.cockpit.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}
-        images={images} range={range} schema={schema} />
+        images={images} range={range} schema={schema} connectionId={connectionId} />
     </div>
   );
 }
@@ -531,6 +532,9 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [imaging, setImaging] = useState(false);
   // Any recorded finding of the connection, as a card (B3); who the cockpit is published to (B5).
   const [picking, setPicking] = useState(false);
+  // Arc OC-4 — a piece bound to the ontology, placed by hand, while `ontology.cockpit_pieces` is on.
+  const [piecesOn, setPiecesOn] = useState(false);
+  const [placing, setPlacing] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [shared, setShared] = useState<SharedCockpitListed[]>([]);
   const [tick, setTick] = useState(0);
@@ -544,8 +548,9 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
 
   useEffect(() => {
     let alive = true;
-    getSystemFlags().then(f => { if (alive) setRangesOn(!!f["briefing.ranges"]?.value); })
-      .catch(() => { if (alive) setRangesOn(false); });
+    getSystemFlags().then(f => {
+      if (alive) { setRangesOn(!!f["briefing.ranges"]?.value); setPiecesOn(!!f["ontology.cockpit_pieces"]?.value); }
+    }).catch(() => { if (alive) { setRangesOn(false); setPiecesOn(false); } });
     return () => { alive = false; };
   }, []);
 
@@ -658,7 +663,9 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
       "Resized. The same thing, with more or less room; nothing was re-measured."),
     onEditNote: (key: string, text: string) => edit(s => editNote(s, key, text), "a note's words changed by hand", "Kept, and stamped with your name and today."),
     onRecaption: (key: string, caption: string) => edit(s => recaption(s, key, caption), "an image's caption changed by hand", "Kept."),
-  }), [takeOffOne, refreshOne, onOpenSource, onEvidence, edit]);
+    onPlaceTable: piecesOn ? (entity: string, segment: string) => edit(s => placePiece(s, "ObjectTable", { entity, segment, size: "wide" }).spec,
+      "an objects table placed from a process board", "Placed: the objects still waiting and already past the promise.") : undefined,
+  }), [takeOffOne, refreshOne, onOpenSource, onEvidence, edit, piecesOn]);
   const host = useMemo(() => hostStateOf(data?.range.status ?? "standing", cards), [data?.range.status, cards]);
   // Where each image's bytes are read from: the API, with this reader's own access.
   const images = useMemo<Record<string, ImageStamp>>(() => Object.fromEntries(
@@ -812,6 +819,13 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                   <Icon name="plus" /> Finding
                 </Button>
               )}
+              {!arranging && piecesOn && (
+                <Button size="xs" variant="ghost" disabled={busy || placing} data-testid="cockpit-piece-new"
+                  title="A process board, an objects table, an object detail or an action button — each reads what the ontology declares, by id."
+                  onClick={() => { setPlacing(true); setComposing(false); setNoting(false); setImaging(false); setPicking(false); }}>
+                  <Icon name="plus" /> From the ontology
+                </Button>
+              )}
               {!arranging && (
                 <Button size="xs" variant={kept.published_to?.length ? "secondary" : "ghost"} disabled={busy} data-testid="cockpit-publish-open"
                   aria-expanded={publishing} title="Share this cockpit, as it stands, with a group you belong to or a role you hold."
@@ -910,6 +924,11 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                 <ImageComposer connectionId={connectionId} busy={busy} onClose={() => setImaging(false)}
                   onPlace={(objectId, caption) => { edit(s => placeImage(s, objectId, caption), "an image uploaded by hand", "Placed. The upload is stamped with your name and the date."); setImaging(false); }} />
               )}
+              {placing && piecesOn && (
+                <OntologyPieceComposer connectionId={connectionId} schema={schema} spec={kept.spec as CockpitSpec} busy={busy}
+                  onClose={() => setPlacing(false)}
+                  onPlace={(change, note, said) => { edit(change, note, said); setPlacing(false); }} />
+              )}
               {picking && (
                 <FindingPicker connectionId={connectionId} schema={schema} busy={busy}
                   placed={new Set(cards.map(c => findingOfCard(c.card)).filter(Boolean))}
@@ -929,7 +948,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               <div aria-busy={reading || undefined}
                 style={{ opacity: reading ? 0.45 : 1, transition: "opacity 120ms ease-out", pointerEvents: reading ? "none" : undefined }}>
                 <ComposedCockpit spec={kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}
-                  images={images} range={range} schema={schema} />
+                  images={images} range={range} schema={schema} connectionId={connectionId} />
               </div>
             </>
           )}

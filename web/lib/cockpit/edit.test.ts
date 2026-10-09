@@ -8,8 +8,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  cardsPlaced, moveCardTo, moveCardToNewSection, moveSectionTo, moveSectionToNewTab, moveWithin,
-  placeCard, rename, sectionsOf, tabsOf, takeOff, takeOffCard, type CockpitSpec,
+  addAction, cardsPlaced, moveCardTo, moveCardToNewSection, moveSectionTo, moveSectionToNewTab, moveWithin,
+  placeCard, placePiece, rename, sectionsOf, tabsOf, takeOff, takeOffCard, type CockpitSpec,
 } from "@/lib/cockpit/edit";
 import { checkCockpitSpec } from "@/lib/cockpit/rules";
 
@@ -153,5 +153,40 @@ describe("each edit", () => {
     s = takeOff(s, "k");
     expect(checkCockpitSpec(s).valid).toBe(false);
     expect(checkCockpitSpec(s).issues.map(i => i.message).join(" ")).toContain("holds nothing");
+  });
+});
+
+describe("the ontology's pieces (Arc OC-4)", () => {
+  const built = () => {
+    const first = sectionsOf(premise())[0].key;
+    let { spec, key: board } = placePiece(premise(), "ProcessBoard", { process: "order_fulfilment", size: "full" }, first);
+    const t = placePiece(spec, "ObjectTable", { entity: "Order", segment: "overdue_dispatch", columns: [], sort: null }, first);
+    const d = placePiece(t.spec, "ObjectDetail", { follows: t.key }, first);
+    spec = addAction(d.spec, d.key as string, "flag_for_review");
+    return { spec, board: board as string, table: t.key as string, detail: d.key as string };
+  };
+
+  it("places a board, a table and a detail that follows it, with a declared action's button — and the rules accept it", () => {
+    const { spec, board, table, detail } = built();
+    accepted(spec);
+    expect(spec.elements[table].props).toEqual({ entity: "Order", segment: "overdue_dispatch" });   // empties left out
+    expect(spec.elements[detail].props).toEqual({ follows: table });
+    const [button] = children(spec, detail);
+    expect(spec.elements[button]).toEqual({ type: "ActionButton", props: { action: "flag_for_review" }, children: [] });
+    expect(addAction(spec, detail, "flag_for_review")).toEqual(spec);                               // once
+    expect(spec.elements[board].props.process).toBe("order_fulfilment");
+  });
+
+  it("taking a table off takes the detail that follows it, and the detail's buttons", () => {
+    const { spec, table, detail } = built();
+    const [button] = children(spec, detail);
+    const after = accepted(takeOff(spec, table));
+    for (const k of [table, detail, button]) expect(after.elements[k]).toBeUndefined();
+  });
+
+  it("taking the last button off leaves the detail standing, empty", () => {
+    const { spec, detail } = built();
+    const after = accepted(takeOff(spec, children(spec, detail)[0]));
+    expect(after.elements[detail]?.children).toEqual([]);
   });
 });

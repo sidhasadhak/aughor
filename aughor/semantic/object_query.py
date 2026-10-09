@@ -150,10 +150,11 @@ class ObjectQuery(BaseModel):
 
 
 class ObjectListing(BaseModel):
-    """Arc OC-4 — `objects(object_type).filter(segment, filters).list(columns).sort(order_by).page(offset, limit)`: one
+    """Arc OC-4 — `objects(entity).filter(segment, filters).list(columns).sort(order_by).page(offset, limit)`: one
     row per object, its key first, compiled by the same compiler as every object read — the segment, the filters, an
     accepted edit read as a property — with the total the object set holds."""
-    object_type: str
+    #: The entity listed, by its id or api name.
+    entity: str
     segment: str = ""
     filters: list[ObjectFilter] = Field(default_factory=list)
     #: Property paths through to-one links (`status`, `user.country`). Empty: the type's title and its first properties.
@@ -224,9 +225,11 @@ class CompiledObjectListing:
     links: list[dict]
     caveats: list[str] = field(default_factory=list)
     overlay: list[dict] = field(default_factory=list)
+    #: The segment read, in words — its description, from the declaration that derives it or the segment's own.
+    segment_said: str = ""
 
     def to_dict(self) -> dict:
-        return {"path": "listed", "sql": self.sql, "count_sql": self.count_sql, "dialect": self.dialect,
+        return {"path": "listed", "segment_said": self.segment_said, "sql": self.sql, "count_sql": self.count_sql, "dialect": self.dialect,
                 "object_type": self.object_type, "type_id": self.type_id, "key": self.key, "title": self.title,
                 "columns": list(self.columns), "plan": list(self.plan), "links": list(self.links),
                 "caveats": list(self.caveats), "overlay": list(self.overlay)}
@@ -370,6 +373,23 @@ def find_property(entity: OntologyEntity, name: str) -> Optional[EntityProperty]
 
 def _type_word(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
+def declared_edit_properties(graph: OntologyGraph, entity: OntologyEntity) -> dict[str, tuple[str, str, bool]]:
+    """Arc OC-4 — each property a declared action's edit writes on ``entity``'s objects, whether or not an edit has
+    been accepted yet: ``{property (lower): (property, action id, boolean)}`` — boolean when the value it writes reads
+    true or false. A name the type reads from its source is never one."""
+    out: dict[str, tuple[str, str, bool]] = {}
+    for action in graph.declared_actions():
+        for edit in action.edits:
+            param = next((x for x in action.params if x.name == edit.object and x.kind == "object"), None)
+            if param is None or find_property(entity, edit.property) is not None:
+                continue
+            if _type_word(param.object_type) not in {_type_word(entity.api_name), _type_word(entity.id)}:
+                continue
+            out.setdefault(edit.property.lower(),
+                           (edit.property, action.id, edit.value.strip().lower() in ("true", "false")))
+    return out
 
 
 def overlay_properties(entity: OntologyEntity, overlay: Optional[list]) -> dict[str, list]:
@@ -716,6 +736,8 @@ class _Compiler:
         #: column, first or last, and the condition of the rows the measure reads — joined at assembly (`period_joins`).
         self._periods: dict[tuple, str] = {}
         self._period_specs: list[tuple[str, str, str, str]] = []
+        #: Arc OC-4 — the segment the query read, in words (`CompiledObjectListing.segment_said`).
+        self.segment_said = ""
 
     def _alias(self, prefix: str) -> str:
         self._n += 1
@@ -1564,6 +1586,7 @@ class _Compiler:
             self.plan.append(f"segment {seg.id} (verified): every {scope.entity.id}")
             return ""
         self.plan.append(f"segment {seg.id} (verified): {seg.filter_sql}")
+        self.segment_said = seg.description or seg.display_name or seg.id
         return _qualify(seg.filter_sql, scope.alias, self.dialect, what=f"segment {seg.id}")
 
     # ── measures ──
@@ -1687,6 +1710,7 @@ class _Compiler:
             raise ObjectQueryRefused(f"segment '{d.name}' on {scope.entity.id} is derived from {d.source}, which "
                                      f"{d.why_not}")
         self.plan.append(f"segment {d.name} (derived from {d.source}, measured): {d.description}")
+        self.segment_said = d.description
         self.caveats.extend(c for c in d.caveats if c not in self.caveats)
         return self.where(scope, self._derived_filters(d, d.filters, "segment"))
 
@@ -2043,7 +2067,7 @@ class _Compiler:
         """Arc OC-4 — one page of the objects the query's segment and filters admit: the key, then each column read
         through to-one links (an accepted edit read like any property), sorted with the key breaking ties; and the
         count of the objects the set holds, under the same conditions."""
-        anchor = self.entity(listing.object_type)
+        anchor = self.entity(listing.entity)
         scope = _Scope(entity=anchor, alias="t0")
         self.home, self.top = entity_source(self.g, anchor), scope
         b = anchor.backing
@@ -2064,8 +2088,21 @@ class _Compiler:
         title = "" if shown["is_key"] else shown["property"]
         k = quote_ident(key)
         select, names, columns = [f"t0.{k} AS {k}"], [key], []
+        unset = declared_edit_properties(self.g, anchor)
         for path in self.listed_paths(scope, anchor, listing.columns, key, title):
             if path.strip().lower() == key.lower():
+                continue
+            pending = unset.get(path.strip().lower())
+            if pending is not None and not overlay_properties(anchor, self.overlay_edits).get(path.strip().lower()):
+                # A property a declared action writes, which no accepted edit has set yet: listed, and empty.
+                prop, action_id, boolean = pending
+                name = _output_name(names, prop)
+                select.append(f"CAST(NULL AS {'BOOLEAN' if boolean else 'VARCHAR'}) AS {quote_ident(name)}")
+                names.append(name)
+                columns.append({"name": name, "path": prop, "label": prop,
+                                "type": "BOOLEAN" if boolean else "VARCHAR", "edited": True})
+                self.plan.append(f"column {prop}: set by the declared action {action_id} — no {anchor.id} carries "
+                                 "it yet")
                 continue
             col, p, hops = self.column(scope, path, "column")
             end = hops[-1].target if hops else anchor
@@ -2100,7 +2137,7 @@ class _Compiler:
         return CompiledObjectListing(sql=self.render(sql), count_sql=self.render(count_sql), dialect=self.dialect,
                                      object_type=anchor.api_name, type_id=anchor.id, key=key, title=title,
                                      columns=columns, plan=self.plan, links=self.links, caveats=self.caveats,
-                                     overlay=self.overlay)
+                                     overlay=self.overlay, segment_said=self.segment_said)
 
     def listed_paths(self, scope: _Scope, anchor: OntologyEntity, asked: list[str], key: str, title: str) -> list[str]:
         """The columns a listing reads: those asked for, each of which must resolve; or, when none is asked for, the
@@ -2323,7 +2360,7 @@ def compile_object_listing(listing: ObjectListing | dict, graph: Optional[Ontolo
             raise ObjectQueryRefused(f"the listing is malformed — {detail}") from exc
     if graph is None or not graph.entities:
         raise ObjectQueryRefused("no ontology is built for this scope — there are no entities to list")
-    query = ObjectQuery(object_type=listing.object_type, segment=listing.segment, filters=listing.filters,
+    query = ObjectQuery(object_type=listing.entity, segment=listing.segment, filters=listing.filters,
                         measures=[ObjectMeasure(agg="count")])
     return _Compiler(graph, query, (dialect or "duckdb").lower(), 1, overlay).build_listing(listing)
 

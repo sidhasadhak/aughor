@@ -154,6 +154,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # governed pipeline — one identifier from the existing API, no prose. Both say "action".
          "tests/unit/test_action_undo_and_gateway_writes.py",
          "aughor/actions/authority.py",
+         # Arc OC-4 (2026-10-09), the same ground: the cockpit pieces' suite and the listing suite build
+         # `KineticAction` fixtures on the graph's `kinetic_actions`, monkeypatch `routers.kinetic`'s graph and
+         # press the frozen `/kinetic-actions/{id}/execute` door — identifiers of the existing API, no prose. The
+         # product code they cover says "declared action" and reads `declared_actions()`.
+         "tests/unit/test_cockpit_pieces.py",
+         "tests/unit/test_object_listing.py",
          # The close-out's C6 (2026-10-05), the same ground: the L5 agent (`actions/autonomy.py`) imports
          # the one executor, `execute_kinetic_action`, to run the action it chose through the governed
          # pipeline, and its suite builds `KineticAction` fixtures and drives that executor. Both say

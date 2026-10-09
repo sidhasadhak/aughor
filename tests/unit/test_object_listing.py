@@ -60,7 +60,7 @@ def total(db, compiled) -> int:
 
 
 def listing(graph, edits=None, **body):
-    return compile_object_listing({"object_type": "order", **body}, graph, overlay=edits)
+    return compile_object_listing({"entity": "order", **body}, graph, overlay=edits)
 
 
 # ── a page ──────────────────────────────────────────────────────────────────────────────────
@@ -119,6 +119,33 @@ def test_an_accepted_edit_is_listed_like_a_column_and_says_so(db, graph):
     assert total(db, flagged) == 1
 
 
+def _flag_action(graph):
+    from aughor.ontology.models import ActionParameter, KineticAction, ObjectEdit
+    graph.kinetic_actions["flag_for_review"] = KineticAction(
+        id="flag_for_review", kind="annotate", risk="low", object_type="Order",
+        params=[ActionParameter(name="order", kind="object", object_type="Order"),
+                ActionParameter(name="reason", required=False, default_value="")],
+        edits=[ObjectEdit(object="order", property="flagged_for_review", value="true", note="{reason}")])
+
+
+def test_a_property_a_declared_action_writes_is_listed_empty_before_any_edit_sets_it(db, graph):
+    _flag_action(graph)
+    page = listing(graph, columns=["status", "flagged_for_review"], limit=3)
+    assert page.columns[-1] == {"name": "flagged_for_review", "path": "flagged_for_review",
+                                "label": "flagged_for_review", "type": "BOOLEAN", "edited": True}
+    assert [r[2] for r in run(db, page.sql)] == [None, None, None]
+    assert "column flagged_for_review: set by the declared action flag_for_review — no Order carries it yet" in page.plan
+    second = run(db, "SELECT order_id FROM ecommerce.orders ORDER BY order_id LIMIT 2")[1][0]
+    edited = listing(graph, [_edit(second)], columns=["flagged_for_review"], limit=2)
+    assert [r[1] for r in run(db, edited.sql)][1].lower() == "true" and edited.overlay      # the edit, once accepted
+
+
+def test_without_a_declaration_or_an_edit_the_name_is_refused_as_before(graph):
+    with pytest.raises(ObjectQueryRefused) as exc:
+        listing(graph, columns=["flagged_for_review"])
+    assert "no property 'flagged_for_review'" in exc.value.reason
+
+
 # ── refused, with why ───────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("body, says", [
@@ -144,6 +171,7 @@ def test_the_overdue_segment_lists_exactly_what_the_promise_counted(db, graph, m
     assert total(db, page) == delivery.open_overdue
     assert any("overdue_delivery (derived from the delivery promise of process order_fulfilment" in line
                for line in page.plan)
+    assert page.segment_said.startswith("the Order objects that have not reached delivered and are already past")
     assert all(r[2] is None and r[1] is not None for r in run(db, page.sql))      # shipped, not delivered
 
 
@@ -184,7 +212,7 @@ def test_the_door_lists_a_page_with_its_total_and_the_plan_over_http(tmp_path, m
     monkeypatch.setattr(C, "open_connection_for_with_schema", lambda *_a, **_k: open_connection(
         "duckdb", str(path), schema_name="ecommerce", connection_id="listing-door-t"))
     params = {"connection_id": "listing-door-t", "schema_name": "ecommerce"}
-    body = {"object_type": "order", "columns": ["status"], "filters": [{"path": "status", "value": "delivered"}],
+    body = {"entity": "order", "columns": ["status"], "filters": [{"path": "status", "value": "delivered"}],
             "order_by": "order_id", "descending": True, "limit": 3, "offset": 1}
     r = client.post("/objects/list", params=params, json=body)
     assert r.status_code == 200, r.text
@@ -197,5 +225,5 @@ def test_the_door_lists_a_page_with_its_total_and_the_plan_over_http(tmp_path, m
     con.close()
     assert [tuple(row) for row in out["rows"]] == [tuple(row) for row in want] and out["total"] == n
     assert out["plan"][0].startswith("list(order)") and out["error"] in ("", None)
-    refused = client.post("/objects/list", params=params, json={"object_type": "order", "columns": ["nope"]}).json()
+    refused = client.post("/objects/list", params=params, json={"entity": "order", "columns": ["nope"]}).json()
     assert refused["path"] == "refused" and "no property 'nope'" in refused["refused"]

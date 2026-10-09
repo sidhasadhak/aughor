@@ -36,14 +36,15 @@ describe("the catalog", () => {
   it("publishes its vocabulary for the server to read", () => {
     expect(vocabulary()).toEqual({
       version: COCKPIT_VOCABULARY_VERSION,
-      components: ["Cockpit", "Tabs", "Tab", "Section", "Card", "Note", "Image"],
+      components: ["Cockpit", "Tabs", "Tab", "Section", "Card", "Note", "Image",
+                   "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton"],
       tones: ["good", "warn", "bad", "info", "neutral"],
       sizes: ["small", "wide", "tall", "large", "full", "hero"],
       range_statuses: ["standing", "final", "provisional", "to_date"],
       card_statuses: ["within", "over", "unmeasured", "withheld"],
       limits: { elements: MAX_ELEMENTS, tabs: MAX_TABS, cards: MAX_CARDS },
     });
-    expect(COCKPIT_VOCABULARY_VERSION).toBe(2);
+    expect(COCKPIT_VOCABULARY_VERSION).toBe(3);
   });
 });
 
@@ -412,5 +413,49 @@ describe("what a condition may read", () => {
   it("nor may it read a repeat's item, since there is no repeat", () => {
     expect(refused(on("card-net", { $item: "status", eq: "over" })))
       .toMatch(/The condition on "card-net" reads "\$item", "eq"\. A condition reads "\$state" and nothing else/);
+  });
+});
+
+describe("the ontology's pieces (Arc OC-4)", () => {
+  const withPieces = (s: Spec, detail: Record<string, unknown> = { follows: "t1" }) => {
+    const section = Object.keys(s.elements).find(k => s.elements[k].type === "Section") as string;
+    s.elements.b1 = { type: "ProcessBoard", props: { process: "order_fulfilment" }, children: [] };
+    s.elements.t1 = { type: "ObjectTable", props: { entity: "Order", segment: "overdue_dispatch", columns: ["status"] }, children: [] };
+    s.elements.d1 = { type: "ObjectDetail", props: detail, children: ["a1"] };
+    s.elements.a1 = { type: "ActionButton", props: { action: "flag_for_review" }, children: [] };
+    (s.elements[section].children as string[]).push("b1", "t1", "d1");
+  };
+
+  it("accepts a board, a table, a detail that follows it and a button in the detail", () => {
+    const s = premise();
+    withPieces(s);
+    expect(checkCockpitSpec(s).issues).toEqual([]);
+  });
+
+  it("refuses a detail that follows anything but a table in the same cockpit", () => {
+    expect(refused(s => withPieces(s, { follows: "b1" })))
+      .toContain('The object detail "d1" follows "b1", which is not an objects table in this cockpit.');
+  });
+
+  it("refuses an action button anywhere but in a detail", () => {
+    expect(refused(s => {
+      withPieces(s);
+      s.elements.d1.children = [];
+      const section = Object.keys(s.elements).find(k => s.elements[k].type === "Section") as string;
+      (s.elements[section].children as string[]).push("a1");
+    })).toContain('holds "a1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail.');
+  });
+
+  it("refuses an expression where an id belongs, as for every prop", () => {
+    expect(refused(s => { withPieces(s); s.elements.t1.props = { entity: { $state: "/x" } }; }))
+      .toContain("from an expression");
+  });
+
+  it("accepts a detail with no buttons", () => {
+    const s = premise();
+    withPieces(s);
+    s.elements.d1.children = [];
+    delete s.elements.a1;
+    expect(checkCockpitSpec(s).issues).toEqual([]);
   });
 });

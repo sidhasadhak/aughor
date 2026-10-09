@@ -316,7 +316,7 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
     } else if (el.type === "Cockpit" && kinds.filter(k => k === "Tabs").length > 1) {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The cockpit ${q(key)} holds more than one Tabs. It holds one.` });
-    } else if (!PLACED.includes(el.type) && !el.children.length) {
+    } else if (MAY_HOLD[el.type].length && !PLACED.includes(el.type) && !el.children.length) {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The ${el.type.toLowerCase()} ${q(key)} holds nothing. An empty ${el.type} is refused.` });
     }
@@ -356,6 +356,16 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
     }
     for (const prop of clean.has(key) ? READER_TEXT[el.type] ?? [] : []) {
       texts.push({ elementKey: key, prop, text: el.props[prop] as string });
+    }
+  }
+
+  // Arc OC-4 — an object detail follows an objects table in the same cockpit, by its key.
+  for (const [key, el] of sound) {
+    if (el.type !== "ObjectDetail" || !clean.has(key)) continue;
+    const follows = el.props.follows as string;
+    if (sound.get(follows)?.type !== "ObjectTable") {
+      issues.push({ code: "bad_prop", elementKey: key,
+        message: `The object detail ${q(key)} follows ${q(follows)}, which is not an objects table in this cockpit.` });
     }
   }
 

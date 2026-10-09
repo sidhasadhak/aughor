@@ -106,20 +106,29 @@ function settle(s: CockpitSpec): CockpitSpec {
   return s;
 }
 
-/** Take `key` out of its parent; a parent left holding nothing goes too, up to the root. */
+/** Take `key` out of its parent; a container left holding nothing goes too, up to the root. A placed element holds
+ *  only what goes with it — an object detail its action buttons — so deleting one deletes those (Arc OC-4), and one
+ *  left empty stays. */
 function detach(s: CockpitSpec, key: string, andDelete: boolean): void {
   const parent = parentOf(s, key);
   if (parent) s.elements[parent].children = s.elements[parent].children.filter(k => k !== key);
-  if (andDelete) delete s.elements[key];
-  if (parent && parent !== s.root && s.elements[parent].type !== "Card" && s.elements[parent].children.length === 0) {
+  if (andDelete) {
+    if (PLACED.includes(s.elements[key]?.type as never)) for (const child of s.elements[key].children) delete s.elements[child];
+    delete s.elements[key];
+  }
+  if (parent && parent !== s.root && !PLACED.includes(s.elements[parent].type as never) && s.elements[parent].children.length === 0) {
     detach(s, parent, true);
   }
 }
 
-/** Take an element — a card, a section — off the cockpit. */
+/** Take an element — a card, a section — off the cockpit. A table goes with every detail that follows it. */
 export function takeOff(spec: unknown, key: string): CockpitSpec {
   const s = copy(spec);
-  if (key in s.elements && key !== s.root) detach(s, key, true);
+  if (!(key in s.elements) || key === s.root) return settle(s);
+  const followers = s.elements[key].type === "ObjectTable"
+    ? Object.keys(s.elements).filter(k => s.elements[k].type === "ObjectDetail" && s.elements[k].props.follows === key) : [];
+  for (const k of followers) if (k in s.elements) detach(s, k, true);
+  if (key in s.elements) detach(s, key, true);
   return settle(s);
 }
 
@@ -204,6 +213,37 @@ export function placeImage(spec: unknown, objectId: string, caption: string, sec
   const key = freshKey(s, "image");
   s.elements[key] = { type: "Image", props: { object: objectId, caption: said }, children: [] };
   s.elements[target].children.push(key);
+  return s;
+}
+
+/** Arc OC-4 — place a piece bound to the ontology in a section (the first, unless one is named). Returns the spec and
+ *  the new element's key — a detail names the table it follows by that key. An action button goes in a detail
+ *  (`addAction`), never in a section. */
+export function placePiece(
+  spec: unknown, type: "ProcessBoard" | "ObjectTable" | "ObjectDetail", props: Record<string, unknown>, sectionKey?: string,
+): { spec: CockpitSpec; key: string | null } {
+  const s = copy(spec);
+  const target = sectionKey ?? sectionsOf(s)[0]?.key;
+  if (!target || s.elements[target]?.type !== "Section") return { spec: s, key: null };
+  const base = type === "ProcessBoard" ? `board-${props.process}` : type === "ObjectTable"
+    ? `table-${props.segment || props.entity}` : `detail-${props.follows}`;
+  const key = freshKey(s, String(base));
+  const kept = Object.fromEntries(Object.entries(props).filter(([, v]) => v !== undefined && v !== null && v !== ""
+    && !(Array.isArray(v) && !v.length)));
+  s.elements[key] = { type, props: kept, children: [] };
+  s.elements[target].children.push(key);
+  return { spec: s, key };
+}
+
+/** Arc OC-4 — add a declared action's button to an object detail, once. */
+export function addAction(spec: unknown, detailKey: string, actionId: string): CockpitSpec {
+  const s = copy(spec);
+  const detail = s.elements[detailKey];
+  if (!detail || detail.type !== "ObjectDetail" || !actionId) return s;
+  if (detail.children.some(k => s.elements[k]?.type === "ActionButton" && s.elements[k]?.props.action === actionId)) return s;
+  const key = freshKey(s, `action-${actionId}`);
+  s.elements[key] = { type: "ActionButton", props: { action: actionId }, children: [] };
+  detail.children.push(key);
   return s;
 }
 
