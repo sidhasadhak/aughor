@@ -257,6 +257,20 @@ def resolve_objects(action: KineticAction, coerced: dict, resolver: Optional[Obj
 Dispatch = Callable[[KineticAction, dict, str], dict]   # (action, coerced_params, scope/conn_id) -> outcome
 
 
+def _undelivered(what: str, exc: Exception) -> KineticDispatchError:
+    """A call that got no answer, said as what is known about it. Refused before it left — a usage cap, a
+    connection never opened — it was not delivered. Anything after the request went out may have landed,
+    and a retry could do the thing twice, so that is said rather than called a failure."""
+    import httpx
+    from aughor.govern.outbound import OutboundBlocked
+    detail = f"{type(exc).__name__}: {str(exc)[:200]}"
+    if isinstance(exc, (OutboundBlocked, httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout,
+                        httpx.UnsupportedProtocol)):
+        return KineticDispatchError(f"the {what} was not delivered — {detail}")
+    return KineticDispatchError(f"the {what} may have been delivered — no answer came back ({detail}); "
+                                "check the receiving system before running it again")
+
+
 def _dispatch_webhook(se: SideEffect, action: KineticAction, params: dict) -> dict:
     """A self-contained, SSRF-guarded POST — reuses the ActionHub URL guard so a declared
     webhook can never reach a private/internal target.
@@ -270,18 +284,21 @@ def _dispatch_webhook(se: SideEffect, action: KineticAction, params: dict) -> di
     `external_call` and this file did not.
     """
     url = (se.config or {}).get("url", "")
-    from aughor.govern.outbound import external_call
+    from aughor.govern.outbound import OutboundBlocked, external_call
     from aughor.util.url_guard import is_safe_webhook_url
     if not url or not is_safe_webhook_url(url):
         raise KineticDispatchError("webhook url missing or blocked by the SSRF guard")
     import httpx
     body = {"action": action.id, "kind": se.kind, "params": params,
             "config": {k: v for k, v in (se.config or {}).items() if k != "url"}}
-    with external_call("webhook", action.id) as extra:
-        resp = httpx.post(url, json=body, timeout=10.0,
-                          headers=(se.config or {}).get("headers") or {})
-        extra["ok"] = resp.is_success
-        extra["status"] = resp.status_code
+    try:
+        with external_call("webhook", action.id) as extra:
+            resp = httpx.post(url, json=body, timeout=10.0,
+                              headers=(se.config or {}).get("headers") or {})
+            extra["ok"] = resp.is_success
+            extra["status"] = resp.status_code
+    except (httpx.HTTPError, OutboundBlocked) as exc:
+        raise _undelivered("webhook", exc) from exc
     return {"kind": se.kind, "http_status": resp.status_code, "ok": resp.is_success}
 
 
@@ -348,7 +365,7 @@ def _dispatch_http(se: SideEffect, action: KineticAction, params: dict) -> dict:
     template would approve `https://api.vendor.com/{path}` and then send the request
     wherever `path` said to — which is not a guard, it is a guard-shaped comment.
     """
-    from aughor.govern.outbound import external_call
+    from aughor.govern.outbound import OutboundBlocked, external_call
     from aughor.secretvault import decrypt_secret
     from aughor.util.url_guard import is_safe_webhook_url
 
@@ -379,12 +396,15 @@ def _dispatch_http(se: SideEffect, action: KineticAction, params: dict) -> dict:
     body = fill_template(cfg.get("body"), params) if cfg.get("body") is not None else None
 
     import httpx
-    with external_call("http_component", action.id,
-                       attributes={"method": method}) as extra:
-        resp = httpx.request(method, url, headers=headers,
-                             json=body if body is not None else None, timeout=20.0)
-        extra["ok"] = resp.is_success
-        extra["status"] = resp.status_code
+    try:
+        with external_call("http_component", action.id,
+                           attributes={"method": method}) as extra:
+            resp = httpx.request(method, url, headers=headers,
+                                 json=body if body is not None else None, timeout=20.0)
+            extra["ok"] = resp.is_success
+            extra["status"] = resp.status_code
+    except (httpx.HTTPError, OutboundBlocked) as exc:
+        raise _undelivered(f"{method} call", exc) from exc
 
     # The response is DATA, and it is capped. A vendor answering with a megabyte of JSON
     # must not put a megabyte into a run record a canvas will render.

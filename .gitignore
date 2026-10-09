@@ -131,6 +131,8 @@ data/_*backup*/
 data/_stale_findings_backup_*/
 data/finding_dismissals.jsonl
 data/ontology_recommendations/
+# Arc OC-2 — an install's unpublished ontology changes; runtime state, never shipped.
+data/ontology_overrides_draft/
 # NOTE: THREE data/ paths are deliberately NOT ignored, because each store's own
 # docstring declares it a version-controllable artifact rather than runtime state:
 #   data/ontology_overrides/     the human override overlay        (overrides.py) — an install's

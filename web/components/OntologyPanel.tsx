@@ -4,6 +4,7 @@ import { Pending } from "@/components/ui/motion";
 import { useCallback, useEffect, useState } from "react";
 
 import { EntityTypeMap } from "@/components/ontology/EntityTypeMap";
+import { ReleaseStrip } from "@/components/ontology/ReleaseStrip";
 import { domainScope } from "@/lib/objectTypes";
 import { OverridesDrawer } from "@/components/ontology/OverridesDrawer";
 import {
@@ -546,6 +547,8 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   const [showProposals,     setShowProposals]     = useState(false);
   // PX-6 — the human-edit ledger: overrides list/revert, routing proposals, export/import.
   const [showOverrides,     setShowOverrides]     = useState(false);
+  // Arc OC-2 — bumped by a publish or a discard so the map re-reads the draft it shows.
+  const [mapVersion,        setMapVersion]        = useState(0);
   const [orgMode,           setOrgMode]          = useState(false);
   // ON-8 — the organisation's ontology: one map over every connection a type is declared on.
   const [domainMode,        setDomainMode]       = useState(false);
@@ -821,10 +824,16 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {headerBar}
+      {/* Arc OC-2 — which release everyone reads, and what waits to be published. Renders nothing while releases are
+          off. A publish or a discard re-reads the map, which shows the draft. */}
+      <ReleaseStrip connectionId={selectedConnId} schema={schema} onChanged={() => {
+        setMapVersion(v => v + 1);
+        getOntology(selectedConnId, schema).then(setGraph).catch(() => {});
+      }} />
 
       <div className="flex-1 flex overflow-hidden">
         {/* ON-3b — the entity-type map brings its own rail and entity-type panel. */}
-        <EntityTypeMap connectionId={selectedConnId} schema={schema} />
+        <EntityTypeMap key={mapVersion} connectionId={selectedConnId} schema={schema} />
 
         {/* Settings panel */}
         {showSettings && (

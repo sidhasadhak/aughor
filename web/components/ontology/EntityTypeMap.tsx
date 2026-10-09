@@ -206,7 +206,7 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
     setSelected(made.object_type);
   });
   if (!selected || map.object_types.length === 0) {
-    if (!domain) return <EmptyState icon="node" title="This ontology has no object types yet." />;
+    if (!domain) return <EmptyState icon="node" title="This ontology has no entities yet." />;
     // ON-8 — an organisation's ontology starts empty, so its first type is declared from here.
     return (
       <EmptyState icon="node" title="Nothing is declared in the organisation's ontology yet">

@@ -133,7 +133,7 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   else if (!detail || (detail.path === "object_type" && detail.object_type !== objectType)) {
     body = <div style={{ padding: 16 }}><SkeletonRows rows={8} /></div>;
   } else if (detail.path === "refused") {
-    body = <EmptyState icon="info" title={`No object type “${objectType}”`}>{detail.refused}</EmptyState>;
+    body = <EmptyState icon="info" title={`No entity “${objectType}”`}>{detail.refused}</EmptyState>;
   } else {
     body = <TypeDetail detail={detail} connectionId={connectionId} schema={schema} types={types}
       onOpen={onOpen} onOpenProcess={onOpenProcess} onChanged={onChanged} sources={sources} />;

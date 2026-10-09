@@ -427,6 +427,140 @@ def _latest_fingerprint(connection_id: str, schema_name: Optional[str] = None) -
 
 # ── Read endpoints ─────────────────────────────────────────────────────────────
 
+def _refuse_if_depended(connection_id: str, effective: str, kind: str, target_id: str) -> None:
+    """Arc OC-1 — a withdrawal something depends on is refused with a 409 naming what (`ontology.history`; off, nothing
+    is read and the withdrawal goes ahead as before). One connection's scope: an organisation's ontology is read across
+    connections, and its dependents are not indexed yet."""
+    from aughor.ontology.dependents import guard_withdrawal, refusal
+    rows = guard_withdrawal(_get_ontology_graph(connection_id, effective), connection_id, kind, target_id)
+    if rows:
+        raise HTTPException(status_code=409, detail=refusal(kind, target_id, rows))
+
+
+def _served_scope(connection_id: str, schema_name: Optional[str]) -> str:
+    """The schema of the graph `GET /ontology` serves for this request — its declarations are the ones the screen
+    shows. A connection browsed under one schema and built under another (the read falls back to the one built graph)
+    reads its declarations, history and releases under the built one."""
+    graph = _get_ontology_graph(connection_id, schema_name)
+    return (graph.schema_name if graph is not None and graph.schema_name else None) or \
+        _resolve_schema(connection_id, schema_name)
+
+
+def _history_kind(kind: str) -> str:
+    from typing import get_args
+
+    from aughor.ontology.overrides import TargetKind
+    kind = "object_set" if kind == "segment" else kind
+    if kind not in get_args(TargetKind):
+        raise HTTPException(status_code=400, detail=f"unknown declaration kind '{kind}'")
+    return kind
+
+
+@router.get("/ontology/history")
+def get_declaration_history(
+    kind: str,
+    target_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+    as_of: Optional[str] = Query(default=None, description="an ISO date or moment — what the declaration said then; "
+                                                           "a bare date reads the end of that day (UTC)"),
+):
+    """Arc OC-1 — one declaration's history (ROADMAP §3.56): every save and withdrawal kept while `ontology.history`
+    is on, newest first, each with what changed and who made it; with ``as_of``, what it said at that moment — or
+    that what it said then is not known, never that nothing was declared."""
+    from aughor.ontology import history
+    kind = _history_kind(kind)
+    effective = _served_scope(connection_id, schema_name)
+    out: dict = {"element": history.element_key(connection_id, effective, kind, target_id),
+                 "kept": history.enabled(),
+                 "versions": history.versions(connection_id, effective, kind, target_id)}
+    if as_of:
+        try:
+            out["as_of"] = {"at": as_of, **history.as_of(connection_id, effective, kind, target_id, as_of)}
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"'{as_of}' is not a date or a moment") from None
+    return out
+
+
+@router.get("/ontology/dependents")
+def get_declaration_dependents(
+    kind: str,
+    target_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc OC-1 — what depends on one declaration (ROADMAP §3.56): automations, processes, rules, actions, declared
+    links, parts and metrics, each with how. Read whether or not `ontology.history` is on; with it on, a withdrawal
+    of anything listed here is refused."""
+    from aughor.ontology.dependents import dependents_of
+    kind = _history_kind(kind)
+    effective = _served_scope(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
+    return {"kind": kind, "target_id": target_id,
+            "dependents": dependents_of(graph, connection_id, kind, target_id)}
+
+
+@router.get("/ontology/release")
+def get_ontology_release(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc OC-2 — the scope's releases and its draft (ROADMAP §3.56): the release consumers read, every earlier one, and
+    each change waiting to be published with its class (ERR · MEANING · WARN · SAFE), its reasons, what changed field
+    by field, and the automations, claims and cockpit cards it touches. While `ontology.release` is off the draft is
+    empty and says so: a declaration is published when it is saved."""
+    from aughor.ontology import release as R
+    effective = _served_scope(connection_id, schema_name)
+    return {"enabled": R.enabled(), "connection_id": connection_id, "schema_name": effective,
+            "published": R.current(connection_id, effective), "releases": R.releases(connection_id, effective)[:50],
+            "draft": R.changes(connection_id, effective) if R.enabled() else []}
+
+
+@router.post("/ontology/release/publish", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def publish_ontology_release(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc OC-2 — publish the scope's draft as its next release, as the person signed in: every change moves into what
+    consumers read, the release is recorded with each element's version, and every claim a change of meaning touches is
+    restated. 409 with every reason while a change would break something, a model's proposal is unconfirmed, or the
+    draft is empty."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.ontology import release as R
+    from aughor.org.context import current_actor
+    effective = _served_scope(connection_id, schema_name)
+    try:
+        return R.publish(connection_id, effective, by=current_actor())
+    except R.ReleaseRefused as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.post("/ontology/release/discard", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def discard_ontology_draft(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+    kind: Optional[str] = Query(default=None, description="with target_id, discard one change; without, all of them"),
+    target_id: Optional[str] = Query(default=None),
+):
+    """Arc OC-2 — drop changes from the scope's draft: every one, or the one named. What consumers read is untouched."""
+    from aughor.ontology import release as R
+    effective = _served_scope(connection_id, schema_name)
+    kind = _history_kind(kind) if kind else ""
+    return {"discarded": R.discard(connection_id, effective, kind=kind, target_id=target_id or "")}
+
+
+@router.get("/ontology/census")
+def get_ontology_census(history_limit: int = Query(default=90, ge=0, le=400)):
+    """Arc OC-0 — the ontology census (ROADMAP §3.56): what every built scope declares, what the data verified of
+    it, and what leans on it — counted now, from cached ontologies only, beside the daily readings the journal kept
+    (`ontology.census`, while that flag is on). Each Arc OC wave is judged against these numbers."""
+    from aughor.ontology.census import history, take_census
+    return {"reading": take_census(), "history": history(limit=history_limit) if history_limit else []}
+
+
 @router.get("/ontology/schemas")
 def list_ontology_schemas(connection_id: str = BUILTIN_ID):
     """List the DB schemas that have a cached ontology for this connection."""
@@ -1784,6 +1918,8 @@ def delete_declared_entity(
                 f"{entity_id} was built from its table, not declared — a built type is absorbed into another or "
                 "kept, never deleted"))
         raise HTTPException(status_code=404, detail=f"no declared entity '{entity_id}'")
+    if domain is None:
+        _refuse_if_depended(connection_id, effective, "entity", entity_id)
     remove(connection_id, effective, "entity", entity_id)
     return {"removed": True, "entity": entity_id}
 
@@ -1873,12 +2009,15 @@ def delete_declared_link(
         rel = graph.relationships.get(relationship_id) if graph is not None else None
         if rel is None:
             raise HTTPException(status_code=404, detail=f"no link '{relationship_id}'")
+        _refuse_if_depended(connection_id, effective, "link", relationship_id)
         fields = {**(existing.fields if existing is not None else {}), "withdrawn": True,
                   "from_entity": rel.from_entity, "to_entity": rel.to_entity}
         ov = OntologyOverride(target_kind="link", target_id=relationship_id, fields=fields,
                               source=(existing.source if existing is not None else "human"))
         save_override(connection_id, effective, ov)
         return {"removed": True, "link": relationship_id, "withdrawn": True}
+    if domain is None:
+        _refuse_if_depended(connection_id, effective, "link", relationship_id)
     remove(connection_id, effective, "link", relationship_id)
     return {"removed": True, "link": relationship_id}
 
@@ -2103,11 +2242,29 @@ def declare_ontology_process(
     return _declare_process_core(body.model_dump(exclude_none=True), connection_id, schema_name)
 
 
-def _declare_process_core(spec: dict, connection_id: str, schema_name: Optional[str]) -> dict:
+@router.put("/ontology/processes/{process_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def change_declared_process(
+    process_id: str,
+    body: _DeclaredProcess,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Change a declared process (Arc OC-1) — a promise moved from two days to three, a stage added — through the same
+    law as declaring it: every anchor resolved, the whole declaration counted before anything is written, 400 with the
+    reason when it cannot be. Until now a promise changed only by withdrawing the process and declaring it again; with
+    `ontology.history` on, each change is a version of the same element."""
+    if body.id != process_id:
+        raise HTTPException(status_code=400, detail=f"the body names '{body.id}', the path '{process_id}' — "
+                                                    "a process's id does not change; its name does")
+    return _declare_process_core(body.model_dump(exclude_none=True), connection_id, schema_name, replace=True)
+
+
+def _declare_process_core(spec: dict, connection_id: str, schema_name: Optional[str], *,
+                          replace: bool = False) -> dict:
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.db.connection import open_connection_for_with_schema
-    from aughor.ontology.overrides import OntologyOverride, save_override
+    from aughor.ontology.overrides import OntologyOverride, find_override, save_override
     from aughor.ontology.processes import (
         NotMeasurable, describe_process, measure_process, process_entry, process_fields, process_spec_problem,
         resolve_process,
@@ -2120,7 +2277,11 @@ def _declare_process_core(spec: dict, connection_id: str, schema_name: Optional[
     if graph is None:
         raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
     process_id = str(spec["id"])
-    if process_id in graph.processes:
+    if replace:
+        # its own derived names are free to it already: the name check excludes the process it resolves
+        if find_override(connection_id, effective, "process", process_id) is None:
+            raise HTTPException(status_code=404, detail=f"no declared process '{process_id}'")
+    elif process_id in graph.processes:
         raise HTTPException(status_code=409, detail=f"a process '{process_id}' already exists")
     problem, fields = resolve_process(graph, process_id, process_fields(spec))
     if problem:
@@ -2173,6 +2334,8 @@ def delete_declared_process(
     effective = _resolve_schema(connection_id, schema_name)
     if find_override(connection_id, effective, "process", process_id) is None:
         raise HTTPException(status_code=404, detail=f"no declared process '{process_id}'")
+    if domain is None:
+        _refuse_if_depended(connection_id, effective, "process", process_id)
     remove(connection_id, effective, "process", process_id)
     return {"removed": True, "process": process_id}
 
@@ -2263,6 +2426,8 @@ def delete_declared_rule(
     effective = _resolve_schema(connection_id, schema_name)
     if find_override(connection_id, effective, "rule", rule_id) is None:
         raise HTTPException(status_code=404, detail=f"no declared rule '{rule_id}'")
+    if domain is None:
+        _refuse_if_depended(connection_id, effective, "rule", rule_id)
     remove(connection_id, effective, "rule", rule_id)
     return {"removed": True, "rule": rule_id}
 
@@ -2973,6 +3138,12 @@ def delete_ontology_override(
     if kind not in get_args(TargetKind):
         raise HTTPException(status_code=400, detail=f"unknown override kind '{kind}'")
     effective = _resolve_schema(connection_id, schema_name)
+    # Arc OC-1 — removing a file that IS the element (a declared type, link, process or rule, or an action) withdraws
+    # it, and is refused where something depends on it; removing an edit of a built element restores the built value.
+    from aughor.ontology.overrides import find_override
+    existing = find_override(connection_id, effective, kind, target_id)  # type: ignore[arg-type]
+    if existing is not None and (kind == "action" or existing.fields.get("declared")):
+        _refuse_if_depended(connection_id, effective, kind, target_id)
     removed = delete_override(connection_id, effective, kind, target_id)  # type: ignore[arg-type]
     return {"removed": removed, "kind": kind, "target_id": target_id}
 

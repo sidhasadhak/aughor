@@ -420,8 +420,11 @@ export function scopeDomain(connectionId: string): string | null {
   return connectionId.startsWith(DOMAIN_SCOPE) ? connectionId.slice(DOMAIN_SCOPE.length) || "default" : null;
 }
 
+/** Arc OC-2 — every door this file calls belongs to the ontology's editing screens, so each asks for the DRAFT: the
+ *  published ontology with the changes waiting to be published laid over it. The agent, the Briefing and every other
+ *  reader get the published ontology. The server ignores the view while releases are off. */
 function scope(connectionId: string, schemaName?: string, extra: Record<string, string> = {}): string {
-  const q = new URLSearchParams({ connection_id: connectionId, ...extra });
+  const q = new URLSearchParams({ connection_id: connectionId, ontology_view: "draft", ...extra });
   const domain = scopeDomain(connectionId);
   if (domain) q.set("domain", domain);
   else if (schemaName) q.set("schema_name", schemaName);
@@ -998,4 +1001,74 @@ export async function deleteRule(connectionId: string, ruleId: string, schemaNam
     `${getApiBase()}/ontology/rules/${encodeURIComponent(ruleId)}?${scope(connectionId, schemaName)}`,
     { method: "DELETE" });
   if (!res.ok) throw new Error(await detailOf(res));
+}
+
+
+// ── Arc OC-2 — the release ──────────────────────────────────────────────────────────────────────
+
+export type ChangeClass = "ERR" | "MEANING" | "WARN" | "SAFE";
+
+/** One change waiting in the draft, as `GET /ontology/release` classes it. */
+export interface ReleaseChange {
+  element: string;
+  kind: string;
+  target_id: string;
+  change: "added" | "changed" | "withdrawn";
+  class: ChangeClass;
+  reasons: { class: ChangeClass; why: string }[];
+  /** What changed, field by field ("changed stages[1].promise.within_days"). */
+  fields: string[];
+  touches: {
+    claims: { id: string; key: string; text: string; definition_version: string }[];
+    cards: { id: string; title: string }[];
+    automations: { id: string; name: string; how: string }[];
+  };
+  by: string;
+}
+
+export interface ReleaseRow {
+  number: number;
+  id: string;
+  at: string;
+  by: string;
+  note: string;
+  elements: number;
+}
+
+export interface ReleaseState {
+  enabled: boolean;
+  connection_id: string;
+  schema_name: string;
+  published: ReleaseRow | null;
+  releases: ReleaseRow[];
+  draft: ReleaseChange[];
+}
+
+/** The scope's published release and the changes waiting in its draft. */
+export async function getRelease(connectionId: string, schemaName?: string): Promise<ReleaseState> {
+  const res = await fetch(`${getApiBase()}/ontology/release?${scope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Publish the draft as the next release. Refused with every reason while a change would break something, a model's
+ *  proposal is unconfirmed, or nothing waits. */
+export async function publishRelease(
+  connectionId: string, schemaName?: string,
+): Promise<{ number: number; id: string; restated_claims: string[] }> {
+  const res = await fetch(`${getApiBase()}/ontology/release/publish?${scope(connectionId, schemaName)}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Drop changes from the draft — all of them, or the one named. What readers get is untouched. */
+export async function discardDraft(
+  connectionId: string, schemaName?: string, change?: { kind: string; target_id: string },
+): Promise<number> {
+  const extra: Record<string, string> = change ? { kind: change.kind, target_id: change.target_id } : {};
+  const res = await fetch(`${getApiBase()}/ontology/release/discard?${scope(connectionId, schemaName, extra)}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).discarded;
 }

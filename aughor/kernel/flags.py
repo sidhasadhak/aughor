@@ -112,6 +112,19 @@ FLAG_ENV = {
     # tab draws what was approved. OFF → the Data Canvas has its three tabs and the cockpit's
     # routes answer 404, exactly as before.
     "cockpit.composed": "AUGHOR_COCKPIT_COMPOSED",
+    # Arc OC-0 (ROADMAP §3.56). ON: once a day the ontology census — what every built scope declares, what the
+    # data verified of it, and what leans on it — is journaled as `ontology.census`, so a later wave reads its
+    # before and after from the journal. OFF: nothing is read or written; GET /ontology/census still reads live.
+    "ontology.census": "AUGHOR_ONTOLOGY_CENSUS",
+    # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
+    # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
+    # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
+    "ontology.history": "AUGHOR_ONTOLOGY_HISTORY",
+    # Arc OC-2 (ROADMAP §3.56). ON: a change to the ontology waits in a draft and reaches the agent, the Briefing,
+    # metrics and automations only when a person publishes it as a release; claims pin the release they were computed
+    # under, and a release that changes a definition's meaning restates them. OFF: a declaration is served the
+    # moment it is saved, exactly as before.
+    "ontology.release": "AUGHOR_ONTOLOGY_RELEASE",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -371,6 +384,18 @@ FLAG_META = {
     "answers.recheck": {
         "label": "Tell people when an answer they were given changes",
         "description": "Once a day, re-run the query behind each chat answer given in the last 14 days and compare it with what the person was told. When a number moved by 5% or more, say so where they were answered — a reply in the Slack thread, through the departure gate, or on the answer in the web — with the old number, the new one, and whether it is late rows (the day was still settling when we answered) or a restatement. On by default since 2026-09-24 (the user's call); off → nothing is re-run, recorded or sent.",
+    },
+    "ontology.release": {
+        "label": "Publish ontology changes as releases",
+        "description": "A change to the business ontology — a person's, the explorer's or a pack's — waits in a draft that the Ontology screens show, each change classed (breaks something · changes a meaning · worth a look · safe) with the automations, claims and cockpit cards it touches. The agent, the Briefing, metrics and automations keep reading what was published until a person publishes the draft as the next release; a change that would break something is refused, a model's proposal is published only once a person confirms it, and every claim computed under a definition whose meaning changed is restated. Each claim records the release it was computed under. Keeps every declaration's history too. Off by default: a declaration is served the moment it is saved.",
+    },
+    "ontology.history": {
+        "label": "Keep every ontology declaration's history, and refuse a withdrawal something depends on",
+        "description": "Every time a person (or the explorer, or a pack) saves or withdraws a declaration — an entity, a link, a process with its promises, a rule, an action — the version is kept with who made it and when, so what a promise said on any past day can be read back (Ontology ▸ history, GET /ontology/history?as_of=…). A measurement written back onto a declaration is not a new version. With it on, withdrawing something an automation, a process, a rule or an action relies on is refused, and the refusal names each one. Off by default: declarations are replaced and deleted as before, and nothing is refused.",
+    },
+    "ontology.census": {
+        "label": "Keep a daily ontology census",
+        "description": "Once a day, count what every built ontology declares (entities, links and their names, processes, promises, rules, segments, declared actions), what the data verified of it, and what leans on it (automations that read it, and the Record's claims by what they are about and whether they name a metric, a segment or a definition version), and keep the reading in the journal. Each later Arc OC wave is judged against these readings. Reads cached ontologies only — nothing is built and no warehouse is queried. Off by default: nothing is kept; GET /ontology/census still counts on request.",
     },
     "cockpit.composed": {
         "label": "A cockpit in each Data Canvas",
@@ -632,6 +657,24 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc OC-2 (ROADMAP §3.56), queued 2026-10-09. No model call and no warehouse query beyond the doors' own.
+    "ontology.release": "receipt: on theLook, the dispatch promise moved from two days to three in a draft — the "
+                        "agent and the Briefing still read two; the draft names the claims, the automation and the "
+                        "cards it touches; after publishing, the claims computed under two days say so, and a "
+                        "change that would break the automation is refused. Falsifier (§3.56): replayed over the "
+                        "declarations' own history, a past change that broke a consumer classed SAFE or MEANING — "
+                        "one miss and the catalogue is wrong",
+    # Arc OC-1 (ROADMAP §3.56), queued 2026-10-09. No model call and no warehouse query.
+    "ontology.history": "receipt: on theLook, a promise declared, changed twice and withdrawn reads back as "
+                        "four versions, and asked as of the day between its two changes says what it said "
+                        "then; withdrawing an entity an automation relies on is refused with the automation "
+                        "named. Falsifier (§3.56): if what *late* meant on a past day cannot be answered from "
+                        "it, it is not history — then the flag goes and the store is redesigned",
+    # Arc OC-0 (ROADMAP §3.56), queued 2026-10-09. No model call, no warehouse query: it graduates on being READ.
+    "ontology.census": "receipt: on the live install, seven daily readings in the journal, each equal to "
+                       "GET /ontology/census taken the same hour, and OC-1's receipt quoting its before and "
+                       "after from them. Falsifier: no Arc OC wave's receipt reads the journal — then the "
+                       "census is a document again, and the flag goes",
     # Arc AO-2b (ROADMAP §3.52), queued 2026-10-03. No model call, no prompt: it graduates on
     # the arc's own measure, which is a clock, not a grid.
     "slack.managed_supervisor": "receipt: on a fresh install with the flag on, the API starts the "

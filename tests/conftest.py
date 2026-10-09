@@ -247,6 +247,8 @@ os.environ["AUGHOR_ONTOLOGY_OVERRIDES_DIR"] = os.path.join(_test_stores_dir, "on
 # …and its shipped seed layer (data/shipped/ontology_overrides), left ABSENT: no test reads a shipped override either,
 # and one that tests the layering names its own.
 os.environ["AUGHOR_ONTOLOGY_OVERRIDES_SEED_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides_seed")
+# Arc OC-2 — the draft layer above the instance tree (data/ontology_overrides_draft), written while `ontology.release` is on.
+os.environ["AUGHOR_ONTOLOGY_OVERRIDES_DRAFT_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides_draft")
 os.environ["AUGHOR_ONTOLOGY_EXPORT_DIR"] = os.path.join(_test_stores_dir, "ontology_export")
 # …and the third tree of the family, the engine-proposed recommendations (a writer with the same hardcoded root).
 os.environ["AUGHOR_ONTOLOGY_RECOMMENDATIONS_DIR"] = os.path.join(_test_stores_dir, "ontology_recommendations")

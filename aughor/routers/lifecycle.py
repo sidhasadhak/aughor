@@ -65,6 +65,21 @@ class FreezeIn(BaseModel):
     tables: list[str] = []
 
 
+#: Kinds whose versions are written by their own doors only. Arc OC-1: an ontology declaration's version records
+#: what its door measured and wrote to the tree; a publish or a revert here would add a version the tree never
+#: held — so the generic doors read its history and refuse to write it.
+_OWN_DOORS: dict[str, str] = {
+    "ontology_declaration": "an ontology declaration changes only through the ontology's own doors, which "
+                            "measure it before it is written",
+}
+
+
+def _refuse_own_doors(kind: str) -> None:
+    why = _OWN_DOORS.get(kind)
+    if why:
+        raise HTTPException(status_code=409, detail=why)
+
+
 def _rev_out(r) -> RevisionOut:
     return RevisionOut(version=r.version, state=r.state, created_at=r.created_at,
                        published_at=r.published_at, artifact_id=r.artifact_id)
@@ -111,6 +126,7 @@ def post_publish(kind: str, natural_key: str = Query(...),
                  version: Optional[int] = Query(default=None)):
     """Publish a version (default: the latest draft), making it what viewers resolve."""
     from aughor.kernel.lifecycle import publish
+    _refuse_own_doors(kind)
 
     rev = publish(kind, natural_key, version=version)
     if rev is None:
@@ -123,6 +139,7 @@ def post_revert(kind: str, natural_key: str = Query(...), to_version: int = Quer
                 publish_now: bool = Query(default=False)):
     """Restore an earlier version's content as a NEW version (history is never rewound)."""
     from aughor.kernel.lifecycle import revert
+    _refuse_own_doors(kind)
 
     rev = revert(kind, natural_key, to_version, publish_now=publish_now)
     if rev is None:

@@ -160,6 +160,18 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # "declared action" in every line a reader sees.
          "aughor/actions/autonomy.py",
          "tests/unit/test_mission_spend_and_l5.py",
+         # The delivery suite (2026-10-09), the same ground: every hit is `execute_kinetic_action`, the one
+         # executor whose dispatch-error boundary it drives, or the `KineticAction` class its fixture builds.
+         # Its own prose says "declared action" and "call" in every line a reader sees.
+         "tests/unit/test_action_delivery_errors.py",
+         # Arc OC-0's census suite (2026-10-09): its one hit is the frozen effect kind `kinetic_action`, needed to
+         # build the automation step the census counts as leaning on a declared action. The module under test
+         # finds that step by the `action_id` it names and does not spell the kind.
+         "tests/unit/test_ontology_census.py",
+         # Arc OC-1's history suite (2026-10-09), RC-3's ground: its hits are the existing API's identifiers — the
+         # `KineticAction` class and the graph's `kinetic_actions` field its action fixtures fill, and the frozen
+         # effect kind `kinetic_action` a step is built with. The module under test reads `declared_actions()`.
+         "tests/unit/test_ontology_history.py",
          # DS-17b (2026-09-19), same ground as demo-api.json below: this suite's fixture is
          # the palette's SERVED contract, captured verbatim — every hit is an effect KIND
          # the server ships (`kinetic_action`) at the priority the server gives it. The
@@ -463,6 +475,14 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         r"(?i)mindsdb", CODE_ROOTS, (),
         "not an integration — describe what the code does",
     ),
+    # Arc OC (ROADMAP §6 item 50(h), 2026-10-09): the word a person reads for a kind of business thing is
+    # *entity*, the word the code already used. A space only — the frozen route `/object-types` and the
+    # wire field `object_type` are identifiers, not prose, and the pattern leaves both alone.
+    "object_type": (
+        r"(?i)\bobject types?\b", CODE_ROOTS, (),
+        "one concept, one word: the glossary's word for a kind of business thing is 'entity' "
+        "(an object is one member of it)",
+    ),
 }
 
 #: Measured 2026-08-01 after Wave W phases 1-3. A baseline may fall, never rise.
@@ -553,6 +573,10 @@ BASELINE: dict[str, int] = {
                       # 2026-09-13: 333 → 328. Instrument's Actions layer dropped the panel's direct
                       # execute call and its "kinetic plane" prose; its classes are `aug-actions-*`.
     "mindsdb": 0,
+    # Measured 2026-10-09 with this file's own counter: 113, then 105 once the six strings a person read
+    # (the action form's two placeholders, the object page's and the entity map's empty states) said "entity".
+    # What remains is docstrings and comments, paid down as their files are touched.
+    "object_type": 105,
     "palantir": 6,
     "persona": 214,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history
                      # component (281 → 271) and VA-8 renamed the custom-agent detail

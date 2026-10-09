@@ -393,6 +393,37 @@ class _WorkspaceContextMiddleware:
                          counter="workspace.reset")
 
 
+class _OntologyViewMiddleware:
+    """Arc OC-2 — which declarations a request reads (`ontology.overrides.viewing`): the DRAFT laid over the published
+    ontology when the client asks (`X-Aughor-Ontology-View: draft`, or `?ontology_view=draft` — the ontology's own
+    editing screens) and for every write to an `/ontology` door, which resolves against and reads back what it drafts;
+    the PUBLISHED ontology for everything else — the agent, the Briefing, metrics, object pages. Pure ASGI for the
+    workspace middleware's reason. Inert while `ontology.release` is off: the view is never consulted."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        draft = scope.get("method") != "GET" and str(scope.get("path") or "").startswith("/ontology")
+        if not draft:
+            for raw_k, raw_v in scope.get("headers") or []:
+                if raw_k == b"x-aughor-ontology-view":
+                    draft = raw_v.decode("latin-1").strip() == "draft"
+                    break
+        if not draft and b"ontology_view=draft" in (scope.get("query_string") or b""):
+            draft = True
+        if not draft:
+            return await self.app(scope, receive, send)
+        from aughor.ontology.overrides import reset_view, set_view
+        token = set_view("draft")
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            reset_view(token)
+
+
 class _TraceFlushMiddleware:
     """Force-export buffered spans before a serverless invocation freezes (OA·LF-1).
 
@@ -429,6 +460,7 @@ app = FastAPI(title="Aughor API", lifespan=_lifespan,
               dependencies=[Depends(_require_auth), Depends(enforce_rbac), Depends(enforce_agent_policy)])
 app.add_middleware(_OrgContextMiddleware)
 app.add_middleware(_WorkspaceContextMiddleware)
+app.add_middleware(_OntologyViewMiddleware)
 app.add_middleware(_TraceFlushMiddleware)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
@@ -873,6 +905,12 @@ async def _ontology_refresh_loop() -> None:
             await _refresh_ontologies_once()
         except Exception as exc:
             logger.warning("Ontology refresh loop error: %s", exc)
+        try:
+            # Arc OC-0: one census reading a day into the journal, behind `ontology.census` (a no-op when off).
+            from aughor.ontology.census import record_if_due
+            await asyncio.get_running_loop().run_in_executor(None, record_if_due)
+        except Exception as exc:
+            logger.warning("Ontology census not recorded: %s", exc)
 
 
 async def _start_ontology_refresh_loop() -> None:

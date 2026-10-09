@@ -181,9 +181,9 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
     body = <EmptyState icon="search" title={`No ${objectType} ${pk}`} action={toWorkbench}>{loaded.detail}</EmptyState>;
   } else if (loaded.path === "refused") {
     body = (
-      <EmptyState icon="info" title={`No object type “${objectType}” here`} action={toWorkbench}>
+      <EmptyState icon="info" title={`No entity “${objectType}” here`} action={toWorkbench}>
         {loaded.refused}
-        {loaded.available.length > 0 && <> Object types: {loaded.available.join(", ")}.</>}
+        {loaded.available.length > 0 && <> Entities: {loaded.available.join(", ")}.</>}
       </EmptyState>
     );
   } else {

@@ -68,6 +68,13 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # Slack supervisor. No model call either; it graduates on the arc's own measure (Create
     # agent → a Slack answer, one person, no terminal, under five minutes, on two machines)
     # and its entry names the falsifier that reopens the in-process spike instead.
-    assert set(GRADUATION_QUEUE) == {"cockpit.composed", "slack.managed_supervisor"}
+    # Arc OC-0 (ROADMAP §3.56), 2026-10-09: `ontology.census` — the daily census in the journal. No model
+    # call and no warehouse query; it graduates on being READ by a later wave's receipt, and its entry names
+    # the falsifier that deletes it instead.
+    # Arc OC-1, the same day: `ontology.history` — every declaration's versions, and a withdrawal refused where
+    # something depends on it. Its entry names the receipt and the falsifier.
+    # …and `ontology.release` (Arc OC-2): a change waits in a draft until a person publishes it.
+    assert set(GRADUATION_QUEUE) == {"cockpit.composed", "slack.managed_supervisor", "ontology.census",
+                                     "ontology.history", "ontology.release"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}
