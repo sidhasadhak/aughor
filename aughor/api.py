@@ -873,6 +873,12 @@ async def _ontology_refresh_loop() -> None:
             await _refresh_ontologies_once()
         except Exception as exc:
             logger.warning("Ontology refresh loop error: %s", exc)
+        try:
+            # Arc OC-0: one census reading a day into the journal, behind `ontology.census` (a no-op when off).
+            from aughor.ontology.census import record_if_due
+            await asyncio.get_running_loop().run_in_executor(None, record_if_due)
+        except Exception as exc:
+            logger.warning("Ontology census not recorded: %s", exc)
 
 
 async def _start_ontology_refresh_loop() -> None:

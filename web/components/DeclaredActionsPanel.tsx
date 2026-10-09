@@ -209,7 +209,7 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
         </SelectField>
       </div>
       <Input style={input} placeholder="description" value={description} onChange={e => setDescription(e.target.value)} />
-      <Input style={input} placeholder="object type this action is about (e.g. order) — optional"
+      <Input style={input} placeholder="entity this action is about (e.g. order) — optional"
         value={objectType} onChange={e => setObjectType(e.target.value)} />
       <label style={hint}>the parameters a proposal must fill — an object parameter names ONE object, read live</label>
       {params.map((p, i) => (
@@ -222,7 +222,7 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
             <option value="object">object</option>
           </SelectField>
           {p.kind === "object" ? (
-            <Input style={{ ...input, flex: 1 }} placeholder="object type (e.g. order)" value={p.object_type}
+            <Input style={{ ...input, flex: 1 }} placeholder="entity (e.g. order)" value={p.object_type}
               onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, object_type: e.target.value } : x))} />
           ) : (
             <SelectField style={{ ...input, flex: 1 }} value={p.data_type}

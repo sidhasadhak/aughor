@@ -51,13 +51,13 @@ describe("DeclaredActionsPanel — declaring an action about an object", () => {
 
     await user.type(screen.getByPlaceholderText("action id (e.g. refund_order)"), "flag_order_for_review");
     await choose(screen.getAllByRole("combobox")[0], "annotate");
-    await user.type(screen.getByPlaceholderText(/object type this action is about/), "order");
+    await user.type(screen.getByPlaceholderText(/entity this action is about/), "order");
 
     // The first parameter row becomes the object the action is about.
     await user.clear(screen.getByPlaceholderText("name (e.g. amount_eur)"));
     await user.type(screen.getByPlaceholderText("name (e.g. amount_eur)"), "order");
     await choose(screen.getAllByRole("combobox").find(b => valueOf(b) === "value")!, "object");
-    await user.type(screen.getByPlaceholderText("object type (e.g. order)"), "order");
+    await user.type(screen.getByPlaceholderText("entity (e.g. order)"), "order");
 
     await user.click(screen.getByRole("button", { name: "+ Add an edit" }));
     await user.type(screen.getByPlaceholderText("object param (e.g. order)"), "order");

@@ -427,6 +427,15 @@ def _latest_fingerprint(connection_id: str, schema_name: Optional[str] = None) -
 
 # ── Read endpoints ─────────────────────────────────────────────────────────────
 
+@router.get("/ontology/census")
+def get_ontology_census(history_limit: int = Query(default=90, ge=0, le=400)):
+    """Arc OC-0 — the ontology census (ROADMAP §3.56): what every built scope declares, what the data verified of
+    it, and what leans on it — counted now, from cached ontologies only, beside the daily readings the journal kept
+    (`ontology.census`, while that flag is on). Each Arc OC wave is judged against these numbers."""
+    from aughor.ontology.census import history, take_census
+    return {"reading": take_census(), "history": history(limit=history_limit) if history_limit else []}
+
+
 @router.get("/ontology/schemas")
 def list_ontology_schemas(connection_id: str = BUILTIN_ID):
     """List the DB schemas that have a cached ontology for this connection."""

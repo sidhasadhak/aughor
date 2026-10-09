@@ -147,6 +147,8 @@ NON_GOVERNANCE_KINDS: frozenset[str] = frozenset({
     # ON-7b: an explorer's run — one model call and the counts of what it proposed, wrote and was refused. Each write
     # goes through ON-7's gated doors, which RBAC journals like any person's edit; this is the run's telemetry.
     "ontology.explore",
+    # Arc OC-0: the daily census of the ontology — a reading, like the measurement pass; it changes nothing.
+    "ontology.census",
     # The 2027 study's Record at work: an inquiry woken or opened by a weak signal, a mission's report
     # composed, a decision's outcome measured, a prediction scored. Readings of the ledger about the
     # business — each is its own entry in the Record, where a person reads it; none grants, changes or

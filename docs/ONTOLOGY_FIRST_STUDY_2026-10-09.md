@@ -1,6 +1,7 @@
 # Ontology-first — the implementation roadmap, read against Aughor
 
-**Status: STUDY, 2026-10-09. Nothing built, nothing adopted, nothing written into `ROADMAP.md`.** Written at the
+**Status: STUDY, 2026-10-09 — ✅ ADOPTED the same day as Arc OC, ROADMAP §3.56 (§6 item 50); OC-0's D1–D3 built
+`742114d7`.** Written at the
 user's ask on 2026-10-09: *"We thoroughly need to study this document and maybe some external sources in order to
 truly gauge how we can make our platform an ontology first platform… Study it hard."* The document is
 `ontology_first_platform_implementation_roadmap.pdf` — *Implementation Roadmap: designing an ontology-first platform
@@ -597,9 +598,10 @@ An app, in Aughor's terms, is **a published cockpit whose pieces bind to a relea
 
 ---
 
-## 9 · The program — Arc OC, the ontology as the contract (proposed)
+## 9 · The program — Arc OC, the ontology as the contract
 
-**Not adopted; not in `ROADMAP.md`.** The label is a proposal. Every wave ships behind a flag that is off by default
+**✅ Adopted 2026-10-09 as ROADMAP §3.56 (§6 item 50).** The plan of record carries status; this section keeps the
+receipts and falsifiers as drafted. Where §10's answers changed the draft — (b), (c), (h) — ROADMAP §3.56 says how. Every wave ships behind a flag that is off by default
 and byte-identical when off, carries a live receipt — on theLook, the go-to connection (ROADMAP §6 item 18(c)),
 unless the wave names another — and a falsifier written before the build, and must give a person a reason to declare
 something on the day it lands: §5's finding is the ordering principle.
@@ -654,6 +656,12 @@ the rest.
 ## 10 · What this study asks of the user
 
 Each with a recommendation. None blocks OC-0.
+
+> **Answered 2026-10-09** (ROADMAP §6 item 50), asked with options: (a) adopt · **(b) platform-owned types now,
+> beside the edit layer — against the recommendation** · **(c) App = a published cockpit**, after reading Palantir's
+> app-building overview · (d) as recommended · (e) as recommended · (f) as recommended · (g) as recommended ·
+> **(h) *entity* everywhere — against the recommendation**: the person-facing word is *entity*, so where this study
+> says *object type* for people, read *entity* · (i) as recommended · (j) as recommended.
 
 - **(a) The arc.** Adopt Arc OC — the ontology as the contract — into ROADMAP §3, OC-0 to OC-2 first. *Recommended:
   yes.*

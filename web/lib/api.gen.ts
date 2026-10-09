@@ -10777,6 +10777,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/census": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ontology Census
+         * @description Arc OC-0 — the ontology census (ROADMAP §3.56): what every built scope declares, what the data verified of
+         *     it, and what leans on it — counted now, from cached ontologies only, beside the daily readings the journal kept
+         *     (`ontology.census`, while that flag is on). Each Arc OC wave is judged against these numbers.
+         */
+        get: operations["get_ontology_census_ontology_census_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/claim-links/{claim_id}": {
         parameters: {
             query?: never;
@@ -39846,6 +39868,37 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ontology_census_ontology_census_get: {
+        parameters: {
+            query?: {
+                history_limit?: number;
             };
             header?: never;
             path?: never;
