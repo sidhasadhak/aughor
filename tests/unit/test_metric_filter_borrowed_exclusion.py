@@ -63,11 +63,11 @@ def test_measuring_the_cancelled_rows_is_still_the_questions_own_choice():
 
 def test_a_scheduled_runs_context_is_not_read_as_the_persons_words():
     """A quoted previous report that mentions returns must not unlock the exclusion."""
-    from aughor.semantic.enforcement import _person_words
+    from aughor.semantic.enforcement import person_words
     from aughor.automations import temporal
     block = (f"{temporal.OBSERVATION_HEADER}\nThis is a scheduled daily run.\n"
              "[Previous scheduled report — for consistency checking]\n"
              "Returns rose 4% on the day.\n"
              f"{temporal.PREVIOUS_REPORT_TAIL}\n\n" if hasattr(temporal, "PREVIOUS_REPORT_TAIL") else "")
-    words = _person_words(block + ASKED) if block else ASKED
+    words = person_words(block + ASKED) if block else ASKED
     assert "return" not in words.lower()

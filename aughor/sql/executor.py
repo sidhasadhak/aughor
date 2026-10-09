@@ -280,7 +280,8 @@ def execute_guarded(
             if not _applied:
                 return statement
             _what = "; ".join(dict.fromkeys(
-                f"{a['metric']} is declared over {a['filter']} on {a['table']}" for a in _applied))
+                f"{a['metric']} is read over {a['said']}" if a.get("said")
+                else f"{a['metric']} is declared over {a['filter']} on {a['table']}" for a in _applied))
             if conn.dry_run(_rewritten)[0]:
                 emit_guard_receipt(
                     "declared_filter", "rewrote_sql",

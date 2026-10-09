@@ -796,6 +796,7 @@ class IntakeOutput(BaseModel):
     named_dimensions: list[str] = Field(default_factory=list, description="Dimensions the question named outright, matched to real columns (set by code from the question; leave empty).")
     metric_filters: list[str] = Field(default_factory=list, description="The declared filters of the governed metric this question was matched to — the rows its formula is over (set by code from the metric catalogue; leave empty).")
     measure_definitions: list[dict] = Field(default_factory=list, description="Each further measure matched to a governed metric: its table, the date that puts its rows in a range, and its filters (set by code from the metric catalogue; leave empty).")
+    framed_metric: dict = Field(default_factory=dict, description="The approved metric a person keyed to an entity that the question frame resolved, taken as declared — with the objects the question's rules chose (set by code from the question frame; leave empty).")
     yoy_start: Optional[str] = Field(default=None, description="YoY comparison start, or null if data < 13 months")
     yoy_end: Optional[str] = Field(default=None)
     date_column: str = Field(description="Fully qualified: table.column")

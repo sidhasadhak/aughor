@@ -1316,6 +1316,9 @@ def _spec_section(intake: dict) -> str:
     if intake.get("metric_filters"):
         lines.append("  metric filter (declared, part of the definition): "
                      + "; ".join(str(f) for f in intake["metric_filters"]))
+    if (intake.get("framed_metric") or {}).get("said"):
+        lines.append(f"  objects (the question's rule): {intake['framed_metric']['said']} — put on every "
+                     "statement that computes the metric")
     lines.append(f"  table: {intake.get('metric_table')} · date column: {intake.get('date_column')}")
     # Each window with its filter written out, half-open — the model wrote `<= '2026-07-31'`
     # on a TIMESTAMP column from a bare "→ 2026-07-31" and dropped the day (2026-09-29).

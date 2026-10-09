@@ -247,15 +247,40 @@ def enforcement_summary(verdicts: list[dict]) -> Optional[dict]:
 #: read their own.
 _QUESTION: ContextVar[str] = ContextVar("enforcement_question", default="")
 
+#: Arc OC-3 — rules the run itself declared once its intake had read them: a keyed metric the question frame resolved
+#: is computed over the rows its statement keeps and the objects the question's rules chose, and the question's words
+#: alone cannot say which objects those are. A list HELD for the run (`answering`, `holding`) and filled in place
+#: (`declare`), so a step that runs after the intake in a copy of the run's context reads what the intake declared.
+#: None outside a run: there is nowhere to declare to.
+_DECLARED: ContextVar[Optional[list]] = ContextVar("enforcement_declared", default=None)
+
 
 @contextmanager
 def answering(question: str):
     """Everything executed inside is in answer to ``question``."""
     token = _QUESTION.set(question or "")
+    held = _DECLARED.set([])
     try:
         yield
     finally:
+        _DECLARED.reset(held)
         _QUESTION.reset(token)
+
+
+def holding(rules: Optional[list] = None) -> None:
+    """Hold the run's declared rules in the CURRENT context — for a run whose every step executes in one copied
+    context it then discards (the deep graph's stream, `routers.investigations._investigation_stream`). ``rules``
+    are ones the run declared before (a resumed run's intake does not run again)."""
+    _DECLARED.set(list(rules or ()))
+
+
+def declare(rules: list) -> bool:
+    """The run's declared rules, from here on. False when no run holds any — nothing is declared then."""
+    held = _DECLARED.get()
+    if held is None:
+        return False
+    held[:] = list(rules or ())
+    return True
 
 
 def _reach(question: str, metric) -> int:
@@ -273,7 +298,7 @@ def _reach(question: str, metric) -> int:
     return max(found, default=0)
 
 
-def _person_words(question: str) -> str:
+def person_words(question: str) -> str:
     """The question as a person asked it: a scheduled run's generated block (its observation
     window, the previous report it quotes) removed, so "returns" in a quoted report is never
     read as the person asking for returns to be excluded."""
@@ -324,7 +349,7 @@ def declared_filter_rules(question: str, metrics: list, dialect: str = "duckdb")
         # the person's words only, never a scheduled run's generated context block.
         found.append((_reach(question, m), {"metric": m.name, "formula": measure["formula"],
                                             "tables": tables, "filters": filters,
-                                            "asked": _person_words(question)}))
+                                            "asked": person_words(question)}))
 
     def _rivals(a: dict, b: dict) -> bool:
         return (same_formula(a["formula"], b["formula"], dialect)
@@ -415,16 +440,18 @@ def rules_for_statement(connection_id: str, question: Optional[str] = None,
     ``question``, or for the one bound by :func:`answering`. ``dialect`` is the engine's:
     a stored metric statement is written for it. ``None`` when there is no question or no
     connection (nothing to enforce, and the executor then leaves the statement exactly as
-    written) and on any failure to read the catalogue."""
+    written) and on any failure to read the catalogue. The rules the run itself declared (`declare`) ride after the
+    question's, whatever the question's words target."""
+    declared = list(_DECLARED.get() or ())
     asked = question if question else _QUESTION.get()
     if not asked or not connection_id:
-        return None
+        return declared or None
     try:
         from aughor.semantic.metrics import list_metrics
-        return declared_filter_rules(asked, list_metrics(connection_id=connection_id),
-                                     dialect or "duckdb") or None
+        return (declared_filter_rules(asked, list_metrics(connection_id=connection_id),
+                                      dialect or "duckdb") + declared) or None
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "declared-filter rules are best-effort; the statement runs as written",
                  counter="metric.declared_filter_rules")
-        return None
+        return declared or None

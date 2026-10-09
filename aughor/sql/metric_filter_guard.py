@@ -333,11 +333,30 @@ def _sources(select: exp.Select, formula: exp.Expression, tables: set, ctes: dic
     return out
 
 
+def _chosen(scope: exp.Select, cond: exp.Expression, here: str, dialect: str) -> bool:
+    """Arc OC-3 — put a rule's ``chosen`` condition on ``scope``: the objects the QUESTION's rules chose ("revenue from
+    completed orders" is over the order lines of completed orders). Nothing a scope does with its own columns deals
+    with it — "revenue from completed orders by status" groups by the line's status and is still about completed
+    orders — so it is added unless the scope already applies it. Its own column is the declared table's here; a
+    column inside its subquery belongs to that subquery. True when it was added."""
+    want = _bare(cond, dialect)
+    where = scope.args.get("where")
+    if where is not None and any(_bare(c, dialect) == want for c in _conjuncts(where.this)):
+        return False
+    outer = cond.find_ancestor(exp.Select)
+    for col in cond.find_all(exp.Column):
+        if not col.table and col.find_ancestor(exp.Select) is outer:
+            col.set("table", exp.to_identifier(here))
+    scope.where(cond, copy=False)
+    return True
+
+
 def enforce_metric_filters(sql: str, rules: list, dialect: str = "duckdb") -> tuple[str, list]:
     """Return ``(sql, applied)`` — the statement with each declared filter on the scopes
     that compute its metric, and one ``{"metric", "table", "filter"}`` per filter added.
 
-    ``rules`` is ``[{"metric": name, "formula": sql, "tables": [...], "filters": [...]}]``.
+    ``rules`` is ``[{"metric": name, "formula": sql, "tables": [...], "filters": [...]}]``; a rule with ``"chosen":
+    True`` holds the objects the question chose (`_chosen`), with ``"said"`` naming them for the receipt.
     """
     if not sql or not rules:
         return sql, []
@@ -366,6 +385,11 @@ def enforce_metric_filters(sql: str, rules: list, dialect: str = "duckdb") -> tu
                         if cond is None or key in done:
                             continue
                         done.add(key)
+                        if rule.get("chosen"):
+                            if _chosen(scope, cond, here, dialect):
+                                applied.append({"metric": str(rule.get("metric") or ""), "table": table.name,
+                                                "filter": text, "said": str(rule.get("said") or "")})
+                            continue
                         columns = {c.name for c in cond.find_all(exp.Column)}
                         values = {str(lit.this) for lit in cond.find_all(exp.Literal)}
                         if not columns or any(_dealt_with(select, c, ref, values, asked)
