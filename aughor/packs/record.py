@@ -120,8 +120,12 @@ def demote(pack_id: str, *, by: str, why: str = "", force: bool = False) -> dict
     pack = set_status(pack_id, "deprecated", actor=by)
     try:
         from aughor.kernel.ledger import Ledger
-        Ledger.default().emit("pack.demoted", {"pack_id": pack_id, "by": by, "record": record["claims"], "why": (why or verdict["why"])[:400],
-                                               "forced": force and not verdict["due"]})
+        said = {"pack_id": pack_id, "by": by, "record": record["claims"], "why": (why or verdict["why"])[:400],
+                "forced": force and not verdict["due"],
+                "text": f"The pack {pack_id} was demoted to deprecated: {(why or verdict['why'])[:400]}"}
+        Ledger.default().emit("pack.demoted", said)
+        from aughor.record.subscriptions import notify          # Arc OC-6, D6: listed subscribable, now pushed
+        notify("pack.demoted", said)
     except Exception as exc:  # noqa: BLE001 — the status is the authority; the event is the trail
         from aughor.kernel.errors import tolerate
         tolerate(exc, "a pack demotion could not be journaled; its status is changed", counter="pack.demoted_event")

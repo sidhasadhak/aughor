@@ -389,8 +389,9 @@ def graduate(action, scope: str, *, by: str) -> dict:
     payload = {**decision, "by": by or "unidentified", "level": 4, "at": _now()}
     rid = _ledger().artifact_write(GRADUATION_KIND, f"graduation:{scope}:{action.id}:{uuid.uuid4().hex[:8]}", payload,
                                    conn_id=scope or None, lineage=[("graduates", action.id, "L3 → L4")])
-    _ledger().emit("authority.graduated", {"action_id": action.id, "scope": scope, "receipt": rid, "by": by},
-                   conn_id=scope or None)
+    _announce("authority.graduated", {"action_id": action.id, "scope": scope, "receipt": rid, "by": by,
+                                      "text": f"The action {action.id} graduated to L4 (execute within policy) on {scope}"
+                                              f"{f', by {by}' if by else ''}."}, scope)
     return {**payload, "id": rid}
 
 
@@ -450,8 +451,10 @@ def grant_l5(action, scope: str, *, by: str, mission: str = "") -> dict:
     payload = {**decision, "by": by or "unidentified", "level": 5, "mission": mission, "at": _now()}
     rid = _ledger().artifact_write(L5_KIND, f"l5:{scope}:{action.id}:{uuid.uuid4().hex[:8]}", payload,
                                    conn_id=scope or None, lineage=[("grants_l5", action.id, "L4 → L5"), ("inside", mission, "the mission")])
-    _ledger().emit("authority.graduated", {"action_id": action.id, "scope": scope, "receipt": rid, "by": by, "level": 5, "mission": mission},
-                   conn_id=scope or None)
+    _announce("authority.graduated", {"action_id": action.id, "scope": scope, "receipt": rid, "by": by, "level": 5,
+                                      "mission": mission,
+                                      "text": f"The action {action.id} was granted L5 inside the mission {mission} on "
+                                              f"{scope}{f', by {by}' if by else ''}."}, scope)
     return {**payload, "id": rid}
 
 
@@ -464,9 +467,23 @@ def demote(action_id: str, scope: str, *, why: str, by: str = "system", evidence
                "grants_revoked": revoked, "evidence": dict(evidence or {}), "to_level": 3, "at": _now()}
     did = _ledger().artifact_write(DEMOTION_KIND, f"demotion:{scope}:{action_id}:{uuid.uuid4().hex[:8]}", payload,
                                    conn_id=scope or None, lineage=[("demotes", action_id, "→ L3")])
-    _ledger().emit("authority.demoted", {"action_id": action_id, "scope": scope, "why": why[:300],
-                                         "grants_revoked": revoked, "entry": did}, conn_id=scope or None)
+    _announce("authority.demoted", {"action_id": action_id, "scope": scope, "why": why[:300], "grants_revoked": revoked,
+                                    "entry": did, "text": f"The action {action_id} was demoted to L3 on {scope}: "
+                                                          f"{why[:300]}"}, scope)
     return did
+
+
+def _announce(kind: str, payload: dict, scope: str) -> None:
+    """Journal an authority event and hand it to the people subscribed to it (Arc OC-6, D6: `authority.graduated` and
+    `authority.demoted` were listed as subscribable and only ever journaled). The record stands whatever a delivery does."""
+    _ledger().emit(kind, payload, conn_id=scope or None)
+    try:
+        from aughor.record.subscriptions import notify
+        notify(kind, payload, conn_id=scope or "")
+    except Exception as exc:  # noqa: BLE001 — best-effort by contract, and said
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, f"{kind} could not reach its subscribers; it is journaled", counter="authority.notify",
+                 conn_id=scope or None)
 
 
 # ── the ceiling a person set ───────────────────────────────────────────────────────────────

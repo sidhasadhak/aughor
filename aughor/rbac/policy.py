@@ -58,6 +58,17 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("POST", "/metastore/workspaces/{workspace_id}/grants"): P.ADMIN_MANAGE_ORG,
     ("DELETE", "/metastore/workspaces/{workspace_id}/grants/{catalog_id}"): P.ADMIN_MANAGE_ORG,
     ("POST", "/llm/config"): P.ADMIN_MANAGE_BILLING,
+    # Arc OC-6 (D7, the user's call 2026-10-10: Admins) — allowlisting a high-risk action for a connection and changing
+    # an action's authority govern what runs unattended; they fell to the write floor, so once RBAC was enforced any
+    # Editor could allowlist. Running an action, undoing a run and withdrawing an edit stay with editors — the action's
+    # own approval gate still holds them.
+    ("POST", "/approvals/allow"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/approvals/revoke"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/authority/{action_id}/grant-l5"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/authority/{action_id}/graduate"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/authority/{action_id}/ceiling"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/authority/{action_id}/widen"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/authority/{action_id}/demote"): P.ADMIN_MANAGE_ORG,
     # Wave G3 — the governance reporting surface. Usage names what the org SPENT and on
     # which model, and the audit feed spans every governance sink, so both sit with the
     # other org-administration reads rather than under the viewer-reads-everything floor.

@@ -57,6 +57,8 @@ class KineticResult:
         return {
             "executed": 200, "criterion_failed": 422, "invalid_params": 422,
             "approval_required": 428, "not_found": 404, "disabled": 404,
+            # Arc OC-6 (D4) — the action's authority is below "execute with approval" here: a refusal, not a gate.
+            "authority_capped": 403,
             # Both mean "the far end refused", so both are 502 rather than the 400
             # fallthrough — a 400 blames the caller for a counterparty's answer, and
             # `failed` is a status the proposal inbox has always written.
@@ -645,6 +647,19 @@ def _risk_of(action: KineticAction):
     return getattr(ActionRisk, name)
 
 
+def _authority_level(action, scope: str) -> Optional[dict]:
+    """The action's L0–L5 on ``scope`` (`authority.level_for`), or None when the record cannot be read — then the
+    approval gate alone decides, as it did before the level was consulted here, and the failure is counted."""
+    try:
+        from aughor.actions.authority import level_for
+        return level_for(action, scope)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the action's authority level could not be read; the approval gate decides alone",
+                 counter="actions.authority_level", conn_id=scope or None)
+        return None
+
+
 def execute_kinetic_action(
     action: KineticAction,
     params: dict,
@@ -712,14 +727,34 @@ def execute_kinetic_action(
             return KineticResult("criterion_failed", False, action.id, message=crit.message,
                                  detail={"expr": crit.expr})
 
+    # 3a — authority (Arc OC-6, D4). The level the record earned and the ceilings a person or a mission set were read
+    #      only when widening and by autonomy, never here: a person capping an action at L2 ("prepare") left it as
+    #      runnable as before. A cap below L3 refuses the run, approved or not; a cap at L3 — approval every time, set
+    #      by a person, a mission, or irreversibility — runs nothing unattended on a standing grant. (An incomplete
+    #      declaration earns L1 too — the declare door refuses one, and a run of an older one is left to the approval
+    #      gate, as before.)
+    level = _authority_level(action, scope)
+    if level is not None and level.get("ceiling", 5) < 3:
+        why = "; ".join([level.get("why", ""), *level.get("notes", [])[:2]]).strip("; ")
+        govern.audit(gov_action, scope, "authority_capped", actor=actor, risk=risk,
+                     detail=f"L{level['level']} ({level['label']}): {why}"[:500])
+        return KineticResult("authority_capped", False, action.id, detail={"level": level["level"], "label": level["label"]},
+                             message=(f"{action.id} is capped at L{level['level']} ({level['label']}) on this scope, so "
+                                      f"it is not run — {why}"))
+
     # 3 — approval. A human accept (approved) or a matching standing grant satisfies it; otherwise
     #     the graduated-approval gate decides (and may 428). Every path is audited with WHY it ran.
     from fastapi import HTTPException
     from aughor.actions.grants import standing_grant_id
-    grant_id = ""
+    grant_id = "" if approved else standing_grant_id(action, coerced, scope)
+    if grant_id and level is not None and level.get("ceiling", 5) < 4:
+        govern.audit(gov_action, scope, "grant_not_honoured", actor=actor, risk=risk,
+                     detail=f"standing grant {grant_id} — the action is capped at L{level['ceiling']} (execute with "
+                            f"approval) here, so it runs only on a person's approval: {level.get('why', '')}"[:500])
+        grant_id = ""
     if approved:
         govern.audit(gov_action, scope, "approved", actor=actor, detail="human accept", risk=risk)
-    elif (grant_id := standing_grant_id(action, coerced, scope)):
+    elif grant_id:
         govern.audit(gov_action, scope, "auto", actor=actor,
                      detail=f"standing grant {grant_id}", risk=risk)
     else:

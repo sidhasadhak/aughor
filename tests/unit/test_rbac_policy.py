@@ -43,3 +43,18 @@ def test_a_get_override_wins_over_the_open_default():
 def test_method_is_case_insensitive():
     assert required_permission("post", "/connections") == Permission.CONNECTION_CREATE
     assert required_permission("delete", "/investigations/{inv_id}") == Permission.RESOURCE_DELETE
+
+
+def test_allowlisting_and_authority_changes_need_an_admin_and_each_key_names_a_real_route():
+    """Arc OC-6, D7 (the user's call, 2026-10-10): these fell to the write floor, so once RBAC was enforced any Editor
+    could allowlist a high-risk action for a connection. A key that names no route gates nothing — so each is checked
+    against the app's own routes."""
+    from aughor.api import app
+    from aughor.rbac.permissions import Permission as P
+    from aughor.rbac.policy import POLICY, required_permission
+    real = {(m, r.path) for r in app.routes for m in getattr(r, "methods", None) or ()}
+    governed = [k for k in POLICY if k[0] == "POST" and k[1].split("/")[1] in ("approvals", "authority")]
+    assert len(governed) == 7 and all(POLICY[k] == P.ADMIN_MANAGE_ORG for k in governed)
+    assert set(governed) <= real, set(governed) - real
+    assert required_permission("POST", "/kinetic-actions/{action_id}/execute") == P.RESOURCE_WRITE   # running stays
+    assert required_permission("POST", "/authority/{action_id}/executions/{entry_id}/undo") == P.RESOURCE_WRITE
