@@ -2106,7 +2106,9 @@ class SchemaExplorer:
                         prior["dimensions"], prior["measures"], prior["signature"] = (
                             _psf["dimensions"], _psf["measures"], _psf)
                     prior["reproduced"] = True
-                    self._state.setdefault("insights", []).append(prior)
+                    # The state holds its findings across runs, this one included: it takes its slot again
+                    # rather than a second place (theLook held each key question four times, 2026-10-09).
+                    _store.keep_slot(self._state, prior)
                     if hasattr(self, "_insight_vecs"):
                         self._insight_vecs.append(None)
                     self._emit_insight(prior, prior.get("sql", ""), dossier=_pdoss,
@@ -2252,7 +2254,7 @@ class SchemaExplorer:
                     "promotion_confidence": 0.0,
                     "pinned": True,
                 }
-                self._state.setdefault("insights", []).append(insight)
+                _store.keep_slot(self._state, insight)
                 if hasattr(self, "_insight_vecs"):
                     self._insight_vecs.append(_pvec)
                 self._emit_insight(insight, sql, journal_extra={"pinned": True})
@@ -4223,7 +4225,7 @@ class SchemaExplorer:
                              counter="explorer.dedup_failed")
 
                 # Step 4: Store the insight
-                insight_id = f"{domain}__{nq.angle}__{used}"
+                insight_id = _store.fresh_finding_id(self._state, f"{domain}__{nq.angle}__{used}")
                 # Structured cut coordinates (measure×dimension×tables) parsed from the
                 # executed SQL — populates the hitherto-empty dimensions/measures and a
                 # `signature` block, the substrate the cut-frontier and the synthesis
@@ -4557,7 +4559,7 @@ class SchemaExplorer:
 
             _sigf = signature_fields(sql, _dialect)
             insight = {
-                "id": f"synth__{ctype}__{stored}",
+                "id": _store.fresh_finding_id(self._state, f"synth__{ctype}__{stored}"),
                 "domain": "Synthesis",
                 "angle": ctype,
                 "entities_involved": [],
