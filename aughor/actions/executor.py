@@ -57,6 +57,8 @@ class KineticResult:
         return {
             "executed": 200, "criterion_failed": 422, "invalid_params": 422,
             "approval_required": 428, "not_found": 404, "disabled": 404,
+            # Arc OC-6 — the action was changed after it was proposed: propose it again, against what will run.
+            "action_changed": 409,
             # Arc OC-6 (D4) — the action's authority is below "execute with approval" here: a refusal, not a gate.
             "authority_capped": 403,
             # Both mean "the far end refused", so both are 502 rather than the 400
@@ -823,10 +825,12 @@ def execute_kinetic_action(
                  detail=f"{action.kind}; verification {verification.get('status')}", risk=risk)
     entry = ""
     try:
+        from aughor.actions.pins import action_pin
         entry = authority.book_action(action=action, params=coerced, scope=scope, actor=actor, status="executed",
                                       outcome=outcome if isinstance(outcome, dict) else {"result": outcome},
                                       grant_id=grant_id, approved_by=("human accept" if approved else ""),
-                                      verification=verification, compensates=compensates)
+                                      verification=verification, compensates=compensates,
+                                      pin=action_pin(action, scope, schema_name))
         if verification.get("status") == "failed":
             authority.demote(action.id, scope, why=f"verification failed after execution: {verification.get('why', '')}",
                              evidence={"action_entry": entry, "verification": verification})

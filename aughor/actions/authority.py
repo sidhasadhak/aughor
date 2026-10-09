@@ -156,7 +156,7 @@ def _platform_record(outcome: Optional[dict]) -> dict:
 
 def book_action(*, action, params: dict, scope: str, actor: str, status: str, outcome: Optional[dict],
                 grant_id: str = "", approved_by: str = "", verification: Optional[dict] = None,
-                decision_id: str = "", compensates: str = "") -> str:
+                decision_id: str = "", compensates: str = "", pin: Optional[dict] = None) -> str:
     """One execution as a kernel artifact: what ran, under what, what it returned, what the
     verification found. ``compensates`` (the close-out, C5) names the Action entry this execution
     is the declared UNDO of. Returns the entry id."""
@@ -166,6 +166,8 @@ def book_action(*, action, params: dict, scope: str, actor: str, status: str, ou
                "outcome": dict(outcome or {}) if isinstance(outcome, dict) else {},
                "under": under, "grant_id": grant_id or "", "approved_by": approved_by or "",
                "verification": dict(verification or {"status": "not_declared"}),
+               # Arc OC-6 — the declaration that ran (`actions.pins`): its hash, its history version, the release
+               "action_pin": dict(pin or {}),
                "reversibility": getattr(action, "reversibility", "") or "",
                "undo": (action.undo.model_dump() if getattr(action, "undo", None) is not None else None),
                "decision": decision_id, "at": _now(), **({"compensates": compensates} if compensates else {})}
