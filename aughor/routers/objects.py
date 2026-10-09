@@ -400,7 +400,7 @@ def post_object_query(
     from aughor.db.connection import open_connection_for_with_schema
     from aughor.kernel.registries.execution_hooks import collect_guard_receipts
     from aughor.routers.ontology import resolve_effective_schema
-    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query, keyed_metrics_for
     from aughor.sql.executor import execute_guarded
 
     graph = _served_graph(connection_id, schema_name)
@@ -409,7 +409,8 @@ def post_object_query(
     try:
         try:
             compiled = compile_object_query(query, graph, dialect=getattr(db, "dialect", "") or "duckdb",
-                                            overlay=_accepted_edits(connection_id))
+                                            overlay=_accepted_edits(connection_id),
+                                            metrics=keyed_metrics_for(connection_id, graph.schema_name))
         except ObjectQueryRefused as exc:
             return {"path": "refused", "refused": exc.reason, "available": exc.available,
                     "connection_id": connection_id, "schema_name": graph.schema_name}

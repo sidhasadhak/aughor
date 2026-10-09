@@ -49,7 +49,8 @@ def statement_tables(sql: str) -> set[str]:
     if tree is None:
         return set()
     ctes = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
-    return {_bare(t.name) for t in tree.find_all(exp.Table) if t.name and t.name.lower() not in ctes}
+    return {_bare(t.name) for t in tree.find_all(exp.Table)
+            if t.name and not (not t.args.get("db") and t.name.lower() in ctes)}
 
 
 def _entity_of(graph: Any, table: str) -> str:

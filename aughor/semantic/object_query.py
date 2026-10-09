@@ -617,8 +617,13 @@ class _ManyLink:
 
 class _Compiler:
     def __init__(self, graph: OntologyGraph, query: ObjectQuery, dialect: str, fiscal_start_month: int,
-                 overlay: Optional[list] = None):
+                 overlay: Optional[list] = None, metrics: Optional[list] = None):
         self.g = graph
+        #: Arc OC-3 — the connection's approved metrics a person keyed to an entity (`MetricDefinition.entity`): a
+        #: measure naming one reads its whole statement over the query's objects. Each is held as a placeholder in
+        #: the select until the query's rows and filters are assembled (`keyed_statement`).
+        self.keyed_metrics = list(metrics or [])
+        self._statements: dict[str, Any] = {}
         #: ON-4 — the accepted property edits on this connection's objects, merged at read time.
         self.overlay_edits = list(overlay or [])
         self.overlay: list[dict] = []
@@ -1515,6 +1520,11 @@ class _Compiler:
     # ── measures ──
     def metric(self, scope: _Scope, name: str) -> str:
         low = name.strip().lower()
+        # Arc OC-3 — an approved metric a person keyed to an entity is THE definition of that name: it wins over the
+        # graph's own copy, which holds the same statement as a formula the compiler cannot re-anchor (§6.2's drift).
+        keyed = self.keyed_metric(scope, name)
+        if keyed:
+            return keyed
         m = next((m for mid, m in self.g.metrics.items()
                   if low in (mid.lower(), m.id.lower(), (m.display_name or "").lower())), None)
         mine = sorted(mid for mid, x in self.g.metrics.items() if x.verified and metric_on(x, scope.entity))
@@ -1523,6 +1533,7 @@ class _Compiler:
             if derived is not None:
                 return self.derived_metric(scope, derived)
             mine += sorted(d.name for d in derived_for(self.g, scope.entity).metrics if d.usable)
+            mine += sorted(k.name for k in self.keyed_metrics if k.entity == scope.entity.id)
             raise ObjectQueryRefused(f"no metric '{name}' on {scope.entity.id}{_did_you_mean(low, mine)}", mine)
         if not m.verified:
             raise ObjectQueryRefused(f"metric '{m.id}' is not verified ({m.verification_note or 'no note'}) — "
@@ -1548,6 +1559,70 @@ class _Compiler:
                                      f"({exc.errors()[0]['msg']})") from exc
         self.plan.append(f"metric {m.id} (verified), within {', '.join(r.id for r in scoping)}: {m.formula_sql}")
         return _within(formula, self.where(scope, filters))
+
+    def keyed_metric(self, scope: _Scope, name: str) -> str:
+        """Arc OC-3 — an approved metric a person keyed to this entity, read as its whole statement over the query's
+        objects: a placeholder now, the restricted statement once the query is assembled. "" when none is named."""
+        low = name.strip().lower()
+        m = next((k for k in self.keyed_metrics if low in (k.name.lower(), (k.label or "").lower())), None)
+        if m is None:
+            return ""
+        if m.entity != scope.entity.id:
+            raise ObjectQueryRefused(f"metric '{m.name}' measures {m.entity}, not {scope.entity.id} — anchor the query "
+                                     f"on {m.entity}, and reach {scope.entity.id} through a filter")
+        if scope is not self.top:
+            raise ObjectQueryRefused(f"metric '{m.name}' is a whole statement — it is read over the query's own "
+                                     "objects, never through a link")
+        if self.q.by or self.q.grain:
+            raise ObjectQueryRefused(f"metric '{m.name}' is a whole statement, read once over the objects — it is not "
+                                     "broken down by `by` or a period yet; name each group in a filter instead")
+        token = f"__stmt{len(self._statements)}__"
+        self._statements[token] = m
+        self.plan.append(f"metric {m.name} (approved, keyed to {m.entity} by {m.entity_confirmed_by or 'a person'}): "
+                         "its whole statement, read over these objects")
+        return token
+
+    def keyed_statement(self, m: Any, anchor: OntologyEntity, key: str, keyset: str) -> str:
+        """The metric's statement with every read of the entity's table restricted to the query's objects (``keyset``
+        selects their keys; "" when the query selects every object), in the compiler's assembly dialect."""
+        import sqlglot
+        from sqlglot import exp
+        read = self.dialect or "duckdb"
+        if not (m.sql or "").strip():
+            raise ObjectQueryRefused(f"metric '{m.name}' has no statement to read")
+        if keyset and not key:
+            raise ObjectQueryRefused(f"{anchor.id} has no key, so the objects this query selects cannot be handed to "
+                                     f"metric '{m.name}' — declare {anchor.id}'s key first")
+        try:
+            tree = sqlglot.parse_one(m.sql or "", read=read)
+        except Exception as exc:  # noqa: BLE001 — an unparseable statement is a refusal, never a guess
+            raise ObjectQueryRefused(f"metric '{m.name}': its statement did not parse ({exc})") from exc
+        if not isinstance(tree, (exp.Select, exp.Union)) and tree.find(exp.Select) is None:
+            raise ObjectQueryRefused(f"metric '{m.name}' is an expression, not a statement — its tables are not "
+                                     "named, so it cannot be read over a set of objects")
+        b = anchor.backing
+        table = ((b.table if b is not None and b.kind == "table" else "") or (anchor.source_tables or [""])[0])
+        bare = table.strip("`\"").lower().rsplit(".", 1)[-1]
+        ctes = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
+        # an unqualified name a CTE defines reads the CTE; a qualified one is the table itself, even under that name
+        hits = [t for t in tree.find_all(exp.Table)
+                if t.name.lower() == bare and not (not t.args.get("db") and t.name.lower() in ctes)]
+        if not hits:
+            raise ObjectQueryRefused(f"metric '{m.name}' does not read {anchor.id}'s table {bare}, so it cannot be "
+                                     f"restricted to {anchor.id} objects")
+        if keyset:
+            keys = sqlglot.parse_one(keyset, read="duckdb")
+            for t in hits:
+                alias = t.alias or t.name
+                bare_table = t.copy()
+                bare_table.set("alias", None)
+                restricted = exp.select("*").from_(bare_table).where(exp.column(key).isin(query=keys.copy()))
+                t.replace(restricted.subquery(alias))
+            self.plan.append(f"  {m.name}: {bare} restricted to the {anchor.id} objects selected, by {key}")
+        try:
+            return tree.sql(dialect="duckdb")
+        except Exception as exc:  # noqa: BLE001
+            raise ObjectQueryRefused(f"metric '{m.name}': its statement could not be assembled ({exc})") from exc
 
     def _derived_filters(self, d, filters, what: str) -> list[ObjectFilter]:
         try:
@@ -1967,6 +2042,9 @@ class _Compiler:
                 expr = self.term(scope, m, label)
             finally:
                 self._per_moment = ""
+            if m.divide_by is not None and "__stmt" in expr:
+                raise ObjectQueryRefused(f"{label}: a keyed metric is a whole statement, its own ratio if it is one — "
+                                         "it is not divided again")
             if m.divide_by is not None:
                 den = self.term(scope, m.divide_by, f"{label} ÷")
                 expr = f"1.0 * ({expr}) / NULLIF({den}, 0)"
@@ -1996,6 +2074,14 @@ class _Compiler:
                                                  f"readings of {r.binding.name}, pre-aggregated") if r.far
                              else r.join_sql())
         where_sql = (" WHERE " + " AND ".join(f"({w})" for w in where)) if where else ""
+        if self._statements:
+            if self.far:
+                raise ObjectQueryRefused("a keyed metric reads its own connection's statement — it is not read across "
+                                         "connections")
+            keyset = f"SELECT DISTINCT t0.{quote_ident(key)} FROM {source}{where_sql}" if where_sql else ""
+            for token, metric in self._statements.items():
+                statement = self.keyed_statement(metric, anchor, key, keyset)
+                select = [item.replace(token, f"({statement})") for item in select]
         periods = self.period_joins(source, where_sql, keys) if self._period_specs else ""
         sql = f"SELECT {', '.join(select)} FROM {source}{periods}{where_sql}"
         if grouped:
@@ -2064,9 +2150,10 @@ class _Compiler:
 
 def compile_object_query(query: ObjectQuery | dict, graph: Optional[OntologyGraph], *, dialect: str = "duckdb",
                          fiscal_start_month: Optional[int] = None,
-                         overlay: Optional[list] = None) -> CompiledObjectQuery:
+                         overlay: Optional[list] = None, metrics: Optional[list] = None) -> CompiledObjectQuery:
     """Compile an object query over the served graph, or raise `ObjectQueryRefused` with why. ``overlay``
-    is the connection's accepted property edits (ON-4): a property they set reads like a column."""
+    is the connection's accepted property edits (ON-4): a property they set reads like a column. ``metrics`` are the
+    connection's approved metrics keyed to an entity (Arc OC-3, `keyed_metrics_for`): a measure may name one."""
     if isinstance(query, dict):
         try:
             query = ObjectQuery.model_validate(query)
@@ -2078,7 +2165,18 @@ def compile_object_query(query: ObjectQuery | dict, graph: Optional[OntologyGrap
     if query.limit is not None and not 1 <= query.limit <= _MAX_LIMIT:
         raise ObjectQueryRefused(f"limit must be between 1 and {_MAX_LIMIT}")
     fiscal = fiscal_start_month if fiscal_start_month is not None else _org_fiscal_start()
-    return _Compiler(graph, query, (dialect or "duckdb").lower(), fiscal, overlay).build()
+    return _Compiler(graph, query, (dialect or "duckdb").lower(), fiscal, overlay, metrics).build()
+
+
+def keyed_metrics_for(connection_id: str, schema_name: Optional[str] = None) -> list:
+    """Arc OC-3 — the approved metrics a person keyed to an entity, on this connection and dataset, while
+    `ontology.keyed_metrics` is on; [] otherwise, so the compiler reads exactly as before."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("ontology.keyed_metrics"):
+        return []
+    from aughor.semantic.metrics import list_metrics
+    return [m for m in list_metrics(connection_id=connection_id, schema_name=schema_name)
+            if m.entity and m.status == "approved"]
 
 
 def property_at(graph: Optional[OntologyGraph], object_type: str, path: str, *,
