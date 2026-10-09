@@ -224,7 +224,7 @@ class _ActionOverride(BaseModel):
     returns: Optional[str] = None
 
 
-class _KineticActionBody(BaseModel):
+class _DeclaredActionBody(BaseModel):
     """Wave K5 — author a DECLARED KineticAction (distinct from the read-side _ActionOverride)."""
     display_name: Optional[str] = None
     description: Optional[str] = None
@@ -3077,10 +3077,87 @@ def _object_types_problem(declared, graph) -> str:
     return ""
 
 
+def _checked_action(action_id: str, fields: dict, graph):
+    """The declared action ``fields`` describe, checked as the declare door checks it — or the HTTPException it is
+    refused with. One check for the door and for the action designer's preview, so a draft the preview counts is a
+    draft declaring accepts."""
+    from aughor.ontology.models import KineticAction
+    if not fields.get("kind"):
+        raise HTTPException(status_code=400,
+                            detail="a declared action requires a 'kind' (annotate|side_effect|query)")
+    try:
+        declared = KineticAction.model_validate({**fields, "id": action_id})
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"invalid action spec: {e}")
+    problem = _object_types_problem(declared, graph)
+    if problem:
+        raise HTTPException(status_code=422, detail=f"invalid action spec: {problem}")
+    # A condition that is not an expression was accepted here and refused every press after, with its own message —
+    # read as "not allowed" by whoever pressed it. Refused at the declaration instead (2026-10-09).
+    import ast
+    for i, criterion in enumerate(declared.submission_criteria, 1):
+        try:
+            ast.parse(criterion.expr, mode="eval")
+        except SyntaxError:
+            raise HTTPException(status_code=422,
+                                detail=f"invalid action spec: condition {i} ({criterion.expr!r}) is not an expression")
+    # Phase 4 of the 2027 study (§M): a side-effect action is declared with the read that verifies
+    # it and the undo that compensates it, or declared irreversible by name — refused here, at the
+    # declaration, never discovered at execute.
+    from aughor.actions.authority import declaration_problem
+    incomplete = declaration_problem(declared)
+    if incomplete:
+        raise HTTPException(status_code=422, detail=f"incomplete declaration: {incomplete}")
+    return declared
+
+
+class _ActionPreview(BaseModel):
+    """A draft action for the designer to read: its id, the declaration as the declare door takes it, the segments a
+    cockpit lists it beside, and the person's own example of what a press is given (``{"reason": "Missed pickup"}``)."""
+    id: str = Field(min_length=1)
+    action: _DeclaredActionBody
+    segments: list[str] = Field(default_factory=list, max_length=8)
+    said: dict[str, str] = Field(default_factory=dict)
+
+
+@router.post("/ontology/declared-actions/preview", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def preview_declared_action(
+    body: _ActionPreview,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Read a draft action as declaring it would read it (the same checks — 400 and 422 with the reason, 409 for an id
+    taken) and say what it would offer (`ontology.action_design.preview`): how many objects allow a press now, over all
+    and over each segment named, and one press dry-run on a real object by the executor's own rules — the marks it
+    would set, the call it would make. NOTHING is written, dispatched or approved: the usability walk-through of
+    2026-10-09 found the declare form could say none of this before declaring. No model call."""
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.action_design import preview
+    from aughor.ontology.processes import NotMeasurable
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    fields = {k: v for k, v in body.action.model_dump().items() if v is not None}
+    declared = _checked_action(body.id, fields, graph)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
+    if body.id in {a.id for a in graph.declared_actions()}:
+        raise HTTPException(status_code=409, detail=f"an action '{body.id}' already exists")
+    if not declared.object_type:
+        raise HTTPException(status_code=400, detail="the designer reads an action that names what it is about")
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        return preview(db, graph, declared, scope=connection_id, schema_name=graph.schema_name or effective,
+                       segments=body.segments, said=body.said)
+    except NotMeasurable as exc:
+        raise HTTPException(status_code=400, detail=f"{body.id} could not be read: {exc}") from exc
+    finally:
+        db.close()
+
+
 @router.put("/ontology/kinetic-actions/{action_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def author_kinetic_action(
     action_id: str,
-    body: _KineticActionBody,
+    body: _DeclaredActionBody,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
@@ -3091,32 +3168,16 @@ def author_kinetic_action(
     silently dropped at overlay or discovered at execute."""
     from aughor import govern
     govern.guard("ontology.override", connection_id)   # P4: mutating the semantic layer
-    from aughor.ontology.models import KineticAction, encrypt_action_secrets
+    from aughor.ontology.models import encrypt_action_secrets
     from aughor.ontology.overrides import OntologyOverride, find_override
     effective = _resolve_schema(connection_id, schema_name)
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
-    if not fields.get("kind"):
-        raise HTTPException(status_code=400,
-                            detail="a declared action requires a 'kind' (annotate|side_effect|query)")
     # DS-13 — a declared component's credential is encrypted BEFORE it is validated and
     # persisted, and an unchanged (masked) one is carried forward from what is stored. The
     # override is a file: a plaintext key here would be a plaintext key in the repo.
     prior = find_override(connection_id, effective, "action", action_id)
     fields = encrypt_action_secrets(fields, getattr(prior, "fields", None) if prior else None)
-    try:
-        declared = KineticAction.model_validate({**fields, "id": action_id})
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"invalid action spec: {e}")
-    problem = _object_types_problem(declared, _get_ontology_graph(connection_id, effective))
-    if problem:
-        raise HTTPException(status_code=422, detail=f"invalid action spec: {problem}")
-    # Phase 4 of the 2027 study (§M): a side-effect action is declared with the read that verifies
-    # it and the undo that compensates it, or declared irreversible by name — refused here, at the
-    # declaration, never discovered at execute.
-    from aughor.actions.authority import declaration_problem
-    incomplete = declaration_problem(declared)
-    if incomplete:
-        raise HTTPException(status_code=422, detail=f"incomplete declaration: {incomplete}")
+    _checked_action(action_id, fields, _get_ontology_graph(connection_id, effective))
     ov = OntologyOverride(target_kind="action", target_id=action_id, fields=fields)
     ov, _ = _bind_and_persist(connection_id, effective, ov)
     return _override_result(ov)

@@ -59,10 +59,19 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 }));
 
 vi.mock("@/components/ontology/EntityTypePanel", () => ({
-  EntityTypePanel: ({ objectType, onDesignProcess }: { objectType: string; onDesignProcess?: (entity: string) => void }) => (
+  EntityTypePanel: ({ objectType, onDesignProcess, onDesignAction }: {
+    objectType: string; onDesignProcess?: (entity: string) => void; onDesignAction?: (entity: string) => void;
+  }) => (
     <div data-testid="panel">{objectType}
       {onDesignProcess && <span role="button" tabIndex={0} onClick={() => onDesignProcess(objectType)}>design a process here</span>}
+      {onDesignAction && <span role="button" tabIndex={0} onClick={() => onDesignAction(objectType)}>declare an action here</span>}
     </div>
+  ),
+}));
+
+vi.mock("@/components/ontology/ActionDesigner", () => ({
+  ActionDesigner: ({ entity, onClose }: { entity?: string; onClose: () => void }) => (
+    <div data-testid="action-designer-stub">deciding:{entity ?? ""}<span role="button" tabIndex={0} onClick={onClose}>close the action designer</span></div>
   ),
 }));
 
@@ -197,6 +206,18 @@ describe("EntityTypeMap", () => {
     const panel = await screen.findByTestId("panel");
     await userEvent.click(within(panel).getByRole("button", { name: "design a process here" }));
     expect(screen.getByTestId("designer-stub").textContent).toContain(`designing:${panel.textContent?.split("design")[0]}`);
+  });
+
+  it("opens the action designer the same way — from the rail's New action, and from a type's Declare an action", async () => {
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    await userEvent.click(await screen.findByTestId("entity-rail-new-action"));
+    expect(screen.getByTestId("action-designer-stub").textContent).toContain("deciding:");
+    expect(screen.queryByTestId("designer-stub")).toBeNull();
+    expect(screen.queryByTestId("panel")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "close the action designer" }));
+    const panel = await screen.findByTestId("panel");
+    await userEvent.click(within(panel).getByRole("button", { name: "declare an action here" }));
+    expect(screen.getByTestId("action-designer-stub").textContent).toContain(`deciding:${panel.textContent?.split("design")[0]}`);
   });
 
   it("lists each declared rule with what it admits and the metrics it scopes", async () => {

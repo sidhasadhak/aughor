@@ -8849,12 +8849,15 @@ export interface DeclaredAction {
   edits: { object: string; property: string; value: string; note: string }[];
 }
 
+/** Where the declared actions are read and declared — the frozen path of the declare door. */
+export const DECLARED_ACTIONS = "/ontology/kinetic-actions";
+
 /** Every declared action on a scope, by id. Throws when the ontology cannot be read: a reader is told, never handed
  *  an empty roster as if nothing were declared. */
 export async function getDeclaredActions(connId: string, schema?: string): Promise<Record<string, DeclaredAction>> {
   const qs = new URLSearchParams({ connection_id: connId });
   if (schema) qs.set("schema_name", schema);
-  const res = await fetch(`${getApiBase()}/ontology/kinetic-actions?${qs}`);
+  const res = await fetch(`${getApiBase()}${DECLARED_ACTIONS}?${qs}`);
   if (!res.ok) throw await refused(res, "Reading the declared actions");
   return res.json();
 }

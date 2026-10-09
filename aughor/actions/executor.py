@@ -489,7 +489,7 @@ def _dispatch_trigger_investigation(se: SideEffect, action: KineticAction, param
             **({"agent_id": req.agent_id} if req.agent_id else {})}
 
 
-def _fill_edit(template: str, params: dict) -> str:
+def fill_edit(template: str, params: dict) -> str:
     try:
         return template.format_map(params) if "{" in template else template
     except (KeyError, IndexError, ValueError) as e:
@@ -515,7 +515,7 @@ def _dispatch_object_edits(action: KineticAction, params: dict, scope: str, *, a
         saved = save_edit(OverlayEdit(
             connection_id=scope, table=str(target.get("table") or target.get("object_type") or ""),
             column=edit.property, row_key=str(target["pk"]), key_column=str(target.get("key") or ""),
-            kind="property", body=_fill_edit(edit.value, params), note=_fill_edit(edit.note, params),
+            kind="property", body=fill_edit(edit.value, params), note=fill_edit(edit.note, params),
             object_type=str(target.get("object_type") or ""), actor=actor, origin=f"action:{action.id}",
             source="user"))
         written.append({"object": f"{saved.object_type}:{saved.row_key}", "property": saved.column,

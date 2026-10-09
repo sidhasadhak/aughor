@@ -11,8 +11,8 @@
  * carrying its `object_type`, and an `edits` entry naming the param and the property. A form that renders
  * the fields and drops them from the body looks identical on screen.
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, change, choose, valueOf } from "@/lib/testing";
+import { describe, expect, it, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@/lib/testing";
 import userEvent from "@testing-library/user-event";
 
 import { DeclaredActionsPanel } from "@/components/DeclaredActionsPanel";
@@ -44,91 +44,21 @@ beforeEach(() => {
   }) as typeof fetch;
 });
 
-describe("DeclaredActionsPanel — declaring an action about an object", () => {
-  it("sends an object parameter and the edit it writes, not just the value params", async () => {
+describe("DeclaredActionsPanel — declaring an action", () => {
+  // The walk-through of 2026-10-09 found the declare form here pre-filled with a refund rule (`amount_eur`, a EUR 10,000
+  // criterion, a body summarising it) that a person saved unless they noticed. The form is gone: "New action" opens the
+  // action designer, whose requests are held in `ontology/ActionDesigner.test.tsx` and `lib/actionDraft.test.ts`.
+  it("opens the action designer, with nothing of anyone else's rule filled in", async () => {
     const user = userEvent.setup();
     render(<DeclaredActionsPanel connectionId="c1" />);
-
-    await user.type(screen.getByPlaceholderText("action id (e.g. refund_order)"), "flag_order_for_review");
-    await choose(screen.getAllByRole("combobox")[0], "annotate");
-    await user.type(screen.getByPlaceholderText(/entity this action is about/), "order");
-
-    // The first parameter row becomes the object the action is about.
-    await user.clear(screen.getByPlaceholderText("name (e.g. amount_eur)"));
-    await user.type(screen.getByPlaceholderText("name (e.g. amount_eur)"), "order");
-    await choose(screen.getAllByRole("combobox").find(b => valueOf(b) === "value")!, "object");
-    await user.type(screen.getByPlaceholderText("entity (e.g. order)"), "order");
-
-    await user.click(screen.getByRole("button", { name: "+ Add an edit" }));
-    await user.type(screen.getByPlaceholderText("object param (e.g. order)"), "order");
-    await user.type(screen.getByPlaceholderText("property (e.g. review_flag)"), "review_flag");
-    await user.type(screen.getByPlaceholderText(/note — /), "duplicate charge");
-
-    await user.click(screen.getByRole("button", { name: "Save action" }));
-
-    await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
-    const put = calls.find((c) => c.method === "PUT")!;
-    expect(put.url).toContain("/ontology/kinetic-actions/flag_order_for_review");
-    expect(put.body.object_type).toBe("order");
-    expect(put.body.params).toEqual([{ name: "order", kind: "object", object_type: "order", required: true }]);
-    expect(put.body.edits).toEqual([
-      { object: "order", property: "review_flag", value: "true", note: "duplicate charge" }]);
-  });
-
-  it("keeps a plain value parameter typed, with no object_type smuggled in", async () => {
-    const user = userEvent.setup();
-    render(<DeclaredActionsPanel connectionId="c1" />);
-    await user.type(screen.getByPlaceholderText("action id (e.g. refund_order)"), "refund_order");
-    await user.click(screen.getByRole("button", { name: "Save action" }));
-
-    await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
-    expect(calls.find((c) => c.method === "PUT")!.body.params).toEqual([
-      { name: "amount_eur", data_type: "NUMERIC", required: true }]);
-  });
-});
-
-describe("DeclaredActionsPanel — a side-effect action declared with its proof and its undo", () => {
-  // The door refuses a side-effect action without the read that proves it took effect, and without an undo
-  // unless it is irreversible by name. The form sent none of the three, so every one declared here was a 422.
-  it("sends the verification read, the reversibility and the undo with its parameter mapping", async () => {
-    const user = userEvent.setup();
-    render(<DeclaredActionsPanel connectionId="c1" />);
-    await user.type(screen.getByPlaceholderText("action id (e.g. refund_order)"), "refund_order");
-    // `change`, not `type`: the user-event keyboard reads `{order_id}` as a key name.
-    change(screen.getByPlaceholderText(/SELECT 1 FROM refunds/),
-      { target: { value: "SELECT 1 FROM refunds WHERE order_id = '{order_id}'" } });
-    await choose(screen.getAllByRole("combobox").find(b => valueOf(b) === "")!, "compensable");
-    await user.type(screen.getByPlaceholderText("undo action id (e.g. reverse_refund)"), "reverse_refund");
-    await user.type(screen.getByPlaceholderText(/window in hours/), "72");
-    await user.click(screen.getByRole("button", { name: "+ Map an undo parameter" }));
-    await user.type(screen.getByPlaceholderText("undo parameter (e.g. refund_id)"), "order_id");
-    change(screen.getByPlaceholderText(/filled from/), { target: { value: "{order_id}" } });
-
-    await user.click(screen.getByRole("button", { name: "Save action" }));
-
-    await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
-    const put = calls.find((c) => c.method === "PUT")!;
-    expect(put.body.verification).toEqual({ sql: "SELECT 1 FROM refunds WHERE order_id = '{order_id}'", expects: "rows" });
-    expect(put.body.reversibility).toBe("compensable");
-    expect(put.body.undo).toEqual({ action_id: "reverse_refund", window_hours: 72, params: { order_id: "{order_id}" } });
-  });
-
-  it("sends no undo for an action declared irreversible, whatever was typed before", async () => {
-    const user = userEvent.setup();
-    render(<DeclaredActionsPanel connectionId="c1" />);
-    await user.type(screen.getByPlaceholderText("action id (e.g. refund_order)"), "close_account");
-    change(screen.getByPlaceholderText(/SELECT 1 FROM refunds/), { target: { value: "SELECT 1 FROM closures" } });
-    await choose(screen.getAllByRole("combobox").find(b => valueOf(b) === "")!, "compensable");
-    await user.type(screen.getByPlaceholderText("undo action id (e.g. reverse_refund)"), "reopen_account");
-    await choose(screen.getAllByRole("combobox").find(b => valueOf(b) === "compensable")!, "irreversible");
-
-    await user.click(screen.getByRole("button", { name: "Save action" }));
-
-    await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
-    const put = calls.find((c) => c.method === "PUT")!;
-    expect(put.body.reversibility).toBe("irreversible");
-    expect(put.body.verification).toEqual({ sql: "SELECT 1 FROM closures", expects: "rows" });
-    expect(put.body).not.toHaveProperty("undo");
+    expect(screen.queryByTestId("action-designer")).toBeNull();
+    await user.click(screen.getByTestId("actions-new"));
+    const page = await screen.findByTestId("action-designer");
+    expect(page.textContent).not.toMatch(/amount_eur|refund|10,?000/i);
+    // Only the designer's own defaults: a reason is asked for, and a mark reads "yes".
+    expect([...page.querySelectorAll("input, textarea")].map(e => (e as HTMLInputElement).value).filter(Boolean))
+      .toEqual(["yes", "Reason"]);
+    expect(calls.some(c => c.method !== "GET")).toBe(false);                     // opening it writes nothing
   });
 });
 

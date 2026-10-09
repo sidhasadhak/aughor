@@ -87,7 +87,7 @@ def test_the_declare_door_refuses_an_incomplete_side_effect_action(monkeypatch):
     monkeypatch.setattr(ONT, "_resolve_schema", lambda c, s: None)
     monkeypatch.setattr("aughor.ontology.overrides.find_override", lambda *a, **k: None)
     monkeypatch.setattr("aughor.ontology.models.encrypt_action_secrets", lambda fields, prior: fields)
-    body = ONT._KineticActionBody(kind="side_effect", params=[{"name": "order_id", "data_type": "VARCHAR"}],
+    body = ONT._DeclaredActionBody(kind="side_effect", params=[{"name": "order_id", "data_type": "VARCHAR"}],
                                   side_effects=[{"kind": "webhook", "config": {"url": "https://x.example/h"}}], risk="high")
     with pytest.raises(HTTPException) as exc:
         ONT.author_kinetic_action("refund", body, connection_id="c", schema_name=None)

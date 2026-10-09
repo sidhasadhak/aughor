@@ -10897,6 +10897,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/declared-actions/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Declared Action
+         * @description Read a draft action as declaring it would read it (the same checks — 400 and 422 with the reason, 409 for an id
+         *     taken) and say what it would offer (`ontology.action_design.preview`): how many objects allow a press now, over all
+         *     and over each segment named, and one press dry-run on a real object by the executor's own rules — the marks it
+         *     would set, the call it would make. NOTHING is written, dispatched or approved: the usability walk-through of
+         *     2026-10-09 found the declare form could say none of this before declaring. No model call.
+         */
+        post: operations["preview_declared_action_ontology_declared_actions_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/dependents": {
         parameters: {
             query?: never;
@@ -20510,6 +20534,22 @@ export interface components {
             /** Sql Template */
             sql_template?: string | null;
         };
+        /**
+         * _ActionPreview
+         * @description A draft action for the designer to read: its id, the declaration as the declare door takes it, the segments a
+         *     cockpit lists it beside, and the person's own example of what a press is given (``{"reason": "Missed pickup"}``).
+         */
+        _ActionPreview: {
+            action: components["schemas"]["_DeclaredActionBody"];
+            /** Id */
+            id: string;
+            /** Said */
+            said?: {
+                [key: string]: string;
+            };
+            /** Segments */
+            segments?: string[];
+        };
         /** _AgentPolicyBody */
         _AgentPolicyBody: {
             /** Connections */
@@ -20807,6 +20847,46 @@ export interface components {
             model: string;
         };
         /**
+         * _DeclaredActionBody
+         * @description Wave K5 — author a DECLARED KineticAction (distinct from the read-side _ActionOverride).
+         */
+        _DeclaredActionBody: {
+            /** Description */
+            description?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Edits */
+            edits?: unknown[] | null;
+            /** Entity */
+            entity?: string | null;
+            /** Kind */
+            kind?: string | null;
+            /** Object Type */
+            object_type?: string | null;
+            /** Origin */
+            origin?: string | null;
+            /** Params */
+            params?: unknown[] | null;
+            /** Reversibility */
+            reversibility?: string | null;
+            /** Risk */
+            risk?: string | null;
+            /** Rule */
+            rule?: string | null;
+            /** Side Effects */
+            side_effects?: unknown[] | null;
+            /** Submission Criteria */
+            submission_criteria?: unknown[] | null;
+            /** Undo */
+            undo?: {
+                [key: string]: unknown;
+            } | null;
+            /** Verification */
+            verification?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
          * _DeclaredBacking
          * @description ON-7 — the source whose rows ARE a declared type's objects.
          */
@@ -21075,46 +21155,6 @@ export interface components {
             hops?: number | null;
             /** Question */
             question: string;
-        };
-        /**
-         * _KineticActionBody
-         * @description Wave K5 — author a DECLARED KineticAction (distinct from the read-side _ActionOverride).
-         */
-        _KineticActionBody: {
-            /** Description */
-            description?: string | null;
-            /** Display Name */
-            display_name?: string | null;
-            /** Edits */
-            edits?: unknown[] | null;
-            /** Entity */
-            entity?: string | null;
-            /** Kind */
-            kind?: string | null;
-            /** Object Type */
-            object_type?: string | null;
-            /** Origin */
-            origin?: string | null;
-            /** Params */
-            params?: unknown[] | null;
-            /** Reversibility */
-            reversibility?: string | null;
-            /** Risk */
-            risk?: string | null;
-            /** Rule */
-            rule?: string | null;
-            /** Side Effects */
-            side_effects?: unknown[] | null;
-            /** Submission Criteria */
-            submission_criteria?: unknown[] | null;
-            /** Undo */
-            undo?: {
-                [key: string]: unknown;
-            } | null;
-            /** Verification */
-            verification?: {
-                [key: string]: unknown;
-            } | null;
         };
         /**
          * _LinkName
@@ -40412,6 +40452,42 @@ export interface operations {
             };
         };
     };
+    preview_declared_action_ontology_declared_actions_preview_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_ActionPreview"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_declaration_dependents_ontology_dependents_get: {
         parameters: {
             query: {
@@ -41758,7 +41834,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["_KineticActionBody"];
+                "application/json": components["schemas"]["_DeclaredActionBody"];
             };
         };
         responses: {

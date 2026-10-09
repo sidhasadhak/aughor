@@ -101,7 +101,7 @@ function Section({ title, aside, children }: { title: string; aside?: React.Reac
 }
 
 export function EntityTypePanel({ connectionId, schema, objectType, types, version, onOpen, onOpenProcess, onChanged,
-  onDesignProcess, sources }: {
+  onDesignProcess, onDesignAction, sources }: {
   connectionId: string;
   schema?: string;
   objectType: string;
@@ -115,6 +115,8 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   onChanged: () => void;
   /** Opens the process designer on this type (2026-10-09); absent where it does not reach, and the form here stands. */
   onDesignProcess?: (entity: string) => void;
+  /** Opens the action designer on this type (2026-10-09); absent where it does not reach. */
+  onDesignAction?: (entity: string) => void;
   /** ON-8 — set in an organisation's ontology: its connections by id, for the type, its bindings and a new binding. */
   sources?: Record<string, string>;
 }) {
@@ -138,7 +140,7 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
     body = <EmptyState icon="info" title={`No entity “${objectType}”`}>{detail.refused}</EmptyState>;
   } else {
     body = <TypeDetail detail={detail} connectionId={connectionId} schema={schema} types={types}
-      onOpen={onOpen} onOpenProcess={onOpenProcess} onChanged={onChanged} onDesignProcess={onDesignProcess} sources={sources} />;
+      onOpen={onOpen} onOpenProcess={onOpenProcess} onChanged={onChanged} onDesignProcess={onDesignProcess} onDesignAction={onDesignAction} sources={sources} />;
   }
   return (
     <aside aria-label="Entity type" data-testid="entity-type-panel"
@@ -149,7 +151,8 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   );
 }
 
-function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess, onChanged, onDesignProcess, sources }: {
+function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess, onChanged, onDesignProcess, onDesignAction,
+  sources }: {
   detail: ObjectTypeDetail;
   connectionId: string;
   schema?: string;
@@ -158,6 +161,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
   onOpenProcess?: (processId: string) => void;
   onChanged: () => void;
   onDesignProcess?: (entity: string) => void;
+  onDesignAction?: (entity: string) => void;
   sources?: Record<string, string>;
 }) {
   const declared = detail.origin === "human" || detail.origin === "model";
@@ -207,7 +211,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
       <LinksSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged}
         inDomain={inDomain} />
       <WithdrawnSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
-      {!inDomain && <ActionsSection detail={detail} connectionId={connectionId} />}
+      {!inDomain && <ActionsSection detail={detail} connectionId={connectionId} onDesignAction={onDesignAction} />}
       <MetricsSection detail={detail} />
       <ProcessesSection detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
         onChanged={onChanged} onDesignProcess={onDesignProcess} />
@@ -1751,13 +1755,23 @@ function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged, 
   );
 }
 
-function ActionsSection({ detail, connectionId }: { detail: ObjectTypeDetail; connectionId: string }) {
+function ActionsSection({ detail, connectionId, onDesignAction }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  /** Opens the action designer on this type; absent where it does not reach. */
+  onDesignAction?: (entity: string) => void;
+}) {
   const href = declaredActionsHref(connectionId);
+  const design = onDesignAction && (
+    <Button variant="outline" size="xs" data-testid="type-design-action" onClick={() => onDesignAction(detail.id)}>
+      Declare an action
+    </Button>
+  );
   if (detail.actions.length === 0) {
     return (
       <Section title="Declared actions">
         <EmptyState variant="inline" title={`No declared action takes a ${detail.display_name.toLowerCase()}.`}
-          action={<Link href={href}><Button variant="outline" size="xs">Open Actions</Button></Link>} />
+          action={design ?? <Link href={href}><Button variant="outline" size="xs">Open Actions</Button></Link>} />
       </Section>
     );
   }
@@ -1778,7 +1792,10 @@ function ActionsSection({ detail, connectionId }: { detail: ObjectTypeDetail; co
           </div>
         </div>
       ))}
-      <Link href={href}><Button variant="minimal" size="xs" style={{ marginTop: 6 }}>Open in Actions</Button></Link>
+      <span style={{ display: "flex", gap: 6, marginTop: 6 }}>
+        {design}
+        <Link href={href}><Button variant="minimal" size="xs">Open in Actions</Button></Link>
+      </span>
     </Section>
   );
 }

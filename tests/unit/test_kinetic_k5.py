@@ -20,10 +20,10 @@ def _iso(tmp_path, monkeypatch):
     monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")   # the gate is on by default since 2026-10-04
 
 
-def _valid_body() -> "ONT._KineticActionBody":
+def _valid_body() -> "ONT._DeclaredActionBody":
     # Phase 4 of the 2027 study: a side-effect action is declared with the read that verifies it
     # and the undo that compensates it — the door refuses one without (test_action_authority).
-    return ONT._KineticActionBody(
+    return ONT._DeclaredActionBody(
         kind="side_effect", display_name="Refund order",
         params=[{"name": "amount", "data_type": "NUMERIC", "required": True}],
         submission_criteria=[{"expr": "amount <= 100", "message": "cap is EUR 100"}],
@@ -58,7 +58,7 @@ def test_author_valid_action_persists_and_reads_back_whole():
 
 
 def test_author_malformed_criterion_is_422():
-    body = ONT._KineticActionBody(kind="side_effect",
+    body = ONT._DeclaredActionBody(kind="side_effect",
                                   submission_criteria=[{"expr": "amount <= 100"}])  # no message
     with pytest.raises(HTTPException) as e:
         ONT.author_kinetic_action("bad", body, connection_id="c", schema_name=None)
@@ -67,7 +67,7 @@ def test_author_malformed_criterion_is_422():
 
 def test_author_missing_kind_is_400():
     with pytest.raises(HTTPException) as e:
-        ONT.author_kinetic_action("x", ONT._KineticActionBody(display_name="x"),
+        ONT.author_kinetic_action("x", ONT._DeclaredActionBody(display_name="x"),
                                   connection_id="c", schema_name=None)
     assert e.value.status_code == 400
 
