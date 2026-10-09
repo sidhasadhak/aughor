@@ -563,7 +563,9 @@ def get_ontology_keys(
     from aughor.ontology.keys import metric_keys
     effective = _served_scope(connection_id, schema_name)
     graph = _get_ontology_graph(connection_id, schema_name)
-    return {"connection_id": connection_id, "schema_name": effective,
+    entities = sorted(({"id": e.id, "label": e.display_name or e.id} for e in graph.entities.values()),
+                      key=lambda x: x["id"]) if graph is not None else []
+    return {"connection_id": connection_id, "schema_name": effective, "entities": entities,
             "metrics": metric_keys(connection_id, effective, graph)}
 
 

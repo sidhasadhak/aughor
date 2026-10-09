@@ -974,6 +974,51 @@ export interface Metric {
   time_source?: string | null;
   /** Stamped by the server with the person signed in — never sent. */
   time_confirmed_by?: string | null;
+  /** Arc OC-3 — the entity whose objects it measures, confirmed by a person through its own door
+   *  (`confirmMetricEntity`); never sent with an edit, which keeps it. */
+  entity?: string | null;
+  entity_confirmed_by?: string | null;
+}
+
+/** Arc OC-3 — one metric's key: the entity a person confirmed, and the one its grain proposes, with why. */
+export interface MetricKey {
+  name: string;
+  label: string;
+  status: string;
+  entity: string;
+  confirmed_by: string;
+  proposal: { entity: string; property: string; why: string; candidates: string[] };
+  agrees: boolean;
+}
+
+export interface OntologyKeys {
+  connection_id: string;
+  schema_name: string;
+  entities: { id: string; label: string }[];
+  metrics: MetricKey[];
+}
+
+/** How the scope's metrics are keyed to its entities — the confirmed key, the proposal and why. */
+export async function getOntologyKeys(connectionId: string, schema?: string): Promise<OntologyKeys> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema && schema !== "*") q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/ontology/keys?${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Could not read the metric keys"));
+  return res.json();
+}
+
+/** Confirm (or, with "", clear) the entity a metric measures — as the person signed in. Its statement, status and
+ *  version are untouched. */
+export async function confirmMetricEntity(
+  name: string, connectionId: string, schema: string | undefined, entity: string,
+): Promise<Metric> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema && schema !== "*") q.set("schema", schema);
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/entity?${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entity }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Could not key the metric"));
+  return res.json();
 }
 
 export interface MetricAuditEntry {
