@@ -101,7 +101,7 @@ function Section({ title, aside, children }: { title: string; aside?: React.Reac
 }
 
 export function EntityTypePanel({ connectionId, schema, objectType, types, version, onOpen, onOpenProcess, onChanged,
-  sources }: {
+  onDesignProcess, sources }: {
   connectionId: string;
   schema?: string;
   objectType: string;
@@ -113,6 +113,8 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   onOpenProcess?: (processId: string) => void;
   /** A write here (a declaration, a measurement) changes what the map shows. */
   onChanged: () => void;
+  /** Opens the process designer on this type (2026-10-09); absent where it does not reach, and the form here stands. */
+  onDesignProcess?: (entity: string) => void;
   /** ON-8 — set in an organisation's ontology: its connections by id, for the type, its bindings and a new binding. */
   sources?: Record<string, string>;
 }) {
@@ -136,7 +138,7 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
     body = <EmptyState icon="info" title={`No entity “${objectType}”`}>{detail.refused}</EmptyState>;
   } else {
     body = <TypeDetail detail={detail} connectionId={connectionId} schema={schema} types={types}
-      onOpen={onOpen} onOpenProcess={onOpenProcess} onChanged={onChanged} sources={sources} />;
+      onOpen={onOpen} onOpenProcess={onOpenProcess} onChanged={onChanged} onDesignProcess={onDesignProcess} sources={sources} />;
   }
   return (
     <aside aria-label="Entity type" data-testid="entity-type-panel"
@@ -147,7 +149,7 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   );
 }
 
-function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess, onChanged, sources }: {
+function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess, onChanged, onDesignProcess, sources }: {
   detail: ObjectTypeDetail;
   connectionId: string;
   schema?: string;
@@ -155,6 +157,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
   onOpen: (objectType: string) => void;
   onOpenProcess?: (processId: string) => void;
   onChanged: () => void;
+  onDesignProcess?: (entity: string) => void;
   sources?: Record<string, string>;
 }) {
   const declared = detail.origin === "human" || detail.origin === "model";
@@ -207,7 +210,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
       {!inDomain && <ActionsSection detail={detail} connectionId={connectionId} />}
       <MetricsSection detail={detail} />
       <ProcessesSection detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
-        onChanged={onChanged} />
+        onChanged={onChanged} onDesignProcess={onDesignProcess} />
       <PathFinder detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} />
     </>
   );
@@ -217,12 +220,13 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
  *  a lag, a breach rate — each read by the compiler once its declaration is measured, and refused with the reason
  *  until then. A process the type goes through and a rule over it are declared here, and counted before anything is
  *  written. */
-function ProcessesSection({ detail, connectionId, schema, onOpenProcess, onChanged }: {
+function ProcessesSection({ detail, connectionId, schema, onOpenProcess, onChanged, onDesignProcess }: {
   detail: ObjectTypeDetail;
   connectionId: string;
   schema?: string;
   onOpenProcess?: (processId: string) => void;
   onChanged: () => void;
+  onDesignProcess?: (entity: string) => void;
 }) {
   const processes = detail.processes ?? [];
   const derived = detail.derived ? [...detail.derived.segments, ...detail.derived.metrics, ...detail.derived.properties] : [];
@@ -245,8 +249,15 @@ function ProcessesSection({ detail, connectionId, schema, onOpenProcess, onChang
         </p>
       )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-        <DeclareProcess detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
-          onChanged={onChanged} />
+        {onDesignProcess ? (
+          <Button variant="outline" size="xs" data-testid="type-design-process" onClick={() => onDesignProcess(detail.id)}
+            title={`Design a process ${detail.display_name} goes through, on a page of its own — counted on the data as you build it`}>
+            <Icon name="plus" size={12} /> Declare a process
+          </Button>
+        ) : (
+          <DeclareProcess detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
+            onChanged={onChanged} />
+        )}
         <DeclareRule detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
       </div>
     </Section>

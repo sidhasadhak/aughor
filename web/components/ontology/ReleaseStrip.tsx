@@ -83,11 +83,13 @@ function ChangeRow({ change, busy, onDiscard }: {
   );
 }
 
-export function ReleaseStrip({ connectionId, schema, onChanged }: {
+export function ReleaseStrip({ connectionId, schema, onChanged, version = 0 }: {
   connectionId: string;
   schema?: string;
   /** Called after a publish or a discard, so the screens re-read what they show. */
   onChanged: () => void;
+  /** Bumped when something below declares or publishes (the process designer), so the strip re-reads the release. */
+  version?: number;
 }) {
   const [state, setState] = useState<ReleaseState | null>(null);
   const [open, setOpen] = useState(false);
@@ -97,7 +99,7 @@ export function ReleaseStrip({ connectionId, schema, onChanged }: {
 
   const read = useCallback(() => {
     getRelease(connectionId, schema).then(setState).catch(e => setError(errorText(e)));
-  }, [connectionId, schema]);
+  }, [connectionId, schema, version]);
 
   useEffect(() => { read(); }, [read]);
 

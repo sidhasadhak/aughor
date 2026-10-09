@@ -2269,6 +2269,78 @@ def declare_ontology_process(
     return _declare_process_core(body.model_dump(exclude_none=True), connection_id, schema_name)
 
 
+@router.get("/ontology/processes/candidates", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def process_candidates(
+    entity: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """The process designer's reading of a type (`ontology.process_design.candidates`): the moments its objects and
+    their to-one linked records carry, with how many objects have each and the span they cover, and the properties
+    whose few values place an object in a state, with how many hold each value — what a stage may be anchored to and
+    the statuses objects actually end in. Counted through the object door; nothing is written. No model call."""
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.process_design import candidates
+    from aughor.ontology.processes import NotMeasurable
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
+    found = graph.entities.get(entity) or next((e for e in graph.entities.values() if e.api_name == entity), None)
+    if found is None:
+        raise HTTPException(status_code=404, detail=f"no entity '{entity}' in this ontology")
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        return candidates(db, graph, found.id)
+    except NotMeasurable as exc:
+        raise HTTPException(status_code=400, detail=f"{found.id} could not be read: {exc}") from exc
+    finally:
+        db.close()
+
+
+@router.post("/ontology/processes/preview", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def preview_declared_process(
+    body: _DeclaredProcess,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Count a draft process exactly as declaring it would (the same checks — 400 with the reason, 409 for a name taken
+    — and the same measurement) and say what a person should read before publishing it (`process_design.design_checks`):
+    objects waiting at a stage for more than a year, asked about with the state that explains them; moments dated after
+    today; objects that skip a stage or reach one before the stage before; who leaves. With what it would derive, each
+    with its number now. NOTHING is written — the usability walk-through of 2026-10-09 found the form could not count a
+    draft, and a delivery process typed the obvious way would have published ≈35,750 late deliveries that were records
+    left behind. No model call."""
+    spec = body.model_dump(exclude_none=True)
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.process_design import creates, design_checks
+    from aughor.ontology.processes import (
+        NotMeasurable, measure_process, process_fields, process_from_fields, process_spec_problem, resolve_process,
+    )
+    effective = _resolve_schema(connection_id, schema_name)
+    problem = process_spec_problem(spec)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
+    process_id = str(spec["id"])
+    if process_id in graph.processes:
+        raise HTTPException(status_code=409, detail=f"a process '{process_id}' already exists")
+    problem, fields = resolve_process(graph, process_id, process_fields(spec))
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        measured = measure_process(db, graph, process_id, fields)
+        checks = design_checks(db, graph, process_from_fields(process_id, fields), measured)
+    except NotMeasurable as exc:
+        raise HTTPException(status_code=400, detail=f"{process_id} could not be counted: {exc}") from exc
+    finally:
+        db.close()
+    return {"process": measured.model_dump(mode="json"), "checks": checks, "creates": creates(measured)}
+
+
 @router.put("/ontology/processes/{process_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def change_declared_process(
     process_id: str,

@@ -59,7 +59,17 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 }));
 
 vi.mock("@/components/ontology/EntityTypePanel", () => ({
-  EntityTypePanel: ({ objectType }: { objectType: string }) => <div data-testid="panel">{objectType}</div>,
+  EntityTypePanel: ({ objectType, onDesignProcess }: { objectType: string; onDesignProcess?: (entity: string) => void }) => (
+    <div data-testid="panel">{objectType}
+      {onDesignProcess && <span role="button" tabIndex={0} onClick={() => onDesignProcess(objectType)}>design a process here</span>}
+    </div>
+  ),
+}));
+
+vi.mock("@/components/ontology/ProcessDesigner", () => ({
+  ProcessDesigner: ({ entity, onClose }: { entity?: string; onClose: () => void }) => (
+    <div data-testid="designer-stub">designing:{entity ?? ""}<span role="button" tabIndex={0} onClick={onClose}>close the designer</span></div>
+  ),
 }));
 
 const map: TypeMap = {
@@ -175,6 +185,18 @@ describe("EntityTypeMap", () => {
     await userEvent.click(screen.getAllByTestId("entity-rail-row").find((b) => b.textContent?.startsWith("country"))!);
     await waitFor(() => expect(screen.getByTestId("panel")).toHaveTextContent("country"));
     await waitFor(() => expect(handoff.edges.every((e) => e.label === undefined)).toBe(true));
+  });
+
+  it("opens the process designer in the whole map's place — from the rail, and from a type — and closes back to it", async () => {
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    await userEvent.click(await screen.findByTestId("entity-rail-new-process"));
+    expect(screen.getByTestId("designer-stub").textContent).toContain("designing:");
+    expect(screen.queryByTestId("panel")).toBeNull();                       // the three columns give way
+    expect(screen.queryByTestId("entity-rail-row")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "close the designer" }));
+    const panel = await screen.findByTestId("panel");
+    await userEvent.click(within(panel).getByRole("button", { name: "design a process here" }));
+    expect(screen.getByTestId("designer-stub").textContent).toContain(`designing:${panel.textContent?.split("design")[0]}`);
   });
 
   it("lists each declared rule with what it admits and the metrics it scopes", async () => {

@@ -935,6 +935,105 @@ export interface DeclaredProcessSpec {
     promise?: { name?: string; within_days?: number; within_hours?: number; deadline?: string; grain?: string; via?: string;
                 target?: number };
   }[];
+  /** Arc OC-4 — how an object leaves the process: a property and the values that mean gone. */
+  leaves?: { property: string; values: string[] };
+}
+
+// ── The process designer: the data read for a person designing a process (2026-10-09) ──────────────────────────────
+
+/** A moment an object of the type — or a record it reaches by a to-one link — carries. */
+export interface ProcessMoment {
+  path: string;
+  property: string;
+  label: string;
+  /** The link it is read through; "" for the type's own. */
+  via: string;
+  on: string;
+  on_label: string;
+  /** How many objects have it. */
+  set: number;
+  earliest: string;
+  latest: string;
+}
+
+export interface ProcessStateValue { value: string | null; objects: number }
+
+/** A property whose few values place an object in a state, with how many objects hold each (most held first). */
+export interface ProcessState { property: string; label: string; values: ProcessStateValue[] }
+
+export interface ProcessCandidates {
+  entity: string;
+  label: string;
+  api_name: string;
+  objects: number;
+  table: string;
+  key: string;
+  moments: ProcessMoment[];
+  states: ProcessState[];
+  /** What could not be read, said. */
+  unread: string[];
+}
+
+/** What a stage may be anchored to, read from the data — no model call, nothing written. */
+export async function getProcessCandidates(
+  connectionId: string, entity: string, schemaName?: string,
+): Promise<ProcessCandidates> {
+  const res = await fetch(`${getApiBase()}/ontology/processes/candidates?${scope(connectionId, schemaName, { entity })}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** One thing a person reads about a draft before publishing it. */
+export interface DesignCheck {
+  id: string;
+  /** `ask` — a question with answers; `warn`; `error`; `ok`. */
+  level: "ask" | "warn" | "error" | "ok";
+  stage?: string;
+  says: string;
+  numbers?: Record<string, number>;
+  /** The object door's filters that list the objects this check is about. */
+  show?: { entity: string; filters: Record<string, unknown>[]; columns: string[] };
+  /** For a stuck stage: the state values that explain the waiting objects — the way they may have left. */
+  exit?: { property: string; label: string; values: string[]; explains: number; of: number; holding: number; recent: number };
+}
+
+/** What a published process derives, with its number now. */
+export interface DesignCreate { kind: "segment" | "metric" | "property"; name: string; noun: string; value: number | null; says: string }
+
+export interface MeasuredStage {
+  name: string;
+  display_name: string;
+  timestamp: string;
+  state: string[];
+  property: string;
+  reached: number | null;
+  verified: boolean | null;
+  note: string;
+  skipped: number | null;
+  out_of_order: number | null;
+  p50_days: number | null;
+  promise: null | {
+    name: string; within_days: number | null; within_hours: number | null; deadline: string;
+    reached: number | null; breached: number | null; open: number | null; open_overdue: number | null;
+    breach_rate: number | null; as_of: string; flags: string[];
+  };
+}
+
+export interface ProcessPreview {
+  process: { id: string; entity: string; objects: number | null; stages: MeasuredStage[];
+             leaves?: { property: string; values: string[]; left: number | null; missing: string[]; unknown: number | null } | null };
+  checks: DesignCheck[];
+  creates: DesignCreate[];
+}
+
+/** Count a draft exactly as declaring it would, and say what to read before publishing it. Nothing is written. */
+export async function previewProcess(
+  connectionId: string, spec: DeclaredProcessSpec, schemaName?: string,
+): Promise<ProcessPreview> {
+  const res = await fetch(`${getApiBase()}/ontology/processes/preview?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
 }
 
 /** The schemas of one connection that have an ontology built, beside the one its registry names — a read of the store;

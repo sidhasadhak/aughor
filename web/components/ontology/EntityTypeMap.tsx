@@ -36,6 +36,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
+import { ProcessDesigner } from "@/components/ontology/ProcessDesigner";
 import { ProcessPanel } from "@/components/ontology/ProcessPanel";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -135,7 +136,12 @@ function nameOf(sources: Record<string, string>, connectionId: string | undefine
   return connectionId ? sources[connectionId] ?? connectionId : "";
 }
 
-export function EntityTypeMap({ connectionId, schema }: { connectionId: string; schema?: string }) {
+export function EntityTypeMap({ connectionId, schema, onReleaseChanged }: {
+  connectionId: string;
+  schema?: string;
+  /** Something here declared or published — the release strip above re-reads. */
+  onReleaseChanged?: () => void;
+}) {
   const [map, setMap] = useState<TypeMap | null>(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -145,6 +151,9 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
   const [draft, setDraft] = useState<OntologyDraft | null>(null);
   // ON-9 — a declared process opened from the rail takes the panel's place; opening a type gives it back.
   const [openProcess, setOpenProcess] = useState<string | null>(null);
+  // The process designer takes the whole map's place while a process is being designed (2026-10-09): a business process
+  // is designed on a page of its own, not in the panel's quarter of the screen.
+  const [designing, setDesigning] = useState<{ entity?: string } | null>(null);
   const openType = (objectType: string) => {
     setOpenProcess(null);
     setSelected(objectType);
@@ -216,6 +225,17 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
     );
   }
   // ON-7 — picking a part lights its parent's card.
+  if (designing && !domain) {
+    return (
+      <div style={{ flex: 1, display: "flex", minWidth: 0, minHeight: 0 }} data-testid="entity-type-map">
+        <ProcessDesigner connectionId={connectionId} schema={schema} types={map.object_types} entity={designing.entity}
+          takenIds={(map.processes ?? []).map((p) => p.id)}
+          onClose={() => setDesigning(null)}
+          onDeclared={() => { setVersion((v) => v + 1); onReleaseChanged?.(); }}
+          onPublished={() => onReleaseChanged?.()} />
+      </div>
+    );
+  }
   const picked = map.object_types.find((t) => t.object_type === selected);
   const standing = picked?.absorbed_into && drawn.object_types.some((t) => t.object_type === picked.absorbed_into)
     ? picked.absorbed_into : selected;
@@ -229,6 +249,7 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
           setOpenProcess(p.id);
         }}
         declare={declare}
+        onNewProcess={domain ? undefined : () => setDesigning({})}
         sources={domain ? sources : undefined}
         draft={draft}
         explore={() => exploreOntology(connectionId, schema).then((next) => {
@@ -248,6 +269,7 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
       ) : (
         <EntityTypePanel connectionId={connectionId} schema={schema} objectType={selected} types={map.object_types}
           version={version} onOpen={openType} onOpenProcess={setOpenProcess} onChanged={() => setVersion((v) => v + 1)}
+          onDesignProcess={domain ? undefined : (entity) => setDesigning({ entity })}
           sources={domain ? sources : undefined} />
       )}
     </div>
@@ -259,7 +281,7 @@ function matches(t: TypeMapRow, wanted: string): boolean {
 }
 
 function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, rules, openProcess, onPickProcess, declare,
-  sources, draft, explore, confirm }: {
+  onNewProcess, sources, draft, explore, confirm }: {
   types: TypeMapRow[];
   /** ON-7 — the types folded into a parent: listed under the cards, still openable by name. */
   parts: TypeMapRow[];
@@ -273,6 +295,8 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, r
   openProcess: string | null;
   onPickProcess: (process: ProcessRow) => void;
   declare: (spec: DeclaredEntitySpec) => Promise<void>;
+  /** Opens the process designer; absent where it does not reach (an organisation's ontology). */
+  onNewProcess?: () => void;
   /** ON-8 — set in an organisation's ontology: its connections by id, which each row names and a declaration picks. */
   sources?: Record<string, string>;
   /** ON-7b — the explorer's draft, and the two doors it offers: a draft, and a confirmation. */
@@ -335,7 +359,7 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, r
         )}
         {shownParts.map((t) => row(t, true))}
         <DeclarationRows processes={processes} rules={rules} openProcess={openProcess} onPickProcess={onPickProcess}
-          onPickType={onPick} />
+          onPickType={onPick} onNewProcess={onNewProcess} />
       </div>
       {!sources && <ExplorerDraft draft={draft} explore={explore} confirm={confirm} onOpen={onPick} />}
       <DeclareEntity declare={declare} sources={sources} />
@@ -353,17 +377,18 @@ function breachWords(rate: number | null): string {
 
 /** ON-9 — the declared processes and rules under the types: a process opens in the panel, with its type lit on the
  *  map; a rule opens the type it is a segment of. Each row says what the data counted, not what was declared. */
-function DeclarationRows({ processes, rules, openProcess, onPickProcess, onPickType }: {
+function DeclarationRows({ processes, rules, openProcess, onPickProcess, onPickType, onNewProcess }: {
   processes: ProcessRow[];
   rules: RuleRow[];
   openProcess: string | null;
   onPickProcess: (process: ProcessRow) => void;
   onPickType: (objectType: string) => void;
+  onNewProcess?: () => void;
 }) {
-  if (!processes.length && !rules.length) return null;
+  if (!processes.length && !rules.length && !onNewProcess) return null;
   return (
     <>
-      {processes.length > 0 && <div className="aug-fs-xs" style={RAIL_HEADING}>Processes</div>}
+      {(processes.length > 0 || onNewProcess) && <div className="aug-fs-xs" style={RAIL_HEADING}>Processes</div>}
       {processes.map((p) => {
         const current = p.id === openProcess;
         return (
@@ -381,6 +406,12 @@ function DeclarationRows({ processes, rules, openProcess, onPickProcess, onPickT
           </Button>
         );
       })}
+      {onNewProcess && (
+        <Button variant="ghost" size="sm" onClick={onNewProcess} data-testid="entity-rail-new-process"
+          className="h-auto w-full justify-start py-1.5" title="Design a business process from the data — its stages, promises and exits">
+          <Icon name="plus" size={12} /> New process
+        </Button>
+      )}
       {rules.length > 0 && <div className="aug-fs-xs" style={RAIL_HEADING}>Rules</div>}
       {rules.map((r) => (
         <Button key={r.id} variant="ghost" size="sm" onClick={() => onPickType(r.entity)} data-testid="entity-rail-rule"

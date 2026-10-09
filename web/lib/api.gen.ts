@@ -11927,6 +11927,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/processes/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Process Candidates
+         * @description The process designer's reading of a type (`ontology.process_design.candidates`): the moments its objects and
+         *     their to-one linked records carry, with how many objects have each and the span they cover, and the properties
+         *     whose few values place an object in a state, with how many hold each value — what a stage may be anchored to and
+         *     the statuses objects actually end in. Counted through the object door; nothing is written. No model call.
+         */
+        get: operations["process_candidates_ontology_processes_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/processes/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Declared Process
+         * @description Count a draft process exactly as declaring it would (the same checks — 400 with the reason, 409 for a name taken
+         *     — and the same measurement) and say what a person should read before publishing it (`process_design.design_checks`):
+         *     objects waiting at a stage for more than a year, asked about with the state that explains them; moments dated after
+         *     today; objects that skip a stage or reach one before the stage before; who leaves. With what it would derive, each
+         *     with its number now. NOTHING is written — the usability walk-through of 2026-10-09 found the form could not count a
+         *     draft, and a delivery process typed the obvious way would have published ≈35,750 late deliveries that were records
+         *     left behind. No model call.
+         */
+        post: operations["preview_declared_process_ontology_processes_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/processes/{process_id}": {
         parameters: {
             query?: never;
@@ -42126,6 +42175,75 @@ export interface operations {
                 connection_id?: string | null;
                 schema_name?: string | null;
                 domain?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_DeclaredProcess"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    process_candidates_ontology_processes_candidates_get: {
+        parameters: {
+            query: {
+                entity: string;
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_declared_process_ontology_processes_preview_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
             };
             header?: never;
             path?: never;

@@ -389,6 +389,8 @@ export interface ObjectListingRequest {
   /** The entity listed, by its id or api name. */
   entity: string;
   segment?: string;
+  /** Conditions in the object door's shape — the process designer lists the objects a check is about by them. */
+  filters?: Record<string, unknown>[];
   columns?: string[];
   order_by?: string;
   descending?: boolean;
