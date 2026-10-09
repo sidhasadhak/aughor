@@ -136,7 +136,13 @@ Just outside the list: the next industry package (insurance has public data to t
 - [x] OC-3 · triggers keyed to an entity — 2026-10-09: `source_change` / `entity_appears` take `entity`; the probe re-reads its table each tick.
 - [ ] OC-3 · theLook's receipt, live, once OC-3 is merged and the API restarted — confirm one or two metrics' entities (the `metric.define` approval granted for the run and revoked after), `ontology.keyed_metrics` on, read through the frame door and the object door, **and one real framed question through Ask** so a claim is booked about the frame's subject (the user, 2026-10-09: *"Also one real question"* — it spends model calls). The PR waits: the user, the same day, *"Not yet"* — OC-4 continues on the same branch first.
 - [ ] OC-3 · vocabulary entries keyed to the entity and property they name — deferred: the schema linker and the SQL synonym block expect tables and columns.
-- [ ] OC-3 → OC-4 · cockpit cards bound to a segment or entity — moved to OC-4, with the ontology-bound pieces.
+- [x] OC-3 → OC-4 · cockpit cards bound to a segment or entity — 2026-10-09: the objects table names an entity and a segment by id; no SQL.
+- [x] OC-4 · the screen shown before the build — 2026-10-09, approved as drawn (three calls as recommended: run or propose when gated; the detail a piece beside the table).
+- [x] OC-4 · the listing door, the overdue segment, the four pieces, `propose_if_gated` — 2026-10-09, behind `ontology.cockpit_pieces`; receipt on the scratch pair through the screen (board 1,400 open and overdue = table total 1,400; flag ran, edit in table, detail and object page; a high-risk action proposed, nothing written).
+- [ ] OC-4 · theLook's live receipt — a person declares a dispatch promise on theLook's *Order fulfilment* and a *flag for review* action (both through the screens, published as a release), then the cockpit as on the scratch pair. Touches the live install: ask first.
+- [ ] OC-4 · a cockpit pinned to the release it was composed against, and the compatibility check before it renders (the study's §8.7 *checked three ways*: ids ✅, grants → OC-7, the pin ⬜).
+- [ ] OC-4 · the *App* copy — *published cockpit* reads *App* (§6 item 50(c)); a screen-copy change, show it first.
+- [ ] OC-4 · the falsifier — the census in the weeks after the cockpit is in use; if it does not move, the surface was not the bottleneck.
 - [ ] Adjacent, not fixed: on a connection whose configured schema differs from the one its ontology was built under (the scratch fixture: `main` vs `default`), the declare doors write under the configured name while every read falls back to the built graph — a declaration from the screen there reads back as a 500.
 - [ ] OC-3 to OC-9 — §3.56's table; D4–D7 close in OC-6.
 

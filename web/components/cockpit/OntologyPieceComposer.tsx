@@ -154,7 +154,7 @@ export function OntologyPieceComposer({ connectionId, schema, spec, busy, onPlac
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} role="radiogroup" aria-label="What to place">
         {withUniqueKeys(KINDS, x => x.kind).map(([key, k]) => (
           <Button key={key} size="xs" variant={kind === k.kind ? "secondary" : "ghost"} role="radio" aria-checked={kind === k.kind}
-            title={k.says} onClick={() => setKind(k.kind)}>{k.label}</Button>
+            aria-label={k.label} title={k.says} onClick={() => setKind(k.kind)}>{k.label}</Button>
         ))}
       </div>
       <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>{KINDS.find(k => k.kind === kind)?.says}. It reads what the ontology declares, by id; nothing here defines anything.</div>
@@ -187,7 +187,7 @@ export function OntologyPieceComposer({ connectionId, schema, spec, busy, onPlac
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 {withUniqueKeys(offered.slice(0, 24), x => x.name).map(([key, c]) => (
                   <label key={key} className="aug-fs-sm" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--t2)" }}>
-                    <Checkbox checked={columns.includes(c.name)} onChange={() => toggle(columns, setColumns, c.name, MAX_TABLE_COLUMNS)} />
+                    <Checkbox aria-label={c.label} checked={columns.includes(c.name)} onChange={() => toggle(columns, setColumns, c.name, MAX_TABLE_COLUMNS)} />
                     {c.label}{c.edited ? " (set by an action)" : ""}
                   </label>
                 ))}
@@ -195,7 +195,7 @@ export function OntologyPieceComposer({ connectionId, schema, spec, busy, onPlac
             </div>
           )}
           <label className="aug-fs-sm" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--t2)" }}>
-            <Checkbox checked={withDetail} onChange={e => setWithDetail(e.target.checked)} /> And a detail beside it, which follows the row chosen
+            <Checkbox aria-label="And a detail beside it" checked={withDetail} onChange={e => setWithDetail(e.target.checked)} /> And a detail beside it, which follows the row chosen
           </label>
         </>
       )}
@@ -228,7 +228,7 @@ export function OntologyPieceComposer({ connectionId, schema, spec, busy, onPlac
             <span className="aug-label">Actions in the detail</span>
             {actionChoices.map(a => (
               <label key={a.id} className="aug-fs-sm" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--t2)" }}>
-                <Checkbox checked={chosenActions.includes(a.id)} onChange={() => toggle(chosenActions, setChosenActions, a.id)} />
+                <Checkbox aria-label={a.display_name || words(a.id)} checked={chosenActions.includes(a.id)} onChange={() => toggle(chosenActions, setChosenActions, a.id)} />
                 {a.display_name || words(a.id)}
               </label>
             ))}

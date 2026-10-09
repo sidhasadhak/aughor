@@ -265,7 +265,7 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
               return (
                 <tr key={pk} data-testid="object-table-row" aria-selected={on}
                   onClick={() => elementKey && pick(elementKey, on ? null : { objectType: page.object_type, typeId: page.type_id, pk })}
-                  style={{ cursor: elementKey ? "pointer" : undefined, background: on ? "var(--bg-1)" : undefined }}>
+                  style={{ cursor: elementKey ? "pointer" : undefined, background: on ? "var(--bg-sel)" : undefined }}>
                   {row.map((v, i) => (
                     <td key={page.names[i] ?? i} style={{ padding: "5px 8px 5px 0", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap",
                       color: cell(v) === "—" ? "var(--t3)" : "var(--t1)", fontVariantNumeric: "tabular-nums" }}>
@@ -429,7 +429,7 @@ export function ActionButtonPiece({ action }: { action: string }) {
           <Button size="xs" variant="ghost" disabled={busy} onClick={() => setAsking(false)}>Cancel</Button>
         </>
       ) : (
-        <Button size="xs" variant="secondary" disabled={busy || !fits}
+        <Button size="xs" variant="secondary" disabled={busy || !fits} aria-label={label}
           title={fits ? declared.description || `Run ${label} on this ${page.type_name}` : `${label} takes a ${target?.object_type || "different"} object`}
           onClick={() => ([...asked, ...optional].length ? setAsking(true) : void run())}>
           <Icon name="bolt" /> {busy ? "Running…" : label}
