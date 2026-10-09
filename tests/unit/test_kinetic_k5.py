@@ -35,12 +35,26 @@ def _valid_body() -> "ONT._KineticActionBody":
 
 # ── author a declared action ──────────────────────────────────────────────────────
 
-def test_author_valid_action_persists_as_an_override():
+def test_author_valid_action_persists_and_reads_back_whole():
+    from aughor.actions.authority import declaration_problem
+    from aughor.ontology.models import OntologyGraph
     out = ONT.author_kinetic_action("refund", _valid_body(), connection_id="c", schema_name=None)
     assert out["override"]["target_kind"] == "action" and out["override"]["target_id"] == "refund"
     assert out["override"]["fields"]["kind"] == "side_effect"
     # a YAML override file was written under the isolated root
     assert list(OV._ROOT.rglob("*.yaml"))
+    # Every reader — the executor, the GET door, the inbox — sees the action through the overlay. The door persisted
+    # the phase-4 fields and the overlay dropped them, so a stored side-effect action read back undeclarable: it
+    # never graduated and its undo was refused.
+    schema = ONT._resolve_schema("c", None)
+    graph, _ = OV.apply_overrides(OntologyGraph(connection_id="c", schema_name=schema, schema_fingerprint="x"),
+                                  "c", schema)
+    action = {a.id: a for a in graph.declared_actions()}["refund"]
+    assert action.reversibility == "compensable"
+    assert action.verification is not None
+    assert action.verification.sql == "SELECT 1 FROM refunds WHERE amount = {amount}"
+    assert action.undo is not None and (action.undo.action_id, action.undo.window_hours) == ("reverse_refund", 72)
+    assert declaration_problem(action) == ""
 
 
 def test_author_malformed_criterion_is_422():

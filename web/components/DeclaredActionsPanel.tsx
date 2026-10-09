@@ -78,6 +78,12 @@ function effectLines(a: any): string[] {
   const params = (a.params || []).map((p: any) => `${p.name}:${p.kind === "object" ? p.object_type : p.data_type}`);
   if (params.length) out.push(`params ${params.join(", ")}`);
   for (const c of a.submission_criteria || []) out.push(`must satisfy ${String(c.expr)}`);
+  if (a.verification?.sql) out.push(`verified by ${String(a.verification.sql)}`);
+  if (a.reversibility === "irreversible") out.push("irreversible");
+  else if (a.undo?.action_id) {
+    const hours = Number(a.undo.window_hours) || 0;
+    out.push(`undone by ${String(a.undo.action_id)}${hours > 0 ? ` within ${hours} h` : ""}`);
+  }
   return out;
 }
 
@@ -124,6 +130,16 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
   const [httpSecret, setHttpSecret] = useState("");
   const [httpHeaders, setHttpHeaders] = useState('{"Content-Type": "application/json"}');
   const [httpBody, setHttpBody] = useState('{"summary": "{amount_eur}"}');
+  // Phase 4 of the 2027 study (§M) — the door refuses a side-effect action without the read that proves it
+  // took effect, and without an undo unless it is declared irreversible by name. The form sent none of the
+  // three, so every side-effect action declared here came back as a 422.
+  const [verifySql, setVerifySql] = useState("");
+  const [verifyExpects, setVerifyExpects] = useState("rows");
+  const [verifyValue, setVerifyValue] = useState("");
+  const [reversibility, setReversibility] = useState("");
+  const [undoAction, setUndoAction] = useState("");
+  const [undoHours, setUndoHours] = useState("");
+  const [undoParams, setUndoParams] = useState<{ name: string; value: string }[]>([]);
 
   const save = async () => {
     setErr(null);
@@ -154,6 +170,21 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
           if (httpSecret.trim()) config.auth_secret = httpSecret.trim();
         }
         body.side_effects = [{ kind: "http", config }];
+      }
+      if (kind === "side_effect") {
+        if (verifySql.trim()) body.verification = verifyExpects === "value"
+          ? { sql: verifySql.trim(), expects: "value", value: verifyValue.trim() }
+          : { sql: verifySql.trim(), expects: verifyExpects };
+        if (reversibility) body.reversibility = reversibility;
+        // An irreversible action declares no undo; any other names the action that takes it back, and how this
+        // action's parameters fill the undo's (`{param}` templates, as the call's body is filled).
+        if (reversibility !== "irreversible" && undoAction.trim()) {
+          const mapped = undoParams.filter(u => u.name.trim());
+          body.undo = {
+            action_id: undoAction.trim(), window_hours: Number(undoHours) || 0,
+            ...(mapped.length ? { params: Object.fromEntries(mapped.map(u => [u.name.trim(), u.value.trim()])) } : {}),
+          };
+        }
       }
       await put(`/ontology/kinetic-actions/${encodeURIComponent(id)}?connection_id=${encodeURIComponent(connectionId)}`, body);
       setId(""); setHttpSecret(""); onSaved();
@@ -268,6 +299,55 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
           <Textarea style={{ ...input, minHeight: 36 }} value={httpHeaders} onChange={e => setHttpHeaders(e.target.value)} />
           <label style={hint}>body (JSON) — {"{param}"} placeholders are filled from the declared params</label>
           <Textarea style={{ ...input, minHeight: 44 }} value={httpBody} onChange={e => setHttpBody(e.target.value)} />
+          <label style={hint}>
+            the read that proves the call took effect — run after it through the ordinary query door; {"{param}"} placeholders are filled
+          </label>
+          <Textarea style={{ ...input, minHeight: 44 }} placeholder="SELECT 1 FROM refunds WHERE order_id = '{order_id}'"
+            value={verifySql} onChange={e => setVerifySql(e.target.value)} />
+          <div style={{ display: "flex", gap: 6 }}>
+            <SelectField style={{ ...input, flex: 1 }} value={verifyExpects} onChange={e => setVerifyExpects(e.target.value)}>
+              <option value="rows">passes when it returns a row</option>
+              <option value="no_rows">passes when it returns no row</option>
+              <option value="value">passes when its first value equals…</option>
+            </SelectField>
+            {verifyExpects === "value" && (
+              <Input style={{ ...input, flex: 1 }} placeholder="the value expected, compared as text"
+                value={verifyValue} onChange={e => setVerifyValue(e.target.value)} />
+            )}
+          </div>
+          <label style={hint}>how it is taken back — the action that undoes it and how long that stays open, or irreversible by name</label>
+          <SelectField style={input} value={reversibility} onChange={e => setReversibility(e.target.value)}>
+            <option value="">reversibility — choose one</option>
+            <option value="undoable">undoable</option>
+            <option value="compensable">compensable</option>
+            <option value="irreversible">irreversible</option>
+          </SelectField>
+          {reversibility !== "irreversible" && (
+            <>
+              <div style={{ display: "flex", gap: 6 }}>
+                <Input style={{ ...input, flex: 2 }} placeholder="undo action id (e.g. reverse_refund)"
+                  value={undoAction} onChange={e => setUndoAction(e.target.value)} />
+                <Input style={{ ...input, flex: 1 }} type="number" min={0} placeholder="window in hours (0 = no limit)"
+                  value={undoHours} onChange={e => setUndoHours(e.target.value)} />
+              </div>
+              {undoParams.map((u, i) => (
+                <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <Input style={{ ...input, flex: 1 }} placeholder="undo parameter (e.g. refund_id)" value={u.name}
+                    onChange={e => setUndoParams(us => us.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+                  <Input style={{ ...input, flex: 2 }} placeholder="filled from — e.g. {refund_id}" value={u.value}
+                    onChange={e => setUndoParams(us => us.map((x, j) => j === i ? { ...x, value: e.target.value } : x))} />
+                  <Button size="xs" variant="ghost" className="mb-1.5"
+                    onClick={() => setUndoParams(us => us.filter((_, j) => j !== i))}>✕</Button>
+                </div>
+              ))}
+              <div>
+                <Button size="xs" variant="ghost" className="mb-2"
+                  onClick={() => setUndoParams(us => [...us, { name: "", value: "" }])}>
+                  + Map an undo parameter
+                </Button>
+              </div>
+            </>
+          )}
         </>
       )}
       <Button variant="default" size="sm" disabled={!id.trim()} onClick={save}>Save action</Button>

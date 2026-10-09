@@ -87,6 +87,51 @@ describe("DeclaredActionsPanel — declaring an action about an object", () => {
   });
 });
 
+describe("DeclaredActionsPanel — a side-effect action declared with its proof and its undo", () => {
+  // The door refuses a side-effect action without the read that proves it took effect, and without an undo
+  // unless it is irreversible by name. The form sent none of the three, so every one declared here was a 422.
+  it("sends the verification read, the reversibility and the undo with its parameter mapping", async () => {
+    const user = userEvent.setup();
+    render(<DeclaredActionsPanel connectionId="c1" />);
+    await user.type(screen.getByPlaceholderText("action id (e.g. refund_order)"), "refund_order");
+    // `change`, not `type`: the user-event keyboard reads `{order_id}` as a key name.
+    change(screen.getByPlaceholderText(/SELECT 1 FROM refunds/),
+      { target: { value: "SELECT 1 FROM refunds WHERE order_id = '{order_id}'" } });
+    await choose(screen.getAllByRole("combobox").find(b => valueOf(b) === "")!, "compensable");
+    await user.type(screen.getByPlaceholderText("undo action id (e.g. reverse_refund)"), "reverse_refund");
+    await user.type(screen.getByPlaceholderText(/window in hours/), "72");
+    await user.click(screen.getByRole("button", { name: "+ Map an undo parameter" }));
+    await user.type(screen.getByPlaceholderText("undo parameter (e.g. refund_id)"), "order_id");
+    change(screen.getByPlaceholderText(/filled from/), { target: { value: "{order_id}" } });
+
+    await user.click(screen.getByRole("button", { name: "Save action" }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
+    const put = calls.find((c) => c.method === "PUT")!;
+    expect(put.body.verification).toEqual({ sql: "SELECT 1 FROM refunds WHERE order_id = '{order_id}'", expects: "rows" });
+    expect(put.body.reversibility).toBe("compensable");
+    expect(put.body.undo).toEqual({ action_id: "reverse_refund", window_hours: 72, params: { order_id: "{order_id}" } });
+  });
+
+  it("sends no undo for an action declared irreversible, whatever was typed before", async () => {
+    const user = userEvent.setup();
+    render(<DeclaredActionsPanel connectionId="c1" />);
+    await user.type(screen.getByPlaceholderText("action id (e.g. refund_order)"), "close_account");
+    change(screen.getByPlaceholderText(/SELECT 1 FROM refunds/), { target: { value: "SELECT 1 FROM closures" } });
+    await choose(screen.getAllByRole("combobox").find(b => valueOf(b) === "")!, "compensable");
+    await user.type(screen.getByPlaceholderText("undo action id (e.g. reverse_refund)"), "reopen_account");
+    await choose(screen.getAllByRole("combobox").find(b => valueOf(b) === "compensable")!, "irreversible");
+
+    await user.click(screen.getByRole("button", { name: "Save action" }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
+    const put = calls.find((c) => c.method === "PUT")!;
+    expect(put.body.reversibility).toBe("irreversible");
+    expect(put.body.verification).toEqual({ sql: "SELECT 1 FROM closures", expects: "rows" });
+    expect(put.body).not.toHaveProperty("undo");
+  });
+});
+
 describe("DeclaredActionsPanel — withdrawing one overlay edit", () => {
   it("deletes THAT edit on THIS connection and re-reads the list", async () => {
     annotations = [{ id: "e1", table: "orders", column: "status", key_column: "order_id", row_key: "8821",

@@ -160,6 +160,10 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # "declared action" in every line a reader sees.
          "aughor/actions/autonomy.py",
          "tests/unit/test_mission_spend_and_l5.py",
+         # The delivery suite (2026-10-09), the same ground: every hit is `execute_kinetic_action`, the one
+         # executor whose dispatch-error boundary it drives, or the `KineticAction` class its fixture builds.
+         # Its own prose says "declared action" and "call" in every line a reader sees.
+         "tests/unit/test_action_delivery_errors.py",
          # DS-17b (2026-09-19), same ground as demo-api.json below: this suite's fixture is
          # the palette's SERVED contract, captured verbatim — every hit is an effect KIND
          # the server ships (`kinetic_action`) at the priority the server gives it. The
