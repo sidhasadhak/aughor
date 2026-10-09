@@ -216,7 +216,7 @@ type CockpitNewCard = {
   limit?: { warning?: number; critical?: number; direction?: string };
 };
 
-const TAKEN_OFF: Record<string, string> = { card: "Card", section: "Section", tab: "Tab" };
+const TAKEN_OFF: Record<string, string> = { card: "Card", section: "Section", tab: "Tab", piece: "From the ontology" };
 
 const MADE_FROM: Record<string, string> = {
   metric: "the approved metric", trusted_query: "the trusted query", finding: "the finding",
