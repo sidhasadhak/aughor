@@ -107,6 +107,23 @@ def metric_keys(connection_id: str, schema_name: str, graph: Any) -> list[dict]:
     return out
 
 
+def entity_table(connection_id: str, entity: str) -> str:
+    """The table an entity's objects are read from on the connection's served ontology — what a trigger keyed to the
+    entity probes. "" when the entity is unknown or backed by a query (a SELECT has no table version to watch)."""
+    from aughor.routers.ontology import served_ontology_graph
+    graph = served_ontology_graph(connection_id, None)
+    if graph is None:
+        return ""
+    want = str(entity or "").strip().lower()
+    e = next((x for x in graph.entities.values() if want in (x.id.lower(), x.api_name.lower())), None)
+    if e is None:
+        return ""
+    b = e.backing
+    if b is not None and b.kind == "query":
+        return ""
+    return (b.table if b is not None and b.table else "") or (e.source_tables[0] if e.source_tables else "")
+
+
 def keyed_counts() -> dict:
     """How far each store that carries meaning is keyed to the ontology — the census's `keyed` section. A store that
     cannot be read is said, never counted as zero."""
@@ -118,4 +135,11 @@ def keyed_counts() -> dict:
     except Exception as exc:  # noqa: BLE001
         out["metrics"] = None
         out.setdefault("unread", {})["metrics"] = str(exc)[:200]
+    try:
+        from aughor.automations.store import list_automations
+        watches = [c for a in list_automations() for c in a.conditions if c.kind in ("source_change", "entity_appears")]
+        out["triggers"] = {"of": len(watches), "n": sum(1 for c in watches if c.config.get("entity"))}
+    except Exception as exc:  # noqa: BLE001
+        out["triggers"] = None
+        out.setdefault("unread", {})["triggers"] = str(exc)[:200]
     return out

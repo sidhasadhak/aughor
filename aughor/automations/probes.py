@@ -127,6 +127,15 @@ def current_version(conn_id: str, db, table: str, *,
     return version, how
 
 
+def _watched_table(cond: Condition, automation: Automation) -> str:
+    """The table a source condition probes: an entity's (Arc OC-3) read again from its backing each time, so the trigger
+    follows the entity; else the table it names."""
+    if cond.entity:
+        from aughor.ontology.keys import entity_table
+        return entity_table(automation.conn_id, cond.entity) or cond.table
+    return cond.table
+
+
 def evaluate_source_condition(cond: Condition, automation: Automation) -> tuple[bool, str]:
     """Evaluate one `source_change` / `entity_appears` condition — compare only, NEVER commit.
 
@@ -135,10 +144,11 @@ def evaluate_source_condition(cond: Condition, automation: Automation) -> tuple[
     """
     from aughor.db.connection import open_connection_for
 
+    table = _watched_table(cond, automation)
     db = open_connection_for(automation.conn_id)
     try:
         current, how = current_version(
-            automation.conn_id, db, cond.table,
+            automation.conn_id, db, table,
             insertions_only=(cond.kind == "entity_appears"))
     finally:
         try:
@@ -148,13 +158,13 @@ def evaluate_source_condition(cond: Condition, automation: Automation) -> tuple[
             tolerate(exc, "closing the probe db handle is best-effort; the version is computed",
                      counter="automations.probes.db_close")
 
-    label = f"{cond.kind}({cond.table})"
+    label = f"{cond.kind}({cond.entity + ' · ' + table if cond.entity else table})"
     if current is None:
         # The pre-registered gate: never silently never-fire. Noisy beats silent.
         return True, f"{label}: cannot compute a source version ({how}) — failing open to changed"
 
     from aughor.automations.store import get_probe_baseline
-    baseline = get_probe_baseline(automation.id, cond.table)
+    baseline = get_probe_baseline(automation.id, table)
     if baseline is None:
         return True, f"{label}: first observation ({current}, via {how})"
     if baseline != current:
@@ -184,11 +194,12 @@ def commit_fired_baselines(automation: Automation) -> None:
     try:
         for cond in source_conds:
             try:
+                table = _watched_table(cond, automation)
                 current, _how = current_version(
-                    automation.conn_id, db, cond.table,
+                    automation.conn_id, db, table,
                     insertions_only=(cond.kind == "entity_appears"))
                 if current is not None:
-                    set_probe_baseline(automation.id, cond.table, current)
+                    set_probe_baseline(automation.id, table, current)
             except Exception as exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "per-condition baseline commit is best-effort (at-least-once semantics)",
