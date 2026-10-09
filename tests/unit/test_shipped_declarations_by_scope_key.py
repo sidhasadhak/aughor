@@ -92,7 +92,7 @@ def test_the_frame_matcher_scores_the_rebuilt_graphs_as_it_scores_the_snapshots(
     """Item 12's receipt, re-proved on a fresh checkout: no data, no builder's machine."""
     import sys
     sys.path.insert(0, str(REPO))
-    from evals.framing_matcher_eval import DATASET, score
+    from evals.framing_matcher_eval import DATASET, GRAPHS, score
     from aughor.ontology.framing import frame_question
     rebuilt, original = {}, {}
     for key, (path, schema) in HOSTS.items():
@@ -100,7 +100,10 @@ def test_the_frame_matcher_scores_the_rebuilt_graphs_as_it_scores_the_snapshots(
         fresh_install[RANDOM_ID] = key
         rebuilt[key], _ = OV.apply_overrides(_stripped(snapshot), RANDOM_ID, schema)
         original[key] = OntologyGraph.model_validate(snapshot)
-    host = {"lux": "luxexperience", "olist": "olist"}
+    # the eval's hosts read by their snapshot's path, never re-typed: a hand-written map missed theLook when the set
+    # grew a third host (Arc OC-3, 2026-10-09) — the shape this file's own `_hosts` was written against
+    host = {eval_host: key for eval_host, snap in GRAPHS.items() for key, (path, _) in HOSTS.items() if path == snap}
+    assert set(host) == set(GRAPHS), f"an eval host with no shipped snapshot: {sorted(set(GRAPHS) - set(host))}"
     items = [json.loads(line) for line in DATASET.read_text().splitlines() if line.strip()]
     for it in items:
         a = score(frame_question(it["question"], original[host[it["host"]]]).model_dump(), it["expect"])

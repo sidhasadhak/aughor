@@ -2232,8 +2232,10 @@ def frame_ontology_question(
         synonyms = [s for s in synonyms_for(connection_id) if s.source == "human"]
     except Exception:  # noqa: BLE001 — synonyms widen what a question may name; the declared names still resolve
         synonyms = []
+    from aughor.semantic.object_query import keyed_metrics_for
     frame = frame_question(question[:2000], graph, synonyms=synonyms, hops=body.hops or DEFAULT_HOPS,
-                           dialect=_frame_dialect(connection_id))
+                           dialect=_frame_dialect(connection_id),
+                           metrics=keyed_metrics_for(connection_id, graph.schema_name))   # Arc OC-3, flag-gated
     return {"connection_id": connection_id, "schema_name": graph.schema_name, "frame": frame.model_dump(mode="json")}
 
 
