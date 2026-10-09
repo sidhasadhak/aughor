@@ -345,14 +345,19 @@ _CATALOG_HEADER = re.compile(r"^\|\s*Column\s*\|\s*Type\s*\|", re.IGNORECASE)
 
 
 def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
-    """Parse a schema string → {table: [col_name, ...]}: ``TABLE:`` blocks (the house and the
-    inline-bracket forms), and the Data Catalog's markdown tables.
+    """Parse a schema string → {table: [col_name, ...]} (`_parse_schema_typed`, names only)."""
+    return {t: [name for name, _ in cols] for t, cols in _parse_schema_typed(schema_str).items()}
+
+
+def _parse_schema_typed(schema_str: str) -> dict[str, list[tuple[str, str]]]:
+    """Parse a schema string → {table: [(col_name, type), ...]}: ``TABLE:`` blocks (the house and the
+    inline-bracket forms), and the Data Catalog's markdown tables. A type the text does not give is "".
 
     PENDING item 18: the catalog REPLACES the schema text on the quick and deep paths, and this
     parser read it as no tables at all — so identifier-case repair, the SQL fixer's column lists
     and the verifier's table map were all empty on every default answer. A ``## heading`` counts
     as a table only when its column header follows, so another markdown section never does."""
-    table_cols: dict[str, list[str]] = {}
+    table_cols: dict[str, list[tuple[str, str]]] = {}
     current: str | None = None
     heading: str | None = None        # a `## table` waiting for its `| Column | Type |` header
     catalog: str | None = None        # the catalog table whose column rows are being read
@@ -375,7 +380,7 @@ def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
             if stripped.startswith("|"):
                 cells = [c.strip() for c in stripped.strip("|").split("|")]
                 if cells and cells[0] and set(cells[0]) - set("-: "):   # not the |---| rule
-                    table_cols[catalog].append(cells[0])
+                    table_cols[catalog].append((cells[0], cells[1] if len(cells) > 1 else ""))
                 continue
             catalog = None
         if ends_column_block(line):
@@ -387,12 +392,12 @@ def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
             table_cols[current] = []
             inline = parse_inline_columns(line)
             if inline:
-                table_cols[current].extend(name for name, _ in inline)
+                table_cols[current].extend(inline)
                 current = None
         elif current:
             col_m = re.match(r"^\s{2}(.+?)\s{2,}(\S+)", line)
             if col_m and not line.strip().startswith("--"):
-                table_cols[current].append(col_m.group(1))
+                table_cols[current].append((col_m.group(1), col_m.group(2)))
     return table_cols
 
 
@@ -423,6 +428,11 @@ def parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
     """Public alias for the schema → {table: [columns]} parser (a stable interface
     callers can import without reaching into the module's internals)."""
     return _parse_schema_tables(schema_str)
+
+
+def parse_schema_column_types(schema_str: str) -> dict[str, dict[str, str]]:
+    """The schema string → {table: {column: type}}, by the same parser — "" where the text gives no type."""
+    return {t: dict(cols) for t, cols in _parse_schema_typed(schema_str or "").items()}
 
 
 def without_tables(schema_str: str, is_off) -> str:

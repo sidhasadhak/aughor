@@ -6,7 +6,10 @@ taxonomy E1–E4. Most patterns Aughor already guards: **E2** (fan-out / missing
 open gap is **E1 — function/operator semantics that silently return the WRONG rows**:
 
   * a TIMESTAMP column compared to a DATE-only literal (midnight) → `<= 'date'` / `BETWEEN … 'date'`
-    drops that day's later rows (CIDR Spider2-Snow TO_TIMESTAMP boundary example);
+    drops that day's later rows (CIDR Spider2-Snow TO_TIMESTAMP boundary example). Where the schema
+    types the column, the guard battery reads that bound whole before the statement runs
+    (`sql.day_window`, 2026-10-09: this caveat never reached the reader of a live answer that lost a
+    day); this check caveats the shape everywhere else;
   * ORDER BY / MIN / MAX over a numeric-looking TEXT column → lexicographic sort ('10' < '2')
     (CIDR "misranking values lexicographically");
   * a TEXT column compared to a numeric literal → lexicographic / implicit-cast surprise
