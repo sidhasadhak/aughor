@@ -53,6 +53,26 @@ def test_a_customers_metrics_are_compiled_across_its_orders(db, graph):
     assert round(float(metrics["aov"]["value"]), 4) == round(float(aov), 4)
 
 
+def test_a_keyed_statement_metric_is_measured_on_the_object_and_an_unkeyed_one_is_refused_in_words(db, graph):
+    """theLook's object page, 2026-10-10: its approved metrics are whole statements, which the graph holds as formulas.
+    The Metrics card compiled each as an expression and showed the parser's error, terminal colour codes and all. A
+    metric a person keyed to its entity is now read as its statement over this object's rows; one nobody keyed says so."""
+    from aughor.semantic.metrics import MetricDefinition
+    graph.metrics["revenue"].formula_sql = "SELECT SUM(total_amount) AS revenue FROM orders"     # as theLook holds it
+    keyed = MetricDefinition(name="order_takings", connection=CONN, label="Order takings", entity="Order",
+                             entity_confirmed_by="ana", status="approved",
+                             sql="SELECT SUM(total_amount) AS order_takings FROM ecommerce.orders")
+    customer = get_object(graph, db, "customer", "C00042")
+    metrics = {m["metric"]: m for m in object_context(graph, db, CONN, "ecommerce", customer, keyed=[keyed])["metrics"]}
+    takings = _scalar(db, "SELECT SUM(total_amount) FROM orders WHERE customer_id = 'C00042'")
+    assert metrics["order_takings"]["via"] == "customer_to_order", metrics["order_takings"]
+    assert round(float(metrics["order_takings"].get("value") or "nan"), 2) == round(float(takings), 2)
+    refused = metrics["revenue"]["refused"]
+    assert "is a whole statement" in refused and "keys it to its entity" in refused and "\x1b" not in refused
+    from aughor.semantic.object_query import ObjectQueryRefused
+    assert ObjectQueryRefused("Col: 13.\n  SELECT \x1b[4mSELECT\x1b[0m SUM(x)").reason == "Col: 13.\n  SELECT SELECT SUM(x)"
+
+
 def test_a_finding_cites_the_object_only_by_an_exact_key_literal(db, graph, monkeypatch):
     monkeypatch.setattr("aughor.explorer.store.get_findings", lambda key: [
         {"id": "f1", "finding": "three lines", "sql": "SELECT COUNT(*) FROM order_items WHERE order_id = 'O000123'"},

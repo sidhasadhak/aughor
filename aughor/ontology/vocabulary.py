@@ -163,11 +163,16 @@ def _read(connection_id: str) -> dict:
 
 
 def _write(connection_id: str, data: dict) -> None:
+    """Every vocabulary change lands here, so here the schema linker's cached hints for the connection are dropped: a
+    word added through the pack or intake doors was otherwise unseen by the linker until its cache turned over."""
     import yaml
+
+    from aughor.tools.schema_linker import invalidate_hints
 
     p = _path(connection_id)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(yaml.safe_dump(data, sort_keys=True, allow_unicode=True))
+    invalidate_hints(connection_id)
 
 
 def add_synonym(connection_id: str, subject_kind: str, subject_id: str, synonym: str, *,

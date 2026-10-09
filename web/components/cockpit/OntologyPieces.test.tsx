@@ -11,6 +11,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ComposedCockpit } from "@/components/cockpit/ComposedCockpit";
+import { ranSaid } from "@/components/cockpit/OntologyPieces";
 import type { CockpitHostState } from "@/lib/cockpit/hostState";
 
 const objects = vi.hoisted(() => ({
@@ -118,6 +119,20 @@ describe("a late dispatch cockpit (Arc OC-4)", () => {
     expect(rows[1]).toContain("yes");
     expect(rows[0]).not.toContain("yes");
     expect(within(detail()).getByTestId("action-button-said").textContent).toBe("Done.");
+  });
+
+  it("a run says what its check found, and a failed check is never read as done", async () => {
+    objects.runOrPropose.mockResolvedValue({ status: "ran", outcome: {},
+      verification: { status: "failed", why: "no row returned — the change is not visible" } });
+    draw();
+    fireEvent.click((await screen.findAllByTestId("object-table-row"))[0]);
+    const button = await screen.findByRole("button", { name: /Flag for review/ });
+    await act(async () => { fireEvent.click(button); });
+    expect((await screen.findByTestId("action-button-said")).textContent)
+      .toBe("It ran, but its check failed: no row returned — the change is not visible.");
+    expect(ranSaid({ status: "passed", why: "1 row returned" })).toBe("Done — its check passed: 1 row returned.");
+    expect(ranSaid({ status: "unavailable", why: "the read failed" })).toBe("Done — its check could not be read: the read failed.");
+    expect(ranSaid({ status: "not_declared" })).toBe("Done.");
   });
 
   it("an action that needs approval is proposed in Actions, and nothing is written", async () => {

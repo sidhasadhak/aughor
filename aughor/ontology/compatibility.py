@@ -90,6 +90,13 @@ def _promise(stage: str, old: Optional[dict], new: Optional[dict], watched: set[
     if old == new:
         return []
     if old is None:
+        noun = new.get("name") or stage
+        if noun != stage:
+            # A stage's lag is named for its promise when it has one: adding a promise under its own name renames the
+            # lag (`<stage>_lag_days` → `<promise>_lag_days`) and whatever read the old name loses it — found by the
+            # catalogue's own replay over theLook's history (2026-10-10), which a by-hand replay had passed.
+            return [("WARN", f"a promise '{noun}' was added on '{stage}' — the stage's lag is renamed "
+                             f"{stage}_lag_days → {noun}_lag_days")]
         return [("SAFE", f"a promise was added on '{stage}'")]
     name = old.get("name") or stage
     if new is None:
@@ -249,3 +256,88 @@ def classify(kind: str, before: Optional[dict], after: Optional[dict], *, depend
             reasons.append(("ERR", f"it does not bind — {why}"))
     worst = min((ORDER.index(c) for c, _ in reasons), default=ORDER.index("SAFE"))
     return ORDER[worst], [{"class": c, "why": w} for c, w in reasons]
+
+
+# ── the falsifier, read again as history grows ──────────────────────────────────────────────────────────────────────
+
+#: The kinds a replay judges: what a consumer reads from them is COMPILED from the declaration (a promise's segments,
+#: rate and lags; a rule's filters), so whether a change moved it is read from the compiled definitions, not from the
+#: field names this catalogue classes by. Every other kind is classed and not judged.
+JUDGED = ("process", "rule")
+
+
+def _definitions(kind: str, target_id: str, fields: Optional[dict]) -> dict[str, str]:
+    """The definitions consumers read from one version of a declaration, by derived name — {} for a withdrawn one."""
+    if fields is None:
+        return {}
+    from aughor.ontology.derived import (
+        late_name, overdue_name, process_derivations, promise_filters, rate_name, rule_filters,
+    )
+    from aughor.ontology.models import BusinessRule, Process
+    if kind == "rule":
+        rule = BusinessRule.model_validate({**fields, "id": target_id})
+        return {rule.id: repr((rule.entity, rule_filters(rule)))}
+    process = Process.model_validate({**fields, "id": target_id})
+    out = {p.name: repr((p.entity, p.start, p.end)) for p in process_derivations(process).properties}
+    for i, stage in enumerate(process.stages):
+        spec = promise_filters(process, i)
+        if spec is None:
+            continue
+        clock = (spec.get("start"), spec.get("within_days"), spec.get("within_hours"), spec.get("deadline"))
+        out[late_name(stage)] = repr((spec["grain"], spec["breach"]))
+        out[rate_name(stage)] = repr((spec["grain"], spec["breach"], spec["reached"]))
+        out[overdue_name(stage)] = repr((spec["grain"], spec["open"], clock))
+    return out
+
+
+def _moved(before: dict[str, str], after: dict[str, str]) -> list[str]:
+    """The definitions a consumer already read that a change altered or took away; a name it adds moves nobody."""
+    return sorted(name for name, definition in before.items() if after.get(name) != definition)
+
+
+def replay(limit: int = 5000) -> dict[str, Any]:
+    """Arc OC-2's falsifier over the history every save and withdrawal keeps (`ontology.history`): each change a reader
+    saw — from one version in force to the next, drafts skipped — classed by this catalogue, and, for the kinds it can
+    judge, set beside the definitions it moved. A change that moved one and is classed SAFE is a ``miss``; one miss and
+    the catalogue is wrong. A withdrawal is classed and not judged (``withdrawals``). Taken with every daily census
+    reading, so the check re-runs itself as history grows."""
+    from aughor.kernel import lifecycle
+    from aughor.kernel.ledger import Ledger
+    from aughor.ontology.history import KIND
+    out: dict[str, Any] = {"changes": 0, "by_class": {c: 0 for c in ORDER}, "judged": 0, "moved": 0,
+                           "misses": [], "withdrawals": 0, "unread": 0}
+    for art in Ledger.default().artifacts_of_kind(KIND, limit=limit):
+        key = str(art.get("natural_key") or "")
+        try:
+            _conn, _schema, kind, target_id = key.removeprefix("ontology:").split("/", 3)
+        except ValueError:
+            out["unread"] += 1
+            continue
+        seen = [r for r in reversed(lifecycle.history(KIND, key, limit=500)) if r.state in ("published", "archived")]
+        for older, newer in zip(seen, seen[1:]):
+            before = None if older.state == "archived" else dict(older.body.get("fields") or {})
+            after = None if newer.state == "archived" else dict(newer.body.get("fields") or {})
+            if before is None and after is None:
+                continue
+            cls, reasons = classify(kind, before, after)
+            out["changes"] += 1
+            out["by_class"][cls] += 1
+            if kind not in JUDGED:
+                continue
+            if after is None:
+                # a withdrawal breaks exactly what relied on it then, and the history does not keep who did: the class
+                # it was given at the time named them (ERR), which a replay cannot rebuild — counted, not judged
+                out["withdrawals"] += 1
+                continue
+            try:
+                moved = _moved(_definitions(kind, target_id, before), _definitions(kind, target_id, after))
+            except Exception:  # noqa: BLE001 — a version that no longer reads is counted, never guessed at
+                out["unread"] += 1
+                continue
+            out["judged"] += 1
+            if moved:
+                out["moved"] += 1
+            if moved and cls == "SAFE":
+                out["misses"].append({"element": key, "from": older.version, "to": newer.version, "moved": moved,
+                                      "why": "; ".join(r["why"] for r in reasons)})
+    return out

@@ -166,12 +166,17 @@ class ObjectListing(BaseModel):
     limit: int = Field(default=50, ge=1, le=_MAX_PAGE)
 
 
+_TERMINAL_CODES = re.compile(r"\x1b\[[0-9;]*m")
+
+
 class ObjectQueryRefused(ValueError):
     """The compiler cannot vouch for this query. Never a guess: `reason` names what failed and
     `available` the names that do exist, so a caller can repair the query or fall back to
     `run_sql` under the guard battery."""
 
     def __init__(self, reason: str, available: Optional[list[str]] = None):
+        # a parser's message underlines the failing token with terminal colour codes; a reader is never handed them
+        reason = _TERMINAL_CODES.sub("", reason)
         super().__init__(reason)
         self.reason = reason
         self.available = list(available or [])
@@ -1616,6 +1621,10 @@ class _Compiler:
         if not metric_on(m, scope.entity):
             raise ObjectQueryRefused(f"metric '{m.id}' is defined on {m.entity or ', '.join(m.tables)}, not "
                                      f"{scope.entity.id} — anchor the query on its object type", mine)
+        if re.match(r"\s*\(?\s*(select|with)\b", m.formula_sql or "", re.IGNORECASE):
+            raise ObjectQueryRefused(f"metric '{m.id}' is a whole statement, not a formula over one "
+                                     f"{scope.entity.id} — it is read on objects once a person approves it and keys "
+                                     "it to its entity in the Semantic Layer", mine)
         formula = _qualify(m.formula_sql, scope.alias, self.dialect, what=f"metric {m.id}", expression=True)
         at = self.semiadditive_formula_check(scope, m.formula_sql, f"metric {m.id}")
         if at:

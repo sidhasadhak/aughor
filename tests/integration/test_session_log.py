@@ -277,15 +277,14 @@ def test_folded_views_summarise_a_run(monkeypatch):
     assert tools["sql.execute"]["failure_rate"] == pytest.approx(1 / 3, abs=0.001)
 
 
-def test_retention_prunes_by_age_and_row_cap(monkeypatch):
-    from aughor import telemetry
+def test_retention_prunes_by_age_and_row_cap(tmp_path):
+    """On a ledger of its own: the row cap is table-wide, and the run's shared ledger takes stray rows from other
+    tests' background work between this test's writes and its prune — it failed in full runs and passed alone."""
+    led = Ledger(tmp_path / "ledger.db")
+    for _ in range(5):
+        led.session_event_insert({"trace_id": "t-prune", "kind": session_log.TOOL_CALL, "name": "x"})
 
-    led = Ledger.default()
-    with telemetry.bind_trace("t-prune"):
-        for _ in range(5):
-            session_log.emit(session_log.TOOL_CALL, name="x")
-
-    assert len(_all_events(trace_id="t-prune")) == 5
+    assert len(led.session_events(limit=100, trace_id="t-prune")) == 5
     deleted = led.session_events_prune(keep_days=0, max_rows=2)
     assert deleted == 3
     assert len(led.session_events(limit=100)) == 2

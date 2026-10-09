@@ -448,10 +448,11 @@ def _refuse_if_depended(connection_id: str, effective: str, kind: str, target_id
 def _served_scope(connection_id: str, schema_name: Optional[str]) -> str:
     """The schema of the graph `GET /ontology` serves for this request — its declarations are the ones the screen
     shows. A connection browsed under one schema and built under another (the read falls back to the one built graph)
-    reads its declarations, history and releases under the built one."""
+    reads its declarations, history and releases under the built one, and every declaration door writes under it: the
+    doors wrote under the name the request carried, where no read looks, so a declaration made from the screen there
+    was kept and never served (2026-10-10)."""
     graph = _get_ontology_graph(connection_id, schema_name)
-    return (graph.schema_name if graph is not None and graph.schema_name else None) or \
-        _resolve_schema(connection_id, schema_name)
+    return getattr(graph, "schema_name", None) or _resolve_schema(connection_id, schema_name)
 
 
 def _history_kind(kind: str) -> str:
@@ -614,8 +615,6 @@ def key_vocabulary_entry(body: _VocabularyKey, connection_id: str = BUILTIN_ID,
                                   note=f"keyed from {body.subject_kind} {body.subject_id}")
     if (body.subject_kind, body.subject_id) != (body.kind, body.subject):
         vocabulary.remove_synonym(connection_id, body.subject_kind, body.subject_id, body.synonym)
-    from aughor.tools.schema_linker import invalidate_hints
-    invalidate_hints(connection_id)
     return {"kept": kept.to_dict()}
 
 
@@ -1397,7 +1396,7 @@ def override_ontology_entity(
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.ontology.overrides import OntologyOverride, find_override
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if not fields:
         raise HTTPException(status_code=400, detail="no override fields provided")
@@ -1483,7 +1482,7 @@ def _bind_entity_core(entity_id: str, name: str, spec: dict, connection_id: str,
     from aughor.ontology.bindings import bind_binding, binding_block, declared_bindings, describe_with, measure_binding
     from aughor.ontology.overrides import OntologyOverride, find_override, save_override
     from aughor.semantic.object_types import describe_object_type
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     spec = _own_connection_spec(spec, connection_id)
     graph = _get_ontology_graph(connection_id, effective)
     entity = graph.entities.get(entity_id) if graph is not None else None
@@ -1584,7 +1583,7 @@ def preview_ontology_backing(
     from aughor.db.connection import open_connection_for_with_schema
     from aughor.ontology.backing import preview_backing
     from aughor.ontology.bindings import describe_with
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     graph = _get_ontology_graph(connection_id, effective)
     entity = graph.entities.get(entity_id) if graph is not None else None
     if entity is None:
@@ -1608,7 +1607,7 @@ def withdraw_ontology_backing(
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
     from aughor.ontology.overrides import delete_override, find_override, save_override
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     existing = find_override(connection_id, effective, "entity", entity_id)
     if existing is None or "backing" not in existing.fields:
         raise HTTPException(status_code=404, detail=f"{entity_id} has no backing a person set")
@@ -1648,7 +1647,7 @@ def unbind_ontology_entity(
     # ON-8 — an organisation's ontology has its own writer, which takes a person's declaration only.
     save, remove = ((save_organisation_override, delete_organisation_override) if domain is not None
                     else (save_override, delete_override))
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     existing = find_override(connection_id, effective, "entity", entity_id)
     specs = dict((existing.fields.get("bindings") if existing else None) or {})
     if existing is None or name not in specs:
@@ -1718,7 +1717,7 @@ def declare_ontology_expression(
     from aughor.ontology.expressions import expression_problem, normalized_expression, probe_expression
     from aughor.ontology.overrides import OntologyOverride, find_override, save_override
     from aughor.semantic.object_types import describe_object_type
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     graph = _get_ontology_graph(connection_id, effective)
     entity = graph.entities.get(entity_id) if graph is not None else None
     if entity is None:
@@ -1759,7 +1758,7 @@ def withdraw_ontology_expression(
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
     from aughor.ontology.overrides import delete_override, find_override, save_override
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     existing = find_override(connection_id, effective, "entity", entity_id)
     specs = dict((existing.fields.get("expressions") if existing else None) or {})
     if existing is None or name not in specs:
@@ -1804,7 +1803,7 @@ def declare_semiadditive(
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.ontology.overrides import OntologyOverride, find_override, save_override
     from aughor.ontology.semiadditive import forget_declared, normalized_semiadditive, semiadditive_problem
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     graph = _get_ontology_graph(connection_id, effective)
     entity = graph.entities.get(entity_id) if graph is not None else None
     if entity is None:
@@ -1839,7 +1838,7 @@ def withdraw_semiadditive(
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
     from aughor.ontology.overrides import delete_override, find_override, save_override
     from aughor.ontology.semiadditive import forget_declared
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     existing = find_override(connection_id, effective, "entity", entity_id)
     specs = dict((existing.fields.get("semiadditive") if existing else None) or {})
     if existing is None or prop not in specs:
@@ -1878,7 +1877,7 @@ def restore_ontology_binding(
                                            save_organisation_override, save_override)
     save, remove = ((save_organisation_override, delete_organisation_override) if domain is not None
                     else (save_override, delete_override))
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     existing = find_override(connection_id, effective, "entity", entity_id)
     gone = list((existing.fields.get("withdrawn_bindings") if existing else None) or [])
     if name not in gone:
@@ -1925,7 +1924,7 @@ def _declare_entity_core(spec: dict, connection_id: str, schema_name: Optional[s
     )
     from aughor.ontology.overrides import OntologyOverride, save_override
     from aughor.semantic.object_types import describe_object_type
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     spec = _own_connection_backing(spec, connection_id)
     problem = entity_spec_problem(spec)
     if problem:
@@ -1976,7 +1975,7 @@ def delete_declared_entity(
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
     from aughor.ontology.overrides import delete_organisation_override, delete_override, find_override
     remove = delete_organisation_override if domain is not None else delete_override  # ON-8 — its own writer
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     existing = find_override(connection_id, effective, "entity", entity_id)
     if existing is None or not existing.fields.get("declared"):
         graph = _get_ontology_graph(connection_id, effective)
@@ -2021,7 +2020,7 @@ def _declare_link_core(spec: dict, connection_id: str, schema_name: Optional[str
     )
     from aughor.ontology.overrides import OntologyOverride, save_override
     from aughor.semantic.object_types import describe_object_type
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     problem = link_spec_problem(spec)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
@@ -2065,7 +2064,7 @@ def delete_declared_link(
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
     from aughor.ontology.overrides import delete_organisation_override, delete_override, find_override
     remove = delete_organisation_override if domain is not None else delete_override  # ON-8 — its own writer
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     existing = find_override(connection_id, effective, "link", relationship_id)
     if existing is None or not existing.fields.get("declared"):
         # 2026-09-22 — a FOUND link is withdrawn by a recorded override (it used to be "named, never deleted",
@@ -2099,7 +2098,7 @@ def restore_ontology_link(
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.ontology.overrides import delete_override, find_override, save_override
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     existing = find_override(connection_id, effective, "link", relationship_id)
     if existing is None or not existing.fields.get("withdrawn"):
         raise HTTPException(status_code=404, detail=f"link '{relationship_id}' was not withdrawn")
@@ -2324,7 +2323,7 @@ def process_candidates(
     from aughor.db.connection import open_connection_for_with_schema
     from aughor.ontology.process_design import candidates
     from aughor.ontology.processes import NotMeasurable
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     graph = _get_ontology_graph(connection_id, effective)
     if graph is None:
         raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
@@ -2359,7 +2358,7 @@ def preview_declared_process(
     from aughor.ontology.processes import (
         NotMeasurable, measure_process, process_fields, process_from_fields, process_spec_problem, resolve_process,
     )
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     problem = process_spec_problem(spec)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
@@ -2410,7 +2409,7 @@ def _declare_process_core(spec: dict, connection_id: str, schema_name: Optional[
         NotMeasurable, describe_process, measure_process, process_entry, process_fields, process_spec_problem,
         resolve_process,
     )
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     problem = process_spec_problem(spec)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
@@ -2472,7 +2471,7 @@ def delete_declared_process(
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
     from aughor.ontology.overrides import delete_organisation_override, delete_override, find_override
     remove = delete_organisation_override if domain is not None else delete_override  # ON-8 — its own writer
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     if find_override(connection_id, effective, "process", process_id) is None:
         raise HTTPException(status_code=404, detail=f"no declared process '{process_id}'")
     if domain is None:
@@ -2507,7 +2506,7 @@ def _declare_rule_core(spec: dict, connection_id: str, schema_name: Optional[str
     )
     from aughor.ontology.overrides import OntologyOverride, save_override
     from aughor.ontology.processes import NotMeasurable
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     problem = rule_spec_problem(spec)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
@@ -2564,7 +2563,7 @@ def delete_declared_rule(
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
     from aughor.ontology.overrides import delete_organisation_override, delete_override, find_override
     remove = delete_organisation_override if domain is not None else delete_override  # ON-8 — its own writer
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     if find_override(connection_id, effective, "rule", rule_id) is None:
         raise HTTPException(status_code=404, detail=f"no declared rule '{rule_id}'")
     if domain is None:
@@ -2637,7 +2636,7 @@ def name_ontology_link(
     if domain is not None:
         return _domain_name_link(relationship_id, body.name, domain)
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     return _name_link_core(connection_id, effective, relationship_id, body.name, origin="human")
 
 
@@ -2997,7 +2996,7 @@ def propose_entity_routing(
     from aughor.ontology.overrides import (
         PROPOSED_FIELD, OntologyOverride, find_override)
 
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     existing = find_override(connection_id, effective, "entity", entity_id)
     fields = dict(existing.fields) if existing else {}
     fields[PROPOSED_FIELD] = {
@@ -3029,7 +3028,7 @@ def list_routing_proposals(
     """
     from aughor.ontology.overrides import PROPOSED_FIELD, load_overrides
 
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     out = []
     for ov in load_overrides(connection_id, effective):
         if ov.target_kind == "entity" and ov.fields.get(PROPOSED_FIELD):
@@ -3055,7 +3054,7 @@ def accept_entity_routing(
     from aughor.ontology.overrides import (
         PROPOSED_FIELD, ROUTING_FIELD, OntologyOverride, find_override)
 
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     existing = find_override(connection_id, effective, "entity", entity_id)
     proposed = (existing.fields.get(PROPOSED_FIELD) if existing else None)
     if not proposed:
@@ -3185,7 +3184,7 @@ def preview_declared_action(
     from aughor.db.connection import open_connection_for_with_schema
     from aughor.ontology.action_design import preview
     from aughor.ontology.processes import NotMeasurable
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     graph = _get_ontology_graph(connection_id, effective)
     fields = {k: v for k, v in body.action.model_dump().items() if v is not None}
     declared = _checked_action(body.id, fields, graph)
@@ -3221,7 +3220,7 @@ def author_kinetic_action(
     govern.guard("ontology.override", connection_id)   # P4: mutating the semantic layer
     from aughor.ontology.models import encrypt_action_secrets
     from aughor.ontology.overrides import OntologyOverride, find_override
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     # DS-13 — a declared component's credential is encrypted BEFORE it is validated and
     # persisted, and an unchanged (masked) one is carried forward from what is stored. The
@@ -3248,7 +3247,7 @@ def override_ontology_computed_property(
     """Assert (or correct) a derived metric on an entity. Once its formula EXPLAIN-binds,
     it is injected into the NL2SQL prompt with authority — overriding the auto-derived one."""
     from aughor.ontology.overrides import OntologyOverride
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if not fields:
         raise HTTPException(status_code=400, detail="no override fields provided")
@@ -3273,7 +3272,7 @@ def override_entity_segment(
 ):
     """Define (or correct) a saved, named row-filter (segment) on an entity."""
     from aughor.ontology.overrides import OntologyOverride
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if not fields:
         raise HTTPException(status_code=400, detail="no override fields provided")
@@ -3317,7 +3316,7 @@ def override_ontology_metric(
     """Assert (or correct) a metric's canonical formula. EXPLAIN-bound, then injected
     with authority through the unified metrics catalog."""
     from aughor.ontology.overrides import OntologyOverride
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if not fields:
         raise HTTPException(status_code=400, detail="no override fields provided")
@@ -3348,7 +3347,7 @@ def delete_ontology_override(
     # a list that has to be kept in sync by hand eventually is not.
     if kind not in get_args(TargetKind):
         raise HTTPException(status_code=400, detail=f"unknown override kind '{kind}'")
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     # Arc OC-1 — removing a file that IS the element (a declared type, link, process or rule, or an action) withdraws
     # it, and is refused where something depends on it; removing an edit of a built element restores the built value.
     from aughor.ontology.overrides import find_override
@@ -3366,7 +3365,7 @@ def list_ontology_overrides(
 ):
     """List all human overrides for this connection+schema (the version-controlled set)."""
     from aughor.ontology.overrides import load_overrides
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     return {"overrides": [o.model_dump() for o in load_overrides(connection_id, effective)]}
 
 
@@ -3384,7 +3383,7 @@ def list_ontology_recommendations(
     times to be worth a human's review are returned.
     """
     from aughor.ontology.recommendations import load_recommendations
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     recs = load_recommendations(connection_id, effective)
     if ripe_only:
         recs = [r for r in recs if r.ripe]
@@ -3404,7 +3403,7 @@ def accept_ontology_recommendation(
     note, a table note becomes the glossary grain. Same review inbox, two sinks."""
     from aughor.ontology.agent_notes import accept_note
     from aughor.ontology.recommendations import accept
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     noted = accept_note(connection_id, effective, rec_id)
     if noted is not None:
         _invalidate_schema_cache(connection_id)
@@ -3428,7 +3427,7 @@ def dismiss_ontology_recommendation(
 ):
     """Dismiss a recommendation so the loop won't resurface it."""
     from aughor.ontology.recommendations import get_recommendation, save_recommendation
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     rec = get_recommendation(connection_id, effective, rec_id)
     if rec is None:
         raise HTTPException(status_code=404, detail=f"recommendation '{rec_id}' not found")
@@ -3448,7 +3447,7 @@ def export_ontology_tree(
     link, process or rule) under `declared/`, as the spec its door takes."""
     from aughor.ontology.filetree import export_tree, export_root
     from aughor.ontology.overrides import load_overrides
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     graph = _get_ontology_graph(connection_id, effective)
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
@@ -3478,7 +3477,7 @@ def import_ontology_tree(
     from aughor.ontology.filetree import declaration_spec, export_root, import_tree, read_declarations
     from aughor.ontology.overrides import bind_overrides, find_override, save_override
     from aughor.ontology.store import load_ontology
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     fingerprint = _latest_fingerprint(connection_id, effective)
     base = load_ontology(connection_id, effective, fingerprint) if fingerprint else None
     if base is None:
@@ -3597,7 +3596,7 @@ def merge_ontology_entities(
     from aughor.ontology.bindings import describe_with
     from aughor.ontology.dedup import merge_plan
     from aughor.semantic.object_types import describe_object_type
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     graph = _get_ontology_graph(connection_id, effective)
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
@@ -3648,7 +3647,7 @@ def override_ontology_action(
     schema_name: Optional[str] = Query(default=None),
 ):
     from aughor.ontology.store import patch_action
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     fingerprint = _latest_fingerprint(connection_id, effective)
     if not fingerprint:
         graph = _get_ontology_graph(connection_id, effective)

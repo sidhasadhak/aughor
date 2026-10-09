@@ -72,13 +72,18 @@ def identity_columns(graph: OntologyGraph, entity: OntologyEntity, instance: Obj
 
 
 def object_metrics(graph: OntologyGraph, db: Any, entity: OntologyEntity, instance: ObjectInstance,
-                   *, dialect: str = "duckdb", run_cross_source: Any = None) -> list[dict]:
+                   *, dialect: str = "duckdb", run_cross_source: Any = None, keyed: Any = None) -> list[dict]:
     """Every verified metric on the object's type and the types it reaches, measured for this object.
 
     A metric that reads another connection compiles to a PLAN (`compiled.cross_source`) whose ``sql`` is the
     statement as written, for a reader — never run: executed on this connection it reads what is not there (PENDING
     item 25). It runs through ``run_cross_source(compiled)`` when the page can run a plan (an organisation's
-    ontology), and is withheld with the reason when it cannot."""
+    ontology), and is withheld with the reason when it cannot.
+
+    ``keyed`` are the connection's approved metrics a person keyed to an entity (Arc OC-3, `keyed_metrics_for`): each
+    is measured on the type it is keyed to as its whole statement over this object's rows — the graph's copy of the
+    same name holds that statement as a formula the compiler cannot re-anchor, which read as a parse error here."""
+    keyed = list(keyed or [])
     values = _values(instance)
     scopes = [(entity, instance.key, instance.pk, "")]
     for link in object_links(graph, entity):
@@ -89,17 +94,18 @@ def object_metrics(graph: OntologyGraph, db: Any, entity: OntologyEntity, instan
             scopes.append((link.target, link.remote_col, str(local), link.name))
     out: list[dict] = []
     for target, column, value, via in scopes:
-        for metric_id, metric in sorted(graph.metrics.items()):
+        mine = {k.name.lower(): k for k in keyed if k.entity == target.id}
+        measured_here = [(mid, m.display_name or mid, m.unit) for mid, m in sorted(graph.metrics.items())
+                         if mid.lower() not in mine and m.verified and metric_on(m, target)]
+        measured_here += [(k.name, k.label or k.name, getattr(k, "unit", "") or "") for _, k in sorted(mine.items())]
+        for metric_id, display_name, unit in sorted(measured_here):
             if len(out) >= _MAX_METRICS:
                 return out
-            if not metric.verified or not metric_on(metric, target):
-                continue
-            row = {"metric": metric_id, "display_name": metric.display_name or metric_id, "unit": metric.unit,
-                   "on": target.api_name, "via": via}
+            row = {"metric": metric_id, "display_name": display_name, "unit": unit, "on": target.api_name, "via": via}
             query = {"object_type": target.api_name, "filters": [{"path": column, "value": value}],
                      "measures": [{"name": "value", "metric": metric_id}]}
             try:
-                compiled = compile_object_query(query, graph, dialect=dialect, fiscal_start_month=1)
+                compiled = compile_object_query(query, graph, dialect=dialect, fiscal_start_month=1, metrics=keyed)
             except ObjectQueryRefused as exc:
                 out.append({**row, "refused": exc.reason})
                 continue
@@ -378,12 +384,13 @@ def object_actions(graph: OntologyGraph, entity: OntologyEntity, instance: Objec
 
 
 def object_context(graph: OntologyGraph, db: Any, connection_id: str, schema_name: str, instance: ObjectInstance,
-                   *, dialect: str = "duckdb", run_cross_source: Any = None) -> dict:
+                   *, dialect: str = "duckdb", run_cross_source: Any = None, keyed: Any = None) -> dict:
     """The four panels around one object. ``findings_unread`` says how many findings could not be read, when any
     could not — an unreadable one is skipped, and said, never the end of the list."""
     entity = find_object_type(graph, instance.type_id)
     findings, unread = _object_findings(connection_id, schema_name, graph, entity, instance)
-    return {"metrics": object_metrics(graph, db, entity, instance, dialect=dialect, run_cross_source=run_cross_source),
+    return {"metrics": object_metrics(graph, db, entity, instance, dialect=dialect, run_cross_source=run_cross_source,
+                                      keyed=keyed),
             "findings": findings,
             **({"findings_unread": unread} if unread else {}),
             "notes": object_notes(connection_id, entity, instance),
