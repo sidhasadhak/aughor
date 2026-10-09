@@ -108,3 +108,38 @@ def test_a_failed_introspection_still_renders_the_catalog(wiring, monkeypatch):
     assert len(entries) == 1
     assert entries[0]["conn_id"] == "c1"
     assert entries[0]["schemas"] == []
+
+
+def test_the_tree_reads_its_catalogs_side_by_side_in_their_order(monkeypatch):
+    """Read one after another, the first tree waited for the SUM of every warehouse's introspection — 17.1 s measured
+    live on 2026-10-09, behind "Loading the catalog…" (the usability walk-through). Side by side it waits for the
+    slowest; the order of the catalogs and the one-at-a-time metastore reconcile are unchanged."""
+    import asyncio
+    import threading
+    import time
+
+    import aughor.metastore as ms
+
+    rec = _Recorder()
+    monkeypatch.setattr(ms, "set_catalog_schemas", rec)
+    monkeypatch.setattr(ms, "accessible_catalog_ids", lambda ws: None)
+    ids = ["w", "bq1", "bq2", "sheets"]
+    monkeypatch.setattr("aughor.db.registry.list_connections",
+                        lambda *a, **k: [{"id": i, "name": i.upper(), "conn_type": "duckdb"} for i in ids])
+    threads: set[str] = set()
+
+    def slow(conn_id, conn_type):
+        threads.add(threading.current_thread().name)
+        time.sleep(0.4)
+        return [{"name": f"{conn_id}_schema", "tables": []}]
+
+    monkeypatch.setattr(catalog_router, "quick_schemas", slow)
+    t0 = time.monotonic()
+    tree = asyncio.run(catalog_router.get_catalog_tree())
+    took = time.monotonic() - t0
+    entries = tree["sections"][0]["entries"]
+    assert [e["conn_id"] for e in entries] == ids
+    assert [e["schemas"][0]["name"] for e in entries] == [f"{i}_schema" for i in ids]
+    assert rec.calls == [(i, [f"{i}_schema"]) for i in ids]
+    assert took < 1.0, f"{took:.2f}s for four 0.4 s catalogs — read one after another"   # 1.6 s one at a time
+    assert len(threads) == 4

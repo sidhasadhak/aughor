@@ -7,6 +7,7 @@
  * says, when it may be pressed, who decides — and a call to another system is its own step, only when the action makes
  * one. Ids are made from the words (`idFrom`), and a draft that cannot be read yet always says why (`notReady`).
  */
+import { DEEP_ANALYSIS_EFFECT } from "@/lib/api";
 import type { DeclaredActionSpec } from "@/lib/objectTypes";
 import { freshId, idFrom } from "@/lib/processDraft";
 
@@ -51,8 +52,13 @@ export interface ActionDraft {
   /** The type the action is about (a type map row's `object_type`), and what a reader calls it. */
   entity: string;
   entityLabel: string;
-  does: "mark" | "call";
+  /** What a press does: marks the object, tells a saved destination, starts a deep analysis, or calls a system. */
+  does: "mark" | "tell" | "analyse" | "call";
   mark: { label: string; value: string; noteFrom: string };
+  /** A destination saved in Notifications, by id, and the message it gets — answers in braces (`{reason}`). */
+  tell: { destination: string; message: string };
+  /** The question the deep analysis asks — answers in braces. */
+  analysis: { question: string };
   asks: AskDraft[];
   conditions: ConditionDraft[];
   approval: boolean;
@@ -68,6 +74,8 @@ export function emptyAction(entity = "", entityLabel = ""): ActionDraft {
   return {
     name: "", description: "", entity, entityLabel, does: "mark",
     mark: { label: "", value: "yes", noteFrom: "reason" },
+    tell: { destination: "", message: "" },
+    analysis: { question: "" },
     asks: [{ label: "Reason", type: "text", required: true }],
     conditions: [], approval: false, call: { ...EMPTY_CALL },
   };
@@ -117,6 +125,15 @@ export function notReady(d: ActionDraft): string {
     if (d.mark.noteFrom && !asked.includes(d.mark.noteFrom)) return "The mark's note is kept from a question the action no longer asks.";
     return "";
   }
+  if (d.does === "tell") {
+    if (!d.tell.destination) return "Choose who is told — a destination saved in Notifications.";
+    if (!d.tell.message.trim()) return "Write the message they get.";
+    return "";
+  }
+  if (d.does === "analyse") {
+    if (!d.analysis.question.trim()) return "Write the question the deep analysis asks.";
+    return "";
+  }
   const c = d.call;
   if (!/^https:\/\/\S+$/.test(c.url.trim())) return "Give the address the call is sent to — it begins https://.";
   if (c.body.trim()) {
@@ -154,6 +171,18 @@ export function toActionSpec(d: ActionDraft, takenIds: Iterable<string> = [], un
                     note: d.mark.noteFrom ? `{${d.mark.noteFrom}}` : "" }];
     return { id, spec };
   }
+  // A message and a deep analysis are the platform's own to perform and record: the record proves them, and neither
+  // can be taken back — a message cannot be unsent, an analysis's model calls cannot be unspent.
+  if (d.does === "tell") {
+    spec.side_effects = [{ kind: "notify", config: { destination: d.tell.destination, message: d.tell.message.trim() } }];
+    spec.reversibility = "irreversible";
+    return { id, spec };
+  }
+  if (d.does === "analyse") {
+    spec.side_effects = [{ kind: DEEP_ANALYSIS_EFFECT, config: { question: d.analysis.question.trim() } }];
+    spec.reversibility = "irreversible";
+    return { id, spec };
+  }
   const c = d.call;
   spec.side_effects = [{ kind: "http", config: {
     method: c.method, url: c.url.trim(),
@@ -186,7 +215,11 @@ export function keptAction(connectionId: string, schema?: string): ActionDraft |
     const raw = localStorage.getItem(KEY(connectionId, schema));
     if (!raw) return null;
     const d = JSON.parse(raw) as ActionDraft;
-    return d && Array.isArray(d.asks) && Array.isArray(d.conditions) ? { ...emptyAction(), ...d, call: { ...EMPTY_CALL, ...d.call } } : null;
+    const empty = emptyAction();
+    return d && Array.isArray(d.asks) && Array.isArray(d.conditions)
+      ? { ...empty, ...d, call: { ...EMPTY_CALL, ...d.call }, tell: { ...empty.tell, ...d.tell },
+          analysis: { ...empty.analysis, ...d.analysis } }
+      : null;
   } catch { return null; }
 }
 

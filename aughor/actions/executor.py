@@ -489,6 +489,58 @@ def _dispatch_trigger_investigation(se: SideEffect, action: KineticAction, param
             **({"agent_id": req.agent_id} if req.agent_id else {})}
 
 
+def readable_params(action, params: dict) -> dict:
+    """``params`` as a person reads them in a message: an object parameter's ``"<Type>:<key>"`` is its key alone — a
+    message names the type once, in its own words, never twice."""
+    objects = {p.name for p in action.params if p.kind == "object"}
+    return {k: (str(v).split(":", 1)[1] if k in objects and ":" in str(v) else v) for k, v in params.items()}
+
+
+def _not_sent(why: str) -> Exception:
+    """The executor's dispatch error, for a message that did not land — said in words."""
+    return KineticDispatchError(why)
+
+
+def _dispatch_destination(se: SideEffect, action, params: dict) -> dict:
+    """``notify`` to a destination a person saved in Notifications — a Slack channel's webhook, a Jira project, a
+    webhook — through `notifications.fire_action`, the send every other door already uses, whose delivery log is the
+    platform's own record of it (2026-10-09; the docstring on `SideEffect` said this for a year while ``notify`` went
+    to a bare URL). Nothing here is a URL a person typed into an action: the destination was set up, and its
+    credential stored, where destinations are.
+
+    A send that did not land is a ``dispatch_error`` in words: turned off (nothing was sent), refused, or no answer —
+    which may have landed, so it is said rather than called a failure a retry could double."""
+    from datetime import datetime, timezone
+
+    from aughor.notifications.executor import fire_action
+    from aughor.notifications.models import ActionPayload
+    from aughor.notifications.store import get_trigger
+
+    cfg = se.config or {}
+    destination = str(cfg.get("destination") or "")
+    trigger = get_trigger(destination)
+    if trigger is None:
+        raise _not_sent(f"no destination '{destination}' is saved in Notifications — it may have been removed")
+    template = str(cfg.get("message") or "").strip()
+    try:
+        message = template.format_map(readable_params(action, params)) if template else (action.display_name or action.id)
+    except (KeyError, IndexError, ValueError) as e:
+        raise _not_sent(f"the message references something the action does not declare: {e}") from e
+    log = fire_action(trigger, ActionPayload(
+        investigation_id="", rec_index=0, recommendation=message, metric_name="",
+        headline=action.display_name or action.id, trigger_id=trigger.id,
+        triggered_at=datetime.now(timezone.utc).isoformat(), context={"action": action.id}))
+    if log.status == "skipped":
+        raise _not_sent(f"the destination '{trigger.name}' is turned off in Notifications — nothing was sent")
+    if log.status == "timeout":
+        raise _not_sent(f"the message to '{trigger.name}' may have been delivered — no answer came back; "
+                        "check it before pressing again")
+    if log.status != "ok":
+        raise _not_sent(f"the message to '{trigger.name}' was not delivered — {log.error or f'HTTP {log.http_status}'}")
+    return {"kind": se.kind, "destination": trigger.id, "destination_name": trigger.name, "message": message,
+            "log_id": log.id, "status": log.status}
+
+
 def fill_edit(template: str, params: dict) -> str:
     try:
         return template.format_map(params) if "{" in template else template
@@ -554,7 +606,9 @@ def default_dispatch(action: KineticAction, params: dict, scope: str = "", *, ac
     if action.kind == "side_effect":
         results = []
         for se in action.side_effects:
-            if se.kind in ("notify", "webhook"):
+            if se.kind == "notify" and (se.config or {}).get("destination"):
+                results.append(_dispatch_destination(se, action, params))
+            elif se.kind in ("notify", "webhook"):
                 results.append(_dispatch_webhook(se, action, params))
             elif se.kind == "http":
                 results.append(_dispatch_http(se, action, params))
@@ -725,7 +779,7 @@ def execute_kinetic_action(
     from aughor.actions import authority
     verification: dict = {"status": "not_declared", "why": "the action declares no verification statement"}
     try:
-        verification = authority.verify(action, coerced, scope)
+        verification = authority.verify(action, coerced, scope, outcome=outcome)
     except Exception as exc:  # noqa: BLE001 — the change happened; a verifier that crashed is said
         verification = {"status": "unavailable", "why": f"the verifier failed: {str(exc)[:160]}"}
 

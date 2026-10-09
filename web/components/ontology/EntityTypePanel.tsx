@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
 import { countNoun, formatCount } from "@/lib/format";
+import { getOntologyKeys, keyVocabularyEntry, type VocabularyKey } from "@/lib/api";
 import { declaredActionsHref } from "@/lib/objectLinks";
 import {
   addBinding,
@@ -212,6 +213,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
         inDomain={inDomain} />
       <WithdrawnSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
       {!inDomain && <ActionsSection detail={detail} connectionId={connectionId} onDesignAction={onDesignAction} />}
+      {!inDomain && <WordsSection detail={detail} connectionId={connectionId} schema={schema} />}
       <MetricsSection detail={detail} />
       <ProcessesSection detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
         onChanged={onChanged} onDesignProcess={onDesignProcess} />
@@ -1796,6 +1798,67 @@ function ActionsSection({ detail, connectionId, onDesignAction }: {
         {design}
         <Link href={href}><Button variant="minimal" size="xs">Open in Actions</Button></Link>
       </span>
+    </Section>
+  );
+}
+
+/** Arc OC-3 — the words people use for this type and its properties (2026-10-09): each keyed to it, read from the table
+ *  and column it comes from now; or naming its table or a column, with the key proposed — never keyed until a person
+ *  says so. A keyed word reaches the agent as what it names, wherever the type's binding points. */
+function WordsSection({ detail, connectionId, schema }: { detail: ObjectTypeDetail; connectionId: string; schema?: string }) {
+  const [rows, setRows] = useState<VocabularyKey[] | null>(null);
+  const [problem, setProblem] = useState("");
+  const [busy, setBusy] = useState("");
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    let live = true;
+    getOntologyKeys(connectionId, schema)
+      .then((k) => { if (live) { setRows(k.vocabulary ?? []); setProblem(""); } })
+      .catch((e: unknown) => { if (live) { setRows([]); setProblem(e instanceof Error ? e.message : String(e)); } });
+    return () => { live = false; };
+  }, [connectionId, schema, version]);
+  const mine = (rows ?? []).filter((r) => {
+    const target = r.keyed ? r.subject_id : r.proposal.subject;
+    return !!target && (target === detail.id || target.startsWith(`${detail.id}.`));
+  });
+  const key = async (r: VocabularyKey) => {
+    setBusy(r.synonym);
+    setProblem("");
+    try {
+      await keyVocabularyEntry(connectionId, r, { kind: r.proposal.kind as "entity" | "property", subject: r.proposal.subject }, schema);
+      setVersion((v) => v + 1);
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(""); }
+  };
+  if (rows === null) return null;
+  return (
+    <Section title="Words people use" aside={mine.length ? countNoun(mine.length, "word") : undefined}>
+      {mine.length === 0 && !problem && (
+        <EmptyState variant="inline" title={`No word people use is recorded for ${detail.display_name.toLowerCase()} yet.`} />
+      )}
+      {mine.map((r, i) => (
+        <div key={`${r.subject_kind}:${r.subject_id}:${r.synonym}`} data-testid="type-word" className="aug-fs-xs"
+          style={{ padding: "6px 0", borderTop: i ? RULE : undefined, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <span style={{ color: "var(--t1)" }}>&ldquo;{r.synonym}&rdquo;</span>
+          {r.keyed ? (
+            <span style={{ color: "var(--t2)" }}>
+              means {r.subject_id.replace(".", " · ")}
+              <span style={{ color: "var(--t3)" }}>
+                {r.reads ? ` — read from ${r.reads.table}${r.reads.column ? `.${r.reads.column}` : ""}` : " — not read here now"}
+              </span>
+            </span>
+          ) : (
+            <>
+              <span style={{ color: "var(--t3)" }}>names {r.subject_kind} {r.subject_id} — {r.proposal.why}</span>
+              <Button size="xs" variant="outline" disabled={!!busy} data-testid="type-word-key" onClick={() => void key(r)}>
+                {busy === r.synonym ? "Keying…" : `Key it to ${r.proposal.subject.replace(".", " · ")}`}
+              </Button>
+            </>
+          )}
+        </div>
+      ))}
+      {problem && <p className="aug-fs-xs" style={{ color: "var(--red5)", margin: "6px 0 0" }}>{problem}</p>}
     </Section>
   );
 }

@@ -21,7 +21,7 @@ const MAP: BrainMap = {
         last_changed: "2026-09-23T10:05:00Z", observed_at: "", observed_basis: "build",
         history: [{ replaced_at: "2026-09-23T10:05:00Z", reason: "corrected", facts: { formula_sql: "AVG(total_amount)" } }] }] } },
     { id: "visibility", vault: "company", title: "What the platform can see", door: "GET /visibility", count: null, unit: "",
-      line: "the profiler has not seen this connection, so the denominator is unknown", detail: {} },
+      line: "Reads 4 tables — how many this connection holds is not known yet", detail: {} },
     { id: "findings", vault: "engagement", title: "Findings", door: "GET /exploration/{conn}/domains", count: 1250, unit: "findings",
       line: "1,250 across 9 domains", detail: {} },
     { id: "owners", vault: "working_memory", title: "Owners reachable", door: "GET /owners", count: 0, unit: "owners reachable",
@@ -52,7 +52,7 @@ describe("BrainMapPanel", () => {
     const { BrainMapPanel } = await import("@/components/BrainMapPanel");
     render(<BrainMapPanel connectionId="c1" />);
     await waitFor(() => expect(screen.getByTestId("brain-map")).toBeTruthy());
-    expect(screen.getByTestId("brain-box-visibility").textContent).toContain("the denominator is unknown");
+    expect(screen.getByTestId("brain-box-visibility").textContent).toContain("how many this connection holds is not known yet");
     // The door (a route) rides the box's tooltip since the ids-as-names movement (study §9.5);
     // the face carries the name and the count.
     expect(screen.getByTestId("brain-box-facts").getAttribute("title")).toBe("GET /graph");

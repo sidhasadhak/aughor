@@ -30,6 +30,14 @@ const setQueryBacking = vi.fn(async (..._args: unknown[]) => undefined);
 const withdrawBacking = vi.fn(async (..._args: unknown[]) => undefined);
 /** The type the panel reads — the fixture below, unless a test shows another. */
 const shown: { detail?: ObjectTypeDetail } = {};
+// The words section reads the scope's keys on every panel — mocked, so no test here reaches a running API.
+const words = vi.hoisted(() => ({ vocabulary: [] as unknown[] }));
+const keyVocabularyEntry = vi.fn(async (..._args: unknown[]) => undefined);
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  getOntologyKeys: async () => ({ connection_id: "c1", schema_name: "s", entities: [], metrics: [], vocabulary: words.vocabulary }),
+  keyVocabularyEntry: (...a: unknown[]) => keyVocabularyEntry(...a),
+}));
 
 vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/objectTypes")>()),
@@ -545,5 +553,32 @@ describe("expression properties (2026-09-22)", () => {
     await user.click(screen.getByRole("button", { name: "Declare" }));
     await waitFor(() => expect(declareExpression).toHaveBeenCalledWith("c1", detail.id, "days_listed",
       { expression: "date_diff('day', listed_at, now())", semantic_type: "dimension", unit: "days" }, undefined));
+  });
+});
+
+
+describe("EntityTypePanel — the words people use for a type (Arc OC-3, 2026-10-09)", () => {
+  afterEach(() => { words.vocabulary = []; keyVocabularyEntry.mockClear(); });
+
+  it("lists each keyed word with where it is read from, and keys a proposed one when a person says so", async () => {
+    words.vocabulary = [
+      { subject_kind: "property", subject_id: "products.retail_price", synonym: "list price", source: "human", note: "",
+        keyed: true, proposal: { kind: "property", subject: "products.retail_price", why: "keyed" },
+        reads: { table: "products", column: "retail_price" } },
+      { subject_kind: "table", subject_id: "products", synonym: "catalogue", source: "mined", note: "",
+        keyed: false, proposal: { kind: "entity", subject: "products", why: "its table, products, backs products" }, reads: null },
+      { subject_kind: "table", subject_id: "orders", synonym: "purchases", source: "human", note: "",
+        keyed: false, proposal: { kind: "entity", subject: "orders", why: "its table, orders, backs orders" }, reads: null },
+    ];
+    panel();
+    const listed = await screen.findAllByTestId("type-word");
+    expect(listed.map(w => w.textContent)).toEqual([
+      "“list price”means products · retail_price — read from products.retail_price",
+      "“catalogue”names table products — its table, products, backs productsKey it to products",
+    ]);                                                                                  // another type's word is not here
+    await userEvent.click(screen.getByTestId("type-word-key"));
+    await waitFor(() => expect(keyVocabularyEntry).toHaveBeenCalledWith("c1",
+      expect.objectContaining({ subject_kind: "table", subject_id: "products", synonym: "catalogue" }),
+      { kind: "entity", subject: "products" }, "s"));
   });
 });

@@ -112,7 +112,7 @@ def _shown(obj: dict, first: list[str]) -> dict:
 def _press(action: Any, key: str, said: dict[str, str], first: list[str], *, scope: str, schema_name: str,
            resolver: Optional[Callable[[str, str], dict]]) -> dict:
     """The draft dry-run on one object: read live, coerced and judged by the executor's own rules, nothing dispatched."""
-    from aughor.actions.executor import default_object_resolver, fill_edit, fill_template
+    from aughor.actions.executor import default_object_resolver, fill_edit, fill_template, readable_params
     from aughor.actions.propose import evaluate_proposal
     who = subject(action)
     about = next(p for p in action.params if p.name == who)
@@ -128,13 +128,22 @@ def _press(action: Any, key: str, said: dict[str, str], first: list[str], *, sco
     status, message, coerced = evaluate_proposal(action, params, scope=scope, schema_name=schema_name,
                                                  resolver=lambda _t, _k: obj)
     out = {"key": key, "status": "allowed" if status == "proposed" else status, "message": message,
-           "properties": _shown(obj, first), "edits": [], "call": None}
+           "properties": _shown(obj, first), "edits": [], "call": None, "tell": None, "analysis": None}
     filled = {**params, **coerced}
     try:
         out["edits"] = [{"property": e.property, "value": fill_edit(e.value, filled), "note": fill_edit(e.note, filled)}
                         for e in action.edits]
         for effect in action.side_effects:
-            if effect.kind == "http":
+            config = effect.config or {}
+            if effect.kind == "notify" and config.get("destination"):
+                from aughor.notifications.store import get_trigger
+                saved = get_trigger(str(config["destination"]))
+                out["tell"] = {"destination": saved.name if saved else str(config["destination"]),
+                               "type": saved.type if saved else "", "saved": saved is not None,
+                               "message": fill_template(str(config.get("message") or ""), readable_params(action, filled))}
+            elif effect.kind == "trigger_investigation":
+                out["analysis"] = {"question": fill_template(str(config.get("question") or ""), filled)}
+            elif effect.kind == "http":
                 config = effect.config or {}
                 out["call"] = {"method": str(config.get("method") or "POST").upper(),
                                "url": fill_template(str(config.get("url") or ""), filled, quote_for_url=True),

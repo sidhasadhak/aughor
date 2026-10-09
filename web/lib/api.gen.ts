@@ -11644,7 +11644,8 @@ export interface paths {
          * Get Ontology Keys
          * @description Arc OC-3 — how this scope's meaning is keyed to its ontology (ROADMAP §3.56): each metric with the entity a
          *     person confirmed it measures, the entity its grain proposes and why — never stored until confirmed through
-         *     `PUT /metrics/{name}/entity`. Read-only; no model and no warehouse.
+         *     `PUT /metrics/{name}/entity`; and each vocabulary entry that names a table, a column, an entity or a property,
+         *     keyed or with the key it is proposed (`PUT /ontology/vocabulary/key`). Read-only; no model and no warehouse.
          */
         get: operations["get_ontology_keys_ontology_keys_get"];
         put?: never;
@@ -12361,6 +12362,29 @@ export interface paths {
          * @description Increment a learned skill's usage_count (feeds per-skill autonomy).
          */
         post: operations["use_learned_skill_ontology_skills__action_id__use_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/vocabulary/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Key Vocabulary Entry
+         * @description Arc OC-3 — a person keys a word people use to the entity or property it names (`GET /ontology/keys` proposes
+         *     one for each table and column entry). The entry is kept as the person's own (``human``), named in the ontology's
+         *     ids, and read as the table and column it comes from wherever the readers need them; the table or column entry it
+         *     replaces goes. The target must be one this scope serves now — a key nothing reads is refused, not stored.
+         */
+        put: operations["key_vocabulary_entry_ontology_vocabulary_key_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -21789,6 +21813,25 @@ export interface components {
             scope: string;
             /** Table */
             table: string;
+        };
+        /**
+         * _VocabularyKey
+         * @description One vocabulary entry, as it is stored, and the entity (``Order``) or property (``Order.status``) it names.
+         */
+        _VocabularyKey: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "entity" | "property";
+            /** Subject */
+            subject: string;
+            /** Subject Id */
+            subject_id: string;
+            /** Subject Kind */
+            subject_kind: string;
+            /** Synonym */
+            synonym: string;
         };
         /**
          * LayoutRequest
@@ -42971,6 +43014,42 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    key_vocabulary_entry_ontology_vocabulary_key_put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_VocabularyKey"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

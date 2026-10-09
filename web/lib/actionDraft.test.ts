@@ -5,6 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { DEEP_ANALYSIS_EFFECT } from "@/lib/api";
 import {
   EMPTY_CALL, conditionMessage, dropAction, emptyAction, keepAction, keptAction, notReady, toActionSpec, type ActionDraft,
 } from "@/lib/actionDraft";
@@ -92,6 +93,17 @@ describe("the declaration a draft becomes", () => {
     expect([spec.reversibility, spec.undo]).toEqual(["compensable", { action_id: "withdraw_claim", window_hours: 48 }]);
     // What the undo asks for is answered from this action's answers, by name — and only those this action has.
     expect(toActionSpec(call, [], ["order", "reason", "claim_id"]).spec.undo?.params).toEqual({ order: "{order}", reason: "{reason}" });
+  });
+
+  it("tells a saved destination, or starts a deep analysis — each irreversible, each with no statement to verify it", () => {
+    const told = toActionSpec({ ...ready, does: "tell" as const, tell: { destination: "t-desk", message: " Order {order}: {reason} " } }).spec;
+    expect([told.kind, told.side_effects, told.reversibility, told.verification, told.edits]).toEqual(
+      ["side_effect", [{ kind: "notify", config: { destination: "t-desk", message: "Order {order}: {reason}" } }], "irreversible", undefined, undefined]);
+    const asked = toActionSpec({ ...ready, does: "analyse" as const, analysis: { question: "Why is {order} late?" } }).spec;
+    expect([asked.side_effects, asked.reversibility]).toEqual([[{ kind: DEEP_ANALYSIS_EFFECT, config: { question: "Why is {order} late?" } }], "irreversible"]);
+    expect(notReady({ ...ready, does: "tell" as const })).toBe("Choose who is told — a destination saved in Notifications.");
+    expect(notReady({ ...ready, does: "tell" as const, tell: { destination: "t-desk", message: "" } })).toBe("Write the message they get.");
+    expect(notReady({ ...ready, does: "analyse" as const })).toBe("Write the question the deep analysis asks.");
   });
 
   it("names the object after its type, unless a question already holds that name", () => {

@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { fireEvent, render, screen, waitFor, within } from "@/lib/testing";
+import { choose, fireEvent, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BriefingCockpits } from "@/components/cockpit/BriefingCockpits";
@@ -25,6 +25,8 @@ const api = vi.hoisted(() => ({
   getSystemFlags: vi.fn(), measureRange: vi.fn(), readExpectedNext: vi.fn(),
 }));
 const drawn = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+const ontology = vi.hoisted(() => ({ getProcesses: vi.fn() }));
+vi.mock("@/lib/objectTypes", async (original) => ({ ...(await original<typeof import("@/lib/objectTypes")>()), ...ontology }));
 const composer = vi.hoisted(() => ({ onCreated: null as null | (() => void) }));
 
 vi.mock("@/lib/api", async (original) => ({ ...(await original<typeof import("@/lib/api")>()), ...api }));
@@ -181,14 +183,20 @@ describe("a person's cockpits", () => {
 });
 
 describe("a retired cockpit", () => {
-  it("is retired from the history, where its versions are", async () => {
+  it("is retired from the toolbar, after one confirmation — not from inside History, where it read as absent", async () => {
     api.retireCockpit.mockResolvedValue({ status: "kept", kept: true, version: 4, artifact_id: "a4", sentences: [] });
     show();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
-    expect(screen.queryByRole("button", { name: /Retire/ })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /History/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Retire this cockpit" }));
+    fireEvent.click(screen.getByTestId("cockpit-retire-open"));
+    expect(screen.getByTestId("cockpit-retire-confirm").textContent).toContain("its history stays");
+    fireEvent.click(screen.getByRole("button", { name: "Keep it" }));
+    expect(screen.queryByTestId("cockpit-retire-confirm")).toBeNull();
+    expect(api.retireCockpit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("cockpit-retire-open"));
+    fireEvent.click(screen.getByRole("button", { name: "Retire it" }));
     await waitFor(() => expect(api.retireCockpit).toHaveBeenCalledWith("thelook", "returns-1"));
+    fireEvent.click(screen.getByRole("button", { name: /History/ }));
+    expect(screen.queryByRole("button", { name: "Retire this cockpit" })).toBeNull();
   });
 
   it("leaves the strip, is said to be retired, and is brought back as it was before", async () => {
@@ -253,6 +261,58 @@ describe("with no cockpits yet", () => {
   });
 });
 
+describe("a new cockpit started without a model", () => {
+  // The walk-through (2026-10-09): + New cockpit offered only a model's draft, and a cockpit for a process only inside
+  // the designer's own session.
+  const kept = () => api.keepCockpit.mock.calls.at(-1) as [string, string, { elements: Record<string, { type: string; props: Record<string, unknown>; children: string[] }> }, string];
+
+  it("starts empty — its name and a first note in the person's words — and opens on it", async () => {
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-new-open"));
+    const startIt = screen.getByTestId("cockpit-start-empty");
+    expect(startIt).toBeDisabled();
+    expect(screen.getByTestId("cockpit-new")).toHaveTextContent("Name it.");                 // never a silent dead end
+    fireEvent.change(screen.getByLabelText("The cockpit's name"), { target: { value: "Carrier performance" } });
+    fireEvent.change(screen.getByLabelText("What this cockpit is for — its first note"), { target: { value: "Which carriers miss pickups." } });
+    fireEvent.click(startIt);
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalled());
+    const [conn, id, spec, note] = kept();
+    expect([conn, note]).toEqual(["thelook", "Started empty"]);
+    expect(id).toMatch(/^carrier-performance-[0-9a-f]{6}$/);
+    expect(Object.values(spec.elements).map(e => [e.type, e.props])).toEqual([
+      ["Cockpit", { title: "Carrier performance" }], ["Section", { title: "Carrier performance", columns: 3 }],
+      ["Note", { text: "Which carriers miss pickups." }]]);
+    expect(api.draftCockpit).not.toHaveBeenCalled();
+  });
+
+  it("starts for a declared process — its board, its overdue objects and one beside them", async () => {
+    ontology.getProcesses.mockResolvedValue({ processes: [
+      { id: "order_fulfilment", display_name: "Order fulfilment", entity: "order", entity_id: "Order",
+        stages: [{ name: "placed", promise: null }, { name: "shipped", promise: { overdue_segment: "overdue_dispatch" } }] },
+    ], rules: [] });
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-new-open"));
+    fireEvent.click(screen.getByTestId("cockpit-new-process"));
+    await choose(await screen.findByLabelText("The process"), "order_fulfilment");
+    fireEvent.click(screen.getByTestId("cockpit-start-process"));
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalled());
+    const [, id, spec, note] = kept();
+    expect(id).toMatch(/^order-fulfilment-[0-9a-f]{6}$/);
+    expect(note).toBe("Started from the process Order fulfilment");
+    const els = Object.values(spec.elements);
+    expect(els.map(e => e.type)).toEqual(["Cockpit", "Section", "ProcessBoard", "ObjectTable", "ObjectDetail"]);
+    expect(els[3].props).toEqual({ entity: "Order", segment: "overdue_dispatch", size: "wide" });
+  });
+
+  it("says there is no process to start from, and where to design one", async () => {
+    ontology.getProcesses.mockResolvedValue({ processes: [], rules: [] });
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-new-open"));
+    fireEvent.click(screen.getByTestId("cockpit-new-process"));
+    expect(await screen.findByTestId("cockpit-new-no-process")).toHaveTextContent("Design one in the Ontology, with New process.");
+  });
+});
+
 describe("a new cockpit from an area", () => {
   const PROPOSAL = {
     id: "p1", kind: "cockpit_draft", status: "pending", reasoning: "Returns first, then what they cost.",
@@ -267,6 +327,7 @@ describe("a new cockpit from an area", () => {
   async function draftReturns() {
     show();
     fireEvent.click(await screen.findByTestId("cockpit-new-open"));
+    fireEvent.click(screen.getByTestId("cockpit-new-draft"));                 // the one way here that asks a model
     fireEvent.change(screen.getByLabelText("What this cockpit is for"), { target: { value: "Returns" } });
     fireEvent.click(screen.getByRole("button", { name: "Draft it" }));
   }

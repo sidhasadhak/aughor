@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter
 
@@ -191,6 +193,10 @@ def quick_schemas(conn_id: str, conn_type: str) -> list[dict] | None:
     return [{"name": s, "tables": t} for s, t in schema_map.items()]
 
 
+#: How many catalogs the tree reads side by side.
+_TREE_READERS = 8
+
+
 @router.get("/catalog/tree")
 async def get_catalog_tree(workspace_id: str | None = None):
     """Return the full 4-level catalog hierarchy: Section → Catalog → Schema → Table.
@@ -205,12 +211,20 @@ async def get_catalog_tree(workspace_id: str | None = None):
         allowed = accessible_catalog_ids(workspace_id)
         # Single catalog list. The Workspace (which now folds in the sample
         # ecommerce tables) is returned first by list_connections.
+        listed = [c for c in list_connections() if allowed is None or c["id"] in allowed]
+        # Each catalog's schemas are a round trip to its own warehouse. Read one after another, the first tree of a
+        # session waited for the SUM of them: 17.1 s measured live on 2026-10-09 (two BigQuery projects, a Sheets
+        # connection and five more), behind "Loading the catalog…" — the usability walk-through's finding. Read side by
+        # side it waits for the slowest. Each thread reads a different connection, so no connector is shared; each runs
+        # in a copy of this request's context; and the metastore reconcile below stays one at a time.
+        parent = contextvars.copy_context()
+        with ThreadPoolExecutor(max_workers=max(1, min(_TREE_READERS, len(listed))),
+                                thread_name_prefix="catalog-tree") as pool:
+            read = list(pool.map(lambda c: parent.copy().run(quick_schemas, c["id"], c.get("conn_type", "duckdb")),
+                                 listed))
         entries = []
-        for conn_info in list_connections():
+        for conn_info, introspected in zip(listed, read):
             cid = conn_info["id"]
-            if allowed is not None and cid not in allowed:
-                continue  # not in the active workspace — don't surface its schema
-            introspected = quick_schemas(cid, conn_info.get("conn_type", "duckdb"))
             schemas = introspected or []
             # Keep the metastore's first-class Schema rows tracking live introspection
             # (catalog.schema namespace). Best-effort — never break the tree build.

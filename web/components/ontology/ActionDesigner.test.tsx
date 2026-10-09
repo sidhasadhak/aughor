@@ -15,7 +15,7 @@ import type { ActionPreview, ProcessCandidates, TypeMapRow } from "@/lib/objectT
 
 const calls = vi.hoisted(() => ({
   candidates: vi.fn(), preview: vi.fn(), declare: vi.fn(), release: vi.fn(), publish: vi.fn(), types: vi.fn(),
-  declared: vi.fn(), cockpits: vi.fn(), cockpit: vi.fn(), keep: vi.fn(), tab: vi.fn(), ok: vi.fn(), err: vi.fn(),
+  declared: vi.fn(), cockpits: vi.fn(), cockpit: vi.fn(), keep: vi.fn(), tab: vi.fn(), ok: vi.fn(), err: vi.fn(), triggers: vi.fn(),
 }));
 
 vi.mock("@/lib/objectTypes", async (importOriginal) => ({
@@ -26,6 +26,7 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   getDeclaredActions: calls.declared, listCockpits: calls.cockpits, getCockpit: calls.cockpit, keepCockpit: calls.keep,
+  getActionTriggers: calls.triggers,
 }));
 vi.mock("@/lib/navigate", () => ({ requestTab: calls.tab }));
 vi.mock("@/components/ui/toast", () => ({ toast: { success: calls.ok, error: calls.err } }));
@@ -127,7 +128,7 @@ describe("the action designer", () => {
     await user.click(screen.getByTestId("action-review"));
     await user.click(screen.getByTestId("action-declare"));
     await waitFor(() => expect(calls.err).toHaveBeenCalled());
-    expect(calls.err.mock.calls[0][0]).toBe("Waiting for approval");            // never "HTTP 428"
+    expect(calls.err.mock.calls[0][0]).toBe("Not approved");                    // never "HTTP 428"
     expect(calls.err.mock.calls[0][1].description).not.toMatch(/428/);
     await user.click(screen.getByTestId("action-declare"));
     await waitFor(() => expect(calls.declare).toHaveBeenCalledTimes(2));
@@ -143,6 +144,33 @@ describe("the action designer", () => {
     expect(button).toEqual([{ type: "ActionButton", props: { action: "escalate_to_carrier" }, children: [] }]);
     expect(els["table-overdue_dispatch"].props.columns).toEqual(["status", "created_at", "escalated_to_carrier"]);
     expect(screen.getByTestId("action-placed").textContent).toContain("The button is on Late dispatch.");
+  });
+
+  it("tells a destination saved in Notifications — chosen, never typed — and shows the message a press would send", async () => {
+    calls.triggers.mockResolvedValue([{ id: "t-desk", name: "Carrier desk", type: "slack", url: "•••", headers: {}, enabled: true }]);
+    calls.preview.mockResolvedValue({ ...PREVIEW, sample: { ...PREVIEW.sample!, edits: [],
+      tell: { destination: "Carrier desk", type: "slack", saved: true, message: "Order 6 needs the carrier: Missed pickup" } } });
+    const user = userEvent.setup();
+    designer();
+    await user.type(screen.getByLabelText("Action name"), "Tell the carrier desk");
+    await user.click(within(screen.getByTestId("action-does")).getByRole("button", { name: /Tell someone/ }));
+    expect(screen.getByTestId("action-designer-status").textContent).toBe("Choose who is told — a destination saved in Notifications.");
+    await choose(await screen.findByLabelText("Who is told"), "t-desk");
+    await user.type(screen.getByLabelText("The message"), "Order {{order} needs the carrier: {{reason}");
+    await waitFor(() => expect(lastAsked()?.action.side_effects).toEqual(
+      [{ kind: "notify", config: { destination: "t-desk", message: "Order {order} needs the carrier: {reason}" } }]), { timeout: 3000 });
+    expect(lastAsked().action).toMatchObject({ kind: "side_effect", risk: "low", reversibility: "irreversible" });
+    expect(lastAsked().action.verification).toBeUndefined();
+    await waitFor(() => expect(screen.getByTestId("action-press").textContent)
+      .toContain("A press would tell Carrier desk (slack): “Order 6 needs the carrier: Missed pickup”. Nothing is sent from here."));
+  });
+
+  it("says where to set a destination up when none is saved", async () => {
+    calls.triggers.mockResolvedValue([]);
+    const user = userEvent.setup();
+    designer();
+    await user.click(within(screen.getByTestId("action-does")).getByRole("button", { name: /Tell someone/ }));
+    expect(await within(screen.getByTestId("action-tell")).findByText(/Set one up in Notifications, under Operations/)).toBeTruthy();
   });
 
   it("asks for the call, its check and how it is taken back only when the action calls another system", async () => {
@@ -181,5 +209,15 @@ describe("where an action's button can sit", () => {
     expect(els["detail-table-overdue_dispatch"].children).toHaveLength(1);
     expect(els["table-overdue_dispatch"].props.columns).toEqual(["status", "created_at", "escalated_to_carrier"]);
     expect((LATE.elements["table-overdue_dispatch"].props as { columns: string[] }).columns).toHaveLength(2);   // the spec read is never changed
+  });
+
+  it("writes out a default-column table's columns with the mark after them — the mark is never left unseen", () => {
+    const plain = structuredClone(LATE);
+    delete (plain.elements["table-overdue_dispatch"].props as { columns?: string[] }).columns;
+    const [place] = placesIn("late-dispatch", "Late dispatch", plain, ["Order"]);
+    const shown = withAction(plain, place, "escalate_to_carrier", "escalated_to_carrier", ["status", "order_date"]) as typeof LATE;
+    expect(shown.elements["table-overdue_dispatch"].props.columns).toEqual(["status", "order_date", "escalated_to_carrier"]);
+    const unread = withAction(plain, place, "escalate_to_carrier", "escalated_to_carrier", []) as typeof LATE;
+    expect("columns" in unread.elements["table-overdue_dispatch"].props).toBe(false);     // defaults unread: left as it was
   });
 });

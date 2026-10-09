@@ -643,11 +643,11 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
         <div className="flex items-center gap-2 ml-auto">
           {graph.enriched ? (
             <span className="aug-fs-xs text-emerald-400 border border-emerald-500/20 bg-emerald-500/8 rounded-[var(--r-chip)] px-2 py-0.5">
-              semantically enriched
+              described in business terms
             </span>
           ) : (
             <span className="aug-fs-xs text-zinc-500 border border-zinc-700 rounded-[var(--r-chip)] px-2 py-0.5">
-              structural only
+              not yet described in business terms
             </span>
           )}
           <span className="aug-fs-xs text-zinc-500">

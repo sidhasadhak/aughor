@@ -991,11 +991,40 @@ export interface MetricKey {
   agrees: boolean;
 }
 
+/** Arc OC-3 — one word people use: what it names as stored, whether it is keyed to an entity or a property, the key
+ *  proposed for a table or column entry, and the table and column a keyed one is read from now. */
+export interface VocabularyKey {
+  subject_kind: "table" | "column" | "entity" | "property";
+  subject_id: string;
+  synonym: string;
+  source: string;
+  note: string;
+  keyed: boolean;
+  proposal: { kind: "" | "entity" | "property"; subject: string; why: string };
+  reads: { table: string; column: string } | null;
+}
+
 export interface OntologyKeys {
   connection_id: string;
   schema_name: string;
   entities: { id: string; label: string }[];
   metrics: MetricKey[];
+  vocabulary?: VocabularyKey[];
+}
+
+/** Key a word people use to the entity or property it names — as the person signed in; the table or column entry it
+ *  replaces goes. The approval gate may hold it (it is a change to the ontology's meaning). */
+export async function keyVocabularyEntry(
+  connectionId: string, entry: Pick<VocabularyKey, "subject_kind" | "subject_id" | "synonym">,
+  key: { kind: "entity" | "property"; subject: string }, schema?: string,
+): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema && schema !== "*") q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/ontology/vocabulary/key?${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...entry, ...key }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The word was not keyed"));
 }
 
 /** How the scope's metrics are keyed to its entities — the confirmed key, the proposal and why. */
@@ -8848,6 +8877,9 @@ export interface DeclaredAction {
   /** ON-4 — the properties an `annotate` action sets on the object it takes. */
   edits: { object: string; property: string; value: string; note: string }[];
 }
+
+/** The side-effect kind that starts a deep analysis — the backend's frozen spelling, mirrored here. */
+export const DEEP_ANALYSIS_EFFECT = "trigger_investigation" as const;
 
 /** Where the declared actions are read and declared — the frozen path of the declare door. */
 export const DECLARED_ACTIONS = "/ontology/kinetic-actions";

@@ -170,6 +170,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # executor whose dispatch-error boundary it drives, or the `KineticAction` class its fixture builds.
          # Its own prose says "declared action" and "call" in every line a reader sees.
          "tests/unit/test_action_delivery_errors.py",
+         # The action designer's suites (2026-10-09), the same ground: every hit is the `KineticAction` class their
+         # fixtures build, `KineticDispatchError` the executor raises, the graph's `kinetic_actions` a fixture fills, or
+         # the frozen declare door `PUT /ontology/kinetic-actions/{id}`. Their own prose and the product code they cover
+         # say "declared action"; the designer's new door is `/ontology/declared-actions/preview`.
+         "tests/unit/test_action_design.py",
+         "tests/unit/test_action_platform_record.py",
          # Arc OC-0's census suite (2026-10-09): its one hit is the frozen effect kind `kinetic_action`, needed to
          # build the automation step the census counts as leaning on a declared action. The module under test
          # finds that step by the `action_id` it names and does not spell the kind.

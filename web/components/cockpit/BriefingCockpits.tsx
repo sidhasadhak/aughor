@@ -36,10 +36,12 @@ import { METRICS_COCKPIT, MetricsCockpit } from "@/components/cockpit/MetricsCoc
 import { PeriodPicker, choiceName } from "@/components/cockpit/PeriodPicker";
 import { person as personName, type ImageStamp } from "@/components/cockpit/StaticTile";
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { SelectField } from "@/components/ui/select";
 import { TabStrip } from "@/components/ui/tab-strip";
 import { ErrorState, Loading, Refusal } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,7 +60,9 @@ import {
   type CockpitSpec,
 } from "@/lib/cockpit/edit";
 import { hostStateOf } from "@/lib/cockpit/hostStatus";
+import { emptyCockpitSpec, overdueSegmentOf, processCockpitHolds, processCockpitSpec, startCockpit } from "@/lib/cockpit/start";
 import { formatDateTime } from "@/lib/format";
+import { getProcesses, type ProcessDetail } from "@/lib/objectTypes";
 
 /** The name the Briefing gives when it keeps something for a person. The server writes the
  *  signed-in person's own name where there is one. */
@@ -261,10 +265,33 @@ function DraftReview({ connectionId, cockpitId, result, proposal, held, onKept, 
   );
 }
 
-/** A new cockpit for an area: the one door here that asks a model. */
+/** A new cockpit, three ways (2026-10-09): empty — its name and a first note in the person's words, since a cockpit
+ *  holding nothing is refused; for a declared process — its board, its open-and-overdue objects and one beside them;
+ *  or drafted by a model for an area, the one way here that asks one. The walk-through found only the last. */
 function NewCockpit({ connectionId, schema, onKept, onClose }: {
   connectionId: string; schema?: string; onKept: (cockpitId: string) => void; onClose: () => void;
 }) {
+  const [way, setWay] = useState<"empty" | "process" | "draft">("empty");
+  const [name, setName] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [processes, setProcesses] = useState<ProcessDetail[] | null>(null);
+  const [processId, setProcessId] = useState("");
+  const [starting, setStarting] = useState(false);
+  useEffect(() => {
+    if (way !== "process" || processes) return;
+    let live = true;
+    getProcesses(connectionId, schema).then(r => { if (live) setProcesses(r.processes); }).catch(() => { if (live) setProcesses([]); });
+    return () => { live = false; };
+  }, [way, processes, connectionId, schema]);
+  const process = processes?.find(p => p.id === processId);
+  const start = async (title: string, spec: unknown, note: string) => {
+    setStarting(true);
+    try {
+      onKept(await startCockpit(connectionId, title, spec, note));
+    } catch (e) {
+      toast.error("The cockpit was not made", { description: (e as Error).message.slice(0, 200) });
+    } finally { setStarting(false); }
+  };
   const [area, setArea] = useState("");
   const [drafting, setDrafting] = useState(false);
   const [result, setResult] = useState<CockpitDrafted | null>(null);
@@ -283,6 +310,63 @@ function NewCockpit({ connectionId, schema, onKept, onClose }: {
 
   return (
     <div data-testid="cockpit-new" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+        {([["empty", "Start empty"], ["process", "For a process"], ["draft", "Draft it with a model"]] as const).map(([w, label]) => (
+          <Button key={w} size="xs" variant={way === w ? "secondary" : "ghost"} aria-pressed={way === w}
+            data-testid={`cockpit-new-${w}`} disabled={drafting || starting || !!proposal} onClick={() => setWay(w)}>{label}</Button>
+        ))}
+        <Button size="xs" variant="ghost" style={{ marginLeft: "auto" }} disabled={drafting || starting} onClick={onClose}>Close</Button>
+      </div>
+
+      {way === "empty" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 560 }}>
+          <Input aria-label="The cockpit's name" placeholder="Carrier performance" value={name} disabled={starting}
+            onChange={e => setName(e.target.value)} />
+          <Textarea aria-label="What this cockpit is for — its first note" rows={2} value={purpose} disabled={starting}
+            placeholder="Which carriers miss pickups, and what we do about it." onChange={e => setPurpose(e.target.value)} />
+          <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <Button size="sm" data-testid="cockpit-start-empty" disabled={!name.trim() || !purpose.trim() || starting}
+              onClick={() => void start(name, emptyCockpitSpec(name, purpose), "Started empty")}>
+              {starting ? "Starting…" : "Start it"}
+            </Button>
+            <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+              {!name.trim() ? "Name it." : !purpose.trim() ? "Say what it is for — it becomes the cockpit's first note."
+                : "Then add cards, findings and pieces from the toolbar. No model is asked."}
+            </span>
+          </span>
+        </div>
+      )}
+
+      {way === "process" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 560 }}>
+          {processes === null ? <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Reading the declared processes…</span>
+            : processes.length === 0 ? (
+              <span className="aug-fs-sm" style={{ color: "var(--t3)" }} data-testid="cockpit-new-no-process">
+                No process is declared on this connection yet. Design one in the Ontology, with New process.
+              </span>
+            ) : (
+              <>
+                <SelectField value={processId} aria-label="The process" disabled={starting} onChange={e => setProcessId(e.target.value)}>
+                  <option value="">Choose a process…</option>
+                  {processes.map(p => <option key={p.id} value={p.id}>{p.display_name} · {p.entity}</option>)}
+                </SelectField>
+                <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <Button size="sm" data-testid="cockpit-start-process" disabled={!process || starting}
+                    onClick={() => process && void start(process.display_name,
+                      processCockpitSpec(process.display_name, process.id, process.entity_id, overdueSegmentOf(process)),
+                      `Started from the process ${process.display_name}`)}>
+                    {starting ? "Starting…" : "Start it"}
+                  </Button>
+                  <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+                    {!process ? "Choose the process it is for." : processCockpitHolds(process)}
+                  </span>
+                </span>
+              </>
+            )}
+        </div>
+      )}
+
+      {way === "draft" && (<>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <Input aria-label="What this cockpit is for" placeholder="What is it for? Returns, pricing, marketing…"
           value={area} onChange={e => setArea(e.target.value)} disabled={drafting || !!proposal}
@@ -291,13 +375,13 @@ function NewCockpit({ connectionId, schema, onKept, onClose }: {
         <Button size="sm" disabled={!area.trim() || drafting || !!proposal} onClick={() => void draft()}>
           {drafting ? "Drafting…" : "Draft it"}
         </Button>
-        <Button size="sm" variant="ghost" disabled={drafting} onClick={onClose}>Close</Button>
       </div>
       <div className="aug-fs-sm" style={{ color: "var(--t3)", marginTop: 6 }}>
         {drafting
           ? "A model is drafting it from the connection's approved metrics, trusted queries and findings. This can take a minute."
           : "Drafting asks a model once. Nothing is kept until you keep it."}
       </div>
+      </>)}
 
       {result && !result.staged && (
         <div style={{ marginTop: 12 }}>
@@ -527,6 +611,8 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<CockpitKept | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  // Retire is on the toolbar (2026-10-09): inside History it read as absent — the usability walk-through's finding.
+  const [retiring, setRetiring] = useState(false);
   const [arranging, setArranging] = useState<CockpitSpec | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [composing, setComposing] = useState(false);
@@ -845,8 +931,28 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               <Button size="xs" variant="ghost" aria-expanded={showHistory} onClick={() => setShowHistory(s => !s)}>
                 <Icon name="history" /> {showHistory ? "Hide history" : "History"}
               </Button>
+              {!arranging && (
+                <Button size="xs" variant="ghost" disabled={busy} data-testid="cockpit-retire-open" aria-expanded={retiring}
+                  title="Take this cockpit off your strip. Its history stays, and it can be brought back as it was."
+                  onClick={() => setRetiring(r => !r)}>
+                  <Icon name="close" /> Retire
+                </Button>
+              )}
             </span>
           </div>
+
+          {retiring && (
+            <Callout tone="amber" style={{ margin: "8px 0" }} data-testid="cockpit-retire-confirm">
+              <span className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                Retire this cockpit? It leaves your strip; its history stays, and it can be brought back as it was.
+                <Button size="xs" disabled={busy} onClick={() => {
+                  setRetiring(false);
+                  void write(() => retireCockpit(connectionId, data.cockpit_id), () => "Cockpit retired. Its history stays.");
+                }}>Retire it</Button>
+                <Button size="xs" variant="ghost" onClick={() => setRetiring(false)}>Keep it</Button>
+              </span>
+            </Callout>
+          )}
 
           {showHistory && (
             <div style={{ margin: "8px 0 12px" }}>
@@ -854,10 +960,6 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               <span className="aug-fs-sm" data-testid="cockpit-version" style={{ color: "var(--t3)" }}>
                 Version {kept.version} · {kept.written_by_model ? "drafted, kept" : "kept"} by {person(kept.approved_by)} · {formatDateTime(kept.kept_at)}
               </span>
-              <Button size="xs" variant="ghost" disabled={busy} style={{ marginLeft: "auto" }}
-                onClick={() => void write(() => retireCockpit(connectionId, data.cockpit_id), () => "Cockpit retired. Its history stays.")}>
-                Retire this cockpit
-              </Button>
             </div>
             <ol data-testid="cockpit-history" style={{ listStyle: "none", margin: 0, padding: 0, borderTop: "1px solid var(--b1)" }}>
               {data.history.map(v => (

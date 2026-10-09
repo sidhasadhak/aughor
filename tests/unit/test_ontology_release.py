@@ -281,6 +281,19 @@ def test_a_promise_moved_is_a_meaning_change_and_a_watched_one_dropped_breaks():
     assert COMPAT.classify("process", before, renamed)[0] == "WARN"
 
 
+def test_how_objects_leave_a_process_is_a_meaning_change_not_an_unknown_field():
+    """It was a WARN the catalogue could not class; on theLook it took 18,726 Cancelled orders out of *open and
+    overdue* (OC-4's live receipt), so publishing it must restate what was computed under the old meaning."""
+    before = copy.deepcopy(FULFILMENT)
+    leaving = {**copy.deepcopy(FULFILMENT), "leaves": {"property": "status", "values": ["cancelled"]}}
+    cls, reasons = COMPAT.classify("process", before, leaving)
+    assert cls == "MEANING" and reasons == [{"class": "MEANING", "why": "how an object leaves it changed (none declared → "
+                                             "status is cancelled) — what is open and overdue moves with it"}]
+    wider = {**leaving, "leaves": {"property": "status", "values": ["cancelled", "refunded"]}}
+    assert COMPAT.classify("process", leaving, wider)[0] == "MEANING"
+    assert COMPAT.classify("process", leaving, copy.deepcopy(leaving)) == ("SAFE", [{"class": "SAFE", "why": "nothing it says changed"}])
+
+
 def test_a_draft_that_does_not_bind_cannot_be_published():
     cls, reasons = COMPAT.classify("link", None, {"name": "x"}, binding={"link": {"bound": False, "note": "no keys meet"}})
     assert cls == "ERR" and "no keys meet" in reasons[-1]["why"]

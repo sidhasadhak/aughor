@@ -308,16 +308,19 @@ def visibility(conn: str, schema: str, graph, *, context_graph=None, universe: O
 
 
 def visibility_line(tables: dict, joins: Optional[dict], top: Optional[dict]) -> str:
-    """One sentence a person reads: what is seen, what is measured, what one fix unblocks."""
+    """One sentence a person reads: what is seen, what is checked, what one approval lets through. In a business
+    reader's words (the usability walk-through, 2026-10-09, read "joins measured 9 of 9" and "approve `revenue` and 4
+    held sends unblock" as the builder's language); the precise terms stay in the line's hover detail."""
     parts = []
     if tables.get("basis") == "profiler":
-        parts.append(f"sees {tables['mapped']} of {tables['in_scope']} tables ({round(tables['share'] * 100)}%)"
-                     + (f", {tables['excluded']} excluded" if tables.get("excluded") else ""))
+        parts.append(f"Reads {tables['mapped']} of your {tables['in_scope']} tables"
+                     + (f" ({tables['excluded']} set aside)" if tables.get("excluded") else ""))
     else:
-        parts.append(f"maps {tables['mapped']} tables; the profiler has not seen this connection, so the denominator is unknown")
+        parts.append(f"Reads {tables['mapped']} tables — how many this connection holds is not known yet")
     if joins and joins.get("total"):
-        parts.append(f"joins measured {joins['measured']} of {joins['total']}")
+        measured, total = joins["measured"], joins["total"]
+        parts.append(f"all {total} links checked" if measured == total else f"{measured} of {total} links checked")
     if top:
         n = top["holds"]
-        parts.append(f"approve `{top['definition']}` and {n} held send{'s' if n != 1 else ''} unblock")
+        parts.append(f"{n} message{'s wait' if n != 1 else ' waits'} for you to approve '{top['definition']}'")
     return " · ".join(parts)

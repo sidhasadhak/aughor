@@ -28,10 +28,11 @@ import {
   conditionMessage, dropAction, emptyAction, keepAction, keptAction, notReady, oneOf, toActionSpec,
   type ActionDraft, type AskDraft, type AskType, type CallDraft, type ConditionDraft,
 } from "@/lib/actionDraft";
-import { getCockpit, getDeclaredActions, keepCockpit, listCockpits } from "@/lib/api";
+import { getActionTriggers, getCockpit, getDeclaredActions, keepCockpit, listCockpits, type ActionTrigger } from "@/lib/api";
 import { addAction } from "@/lib/cockpit/edit";
 import { formatCount } from "@/lib/format";
 import { requestTab } from "@/lib/navigate";
+import { listObjects } from "@/lib/objects";
 import {
   declareAction, getProcessCandidates, getRelease, getTypeMap, previewAction, publishRelease,
   type ActionPreview, type ProcessCandidates, type ReleaseState, type TypeMapRow,
@@ -50,11 +51,13 @@ function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** A refusal in words — an edit the platform's approval gate holds (HTTP 428) says what to do, never the status code. */
-function refusal(title: string, e: unknown, then: string): [string, { description: string }] {
+/** A refusal in words — an edit the platform's approval gate held (HTTP 428) says what happened, never the status code.
+ *  An approval given in the dialog sends the held edit on its own (`lib/approval`); a 428 reaches here only when the
+ *  dialog was closed without approving. */
+function refusal(title: string, e: unknown): [string, { description: string }] {
   const said = errorText(e);
   return /\b428\b|approval/i.test(said)
-    ? ["Waiting for approval", { description: `Changing the ontology on this connection needs approval. Approve it in the dialog, ${then}.` }]
+    ? ["Not approved", { description: `Nothing was changed: changing the ontology on this connection needs approval. Press again and approve it in the dialog.` }]
     : [title, { description: said.slice(0, 240) }];
 }
 
@@ -84,13 +87,27 @@ export function placesIn(cockpitId: string, title: string, spec: unknown, entity
   });
 }
 
-/** ``spec`` with the action's button in the detail and — for a mark — the mark as a column of the table it follows. */
-export function withAction(spec: unknown, place: ActionPlace, actionId: string, markProperty: string): unknown {
+/** ``spec`` with the action's button in the detail and — for a mark — the mark as a column of the table it follows.
+ *  A table that shows the type's default columns names none, so ``defaults`` — the columns the listing door read for
+ *  it — are written out with the mark after them; without them the mark would never show (Order shipping, 2026-10-09). */
+export function withAction(spec: unknown, place: ActionPlace, actionId: string, markProperty: string,
+  defaults: string[] = []): unknown {
   const s = addAction(spec, place.detailKey, actionId) as unknown as { elements: Record<string, { props: Record<string, unknown> }> };
   const table = s.elements[place.tableKey];
-  const columns = table?.props.columns;
-  if (markProperty && Array.isArray(columns) && !columns.includes(markProperty)) table.props.columns = [...columns, markProperty];
+  if (!table || !markProperty) return s;
+  const columns = Array.isArray(table.props.columns) ? (table.props.columns as string[]) : defaults;
+  if (columns.length && !columns.includes(markProperty)) table.props.columns = [...columns, markProperty];
   return s;
+}
+
+/** The columns a table that names none shows — what the listing door reads for it — or [] when it cannot be read. */
+async function defaultColumns(connectionId: string, schema: string | undefined, entity: string, segment: string): Promise<string[]> {
+  try {
+    const page = await listObjects({ entity, ...(segment ? { segment } : {}), limit: 1 }, connectionId, schema);
+    return page.path === "listed" ? page.columns.map(c => c.path) : [];
+  } catch {
+    return [];
+  }
 }
 
 type Phase = { at: "draft" } | { at: "declared"; id: string } | { at: "published"; id: string; release: number }
@@ -120,6 +137,8 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
   // Read per type and kept under the type read — a reading of another type is never shown beside this one.
   const [candsRead, setCandsRead] = useState<{ entity: string; cands: ProcessCandidates | null } | null>(null);
   const [declared, setDeclared] = useState<Record<string, { name: string; takes: string[] }>>({});
+  // The destinations saved in Notifications — who a press may tell.
+  const [destinations, setDestinations] = useState<ActionTrigger[] | null>(null);
   const [placesRead, setPlacesRead] = useState<{ entity: string; places: ActionPlace[] } | null>(null);
   const [ticked, setTicked] = useState<Record<string, boolean>>({});
   const [said, setSaid] = useState<Record<string, string>>({});
@@ -154,6 +173,13 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
       .catch(() => { /* an id is still checked by the preview door, which answers 409 for one taken */ });
     return () => { live = false; };
   }, [connectionId, schema]);
+
+  useEffect(() => {
+    if (draft.does !== "tell" || destinations) return;
+    let live = true;
+    getActionTriggers().then(all => { if (live) setDestinations(all); }).catch(() => { if (live) setDestinations([]); });
+    return () => { live = false; };
+  }, [draft.does, destinations]);
 
   // What the type carries — its count and the values its state-like properties hold, read when the type is chosen.
   useEffect(() => {
@@ -234,7 +260,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
       setRelease(await getRelease(connectionId, schema).catch(() => null));
       toast.success("Declared. It reaches cockpits and the agent when the release is published.");
     } catch (e) {
-      toast.error(...refusal("Not declared", e, "then declare again"));
+      toast.error(...refusal("Not declared", e));
     } finally { setBusy(""); }
   };
 
@@ -247,7 +273,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
       onPublished?.();
       toast.success(`Published as release ${out.number}.`);
     } catch (e) {
-      toast.error(...refusal("Not published", e, "then publish again"));
+      toast.error(...refusal("Not published", e));
     } finally { setBusy(""); }
   };
 
@@ -260,7 +286,13 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
       for (const cockpitId of [...new Set(chosen.map(p => p.cockpitId))]) {
         const read = await getCockpit(connectionId, cockpitId);
         let spec: unknown = read.cockpit.spec;
-        for (const p of chosen.filter(c => c.cockpitId === cockpitId)) spec = withAction(spec, p, phase.id, markProperty);
+        const els = (spec as { elements: Record<string, { props?: Record<string, unknown> }> }).elements;
+        for (const p of chosen.filter(c => c.cockpitId === cockpitId)) {
+          const named = Array.isArray(els[p.tableKey]?.props?.columns);
+          const defaults = markProperty && !named
+            ? await defaultColumns(connectionId, schema, String(els[p.tableKey]?.props?.entity ?? draft.entity), p.segment) : [];
+          spec = withAction(spec, p, phase.id, markProperty, defaults);
+        }
         await keepCockpit(connectionId, cockpitId, spec, `Added the action ${draft.name.trim()}`);
         on.push(chosen.find(c => c.cockpitId === cockpitId)?.title ?? cockpitId);
       }
@@ -400,6 +432,43 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
                 </SelectField>
               </div>
             )}
+            <Choice on={draft.does === "tell"} disabled={!drafting} icon="send" title="Tell someone"
+              says="Sends a message to a destination saved in Notifications — a Slack channel, Jira, a webhook."
+              onPick={() => edit({ does: "tell", approval: false })} />
+            {draft.does === "tell" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "2px 0 8px 26px" }} data-testid="action-tell">
+                {destinations !== null && destinations.length === 0 ? (
+                  <p className="aug-fs-xs" style={{ ...HINT, margin: 0 }}>
+                    No destination is saved yet. Set one up in Notifications, under Operations — then choose it here.
+                  </p>
+                ) : (
+                  <SelectField value={draft.tell.destination} aria-label="Who is told" disabled={!drafting || destinations === null}
+                    onChange={e => edit({ tell: { ...draft.tell, destination: e.target.value } })}>
+                    <option value="">{destinations === null ? "Reading the destinations…" : "Choose a destination…"}</option>
+                    {(destinations ?? []).map(t => (
+                      <option key={t.id} value={t.id}>{t.name} · {t.type}{t.enabled ? "" : " · turned off"}</option>
+                    ))}
+                  </SelectField>
+                )}
+                <Textarea value={draft.tell.message} rows={2} aria-label="The message" disabled={!drafting}
+                  placeholder={`${entityLabel} {${idFrom(entityLabel) || "object"}} needs the carrier: {reason}`}
+                  onChange={e => edit({ tell: { ...draft.tell, message: e.target.value } })} />
+                <span className="aug-fs-xs" style={HINT}>
+                  An answer, or the {entityLabel.toLowerCase()} pressed on, goes in braces. A message cannot be unsent.
+                </span>
+              </div>
+            )}
+            <Choice on={draft.does === "analyse"} disabled={!drafting} icon="search" title="Start a deep analysis"
+              says="Asks a question about this one, in a deep analysis — it spends model calls."
+              onPick={() => edit({ does: "analyse", approval: true })} />
+            {draft.does === "analyse" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "2px 0 8px 26px" }} data-testid="action-analysis">
+                <Textarea value={draft.analysis.question} rows={2} aria-label="The question it asks" disabled={!drafting}
+                  placeholder={`Why is ${entityLabel.toLowerCase()} {${idFrom(entityLabel) || "object"}} late? {reason}`}
+                  onChange={e => edit({ analysis: { question: e.target.value } })} />
+                <span className="aug-fs-xs" style={HINT}>An answer, or the {entityLabel.toLowerCase()} pressed on, goes in braces.</span>
+              </div>
+            )}
             <Choice on={draft.does === "call"} disabled={!drafting} icon="plug" title="Call another system"
               says="Sends it to a service such as your carrier's. Set up in step 7." onPick={() => edit({ does: "call", approval: true })} />
           </section>
@@ -536,6 +605,17 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
                     {e.note ? `, with the note “${e.note}”` : ""}. By whoever pressed it, and it can be withdrawn.
                   </span>
                 ))}
+                {sample.status === "allowed" && sample.tell && (
+                  <span style={{ color: "var(--t1)" }}>
+                    A press would tell {sample.tell.destination}{sample.tell.type ? ` (${sample.tell.type})` : ""}: &ldquo;{sample.tell.message}&rdquo;.
+                    Nothing is sent from here.
+                  </span>
+                )}
+                {sample.status === "allowed" && sample.analysis && (
+                  <span style={{ color: "var(--t1)" }}>
+                    A press would start a deep analysis: &ldquo;{sample.analysis.question}&rdquo;. Nothing runs from here.
+                  </span>
+                )}
                 {sample.status === "allowed" && sample.call && (
                   <span style={{ color: "var(--t1)", wordBreak: "break-all" }}>
                     A press would call {sample.call.method} {sample.call.url}. Nothing is sent from here.
@@ -553,7 +633,9 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
               </p>
             )}
             <p className="aug-fs-xs" style={{ color: "var(--t2)", margin: 0 }}>
-              <Icon name="run" size={11} /> A button for {oneOf(entityLabel)}&apos;s detail on a cockpit.
+              <Icon name="run" size={11} /> A button for {oneOf(entityLabel)}&apos;s detail on a cockpit
+              {draft.does === "tell" ? ", that sends a message and keeps its delivery as the proof it was sent"
+                : draft.does === "analyse" ? ", that starts a deep analysis and keeps its job as the proof it started" : ""}.
             </p>
           </section>
 
@@ -609,7 +691,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
 }
 
 function Choice({ on, disabled, icon, title, says, onPick }: {
-  on: boolean; disabled: boolean; icon: "bookmark" | "plug" | "run" | "hand"; title: string; says: string; onPick: () => void;
+  on: boolean; disabled: boolean; icon: "bookmark" | "plug" | "run" | "hand" | "send" | "search"; title: string; says: string; onPick: () => void;
 }) {
   return (
     <Button variant="ghost" size="sm" disabled={disabled} aria-pressed={on} onClick={onPick} className="h-auto w-full justify-start py-1.5"

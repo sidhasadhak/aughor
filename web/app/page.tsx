@@ -320,6 +320,11 @@ const NAV_SECTIONS = [
     label: "Intelligence", // what Aughor knows about your data
     items: [
       { id: "intelligence", icon: "brief",    label: "Briefing" },
+      // The Ontology (2026-10-09, shown first and approved): where the business is designed — its entities, processes
+      // and actions — had no row of its own; it was one of ten layer tabs inside the Briefing (the usability
+      // walk-through's first finding). One row, the rest of the rail unchanged; it opens Briefing's Ontology layer,
+      // which stays a tab there too, and lights while that layer is open.
+      { id: "ontology",     icon: "node",     label: "Ontology" },
       { id: "recents",      icon: "search",   label: "Agent runs" },
       { id: "health",       icon: "activity", label: "Health" },
       // Playbook moved to Settings ▸ Organization on 2026-09-19 (the user's call). A nav
@@ -2010,7 +2015,9 @@ export default function Home() {
       <div className="aug-body">
 
         {/* Sidebar */}
-        <Sidebar tab={(tab === "operations" ? opsLayer : tab === "data" ? RAIL_TAB_FOR_DATA_LAYER[dataLayer] : tab) as NavTab} onNavigate={handleNavigate} selectedConn={selectedConn} counts={navCounts} />
+        <Sidebar tab={(tab === "operations" ? opsLayer : tab === "data" ? RAIL_TAB_FOR_DATA_LAYER[dataLayer]
+          : tab === "intelligence" && intelLayer === "ontology" ? "ontology" : tab) as NavTab}
+          onNavigate={handleNavigate} selectedConn={selectedConn} counts={navCounts} />
 
         {/* Content */}
         <SchemaProvider connId={selectedConn}>

@@ -185,6 +185,9 @@ UNGATED_BY_DESIGN: dict[str, str] = {
         "a person reviewed this exact send in the inbox and pressed accept — the person is the gate",
     "aughor/routers/actions.py::test_action_trigger":
         "a fixed '[TEST]' payload that carries no measured information",
+    "aughor/actions/executor.py::_dispatch_destination":
+        "a declared action's message: the declaring person's words filled with the pressing person's answers and the "
+        "object's key — no figure the platform computed leaves; a person pressed it, and approved it when its risk asks",
 }
 
 

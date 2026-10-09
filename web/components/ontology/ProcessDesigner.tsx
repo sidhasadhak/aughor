@@ -25,8 +25,7 @@ import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
-import { keepCockpit } from "@/lib/api";
-import { placePiece } from "@/lib/cockpit/edit";
+import { processCockpitSpec, startCockpit as keepNewCockpit } from "@/lib/cockpit/start";
 import { formatCount, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { requestTab } from "@/lib/navigate";
@@ -46,7 +45,6 @@ import {
 } from "@/lib/objectTypes";
 import {
   EMPTY_STAGE,
-  cockpitIdFor,
   dropDraft,
   emptyDraft,
   freshId,
@@ -74,11 +72,13 @@ function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** A refusal in words — an edit the platform's approval gate holds (HTTP 428) says what to do, never the status code. */
-function refusal(title: string, e: unknown, then: string): [string, { description: string }] {
+/** A refusal in words — an edit the platform's approval gate held (HTTP 428) says what happened, never the status code.
+ *  An approval given in the dialog sends the held edit on its own (`lib/approval`); a 428 reaches here only when the
+ *  dialog was closed without approving. */
+function refusal(title: string, e: unknown): [string, { description: string }] {
   const said = errorText(e);
   return /\b428\b|approval/i.test(said)
-    ? ["Waiting for approval", { description: `Changing the ontology on this connection needs approval. Approve it in the dialog, ${then}.` }]
+    ? ["Not approved", { description: `Nothing was changed: changing the ontology on this connection needs approval. Press again and approve it in the dialog.` }]
     : [title, { description: said.slice(0, 240) }];
 }
 
@@ -95,18 +95,9 @@ function days(n: number | null | undefined): string {
   return `${Number.isInteger(n) ? n : n.toFixed(1)} d`;
 }
 
-/** A fresh cockpit holding the process's board, its open-and-overdue objects and one object beside them. */
-export function cockpitSpecFor(title: string, processId: string, entity: string, segment: string): unknown {
-  const base = { root: "cockpit", elements: {
-    cockpit: { type: "Cockpit", props: { title }, children: ["sec"] },
-    sec: { type: "Section", props: { title, columns: 3 }, children: [] },
-  } };
-  let { spec } = placePiece(base, "ProcessBoard", { process: processId, size: "full" });
-  const table = placePiece(spec, "ObjectTable", { entity, segment, size: "wide" });
-  spec = table.spec;
-  if (table.key) spec = placePiece(spec, "ObjectDetail", { follows: table.key, size: "small" }).spec;
-  return spec;
-}
+/** A fresh cockpit holding the process's board, its open-and-overdue objects and one object beside them — the same
+ *  cockpit a process's own panel and *+ New cockpit* start (`lib/cockpit/start`). */
+export const cockpitSpecFor = processCockpitSpec;
 
 type Phase = { at: "draft" } | { at: "declared"; id: string } | { at: "published"; id: string; release: number };
 
@@ -232,7 +223,7 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
       setRelease(await getRelease(connectionId, schema).catch(() => null));
       toast.success("Declared. It reaches readers when the release is published.");
     } catch (e) {
-      toast.error(...refusal("Not declared", e, "then declare again"));
+      toast.error(...refusal("Not declared", e));
     } finally { setBusy(""); }
   };
 
@@ -245,7 +236,7 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
       onPublished?.();
       toast.success(`Published as release ${out.number}.`);
     } catch (e) {
-      toast.error(...refusal("Not published", e, "then publish again"));
+      toast.error(...refusal("Not published", e));
     } finally { setBusy(""); }
   };
 
@@ -253,11 +244,9 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
   const startCockpit = async () => {
     if (phase.at !== "published" || !segment) return;
     setBusy("cockpit");
-    const id = cockpitIdFor(draft.name);
     try {
-      await keepCockpit(connectionId, id, cockpitSpecFor(draft.name.trim(), phase.id, cands?.entity ?? draft.entity, segment.name),
+      await keepNewCockpit(connectionId, draft.name, processCockpitSpec(draft.name, phase.id, cands?.entity ?? draft.entity, segment.name),
         `Started from the process ${draft.name.trim()}`);
-      try { localStorage.setItem(`aughor:cockpit:${connectionId}`, id); } catch { /* the cockpit opens on its own tab */ }
       requestTab("cockpit", { conn: connectionId });
     } catch (e) {
       toast.error("The cockpit was not made", { description: errorText(e).slice(0, 240) });

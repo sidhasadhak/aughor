@@ -567,14 +567,56 @@ def get_ontology_keys(
 ):
     """Arc OC-3 — how this scope's meaning is keyed to its ontology (ROADMAP §3.56): each metric with the entity a
     person confirmed it measures, the entity its grain proposes and why — never stored until confirmed through
-    `PUT /metrics/{name}/entity`. Read-only; no model and no warehouse."""
-    from aughor.ontology.keys import metric_keys
+    `PUT /metrics/{name}/entity`; and each vocabulary entry that names a table, a column, an entity or a property,
+    keyed or with the key it is proposed (`PUT /ontology/vocabulary/key`). Read-only; no model and no warehouse."""
+    from aughor.ontology.keys import metric_keys, vocabulary_keys
     effective = _served_scope(connection_id, schema_name)
     graph = _get_ontology_graph(connection_id, schema_name)
     entities = sorted(({"id": e.id, "label": e.display_name or e.id} for e in graph.entities.values()),
                       key=lambda x: x["id"]) if graph is not None else []
     return {"connection_id": connection_id, "schema_name": effective, "entities": entities,
-            "metrics": metric_keys(connection_id, effective, graph)}
+            "metrics": metric_keys(connection_id, effective, graph),
+            "vocabulary": vocabulary_keys(connection_id, graph)}
+
+
+class _VocabularyKey(BaseModel):
+    """One vocabulary entry, as it is stored, and the entity (``Order``) or property (``Order.status``) it names."""
+    subject_kind: str
+    subject_id: str
+    synonym: str
+    kind: Literal["entity", "property"]
+    subject: str = Field(min_length=1)
+
+
+@router.put("/ontology/vocabulary/key", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def key_vocabulary_entry(body: _VocabularyKey, connection_id: str = BUILTIN_ID,
+                         schema_name: Optional[str] = Query(default=None)):
+    """Arc OC-3 — a person keys a word people use to the entity or property it names (`GET /ontology/keys` proposes
+    one for each table and column entry). The entry is kept as the person's own (``human``), named in the ontology's
+    ids, and read as the table and column it comes from wherever the readers need them; the table or column entry it
+    replaces goes. The target must be one this scope serves now — a key nothing reads is refused, not stored."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)
+    from aughor.ontology import vocabulary
+    from aughor.ontology.keys import subject_columns
+    graph = _get_ontology_graph(connection_id, schema_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="no ontology is built for this scope")
+    if subject_columns(graph, body.kind, body.subject) is None:
+        raise HTTPException(status_code=400, detail=f"{body.kind} '{body.subject}' is not one this scope serves, or "
+                                                    "it is read by a query rather than from a table")
+    present = any(s.subject_kind == body.subject_kind and s.subject_id == body.subject_id and s.synonym == body.synonym
+                  for s in vocabulary.synonyms_for(connection_id))
+    if not present:
+        raise HTTPException(status_code=404, detail=f"no entry \"{body.synonym}\" for {body.subject_kind} "
+                                                    f"{body.subject_id} on this connection")
+    kept = vocabulary.add_synonym(connection_id, body.kind, body.subject, body.synonym, source="human",
+                                  note=f"keyed from {body.subject_kind} {body.subject_id}")
+    if (body.subject_kind, body.subject_id) != (body.kind, body.subject):
+        vocabulary.remove_synonym(connection_id, body.subject_kind, body.subject_id, body.synonym)
+    from aughor.tools.schema_linker import invalidate_hints
+    invalidate_hints(connection_id)
+    return {"kept": kept.to_dict()}
 
 
 @router.get("/ontology/census")
@@ -3101,6 +3143,15 @@ def _checked_action(action_id: str, fields: dict, graph):
         except SyntaxError:
             raise HTTPException(status_code=422,
                                 detail=f"invalid action spec: condition {i} ({criterion.expr!r}) is not an expression")
+    # A message goes to a destination saved in Notifications, by its id: one that is not there is refused here, not
+    # discovered by the first press.
+    for effect in declared.side_effects:
+        destination = (effect.config or {}).get("destination") if effect.kind == "notify" else None
+        if destination:
+            from aughor.notifications.store import get_trigger
+            if get_trigger(str(destination)) is None:
+                raise HTTPException(status_code=422, detail=f"invalid action spec: no destination '{destination}' is "
+                                                            "saved in Notifications")
     # Phase 4 of the 2027 study (§M): a side-effect action is declared with the read that verifies
     # it and the undo that compensates it, or declared irreversible by name — refused here, at the
     # declaration, never discovered at execute.

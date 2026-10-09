@@ -6,7 +6,7 @@
  * The shapes mirror `aughor/semantic/object_types.py` and `aughor/ontology/display.py`. The routes return plain
  * dicts, so `api.gen.ts` types their paths but not their bodies — these do. A refusal is an answer, not an error.
  */
-import { DECLARED_ACTIONS } from "@/lib/api";
+import { DECLARED_ACTIONS, type DEEP_ANALYSIS_EFFECT } from "@/lib/api";
 import { getApiBase } from "@/lib/config";
 
 /** One object type on the map: the measured facts its card and its rail row show. */
@@ -1049,7 +1049,7 @@ export interface DeclaredActionSpec {
             required?: boolean }[];
   submission_criteria: { expr: string; message: string }[];
   edits?: { object: string; property: string; value: string; note: string }[];
-  side_effects?: { kind: "http"; config: Record<string, unknown> }[];
+  side_effects?: { kind: "http" | "notify" | typeof DEEP_ANALYSIS_EFFECT; config: Record<string, unknown> }[];
   reversibility?: "irreversible" | "compensable";
   verification?: { sql: string; expects: "rows" | "no_rows" | "value"; value?: string };
   undo?: { action_id: string; window_hours: number; params?: Record<string, string> };
@@ -1064,6 +1064,10 @@ export interface ActionPress {
   properties?: Record<string, unknown>;
   edits?: { property: string; value: string; note: string }[];
   call?: { method: string; url: string; body: unknown } | null;
+  /** The message a press would send, filled — nothing is sent from a preview. */
+  tell?: { destination: string; type: string; saved: boolean; message: string } | null;
+  /** The question a press would ask in a deep analysis, filled — nothing runs from a preview. */
+  analysis?: { question: string } | null;
 }
 
 /** What declaring a draft action would offer, counted (`POST /ontology/declared-actions/preview`). */

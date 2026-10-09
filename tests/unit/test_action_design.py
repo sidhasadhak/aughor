@@ -160,3 +160,27 @@ def test_the_declare_door_refuses_a_condition_that_is_not_an_expression(served, 
                    json={**ESCALATE, "submission_criteria": [{"expr": "order.status in [", "message": "m"}]})
     assert r.status_code == 422 and "is not an expression" in r.json()["detail"]
     assert find_override(CONN, SCHEMA, "action", "escalate_to_carrier") is None
+
+
+def test_a_message_and_an_investigation_are_shown_filled_and_neither_is_sent(db, graph, live, monkeypatch):  # noqa: F811
+    from aughor.notifications.models import ActionTrigger
+    desk = ActionTrigger(id="t-desk", name="Carrier desk", type="slack", url="https://hooks.slack.example/x")
+    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: desk if tid == "t-desk" else None)
+    monkeypatch.setattr("aughor.notifications.executor.fire_action", lambda *a: pytest.fail("a preview sent a message"))
+    both = action(kind="side_effect", edits=[], reversibility="irreversible", side_effects=[
+        {"kind": "notify", "config": {"destination": "t-desk", "message": "Order {order}: {reason}"}},
+        {"kind": "trigger_investigation", "config": {"question": "Why is {order} late? {reason}"}}])
+    press = preview(db, graph, both, scope=CONN, schema_name=SCHEMA, said={"reason": "Missed pickup"})["sample"]
+    assert press["tell"] == {"destination": "Carrier desk", "type": "slack", "saved": True,
+                             "message": f"Order {press['key']}: Missed pickup"}            # "Order 6", never "Order Order:6"
+    assert press["analysis"] == {"question": f"Why is Order:{press['key']} late? Missed pickup"}
+
+
+def test_the_declare_door_refuses_a_destination_not_saved_in_notifications(served, monkeypatch):
+    monkeypatch.setattr("aughor.govern.guard", lambda *a, **k: None)
+    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: None)
+    r = served.put("/ontology/kinetic-actions/tell_desk", params={"connection_id": CONN}, json={
+        **ESCALATE, "kind": "side_effect", "edits": [], "reversibility": "irreversible",
+        "side_effects": [{"kind": "notify", "config": {"destination": "gone", "message": "x"}}]})
+    assert r.status_code == 422 and "no destination 'gone' is saved in Notifications" in r.json()["detail"]
+    assert find_override(CONN, SCHEMA, "action", "tell_desk") is None
