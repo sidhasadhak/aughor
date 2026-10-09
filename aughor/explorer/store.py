@@ -50,11 +50,85 @@ def _empty() -> dict:
     }
 
 
+# ── One id, one finding ──────────────────────────────────────────────────────
+# A finding's id is how a card, a claim and the ledger name it, and the
+# cockpit's ledger picker keys its rows by it. Until 2026-10-09 the ids were numbered by position
+# within one run and appended to the list the state already held across runs: on theLook's live
+# state 35 ids named 62 findings — each pinned key question four times over (the read-back of an
+# unchanged finding appended a copy of what the list held), and `synth__share__1` three DIFFERENT
+# findings, of which a card could only ever be made from the first. Read: `load` reads a list with
+# one id per finding (`one_id_each`). Written: a pinned question keeps its slot (`keep_slot`) and
+# every other finding is minted an id the list does not hold (`fresh_finding_id`).
+
+#: The key a run's state holds its findings under — the store's own, written before the glossary said 'finding'.
+FINDINGS = "insights"
+
+
+def _same_finding(a: dict, b: dict) -> bool:
+    return all(a.get(k) == b.get(k) for k in ("finding", "sql", "generated_at"))
+
+
+def one_id_each(findings: list) -> list:
+    """The findings with one id each, in their order: a copy of a finding already read (the same id, words, query
+    and time) is dropped; a DIFFERENT finding on an id an earlier one holds is read as ``{id}~2``, ``~3``… — the
+    earliest keeps the id every card and claim made so far resolved to. The list itself is not changed; a
+    renamed finding is a copy. Idempotent."""
+    raw = {str(f.get("id")) for f in findings or [] if isinstance(f, dict) and f.get("id")}
+    out: list = []
+    seen: dict[str, list[dict]] = {}
+    taken: set[str] = set()
+    for f in findings or []:
+        fid = str(f.get("id") or "") if isinstance(f, dict) else ""
+        if not fid:
+            out.append(f)
+            continue
+        held = seen.setdefault(fid, [])
+        if any(_same_finding(h, f) for h in held):
+            continue
+        if held:
+            n = 2
+            while f"{fid}~{n}" in raw or f"{fid}~{n}" in taken:
+                n += 1
+            f = {**f, "id": f"{fid}~{n}"}
+        held.append(f)
+        taken.add(f["id"])
+        out.append(f)
+    return out
+
+
+def fresh_finding_id(state: dict, base: str) -> str:
+    """``base``, or ``base~n`` — the first the run's findings do not already hold."""
+    ids = {str(f.get("id")) for f in state.get(FINDINGS) or [] if isinstance(f, dict)}
+    if base not in ids:
+        return base
+    n = 2
+    while f"{base}~{n}" in ids:
+        n += 1
+    return f"{base}~{n}"
+
+
+def keep_slot(state: dict, finding: dict) -> None:
+    """Put ``finding`` in the slot its id names — the finding a pinned key question answers — replacing the one
+    the run's findings hold there, else at the end. The ledger keeps every receipt under that id; the state, the latest."""
+    findings = state.setdefault(FINDINGS, [])
+    for i, f in enumerate(findings):
+        if isinstance(f, dict) and f.get("id") == finding.get("id"):
+            findings[i] = finding
+            return
+    findings.append(finding)
+
+
+def _read_once(entry: dict) -> dict:
+    found = entry.get(FINDINGS) or []
+    unique = one_id_each(found)
+    return entry if len(unique) == len(found) and all(a is b for a, b in zip(unique, found)) else {**entry, FINDINGS: unique}
+
+
 def load(connection_id: str) -> dict:
     try:
         entry = _family().get_entry(connection_id)
         if entry is not None:
-            return entry
+            return _read_once(entry)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "exploration state read is best-effort; empty state used on error", counter="explorer.store.read")
@@ -175,6 +249,7 @@ def load_aggregate(connection_id: str) -> dict:
         phases.append(st.get("phase", "pending"))
         q += int(st.get("queries_executed", 0) or 0)
         tt += int(st.get("tables_total", 0) or 0)
+    agg[FINDINGS] = one_id_each(agg[FINDINGS])          # two schemas' runs number their ids alike
     agg["phase"] = _agg_phase(phases)
     agg["queries_executed"] = q
     agg["tables_total"] = tt
@@ -186,14 +261,17 @@ def get_aggregate_domain_findings(connection_id: str, include_invalid: bool = Fa
     """by_domain findings merged across all per-schema runs of a connection. Each one is
     tagged with its `source_schema` so the briefing can keep UNRELATED businesses apart
     (a beauty-ecommerce finding and a bakery finding must not be synthesized as one story)."""
-    grouped: dict[str, list[dict]] = {}
+    found: list[dict] = []
     for k in schema_run_keys(connection_id):
         sch = k.split("__", 1)[1] if "__" in k else ""
         for d, ins in get_domain_findings(k, include_invalid=include_invalid).items():
             for i in ins:
                 if sch:
                     i.setdefault("source_schema", sch)
-            grouped.setdefault(d, []).extend(ins)
+            found.extend(ins)
+    grouped: dict[str, list[dict]] = {}
+    for i in one_id_each(found):                     # two schemas' runs number their ids alike
+        grouped.setdefault(i.get("domain", "General"), []).append(i)
     return grouped
 
 

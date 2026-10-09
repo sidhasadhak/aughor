@@ -178,7 +178,7 @@ def persist_fixed_finding(
 
     state = _store.load_canvas(canvas_id) if canvas_id else _store.load(conn_id)
     insights = state.setdefault("insights", [])
-    insight_id = f"{domain}__{angle}__fix{len(insights) + 1}"
+    insight_id = _store.fresh_finding_id(state, f"{domain}__{angle}__fix{len(insights) + 1}")
     insight = {
         "id": insight_id,
         "domain": domain,
