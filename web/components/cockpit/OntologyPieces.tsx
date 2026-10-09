@@ -419,7 +419,11 @@ export function ActionButtonPiece({ action }: { action: string }) {
     try {
       const params: Record<string, unknown> = { [target.name]: page.pk };
       for (const p of [...asked, ...optional]) if (values[p.name]?.trim()) params[p.name] = values[p.name].trim();
-      const out = await runOrPropose(declared.id, params, connectionId, schema, `from a cockpit, on ${page.type_name} ${page.pk}`);
+      // Arc OC-6 — the version of each property the action sets, as this detail read it (0: none set yet)
+      const expected = Object.fromEntries((declared.edits ?? []).map(e => [e.property,
+        page.properties.find(p => p.name.toLowerCase() === e.property.toLowerCase() && p.overlay)?.overlay?.version ?? 0]));
+      const out = await runOrPropose(declared.id, params, connectionId, schema, `from a cockpit, on ${page.type_name} ${page.pk}`,
+        Object.keys(expected).length ? expected : undefined);
       if (out.status === "ran") { setSaid(ranSaid(out.verification)); setAsking(false); setValues({}); bump(); }
       else if (out.status === "proposed") { setSaid("It needs approval — proposed in Actions."); setAsking(false); }
       else setSaid(out.message);

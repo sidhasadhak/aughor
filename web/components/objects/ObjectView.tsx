@@ -28,8 +28,10 @@ import { currencyFromColumn, currencySymbol, effectiveCurrencySymbol, isMoneyCol
 import { getOrgSettings } from "@/lib/api";
 import { declaredActionsHref, objectHref } from "@/lib/objectLinks";
 import {
+  getEditHistory,
   getLinkedObjects,
   getObjectPage,
+  type EditHistoryRow,
   type LinkedObjectsPage,
   type ObjectAction,
   type ObjectActionParam,
@@ -306,6 +308,44 @@ function Withdraw({ editId, what, connectionId, reload }: {
   );
 }
 
+/** Arc OC-6 — every version of one property's edits on this object: who set what and what it replaced, who withdrew
+ *  it. Read on request — most readers never ask. */
+function EditHistory({ connectionId, objectType, rowKey, column }: {
+  connectionId: string;
+  objectType: string;
+  rowKey: string;
+  column: string;
+}) {
+  const [rows, setRows] = useState<EditHistoryRow[] | null>(null);
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
+  const toggle = () => {
+    setOpen(o => !o);
+    if (rows !== null) return;
+    getEditHistory(connectionId, objectType, rowKey, column).then(setRows).catch((e: unknown) => setError(errorText(e)));
+  };
+  return (
+    <>
+      <Button variant="ghost" size="xs" onClick={toggle} data-testid="edit-history-toggle">
+        {open ? "Hide history" : "History"}
+      </Button>
+      {open && (
+        <span style={{ display: "block", width: "100%" }} data-testid="edit-history">
+          {error ? <span style={{ color: "var(--red3)" }}>{error}</span>
+            : rows === null ? "Reading…"
+            : rows.map((r) => (
+              <span key={`${r.version}:${r.event}`} style={{ display: "block" }}>
+                v{r.version} · {r.event === "withdrawn" ? `withdrawn (was ${r.previous || "unset"})`
+                  : `set to ${r.body}${r.previous ? ` (was ${r.previous})` : ""}`}
+                {" "}by {r.actor || "—"} · {r.at.slice(0, 16).replace("T", " ")}
+              </span>
+            ))}
+        </span>
+      )}
+    </>
+  );
+}
+
 function PropertiesCard({ page, scope, reload }: { page: ObjectPage; scope: Scope; reload: () => void }) {
   // A property that names another object — an order's customer_id — opens that object.
   const objectColumns = useObjectKeyColumns(scope.connectionId);
@@ -349,6 +389,8 @@ function PropertiesCard({ page, scope, reload }: { page: ObjectPage; scope: Scop
                     {p.overlay.provenance}{p.overlay.note ? ` — ${p.overlay.note}` : ""}
                     <Withdraw editId={p.overlay.id} what={`${p.display_name} on this ${page.type_name}`}
                       connectionId={page.connection_id} reload={reload} />
+                    <EditHistory connectionId={page.connection_id} objectType={page.object_type} rowKey={page.pk}
+                      column={p.name} />
                   </span>
                 )}
                 {/* ON-5 — a timeseries property is a value AT A TIME, and what it was before is half of what a

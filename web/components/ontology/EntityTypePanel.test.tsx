@@ -28,6 +28,7 @@ const confirmProposals = vi.fn(async (..._args: unknown[]) => ({ confirmed: [], 
 const previewBacking = vi.fn(async (..._args: unknown[]): Promise<unknown> => undefined);
 const setQueryBacking = vi.fn(async (..._args: unknown[]) => undefined);
 const withdrawBacking = vi.fn(async (..._args: unknown[]) => undefined);
+const declareEditStates = vi.fn(async (..._args: unknown[]) => undefined);
 /** The type the panel reads — the fixture below, unless a test shows another. */
 const shown: { detail?: ObjectTypeDetail } = {};
 // The words section reads the scope's keys on every panel — mocked, so no test here reaches a running API.
@@ -54,6 +55,7 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   deleteLink: (...a: unknown[]) => deleteLink(...a),
   restoreLink: (...a: unknown[]) => restoreLink(...a),
   declareExpression: (...a: unknown[]) => declareExpression(...a),
+  declareEditStates: (...a: unknown[]) => declareEditStates(...a),
 }));
 
 import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
@@ -580,5 +582,30 @@ describe("EntityTypePanel — the words people use for a type (Arc OC-3, 2026-10
     await waitFor(() => expect(keyVocabularyEntry).toHaveBeenCalledWith("c1",
       expect.objectContaining({ subject_kind: "table", subject_id: "products", synonym: "catalogue" }),
       { kind: "entity", subject: "products" }, "s"));
+  });
+});
+
+
+// ── Arc OC-6 — the moves a property the edit layer holds may make ────────────────────────────────────────────────────
+
+describe("the moves the edit layer allows", () => {
+  afterEach(() => { shown.detail = undefined; });
+
+  it("lists each declared property's moves, and declares new ones from words", async () => {
+    const user = userEvent.setup();
+    shown.detail = { ...detail, edit_states: { review_status: { states: ["flagged", "reviewed"],
+      moves: [["", "flagged"], ["flagged", "reviewed"]], initial: "" } } };
+    panel();
+    const row = await screen.findByTestId("edit-states-row");
+    expect(row.textContent).toContain("review_status: unset → flagged · flagged → reviewed");
+    await user.click(screen.getByTestId("edit-states-new"));
+    await user.type(screen.getByLabelText("Property the edit layer holds"), "case_status");
+    await user.type(screen.getByLabelText("Its states"), "open, working, resolved");
+    await user.type(screen.getByLabelText("Its moves, one per line"), "unset → open{enter}open → working{enter}working → resolved");
+    await user.click(screen.getByRole("button", { name: "Declare the moves" }));
+    await waitFor(() => expect(declareEditStates).toHaveBeenCalledTimes(1));
+    expect(declareEditStates.mock.calls[0].slice(1, 4)).toEqual([detail.id, "case_status", {
+      states: ["open", "working", "resolved"], initial: "",
+      moves: [["", "open"], ["open", "working"], ["working", "resolved"]] }]);
   });
 });

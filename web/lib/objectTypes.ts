@@ -295,7 +295,36 @@ export interface TypeExpression {
   note: string;
 }
 
+/** Arc OC-6 — the moves a property the edit layer holds may make; "" in a move is the start (`initial`). */
+export interface EditStates {
+  states: string[];
+  moves: [string, string][];
+  initial: string;
+}
+
+/** Arc OC-6 — declare the moves of a property the edit layer holds; an action off them is refused before it runs. */
+export async function declareEditStates(
+  connectionId: string, entityId: string, property: string, spec: EditStates, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/edit-states/${encodeURIComponent(property)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** Arc OC-6 — withdraw a property's declared moves. */
+export async function withdrawEditStates(
+  connectionId: string, entityId: string, property: string, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/edit-states/${encodeURIComponent(property)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
 export interface ObjectTypeDetail {
+  /** Arc OC-6 — the declared moves of each property the edit layer holds, by property. */
+  edit_states?: Record<string, EditStates>;
   /** 2026-09-22 — the expression properties a person declared on this type, verified or not. */
   expressions?: TypeExpression[];
   /** 2026-09-22 — what a person withdrew on this type: builder-found bindings and found links, restorable. */

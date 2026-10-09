@@ -59,6 +59,9 @@ import {
   type TypePaths,
   type TypeProperty,
   type TypeRefusal,
+  declareEditStates,
+  withdrawEditStates,
+  type EditStates,
 } from "@/lib/objectTypes";
 import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -213,6 +216,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
         inDomain={inDomain} />
       <WithdrawnSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
       {!inDomain && <ActionsSection detail={detail} connectionId={connectionId} onDesignAction={onDesignAction} />}
+      {!inDomain && <EditStatesSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
       {!inDomain && <WordsSection detail={detail} connectionId={connectionId} schema={schema} />}
       <MetricsSection detail={detail} />
       <ProcessesSection detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
@@ -1815,6 +1819,75 @@ function ActionsSection({ detail, connectionId, onDesignAction }: {
 /** Arc OC-3 — the words people use for this type and its properties (2026-10-09): each keyed to it, read from the table
  *  and column it comes from now; or naming its table or a column, with the key proposed — never keyed until a person
  *  says so. A keyed word reaches the agent as what it names, wherever the type's binding points. */
+/** Arc OC-6 — the moves each property the edit layer holds may make (a review flag: unset → flagged → reviewed),
+ *  enforced when an action sets it: an action off them is refused before it runs, with what is allowed. */
+function EditStatesSection({ detail, connectionId, schema, onChanged }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
+  onChanged: () => void;
+}) {
+  const declared = Object.entries(detail.edit_states ?? {});
+  const held = detail.properties.filter((p) => p.role === "overlay").map((p) => p.name);
+  const [open, setOpen] = useState(false);
+  const [property, setProperty] = useState("");
+  const [states, setStates] = useState("");
+  const [moves, setMoves] = useState("");
+  const [problem, setProblem] = useState("");
+  const [busy, setBusy] = useState(false);
+  const word = (s: string) => (s ? s : "unset");
+  const save = async () => {
+    const list = states.split(",").map((x) => x.trim()).filter(Boolean);
+    const pairs = moves.split("\n").map((line) => line.split(/->|→/).map((x) => x.trim()))
+      .filter((m) => m.length === 2).map(([a, b]) => [a === "unset" ? "" : a, b] as [string, string]);
+    setBusy(true);
+    setProblem("");
+    try {
+      const spec: EditStates = { states: list, moves: pairs, initial: "" };
+      await declareEditStates(connectionId, detail.id, property.trim(), spec, schema);
+      setOpen(false);
+      onChanged();
+    } catch (e) { setProblem(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Section title="Moves the edit layer allows" aside={declared.length ? countNoun(declared.length, "property") : undefined}>
+      {declared.map(([prop, spec]) => (
+        <div key={prop} data-testid="edit-states-row" className="aug-fs-xs" style={{ padding: "4px 0", color: "var(--t2)" }}>
+          <span style={{ color: "var(--t1)", fontWeight: 600 }}>{prop}</span>
+          {": "}{spec.moves.map(([a, b]) => `${word(a)} → ${b}`).join(" · ")}
+          <Button variant="minimal" size="xs" onClick={() => void withdrawEditStates(connectionId, detail.id, prop, schema).then(onChanged)}>
+            Withdraw
+          </Button>
+        </div>
+      ))}
+      {!declared.length && !open && (
+        <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)" }}>
+          None declared — an action may set {held.length ? held.join(", ") : "what it sets"} to any value.
+        </p>
+      )}
+      {open ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }} data-testid="edit-states-form">
+          <Input value={property} aria-label="Property the edit layer holds" placeholder={held[0] ?? "review_status"}
+            onChange={(e) => setProperty(e.target.value)} />
+          <Input value={states} aria-label="Its states" placeholder="flagged, reviewed" onChange={(e) => setStates(e.target.value)} />
+          <Textarea value={moves} rows={3} aria-label="Its moves, one per line" placeholder={"unset → flagged\nflagged → reviewed"}
+            onChange={(e) => setMoves(e.target.value)} />
+          {problem && <span className="aug-fs-xs" style={{ color: "var(--red5)" }}>{problem}</span>}
+          <span style={{ display: "flex", gap: 6 }}>
+            <Button size="xs" disabled={busy || !property.trim()} onClick={() => void save()}>{busy ? "Declaring…" : "Declare the moves"}</Button>
+            <Button size="xs" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+          </span>
+        </div>
+      ) : (
+        <Button size="xs" variant="ghost" data-testid="edit-states-new" onClick={() => setOpen(true)}>
+          <Icon name="plus" size={12} /> Declare how one may move
+        </Button>
+      )}
+    </Section>
+  );
+}
+
 function WordsSection({ detail, connectionId, schema }: { detail: ObjectTypeDetail; connectionId: string; schema?: string }) {
   const [rows, setRows] = useState<VocabularyKey[] | null>(null);
   const [problem, setProblem] = useState("");

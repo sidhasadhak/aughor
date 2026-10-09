@@ -294,6 +294,8 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
         "time": entity.created_at_col or "",
         "properties": properties[:_MAX_PROPERTIES],
         "properties_truncated": len(properties) > _MAX_PROPERTIES,
+        # Arc OC-6 — the moves each property the edit layer holds may make, enforced by the executor
+        "edit_states": {k: v.model_dump() for k, v in (entity.edit_states or {}).items()},
         "bindings": [binding] + [row for _, row in further],
         "proposed_bindings": proposals,
         # 2026-09-22 — the expression properties a person declared, verified or not

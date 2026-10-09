@@ -18,7 +18,9 @@ export interface ObjectProperty {
   unit: string;
   description: string;
   /** ON-4 — set by an accepted action and merged at read time: who, when, and why. */
-  overlay?: { by: string; at: string; note: string; origin: string; provenance: string; id: string };
+  overlay?: { by: string; at: string; note: string; origin: string; provenance: string; id: string;
+              /** Arc OC-6 — how many times it has been set or withdrawn; a press sends the version it read. */
+              version?: number };
   /** PENDING item 27 — a formula evaluated for this object: an expression a person declared, or a computed property
    *  the builder verified. Not a column of the source row. */
   formula?: { expression: string; kind: "expression" | "computed" };
@@ -327,6 +329,30 @@ export async function withdrawEdit(editId: string, connectionId?: string): Promi
 }
 
 
+/** Arc OC-6 — one version of an edit on an object: who set what (and what it replaced), or who withdrew it. */
+export interface EditHistoryRow {
+  event: "set" | "withdrawn";
+  version: number;
+  column: string;
+  body: string;
+  previous: string;
+  note: string;
+  actor: string;
+  origin: string;
+  at: string;
+}
+
+/** Arc OC-6 — every version of the edits on one object (and one property), newest first. */
+export async function getEditHistory(
+  connectionId: string, objectType: string, rowKey: string, column = "",
+): Promise<EditHistoryRow[]> {
+  const q = new URLSearchParams({ connection_id: connectionId, object_type: objectType, row_key: rowKey });
+  if (column) q.set("column", column);
+  const res = await fetch(`${getApiBase()}/kinetic-actions/edits/history?${q}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).history;
+}
+
 /** ON-3b — what a set of keys is NAMED: one query over the backing per type. `titles` omits a key nothing
  *  matched, and a type named by its own key resolves nothing and says so in `note`. */
 export interface ObjectTitles {
@@ -426,10 +452,13 @@ export type ActionOutcome =
 /** Run a declared action; when running it needs approval, the door stages it for a person to accept instead. */
 export async function runOrPropose(
   actionId: string, params: Record<string, unknown>, connectionId: string, schemaName?: string, reasoning = "",
+  expected?: Record<string, number>,
 ): Promise<ActionOutcome> {
   const res = await fetch(`${getApiBase()}/kinetic-actions/${encodeURIComponent(actionId)}/execute${scope(connectionId, schemaName)}`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ params, propose_if_gated: true, reasoning }),
+    // Arc OC-6 — the version of each property the action sets, as this page read it: a run against a version
+    // someone changed since is refused (409) and writes nothing
+    body: JSON.stringify({ params, propose_if_gated: true, reasoning, ...(expected ? { expected } : {}) }),
   });
   if (!res.ok) return { status: "refused", message: await refusalOf(res) };
   const body = (await res.json()) as {
