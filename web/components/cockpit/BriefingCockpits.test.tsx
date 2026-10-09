@@ -504,7 +504,7 @@ describe("the canvas: a finding from the ledger, a change in words, publishing (
     // What Priya published reads as hers, read-only, with the door to start one's own from it.
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Sales weekly · priya@example.com" }));
     const sharedView = await screen.findByTestId("cockpit-shared");
-    expect(within(sharedView).getByTestId("cockpit-shared-by")).toHaveTextContent("Published by priya@example.com to Sales team · version 3 · read-only");
+    expect(within(sharedView).getByTestId("cockpit-shared-by")).toHaveTextContent("An App by priya@example.com, for Sales team · version 3 · read-only");
     const doors = drawn.props.at(-1)!.doors as Record<string, unknown>;
     expect(doors.onRemove).toBeUndefined();
     expect(doors.onResize).toBeUndefined();

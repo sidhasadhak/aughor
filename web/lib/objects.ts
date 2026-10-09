@@ -406,29 +406,9 @@ export async function listObjects(
   return res.json();
 }
 
-/** The declared actions' doors keep the spelling they were built under; this is the one place this file writes it. */
-const ACTIONS = "kinetic-actions";
-
-/** A declared action as the ontology's actions door returns it — what a button needs to run one. */
-export interface DeclaredAction {
-  id: string;
-  display_name: string;
-  description: string;
-  entity: string;
-  object_type: string;
-  kind: "annotate" | "side_effect" | "query";
-  risk: "read_only" | "low" | "high";
-  params: { name: string; display_name: string; data_type: string; required: boolean; default_value: string | null;
-            kind: "value" | "object"; object_type: string; description: string }[];
-  /** ON-4 — the properties an `annotate` action sets on the object it takes. */
-  edits: { object: string; property: string; value: string; note: string }[];
-}
-
-export async function getDeclaredActions(connectionId: string, schemaName?: string): Promise<Record<string, DeclaredAction>> {
-  const res = await fetch(`${getApiBase()}/ontology/${ACTIONS}${scope(connectionId, schemaName)}`);
-  if (!res.ok) throw new Error(await detailOf(res));
-  return res.json();
-}
+/** A declared action, as the ontology's actions door returns it (`getDeclaredActions` in `lib/api.ts`). */
+export type { DeclaredAction } from "@/lib/api";
+export { getDeclaredActions } from "@/lib/api";
 
 /** What became of pressing an action's button: it ran; it waits for a person in the Actions inbox; or it was
  *  refused, in the action's own words. */
@@ -441,7 +421,7 @@ export type ActionOutcome =
 export async function runOrPropose(
   actionId: string, params: Record<string, unknown>, connectionId: string, schemaName?: string, reasoning = "",
 ): Promise<ActionOutcome> {
-  const res = await fetch(`${getApiBase()}/${ACTIONS}/${encodeURIComponent(actionId)}/execute${scope(connectionId, schemaName)}`, {
+  const res = await fetch(`${getApiBase()}/kinetic-actions/${encodeURIComponent(actionId)}/execute${scope(connectionId, schemaName)}`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ params, propose_if_gated: true, reasoning }),
   });

@@ -195,3 +195,91 @@ def test_asked_and_on_a_gated_action_is_staged_for_a_person_and_nothing_runs(gat
     staged = get_proposal(r.json()["inbox_id"])
     assert (staged.action_id, staged.status, staged.source) == ("flag_for_review", "pending", "cockpit")
     assert staged.params == {"order": "Order:O000001", "reason": "late"} and staged.reasoning == "from a cockpit"
+
+
+# ── the release a cockpit was composed against ───────────────────────────────────────────────
+
+def _both_on(monkeypatch):
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name in (FLAG, "ontology.release"))
+
+
+def _release(conn: str, *changes: tuple[str, str, str, str]) -> str:
+    """Record the scope's next release, with what it changed: ``(kind, id, change, class)``."""
+    from aughor.kernel import lifecycle
+    from aughor.ontology import release
+    body = {"elements": {}, "hash": "", "changes": [
+        {"element": f"ontology:{conn}/default/{k}/{t}", "change": c, "class": cls} for k, t, c, cls in changes]}
+    rev = lifecycle.record(release.KIND, release._key(conn, "default"), body, "published", by="ana", note="", conn_id=conn)
+    return release.release_id(conn, "default", rev.version)
+
+
+@needs_rules
+def test_a_version_holding_pieces_is_pinned_resizing_keeps_the_pin_and_repointing_or_asking_moves_it(
+        volumes, monkeypatch, no_edits):  # noqa: F811
+    tag = uuid.uuid4().hex[:6]
+    home = Home(f"pin{tag}", ME, f"late-{tag}")
+    rate, net = f"rate{tag}", f"net{tag}"
+    for cid, title in ((rate, "Return rate"), (net, "Net revenue")):
+        cards.place(home, DashboardCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
+    plain = json.loads(FIXTURE.read_text().replace("c7f3a001", rate).replace("c91b2002", net))
+    graph = _graph()
+    monkeypatch.setattr(pieces, "_graph", lambda conn: graph)
+    _both_on(monkeypatch)
+
+    def keep(s, **kw):
+        return versions.keep(home, s, approved_by="user:amit", source="a person's own hand", written_by_model=False, **kw)
+    assert keep(json.loads(json.dumps(plain))).kept
+    assert "ontology_release" not in versions.latest(home)                    # no piece: nothing is pinned
+    first = _release(home.connection_id)
+    spec = _with_pieces(json.loads(json.dumps(plain)))
+    assert keep(spec).kept and versions.latest(home)["ontology_release"] == first
+    second = _release(home.connection_id, ("process", "order_fulfilment", "changed", "MEANING"))
+    resized = json.loads(json.dumps(spec))
+    resized["elements"]["table"]["props"]["size"] = "large"
+    assert keep(resized).kept and versions.latest(home)["ontology_release"] == first   # arrangement reads nothing new
+    assert keep(resized).status == "unchanged"
+    repinned = keep(resized, repin=True)                                      # a person read what changed, and keeps it
+    assert repinned.kept and versions.latest(home)["ontology_release"] == second
+    _release(home.connection_id)
+    repointed = json.loads(json.dumps(resized))
+    repointed["elements"]["table"]["props"]["columns"] = ["status"]
+    assert keep(repointed).kept and versions.latest(home)["ontology_release"].endswith("@3")
+
+
+def test_the_read_names_every_change_since_the_pin_that_touches_a_piece_and_no_other(monkeypatch):
+    _both_on(monkeypatch)
+    conn = f"since{uuid.uuid4().hex[:6]}"
+    pinned = _release(conn)
+    _release(conn, ("process", "order_fulfilment", "changed", "MEANING"), ("process", "returns", "added", "SAFE"))
+    _release(conn, ("action", "flag_for_review", "changed", "WARN"), ("entity", "Customer", "changed", "SAFE"))
+    said = pieces.since(conn, _with_pieces(json.loads(FIXTURE.read_text())), pinned, graph=_graph())
+    assert said["pinned"] == pinned and said["current"].endswith("@3")
+    assert [(c["number"], c["kind"], c["target_id"], c["class"], c["pieces"]) for c in said["changes"]] == [
+        (2, "process", "order_fulfilment", "MEANING", ["board"]),
+        (3, "action", "flag_for_review", "WARN", ["flag"])]
+    assert pieces.since(conn, json.loads(FIXTURE.read_text()), pinned, graph=_graph()) is None   # no piece, nothing said
+
+
+def test_a_segment_is_read_from_the_declaration_that_derives_it():
+    g = _graph()
+    from aughor.ontology.processes import process_from_fields
+    g.processes["order_fulfilment"] = process_from_fields("order_fulfilment", {"entity": "Order", "stages": [
+        {"name": "placed", "timestamp": "order_date"},
+        {"name": "shipped", "timestamp": "shipped_at", "promise": {"name": "dispatch", "within_days": 2}}]})
+    spec = {"elements": {"t": {"type": "ObjectTable", "props": {"entity": "order", "segment": "overdue_dispatch"},
+                               "children": []}}}
+    assert pieces.depends(spec, g) == {("entity", "Order"): ["t"], ("process", "order_fulfilment"): ["t"]}
+    spec["elements"]["t"]["props"]["segment"] = "vip"
+    assert ("object_set", "Order::vip") in pieces.depends(spec, g)
+
+
+def test_the_release_strip_names_the_cockpits_a_change_touches_only_while_pieces_are_on(monkeypatch):
+    from aughor.ontology import release
+    monkeypatch.setattr(pieces, "cockpits_reading", lambda conn, names, graph=None: [{"cockpit": "late", "title": "Late",
+                                                                                     "pieces": ["board"]}])
+    monkeypatch.setattr("aughor.dashboard.store.list_cards", lambda **k: [])
+    _flag(monkeypatch, True)
+    assert release._touches("c", {"order_fulfilment"}, [])["cockpits"] == [{"cockpit": "late", "title": "Late",
+                                                                          "pieces": ["board"]}]
+    _flag(monkeypatch, False)
+    assert "cockpits" not in release._touches("c", {"order_fulfilment"}, [])

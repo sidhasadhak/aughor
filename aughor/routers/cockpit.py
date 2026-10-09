@@ -35,6 +35,8 @@ _STATUS_CODE = {"refused": 422, "not_checked": 503, "failed": 500}
 class KeepRequest(BaseModel):
     spec: Any
     note: str = ""
+    #: Arc OC-4 — pin a cockpit holding pieces to the ontology release in force now, the spec unchanged or not.
+    repin: bool = False
 
 
 class RestoreRequest(BaseModel):
@@ -202,6 +204,7 @@ def read_shared_cockpit(request: Request, owner: str, cockpit_id: str, connectio
         "images": images.stamps_for(connection_id, kept.get("spec")),
         "published_by": kept.get("published_by") or "",
         "published_to": kept.get("published_to") or [],
+        **_pinned(connection_id, kept),
     }
 
 
@@ -253,7 +256,16 @@ def read_cockpit(request: Request, cockpit_id: str, connection_id: str, preset: 
         "currency_symbol": resolve_currency_symbol(connection_id, None),
         # What the spec's images are, from the volume's own rows; one the cockpit may not show says why.
         "images": images.stamps_for(connection_id, kept.get("spec")),
+        **_pinned(connection_id, kept),
     }
+
+
+def _pinned(connection_id: str, kept: dict) -> dict:
+    """Arc OC-4 — for a cockpit holding pieces bound to the ontology: the release it was composed against, the one in
+    force, and every change between them that touches what its pieces read. Nothing at all for one without them."""
+    from aughor.cockpit.pieces import since
+    said = since(connection_id, kept.get("spec"), str(kept.get("ontology_release") or ""))
+    return {"ontology": said} if said is not None else {}
 
 
 @router.post("/cockpits/images")
@@ -296,7 +308,8 @@ def keep_cockpit(request: Request, cockpit_id: str, connection_id: str, req: Kee
     from aughor.cockpit import versions
     home = _home(request, connection_id, cockpit_id)
     return _answer(versions.keep(home, req.spec, approved_by=_approved_by(request),
-                                 source="a person's own hand", note=req.note, written_by_model=False),
+                                 source="a person's own hand", note=req.note, written_by_model=False,
+                                 repin=req.repin),
                    cockpit_id=home.cockpit_id)
 
 

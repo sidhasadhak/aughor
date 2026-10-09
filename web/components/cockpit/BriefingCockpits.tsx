@@ -31,6 +31,7 @@ import { CockpitArrange, type CardLine } from "@/components/cockpit/CockpitArran
 import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/ComposedCockpit";
 import { FindingPicker } from "@/components/cockpit/FindingPicker";
 import { OntologyPieceComposer } from "@/components/cockpit/OntologyPieceComposer";
+import { PinStrip } from "@/components/cockpit/PinStrip";
 import { METRICS_COCKPIT, MetricsCockpit } from "@/components/cockpit/MetricsCockpit";
 import { PeriodPicker, choiceName } from "@/components/cockpit/PeriodPicker";
 import { person as personName, type ImageStamp } from "@/components/cockpit/StaticTile";
@@ -239,7 +240,7 @@ function DraftReview({ connectionId, cockpitId, result, proposal, held, onKept, 
       )}
       {publish ? (
         <div className="aug-fs-sm" data-testid="cockpit-publish-proposal" style={{ color: "var(--t1)" }}>
-          Publish this cockpit, as it stands, to {(detail.to ?? []).join(", ")} — read-only for its readers, under your name.
+          Publish this cockpit as an App, as it stands, to {(detail.to ?? []).join(", ")} — read-only for its readers, under your name.
           Your notes and images travel marked as yours.
         </div>
       ) : spec ? (
@@ -390,7 +391,7 @@ function PublishPanel({ connectionId, cockpitId, publishedTo, busy, onDone, onCl
   const all = [...(audiences?.groups ?? []), ...(audiences?.roles ?? [])];
   return (
     <div data-testid="cockpit-publish" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-      <div className="aug-label">Publish to</div>
+      <div className="aug-label">Publish as an App to</div>
       {problem ? <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>Who you may publish to could not be read: {problem}</div>
         : !audiences ? <Loading what="who you may publish to" style={{ padding: "4px 0" }} />
         : !all.length ? <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>You belong to no group and hold no role a cockpit can be published to.</div>
@@ -407,18 +408,19 @@ function PublishPanel({ connectionId, cockpitId, publishedTo, busy, onDone, onCl
           </ul>
         )}
       <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-        Readers see it under “Shared with you”, read-only, under your name, for the period they choose. A card they may not read stands and says so.
-        Your notes and images travel marked as yours. Publishing is a version; so is unpublishing.
+        Readers find it under “Apps shared with you”, read-only, under your name, for the period they choose. A card they may not read stands and says so.
+        Your notes and images travel marked as yours. It reads the ontology release it was pinned to and says when one since changes what it reads.
+        Publishing is a version; so is unpublishing.
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <Button size="sm" disabled={busy || same || !chosen.length} data-testid="cockpit-publish-go"
-          onClick={() => void onDone(() => publishCockpit(connectionId, cockpitId, chosen), k => `Published, as version ${k.version}.`).then(ok => { if (ok) onClose(); })}>
-          Publish
+          onClick={() => void onDone(() => publishCockpit(connectionId, cockpitId, chosen), k => `Published as an App, as version ${k.version}.`).then(ok => { if (ok) onClose(); })}>
+          Publish the App
         </Button>
         {publishedTo.length > 0 && (
           <Button size="sm" variant="secondary" disabled={busy}
             onClick={() => void onDone(() => unpublishCockpit(connectionId, cockpitId), k => `Unpublished, as version ${k.version}.`).then(ok => { if (ok) onClose(); })}>
-            Unpublish
+            Unpublish the App
           </Button>
         )}
         <Button size="sm" variant="ghost" disabled={busy} onClick={onClose}>Close</Button>
@@ -490,12 +492,13 @@ function SharedCockpitView({ connectionId, schema, owner, cockpitId, range, chos
           <PeriodPicker value={chosenRange} onChange={onRange} showing={data.range.status === "standing" ? null : data.range} />
         )}
         <span className="aug-fs-sm" data-testid="cockpit-shared-by" style={{ color: "var(--t2)" }}>
-          Published by {personName(data.published_by)} to {data.published_to.map(t => t.name).join(", ")} · version {data.cockpit.version} · read-only
+          An App by {personName(data.published_by)}, for {data.published_to.map(t => t.name).join(", ")} · version {data.cockpit.version} · read-only
         </span>
         <Button size="xs" variant="secondary" disabled={busy} style={{ marginLeft: "auto" }} onClick={() => void start()}>
           Start my cockpit from this
         </Button>
       </div>
+      {data.ontology && <PinStrip pin={data.ontology} spec={data.cockpit.spec} />}
       <ComposedCockpit spec={data.cockpit.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}
         images={images} range={range} schema={schema} connectionId={connectionId} />
     </div>
@@ -723,7 +726,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           { heading: <span className="aug-label" style={{ color: "var(--vio4)" }}>Your cockpits</span> },
           ...live.map(c => ({ id: c.cockpit_id, label: c.title || c.cockpit_id })),
           // Published to a group the person is in or a role they hold: read-only, under the publisher's name.
-          ...(shared.length ? [{ heading: <span className="aug-label" style={{ color: "var(--t3)" }}>Shared with you</span> }] : []),
+          ...(shared.length ? [{ heading: <span className="aug-label" style={{ color: "var(--t3)" }}>Apps shared with you</span> }] : []),
           ...shared.map(s => ({ id: `shared:${s.owner}/${s.cockpit_id}`, label: `${s.title || s.cockpit_id} · ${person(s.published_by || s.owner)}` })),
         ]}
         trailing={<Button size="xs" variant="ghost" data-testid="cockpit-new-open" onClick={() => setNewOpen(o => !o)}>+ New cockpit</Button>} />
@@ -830,7 +833,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                 <Button size="xs" variant={kept.published_to?.length ? "secondary" : "ghost"} disabled={busy} data-testid="cockpit-publish-open"
                   aria-expanded={publishing} title="Share this cockpit, as it stands, with a group you belong to or a role you hold."
                   onClick={() => setPublishing(p => !p)}>
-                  <Icon name="send" /> {kept.published_to?.length ? `Published to ${kept.published_to.map(t => t.name).join(", ")}` : "Publish"}
+                  <Icon name="send" /> {kept.published_to?.length ? `An App for ${kept.published_to.map(t => t.name).join(", ")}` : "Publish as an App"}
                 </Button>
               )}
               {!arranging && (
@@ -941,6 +944,12 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               )}
               <AskChange connectionId={connectionId} cockpitId={data.cockpit_id} schema={schema} held={lines}
                 onKept={() => { setPublishing(false); reload(); }} />
+              {data.ontology && (
+                <PinStrip pin={data.ontology} spec={kept.spec} busy={busy}
+                  onRepin={() => void write(() => keepCockpit(connectionId, data.cockpit_id, kept.spec,
+                    `re-pinned to ${data.ontology?.current}`, true),
+                  k => (k.status === "unchanged" ? "Already pinned there." : `Re-pinned, as version ${k.version}.`))} />
+              )}
               {reading && <Loading what={`the cards for ${choiceName(chosenRange)}`} style={{ padding: "12px 0" }} />}
               {!reading && data.range.edge_note && (
                 <div className="aug-fs-sm" data-testid="cockpit-edge-note" style={{ color: "var(--t2)", margin: "4px 0 8px" }}>{data.range.edge_note}</div>

@@ -126,6 +126,8 @@ def _entry(row: dict, *, with_spec: bool) -> dict[str, Any]:
         # Who this version reaches beyond its owner, and who published it (the canvas, B5).
         "published_to": list(p.get("published_to") or []),
         "published_by": p.get("published_by") or "",
+        # Arc OC-4 — the ontology release a version holding pieces was composed against.
+        **({"ontology_release": p["ontology_release"]} if p.get("ontology_release") else {}),
     }
     if with_spec:
         out["spec"] = p.get("spec")
@@ -270,7 +272,8 @@ def stamp_notes(spec: Any, before: Any, approved_by: str, *, now: Optional[str] 
 
 def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = "",
          also_known: Iterable[str] = (), written_by_model: bool = True,
-         came_from: Iterable[tuple[str, str, str]] = (), stamps_are_ours: bool = False) -> Kept:
+         came_from: Iterable[tuple[str, str, str]] = (), stamps_are_ours: bool = False,
+         repin: bool = False) -> Kept:
     """Keep ``spec`` as this person's cockpit: the next version, or nothing at all.
 
     ``approved_by`` is the person who approved it; ``source`` is where it came from.
@@ -278,6 +281,8 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
     whose words its titles are; it defaults to True, the strict reading, and is kept with the
     version so that going back to it holds it to the rule it was first held to.
     ``came_from`` is lineage beyond the version before — where a cockpit moved from.
+    ``repin`` (Arc OC-4) pins a cockpit holding pieces to the ontology release in force now — a person read what
+    changed since the release it was composed against, and keeps it; the spec may be unchanged.
     """
     missing = _provenance_missing(approved_by, source)
     if missing:
@@ -305,7 +310,9 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
     copies = twin_cards(verdict.cards, before.get("cards") or [])
     if copies:
         return Kept(REFUSED, sentences=tuple(copies))
-    if prior and not before.get("retired") and _canonical(before.get("spec")) == _canonical(spec):
+    pin = pieces.pin_for(home.connection_id, before, spec, repin=repin)
+    if prior and not before.get("retired") and _canonical(before.get("spec")) == _canonical(spec) \
+            and pin == str(before.get("ontology_release") or ""):
         return Kept(UNCHANGED, version=prior.get("version"), artifact_id=prior.get("id") or "")
 
     vocab = _validate.vocabulary() or {}
@@ -319,6 +326,7 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
         # An edit does not unpublish: who the cockpit reaches carries to the next version.
         "published_to": list(before.get("published_to") or []) if not before.get("retired") else [],
         "published_by": (before.get("published_by") or "") if not before.get("retired") else "",
+        **({"ontology_release": pin} if pin else {}),
     }
     return _write(home.key, home.connection_id, payload, prior, "the spec changed", also=came_from)
 

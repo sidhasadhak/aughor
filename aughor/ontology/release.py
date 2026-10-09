@@ -96,14 +96,18 @@ def current_id(conn: str, schema: str) -> str:
     return row["id"] if row else ""
 
 
-def current_id_for_connection(conn: str) -> str:
-    """The release in force on a connection's configured schema — what a claim booked on it pins. "" when none."""
+def connection_scope(conn: str) -> str:
+    """A connection's configured schema — the scope a read of it with no schema named is served from."""
     try:
         from aughor.db.registry import get_meta
-        schema = (get_meta(conn) or {}).get("schema_name") or "default"
+        return (get_meta(conn) or {}).get("schema_name") or "default"
     except Exception:  # noqa: BLE001 — an unregistered connection has no configured schema; read as the default
-        schema = "default"
-    return current_id(conn, schema)
+        return "default"
+
+
+def current_id_for_connection(conn: str) -> str:
+    """The release in force on a connection's configured schema — what a claim booked on it pins. "" when none."""
+    return current_id(conn, connection_scope(conn))
 
 
 def _record(conn: str, schema: str, *, by: str, note: str, changes: list[dict]) -> dict:
@@ -174,9 +178,20 @@ def _touches(conn: str, names: set[str], automations: list[dict], metrics: list[
     except Exception as exc:  # noqa: BLE001
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the cards a change touches could not be read", counter="ontology.release")
-    return {"claims": claims, "cards": cards,
-            "automations": [{"id": a["id"], "name": a["name"], "how": a["how"]} for a in automations],
-            "metrics": [{"id": m["id"], "name": m["name"], "how": m["how"]} for m in metrics]}
+    out = {"claims": claims, "cards": cards,
+           "automations": [{"id": a["id"], "name": a["name"], "how": a["how"]} for a in automations],
+           "metrics": [{"id": m["id"], "name": m["name"], "how": m["how"]} for m in metrics]}
+    from aughor.kernel.flags import flag_enabled
+    if flag_enabled("ontology.cockpit_pieces"):
+        # Arc OC-4 — a cockpit's pieces name the process, the entity, the segment and the action they read.
+        try:
+            from aughor.cockpit.pieces import cockpits_reading
+            out["cockpits"] = cockpits_reading(conn, names)
+        except Exception as exc:  # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the cockpits a change touches could not be read", counter="ontology.release")
+            out["cockpits"] = []
+    return out
 
 
 def _watched_promises(conn: str, process_id: str) -> set[str]:

@@ -18038,6 +18038,11 @@ export interface components {
              * @default
              */
             note: string;
+            /**
+             * Repin
+             * @default false
+             */
+            repin: boolean;
             /** Spec */
             spec: unknown;
         };

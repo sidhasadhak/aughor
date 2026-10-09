@@ -2671,6 +2671,17 @@ export interface CockpitVersion {
   /** Who this version reaches beyond its owner, and who published it (the canvas, B5). */
   published_to?: { kind: "group" | "role"; id: string; name: string }[];
   published_by?: string;
+  /** Arc OC-4 — the ontology release a version holding pieces was composed against. */
+  ontology_release?: string;
+}
+
+/** Arc OC-4 — for a cockpit holding pieces bound to the ontology: the release it was composed against, the one in
+ *  force, and every change published between them that touches what its pieces read. */
+export interface CockpitPin {
+  pinned: string;
+  current: string;
+  changes: { release: string; number: number; kind: string; target_id: string; change: string;
+             class: "ERR" | "MEANING" | "WARN" | "SAFE"; pieces: string[] }[];
 }
 
 /** One of a person's cockpits, as the strip lists it. */
@@ -2748,6 +2759,7 @@ export interface PersonCockpit {
   currency_symbol?: string;
   /** The images the spec places, by object id (the canvas, 2026-10-08). */
   images?: Record<string, CockpitImageStamp>;
+  ontology?: CockpitPin;
 }
 
 /** Where an image placed on a cockpit is read from: the API, with the reader's own access. */
@@ -2856,11 +2868,13 @@ export async function getCockpit(connectionId: string, cockpitId: string, range?
 }
 
 /** Keep a spec the person wrote — a card moved, a section renamed — as the next version. */
-export async function keepCockpit(connectionId: string, cockpitId: string, spec: unknown, note = ""): Promise<CockpitKept> {
+export async function keepCockpit(
+  connectionId: string, cockpitId: string, spec: unknown, note = "", repin = false,
+): Promise<CockpitKept> {
   const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}`, connectionId), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ spec, note }),
+    body: JSON.stringify(repin ? { spec, note, repin } : { spec, note }),
   });
   return cockpitWrite(res, "Failed to keep the cockpit");
 }
@@ -2983,6 +2997,7 @@ export interface SharedCockpit {
   images?: Record<string, CockpitImageStamp>;
   published_by: string;
   published_to: CockpitAudience[];
+  ontology?: CockpitPin;
 }
 
 /** A published cockpit as it stands, read for the asker's own range. */
@@ -8819,6 +8834,31 @@ export async function listUserAgents(): Promise<UserAgent[]> {
   return res.json();
 }
 
+/** A declared action as the ontology's actions door returns it — what a cockpit's button needs to run one (Arc OC-4). */
+export interface DeclaredAction {
+  id: string;
+  display_name: string;
+  description: string;
+  entity: string;
+  object_type: string;
+  kind: "annotate" | "side_effect" | "query";
+  risk: "read_only" | "low" | "high";
+  params: { name: string; display_name: string; data_type: string; required: boolean; default_value: string | null;
+            kind: "value" | "object"; object_type: string; description: string }[];
+  /** ON-4 — the properties an `annotate` action sets on the object it takes. */
+  edits: { object: string; property: string; value: string; note: string }[];
+}
+
+/** Every declared action on a scope, by id. Throws when the ontology cannot be read: a reader is told, never handed
+ *  an empty roster as if nothing were declared. */
+export async function getDeclaredActions(connId: string, schema?: string): Promise<Record<string, DeclaredAction>> {
+  const qs = new URLSearchParams({ connection_id: connId });
+  if (schema) qs.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/ontology/kinetic-actions?${qs}`);
+  if (!res.ok) throw await refused(res, "Reading the declared actions");
+  return res.json();
+}
+
 /** VA-9c — the declared-action roster grants pick from (keys are the grantable ids).
  *  Empty on any failure: a broken ontology read must not take the agent editor down,
  *  and an empty roster renders as its own honest sentence. */
@@ -8826,11 +8866,7 @@ export async function getActionRoster(
   connId: string, schema?: string,
 ): Promise<Record<string, { title?: string; description?: string }>> {
   try {
-    const qs = new URLSearchParams({ connection_id: connId });
-    if (schema) qs.set("schema_name", schema);
-    const res = await fetch(`${getApiBase()}/ontology/kinetic-actions?${qs}`);
-    if (!res.ok) return {};
-    return await res.json();
+    return await getDeclaredActions(connId, schema);
   } catch {
     return {};
   }
