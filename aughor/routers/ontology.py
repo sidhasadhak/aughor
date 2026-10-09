@@ -180,6 +180,12 @@ class _DeclaredStage(BaseModel):
     promise: Optional[_DeclaredPromise] = None
 
 
+class _ProcessLeaves(BaseModel):
+    """Arc OC-4 — how an object leaves the process: its `property` holds one of `values` (status is Cancelled)."""
+    property: str
+    values: list[str]
+
+
 class _DeclaredProcess(BaseModel):
     """ON-9 — a process one object type goes through: its stages in order."""
     id: str
@@ -190,6 +196,8 @@ class _DeclaredProcess(BaseModel):
     owner: Optional[str] = None
     origin: Optional[Literal["human", "model", "pack"]] = None
     provenance: Optional[str] = Field(default=None, max_length=200)
+    #: Arc OC-4 — how an object leaves it; one that left is no longer open, and never overdue.
+    leaves: Optional[_ProcessLeaves] = None
 
 
 class _DeclaredRule(BaseModel):
