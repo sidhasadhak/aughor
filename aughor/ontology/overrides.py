@@ -179,7 +179,7 @@ def visible_override_files(pattern: str) -> list[Path]:
 # human has already authored and every one committed to a repo. The display word is mapped
 # at the HTTP boundary (routers/ontology.py), not here. `link` (ON-3b) is a NEW kind — a relationship's
 # business-verb name — so it adds a directory and renames none.
-TargetKind = Literal["entity", "object_set", "computed_property", "metric", "action", "link", "process", "rule"]
+TargetKind = Literal["entity", "object_set", "computed_property", "metric", "action", "link", "process", "rule", "impact"]
 
 # Whitelist of fields a human may override, per target kind. Anything outside
 # these sets is ignored on write *and* on apply, so an override file can never
@@ -266,6 +266,10 @@ _EDITABLE: dict[str, set[str]] = {
     "process": {"declared", "display_name", "description", "entity", "stages", "owner", "origin", "provenance"},
     "rule": {"declared", "display_name", "description", "entity", "kind", "property", "values", "conditions",
              "owner", "origin", "provenance"},
+    # Arc OC-5: a DECLARED impact (POST /ontology/impacts) — one promise's bearing on another, with its mechanism; the
+    # resolved path from the downstream promise's lead object rides the fields, the measurement the binding (`impact`).
+    "impact": {"declared", "display_name", "description", "owner", "upstream", "downstream", "mechanism", "formula",
+               "evidence", "window_days", "lead", "path", "to_many", "origin", "provenance"},
 }
 
 # Fields whose value is SQL and must EXPLAIN-bind before they earn `verified`.
@@ -924,6 +928,16 @@ def _apply_rule(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
     return ["<declared>"]
 
 
+def _apply_impact(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
+    """Arc OC-5 — a declared impact, rebuilt the same way; nothing when a promise it names is not on the graph."""
+    from aughor.ontology.impacts import declared_impact
+    impact = declared_impact(ov, graph)
+    if impact is None:
+        return []
+    graph.impacts[impact.id] = impact
+    return ["<declared>"]
+
+
 def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> tuple[Optional[OntologyGraph], OverlayReport]:
     """Overlay all human overrides for {conn}/{schema} onto ``graph`` in place.
 
@@ -934,7 +948,9 @@ def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> t
     report = OverlayReport()
     if graph is None:
         return graph, report
-    for ov in load_overrides(conn, schema):
+    loaded = load_overrides(conn, schema)
+    # Arc OC-5 — an impact names two promises, so it is read after every process it could name.
+    for ov in [o for o in loaded if o.target_kind != "impact"] + [o for o in loaded if o.target_kind == "impact"]:
         try:
             if ov.target_kind == "entity":
                 ent = graph.entities.get(ov.target_id)
@@ -964,6 +980,8 @@ def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> t
                 touched = _apply_process(graph, ov)
             elif ov.target_kind == "rule":
                 touched = _apply_rule(graph, ov)
+            elif ov.target_kind == "impact":
+                touched = _apply_impact(graph, ov)
             elif ov.target_kind == "action":
                 # Wave K substrate — only human-DECLARED actions exist to overlay.
                 touched = _apply_action(graph, ov)

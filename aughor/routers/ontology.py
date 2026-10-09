@@ -200,6 +200,22 @@ class _DeclaredProcess(BaseModel):
     leaves: Optional[_ProcessLeaves] = None
 
 
+class _DeclaredImpact(BaseModel):
+    """Arc OC-5 — one promise's bearing on another (`<process id>.<promise>` each), with its mechanism."""
+    id: str
+    upstream: str
+    downstream: str
+    mechanism: Literal["influence", "validated", "formula"] = "influence"
+    formula: Optional[str] = Field(default=None, max_length=500)
+    evidence: Optional[str] = Field(default=None, max_length=200)
+    window_days: Optional[int] = None
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    owner: Optional[str] = None
+    origin: Optional[Literal["human", "model", "pack"]] = None
+    provenance: Optional[str] = Field(default=None, max_length=200)
+
+
 class _DeclaredRule(BaseModel):
     """ON-9 — a named, owned definition over one type: a value set, or conditions in the object door's shape."""
     id: str
@@ -2223,8 +2239,10 @@ def list_ontology_processes(
         if graph is None:
             raise HTTPException(status_code=404, detail="Ontology not available")
         where = {"connection_id": connection_id, "schema_name": graph.schema_name}
+    from aughor.ontology.impacts import describe_impact
     return {**where, "processes": [describe_process(graph, p) for _, p in sorted(graph.processes.items())],
-            "rules": [describe_rule(graph, r) for _, r in sorted(graph.rules.items())]}
+            "rules": [describe_rule(graph, r) for _, r in sorted(graph.rules.items())],
+            "impacts": [describe_impact(graph, i) for _, i in sorted((graph.impacts or {}).items())]}
 
 
 class _FrameQuestion(BaseModel):
@@ -2478,6 +2496,116 @@ def delete_declared_process(
         _refuse_if_depended(connection_id, effective, "process", process_id)
     remove(connection_id, effective, "process", process_id)
     return {"removed": True, "process": process_id}
+
+
+@router.post("/ontology/impacts", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def declare_ontology_impact(
+    body: _DeclaredImpact,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Declare an impact (Arc OC-5): one promise's bearing on another, with its mechanism — an influence (an
+    association, measured), validated (an influence promoted on recorded evidence) or a formula (exact by definition,
+    not measured). Both promises are resolved and the path from the downstream promise's lead object to the upstream
+    one's is found; an influence is COUNTED through the object door before anything is written — 400 with the reason
+    when it cannot be. No model call."""
+    return _declare_impact_core(body.model_dump(exclude_none=True), connection_id, schema_name)
+
+
+@router.put("/ontology/impacts/{impact_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def change_declared_impact(
+    impact_id: str,
+    body: _DeclaredImpact,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Change a declared impact through the same law as declaring it; each change is a version of the element."""
+    if body.id != impact_id:
+        raise HTTPException(status_code=400, detail=f"the body names '{body.id}', the path '{impact_id}' — "
+                                                    "an impact's id does not change; its name does")
+    return _declare_impact_core(body.model_dump(exclude_none=True), connection_id, schema_name, replace=True)
+
+
+@router.post("/ontology/impacts/preview", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def preview_declared_impact(
+    body: _DeclaredImpact,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Count a draft impact exactly as declaring it would, and write NOTHING — how a person reads an influence before
+    stating it, and how one is read on a scope it is not declared on."""
+    graph, effective, fields = _resolved_impact(body.model_dump(exclude_none=True), connection_id, schema_name)
+    measured = _measured_impact(graph, effective, connection_id, {**fields, "id": body.id})
+    from aughor.ontology.impacts import describe_impact
+    return {"impact": describe_impact(graph, measured)}
+
+
+def _resolved_impact(spec: dict, connection_id: str, schema_name: Optional[str]):
+    from aughor.ontology.impacts import impact_fields, impact_spec_problem, resolve_impact
+    effective = _served_scope(connection_id, schema_name)
+    problem = impact_spec_problem(spec)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
+    problem, fields = resolve_impact(graph, str(spec["id"]), impact_fields(spec))
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    return graph, effective, fields
+
+
+def _measured_impact(graph, effective: str, connection_id: str, fields: dict):
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.impacts import measure_impact
+    from aughor.ontology.processes import NotMeasurable
+    impact_id = str(fields.get("id") or "")
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        return measure_impact(db, graph, impact_id, fields)
+    except NotMeasurable as exc:
+        raise HTTPException(status_code=400, detail=f"the impact could not be counted: {exc}") from exc
+    finally:
+        db.close()
+
+
+def _declare_impact_core(spec: dict, connection_id: str, schema_name: Optional[str], *, replace: bool = False) -> dict:
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.ontology.impacts import describe_impact, impact_entry
+    from aughor.ontology.overrides import OntologyOverride, find_override, save_override
+    impact_id = str(spec.get("id") or "")
+    graph, effective, fields = _resolved_impact(spec, connection_id, schema_name)
+    exists = find_override(connection_id, effective, "impact", impact_id) is not None or impact_id in graph.impacts
+    if replace and not exists:
+        raise HTTPException(status_code=404, detail=f"no declared impact '{impact_id}'")
+    if not replace and exists:
+        raise HTTPException(status_code=409, detail=f"an impact '{impact_id}' already exists")
+    measured = _measured_impact(graph, effective, connection_id, {**fields, "id": impact_id})
+    ov = OntologyOverride(target_kind="impact", target_id=impact_id, fields=fields, source=fields["origin"],
+                          binding={"impact": impact_entry(fields, measured)})
+    save_override(connection_id, effective, ov)
+    served = _get_ontology_graph(connection_id, effective)
+    if served is None or impact_id not in served.impacts:
+        raise HTTPException(status_code=500, detail=f"{impact_id} was written but does not read back — see the overlay report")
+    return {**_override_result(ov), "impact": describe_impact(served, served.impacts[impact_id])}
+
+
+@router.delete("/ontology/impacts/{impact_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def delete_declared_impact(
+    impact_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Withdraw a declared impact (Arc OC-5)."""
+    from aughor import govern
+    govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
+    from aughor.ontology.overrides import delete_override, find_override
+    effective = _served_scope(connection_id, schema_name)
+    if find_override(connection_id, effective, "impact", impact_id) is None:
+        raise HTTPException(status_code=404, detail=f"no declared impact '{impact_id}'")
+    delete_override(connection_id, effective, "impact", impact_id)
+    return {"removed": True, "impact": impact_id}
 
 
 @router.post("/ontology/rules", dependencies=[gate(Capability.ONTOLOGY_EDIT)])

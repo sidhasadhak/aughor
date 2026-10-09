@@ -209,6 +209,10 @@ class FrameDriver(BaseModel):
     table: str = ""
     links: list[str] = Field(default_factory=list)
     named: bool = False
+    #: Arc OC-5 — a declared, measured impact into the chosen promise: its id and its reading by mechanism. Ranked
+    #: before every candidate reached by hops alone; its breakdown is the downstream rate where the upstream broke.
+    impact: str = ""
+    reading: str = ""
 
 
 class Frame(BaseModel):
@@ -884,6 +888,7 @@ def frame_question(question: str, graph: Optional[OntologyGraph], *, synonyms: I
         mine = [(t.start, t.end) for t in terms if t.kind == "metric" and t.target == f"{_KEYED}{o.name}"]
         spans = {s: v for s, v in spans.items() if not any(a <= s[0] and s[1] <= b for a, b in mine)}
     _frame_drivers(frame, _said_which(graph, frame, terms, spans), start, paths)
+    _frame_impacts(graph, frame)
     _frame_compiled(graph, frame, dialect, metrics)
     frame.reading = frame_reading(frame)
     return frame
@@ -1049,6 +1054,51 @@ def _frame_drivers(frame: Frame, named_props: set, start: Optional[OntologyEntit
                                "objects")
 
 
+def _frame_impacts(graph: OntologyGraph, frame: Frame) -> None:
+    """Arc OC-5 — the declared impacts into the chosen promise, measured-true, rank first among its candidate drivers:
+    a person said the upstream promise bears on it and the data showed the association, which is more than a dimension
+    being one hop away. The drivers the question named stay first."""
+    o = frame.outcome
+    if o is None or o.kind != "promise" or not o.process or not o.promise:
+        return
+    from aughor.ontology.impacts import impact_words, impacts_into, promise_at
+    rows = []
+    for imp in impacts_into(graph, o.process, o.promise):
+        process, index = promise_at(graph, imp.upstream)
+        if imp.verified is not True or process is None:
+            continue
+        lead = graph.entities.get(imp.lead)
+        rows.append(FrameDriver(path=f"impact:{imp.id}", entity=imp.lead,
+                                label=f"the {promise_noun(process.stages[index])} promise of {_process_label(process)}",
+                                object_type=lead.api_name if lead is not None else imp.lead, property="",
+                                impact=imp.id, reading=impact_words(graph, imp)))
+    if rows:
+        frame.drivers = [d for d in frame.drivers if d.named] + rows + [d for d in frame.drivers if not d.named]
+
+
+def _impact_query(graph: OntologyGraph, chosen: "FrameOutcome", driver: FrameDriver, filters: list[dict]) -> Optional[dict]:
+    """The chosen promise's rate where the upstream promise of ``driver``'s impact broke, beside its rate over every
+    object — the object door's own counts, at the promise's lead object."""
+    from aughor.ontology.impacts import promise_at, upstream_filters
+    imp = (graph.impacts or {}).get(driver.impact)
+    if imp is None:
+        return None
+    down_process, down_index = promise_at(graph, imp.downstream)
+    up_process, up_index = promise_at(graph, imp.upstream)
+    if down_process is None or up_process is None:
+        return None
+    down, up = promise_filters(down_process, down_index), promise_filters(up_process, up_index)
+    broke, _reached = upstream_filters(up, imp.path)
+    noun = promise_noun(up_process.stages[up_index])
+    return {"object_type": chosen.object_type, "filters": [*filters, *down["reached"]], "measures": [
+        {"name": f"{chosen.metric}_where_{noun}_broke", "agg": "count", "where": [*broke, *down["breach"]],
+         "divide_by": {"agg": "count", "where": broke}},
+        {"name": f"{chosen.metric}_overall", "agg": "count", "where": list(down["breach"]),
+         "divide_by": {"agg": "count"}},
+        {"name": f"objects_where_{noun}_broke", "agg": "count", "where": broke},
+        {"name": "objects", "agg": "count"}]}
+
+
 def _qualified(graph: OntologyGraph) -> OntologyGraph:
     """A copy whose tables carry the graph's schema, so the compiled SQL names `ecommerce.orders` the way the schema a
     reader is shown does — the served graph keeps bare names and the door runs them on a connection scoped to the schema."""
@@ -1150,6 +1200,11 @@ def _frame_compiled(graph: OntologyGraph, frame: Frame, dialect: str, metrics: I
         named = [d for d in frame.drivers if d.named][:_MAX_COMPILED_BY]
         candidates = [d for d in frame.drivers if not d.named][:_MAX_COMPILED_CANDIDATES]
         for d in named + candidates:
+            if d.impact:
+                query = _impact_query(graph, chosen, d, filters)
+                if query is not None:
+                    frame.compiled[f"by {d.path}"] = _compile_candidate(graph, query, dialect)
+                continue
             query = {"object_type": chosen.object_type, "filters": filters, "by": [d.path], "measures": [measure]}
             # A NAMED driver compiles the way it always did — the question asked for it, so a failure is
             # loud. A CANDIDATE is the frame's own suggestion: one that cannot compile (a binding shape the
@@ -1262,9 +1317,14 @@ def render_frame_block(frame: Frame) -> str:
         if s.get("key"):
             key = f"; key {s['key']}" + ("" if s.get("key_unique") else ", NOT unique per row — count rows, not keys")
         lines.append(f"- Start from {s['name']} ({s.get('table') or 'its backing'}{key}).")
-    if frame.drivers:
+    upstream = [d for d in frame.drivers if d.impact]
+    if upstream:
+        lines.append("- Upstream, declared and measured — an association, never a cause; say it that way: "
+                     + "; ".join(d.reading for d in upstream))
+    hops = [d for d in frame.drivers if not d.impact]
+    if hops:
         lines.append("- Candidate drivers, reachable from the start by measured to-one links: "
-                     + "; ".join(f"{d.path}{' (named in the question)' if d.named else ''}" for d in frame.drivers))
+                     + "; ".join(f"{d.path}{' (named in the question)' if d.named else ''}" for d in hops))
     for note in frame.notes:
         lines.append(f"- Note: {note}")
     return "\n".join(lines)

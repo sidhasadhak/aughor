@@ -791,6 +791,63 @@ class BusinessRule(BaseModel):
     note: str = ""
 
 
+class Impact(BaseModel):
+    """Arc OC-5 — what one promise does to another, declared with its mechanism and measured (the study's §8.4).
+
+    ``upstream`` and ``downstream`` each name a promise as ``<process id>.<promise noun>``
+    (``order_fulfilment.dispatch``). The mechanism is said, never implied:
+
+    * **influence** — an association, MEASURED: of the downstream promise's objects (its lead object, the type it is
+      kept per) that reached its stage with it in force, the share that broke it when the upstream promise broke on
+      them, against when it was kept — with how many objects each share is of, the lag between the two moments, and
+      the window read. The upstream promise is reached from the lead object through the graph's links: a to-one link
+      reads the one upstream object, a to-many link reads "at least one of them broke it" (an order whose lines missed
+      dispatch), so nothing is counted twice;
+    * **validated** — an influence a person promoted on recorded evidence (``evidence``: a decision's outcome or an
+      intervention in the Record). It is measured exactly as an influence is;
+    * **formula** — exact by definition (``formula``, in words): not an association, so nothing is measured, and a
+      reader is told so.
+
+    An association is never a cause: the platform words it by mechanism wherever it is read, and the departure gate
+    already holds causal language that has no licence. Lives in the overrides tree (``impact/<id>.yaml``) with what its
+    measurement recorded, like a process.
+    """
+    id: str
+    display_name: str = ""
+    description: str = ""
+    owner: str = ""
+    upstream: str
+    downstream: str
+    mechanism: Literal["influence", "validated", "formula"] = "influence"
+    formula: str = ""
+    evidence: str = ""
+    #: Read only the downstream objects whose moment falls in the last N days of the data (its own clock). None: all.
+    window_days: Optional[int] = None
+    origin: Literal["human", "model", "pack"] = "human"
+    provenance: str = ""
+    #: Resolved on declaration: the downstream promise's lead object, and the link path from it to the upstream
+    #: promise's (empty when both are kept per the same object), and whether that path crosses a to-many link.
+    lead: str = ""
+    path: str = ""
+    to_many: bool = False
+    #: Measured (influence and validated) — None until counted. ``objects``: the lead objects that reached the
+    #: downstream stage with its promise in force (in the window); of them ``upstream_broke`` and ``upstream_kept``,
+    #: each with its downstream breach rate; ``lag_days``: the median days from the upstream stage's moment to the
+    #: downstream's, when both are moments of the lead object.
+    objects: Optional[int] = None
+    upstream_broke: Optional[int] = None
+    upstream_kept: Optional[int] = None
+    rate_when_broke: Optional[float] = None
+    rate_when_kept: Optional[float] = None
+    lag_days: Optional[float] = None
+    window: str = ""
+    as_of: str = ""
+    verified: Optional[bool] = None
+    flags: list[str] = Field(default_factory=list)
+    note: str = ""
+    measured_at: str = ""
+
+
 class ActionParameter(BaseModel):
     """A typed, named input to a QueryTemplate *or* to a declared, governed write action.
 
@@ -1106,6 +1163,8 @@ class OntologyGraph(BaseModel):
     #: an old cached graph deserialises with both empty.
     processes: dict[str, Process] = Field(default_factory=dict)
     rules: dict[str, BusinessRule] = Field(default_factory=dict)
+    #: Arc OC-5 — what one declared promise does to another (see Impact), overlaid the same way. Additive.
+    impacts: dict[str, Impact] = Field(default_factory=dict)
 
     # Fast-lookup reverse maps
     entity_to_tables: dict[str, list[str]] = Field(default_factory=dict)

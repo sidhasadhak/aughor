@@ -61,6 +61,7 @@ def scope_census(graph: OntologyGraph) -> dict[str, Any]:
             "processes": len(processes),
             "promises": sum(1 for p in processes for s in p.stages if s.promise is not None),
             "rules": len(graph.rules),
+            "impacts": len(graph.impacts or {}),
             "segments": len(segments),
             "declared_actions": len(graph.declared_actions()),
         },
@@ -74,6 +75,8 @@ def scope_census(graph: OntologyGraph) -> dict[str, Any]:
             "segments_verified": _share(sum(1 for s in segments if s.verified), len(segments)),
             "computed_verified": _share(sum(1 for c in computed if c.verified), len(computed)),
             "properties_described": _share(sum(1 for p in properties if p.description), len(properties)),
+            "impacts_verified": _share(sum(1 for i in (graph.impacts or {}).values() if i.verified),
+                                       len(graph.impacts or {})),
         },
     }
 

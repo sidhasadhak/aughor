@@ -46,6 +46,7 @@ from pydantic import BaseModel
 
 from aughor.ontology.models import (
     ActionParameter,
+    Impact,
     Binding,
     BusinessRule,
     ComputedProperty,
@@ -259,6 +260,16 @@ def fixture_graph() -> OntologyGraph:
         conditions=[{"path": "country", "op": "!=", "value": "XX"}], origin="human", provenance="model:x@1",
         objects=10, admitted=6, observed={"DE": 4, "FR": 2}, missing=["AT"], verified=True,
         flags=["never observed: AT"], note="admits 6 of 10 Customer objects")
+    # Arc OC-5 — a declared, measured impact between the two promises, every field set, so the walk reaches what the
+    # question frame renders of it (its reading) and records what it does not.
+    impact = Impact(
+        id="late_shipping_late_delivery", display_name="Late shipping, late delivery", description="upstream of delivery",
+        owner="operations", upstream="order_fulfilment.shipping", downstream="order_fulfilment.delivery",
+        mechanism="influence", formula="", evidence="decision:d1", window_days=90, origin="human", provenance="x",
+        lead="Order", path="", to_many=False, objects=80, upstream_broke=40, upstream_kept=40, rate_when_broke=0.2,
+        rate_when_kept=0.05, lag_days=2.0, window="the 90 days to 2026-09-02", as_of="2026-09-02 00:00:00",
+        verified=True, flags=["read through a to-many link"], note="of the 80 Order objects …",
+        measured_at="2026-09-13T00:00:00+00:00")
     iface = OntologyInterface(
         id="HasLifecycle", display_name="Has Lifecycle",
         description="Any entity with a named status machine",
@@ -277,6 +288,7 @@ def fixture_graph() -> OntologyGraph:
         interfaces={iface.id: iface},
         processes={process.id: process},
         rules={rule.id: rule},
+        impacts={impact.id: impact},
         entity_to_tables={"Order": ["orders"], "Customer": ["customers"]},
         table_to_entity={"orders": "Order", "customers": "Customer"},
         relationship_index={"Order": [rel.id], "Customer": [rel.id]},
@@ -366,6 +378,7 @@ FRAME_QUESTIONS: tuple[str, ...] = (
     "What was late?",
     "When were orders shipped?",
     "How many EU core customers are there?",
+    "What is behind late delivery?",          # Arc OC-5 — the delivery promise, with the impact declared into it
 )
 
 

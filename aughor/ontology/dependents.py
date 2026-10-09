@@ -182,6 +182,11 @@ def dependents_of(graph: Optional[OntologyGraph], conn: str, kind: str, target_i
                              "a stage or a promise of the process is read through it"))
         automations_on(on_it, set(), set(), ", which is read through this link")
     elif kind == "process":
+        for iid, imp in sorted((graph.impacts or {}).items()):        # Arc OC-5: an impact names its promises
+            ends = [w for w, ref in (("upstream", imp.upstream), ("downstream", imp.downstream))
+                    if ref.partition(".")[0] == target_id]
+            if ends:
+                rows.append(_row("impact", iid, imp.display_name, f"the impact's {' and '.join(ends)} promise is in it"))
         automations_on({target_id}, set(), set())
     elif kind == "action":
         for aid, act in sorted(actions.items()):

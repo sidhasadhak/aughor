@@ -1265,7 +1265,7 @@ def test_the_process_rule_and_frame_doors_take_an_organisations_ontology_over_ht
     assert client.delete("/ontology/processes/customer_journey", params=domain).status_code == 404
     assert client.delete("/ontology/rules/eu_orders", params=domain).status_code == 200
     assert client.get("/ontology/processes", params=domain).json() == {"domain": "default/default", "processes": [],
-                                                                      "rules": []}
+                                                                      "rules": [], "impacts": []}
     gone = client.post("/objects/query", params=domain,
                        json={"object_type": "Order", "segment": "late_dispatch", "measures": [{"agg": "count"}]}).json()
     assert gone["path"] == "refused"

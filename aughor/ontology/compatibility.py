@@ -167,6 +167,24 @@ def _rule(before: dict, after: dict) -> list[tuple[str, str]]:
     return out
 
 
+def _impact(before: dict, after: dict) -> list[tuple[str, str]]:
+    """Arc OC-5 — the frame ranks drivers by an impact and the Briefing explains a moved promise by it: which promises
+    it joins, its mechanism and its window move what they read; its formula or evidence is what a reader is told."""
+    out = []
+    for k in sorted(_changed(before, after) - {"lead", "path", "to_many"}):
+        if k in _WORDS:
+            out.append(("SAFE", f"its {k.replace('_', ' ')} changed"))
+        elif k in ("upstream", "downstream"):
+            out.append(("MEANING", f"its {k} promise changed ({before.get(k)} → {after.get(k)})"))
+        elif k in ("mechanism", "window_days"):
+            out.append(("MEANING", f"its {k.replace('_', ' ')} changed ({before.get(k)} → {after.get(k)})"))
+        elif k in ("formula", "evidence"):
+            out.append(("WARN", f"its {k} changed — what a reader is told it rests on"))
+        else:
+            out.append(("WARN", f"'{k}' changed — the catalogue does not class it; read it before publishing"))
+    return out
+
+
 def _sql_bearing(before: dict, after: dict, meaning: set[str]) -> list[tuple[str, str]]:
     out = []
     for k in sorted(_changed(before, after)):
@@ -238,7 +256,7 @@ def classify(kind: str, before: Optional[dict], after: Optional[dict], *, depend
     elif before is None:
         reasons.append(("SAFE", "it is added"))
     else:
-        handler = {"entity": _entity, "link": _link, "rule": _rule, "action": _action}.get(kind)
+        handler = {"entity": _entity, "link": _link, "rule": _rule, "action": _action, "impact": _impact}.get(kind)
         if kind == "process":
             reasons.extend(_process(before, after, set(watched_promises)))
         elif handler is not None:

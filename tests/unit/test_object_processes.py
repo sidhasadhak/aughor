@@ -659,7 +659,7 @@ def test_a_process_and_a_rule_are_declared_counted_read_back_and_withdrawn_over_
     assert client.delete("/ontology/rules/eu_core", params=PARAMS).status_code == 200
     assert client.delete("/ontology/rules/fulfilled_orders", params=PARAMS).status_code == 200
     assert client.get("/ontology/processes", params=PARAMS).json() == {
-        "connection_id": CONN, "schema_name": "ecommerce", "processes": [], "rules": []}
+        "connection_id": CONN, "schema_name": "ecommerce", "processes": [], "rules": [], "impacts": []}
 
 
 def test_a_declared_process_is_changed_in_place_through_the_same_law(door, client):
