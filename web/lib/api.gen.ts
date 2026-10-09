@@ -20832,6 +20832,7 @@ export interface components {
             entity: string;
             /** Id */
             id: string;
+            leaves?: components["schemas"]["_ProcessLeaves"] | null;
             /** Origin */
             origin?: ("human" | "model" | "pack") | null;
             /** Owner */
@@ -21188,6 +21189,16 @@ export interface components {
             role?: string | null;
             /** Rounds */
             rounds?: number | null;
+        };
+        /**
+         * _ProcessLeaves
+         * @description Arc OC-4 — how an object leaves the process: its `property` holds one of `values` (status is Cancelled).
+         */
+        _ProcessLeaves: {
+            /** Property */
+            property: string;
+            /** Values */
+            values: string[];
         };
         /** _QueryBuildRequest */
         _QueryBuildRequest: {

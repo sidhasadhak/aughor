@@ -88,3 +88,21 @@ def test_a_process_no_object_leaves_is_stored_and_described_exactly_as_before(db
     assert "leaves" not in describe_process(graph, p)
     fields, p = declare(graph, db, _leaving())
     assert fields["leaves"] == GONE and describe_process(graph, p)["leaves"]["left"] == p.leaves.left
+
+
+# ── through the door ────────────────────────────────────────────────────────────────────────
+
+from tests.unit.test_object_processes import PARAMS, door  # noqa: E402,F401 — the door's fixture, by name
+
+
+def test_the_door_carries_how_an_object_leaves_and_counts_it(door, client):  # noqa: F811
+    """The live receipt sent `leaves` to the door, and the door's request model dropped it: every count stayed as if
+    nothing left. The functions were tested; the door was not (the same as `within_hours`, ON-9)."""
+    r = client.post("/ontology/processes", params=PARAMS, json=_leaving())
+    assert r.status_code == 200, r.text
+    process = r.json()["process"]
+    assert process["leaves"]["property"] == "status" and process["leaves"]["left"] > 0
+    listed = {p["id"]: p for p in client.get("/ontology/processes", params=PARAMS).json()["processes"]}
+    assert listed["order_fulfilment"]["leaves"]["values"] == ["cancelled", "refunded"]
+    delivery = listed["order_fulfilment"]["stages"][2]["promise"]
+    assert delivery["open"] == 0                                         # every shipped-and-undelivered one left
