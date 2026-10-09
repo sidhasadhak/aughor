@@ -152,6 +152,12 @@ function ProcessView({ process, connectionId, schema, onOpenType, onClose, onCha
             {process.note}
           </p>
         )}
+        {process.leaves && (
+          <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--t2)", lineHeight: 1.45 }} data-testid="process-leaves">
+            Leaves the process when {process.leaves.property} is {process.leaves.values.join(" or ")}
+            {process.leaves.note ? ` — ${process.leaves.note}` : ""}
+          </p>
+        )}
         {process.measured_at && (
           <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2 }}>counted {process.measured_at}</div>
         )}

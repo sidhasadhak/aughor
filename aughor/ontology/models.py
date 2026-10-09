@@ -713,6 +713,21 @@ class ProcessStage(BaseModel):
     p95_days: Optional[float] = None
 
 
+class ProcessExit(BaseModel):
+    """Arc OC-4 — how an object leaves a process before its last stage, as a person declares it: its `property` holds
+    one of `values` ("an order leaves fulfilment when its status is Cancelled"). One that left still counts toward
+    the stages it reached and the promises it kept or broke; it is no longer open, and never overdue. Measured on
+    declaration: how many objects left, each value no object holds (a spelling the data does not use), and how many
+    hold no value at all — those cannot be read as having left or not, and the open counts leave them out, said."""
+    property: str
+    values: list[str] = Field(default_factory=list)
+    #: Measured — None until counted.
+    left: Optional[int] = None
+    missing: list[str] = Field(default_factory=list)
+    unknown: Optional[int] = None
+    note: str = ""
+
+
 class Process(BaseModel):
     """ON-9 — a business process one object type goes through, end to end: ordered stages (see ProcessStage), and
     on a stage the promise the business makes about reaching it (see Promise). DECLARED — by a person, a pack or an
@@ -731,6 +746,8 @@ class Process(BaseModel):
     owner: str = ""
     origin: Literal["human", "model", "pack"] = "human"
     provenance: str = ""
+    #: Arc OC-4 — how an object leaves the process (see ProcessExit). None: no object leaves it.
+    leaves: Optional[ProcessExit] = None
     #: Measured: the process's objects, the verdict over every stage and promise, and when it was counted.
     objects: Optional[int] = None
     verified: Optional[bool] = None

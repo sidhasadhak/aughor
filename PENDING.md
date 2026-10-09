@@ -143,6 +143,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [x] OC-4 · a cockpit pinned to the release it was composed against — 2026-10-09: `pieces.pin_for` / `pieces.since`, the *Re-pin* door (`repin` on keep), the strip above the pieces, and the release strip naming the cockpits a change touches (the study's §8.7 *checked three ways*: ids ✅, the pin ✅, grants → OC-7).
 - [x] OC-4 · the *App* copy — 2026-10-09, shown first and approved as drawn (nine strings; the glossary's App row).
 - [ ] OC-4 · the falsifier — the census in the weeks after the cockpit is in use; if it does not move, the surface was not the bottleneck.
+- [x] OC-4 · a process says how an object leaves it — 2026-10-09, found on theLook's live receipt: of 43,777 orders the dispatch promise counted *open and overdue*, 18,726 were Cancelled. `Process.leaves` (a property and the values that mean gone), declared by a person and measured (who left, a value no object holds, who holds none); a promise's open, open-and-overdue and `overdue_<noun>` leave them out. The user: *"A process declares how objects leave it"*.
 - [ ] Adjacent, not fixed: on a connection whose configured schema differs from the one its ontology was built under (the scratch fixture: `main` vs `default`), the declare doors write under the configured name while every read falls back to the built graph — a declaration from the screen there reads back as a 500.
 - [ ] OC-3 to OC-9 — §3.56's table; D4–D7 close in OC-6.
 

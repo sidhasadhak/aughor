@@ -43,13 +43,23 @@ from aughor.ontology.derived import (
     rate_name,
     rows_of,
 )
-from aughor.ontology.models import PROCESS_NAME_PATTERN, OntologyEntity, OntologyGraph, Process, ProcessStage, Promise
+from aughor.ontology.models import (
+    PROCESS_NAME_PATTERN,
+    OntologyEntity,
+    OntologyGraph,
+    Process,
+    ProcessExit,
+    ProcessStage,
+    Promise,
+)
 
 logger = logging.getLogger(__name__)
 
 ORIGINS = ("human", "model", "pack")
 _MAX_STAGES = 12
 _MAX_DAYS = 3650
+#: Arc OC-4 — the most values of one property a process's `leaves` names.
+_MAX_LEAVING_VALUES = 50
 _MAX_HOURS = 24 * _MAX_DAYS
 #: A per-day histogram wider than this is not a lag between two stages — it is a declaration read wrong.
 _MAX_LAG_VALUES = 20_000
@@ -153,6 +163,20 @@ def process_spec_problem(spec: Any) -> str:
         if noun in nouns:
             return f"two stages derive names from '{noun}' — name a promise (`promise.name`) differently"
         nouns.add(noun)
+    return _leaves_problem(spec.get("leaves"))
+
+
+def _leaves_problem(leaves: Any) -> str:
+    """Why a process's `leaves` cannot be declared as written, or ""."""
+    if leaves is None:
+        return ""
+    if not isinstance(leaves, dict) or not PATH_PATTERN.match(str(leaves.get("property") or "")):
+        return ("`leaves` names how an object leaves the process: `property` (a property path) and `values` — "
+                "{\"property\": \"status\", \"values\": [\"Cancelled\"]}")
+    values = leaves.get("values")
+    if not isinstance(values, list) or not 1 <= len(values) <= _MAX_LEAVING_VALUES \
+            or not all(isinstance(v, str) and v.strip() for v in values):
+        return f"`leaves` holds from 1 to {_MAX_LEAVING_VALUES} values of {leaves['property']}, each written as the data writes it"
     return ""
 
 
@@ -189,6 +213,9 @@ def process_fields(spec: dict) -> dict:
     for key in ("display_name", "description", "owner", "provenance"):
         if str(spec.get(key) or "").strip():
             out[key] = str(spec[key]).strip()
+    if spec.get("leaves"):
+        out["leaves"] = {"property": str(spec["leaves"]["property"]).strip(),
+                         "values": [str(v).strip() for v in spec["leaves"]["values"]]}
     return out
 
 
@@ -201,7 +228,8 @@ def process_from_fields(process_id: str, fields: dict) -> Process:
     return Process(id=process_id, display_name=fields.get("display_name") or process_id.replace("_", " ").capitalize(),
                    description=fields.get("description") or "", entity=fields["entity"], stages=stages,
                    owner=fields.get("owner") or "", origin=fields.get("origin") or "human",
-                   provenance=fields.get("provenance") or "")
+                   provenance=fields.get("provenance") or "",
+                   leaves=ProcessExit(**fields["leaves"]) if fields.get("leaves") else None)
 
 
 # ── the declaration against the graph ───────────────────────────────────────────────────────
@@ -328,6 +356,15 @@ def resolve_process(graph: OntologyGraph, process_id: str, fields: dict) -> tupl
         if problem:
             return f"the {noun} promise is kept per {grain.id}: {problem}", fields
         promise["grain"], promise["via"] = grain.id, via
+    leaves = out.get("leaves")
+    if leaves:
+        try:
+            _, prop, _ = property_at(graph, entity.api_name, leaves["property"], purpose="`leaves`")
+        except ObjectQueryRefused as exc:
+            return f"how an object leaves the process: {exc.reason}", fields
+        if is_temporal(prop):
+            return (f"how an object leaves the process: {leaves['property']} is a moment — `leaves` reads a state "
+                    "(status is Cancelled)"), fields
     problem = _name_problem(graph, process_from_fields(process_id, out))
     return problem, (fields if problem else out)
 
@@ -611,9 +648,18 @@ def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict
                 {"name": f"early_{i}", "agg": "count", "where": [{"path": stage.timestamp, "op": "<",
                                                                    "value_path": previous.timestamp}]},
             ]
+    leaves = process.leaves
+    if leaves is not None:
+        measures.append({"name": "left", "agg": "count",
+                         "where": [{"path": leaves.property, "op": "in", "values": list(leaves.values)}]})
+        measures.append({"name": "unknown", "agg": "count", "where": [{"path": leaves.property, "op": "is_null"}]})
+        measures += [{"name": f"left_{j}", "agg": "count", "where": [{"path": leaves.property, "op": "=", "value": v}]}
+                     for j, v in enumerate(leaves.values)]
     counts = counter.one(entity.api_name, measures)
     measured = process.model_copy(deep=True)
     measured.objects = cell_int(counts.get("objects")) or 0
+    if measured.leaves is not None:
+        _measure_leaving(measured.leaves, counts, entity.id)
     for i, stage in enumerate(measured.stages):
         previous = measured.stages[i - 1] if i else None
         stage.reached = cell_int(counts.get(f"reached_{i}")) or 0
@@ -657,18 +703,34 @@ def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict
     return measured
 
 
+def _measure_leaving(leaves: ProcessExit, counts: dict, entity: str) -> None:
+    leaves.left = cell_int(counts.get("left")) or 0
+    leaves.unknown = cell_int(counts.get("unknown")) or 0
+    leaves.missing = [v for j, v in enumerate(leaves.values) if not cell_int(counts.get(f"left_{j}"))]
+    leaves.note = (f"{leaves.left:,} {entity} objects left the process ({leaves.property} is "
+                   f"{' or '.join(leaves.values)}); they are no longer open or overdue")
+    if leaves.missing:
+        leaves.note += f"; no object holds {', '.join(leaves.missing)} — check the spelling the data uses"
+    if leaves.unknown:
+        leaves.note += (f"; {leaves.unknown:,} hold no {leaves.property}, so whether they left is not known — the open "
+                        "counts leave them out")
+
+
 # ── the override file ───────────────────────────────────────────────────────────────────────
 
 
 def substance(fields: dict) -> dict:
     """What a measurement is OF: the type and the stages. Renaming the process, describing it, naming its owner or
     confirming a model's proposal changes none of it, so the measurement stands."""
-    return {"entity": fields.get("entity"), "stages": fields.get("stages")}
+    return {"entity": fields.get("entity"), "stages": fields.get("stages"),
+            **({"leaves": fields["leaves"]} if fields.get("leaves") else {})}
 
 
 def process_entry(fields: dict, measured: Process) -> dict:
-    return {"bound": True, "note": measured.note, "substance": substance(fields),
-            "measured": measured.model_dump(mode="json")}
+    dumped = measured.model_dump(mode="json")
+    if dumped.get("leaves") is None:
+        dumped.pop("leaves", None)          # Arc OC-4: a process no object leaves is stored exactly as before
+    return {"bound": True, "note": measured.note, "substance": substance(fields), "measured": dumped}
 
 
 def declared_process(ov, graph: Optional[OntologyGraph]) -> Optional[Process]:
@@ -795,7 +857,8 @@ def describe_process(graph: OntologyGraph, process: Process) -> dict:
             "entity": entity.api_name if entity is not None else process.entity, "entity_id": process.entity,
             "owner": process.owner, "origin": process.origin, "provenance": process.provenance,
             "objects": process.objects, "verified": process.verified, "note": process.note,
-            "measured_at": process.measured_at, "stages": stages, "derived": rows_of(process_derivations(process))}
+            "measured_at": process.measured_at, "stages": stages, "derived": rows_of(process_derivations(process)),
+            **({"leaves": process.leaves.model_dump()} if process.leaves is not None else {})}
 
 
 def processes_of(graph: OntologyGraph, entity: OntologyEntity) -> list[dict]:

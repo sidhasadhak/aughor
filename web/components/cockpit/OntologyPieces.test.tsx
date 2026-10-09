@@ -130,6 +130,14 @@ describe("a late dispatch cockpit (Arc OC-4)", () => {
     expect(screen.getAllByTestId("object-table-row").every(r => !r.textContent?.includes("yes"))).toBe(true);
   });
 
+  it("a board says how many left the process, and that they are not counted open", async () => {
+    types.getProcesses.mockResolvedValue({ processes: [{ ...PROCESS, leaves: { property: "status", values: ["Cancelled"],
+      left: 18726, missing: [], unknown: 0, note: "" } }], rules: [] });
+    draw();
+    expect((await screen.findByTestId("process-leaves")).textContent)
+      .toContain("18,726 left the process when status is Cancelled — they are not open, and never overdue");
+  });
+
   it("a process the connection does not declare is said where the board stands", async () => {
     types.getProcesses.mockResolvedValue({ processes: [], rules: [] });
     draw();
