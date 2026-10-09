@@ -62,10 +62,22 @@ def _ledger():
 
 # ── from the Trust Receipt ─────────────────────────────────────────────────────────────────
 
+def _about(connection_id: str, about: Optional[dict]) -> "_claims.About":
+    """Arc OC-3 — what the claim is about: the frame's segment or entity when the run had one, else its connection."""
+    if about and about.get("kind") in ("segment", "type", "object") and about.get("key"):
+        return _claims.About(kind=about["kind"], key=str(about["key"]))
+    return _claims.About(kind="connection", key=connection_id)
+
+
+def _object_set(about: Optional[dict]) -> str:
+    about = about or {}
+    return str(about.get("object_set") or (about.get("key") if about.get("kind") == "segment" else "") or "")
+
+
 def book_answer_observation(*, kind: str, natural_key: str, receipt_id: str, connection_id: str,
                             question: str, headline: str, sql: str,
                             metrics_used: Optional[list[str]] = None, agent: Optional[dict] = None,
-                            canvas_id: str = "") -> Optional[str]:
+                            canvas_id: str = "", about: Optional[dict] = None) -> Optional[str]:
     """Book the answer's headline as an observation at tier ``measured``, warranted by its receipt.
     Returns the claim's artifact id, or None when there is nothing to book: no receipt, no query
     behind the headline, or a headline that concluded nothing (the caller passes "" then — the
@@ -95,8 +107,10 @@ def book_answer_observation(*, kind: str, natural_key: str, receipt_id: str, con
             tolerate(exc, "the claim's falsifier could not be read; the claim books without it", counter="record.falsifier")
     claim = _claims.Claim(
         kind="observation", tier="measured",
-        about=_claims.About(kind="connection", key=connection_id),
-        statement=_claims.Statement(text=headline[:1000], metric=(metrics_used or [""])[0] or ""),
+        about=_about(connection_id, about),
+        statement=_claims.Statement(text=headline[:1000],
+                                    metric=(metrics_used or [""])[0] or str((about or {}).get("metric") or ""),
+                                    object_set=_object_set(about)),
         status="Provisional", as_of=_today(),
         warrants=[_claims.Warrant(kind="run", ref=receipt_id, detail=sql[:400])],
         falsifier=falsifier, next_check=next_check,
@@ -109,7 +123,7 @@ def book_answer_observation(*, kind: str, natural_key: str, receipt_id: str, con
 
 
 def book_deep_findings(*, investigation_id: str, connection_id: str, receipt_id: str,
-                       agent: Optional[dict] = None) -> list[str]:
+                       agent: Optional[dict] = None, about: Optional[dict] = None) -> list[str]:
     """Book a deep analysis's findings from the evidence ledger it filled: a finding with its own
     query is ``measured`` on the report's receipt; one without is a ``hypothesis`` at tier
     ``said``, open. Returns the artifact ids booked (restated when the same finding was booked
@@ -124,8 +138,10 @@ def book_deep_findings(*, investigation_id: str, connection_id: str, receipt_id:
         if not text:
             continue
         common: dict[str, Any] = dict(
-            about=_claims.About(kind="connection", key=connection_id),
-            statement=_claims.Statement(text=text[:1000], metric=ev.metric_used or ""),
+            about=_about(connection_id, about),
+            statement=_claims.Statement(text=text[:1000],
+                                        metric=ev.metric_used or str((about or {}).get("metric") or ""),
+                                        object_set=_object_set(about)),
             status="Provisional", as_of=(ev.data_freshness or ev.created_at or "")[:10] or _today(),
             author=author, author_kind=author_kind,
             extra={"investigation_id": investigation_id, "evidence_claim_id": ev.id,
@@ -152,17 +168,29 @@ def book_from_receipt(*, kind: str, natural_key: str, receipt_id: Optional[str],
     out: dict[str, Any] = {"observation": None, "findings": []}
     if not receipt_id:
         return out
+    extra = payload_extra or {}
+    # Arc OC-3 — the subject the run's frame gave it (`framing.frame_about`), while `ontology.release` is on
+    about = _frame_subject(extra)
     out["observation"] = book_answer_observation(
         kind=kind, natural_key=natural_key, receipt_id=receipt_id, connection_id=connection_id,
         question=question, headline=headline, sql=sql, metrics_used=metrics_used, agent=agent,
-        canvas_id=canvas_id)
+        canvas_id=canvas_id, about=about)
     from aughor.kernel.ledger import DEEP_REPORT_KIND
-    extra = payload_extra or {}
     if kind == DEEP_REPORT_KIND and extra.get("investigation_id") and not extra.get("partial"):
         out["findings"] = book_deep_findings(investigation_id=str(extra["investigation_id"]),
                                              connection_id=connection_id, receipt_id=receipt_id,
-                                             agent=agent)
+                                             agent=agent, about=about)
     return out
+
+
+def _frame_subject(extra: dict) -> Optional[dict]:
+    """The `about` a receipt's caller derived from its run's frame, honoured only while `ontology.release` is on — off,
+    every claim is about its connection exactly as before."""
+    about = extra.get("about")
+    if not isinstance(about, dict) or not about:
+        return None
+    from aughor.kernel.flags import flag_enabled
+    return about if flag_enabled("ontology.release") else None
 
 
 # ── from the daily re-check ───────────────────────────────────────────────────────────────

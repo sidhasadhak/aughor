@@ -1116,6 +1116,32 @@ def _frame_compiled(graph: OntologyGraph, frame: Frame, dialect: str, metrics: I
                                                         "measures": [{"name": r.id, "agg": "count"}]}, dialect)
 
 
+def frame_about(frame: Any) -> dict:
+    """Arc OC-3 — what a run's claims are about, read from its frame (a `Frame` or its dump): the segment a promise or a
+    rule derives, or the entity a lag or a keyed metric starts from, with the rule set the number was computed over and
+    the metric. {} when the frame defines nothing — the claim stays about its connection, as before."""
+    data = frame.model_dump(mode="json") if hasattr(frame, "model_dump") else dict(frame or {})
+    outcomes, chosen = data.get("outcomes") or [], data.get("chosen")
+    o = outcomes[chosen] if isinstance(chosen, int) and 0 <= chosen < len(outcomes) else None
+    rules = [r.get("id") for r in data.get("rules") or [] if r.get("usable") and r.get("id")]
+    if o is not None and o.get("kind") in ("promise", "rule") and o.get("segment"):
+        about = {"kind": "segment", "key": o["segment"]}
+    elif o is not None and o.get("entity"):
+        about = {"kind": "type", "key": o["entity"]}
+    elif o is None and rules:
+        about = {"kind": "segment", "key": rules[0]}
+    elif (data.get("start") or {}).get("entity") and (rules or data.get("moments")):
+        about = {"kind": "type", "key": data["start"]["entity"]}
+    else:
+        return {}
+    over = [r for r in rules if r != about["key"]]
+    if over:
+        about["object_set"] = over[0]
+    if o is not None and o.get("kind") in ("promise", "metric") and o.get("metric"):
+        about["metric"] = o["metric"]
+    return about
+
+
 # ── reading it ──────────────────────────────────────────────────────────────────────────────
 
 
