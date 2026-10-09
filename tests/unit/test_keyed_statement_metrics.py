@@ -42,7 +42,12 @@ def graph():
 
 
 def _run(db, query: dict, graph, metrics=(LINE_REVENUE, BIG_LINES)):
-    return rows(db, compile_object_query(query, graph, metrics=list(metrics)).sql)
+    out = rows(db, compile_object_query(query, graph, metrics=list(metrics)).sql)
+    if not query.get("by") and not query.get("grain"):
+        # An ungrouped read is ONE row. Every test here read only the first, and a keyed metric came back once per
+        # object — the value a thousand times over on theLook's live receipt (2026-10-09) — while all stayed green.
+        assert len(out) == 1, f"an ungrouped read is one row, not {len(out)}"
+    return out
 
 
 def _one(db, sql: str):
@@ -50,7 +55,7 @@ def _one(db, sql: str):
 
 
 def test_over_every_object_the_figure_is_the_statements_own(db, graph):
-    (got,) = _run(db, {"object_type": "order_item", "measures": [{"metric": "line_revenue"}]}, graph)[0:1]
+    (got,) = _run(db, {"object_type": "order_item", "measures": [{"metric": "line_revenue"}]}, graph)
     assert got[0] == _one(db, LINE_REVENUE.sql)
 
 

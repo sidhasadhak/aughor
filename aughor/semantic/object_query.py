@@ -2254,6 +2254,11 @@ class _Compiler:
                                                  f"readings of {r.binding.name}, pre-aggregated") if r.far
                              else r.join_sql())
         where_sql = (" WHERE " + " AND ".join(f"({w})" for w in where)) if where else ""
+        # A keyed metric is a whole statement, one value, read over the objects through its keyset. When every column
+        # the query asks for is one, nothing is read per object, so the query reads no rows of its own: it was one row
+        # per object before (2026-10-09, theLook's live receipt — the value a thousand times over).
+        standalone = bool(self._statements) and not grouped and not self._period_specs and all(
+            any(token in item for token in self._statements) for item in select)
         if self._statements:
             if self.far:
                 raise ObjectQueryRefused("a keyed metric reads its own connection's statement — it is not read across "
@@ -2263,7 +2268,8 @@ class _Compiler:
                 statement = self.keyed_statement(metric, anchor, key, keyset)
                 select = [item.replace(token, f"({statement})") for item in select]
         periods = self.period_joins(source, where_sql, keys) if self._period_specs else ""
-        sql = f"SELECT {', '.join(select)} FROM {source}{periods}{where_sql}"
+        sql = (f"SELECT {', '.join(select)}" if standalone
+               else f"SELECT {', '.join(select)} FROM {source}{periods}{where_sql}")
         if grouped:
             sql += " GROUP BY " + ", ".join(str(i + 1) for i in range(grouped))
         order = self.order(names, grouped)
