@@ -10897,6 +10897,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/declared-actions/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Declared Action
+         * @description Read a draft action as declaring it would read it (the same checks — 400 and 422 with the reason, 409 for an id
+         *     taken) and say what it would offer (`ontology.action_design.preview`): how many objects allow a press now, over all
+         *     and over each segment named, and one press dry-run on a real object by the executor's own rules — the marks it
+         *     would set, the call it would make. NOTHING is written, dispatched or approved: the usability walk-through of
+         *     2026-10-09 found the declare form could say none of this before declaring. No model call.
+         */
+        post: operations["preview_declared_action_ontology_declared_actions_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/dependents": {
         parameters: {
             query?: never;
@@ -11620,7 +11644,8 @@ export interface paths {
          * Get Ontology Keys
          * @description Arc OC-3 — how this scope's meaning is keyed to its ontology (ROADMAP §3.56): each metric with the entity a
          *     person confirmed it measures, the entity its grain proposes and why — never stored until confirmed through
-         *     `PUT /metrics/{name}/entity`. Read-only; no model and no warehouse.
+         *     `PUT /metrics/{name}/entity`; and each vocabulary entry that names a table, a column, an entity or a property,
+         *     keyed or with the key it is proposed (`PUT /ontology/vocabulary/key`). Read-only; no model and no warehouse.
          */
         get: operations["get_ontology_keys_ontology_keys_get"];
         put?: never;
@@ -12337,6 +12362,29 @@ export interface paths {
          * @description Increment a learned skill's usage_count (feeds per-skill autonomy).
          */
         post: operations["use_learned_skill_ontology_skills__action_id__use_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/vocabulary/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Key Vocabulary Entry
+         * @description Arc OC-3 — a person keys a word people use to the entity or property it names (`GET /ontology/keys` proposes
+         *     one for each table and column entry). The entry is kept as the person's own (``human``), named in the ontology's
+         *     ids, and read as the table and column it comes from wherever the readers need them; the table or column entry it
+         *     replaces goes. The target must be one this scope serves now — a key nothing reads is refused, not stored.
+         */
+        put: operations["key_vocabulary_entry_ontology_vocabulary_key_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -20510,6 +20558,22 @@ export interface components {
             /** Sql Template */
             sql_template?: string | null;
         };
+        /**
+         * _ActionPreview
+         * @description A draft action for the designer to read: its id, the declaration as the declare door takes it, the segments a
+         *     cockpit lists it beside, and the person's own example of what a press is given (``{"reason": "Missed pickup"}``).
+         */
+        _ActionPreview: {
+            action: components["schemas"]["_DeclaredActionBody"];
+            /** Id */
+            id: string;
+            /** Said */
+            said?: {
+                [key: string]: string;
+            };
+            /** Segments */
+            segments?: string[];
+        };
         /** _AgentPolicyBody */
         _AgentPolicyBody: {
             /** Connections */
@@ -20807,6 +20871,46 @@ export interface components {
             model: string;
         };
         /**
+         * _DeclaredActionBody
+         * @description Wave K5 — author a DECLARED KineticAction (distinct from the read-side _ActionOverride).
+         */
+        _DeclaredActionBody: {
+            /** Description */
+            description?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Edits */
+            edits?: unknown[] | null;
+            /** Entity */
+            entity?: string | null;
+            /** Kind */
+            kind?: string | null;
+            /** Object Type */
+            object_type?: string | null;
+            /** Origin */
+            origin?: string | null;
+            /** Params */
+            params?: unknown[] | null;
+            /** Reversibility */
+            reversibility?: string | null;
+            /** Risk */
+            risk?: string | null;
+            /** Rule */
+            rule?: string | null;
+            /** Side Effects */
+            side_effects?: unknown[] | null;
+            /** Submission Criteria */
+            submission_criteria?: unknown[] | null;
+            /** Undo */
+            undo?: {
+                [key: string]: unknown;
+            } | null;
+            /** Verification */
+            verification?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
          * _DeclaredBacking
          * @description ON-7 — the source whose rows ARE a declared type's objects.
          */
@@ -21075,46 +21179,6 @@ export interface components {
             hops?: number | null;
             /** Question */
             question: string;
-        };
-        /**
-         * _KineticActionBody
-         * @description Wave K5 — author a DECLARED KineticAction (distinct from the read-side _ActionOverride).
-         */
-        _KineticActionBody: {
-            /** Description */
-            description?: string | null;
-            /** Display Name */
-            display_name?: string | null;
-            /** Edits */
-            edits?: unknown[] | null;
-            /** Entity */
-            entity?: string | null;
-            /** Kind */
-            kind?: string | null;
-            /** Object Type */
-            object_type?: string | null;
-            /** Origin */
-            origin?: string | null;
-            /** Params */
-            params?: unknown[] | null;
-            /** Reversibility */
-            reversibility?: string | null;
-            /** Risk */
-            risk?: string | null;
-            /** Rule */
-            rule?: string | null;
-            /** Side Effects */
-            side_effects?: unknown[] | null;
-            /** Submission Criteria */
-            submission_criteria?: unknown[] | null;
-            /** Undo */
-            undo?: {
-                [key: string]: unknown;
-            } | null;
-            /** Verification */
-            verification?: {
-                [key: string]: unknown;
-            } | null;
         };
         /**
          * _LinkName
@@ -21749,6 +21813,25 @@ export interface components {
             scope: string;
             /** Table */
             table: string;
+        };
+        /**
+         * _VocabularyKey
+         * @description One vocabulary entry, as it is stored, and the entity (``Order``) or property (``Order.status``) it names.
+         */
+        _VocabularyKey: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "entity" | "property";
+            /** Subject */
+            subject: string;
+            /** Subject Id */
+            subject_id: string;
+            /** Subject Kind */
+            subject_kind: string;
+            /** Synonym */
+            synonym: string;
         };
         /**
          * LayoutRequest
@@ -40412,6 +40495,42 @@ export interface operations {
             };
         };
     };
+    preview_declared_action_ontology_declared_actions_preview_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_ActionPreview"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_declaration_dependents_ontology_dependents_get: {
         parameters: {
             query: {
@@ -41758,7 +41877,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["_KineticActionBody"];
+                "application/json": components["schemas"]["_DeclaredActionBody"];
             };
         };
         responses: {
@@ -42895,6 +43014,42 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    key_vocabulary_entry_ontology_vocabulary_key_put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_VocabularyKey"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

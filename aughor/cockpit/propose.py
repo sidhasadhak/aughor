@@ -42,6 +42,8 @@ from aughor.cockpit import cards as _cards
 from aughor.cockpit import validate as _validate
 from aughor.cockpit import versions as _versions
 from aughor.cockpit.home import NOBODY_IN_PARTICULAR, Home, approver
+from aughor.cockpit.pieces import PIECES
+from aughor.cockpit.pieces import title_of as piece_title
 from aughor.kernel.errors import tolerate
 
 #: The inbox's kind for a cockpit proposal, and for a proposal to publish one (the canvas, B5).
@@ -416,6 +418,10 @@ def outline(spec: dict, titles: dict[str, str], new_ids: set[str],
             return {**line, "title": static_title(els[c]), "new": False, "tone": "", "static": "note"}
         if kind == "Image":
             return {**line, "title": static_title(els[c]), "new": False, "tone": "", "static": "image"}
+        # A piece bound to the ontology names no card. Read as one, every edit to Late dispatch raised
+        # KeyError('card') here, after it had passed every check (2026-10-09).
+        if kind in PIECES:
+            return {**line, "title": piece_title(kind, props), "new": False, "tone": "", "static": "piece"}
         return {**line, "title": titles.get(props["card"]) or props["card"], "new": props["card"] in new_ids,
                 "tone": props.get("tone") or ""}
 
@@ -461,6 +467,8 @@ def taken_off(before: Optional[dict], removed: list[str], titles: dict[str, str]
             title = titles.get(props.get("card")) or str(props.get("card") or key)
         elif kind in ("Note", "Image"):
             title = static_title(el)
+        elif kind in PIECES:
+            kind, title = "Piece", piece_title(kind, props)
         elif kind == "Tab":
             title = str(props.get("label") or key)
         elif kind == "Section":
@@ -490,7 +498,7 @@ def _replaced(before: dict, placed_after: set[str], removed: list[str], titles: 
         if card is not None and card not in placed_after and card not in told:
             told.add(card)
             keys.append(key)
-        elif el.get("type") in ("Tab", "Section", "Note", "Image") and key in removed:
+        elif el.get("type") in ("Tab", "Section", "Note", "Image", *PIECES) and key in removed:
             keys.append(key)
     return taken_off(before, keys, titles)
 

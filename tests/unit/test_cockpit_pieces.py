@@ -143,6 +143,44 @@ def test_an_edit_may_resize_or_take_off_a_piece_and_may_not_add_one_or_change_wh
     assert "never change what it reads" in " ".join(pieces.pieces_written(before, repointed, new=False))
 
 
+@needs_rules
+def test_an_edit_to_a_cockpit_holding_pieces_is_staged_and_names_each_piece_it_moves_or_takes_off(
+        volumes, monkeypatch, no_edits):  # noqa: F811
+    """Late dispatch, 2026-10-09, "add average order to delivery time": the model's repaired edits passed every check and
+    each raised KeyError('card') writing the outline, which read every element not a note or an image as a card. The
+    person was shown the first refusal and never the edit. The test above read the draft path's source; this runs it."""
+    tag = uuid.uuid4().hex[:6]
+    home = Home(f"conn{tag}", ME, f"late-{tag}")
+    rate, net = f"rate{tag}", f"net{tag}"
+    for cid, title in ((rate, "Return rate"), (net, "Net revenue")):
+        cards.place(home, DashboardCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
+    spec = _with_pieces(json.loads(FIXTURE.read_text().replace("c7f3a001", rate).replace("c91b2002", net)))
+    graph = _graph()
+    monkeypatch.setattr(pieces, "_graph", lambda conn: graph)
+    _flag(monkeypatch, True)
+    assert versions.keep(home, spec, approved_by="user:amit", source="a person's own hand", written_by_model=False).kept
+    at = spec["elements"]["sec-headline"]["children"].index("board")
+    out = propose.draft(home, mode=propose.MODE_EDIT, patches=[
+        {"op": "add", "path": "/elements/table/props/size", "value": "large"},
+        {"op": "remove", "path": f"/elements/sec-headline/children/{at}"},
+        {"op": "remove", "path": "/elements/board"},
+    ])
+    assert out.staged, out.refusals
+    detail = out.proposal.detail
+    lines = {c["title"]: c for t in detail["outline"] for s in t["sections"] for c in s["cards"]}
+    table = lines["Objects table · order"]
+    assert (table["change"], table["static"], table["size"]) == ("changed", "piece", "large")
+    assert lines["Object detail"]["static"] == "piece" and lines["Net revenue"].get("static") is None
+    assert detail["taken_off"] == [{"what": "piece", "title": "Process board · order fulfilment", "from": "Headline"}]
+
+
+def test_a_new_cockpit_names_each_piece_it_takes_off_the_one_that_stands():
+    before = _with_pieces(json.loads(FIXTURE.read_text()))
+    gone = propose._replaced(before, {"c7f3a001", "c91b2002"}, ["board", "table", "detail", "flag"], {})
+    assert [g["title"] for g in gone if g["what"] == "piece"] == [
+        "Process board · order fulfilment", "Objects table · order", "Object detail", "Action button · flag for review"]
+
+
 def test_the_draft_path_reads_the_pieces_law():
     import inspect
     assert "pieces_written(" in inspect.getsource(propose)      # wired beside the note-and-image law, for both modes

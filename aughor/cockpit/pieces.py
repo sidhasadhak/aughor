@@ -20,6 +20,14 @@ _WORDS = {"ProcessBoard": "process board", "ObjectTable": "objects table", "Obje
           "ActionButton": "action button"}
 
 
+def title_of(kind: str, props: dict) -> str:
+    """A piece as a person approving an edit reads it, by what it names: "Process board · order fulfilment"."""
+    named = {"ProcessBoard": props.get("process"), "ActionButton": props.get("action"),
+             "ObjectTable": ", ".join(str(v) for v in (props.get("entity"), props.get("segment")) if v)}.get(kind)
+    words = _WORDS.get(kind, kind).capitalize()
+    return f"{words} · {str(named).replace('_', ' ')}" if named else words
+
+
 def pieces_of(spec: Any) -> dict[str, tuple[str, dict]]:
     """Each ontology piece a spec holds, by element key: ``(type, props)``."""
     elements = spec.get("elements") if isinstance(spec, dict) else None

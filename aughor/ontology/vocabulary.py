@@ -52,8 +52,10 @@ SOURCE_RANKS: tuple[str, ...] = ("human", "mined", "pack", "llm_candidate")
 #: by re-adding it as ``human``.
 PACK_SOURCE = "pack"
 
-#: What a synonym can be attached to.
-SUBJECT_KINDS: tuple[str, ...] = ("table", "column", "metric", "term")
+#: What a synonym can be attached to. ``entity`` and ``property`` (Arc OC-3, 2026-10-09) name the ontology's own ids —
+#: `Order`, `Order.status` — and are read as the table and column they come from at the moment they are read
+#: (`ontology.keys.subject_columns`), so a re-pointed binding moves the entry with it.
+SUBJECT_KINDS: tuple[str, ...] = ("table", "column", "metric", "term", "entity", "property")
 
 #: Declared display formats (O1c). Small and closed: a format nobody can render is a
 #: format that silently does nothing, and S2 has to implement each one.
@@ -222,6 +224,28 @@ def synonyms_for(connection_id: str, *, subject_kind: Optional[str] = None) -> l
 _SYNONYM_BLOCK_CAP = 24
 
 
+def connections_with_synonyms() -> list[str]:
+    """Every connection this store holds a vocabulary for — what the census counts across."""
+    root = _root()
+    if not root.exists():
+        return []
+    return sorted(p.stem for p in root.glob("*.yaml"))
+
+
+def _served_graph(connection_id: str):
+    """The ontology this connection serves, read from the cache — never built here (a read never builds)."""
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        return load_latest_ontology(connection_id, None)
+    except Exception:  # noqa: BLE001 — an unread graph leaves an entity entry said in its own words
+        return None
+
+
+def _reads(s: Synonym, graph) -> Optional[tuple[str, str]]:
+    from aughor.ontology.keys import subject_columns
+    return subject_columns(graph, s.subject_kind, s.subject_id)
+
+
 def build_synonyms_block(connection_id: str, *, cap: int = _SYNONYM_BLOCK_CAP) -> str:
     """HUMAN-tier synonyms as a prompt section — the Snowflake-study lever this
     store was missing: synonyms widened schema-linker retrieval but never reached
@@ -234,10 +258,15 @@ def build_synonyms_block(connection_id: str, *, cap: int = _SYNONYM_BLOCK_CAP) -
     humans = [s for s in synonyms_for(connection_id) if s.source == "human"][:max(1, cap)]
     if not humans:
         return ""
+    graph = _served_graph(connection_id) if any(s.subject_kind in ("entity", "property") for s in humans) else None
     lines = ["BUSINESS SYNONYMS (human-curated; treat each as an exact alias when "
              "reading the question and when labelling results):"]
     for s in humans:
         subject = f"{s.subject_kind} {s.subject_id}".strip()
+        # An entry keyed to the ontology says what it names AND where that is read from, since the writer writes SQL.
+        reads = _reads(s, graph) if s.subject_kind in ("entity", "property") else None
+        if reads:
+            subject += f" (table {reads[0]})" if s.subject_kind == "entity" else f" (column {reads[0]}.{reads[1]})"
         lines.append(f'- "{s.synonym}" means {subject}'
                      + (f" — {s.note}" if s.note else ""))
     lines.append("")
@@ -254,13 +283,24 @@ def synonym_expansion(connection_id: str) -> dict[str, set[str]]:
     """
     best: dict[str, int] = {}
     out: dict[str, set[str]] = {}
-    for s in synonyms_for(connection_id):          # already strongest-first
+    rows = synonyms_for(connection_id)
+    graph = _served_graph(connection_id) if any(s.subject_kind in ("entity", "property") for s in rows) else None
+    for s in rows:                                 # already strongest-first
+        # The linker matches table and column names: an entry keyed to an entity or a property hands it the table and
+        # column it is read from now; one the graph cannot place is left out rather than handed a name nothing matches.
+        if s.subject_kind in ("entity", "property"):
+            reads = _reads(s, graph)
+            ids = {x for x in (reads or ()) if x}
+            if not ids:
+                continue
+        else:
+            ids = {s.subject_id}
         rank = best.get(s.synonym)
         if rank is None:
             best[s.synonym] = s.rank
-            out[s.synonym] = {s.subject_id}
+            out[s.synonym] = set(ids)
         elif s.rank == rank:
-            out[s.synonym].add(s.subject_id)
+            out[s.synonym] |= ids
         # a weaker source for a term already claimed is ignored
     return out
 

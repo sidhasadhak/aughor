@@ -59,14 +59,27 @@ def _now() -> str:
 
 # ── the declaration ────────────────────────────────────────────────────────────────────────
 
+def platform_performed(action) -> bool:
+    """True when every effect of a side-effect action is one the platform performs and records itself: a message to a
+    destination saved in Notifications (its delivery log) or an investigation (its accepted job). Its proof is that
+    record, not a SQL read — there is no table a message or an investigation lands in (2026-10-09, the user's call)."""
+    effects = list(getattr(action, "side_effects", None) or [])
+    return getattr(action, "kind", "") == "side_effect" and bool(effects) and all(
+        se.kind == "trigger_investigation" or (se.kind == "notify" and (se.config or {}).get("destination"))
+        for se in effects)
+
+
 def declaration_problem(action) -> str:
     """Why a declaration is incomplete, or "". A side-effect action needs a verification statement,
     and an undo unless it is declared irreversible by name; an ``annotate`` writes the platform's own
-    overlay, which is withdrawable (its undo is built in), and a ``query`` changes nothing."""
+    overlay, which is withdrawable (its undo is built in), and a ``query`` changes nothing. An action whose
+    every effect the platform performs (`platform_performed`) is verified by the platform's own record instead
+    of a statement — and still declares how it is taken back, or that it cannot be."""
     if getattr(action, "kind", "") != "side_effect":
         return ""
     verification = getattr(action, "verification", None)
-    if verification is None or not str(getattr(verification, "sql", "") or "").strip():
+    if not platform_performed(action) and (
+            verification is None or not str(getattr(verification, "sql", "") or "").strip()):
         return ("a side-effect action is declared with a verification statement — the read that proves "
                 "the change took effect; without one it cannot be declared")
     if getattr(action, "reversibility", "") == "irreversible":
@@ -84,11 +97,14 @@ def is_complete(action) -> bool:
 
 # ── the verification read ──────────────────────────────────────────────────────────────────
 
-def verify(action, params: dict, scope: str, *, run_sql=None) -> dict:
+def verify(action, params: dict, scope: str, *, run_sql=None, outcome: Optional[dict] = None) -> dict:
     """Run the declared verification read and say what it found: ``passed`` · ``failed`` ·
-    ``unavailable`` (the read could not run — recorded, not a failed change) · ``not_declared``."""
+    ``unavailable`` (the read could not run — recorded, not a failed change) · ``not_declared``. An action the
+    platform performs itself (`platform_performed`) is verified by its own record of each effect, from ``outcome``."""
     verification = getattr(action, "verification", None)
     if verification is None or not str(getattr(verification, "sql", "") or "").strip():
+        if platform_performed(action):
+            return _platform_record(outcome)
         return {"status": "not_declared", "why": "the action declares no verification statement"}
     from aughor.actions.executor import fill_template
     try:
@@ -114,6 +130,26 @@ def verify(action, params: dict, scope: str, *, run_sql=None) -> dict:
         first = str(rows[0][0]) if rows and rows[0] else ""
         ok, why = first == str(verification.value), (f"read {first!r}" + ("" if ok else f", expected {verification.value!r}"))
     return {"status": "passed" if ok else "failed", "sql": sql, "rows": n, "why": why}
+
+
+def _platform_record(outcome: Optional[dict]) -> dict:
+    """``passed`` when the platform recorded every effect it performed — each message delivered (its delivery log) and
+    each investigation accepted (its job) — else ``unavailable``: the effect may have happened, and is not called
+    failed on a missing record."""
+    effects = list((outcome or {}).get("side_effects") or [])
+    said = []
+    for effect in effects:
+        if effect.get("kind") == "notify" and effect.get("status") == "ok" and effect.get("log_id"):
+            said.append(f"delivered to {effect.get('destination_name') or effect.get('destination')} "
+                        f"(delivery {effect['log_id']})")
+        elif effect.get("kind") == "trigger_investigation" and (effect.get("job_id") or effect.get("investigation_id")):
+            said.append(f"the investigation was accepted (job {effect.get('job_id') or effect.get('investigation_id')})")
+        else:
+            return {"status": "unavailable", "basis": "platform_record",
+                    "why": f"the platform holds no record of its {effect.get('kind') or 'effect'}"}
+    if not said:
+        return {"status": "unavailable", "basis": "platform_record", "why": "the platform holds no record of the effect"}
+    return {"status": "passed", "basis": "platform_record", "why": "the platform's own record: " + "; ".join(said)}
 
 
 # ── the Action ledger entry ────────────────────────────────────────────────────────────────

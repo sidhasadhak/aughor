@@ -96,5 +96,5 @@ def test_the_door_serves_the_day_one_screen_with_its_gate(monkeypatch):
     monkeypatch.setattr(pc, "latest_profiled_tables", lambda c: ["shop.orders", "shop.returns"])
     out = R.get_onboarding(connection_id=conn, schema_name="shop", pack_id="core-ecommerce")
     assert out["gate"]["hours"] == 24 and out["hours"]["passed"] is None
-    assert out["coverage"]["tables"]["share"] == 0.5 and out["coverage"]["line"].startswith("sees 1 of 2 tables (50%)")
+    assert out["coverage"]["tables"]["share"] == 0.5 and out["coverage"]["line"].startswith("Reads 1 of your 2 tables")
     assert any(i["what"] == "a table for Return" for i in out["shopping_list"])

@@ -4,7 +4,8 @@
  * DeclaredActionsPanel — what Aughor may do on a connection (Aughor Intelligence · 07 Actions).
  *
  * Numbered sections beside a rail. §01 the declared actions — what each does, what it is about, and
- * its gate — with the form that declares one; §02 the overlay edits a person wrote over the data,
+ * its gate — with the door to the action designer (`ontology/ActionDesigner`), which replaced the declare form on
+ * 2026-10-09: the walk-through found that form a developer's, pre-filled with someone else's refund rule; §02 the overlay edits a person wrote over the data,
  * each withdrawable, with the form that annotates a value; §03 proposing actions from a finding. The
  * rail holds what is awaiting approval, with the doors that resolve it, and the permission model as
  * the code enforces it.
@@ -21,7 +22,9 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 
+import { ActionDesigner } from "@/components/ontology/ActionDesigner";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { ProposalCard } from "@/components/ProposalCard";
 import { SkeletonRows } from "@/components/ui/motion";
 import { toast } from "@/components/ui/toast";
@@ -29,11 +32,9 @@ import { getProposals, type StagedProposal } from "@/lib/api";
 import { claimsOf, getIdToken } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { countNoun, formatCount, formatTimestamp, relTime } from "@/lib/format";
-import { SelectField } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 
 async function apiFetch(path: string, opts?: RequestInit) {
   const res = await fetch(`${getApiBase()}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -43,7 +44,6 @@ async function apiFetch(path: string, opts?: RequestInit) {
   }
   return res.json();
 }
-const put = (p: string, b: unknown) => apiFetch(p, { method: "PUT", body: JSON.stringify(b) });
 const post = (p: string, b: unknown) => apiFetch(p, { method: "POST", body: JSON.stringify(b) });
 const del = (p: string) => apiFetch(p, { method: "DELETE" });
 
@@ -51,7 +51,6 @@ const del = (p: string) => apiFetch(p, { method: "DELETE" });
 const actorName = () => claimsOf(getIdToken())?.email || "human";
 
 const input: React.CSSProperties = { width: "100%", padding: "6px 8px", fontSize: 12, border: "1px solid var(--b0)", borderRadius: 6, background: "var(--bg-2)", color: "var(--t1)", marginBottom: 6, boxSizing: "border-box" };
-const hint: React.CSSProperties = { fontSize: 12, color: "var(--t3)", padding: "8px 0" };
 
 function Err({ e }: { e: string | null }) {
   return e ? <p className="aug-actions-err">{e}</p> : null;
@@ -98,260 +97,6 @@ function Section({ title, meta, children }: { title: string; meta?: string; chil
         {children}
       </div>
     </section>
-  );
-}
-
-// ── §01 · declaring an action ────────────────────────────────────────────────────
-
-function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; onSaved: () => void }) {
-  const [err, setErr] = useState<string | null>(null);
-  const [id, setId] = useState("");
-  const [kind, setKind] = useState("side_effect");
-  const [description, setDescription] = useState("");
-  const [risk, setRisk] = useState("high");
-  // PX-2 — params and criteria are typed ROWS, not JSON textareas. The crown-jewel
-  // governance plane had the least-designed authoring surface on the platform: two
-  // unlabeled JSON blobs. Both are lists of flat shapes, so rows are lossless.
-  // ON-4 — an action can be ABOUT an object type, take one of its objects as a parameter, and write a
-  // property onto it. All three were API-only until now: the panel listed them and could not declare one,
-  // so the only way to author `flag_order_for_review` was to PUT the override by hand.
-  const [objectType, setObjectType] = useState("");
-  const [params, setParams] = useState<
-    { name: string; kind: "value" | "object"; data_type: string; object_type: string; required: boolean }[]>(
-    [{ name: "amount_eur", kind: "value", data_type: "NUMERIC", object_type: "", required: true }]);
-  const [edits, setEdits] = useState<{ object: string; property: string; value: string; note: string }[]>([]);
-  const [criteria, setCriteria] = useState<{ expr: string; message: string }[]>(
-    [{ expr: "amount_eur <= 10000", message: "Refunds over EUR 10,000 need finance sign-off." }]);
-  // DS-13 — the declarative custom component: named fields rather than a JSON blob, so the call is
-  // described without writing anything executable.
-  const [httpUrl, setHttpUrl] = useState("");
-  const [httpMethod, setHttpMethod] = useState("POST");
-  const [httpAuthHeader, setHttpAuthHeader] = useState("");
-  const [httpSecret, setHttpSecret] = useState("");
-  const [httpHeaders, setHttpHeaders] = useState('{"Content-Type": "application/json"}');
-  const [httpBody, setHttpBody] = useState('{"summary": "{amount_eur}"}');
-  // Phase 4 of the 2027 study (§M) — the door refuses a side-effect action without the read that proves it
-  // took effect, and without an undo unless it is declared irreversible by name. The form sent none of the
-  // three, so every side-effect action declared here came back as a 422.
-  const [verifySql, setVerifySql] = useState("");
-  const [verifyExpects, setVerifyExpects] = useState("rows");
-  const [verifyValue, setVerifyValue] = useState("");
-  const [reversibility, setReversibility] = useState("");
-  const [undoAction, setUndoAction] = useState("");
-  const [undoHours, setUndoHours] = useState("");
-  const [undoParams, setUndoParams] = useState<{ name: string; value: string }[]>([]);
-
-  const save = async () => {
-    setErr(null);
-    try {
-      const body: any = { kind, description, risk };
-      if (objectType.trim()) body.object_type = objectType.trim();
-      const cleanParams = params.filter(p => p.name.trim());
-      if (cleanParams.length) body.params = cleanParams.map(p => p.kind === "object"
-        ? { name: p.name.trim(), kind: "object", object_type: p.object_type.trim(), required: p.required }
-        : { name: p.name.trim(), data_type: p.data_type, required: p.required });
-      // An edit names one of the object params above and the property it writes; `{param}` placeholders in
-      // the value or the note are filled from the proposal, the way a side effect's body is.
-      const cleanEdits = edits.filter(e => e.object.trim() && e.property.trim());
-      if (cleanEdits.length) body.edits = cleanEdits.map(e => ({
-        object: e.object.trim(), property: e.property.trim(), value: e.value.trim(), note: e.note.trim() }));
-      const cleanCriteria = criteria.filter(c => c.expr.trim());
-      if (cleanCriteria.length) body.submission_criteria = cleanCriteria.map(c => ({
-        expr: c.expr.trim(), message: c.message.trim() }));
-      if (kind === "side_effect" && httpUrl.trim()) {
-        const config: any = { url: httpUrl.trim(), method: httpMethod };
-        if (httpHeaders.trim()) config.headers = JSON.parse(httpHeaders);
-        if (httpBody.trim()) config.body = JSON.parse(httpBody);
-        if (httpAuthHeader.trim()) {
-          config.auth_header = httpAuthHeader.trim();
-          // Sent ONLY when the person typed one. Left empty, the server carries the
-          // stored credential forward — a form that posts back the mask it was showing
-          // would otherwise overwrite the key with bullets.
-          if (httpSecret.trim()) config.auth_secret = httpSecret.trim();
-        }
-        body.side_effects = [{ kind: "http", config }];
-      }
-      if (kind === "side_effect") {
-        if (verifySql.trim()) body.verification = verifyExpects === "value"
-          ? { sql: verifySql.trim(), expects: "value", value: verifyValue.trim() }
-          : { sql: verifySql.trim(), expects: verifyExpects };
-        if (reversibility) body.reversibility = reversibility;
-        // An irreversible action declares no undo; any other names the action that takes it back, and how this
-        // action's parameters fill the undo's (`{param}` templates, as the call's body is filled).
-        if (reversibility !== "irreversible" && undoAction.trim()) {
-          const mapped = undoParams.filter(u => u.name.trim());
-          body.undo = {
-            action_id: undoAction.trim(), window_hours: Number(undoHours) || 0,
-            ...(mapped.length ? { params: Object.fromEntries(mapped.map(u => [u.name.trim(), u.value.trim()])) } : {}),
-          };
-        }
-      }
-      await put(`/ontology/kinetic-actions/${encodeURIComponent(id)}?connection_id=${encodeURIComponent(connectionId)}`, body);
-      setId(""); setHttpSecret(""); onSaved();
-    } catch (e: any) { setErr(String(e.message || e)); }
-  };
-
-  return (
-    <div className="aug-actions-form">
-      <div className="aug-actions-form-title">Declare an action</div>
-      <Err e={err} />
-      <Input style={input} placeholder="action id (e.g. refund_order)" value={id} onChange={e => setId(e.target.value)} />
-      <div style={{ display: "flex", gap: 6 }}>
-        <SelectField style={{ ...input, flex: 1 }} value={kind} onChange={e => setKind(e.target.value)}>
-          <option value="side_effect">side_effect</option>
-          <option value="annotate">annotate</option>
-          <option value="query">query</option>
-        </SelectField>
-        <SelectField style={{ ...input, flex: 1 }} value={risk} onChange={e => setRisk(e.target.value)}>
-          <option value="high">high</option>
-          <option value="low">low</option>
-          <option value="read_only">read_only</option>
-        </SelectField>
-      </div>
-      <Input style={input} placeholder="description" value={description} onChange={e => setDescription(e.target.value)} />
-      <Input style={input} placeholder="entity this action is about (e.g. order) — optional"
-        value={objectType} onChange={e => setObjectType(e.target.value)} />
-      <label style={hint}>the parameters a proposal must fill — an object parameter names ONE object, read live</label>
-      {params.map((p, i) => (
-        <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <Input style={{ ...input, flex: 2 }} placeholder="name (e.g. amount_eur)"
-            value={p.name} onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-          <SelectField style={{ ...input, width: 90 }} value={p.kind}
-            onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, kind: e.target.value as "value" | "object" } : x))}>
-            <option value="value">value</option>
-            <option value="object">object</option>
-          </SelectField>
-          {p.kind === "object" ? (
-            <Input style={{ ...input, flex: 1 }} placeholder="entity (e.g. order)" value={p.object_type}
-              onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, object_type: e.target.value } : x))} />
-          ) : (
-            <SelectField style={{ ...input, flex: 1 }} value={p.data_type}
-              onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, data_type: e.target.value } : x))}>
-              {["TEXT", "NUMERIC", "INTEGER", "BOOLEAN", "DATE"].map(t => <option key={t} value={t}>{t}</option>)}
-            </SelectField>
-          )}
-          <label className="aug-fs-xs" style={{ color: "var(--t3)", display: "flex", alignItems: "center", gap: 4, marginBottom: 6, whiteSpace: "nowrap" }}>
-            <Checkbox checked={p.required}
-              onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, required: e.target.checked } : x))} />
-            required
-          </label>
-          <Button size="xs" variant="ghost" className="mb-1.5"
-            onClick={() => setParams(ps => ps.filter((_, j) => j !== i))}>✕</Button>
-        </div>
-      ))}
-      <Button size="xs" variant="ghost" className="mb-2"
-        onClick={() => setParams(ps => [...ps, { name: "", kind: "value", data_type: "TEXT", object_type: "", required: true }])}>
-        + Add a parameter
-      </Button>
-      <label style={hint}>what a proposal must satisfy — the message is shown verbatim when it fails</label>
-      {criteria.map((c, i) => (
-        <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <Input style={{ ...input, flex: 2 }} placeholder="amount_eur <= 10000"
-            value={c.expr} onChange={e => setCriteria(cs => cs.map((x, j) => j === i ? { ...x, expr: e.target.value } : x))} />
-          <Input style={{ ...input, flex: 3 }} placeholder="why — shown to the proposer on failure"
-            value={c.message} onChange={e => setCriteria(cs => cs.map((x, j) => j === i ? { ...x, message: e.target.value } : x))} />
-          <Button size="xs" variant="ghost" className="mb-1.5"
-            onClick={() => setCriteria(cs => cs.filter((_, j) => j !== i))}>✕</Button>
-        </div>
-      ))}
-      <Button size="xs" variant="ghost" className="mb-2"
-        onClick={() => setCriteria(cs => [...cs, { expr: "", message: "" }])}>
-        + Add a criterion
-      </Button>
-      <label style={hint}>
-        what an accepted proposal writes onto the object — an overlay merged at read time, never the source
-      </label>
-      {edits.map((e, i) => (
-        <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <Input style={{ ...input, flex: 1 }} placeholder="object param (e.g. order)" value={e.object}
-            onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, object: ev.target.value } : x))} />
-          <Input style={{ ...input, flex: 1 }} placeholder="property (e.g. review_flag)" value={e.property}
-            onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, property: ev.target.value } : x))} />
-          <Input style={{ ...input, flex: 1 }} placeholder="value (e.g. true)" value={e.value}
-            onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, value: ev.target.value } : x))} />
-          <Input style={{ ...input, flex: 2 }} placeholder="note — {param} is filled from the proposal" value={e.note}
-            onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, note: ev.target.value } : x))} />
-          <Button size="xs" variant="ghost" className="mb-1.5"
-            onClick={() => setEdits(es => es.filter((_, j) => j !== i))}>✕</Button>
-        </div>
-      ))}
-      <Button size="xs" variant="ghost" className="mb-2"
-        onClick={() => setEdits(es => [...es, { object: "", property: "", value: "true", note: "" }])}>
-        + Add an edit
-      </Button>
-      {kind === "side_effect" && (
-        <>
-          <label style={hint}>the call this action makes — described, never coded</label>
-          <div style={{ display: "flex", gap: 6 }}>
-            <SelectField style={{ ...input, width: 110 }} value={httpMethod} onChange={e => setHttpMethod(e.target.value)}>
-              {["POST", "GET", "PUT", "PATCH", "DELETE"].map(m => <option key={m} value={m}>{m}</option>)}
-            </SelectField>
-            <Input style={{ ...input, flex: 1 }} placeholder="https://events.pagerduty.com/v2/enqueue"
-              value={httpUrl} onChange={e => setHttpUrl(e.target.value)} />
-          </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <Input style={{ ...input, flex: 1 }} placeholder="auth header (e.g. Authorization)"
-              value={httpAuthHeader} onChange={e => setHttpAuthHeader(e.target.value)} />
-            <Input style={{ ...input, flex: 1 }} type="password" placeholder="credential — stored encrypted"
-              value={httpSecret} onChange={e => setHttpSecret(e.target.value)} />
-          </div>
-          <label style={hint}>headers (JSON)</label>
-          <Textarea style={{ ...input, minHeight: 36 }} value={httpHeaders} onChange={e => setHttpHeaders(e.target.value)} />
-          <label style={hint}>body (JSON) — {"{param}"} placeholders are filled from the declared params</label>
-          <Textarea style={{ ...input, minHeight: 44 }} value={httpBody} onChange={e => setHttpBody(e.target.value)} />
-          <label style={hint}>
-            the read that proves the call took effect — run after it through the ordinary query door; {"{param}"} placeholders are filled
-          </label>
-          <Textarea style={{ ...input, minHeight: 44 }} placeholder="SELECT 1 FROM refunds WHERE order_id = '{order_id}'"
-            value={verifySql} onChange={e => setVerifySql(e.target.value)} />
-          <div style={{ display: "flex", gap: 6 }}>
-            <SelectField style={{ ...input, flex: 1 }} value={verifyExpects} onChange={e => setVerifyExpects(e.target.value)}>
-              <option value="rows">passes when it returns a row</option>
-              <option value="no_rows">passes when it returns no row</option>
-              <option value="value">passes when its first value equals…</option>
-            </SelectField>
-            {verifyExpects === "value" && (
-              <Input style={{ ...input, flex: 1 }} placeholder="the value expected, compared as text"
-                value={verifyValue} onChange={e => setVerifyValue(e.target.value)} />
-            )}
-          </div>
-          <label style={hint}>how it is taken back — the action that undoes it and how long that stays open, or irreversible by name</label>
-          <SelectField style={input} value={reversibility} onChange={e => setReversibility(e.target.value)}>
-            <option value="">reversibility — choose one</option>
-            <option value="undoable">undoable</option>
-            <option value="compensable">compensable</option>
-            <option value="irreversible">irreversible</option>
-          </SelectField>
-          {reversibility !== "irreversible" && (
-            <>
-              <div style={{ display: "flex", gap: 6 }}>
-                <Input style={{ ...input, flex: 2 }} placeholder="undo action id (e.g. reverse_refund)"
-                  value={undoAction} onChange={e => setUndoAction(e.target.value)} />
-                <Input style={{ ...input, flex: 1 }} type="number" min={0} placeholder="window in hours (0 = no limit)"
-                  value={undoHours} onChange={e => setUndoHours(e.target.value)} />
-              </div>
-              {undoParams.map((u, i) => (
-                <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <Input style={{ ...input, flex: 1 }} placeholder="undo parameter (e.g. refund_id)" value={u.name}
-                    onChange={e => setUndoParams(us => us.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-                  <Input style={{ ...input, flex: 2 }} placeholder="filled from — e.g. {refund_id}" value={u.value}
-                    onChange={e => setUndoParams(us => us.map((x, j) => j === i ? { ...x, value: e.target.value } : x))} />
-                  <Button size="xs" variant="ghost" className="mb-1.5"
-                    onClick={() => setUndoParams(us => us.filter((_, j) => j !== i))}>✕</Button>
-                </div>
-              ))}
-              <div>
-                <Button size="xs" variant="ghost" className="mb-2"
-                  onClick={() => setUndoParams(us => [...us, { name: "", value: "" }])}>
-                  + Map an undo parameter
-                </Button>
-              </div>
-            </>
-          )}
-        </>
-      )}
-      <Button variant="default" size="sm" disabled={!id.trim()} onClick={save}>Save action</Button>
-    </div>
   );
 }
 
@@ -445,6 +190,7 @@ export function DeclaredActionsPanel({ connectionId }: { connectionId: string })
   const [editsErr, setEditsErr] = useState<string | null>(null);
   const [busyEdit, setBusyEdit] = useState<string | null>(null);
   const [pending, setPending] = useState<StagedProposal[] | null>(null);
+  const [designing, setDesigning] = useState(false);
 
   const loadActions = useCallback(() => {
     apiFetch(`/ontology/kinetic-actions?connection_id=${encodeURIComponent(connectionId)}`)
@@ -530,7 +276,16 @@ export function DeclaredActionsPanel({ connectionId }: { connectionId: string })
               </Table>
             </div>
           )}
-          <DeclareActionForm connectionId={connectionId} onSaved={loadActions} />
+          {designing ? (
+            <div style={{ display: "flex", border: "1px solid var(--b1)", borderRadius: "var(--r3)", marginTop: 8 }}>
+              <ActionDesigner connectionId={connectionId} within=""
+                onClose={() => { setDesigning(false); loadActions(); }} onDeclared={() => loadActions()} />
+            </div>
+          ) : (
+            <Button variant="outline" size="sm" style={{ marginTop: 8 }} data-testid="actions-new" onClick={() => setDesigning(true)}>
+              <Icon name="plus" size={12} /> New action
+            </Button>
+          )}
         </Section>
 
         <Section title="Overlay edits" meta="a person's edit over the data — merged when it is read, never written to the source">

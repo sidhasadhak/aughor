@@ -416,6 +416,16 @@ def _synonym_target(graph: OntologyGraph, tables: dict[str, str], kind: str,
                     subject: str) -> Optional[tuple[str, str, str]]:
     """What a person's synonym names on THIS graph, as (kind, target, label) — or None, never a guess."""
     low = subject.strip().lower()
+    if kind in ("entity", "property"):
+        # Arc OC-3 — an entry keyed to the ontology names its target directly, with no table to hop through.
+        entity_name, _, prop = low.partition(".") if kind == "property" else (low, "", "")
+        e = next((x for x in graph.entities.values() if entity_name in (x.id.lower(), str(x.api_name or "").lower())), None)
+        if e is None:
+            return None
+        if kind == "entity":
+            return "entity", e.id, _label(e)
+        name = next((n for n in _readable_properties(e) if n.lower() == prop), None)
+        return ("property", f"{e.id}.{name}", f"{_label(e)} · {name.replace('_', ' ')}") if name else None
     if kind == "table":
         eid = tables.get(low.rsplit(".", 1)[-1])
         return ("entity", eid, _label(graph.entities[eid])) if eid else None

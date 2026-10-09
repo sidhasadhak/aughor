@@ -6,6 +6,7 @@
  * The shapes mirror `aughor/semantic/object_types.py` and `aughor/ontology/display.py`. The routes return plain
  * dicts, so `api.gen.ts` types their paths but not their bodies — these do. A refusal is an answer, not an error.
  */
+import { DECLARED_ACTIONS, type DEEP_ANALYSIS_EFFECT } from "@/lib/api";
 import { getApiBase } from "@/lib/config";
 
 /** One object type on the map: the measured facts its card and its rail row show. */
@@ -1034,6 +1035,71 @@ export async function previewProcess(
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
   if (!res.ok) throw new Error(await detailOf(res));
   return res.json();
+}
+
+/** A declared action as the declare door takes it (a `PUT` to `DECLARED_ACTIONS`/{id}) — what the action designer
+ *  writes (`lib/actionDraft`). */
+export interface DeclaredActionSpec {
+  display_name?: string;
+  description?: string;
+  kind: "annotate" | "side_effect";
+  risk: "low" | "high";
+  object_type: string;
+  params: { name: string; display_name?: string; kind: "value" | "object"; object_type?: string; data_type?: string;
+            required?: boolean }[];
+  submission_criteria: { expr: string; message: string }[];
+  edits?: { object: string; property: string; value: string; note: string }[];
+  side_effects?: { kind: "http" | "notify" | typeof DEEP_ANALYSIS_EFFECT; config: Record<string, unknown> }[];
+  reversibility?: "irreversible" | "compensable";
+  verification?: { sql: string; expects: "rows" | "no_rows" | "value"; value?: string };
+  undo?: { action_id: string; window_hours: number; params?: Record<string, string> };
+}
+
+/** A press of a draft action, dry-run on one real object by the executor's own rules — nothing dispatched or written. */
+export interface ActionPress {
+  key: string;
+  /** `allowed`; `criterion_failed` (the author's message); `invalid_params`; `unread`. */
+  status: "allowed" | "criterion_failed" | "invalid_params" | "unread";
+  message: string;
+  properties?: Record<string, unknown>;
+  edits?: { property: string; value: string; note: string }[];
+  call?: { method: string; url: string; body: unknown } | null;
+  /** The message a press would send, filled — nothing is sent from a preview. */
+  tell?: { destination: string; type: string; saved: boolean; message: string } | null;
+  /** The question a press would ask in a deep analysis, filled — nothing runs from a preview. */
+  analysis?: { question: string } | null;
+}
+
+/** What declaring a draft action would offer, counted (`POST /ontology/declared-actions/preview`). */
+export interface ActionPreview {
+  entity: string;
+  objects: number | null;
+  /** How many allow a press now — null when the conditions are not counted (`uncounted` says why). */
+  allowed: number | null;
+  uncounted: string;
+  segments: { segment: string; objects: number; allowed: number | null }[];
+  sample: ActionPress | null;
+  unread: string[];
+}
+
+export async function previewAction(
+  connectionId: string,
+  draft: { id: string; action: DeclaredActionSpec; segments?: string[]; said?: Record<string, string> },
+  schemaName?: string,
+): Promise<ActionPreview> {
+  const res = await fetch(`${getApiBase()}/ontology/declared-actions/preview?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(draft) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Declare an action — the approval gate may hold it (HTTP 428), which the designer says in words. */
+export async function declareAction(
+  connectionId: string, id: string, spec: DeclaredActionSpec, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(`${getApiBase()}${DECLARED_ACTIONS}/${encodeURIComponent(id)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(`${res.status} ${await detailOf(res)}`);
 }
 
 /** The schemas of one connection that have an ontology built, beside the one its registry names — a read of the store;

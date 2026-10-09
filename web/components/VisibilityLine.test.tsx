@@ -15,7 +15,7 @@ const seen = {
   joins: { total: 8, measured: 5, share: 0.625 },
   definitions: [{ definition: "revenue", holds: 3, automations: ["a1"], latest: "" }],
   top_blocker: { definition: "revenue", holds: 3, automations: ["a1"], latest: "" },
-  line: "sees 3 of 4 tables (75%), 1 excluded · joins measured 5 of 8 · approve `revenue` and 3 held sends unblock",
+  line: "Reads 3 of your 4 tables (1 set aside) · 5 of 8 links checked · 3 messages wait for you to approve 'revenue'",
   exclusion_reasons: ["system_table"],
 };
 

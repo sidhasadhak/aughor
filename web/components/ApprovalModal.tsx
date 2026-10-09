@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { onApprovalRequired, approveAction, type ApprovalInfo } from "@/lib/approval";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,9 @@ function prettify(action: string): string {
 /**
  * App-wide approval modal (P4). Listens for HTTP-428 `approval_required` events surfaced
  * by the fetch interceptor (lib/approval.ts). Approving allowlists the action for its
- * scope; the user then retries and it proceeds. Mounted once at the app root.
+ * scope and settles the request the interceptor held, which is sent again — the button a
+ * person pressed finishes on its own. Closing without approving hands that request its 428.
+ * Mounted once at the app root.
  * Composed on ui/dialog + ui/button (the Wave-1 proof pattern for hand-rolled overlays);
  * Escape / backdrop-close come from the Dialog primitive.
  */
@@ -33,11 +35,22 @@ export function ApprovalModal() {
   const [busy, setBusy] = useState(false);
   const [approved, setApproved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The held request this dialog answers. Settled exactly once: approved, or not — a dialog replaced by another, or
+  // closed, settles its own request as not approved so nothing waits on a question nobody can see.
+  const open = useRef<ApprovalInfo | null>(null);
 
-  useEffect(() => onApprovalRequired((i) => { setInfo(i); setApproved(false); setError(null); }), []);
+  useEffect(() => onApprovalRequired((i) => {
+    open.current?.settle?.(false);
+    open.current = i;
+    setInfo(i); setApproved(false); setError(null);
+  }), []);
 
   if (!info) return null;
-  const close = () => setInfo(null);
+  const close = () => {
+    open.current?.settle?.(false);
+    open.current = null;
+    setInfo(null);
+  };
 
   async function approve() {
     if (!info) return;
@@ -45,6 +58,7 @@ export function ApprovalModal() {
     try {
       await approveAction(info.action, info.scope);
       setApproved(true);
+      info.settle?.(true);
     } catch (e) {
       setError((e as Error)?.message ?? "Approval failed");
     } finally {
@@ -97,7 +111,7 @@ export function ApprovalModal() {
         ) : (
           <>
             <p style={{ fontSize: 13, color: "var(--grn4)", margin: 0 }}>
-              ✓ Approved. Retry the action — it will now proceed.
+              {info.replays ? "✓ Approved — it is running now." : "✓ Approved. Retry the action — it will now proceed."}
             </p>
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <Button onClick={close} className="font-semibold">

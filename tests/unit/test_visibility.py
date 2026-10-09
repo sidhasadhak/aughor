@@ -84,9 +84,9 @@ class TestTheOneDefinitionHoldingTheMostBack:
         out = V.visibility("c1", "main", _graph("orders", "users"), universe=["orders", "users", "events_raw"],
                            held_rows=[_row(missing=["revenue"]), _row(missing=["revenue"], automation="auto-2")])
         assert out["top_blocker"]["definition"] == "revenue" and out["top_blocker"]["holds"] == 2
-        assert out["line"] == "sees 2 of 3 tables (67%) · approve `revenue` and 2 held sends unblock"
+        assert out["line"] == "Reads 2 of your 3 tables · 2 messages wait for you to approve 'revenue'"
         none = V.visibility("c1", "main", _graph("orders"), universe=[], held_rows=[])
-        assert none["top_blocker"] is None and "denominator is unknown" in none["line"]
+        assert none["top_blocker"] is None and "how many this connection holds is not known yet" in none["line"]
 
 
 class TestTheGateRecordsWhatWouldClearAHold:
@@ -121,7 +121,7 @@ class TestTheDoors:
         body = client.get("/visibility", params={"connection_id": "fixture", "schema_name": "main"}).json()
         assert body["tables"]["mapped"] == 2 and body["tables"]["in_scope"] == 3 and body["tables"]["excluded"] == 1
         assert body["top_blocker"]["definition"] == "revenue" and body["top_blocker"]["holds"] == 1
-        assert body["line"].startswith("sees 2 of 3 tables (67%), 1 excluded")
+        assert body["line"].startswith("Reads 2 of your 3 tables (1 set aside)")
         assert "system_table" in body["exclusion_reasons"]
         assert client.delete("/visibility/exclusions", params={"connection_id": "fixture", "schema_name": "main", "table": "_dbt_tmp"}).status_code == 200
         assert client.delete("/visibility/exclusions", params={"connection_id": "fixture", "schema_name": "main", "table": "_dbt_tmp"}).status_code == 404

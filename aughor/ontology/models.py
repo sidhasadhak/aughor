@@ -872,8 +872,10 @@ class SubmissionCriterion(BaseModel):
 
 class SideEffect(BaseModel):
     """A declared consequence of a KineticAction, dispatched by the executor (K2) through an
-    existing primitive: ``notify``/``webhook`` → ``actions.fire_action``, ``trigger_investigation``
-    → ``runners.investigation`` (H5), which submits it as a supervised kernel job. ``config`` is
+    existing primitive: ``notify`` with a ``destination`` → a destination saved in Notifications, through
+    ``notifications.fire_action`` (its delivery log is the platform's record of it); ``notify`` with a ``url``, and
+    ``webhook`` → AUGHOR's envelope posted to that URL; ``trigger_investigation`` → ``runners.investigation`` (H5),
+    which submits it as a supervised kernel job. ``config`` is
     opaque here; the executor validates it per kind — for ``trigger_investigation`` it carries the
     ``question`` (``{param}`` placeholders filled from the action's declared parameters) and
     optionally ``connection_id`` / ``schema_name`` / ``agent_id``."""

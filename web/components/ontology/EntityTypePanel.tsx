@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
 import { countNoun, formatCount } from "@/lib/format";
+import { getOntologyKeys, keyVocabularyEntry, type VocabularyKey } from "@/lib/api";
 import { declaredActionsHref } from "@/lib/objectLinks";
 import {
   addBinding,
@@ -101,7 +102,7 @@ function Section({ title, aside, children }: { title: string; aside?: React.Reac
 }
 
 export function EntityTypePanel({ connectionId, schema, objectType, types, version, onOpen, onOpenProcess, onChanged,
-  onDesignProcess, sources }: {
+  onDesignProcess, onDesignAction, sources }: {
   connectionId: string;
   schema?: string;
   objectType: string;
@@ -115,6 +116,8 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   onChanged: () => void;
   /** Opens the process designer on this type (2026-10-09); absent where it does not reach, and the form here stands. */
   onDesignProcess?: (entity: string) => void;
+  /** Opens the action designer on this type (2026-10-09); absent where it does not reach. */
+  onDesignAction?: (entity: string) => void;
   /** ON-8 — set in an organisation's ontology: its connections by id, for the type, its bindings and a new binding. */
   sources?: Record<string, string>;
 }) {
@@ -138,7 +141,7 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
     body = <EmptyState icon="info" title={`No entity “${objectType}”`}>{detail.refused}</EmptyState>;
   } else {
     body = <TypeDetail detail={detail} connectionId={connectionId} schema={schema} types={types}
-      onOpen={onOpen} onOpenProcess={onOpenProcess} onChanged={onChanged} onDesignProcess={onDesignProcess} sources={sources} />;
+      onOpen={onOpen} onOpenProcess={onOpenProcess} onChanged={onChanged} onDesignProcess={onDesignProcess} onDesignAction={onDesignAction} sources={sources} />;
   }
   return (
     <aside aria-label="Entity type" data-testid="entity-type-panel"
@@ -149,7 +152,8 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   );
 }
 
-function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess, onChanged, onDesignProcess, sources }: {
+function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess, onChanged, onDesignProcess, onDesignAction,
+  sources }: {
   detail: ObjectTypeDetail;
   connectionId: string;
   schema?: string;
@@ -158,6 +162,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
   onOpenProcess?: (processId: string) => void;
   onChanged: () => void;
   onDesignProcess?: (entity: string) => void;
+  onDesignAction?: (entity: string) => void;
   sources?: Record<string, string>;
 }) {
   const declared = detail.origin === "human" || detail.origin === "model";
@@ -207,7 +212,8 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
       <LinksSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged}
         inDomain={inDomain} />
       <WithdrawnSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
-      {!inDomain && <ActionsSection detail={detail} connectionId={connectionId} />}
+      {!inDomain && <ActionsSection detail={detail} connectionId={connectionId} onDesignAction={onDesignAction} />}
+      {!inDomain && <WordsSection detail={detail} connectionId={connectionId} schema={schema} />}
       <MetricsSection detail={detail} />
       <ProcessesSection detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
         onChanged={onChanged} onDesignProcess={onDesignProcess} />
@@ -1751,13 +1757,23 @@ function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged, 
   );
 }
 
-function ActionsSection({ detail, connectionId }: { detail: ObjectTypeDetail; connectionId: string }) {
+function ActionsSection({ detail, connectionId, onDesignAction }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  /** Opens the action designer on this type; absent where it does not reach. */
+  onDesignAction?: (entity: string) => void;
+}) {
   const href = declaredActionsHref(connectionId);
+  const design = onDesignAction && (
+    <Button variant="outline" size="xs" data-testid="type-design-action" onClick={() => onDesignAction(detail.id)}>
+      Declare an action
+    </Button>
+  );
   if (detail.actions.length === 0) {
     return (
       <Section title="Declared actions">
         <EmptyState variant="inline" title={`No declared action takes a ${detail.display_name.toLowerCase()}.`}
-          action={<Link href={href}><Button variant="outline" size="xs">Open Actions</Button></Link>} />
+          action={design ?? <Link href={href}><Button variant="outline" size="xs">Open Actions</Button></Link>} />
       </Section>
     );
   }
@@ -1778,7 +1794,71 @@ function ActionsSection({ detail, connectionId }: { detail: ObjectTypeDetail; co
           </div>
         </div>
       ))}
-      <Link href={href}><Button variant="minimal" size="xs" style={{ marginTop: 6 }}>Open in Actions</Button></Link>
+      <span style={{ display: "flex", gap: 6, marginTop: 6 }}>
+        {design}
+        <Link href={href}><Button variant="minimal" size="xs">Open in Actions</Button></Link>
+      </span>
+    </Section>
+  );
+}
+
+/** Arc OC-3 — the words people use for this type and its properties (2026-10-09): each keyed to it, read from the table
+ *  and column it comes from now; or naming its table or a column, with the key proposed — never keyed until a person
+ *  says so. A keyed word reaches the agent as what it names, wherever the type's binding points. */
+function WordsSection({ detail, connectionId, schema }: { detail: ObjectTypeDetail; connectionId: string; schema?: string }) {
+  const [rows, setRows] = useState<VocabularyKey[] | null>(null);
+  const [problem, setProblem] = useState("");
+  const [busy, setBusy] = useState("");
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    let live = true;
+    getOntologyKeys(connectionId, schema)
+      .then((k) => { if (live) { setRows(k.vocabulary ?? []); setProblem(""); } })
+      .catch((e: unknown) => { if (live) { setRows([]); setProblem(e instanceof Error ? e.message : String(e)); } });
+    return () => { live = false; };
+  }, [connectionId, schema, version]);
+  const mine = (rows ?? []).filter((r) => {
+    const target = r.keyed ? r.subject_id : r.proposal.subject;
+    return !!target && (target === detail.id || target.startsWith(`${detail.id}.`));
+  });
+  const key = async (r: VocabularyKey) => {
+    setBusy(r.synonym);
+    setProblem("");
+    try {
+      await keyVocabularyEntry(connectionId, r, { kind: r.proposal.kind as "entity" | "property", subject: r.proposal.subject }, schema);
+      setVersion((v) => v + 1);
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(""); }
+  };
+  if (rows === null) return null;
+  return (
+    <Section title="Words people use" aside={mine.length ? countNoun(mine.length, "word") : undefined}>
+      {mine.length === 0 && !problem && (
+        <EmptyState variant="inline" title={`No word people use is recorded for ${detail.display_name.toLowerCase()} yet.`} />
+      )}
+      {mine.map((r, i) => (
+        <div key={`${r.subject_kind}:${r.subject_id}:${r.synonym}`} data-testid="type-word" className="aug-fs-xs"
+          style={{ padding: "6px 0", borderTop: i ? RULE : undefined, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <span style={{ color: "var(--t1)" }}>&ldquo;{r.synonym}&rdquo;</span>
+          {r.keyed ? (
+            <span style={{ color: "var(--t2)" }}>
+              means {r.subject_id.replace(".", " · ")}
+              <span style={{ color: "var(--t3)" }}>
+                {r.reads ? ` — read from ${r.reads.table}${r.reads.column ? `.${r.reads.column}` : ""}` : " — not read here now"}
+              </span>
+            </span>
+          ) : (
+            <>
+              <span style={{ color: "var(--t3)" }}>names {r.subject_kind} {r.subject_id} — {r.proposal.why}</span>
+              <Button size="xs" variant="outline" disabled={!!busy} data-testid="type-word-key" onClick={() => void key(r)}>
+                {busy === r.synonym ? "Keying…" : `Key it to ${r.proposal.subject.replace(".", " · ")}`}
+              </Button>
+            </>
+          )}
+        </div>
+      ))}
+      {problem && <p className="aug-fs-xs" style={{ color: "var(--red5)", margin: "6px 0 0" }}>{problem}</p>}
     </Section>
   );
 }

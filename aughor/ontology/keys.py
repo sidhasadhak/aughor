@@ -107,6 +107,88 @@ def metric_keys(connection_id: str, schema_name: str, graph: Any) -> list[dict]:
     return out
 
 
+# ── the vocabulary: words people use, keyed to what they name ────────────────────────────────────────────────────────
+#
+# A vocabulary entry (`ontology.vocabulary.Synonym`) named a table, `table.column`, a metric or a term — the ontology's
+# entities and properties it could not name, though they are what a person means by "late orders" or "sales value".
+# An entry may now name an ENTITY (`Order`) or a PROPERTY (`Order.status`); the readers that work in tables and columns
+# — the schema linker, the SQL writer's synonym block — read it through `subject_columns`, at the moment they read it,
+# so a re-pointed binding moves the entry with it. Table and column entries are proposed a key the way a metric is
+# (`propose_synonym_key`): never stored until a person confirms it (`PUT /ontology/vocabulary/key`).
+
+ONTOLOGY_KINDS = ("entity", "property")
+
+
+def _entity_named(graph: Any, name: str) -> Any:
+    want = str(name or "").strip().lower()
+    return next((e for e in graph.entities.values() if want in (e.id.lower(), str(e.api_name or "").lower())), None)
+
+
+def subject_columns(graph: Any, kind: str, subject: str) -> Any:
+    """``(table, column)`` an entity or property entry is read from on ``graph`` — column "" for an entity — or None
+    when the graph cannot say: no graph, an unknown entity or property, a query backing (a SELECT has no table)."""
+    if graph is None or kind not in ONTOLOGY_KINDS:
+        return None
+    entity_name, _, prop = str(subject or "").partition(".") if kind == "property" else (subject, "", "")
+    e = _entity_named(graph, entity_name)
+    if e is None:
+        return None
+    b = e.backing
+    if b is not None and b.kind == "query":
+        return None
+    table = (b.table if b is not None and b.table else "") or (e.source_tables[0] if e.source_tables else "")
+    if kind == "entity":
+        return (table, "") if table else None
+    from aughor.ontology.bindings import column_of, property_binding
+    bound = property_binding(e, prop)
+    if bound is not None:
+        return (bound.table, column_of(bound, prop)) if getattr(bound, "table", "") else None
+    hit = next((k for k in (e.properties or {}) if k.lower() == prop.strip().lower()), None)
+    return (table, hit) if hit and table else None
+
+
+def propose_synonym_key(kind: str, subject: str, graph: Any) -> dict:
+    """``{kind, subject, why}`` — the entity or property a table or column entry names on ``graph``, or kind "" with
+    why none: the one entity a table backs, and the property of it that reads the column."""
+    if kind in ONTOLOGY_KINDS:
+        return {"kind": kind, "subject": subject, "why": "keyed"}
+    if graph is None:
+        return {"kind": "", "subject": "", "why": "no ontology is built for this scope"}
+    if kind == "table":
+        entity = _entity_of(graph, _bare(subject))
+        return ({"kind": "entity", "subject": entity, "why": f"its table, {_bare(subject)}, backs {entity}"} if entity
+                else {"kind": "", "subject": "", "why": f"no entity is backed by {_bare(subject)}"})
+    if kind == "column":
+        table, _, column = str(subject).rpartition(".")
+        entity = _entity_of(graph, _bare(table))
+        if not entity:
+            return {"kind": "", "subject": "", "why": f"no entity is backed by {_bare(table) or 'its table'}"}
+        e = graph.entities[entity]
+        name = next((k for k in (e.properties or {}) if k.lower() == column.lower()), None)
+        if name is None:
+            from aughor.ontology.bindings import column_of
+            name = next((p for b in e.bindings or [] if _bare(b.table) == _bare(table)
+                         for p in b.properties if column_of(b, p).lower() == column.lower()), None)
+        return ({"kind": "property", "subject": f"{entity}.{name}", "why": f"{entity} reads {column} as {name}"} if name
+                else {"kind": "", "subject": "", "why": f"{entity} has no property that reads {column}"})
+    return {"kind": "", "subject": "", "why": f"a {kind} is not a table or a column — nothing to key it to"}
+
+
+def vocabulary_keys(connection_id: str, graph: Any) -> list[dict]:
+    """Every vocabulary entry on the connection that names a table, a column, an entity or a property — keyed or with
+    the key it is proposed, and the table and column a keyed one reads now."""
+    from aughor.ontology.vocabulary import synonyms_for
+    out = []
+    for s in synonyms_for(connection_id):
+        if s.subject_kind not in ("table", "column", *ONTOLOGY_KINDS):
+            continue
+        keyed = s.subject_kind in ONTOLOGY_KINDS
+        reads = subject_columns(graph, s.subject_kind, s.subject_id) if keyed else None
+        out.append({**s.to_dict(), "keyed": keyed, "proposal": propose_synonym_key(s.subject_kind, s.subject_id, graph),
+                    "reads": {"table": reads[0], "column": reads[1]} if reads else None})
+    return out
+
+
 def entity_table(connection_id: str, entity: str) -> str:
     """The table an entity's objects are read from on the connection's served ontology — what a trigger keyed to the
     entity probes. "" when the entity is unknown or backed by a query (a SELECT has no table version to watch)."""
@@ -135,6 +217,14 @@ def keyed_counts() -> dict:
     except Exception as exc:  # noqa: BLE001
         out["metrics"] = None
         out.setdefault("unread", {})["metrics"] = str(exc)[:200]
+    try:
+        from aughor.ontology.vocabulary import connections_with_synonyms, synonyms_for
+        named = [x for c in connections_with_synonyms() for x in synonyms_for(c)
+                 if x.subject_kind in ("table", "column", *ONTOLOGY_KINDS)]
+        out["vocabulary"] = {"of": len(named), "n": sum(1 for x in named if x.subject_kind in ONTOLOGY_KINDS)}
+    except Exception as exc:  # noqa: BLE001
+        out["vocabulary"] = None
+        out.setdefault("unread", {})["vocabulary"] = str(exc)[:200]
     try:
         from aughor.automations.store import list_automations
         watches = [c for a in list_automations() for c in a.conditions if c.kind in ("source_change", "entity_appears")]

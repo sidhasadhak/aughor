@@ -6,7 +6,7 @@ Every change waiting in a draft is classed before it can be published, from what
   changed or widened from to-one to to-many, a process moved to another type, an action's parameters changed, a
   declaration whose own measurement did not bind. Publishing is refused while one stands.
 * **MEANING** — Aughor's own class: the element still reads, but what it *means* moved — a promise from two days to
-  three, a stage's anchor, a rule's values, a segment's filter, a metric's statement. Publishing one restates every
+  three, a stage's anchor, how an object leaves a process, a rule's values, a segment's filter, a metric's statement. Publishing one restates every
   claim computed under the old meaning (`ontology.release.publish`), so nobody keeps a number whose definition changed
   under it without being told.
 * **WARN** — readers keep working but should look: a governed action's criteria, effects or risk changed; a binding
@@ -106,6 +106,12 @@ def _promise(stage: str, old: Optional[dict], new: Optional[dict], watched: set[
     return out
 
 
+def _leaving(leaves: Any) -> str:
+    if not isinstance(leaves, dict) or not leaves.get("values"):
+        return "none declared"
+    return f"{leaves.get('property')} is {', '.join(str(v) for v in leaves['values'])}"
+
+
 def _process(before: dict, after: dict, watched: set[str]) -> list[tuple[str, str]]:
     out = []
     for k in sorted(_changed(before, after) - {"stages"}):
@@ -113,6 +119,11 @@ def _process(before: dict, after: dict, watched: set[str]) -> list[tuple[str, st
             out.append(("SAFE", f"its {k.replace('_', ' ')} changed"))
         elif k == "entity":
             out.append(("ERR", f"it runs on another type ({before.get(k)} → {after.get(k)})"))
+        elif k == "leaves":
+            # Who has left the process is who is never open, never overdue: the board's open and overdue counts and
+            # every `overdue_<noun>` list move with it (OC-4, found on theLook's live receipt — 18,726 Cancelled).
+            out.append(("MEANING", f"how an object leaves it changed ({_leaving(before.get(k))} → {_leaving(after.get(k))})"
+                                   " — what is open and overdue moves with it"))
         else:
             out.append(("WARN", f"'{k}' changed — the catalogue does not class it; read it before publishing"))
     old = {s.get("name"): s for s in before.get("stages") or []}
