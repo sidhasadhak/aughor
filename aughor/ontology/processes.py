@@ -470,7 +470,7 @@ class ObjectCounter:
         return {str(c): rows[0][i] for i, c in enumerate(columns)}
 
 
-def _provisional(process: Process) -> Process:
+def provisional(process: Process) -> Process:
     """A copy that reads as measured, so the object door compiles what the process derives WHILE it is being counted.
     Never saved, never served."""
     work = process.model_copy(deep=True)
@@ -482,7 +482,7 @@ def _provisional(process: Process) -> Process:
     return work
 
 
-def _reached_filters(stage: ProcessStage) -> list[dict]:
+def reached_filters(stage: ProcessStage) -> list[dict]:
     if stage.timestamp:
         return [{"path": stage.timestamp, "op": "not_null"}]
     return [{"path": stage.property, "op": "in", "values": list(stage.state)}]
@@ -630,14 +630,14 @@ def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict
     ontology ``db`` is None and ``open_source`` opens each count's connection (`ObjectCounter`)."""
     process = process_from_fields(process_id, fields)
     work = graph.model_copy()
-    work.processes = {**(graph.processes or {}), process_id: _provisional(process)}
+    work.processes = {**(graph.processes or {}), process_id: provisional(process)}
     entity = work.entities.get(process.entity)
     if entity is None:
         raise NotMeasurable(f"no object type '{process.entity}' in this ontology")
     counter = ObjectCounter(db, work, open_source)
     measures: list[dict] = [{"name": "objects", "agg": "count"}]
     for i, stage in enumerate(process.stages):
-        measures.append({"name": f"reached_{i}", "agg": "count", "where": _reached_filters(stage)})
+        measures.append({"name": f"reached_{i}", "agg": "count", "where": reached_filters(stage)})
         previous = process.stages[i - 1] if i else None
         if stage.timestamp and previous is not None and previous.timestamp:
             measures += [

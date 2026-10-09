@@ -163,6 +163,7 @@ type NavTab =
   | "intel"             // legacy deep-link → intelligence/domains layer
   | "org-intel"         // legacy deep-link → intelligence/org layer
   | "ontology"          // legacy deep-link → intelligence/ontology layer
+  | "cockpit"           // deep-link → intelligence/cockpit layer (the process designer hands a new cockpit over)
   | "operations"        // unified Operations workspace (Monitors / Action Hub / Security)
   | "agentic-ops"       // Agentic Ops — runs · agents · attention · activity · run graphs
   | "control-room"      // legacy deep-link → agentic-ops (Wave CR's original id)
@@ -1088,7 +1089,7 @@ const VALID_TABS = new Set<NavTab>([
   "now", "record", "inquiries", "decisions", "missions", "claims", "corrections", "action-centre", "developer",
   "home", "spend", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
   "inbox", "briefing", "intelligence", "intel-hub", "intel", "org-intel",
-  "ontology", "operations", "agentic-ops", "control-room", "evals", "data",
+  "ontology", "cockpit", "operations", "agentic-ops", "control-room", "evals", "data",
   "health", "playbook", "documents", "catalog", "builder", "query", "connections", "metrics",
   // AO-4 — `integrations` is an Operations layer alias like `monitors`; it was missing
   // here, so `?tab=integrations` (the link every Slack door hands out) opened Home.
@@ -1139,6 +1140,7 @@ const OPS_LAYER_FOR_TAB: Partial<Record<NavTab, OpsLayer>> = {
 const INTEL_LAYER_FOR_TAB: Partial<Record<NavTab, IntelLayer>> = {
   briefing:    "briefing",
   ontology:    "ontology",
+  cockpit:     "cockpit",
   "intel-hub": "hub",
   intel:       "hub",   // the former Domains layer folded into the Hub (Data Profile)
   "org-intel":  "org",
