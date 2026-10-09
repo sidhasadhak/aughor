@@ -53,7 +53,13 @@ from pydantic import BaseModel, Field, ValidationError
 
 from aughor.ontology.backing import object_from
 from aughor.ontology.bindings import binding_from, binding_problem, column_of, property_binding
-from aughor.ontology.derived import derived_for, find_derived_metric, find_derived_property, find_derived_segment
+from aughor.ontology.derived import (
+    derived_for,
+    find_derived_metric,
+    find_derived_property,
+    find_derived_segment,
+    find_overdue_segment,
+)
 from aughor.ontology.parts import backing_table, detail_from, part_of, parts_of, rollup_note
 from aughor.ontology.sources import binding_source, entity_source
 from aughor.ontology.timeseries import latest_from, latest_note
@@ -76,6 +82,8 @@ Grain = Literal["", "hour", "day", "week", "month", "quarter", "year"]
 _MAX_LIMIT = 10_000
 _MAX_IN = 1_000
 _MAX_HOPS = 3
+#: Arc OC-4 — the most objects one page of a listing carries.
+_MAX_PAGE = 200
 #: The most links one path may cross — public for the path finder (ON-3b), which marks a longer path as
 #: one the compiler would not take even when every hop on it is traversable.
 MAX_LINK_HOPS = _MAX_HOPS
@@ -141,6 +149,22 @@ class ObjectQuery(BaseModel):
     limit: Optional[int] = None
 
 
+class ObjectListing(BaseModel):
+    """Arc OC-4 — `objects(object_type).filter(segment, filters).list(columns).sort(order_by).page(offset, limit)`: one
+    row per object, its key first, compiled by the same compiler as every object read — the segment, the filters, an
+    accepted edit read as a property — with the total the object set holds."""
+    object_type: str
+    segment: str = ""
+    filters: list[ObjectFilter] = Field(default_factory=list)
+    #: Property paths through to-one links (`status`, `user.country`). Empty: the type's title and its first properties.
+    columns: list[str] = Field(default_factory=list)
+    #: A listed column's path, or the key; empty: the key. Ties are broken by the key, so a page is stable.
+    order_by: str = ""
+    descending: bool = False
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=50, ge=1, le=_MAX_PAGE)
+
+
 class ObjectQueryRefused(ValueError):
     """The compiler cannot vouch for this query. Never a guess: `reason` names what failed and
     `available` the names that do exist, so a caller can repair the query or fall back to
@@ -181,6 +205,31 @@ class CompiledObjectQuery:
                 "plan": list(self.plan), "links": list(self.links), "caveats": list(self.caveats),
                 "overlay": list(self.overlay), "bindings": list(self.bindings),
                 **({"cross_source": self.cross_source.to_dict()} if self.cross_source is not None else {})}
+
+
+@dataclass
+class CompiledObjectListing:
+    """Arc OC-4 — a page of objects as SQL: ``sql`` reads the page, ``count_sql`` the objects the set holds."""
+    sql: str
+    count_sql: str
+    dialect: str
+    object_type: str
+    type_id: str
+    key: str
+    #: The column that titles each object, empty when the key does (`object_instances.title_column`).
+    title: str
+    #: One per listed column after the key: its output name, path, label, type and whether an edit sets it.
+    columns: list[dict]
+    plan: list[str]
+    links: list[dict]
+    caveats: list[str] = field(default_factory=list)
+    overlay: list[dict] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {"path": "listed", "sql": self.sql, "count_sql": self.count_sql, "dialect": self.dialect,
+                "object_type": self.object_type, "type_id": self.type_id, "key": self.key, "title": self.title,
+                "columns": list(self.columns), "plan": list(self.plan), "links": list(self.links),
+                "caveats": list(self.caveats), "overlay": list(self.overlay)}
 
 
 # ── links, read from where the query stands ─────────────────────────────────────────────
@@ -1502,7 +1551,7 @@ class _Compiler:
         seg = next((s for k, s in segs.items() if low in (k.lower(), (s.display_name or "").lower())), None)
         verified = sorted(k for k, s in segs.items() if s.verified)
         if seg is None:
-            derived = find_derived_segment(self.g, scope.entity, name)
+            derived = find_derived_segment(self.g, scope.entity, name) or find_overdue_segment(self.g, scope.entity, name)
             if derived is not None:
                 return self.derived_segment(scope, derived)
             verified += sorted(d.name for d in derived_for(self.g, scope.entity).segments if d.usable)
@@ -1976,6 +2025,108 @@ class _Compiler:
             return "1"
         return f"{grouped + 1} DESC" if grouped else ""
 
+    def object_set(self, scope: _Scope) -> list[str]:
+        """The query's objects: its segment and its filters, as conditions on ``scope``."""
+        q = self.q
+        where: list[str] = []
+        if q.segment:
+            frag = self.segment(scope, q.segment)
+            if frag:
+                where.append(frag)
+        for f in q.filters:
+            where.append(self.condition(scope, f))
+            self.plan.append(f"filter {f.path} {f.op}" + ("" if f.value is None else f" {f.value!r}")
+                             + (f" {f.value_path} (another property of the same object)" if f.value_path else ""))
+        return where
+
+    def build_listing(self, listing: ObjectListing) -> CompiledObjectListing:
+        """Arc OC-4 — one page of the objects the query's segment and filters admit: the key, then each column read
+        through to-one links (an accepted edit read like any property), sorted with the key breaking ties; and the
+        count of the objects the set holds, under the same conditions."""
+        anchor = self.entity(listing.object_type)
+        scope = _Scope(entity=anchor, alias="t0")
+        self.home, self.top = entity_source(self.g, anchor), scope
+        b = anchor.backing
+        key = (b.primary_key if b is not None else "") or anchor.identity_key
+        if not key:
+            raise ObjectQueryRefused(f"{anchor.id} declares no key — a listing names each object by its key")
+        verdict = {True: "unique, measured", False: "NOT unique, measured", None: "unmeasured"}[
+            b.verified if b is not None else None]
+        self.plan.append(f"list({anchor.api_name}): {anchor.id} read from "
+                         f"{(b.from_clause() if b is not None else '') or anchor.source_tables[0]}, one row per object, "
+                         f"key {key} ({verdict})")
+        if b is not None and b.verified is False:
+            self.caveats.append(f"{anchor.id}'s key {key} is not unique ({b.verification_note}) — the listing shows "
+                                f"rows, and the total counts distinct keys")
+        where = self.object_set(scope)
+        from aughor.ontology.display import display_of
+        shown = display_of(anchor)
+        title = "" if shown["is_key"] else shown["property"]
+        k = quote_ident(key)
+        select, names, columns = [f"t0.{k} AS {k}"], [key], []
+        for path in self.listed_paths(scope, anchor, listing.columns, key, title):
+            if path.strip().lower() == key.lower():
+                continue
+            col, p, hops = self.column(scope, path, "column")
+            end = hops[-1].target if hops else anchor
+            edited = find_property(end, p.name) is None and bool(overlay_properties(end, self.overlay_edits)
+                                                                   .get(p.name.lower()))
+            name = _output_name(names, path.rsplit(".", 1)[-1], path.replace(".", "_"))
+            select.append(f"{col} AS {quote_ident(name)}")
+            names.append(name)
+            columns.append({"name": name, "path": path, "label": p.display_name or p.name,
+                            "type": p.data_type or p.semantic_type or "", "edited": edited})
+            self.plan.append(f"column {path}" + (" (set by accepted edits)" if edited else ""))
+        want = (listing.order_by or key).strip().lower()
+        order = next((c["name"] for c in columns if want in (c["path"].lower(), c["name"].lower())),
+                     key if want == key.lower() else None)
+        if order is None:
+            raise ObjectQueryRefused(f"order_by '{listing.order_by}' is not a listed column", names)
+        direction = "DESC" if listing.descending else "ASC"
+        order_sql = f"{quote_ident(order)} {direction} NULLS LAST" + ("" if order == key else f", {k} ASC")
+        self.plan.append(f"sorted by {order} {direction.lower()}" + ("" if order == key else f", then {key}")
+                         + f"; {listing.limit} from {listing.offset}")
+        if self.far:
+            raise ObjectQueryRefused("a listing reads its own connection's rows — a column or filter here is read from "
+                                     "another connection")
+        if self._many or self._readings or self._period_specs:
+            raise ObjectQueryRefused("a listing reads one row per object — a column here aggregates, which belongs in "
+                                     "an object query's measure")
+        source = backing_from(anchor, "t0") + "".join(f" {j}" for j in scope.joins)
+        where_sql = (" WHERE " + " AND ".join(f"({w})" for w in where)) if where else ""
+        sql = (f"SELECT {', '.join(select)} FROM {source}{where_sql} ORDER BY {order_sql} "
+               f"LIMIT {int(listing.limit)} OFFSET {int(listing.offset)}")
+        count_sql = f"SELECT COUNT(DISTINCT t0.{k}) AS n FROM {source}{where_sql}"
+        return CompiledObjectListing(sql=self.render(sql), count_sql=self.render(count_sql), dialect=self.dialect,
+                                     object_type=anchor.api_name, type_id=anchor.id, key=key, title=title,
+                                     columns=columns, plan=self.plan, links=self.links, caveats=self.caveats,
+                                     overlay=self.overlay)
+
+    def listed_paths(self, scope: _Scope, anchor: OntologyEntity, asked: list[str], key: str, title: str) -> list[str]:
+        """The columns a listing reads: those asked for, each of which must resolve; or, when none is asked for, the
+        title and the type's first properties — a default the type cannot read is left out, and the plan says so."""
+        if asked:
+            return list(asked)
+        candidates = ([title] if title else []) + [n for n in (anchor.properties or {})
+                                                   if n.lower() not in (key.lower(), title.lower())]
+        out: list[str] = []
+        for name in candidates:
+            if len(out) == 6:
+                break
+            if self.readable(scope, name):
+                out.append(name)
+        return out
+
+    def readable(self, scope: _Scope, name: str) -> bool:
+        """Whether a default column resolves on a scratch compiler — refused ones are named in the plan, not read."""
+        trial = _Compiler(self.g, self.q, self.dialect, self.fiscal, self.overlay_edits, self.keyed_metrics)
+        try:
+            trial.column(_Scope(entity=scope.entity, alias="t0"), name, "column")
+        except ObjectQueryRefused as exc:
+            self.plan.append(f"column {name} left out: {exc.reason}")
+            return False
+        return True
+
     def build(self) -> CompiledObjectQuery:
         q = self.q
         anchor = self.entity(q.object_type)
@@ -1991,15 +2142,7 @@ class _Compiler:
             self.caveats.append(f"{anchor.id}'s key {key} is not unique ({b.verification_note}) — a count of "
                                 f"{anchor.id} counts rows, not distinct objects")
 
-        where: list[str] = []
-        if q.segment:
-            frag = self.segment(scope, q.segment)
-            if frag:
-                where.append(frag)
-        for f in q.filters:
-            where.append(self.condition(scope, f))
-            self.plan.append(f"filter {f.path} {f.op}" + ("" if f.value is None else f" {f.value!r}")
-                             + (f" {f.value_path} (another property of the same object)" if f.value_path else ""))
+        where = self.object_set(scope)
 
         select: list[str] = []
         names: list[str] = []
@@ -2166,6 +2309,23 @@ def compile_object_query(query: ObjectQuery | dict, graph: Optional[OntologyGrap
         raise ObjectQueryRefused(f"limit must be between 1 and {_MAX_LIMIT}")
     fiscal = fiscal_start_month if fiscal_start_month is not None else _org_fiscal_start()
     return _Compiler(graph, query, (dialect or "duckdb").lower(), fiscal, overlay, metrics).build()
+
+
+def compile_object_listing(listing: ObjectListing | dict, graph: Optional[OntologyGraph], *, dialect: str = "duckdb",
+                           overlay: Optional[list] = None) -> CompiledObjectListing:
+    """Arc OC-4 — compile a page of objects over the served graph, or raise `ObjectQueryRefused` with why. ``overlay``
+    is the connection's accepted property edits (ON-4): a property they set is listed like a column."""
+    if isinstance(listing, dict):
+        try:
+            listing = ObjectListing.model_validate(listing)
+        except ValidationError as exc:
+            detail = "; ".join(f"{'.'.join(str(x) for x in e['loc'])}: {e['msg']}" for e in exc.errors()[:5])
+            raise ObjectQueryRefused(f"the listing is malformed — {detail}") from exc
+    if graph is None or not graph.entities:
+        raise ObjectQueryRefused("no ontology is built for this scope — there are no entities to list")
+    query = ObjectQuery(object_type=listing.object_type, segment=listing.segment, filters=listing.filters,
+                        measures=[ObjectMeasure(agg="count")])
+    return _Compiler(graph, query, (dialect or "duckdb").lower(), 1, overlay).build_listing(listing)
 
 
 def keyed_metrics_for(connection_id: str, schema_name: Optional[str] = None) -> list:

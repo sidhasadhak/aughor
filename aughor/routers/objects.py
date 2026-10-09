@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from aughor.db.registry import BUILTIN_ID
 from aughor.routers.ontology import refuse_organisation_scope
 from aughor.security.authz import connection_owner_guard
-from aughor.semantic.object_query import ObjectQuery
+from aughor.semantic.object_query import ObjectListing, ObjectQuery
 
 #: ON-8 — an organisation's ontology is reached through `?domain=` only, never by naming its tree as a connection;
 #: DATA-06 — every connection a door names belongs to the caller's org (identity on).
@@ -425,6 +425,47 @@ def post_object_query(
                     "truncated": len(rows) > _MAX_ROWS, "error": result.error,
                     "caveats": list(compiled.caveats) + list(result.caveats or []),
                     "guard_receipts": list(receipts)})
+        return out
+    finally:
+        db.close()
+
+
+@router.post("/objects/list")
+def post_object_listing(
+    listing: ObjectListing,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+    execute: bool = Query(default=True, description="False returns the compiled SQL and plan without running it"),
+):
+    """Arc OC-4 — one page of objects (ROADMAP §3.56): an entity, or a segment of it, with the columns asked for, sorted
+    with the key breaking ties, from `offset`, at most 200 — and `total`, the objects the set holds. Compiled by the
+    object door's own compiler over the SERVED ontology, an accepted edit read like a column, and run through the guard
+    battery. `path` is `listed`, or `refused` with the reason and the names that exist. No model call."""
+    from aughor.kernel.registries.execution_hooks import collect_guard_receipts
+    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_listing
+    from aughor.sql.executor import execute_guarded
+
+    graph = _served_graph(connection_id, schema_name)
+    db = _open_scoped(connection_id, schema_name, graph)
+    try:
+        try:
+            compiled = compile_object_listing(listing, graph, dialect=getattr(db, "dialect", "") or "duckdb",
+                                              overlay=_accepted_edits(connection_id))
+        except ObjectQueryRefused as exc:
+            return {"path": "refused", "refused": exc.reason, "available": exc.available,
+                    "connection_id": connection_id, "schema_name": graph.schema_name}
+        out = {"connection_id": connection_id, "schema_name": graph.schema_name, "offset": listing.offset,
+               "limit": listing.limit, **compiled.to_dict()}
+        if not execute:
+            return out
+        with collect_guard_receipts() as receipts:
+            page = execute_guarded(db, compiled.sql, query_id="objects.list")
+            counted = execute_guarded(db, compiled.count_sql, query_id="objects.list") if not page.error else None
+        error = page.error or (counted.error if counted is not None else "")
+        n = (counted.rows or [[None]])[0][0] if counted is not None and not counted.error else None
+        out.update({"names": list(page.columns or []), "rows": list(page.rows or [])[:listing.limit],
+                    "total": int(n) if n not in (None, "", "NULL") else None, "error": error,
+                    "caveats": list(compiled.caveats) + list(page.caveats or []), "guard_receipts": list(receipts)})
         return out
     finally:
         db.close()

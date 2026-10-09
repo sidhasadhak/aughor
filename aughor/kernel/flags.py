@@ -129,6 +129,11 @@ FLAG_ENV = {
     # whole statement over any set of that entity's objects, and the question frame may resolve to it. OFF: the
     # object door and the frame read exactly as before; the key is still kept and counted.
     "ontology.keyed_metrics": "AUGHOR_ONTOLOGY_KEYED_METRICS",
+    # Arc OC-4 (ROADMAP §3.56). ON: a cockpit may hold pieces bound to the ontology — a process board, an objects table
+    # over an entity or a segment, an object detail that follows the table, and a button that runs a declared action —
+    # and the object door resolves each promise's overdue segment (`overdue_<noun>`). OFF: the cockpit vocabulary
+    # refuses those pieces and the compiler resolves exactly the names it did; POST /objects/list still lists.
+    "ontology.cockpit_pieces": "AUGHOR_ONTOLOGY_COCKPIT_PIECES",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -388,6 +393,10 @@ FLAG_META = {
     "answers.recheck": {
         "label": "Tell people when an answer they were given changes",
         "description": "Once a day, re-run the query behind each chat answer given in the last 14 days and compare it with what the person was told. When a number moved by 5% or more, say so where they were answered — a reply in the Slack thread, through the departure gate, or on the answer in the web — with the old number, the new one, and whether it is late rows (the day was still settling when we answered) or a restatement. On by default since 2026-09-24 (the user's call); off → nothing is re-run, recorded or sent.",
+    },
+    "ontology.cockpit_pieces": {
+        "label": "Build cockpits from the ontology",
+        "description": "A cockpit may hold pieces bound to the business ontology instead of SQL: a process board (each stage, each promise with how often it is broken and how many objects are open and already past it), an objects table over an entity or a segment — the overdue objects of a promise among them — an object detail that follows the table's selection, and a button that runs a declared action, or proposes it when it needs approval. Each piece names what it reads by id, so a piece whose entity, process or action is gone says so. Off by default: those pieces cannot be added and the object door resolves exactly the names it did.",
     },
     "ontology.keyed_metrics": {
         "label": "Read approved metrics by the entity they measure",
@@ -672,6 +681,12 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc OC-4 (ROADMAP §3.56), queued 2026-10-09. No model call; the warehouse is read through the object door only.
+    "ontology.cockpit_pieces": "receipt: on theLook, a late dispatch cockpit — the process board's open-and-overdue "
+                               "count opens a table of exactly that many objects, one opens beside it, and a declared "
+                               "action run from it shows its edit in the table and on the object's own page. "
+                               "Falsifier (§3.56): if the census does not move in the weeks after, the surface was "
+                               "not the bottleneck — the flag goes and the arc is re-surveyed",
     # Arc OC-2 (ROADMAP §3.56), queued 2026-10-09. No model call and no warehouse query beyond the doors' own.
     "ontology.release": "receipt: on theLook, the dispatch promise moved from two days to three in a draft — the "
                         "agent and the Briefing still read two; the draft names the claims, the automation and the "

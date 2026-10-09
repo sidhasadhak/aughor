@@ -74,7 +74,9 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # Arc OC-1, the same day: `ontology.history` — every declaration's versions, and a withdrawal refused where
     # something depends on it. Its entry names the receipt and the falsifier.
     # …and `ontology.release` (Arc OC-2): a change waits in a draft until a person publishes it.
+    # Arc OC-4, the same day: `ontology.cockpit_pieces` — cockpit pieces bound to the ontology. No model call; it
+    # graduates on its live receipt, and its entry names the falsifier that deletes it instead.
     assert set(GRADUATION_QUEUE) == {"cockpit.composed", "slack.managed_supervisor", "ontology.census",
-                                     "ontology.history", "ontology.release"}
+                                     "ontology.history", "ontology.release", "ontology.cockpit_pieces"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

@@ -25,14 +25,17 @@ import copy
 import logging
 import math
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from aughor.ontology.derived import (
     Derivations,
+    cutoff_days,
+    cutoff_hours,
     derivations,
     lag_name,
     late_name,
+    overdue_filters,
     process_derivations,
     promise_filters,
     promise_noun,
@@ -448,19 +451,13 @@ def _reached_filters(stage: ProcessStage) -> list[dict]:
 
 
 def _cutoff(as_of: str, days: int) -> str:
-    """The date ``days`` calendar days before ``as_of``'s date: a moment before it is more than ``days`` days back."""
-    try:
-        moment = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
-        day = moment.date()
-    except ValueError:
-        day = date.fromisoformat(as_of[:10])
-    return (day - timedelta(days=days)).isoformat()
+    """The date ``days`` calendar days before ``as_of``'s date (`derived.cutoff_days`)."""
+    return cutoff_days(as_of, days)
 
 
 def _cutoff_hours(as_of: str, hours: int) -> str:
-    """The moment ``hours`` hours before ``as_of``: a moment before it is more than ``hours`` hours back."""
-    moment = datetime.fromisoformat(as_of.replace("Z", "+00:00").replace("T", " ")).replace(tzinfo=None)
-    return (moment - timedelta(hours=hours)).isoformat(sep=" ", timespec="seconds")
+    """The moment ``hours`` hours before ``as_of`` (`derived.cutoff_hours`)."""
+    return cutoff_hours(as_of, hours)
 
 
 #: The prefix of the flag raised when impossible rows MOVE the number. LOAD-BEARING TEXT, not
@@ -562,12 +559,8 @@ def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Proce
     promise.kept = promise.reached - promise.breached
     promise.open_overdue = None
     if promise.as_of and promise.open:
-        overdue = ([{"path": spec["deadline"], "op": "<", "value": promise.as_of}] if spec.get("deadline")
-                   else [{"path": spec["start"], "op": "<", "value": _cutoff_hours(promise.as_of, spec["within_hours"])}]
-                   if spec.get("within_hours") is not None
-                   else [{"path": spec["start"], "op": "<", "value": _cutoff(promise.as_of, spec["within_days"])}])
         promise.open_overdue = cell_int(counter.one(grain.api_name, [
-            {"name": "overdue", "agg": "count", "where": list(spec["open"]) + overdue}]).get("overdue")) or 0
+            {"name": "overdue", "agg": "count", "where": list(overdue_filters(spec, promise.as_of))}]).get("overdue")) or 0
     noun = promise_noun(stage)
     what = (f"the {promise.deadline} deadline" if promise.deadline else
             f"{promise.within_hours} hours" if promise.within_hours is not None else f"{promise.within_days} calendar days")
