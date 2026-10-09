@@ -126,6 +126,9 @@ def _process(before: dict, after: dict, watched: set[str]) -> list[tuple[str, st
             out.append(("SAFE", f"its {k.replace('_', ' ')} changed"))
         elif k == "entity":
             out.append(("ERR", f"it runs on another type ({before.get(k)} → {after.get(k)})"))
+        elif k == "transitions":
+            out.append(("WARN", "its declared moves between stages changed — what reads as a move nobody declared "
+                                "moves with them"))
         elif k == "leaves":
             # Who has left the process is who is never open, never overdue: the board's open and overdue counts and
             # every `overdue_<noun>` list move with it (OC-4, found on theLook's live receipt — 18,726 Cancelled).

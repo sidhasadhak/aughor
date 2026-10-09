@@ -273,7 +273,10 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
                            "data_type": "", "unit": "", "is_key": False, "null_rate": None,
                            "description": "set by accepted actions and merged at read time; the source is never written",
                            "source": {"binding": "overlay", "edits": len(edits)}})
-    links = [link_row(h) for h in object_links(graph, entity)]
+    from aughor.ontology.purpose import link_purposes
+    carries = link_purposes(graph)              # Arc OC-5 — what each link carries
+    links = [{**link_row(h), **({"carries": carries[h.rel.id]} if h.rel.id in carries else {})}
+             for h in object_links(graph, entity)]
     actions = type_actions(graph, entity)
     metrics, unverified = _metrics(graph, entity)
     proposals = [p for p in _proposals(entity) if p["table"].lower() not in hidden]
@@ -350,6 +353,8 @@ def object_type_map(graph: OntologyGraph, *, overlay: Optional[list] = None) -> 
                       "traversable_links": sum(1 for h in links if not link_problem(h)),
                       "actions": len(type_actions(graph, e)), "metrics": len(metrics)})
     edges = []
+    from aughor.ontology.purpose import link_purposes
+    carries = link_purposes(graph)              # Arc OC-5 — what each link carries, derived from the declarations
     for r in graph.relationships.values():
         source, target = graph.entities.get(r.from_entity), graph.entities.get(r.to_entity)
         if source is None or target is None:
@@ -364,7 +369,8 @@ def object_type_map(graph: OntologyGraph, *, overlay: Optional[list] = None) -> 
                       "name": r.api_name, "reverse_name": r.reverse_api_name, "business_name": r.business_name(),
                       "verb": r.verb, "cardinality": r.measured_cardinality or r.cardinality,
                       "measured": r.measured_cardinality is not None, "traversable": not problem,
-                      "traversal": r.traversal, **({"why_not": problem} if problem else {})})
+                      "traversal": r.traversal, **({"why_not": problem} if problem else {}),
+                      **({"carries": carries[r.id]} if r.id in carries else {})})
     api = (lambda eid: graph.entities[eid].api_name if eid in graph.entities else eid)  # noqa: E731
     # ON-9 — every declared process and rule, one short row each: what the map's rail lists.
     processes = [{"id": p.id, "display_name": p.display_name or p.id, "entity": api(p.entity), "origin": p.origin,

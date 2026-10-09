@@ -50,6 +50,7 @@ from aughor.ontology.models import (
     Process,
     ProcessExit,
     ProcessStage,
+    ProcessTransition,
     Promise,
 )
 
@@ -163,7 +164,32 @@ def process_spec_problem(spec: Any) -> str:
         if noun in nouns:
             return f"two stages derive names from '{noun}' — name a promise (`promise.name`) differently"
         nouns.add(noun)
-    return _leaves_problem(spec.get("leaves"))
+    return _leaves_problem(spec.get("leaves")) or _transitions_problem(spec.get("transitions"), names)
+
+
+#: The word a transition's `to` uses for leaving the process.
+LEFT = "left"
+_MAX_TRANSITIONS = 60
+
+
+def _transitions_problem(transitions: Any, names: set[str]) -> str:
+    """Why a process's declared `transitions` cannot be read, or "" — each a move from one stage to another, or out of
+    the process (`to: "left"`), named by the stages' names."""
+    if transitions is None:
+        return ""
+    if not isinstance(transitions, list) or len(transitions) > _MAX_TRANSITIONS:
+        return (f"`transitions` lists up to {_MAX_TRANSITIONS} moves, each {{\"from\": <stage>, \"to\": <stage or "
+                f"\"{LEFT}\">}}")
+    seen = set()
+    for t in transitions:
+        if not isinstance(t, dict) or t.get("from") not in names or t.get("to") not in (names | {LEFT}):
+            return f"each transition moves from one of its stages ({', '.join(sorted(names))}) to another, or to \"{LEFT}\""
+        if t["from"] == t["to"]:
+            return f"a transition moves between two stages — '{t['from']}' to itself is not a move"
+        if (t["from"], t["to"]) in seen:
+            return f"the move {t['from']} → {t['to']} is declared twice"
+        seen.add((t["from"], t["to"]))
+    return ""
 
 
 def _leaves_problem(leaves: Any) -> str:
@@ -216,6 +242,8 @@ def process_fields(spec: dict) -> dict:
     if spec.get("leaves"):
         out["leaves"] = {"property": str(spec["leaves"]["property"]).strip(),
                          "values": [str(v).strip() for v in spec["leaves"]["values"]]}
+    if spec.get("transitions"):
+        out["transitions"] = [{"from": str(t["from"]), "to": str(t["to"])} for t in spec["transitions"]]
     return out
 
 
@@ -229,7 +257,9 @@ def process_from_fields(process_id: str, fields: dict) -> Process:
                    description=fields.get("description") or "", entity=fields["entity"], stages=stages,
                    owner=fields.get("owner") or "", origin=fields.get("origin") or "human",
                    provenance=fields.get("provenance") or "",
-                   leaves=ProcessExit(**fields["leaves"]) if fields.get("leaves") else None)
+                   leaves=ProcessExit(**fields["leaves"]) if fields.get("leaves") else None,
+                   transitions=[ProcessTransition(from_stage=t["from"], to_stage=t["to"], declared=True)
+                                for t in fields.get("transitions") or []])
 
 
 # ── the declaration against the graph ───────────────────────────────────────────────────────
@@ -577,6 +607,24 @@ def _flag_out_of_order(promise: Any, stage: ProcessStage, spec: dict, process: P
         f"{stage.name} BEFORE {previous_name}, so their lag is negative and none of them can break the promise")
 
 
+def _flag_deadline_before_entry(counter: ObjectCounter, process: Process, spec: dict, promise: Any, grain: Any) -> None:
+    """Arc OC-5 — a deadline is a timestamp too, checked before it is believed: the objects whose deadline falls before
+    the moment they entered the process (its first stage's) cannot have been given that deadline then. Flagged with the
+    count, never excluded; a count that cannot be taken is no flag."""
+    first = process.stages[0] if process.stages else None
+    if not spec.get("deadline") or first is None or not first.timestamp:
+        return
+    entered = f"{promise.via}.{first.timestamp}" if promise.via else first.timestamp
+    try:
+        n = cell_int(counter.one(grain.api_name, [{"name": "early", "agg": "count", "where": [
+            {"path": spec["deadline"], "op": "<", "value_path": entered}]}]).get("early")) or 0
+    except NotMeasurable:
+        return
+    if n:
+        promise.flags.append(f"deadline before entry: {n:,} {grain.id} objects have a {spec['deadline']} before they "
+                             f"entered the process ({first.name}, {entered}) — read the deadline before believing it")
+
+
 def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Process, index: int, measured: Process) -> None:
     spec = promise_filters(work.processes[process.id], index)
     stage = measured.stages[index]
@@ -618,6 +666,7 @@ def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Proce
         promise.flags.append(f"always broken: every one of the {promise.reached:,} {grain.id} objects that reached "
                              f"{stage.name} went past {what} — {check}")
     _flag_out_of_order(promise, stage, spec, process, grain)
+    _flag_deadline_before_entry(counter, process, spec, promise, grain)
     promise.note = (f"{promise.breached:,} of the {promise.reached:,} {grain.id} objects that reached {stage.name} broke "
                     f"the {noun} promise ({promise.breach_rate:.2%}); {promise.open:,} have not reached it"
                     + (f", {promise.open_overdue:,} of them already past it as of {promise.as_of}"
@@ -648,6 +697,8 @@ def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict
                 {"name": f"early_{i}", "agg": "count", "where": [{"path": stage.timestamp, "op": "<",
                                                                    "value_path": previous.timestamp}]},
             ]
+    timed = [i for i, s in enumerate(process.stages) if s.timestamp]
+    measures += _move_measures(process, timed)
     leaves = process.leaves
     if leaves is not None:
         measures.append({"name": "left", "agg": "count",
@@ -690,6 +741,7 @@ def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict
             stage.note += f"; {stage.out_of_order:,} reached {stage.name} BEFORE {previous.name}"
         if stage.skipped:
             stage.note += f"; {stage.skipped:,} reached {stage.name} with no moment for {previous.name}"
+    _measure_moves(measured, counts, timed)
     for i, stage in enumerate(measured.stages):
         if stage.promise is not None:
             _measure_promise(counter, work, process, i, measured)
@@ -697,10 +749,73 @@ def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict
     measured.verified = bool(measured.objects) and all(v is True for v in verdicts)
     reached = sum(1 for s in measured.stages if s.verified)
     promises = [s for s in measured.stages if s.promise is not None]
+    seen_only = measured.conformance.get("seen_only_in_data") or []
     measured.note = (f"{measured.objects:,} {entity.id} objects; {reached} of {len(measured.stages)} stages reached"
-                     + (f"; {len(promises)} promise{'s' if len(promises) != 1 else ''} measured" if promises else ""))
+                     + (f"; {len(promises)} promise{'s' if len(promises) != 1 else ''} measured" if promises else "")
+                     + (f"; moves no one declared: {', '.join(seen_only[:4])}" if seen_only else ""))
     measured.measured_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     return measured
+
+
+def _move_measures(process: Process, timed: list[int]) -> list[dict]:
+    """Arc OC-5 — the counts the moves and every-pair ordering are read from: for each two stages that carry a moment,
+    the objects holding both and none of a timed stage between (a move), the objects whose later moment comes BEFORE
+    the earlier one (beyond the previous stage, which `early_i` already counts), and — with `leaves` — the objects
+    that left after each stage."""
+    stages, out = process.stages, []
+    for a, i in enumerate(timed):
+        later = timed[a + 1:]
+        for j in later:
+            between = [k for k in timed if i < k < j]
+            out.append({"name": f"move_{i}_{j}", "agg": "count", "where": [
+                {"path": stages[i].timestamp, "op": "not_null"}, {"path": stages[j].timestamp, "op": "not_null"},
+                *({"path": stages[k].timestamp, "op": "is_null"} for k in between)]})
+            if j != i + 1 or not (stages[j - 1].timestamp if j else ""):
+                out.append({"name": f"before_{i}_{j}", "agg": "count", "where": [
+                    {"path": stages[j].timestamp, "op": "<", "value_path": stages[i].timestamp}]})
+        if process.leaves is not None:
+            out.append({"name": f"move_{i}_left", "agg": "count", "where": [
+                {"path": stages[i].timestamp, "op": "not_null"},
+                *({"path": stages[k].timestamp, "op": "is_null"} for k in later),
+                {"path": process.leaves.property, "op": "in", "values": list(process.leaves.values)}]})
+    return out
+
+
+def _measure_moves(measured: Process, counts: dict, timed: list[int]) -> None:
+    """Stamp the moves seen, every-pair ordering, and conformance against what was declared (none declared: each
+    stage to the next, and leaving from any)."""
+    stages = measured.stages
+    observed: list[ProcessTransition] = []
+    declared = {(t.from_stage, t.to_stage) for t in measured.transitions}
+    implicit = not declared
+    expected = declared or {(stages[timed[a]].name, stages[timed[a + 1]].name) for a in range(len(timed) - 1)}
+    for a, i in enumerate(timed):
+        for j in timed[a + 1:]:
+            n = cell_int(counts.get(f"move_{i}_{j}")) or 0
+            pair = (stages[i].name, stages[j].name)
+            if n or pair in expected:
+                observed.append(ProcessTransition(from_stage=pair[0], to_stage=pair[1], objects=n,
+                                                  declared=pair in declared or (implicit and pair in expected)))
+            early = cell_int(counts.get(f"before_{i}_{j}"))
+            if early:
+                stages[j].precedes[stages[i].name] = early
+        if measured.leaves is not None:
+            n = cell_int(counts.get(f"move_{i}_left")) or 0
+            pair = (stages[i].name, LEFT)
+            if n or pair in declared:
+                observed.append(ProcessTransition(from_stage=pair[0], to_stage=LEFT, objects=n,
+                                                  declared=implicit or pair in declared))
+    for j in timed:                                   # the previous stage's ordering, already counted, on the same map
+        previous = j - 1 if j and stages[j - 1].timestamp else None
+        if previous is not None and stages[j].out_of_order:
+            stages[j].precedes[stages[previous].name] = stages[j].out_of_order
+    measured.observed = observed
+    measured.conformance = {
+        "seen_only_in_data": [f"{t.from_stage} → {t.to_stage}" for t in observed if t.objects and not t.declared],
+        "never_observed": [f"{t.from_stage} → {t.to_stage}" for t in observed if t.declared and not t.objects]
+                          + [f"{f} → {t}" for f, t in sorted(declared) if not any(
+                              (o.from_stage, o.to_stage) == (f, t) for o in observed)],
+        "untimed": [s.name for s in stages if not s.timestamp]}
 
 
 def _measure_leaving(leaves: ProcessExit, counts: dict, entity: str) -> None:
@@ -723,7 +838,8 @@ def substance(fields: dict) -> dict:
     """What a measurement is OF: the type and the stages. Renaming the process, describing it, naming its owner or
     confirming a model's proposal changes none of it, so the measurement stands."""
     return {"entity": fields.get("entity"), "stages": fields.get("stages"),
-            **({"leaves": fields["leaves"]} if fields.get("leaves") else {})}
+            **({"leaves": fields["leaves"]} if fields.get("leaves") else {}),
+            **({"transitions": fields["transitions"]} if fields.get("transitions") else {})}
 
 
 def process_entry(fields: dict, measured: Process) -> dict:
@@ -830,7 +946,8 @@ def describe_process(graph: OntologyGraph, process: Process) -> dict:
                      "reached": stage.reached,
                      "share": (round(stage.reached / process.objects, 6)
                                if stage.reached is not None and process.objects else None),
-                     "verified": stage.verified, "note": stage.note, "transition": None, "promise": None}
+                     "verified": stage.verified, "note": stage.note, "transition": None, "promise": None,
+                     "precedes": dict(stage.precedes)}
         if stage.timestamp and previous is not None and previous.timestamp:
             row["transition"] = {"from": previous.name, "both": stage.both, "skipped": stage.skipped,
                                  "out_of_order": stage.out_of_order, "p50_days": stage.p50_days,
@@ -852,12 +969,18 @@ def describe_process(graph: OntologyGraph, process: Process) -> dict:
             if _pieces_on():
                 # Arc OC-4 — the segment a process board's open-and-overdue count lists (`overdue_<noun>`).
                 row["promise"]["overdue_segment"] = overdue_name(stage)
+        # Arc OC-5 — the objects the stage touches, each with its role (the promise's lead object among them)
+        from aughor.ontology.purpose import stage_roles
+        row["roles"] = stage_roles(graph, process, i)
         stages.append(row)
     return {"id": process.id, "display_name": process.display_name or process.id, "description": process.description,
             "entity": entity.api_name if entity is not None else process.entity, "entity_id": process.entity,
             "owner": process.owner, "origin": process.origin, "provenance": process.provenance,
             "objects": process.objects, "verified": process.verified, "note": process.note,
             "measured_at": process.measured_at, "stages": stages, "derived": rows_of(process_derivations(process)),
+            # Arc OC-5 — the moves declared, the moves the data makes, and where the two disagree
+            "transitions": [t.model_dump() for t in process.transitions],
+            "observed": [t.model_dump() for t in process.observed], "conformance": dict(process.conformance),
             **({"leaves": process.leaves.model_dump()} if process.leaves is not None else {})}
 
 

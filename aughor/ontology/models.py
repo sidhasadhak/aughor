@@ -711,6 +711,20 @@ class ProcessStage(BaseModel):
     p50_days: Optional[float] = None
     p90_days: Optional[float] = None
     p95_days: Optional[float] = None
+    #: Arc OC-5 — measured against EVERY earlier stage that carries a moment, not only the previous one: earlier
+    #: stage → how many objects reached this stage before it. A timestamp is checked before it is believed.
+    precedes: dict[str, int] = Field(default_factory=dict)
+
+
+class ProcessTransition(BaseModel):
+    """Arc OC-5 — one move between two stages of a process, or out of it (``to_stage`` "left"). DECLARED, the moves the
+    business expects (none declared: each stage to the next, and leaving from any); MEASURED from the stages' moments —
+    an object moved from one stage to another when it carries both moments and none of a stage between them. What the
+    data does that nobody declared, and what was declared and never happens, are both said (`Process.conformance`)."""
+    from_stage: str
+    to_stage: str
+    declared: bool = False
+    objects: Optional[int] = None
 
 
 class ProcessExit(BaseModel):
@@ -748,6 +762,12 @@ class Process(BaseModel):
     provenance: str = ""
     #: Arc OC-4 — how an object leaves the process (see ProcessExit). None: no object leaves it.
     leaves: Optional[ProcessExit] = None
+    #: Arc OC-5 — the moves declared between its stages (see ProcessTransition); empty: each stage to the next.
+    transitions: list[ProcessTransition] = Field(default_factory=list)
+    #: Measured: every move seen between stages that carry a moment, and out of the process, with its objects.
+    observed: list[ProcessTransition] = Field(default_factory=list)
+    #: Measured: ``{"seen_only_in_data": ["placed → delivered", …], "never_observed": [...], "untimed": [...]}``.
+    conformance: dict[str, list[str]] = Field(default_factory=dict)
     #: Measured: the process's objects, the verdict over every stage and promise, and when it was counted.
     objects: Optional[int] = None
     verified: Optional[bool] = None

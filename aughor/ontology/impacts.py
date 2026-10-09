@@ -352,7 +352,9 @@ def _label(graph: OntologyGraph, ref: str) -> str:
 
 
 def impact_words(graph: OntologyGraph, impact: Impact) -> str:
-    """The impact in a reader's words, by its mechanism — an association is never said as a cause."""
+    """The impact in a reader's words, by its mechanism. An influence is said as the counts it is — descriptive, so
+    it departs (`agent/claim_type.py`) — and never with a verb that relates one promise to the other: an association
+    departs only on an analysis's licence, and a cause on an intervention's."""
     up, down = _label(graph, impact.upstream), _label(graph, impact.downstream)
     if impact.mechanism == "formula":
         return f"{down} follows from {up} by definition: {impact.formula}"
@@ -363,7 +365,7 @@ def impact_words(graph: OntologyGraph, impact: Impact) -> str:
             f"{impact.lead or 'objects'})")
     if impact.mechanism == "validated":
         return f"{said} — shown by {impact.evidence}"
-    return f"{said} — an association, not a measured cause"
+    return said
 
 
 def impacts_into(graph: Optional[OntologyGraph], process_id: str, noun: str) -> list[Impact]:

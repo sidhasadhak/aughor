@@ -144,8 +144,11 @@ def test_it_is_kept_in_the_tree_and_read_back_with_its_measurement_and_worded_as
     assert (read.objects, read.rate_when_broke, read.verified) == (measured.objects, measured.rate_when_broke,
                                                                    measured.verified)
     assert [i.id for i in impacts_into(served, "fulfilment_days", "delivery")] == ["late_dispatch_late_delivery"]
-    if read.verified:
-        assert impact_words(served, read).endswith("an association, not a measured cause")
+    from aughor.agent.claim_type import sentence_claims
+    read.verified = True
+    words = impact_words(served, read)
+    assert words.startswith("where the dispatch promise of Fulfilment in days was broken, the delivery promise")
+    assert sentence_claims(words) == []                  # descriptive: it departs without an analysis's licence
     moved = OntologyOverride(target_kind="impact", target_id="x", fields={**fields, "window_days": 30},
                              binding={"impact": impact_entry(fields, measured)})
     assert "changed since it was counted" in declared_impact(moved, served).note
@@ -184,3 +187,91 @@ def test_an_impact_the_data_does_not_bear_out_is_no_driver(db, graph):  # noqa: 
     impact.verified = False
     graph.impacts[impact.id] = impact
     assert not any(d.impact for d in frame_question("what is causing late delivery", graph).drivers)
+
+
+def test_the_briefing_reads_a_moved_promise_beside_what_is_measured_upstream_of_it(db, graph, monkeypatch):  # noqa: F811 — the warehouse fixture, by name
+    from aughor.knowledge import promise_chains
+    declare(graph, db, WINDOWS)
+    fields = _resolved(graph, "fulfilment_days.dispatch", "fulfilment_days.delivery")
+    impact = measure_impact(db, graph, "late_dispatch_late_delivery", fields)
+    graph.impacts[impact.id] = impact
+    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda conn, schema=None: graph)
+    impact.verified = True
+    said = promise_chains._upstream("c1", "fulfilment_days.delivery")
+    assert said == impact_words(graph, impact) and said.startswith("where the dispatch promise")
+    impact.verified = False
+    assert promise_chains._upstream("c1", "fulfilment_days.delivery") == ""
+    assert promise_chains._upstream("c1", "fulfilment_days.dispatch") == ""      # nothing is upstream of dispatch
+
+
+# ── what a link carries, and the objects a stage touches ────────────────────────────────────────────────────────────
+
+def test_a_link_carries_the_promise_kept_through_it_and_a_stage_names_its_lead_object(db, graph):  # noqa: F811 — the warehouse fixture, by name
+    from aughor.ontology.purpose import link_purposes, stage_roles
+    from aughor.semantic.object_types import object_type_map
+    declare(graph, db, FULFILMENT)
+    process = graph.processes["order_fulfilment"]
+    via = process.stages[1].promise.via
+    rel = next(r for r in graph.relationships.values() if via in (r.api_name, r.reverse_api_name))
+    carried = link_purposes(graph)[rel.id]
+    assert {"process": "order_fulfilment", "process_label": "Order fulfilment", "promise": "shipping",
+            "how": "the shipping promise is kept per OrderItem and reaches Order through it"} in carried
+    roles = stage_roles(graph, process, 1)
+    lead = next(r for r in roles if r["role"] == "the lead object its promise is kept per")
+    assert lead["entity"] == "OrderItem" and "every hop to-one" in lead["why"]
+    assert next(r for r in roles if r["role"] == "goes through the process")["entity"] == "Order"
+    edge = next(e for e in object_type_map(graph)["links"] if e["relationship"] == rel.id)
+    assert edge["carries"] == carried
+    unrelated = [r.id for r in graph.relationships.values() if r.id != rel.id and r.id not in link_purposes(graph)]
+    assert unrelated, "a link no declaration reads carries nothing"
+
+
+# ── moves between stages, and every timestamp checked ───────────────────────────────────────────────────────────────
+
+def test_the_moves_the_data_makes_are_counted_and_set_against_those_declared(db, graph):  # noqa: F811 — the warehouse fixture, by name
+    from aughor.ontology.processes import process_spec_problem
+    spec = {**WINDOWS, "id": "moves", "leaves": {"property": "status", "values": ["cancelled", "refunded"]},
+            "transitions": [{"from": "placed", "to": "shipped"}, {"from": "shipped", "to": "delivered"},
+                            {"from": "delivered", "to": "left"}]}
+    assert process_spec_problem(spec) == ""
+    _, p = declare(graph, db, spec)
+    moves = {(t.from_stage, t.to_stage): t for t in p.observed}
+    o = "ecommerce.orders"
+    ps, sd, pd, sl, pl = ints(db, (
+        "SELECT COUNT(*) FILTER (WHERE order_date IS NOT NULL AND shipped_at IS NOT NULL), "
+        "COUNT(*) FILTER (WHERE shipped_at IS NOT NULL AND delivered_at IS NOT NULL), "
+        "COUNT(*) FILTER (WHERE order_date IS NOT NULL AND delivered_at IS NOT NULL AND shipped_at IS NULL), "
+        "COUNT(*) FILTER (WHERE shipped_at IS NOT NULL AND delivered_at IS NULL AND status IN ('cancelled', 'refunded')), "
+        f"COUNT(*) FILTER (WHERE order_date IS NOT NULL AND shipped_at IS NULL AND delivered_at IS NULL AND status IN ('cancelled', 'refunded')) FROM {o}"))
+    assert moves[("placed", "shipped")].objects == ps and moves[("shipped", "delivered")].objects == sd
+    assert moves[("placed", "shipped")].declared and moves[("shipped", "delivered")].declared
+    assert pd + sl + pl > 0, "the samples hold moves nobody declared — the check is not vacuous"
+    for pair, n in ((("placed", "delivered"), pd), (("shipped", "left"), sl), (("placed", "left"), pl)):
+        assert (moves[pair].objects if pair in moves else 0) == n
+        said = f"{pair[0]} → {pair[1]}"
+        assert (said in p.conformance["seen_only_in_data"]) == bool(n), said        # nobody declared these
+    assert sl == 1100 and "delivered → left" in p.conformance["never_observed"]     # declared; no delivered order left
+    (before,) = ints(db, f"SELECT COUNT(*) FROM {o} WHERE delivered_at < order_date")
+    assert p.stages[2].precedes.get("placed", 0) == before
+
+
+@pytest.mark.parametrize("transitions, says", [
+    ([{"from": "placed", "to": "nowhere"}], "each transition moves from one of its stages"),
+    ([{"from": "placed", "to": "placed"}], "to itself is not a move"),
+    ([{"from": "placed", "to": "shipped"}, {"from": "placed", "to": "shipped"}], "declared twice"),
+])
+def test_a_transition_that_names_no_stage_is_refused(transitions, says):
+    from aughor.ontology.processes import process_spec_problem
+    assert says in process_spec_problem({**WINDOWS, "transitions": transitions})
+
+
+def test_a_deadline_before_the_object_entered_the_process_is_flagged_with_its_count(db, graph):  # noqa: F811 — the warehouse fixture, by name
+    from tests.unit.test_object_processes import LINE_JOIN
+    spec = {"id": "late_entry", "entity": "Order", "stages": [
+        {"name": "shipped", "timestamp": "shipped_at"},
+        {"name": "delivered", "timestamp": "delivered_at",
+         "promise": {"name": "by_limit", "deadline": "ship_by", "grain": "OrderItem"}}]}
+    _, p = declare(graph, db, spec)
+    (early,) = ints(db, f"SELECT COUNT(*) {LINE_JOIN} WHERE i.ship_by < o.shipped_at")
+    flags = [f for f in p.stages[1].promise.flags if f.startswith("deadline before entry")]
+    assert early > 0 and flags and flags[0].startswith(f"deadline before entry: {early:,} OrderItem objects")

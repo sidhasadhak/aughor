@@ -263,7 +263,8 @@ _EDITABLE: dict[str, set[str]] = {
     # anchored to a moment or a state, with the promise about reaching it — and a DECLARED rule (POST /ontology/rules):
     # a value set or named conditions over one type. Both are the target's whole existence; what their measurement
     # counted rides the binding (`process` / `rule`), so the overlay rebuilds them with no database.
-    "process": {"declared", "display_name", "description", "entity", "stages", "owner", "origin", "provenance"},
+    "process": {"declared", "display_name", "description", "entity", "stages", "owner", "origin", "provenance",
+                "transitions"},
     "rule": {"declared", "display_name", "description", "entity", "kind", "property", "values", "conditions",
              "owner", "origin", "provenance"},
     # Arc OC-5: a DECLARED impact (POST /ontology/impacts) — one promise's bearing on another, with its mechanism; the
