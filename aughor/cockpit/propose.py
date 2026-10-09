@@ -44,8 +44,9 @@ from aughor.cockpit import versions as _versions
 from aughor.cockpit.home import NOBODY_IN_PARTICULAR, Home, approver
 from aughor.kernel.errors import tolerate
 
-#: The inbox's kind for a cockpit proposal.
+#: The inbox's kind for a cockpit proposal, and for a proposal to publish one (the canvas, B5).
 KIND = "cockpit_draft"
+PUBLISH_KIND = "cockpit_publish"
 
 #: What a new card may be made from.
 FROM_METRIC = "metric"
@@ -81,6 +82,8 @@ HOW_TO_DRAFT = (
     "choose the ones that matter most, and say that more can follow in an edit. "
     'A limit goes on a card, as "limit", only when the user named it; a limit you choose is refused. '
     'Leave "visible" out of an element that is always shown. '
+    "A Note and an Image on the cockpit are the person's own: an edit may move one, give it a size or take "
+    "it off, and may not add one, change a note's text or choose an image; a new cockpit holds none. "
     "A card shows what its record measures and no more: a metric is one figure for the whole connection, "
     "and a trusted query or a finding shows its own rows. When the user asks for what no record "
     "measures, such as a breakdown no record gives, say so in your answer rather than drafting "
@@ -332,7 +335,7 @@ def _draft_cards(home: Home, schema: Optional[str], asked: Any,
 
 # ── the spec ─────────────────────────────────────────────────────────────────────────────────
 
-def _with_ids(spec: Any, ids: dict[str, str]) -> Any:
+def with_card_ids(spec: Any, ids: dict[str, str]) -> Any:
     """``spec`` with each new card's name replaced by the id it will be created with — where a
     ``Card`` places it, and where a condition reads its status."""
     if not ids or not isinstance(spec, dict) or not isinstance(spec.get("elements"), dict):
@@ -404,19 +407,25 @@ def outline(spec: dict, titles: dict[str, str], new_ids: set[str],
     def moved(key: str) -> str:
         return "added" if key in added else "changed" if key in changed else ""
 
+    def placed(c: str) -> dict:
+        props = els[c]["props"]
+        line = {"change": moved(c), "size": props.get("size") or "small",
+                "shown": _said(els[c].get("visible"), titles) if "visible" in els[c] else ""}
+        kind = els[c]["type"]
+        if kind == "Note":
+            return {**line, "title": static_title(els[c]), "new": False, "tone": "", "static": "note"}
+        if kind == "Image":
+            return {**line, "title": static_title(els[c]), "new": False, "tone": "", "static": "image"}
+        return {**line, "title": titles.get(props["card"]) or props["card"], "new": props["card"] in new_ids,
+                "tone": props.get("tone") or ""}
+
     def section(key: str) -> dict:
         el = els[key]
         return {
             "title": el["props"]["title"],
             "change": moved(key),
             "shown": _said(el.get("visible"), titles) if "visible" in el else "",
-            "cards": [{
-                "title": titles.get(els[c]["props"]["card"]) or els[c]["props"]["card"],
-                "new": els[c]["props"]["card"] in new_ids,
-                "change": moved(c),
-                "tone": els[c]["props"].get("tone") or "",
-                "shown": _said(els[c].get("visible"), titles) if "visible" in els[c] else "",
-            } for c in el["children"]],
+            "cards": [placed(c) for c in el["children"]],
         }
 
     root = els[spec["root"]]
@@ -428,10 +437,19 @@ def outline(spec: dict, titles: dict[str, str], new_ids: set[str],
     return [{"tab": "", "change": "", "sections": [section(s) for s in root["children"]]}]
 
 
+def static_title(el: dict) -> str:
+    """A note by its first words, an image by its caption — how a line names what measures nothing."""
+    props = el.get("props") or {}
+    if el.get("type") == "Note":
+        words = " ".join(str(props.get("text") or "").split())
+        return f"Note · {words[:60]}{'…' if len(words) > 60 else ''}"
+    return f"Image · {props.get('caption') or props.get('object') or ''}"
+
+
 def taken_off(before: Optional[dict], removed: list[str], titles: dict[str, str]) -> list[dict]:
-    """What an edit takes off the cockpit, as a person reads it: each card, section and tab by
-    its own name, and where it was. The outline says what the cockpit will be, so what is no
-    longer in it is said here or nowhere."""
+    """What an edit takes off the cockpit, as a person reads it: each card, note, image, section
+    and tab by its own name, and where it was. The outline says what the cockpit will be, so
+    what is no longer in it is said here or nowhere."""
     els = (before or {}).get("elements") or {}
     holder = {c: k for k, el in els.items() if isinstance(el, dict) for c in el.get("children") or []}
     out = []
@@ -441,6 +459,8 @@ def taken_off(before: Optional[dict], removed: list[str], titles: dict[str, str]
         kind = el.get("type")
         if kind == "Card":
             title = titles.get(props.get("card")) or str(props.get("card") or key)
+        elif kind in ("Note", "Image"):
+            title = static_title(el)
         elif kind == "Tab":
             title = str(props.get("label") or key)
         elif kind == "Section":
@@ -470,9 +490,48 @@ def _replaced(before: dict, placed_after: set[str], removed: list[str], titles: 
         if card is not None and card not in placed_after and card not in told:
             told.add(card)
             keys.append(key)
-        elif el.get("type") in ("Tab", "Section") and key in removed:
+        elif el.get("type") in ("Tab", "Section", "Note", "Image") and key in removed:
             keys.append(key)
     return taken_off(before, keys, titles)
+
+
+# ── what a model may not do to a note or an image ────────────────────────────────────────────
+
+def _statics(spec: Any) -> dict[str, tuple[str, str]]:
+    """Each note and image a spec holds, by key: ``(kind, what it says)`` — a note's words, an
+    image's object."""
+    out: dict[str, tuple[str, str]] = {}
+    elements = spec.get("elements") if isinstance(spec, dict) else None
+    for key, el in (elements or {}).items():
+        if not isinstance(el, dict) or not isinstance(el.get("props"), dict):
+            continue
+        if el.get("type") == "Note":
+            out[key] = ("note", str(el["props"].get("text") or ""))
+        elif el.get("type") == "Image":
+            out[key] = ("image", str(el["props"].get("object") or ""))
+    return out
+
+
+def statics_written(before: Any, after: Any, mode: str) -> list[str]:
+    """The sentences for what a draft did to a person's own elements that only the person may do
+    (the canvas, 2026-10-08): a model arranges a note or an image — moves it, resizes it, takes
+    it off — and never makes one, writes a note's words or chooses an image. A new cockpit holds
+    none; an edit may carry each one only as it stands."""
+    was = _statics(before) if mode == MODE_EDIT else {}
+    said = []
+    for key, (kind, says) in _statics(after).items():
+        if mode == MODE_NEW:
+            said.append(f'The cockpit holds the {kind} "{key}". A new cockpit holds no note and no image: '
+                        "those are the person's to add, by hand.")
+        elif key not in was:
+            said.append(f'The edit adds the {kind} "{key}". A note is the person\'s words and an image is '
+                        "the person's choice: you may move one they placed, resize it or take it off, never add one.")
+        elif was[key][1] != says:
+            said.append(f'The edit changes the {kind} "{key}". ' + (
+                "A note's words are the person's: move it, resize it or take it off, never write it."
+                if kind == "note" else
+                "Which image it shows is the person's choice: move it, resize it or take it off, never choose one."))
+    return said
 
 
 def _canonical(spec: Any) -> str:
@@ -499,9 +558,14 @@ def options(home: Home, schema: Optional[str] = None) -> dict:
     shown = [f for f in findings(home.connection_id, schema) if (f.get("sql") or "").strip()]
     current = _versions.latest(home)
     live = current if current and not current["retired"] and current.get("spec") else None
+    from aughor.cockpit import sharing
+    audience = sharing.audience_of(home.owner)
     return {
         "available": True,
-        "cockpit": ({"version": live["version"], "spec": live["spec"]} if live else None),
+        "cockpit": ({"version": live["version"], "spec": live["spec"],
+                     "published_to": [t["name"] for t in live.get("published_to") or []]} if live else None),
+        "may_publish_to": {"groups": [g["name"] for g in audience["groups"]],
+                           "roles": [r["name"] for r in audience["roles"]]},
         "cards_you_have": [{"id": c.id, "title": c.title, "kind": c.kind,
                             "has_limit": bool(_limit_key(c.thresholds)),
                             **({"made_from": dict([made_from(c)])} if made_from(c) else {})}
@@ -608,9 +672,10 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
     refusals.extend(card_refusals)
 
     ids = {c["key"]: c["id"] for c in made}
-    final = _with_ids(spec, ids) if spec is not None else None
+    final = with_card_ids(spec, ids) if spec is not None else None
     verdict = None
     if final is not None:
+        refusals.extend(statics_written(live["spec"] if live else None, final, mode))
         # A card that was refused is still a name the spec places. It is counted as known
         # here, or the rules would call it a card the cockpit may not place — a second
         # sentence for a fault already told in its own.
@@ -668,6 +733,62 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
         params=params, detail=detail, reasoning=reasoning,
         proposer="cockpit", source="agent"))
     return Drafted(proposal=p, replaced=_retire_pending(home, p.id))
+
+
+def propose_publish(home: Home, to: Any) -> Drafted:
+    """Stage ONE proposal to publish the cockpit that stands to the groups and roles ``to`` names
+    (each ``{"kind", "name"}``), or refuse with every reason. Kept, it publishes; nothing is shared
+    before that (the canvas, B5)."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.cockpit import sharing
+    from aughor.org.context import current_org_id
+
+    current = _versions.latest(home)
+    live = current if current and not current["retired"] and current.get("spec") else None
+    if live is None:
+        return Drafted(refusals=("There is no cockpit here to publish.",))
+    if not isinstance(to, list) or not to:
+        return Drafted(refusals=('"to" names at least one group or role, each as {"kind", "name"}.',))
+    targets: list[dict] = []
+    refusals: list[str] = []
+    for raw in to:
+        hit, why = sharing.may_publish_to(home.owner, raw)
+        if hit is None:
+            refusals.append(why)
+        elif hit not in targets:
+            targets.append(hit)
+    if refusals:
+        return Drafted(refusals=tuple(refusals))
+    if targets == list(live.get("published_to") or []):
+        return Drafted(refusals=(f"The cockpit is already published to {', '.join(t['name'] for t in targets)}.",))
+    title = str(live["spec"]["elements"][live["spec"]["root"]]["props"]["title"])
+    p = stage_proposal(StagedProposal(
+        kind=PUBLISH_KIND, org_id=current_org_id() or "", connection_id=home.connection_id,
+        schema_name="", action_id=f"cockpit:{title}:publish",
+        params={"home": home.as_params(), "base_version": live["version"], "to": targets},
+        detail={"title": title, "mode": "publish", "replaces_version": live["version"],
+                "to": [t["name"] for t in targets], "outline": [], "counts": {}, "changes": {}, "taken_off": []},
+        reasoning="", proposer="cockpit", source="agent"))
+    return Drafted(proposal=p)
+
+
+def accept_publish(params: dict, *, connection_id: str, approved_by: str) -> tuple[bool, Any]:
+    """Publish what an approved proposal names — or nothing, when the cockpit has moved on."""
+    home = Home.of((params or {}).get("home"))
+    if home is None or home.connection_id != connection_id:
+        return False, "This proposal names no cockpit of this connection to publish. Nothing was shared."
+    if home.owner != NOBODY_IN_PARTICULAR and approved_by.strip() != approver(home.owner):
+        return False, "This cockpit is someone else's, and only they can publish it. Nothing was shared."
+    current = _versions.latest(home)
+    now = current["version"] if current else None
+    if now != params.get("base_version"):
+        return False, (f"The cockpit has changed since this was proposed: it was version {params.get('base_version')} "
+                       f"and is now version {now}. Ask for it again.")
+    kept = _versions.publish(home, list(params.get("to") or []), approved_by=approved_by)
+    if not kept.kept:
+        return False, " ".join(kept.sentences) or "The cockpit already reads this way."
+    return True, {**home.as_params(), "version": kept.version, "artifact_id": kept.artifact_id,
+                  "to": [t["name"] for t in params.get("to") or []]}
 
 
 def _limits_asked(cards: Any) -> list[float]:

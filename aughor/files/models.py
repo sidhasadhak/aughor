@@ -49,3 +49,6 @@ class VolumeObject(BaseModel):
     size_bytes: int = 0
     extracted_text: Optional[str] = None   # filled by R8 extraction later
     created_at: str = ""
+    #: Who put it there (``user:<id>``), when the writer said. Provenance is required of a thing a
+    #: cockpit shows (the canvas, 2026-10-08); an older row says "".
+    created_by: str = ""

@@ -13,7 +13,7 @@
  *
  * No model, no figure. A title a person types is theirs; the server keeps it as theirs.
  */
-import { MAX_LABEL, MAX_TITLE } from "@/lib/cockpit/catalog";
+import { MAX_CAPTION, MAX_LABEL, MAX_NOTE, MAX_TITLE, PLACED, type Size } from "@/lib/cockpit/catalog";
 
 export interface Element {
   type: string;
@@ -180,6 +180,71 @@ export function placeCard(spec: unknown, cardId: string, sectionKey?: string): C
   s.elements[key] = { type: "Card", props: { card: cardId }, children: [] };
   s.elements[target].children.push(key);
   return s;
+}
+
+/** Place a note — the person's own words — in a section; the first, when none is named. The
+ *  author and the date are the server's to stamp when it is kept. An empty note is no note. */
+export function placeNote(spec: unknown, text: string, sectionKey?: string): CockpitSpec {
+  const s = copy(spec);
+  const words = text.trim().slice(0, MAX_NOTE);
+  const target = sectionKey ?? sectionsOf(s)[0]?.key;
+  if (!words || !target || s.elements[target]?.type !== "Section") return s;
+  const key = freshKey(s, "note");
+  s.elements[key] = { type: "Note", props: { text: words }, children: [] };
+  s.elements[target].children.push(key);
+  return s;
+}
+
+/** Place an image the person uploaded, by its object id, with a caption. */
+export function placeImage(spec: unknown, objectId: string, caption: string, sectionKey?: string): CockpitSpec {
+  const s = copy(spec);
+  const said = caption.trim().slice(0, MAX_CAPTION);
+  const target = sectionKey ?? sectionsOf(s)[0]?.key;
+  if (!objectId || !said || !target || s.elements[target]?.type !== "Section") return s;
+  const key = freshKey(s, "image");
+  s.elements[key] = { type: "Image", props: { object: objectId, caption: said }, children: [] };
+  s.elements[target].children.push(key);
+  return s;
+}
+
+/** Change a note's words. Its stamps are the server's: a changed note is re-stamped when kept. */
+export function editNote(spec: unknown, key: string, text: string): CockpitSpec {
+  const s = copy(spec);
+  const words = text.trim().slice(0, MAX_NOTE);
+  const el = s.elements[key];
+  if (!el || el.type !== "Note" || !words) return s;
+  el.props = { ...el.props, text: words };
+  return s;
+}
+
+/** Change an image's caption. */
+export function recaption(spec: unknown, key: string, caption: string): CockpitSpec {
+  const s = copy(spec);
+  const said = caption.trim().slice(0, MAX_CAPTION);
+  const el = s.elements[key];
+  if (!el || el.type !== "Image" || !said) return s;
+  el.props = { ...el.props, caption: said };
+  return s;
+}
+
+/** Give a placed element — a card, a note, an image — a size. "small" is the size an element
+ *  has when it says none, so it is written as none: a spec says only what it must. */
+export function resize(spec: unknown, key: string, size: Size): CockpitSpec {
+  const s = copy(spec);
+  const el = s.elements[key];
+  if (!el || !PLACED.includes(el.type as never)) return s;
+  const { size: _was, ...rest } = el.props;
+  el.props = size === "small" ? rest : { ...rest, size };
+  return s;
+}
+
+/** The keys of the notes and images a spec holds, in the order its sections place them. */
+export function staticsPlaced(spec: unknown): string[] {
+  const s = spec as CockpitSpec;
+  return sectionsOf(s).flatMap(sec => s.elements[sec.key].children.filter(k => {
+    const t = s.elements[k]?.type;
+    return t === "Note" || t === "Image";
+  }));
 }
 
 /** Rename the cockpit, a section or a tab. An empty name is no name: nothing changes. */

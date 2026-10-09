@@ -7392,7 +7392,12 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   quarterly sales growth target [1]"* — from the DECLARED PRIORITIES block. The per-citation `priority` tag stayed empty on
   all eight: the findings say *revenue* and *AOV*, never *total sales*, and the tag holds the north-star word rule on
   purpose (a tag that guessed would be worse than none). The explorer was stopped after the brief to cap the spend.
-- ✅ **CB-7 · One action beside each Briefing item** (idea 20) — **BUILT 2026-09-23**. `briefing.best_action_for`: the cited
+- ✅ **CB-7 · One action beside each Briefing item** (idea 20) — **BUILT 2026-09-23**; ⛔ **its line under the
+  Full synthesis TAKEN OFF 2026-10-09** (the user, reading eight identical playbook lines there: "those 8 points
+  should not be a part of the Full synthesis at all"). The synthesis is the narrative and its citations; a next step
+  belongs with the finding — in the ledger's row or the analysis it came from. `best_action_for` still stamps an
+  action on each citation (the fit rule of the same day keeps it honest), and nothing on the page reads it now.
+  CB-6's "bears on the goal" line went with it. `briefing.best_action_for`: the cited
   investigation's own first recommendation when the item came from one (executable through the inbox's gated door —
   the brief links to it), else the playbook's best play for the finding's labels by learned success rate, read for the
   brief's industry only (`industry_scope`) — a suggestion, never fired on its own; an item with neither carries none.
@@ -13641,9 +13646,10 @@ the browser** · **measure the premise before building.**
     (c) **The Briefing gains all three**: signed and dated as a delivery, an action on an item, a prediction on an
     item. *Built so far — signed and dated:* a send that leaves books one ledger entry (`briefing_delivery`) citing
     the kept version it delivered and the departure that carried it — to whom, when, under which receipt
-    (`aughor/briefing/deliveries.py`). The Briefing lists its deliveries under its measured table, each saying
-    whether the version sent is still the one on the page, and "Open what was sent" reads that version by its id,
-    never the latest. A send the gate held or a channel refused books nothing; the standing Briefing, which keeps no
+    (`aughor/briefing/deliveries.py`). The Briefing listed its deliveries under its measured table, each saying
+    whether the version sent is still the one on the page, and "Open what was sent" read that version by its id,
+    never the latest — ⛔ **that table left the Briefing 2026-10-09** (the user: "the delivered part doesn't need
+    to be here — the departures is enough"): the ledger entry stands, and a send is read in Agent Ops › Departures. A send the gate held or a channel refused books nothing; the standing Briefing, which keeps no
     version, books nothing. The entry is in the ledger's export. Not seen on a real send yet: the scratch install has
     no channel, so the first scheduled send is its receipt.
     *Built — a prediction on each measured item:* for every approved metric, the band its own past puts on the
@@ -13850,6 +13856,33 @@ the browser** · **measure the premise before building.**
     transportation, overhead, operating income and operating ratio; airline: operating revenue, operating
     expenses (fuel, labour, maintenance, airports), operating income; food delivery: gross order value, refunds,
     revenue (take), courier costs, contribution, marketing, EBITDA — then each one's drivers.
+    (g) **The Briefing's measured table, its segment breakdown and the early read come off** (asked with the four
+    metric blocks as options): they are the Metrics cockpit's, and the narrative cites the figures it needs. The
+    Key Metrics tiles and the hero's largest moves stay. Item 43 had kept the table on both pages.
+49. ✅ **DECIDED 2026-10-08 — the cockpit as a canvas, the Briefing as a reading**
+    (`docs/COCKPIT_CANVAS_2026-10-08.md`; the user: *"this makes briefing and the custom cockpit more like a canvas
+    on which user can place literally anything.. this is more of a product design decision that we need to really
+    think through"*). Asked with options, decided: (a) **the Cockpit is the canvas; the Briefing gets switches** —
+    a person shows, hides and orders the Briefing's sections and chooses the cockpit strip that rides with it, never
+    its content; the default Metrics cockpit stays the product's; (b) a person may place **text notes, images and
+    any finding from the ledger** — cards from other connections declined (one period over two data edges is two
+    periods); (c) **personal, plus publish to a group or role**, kept as a version under the publisher's name. The
+    (d) **every change can be asked for in natural language, except uploading an image and adding a text note** —
+    the existing proposal door (CT-5: the model proposes, the person keeps whole or not at all); a model arranges a
+    note or image, never writes one; (e) **every element has a size from a closed set** (six names, a span of
+    1–3 by 1–2, never pixels; asked for after a clickable mock the same day). The laws (a static thing says it is
+    static; the platform never speaks a person's words as its own; a send strips what was not measured) are in
+    the doc. ✅ **BUILT 2026-10-08** on `claude/cockpit-canvas`, one branch, one PR: vocabulary 2 (Note, Image,
+    `size`; the validator bundle rebuilt); notes stamped by the server; images in a per-connection cockpit
+    volume with the uploader on the row, sniffed from the bytes, SVG with script refused; the Briefing's
+    switches as the `briefing_sections` preference — six sections, and the verdict's measured figures and
+    "what the findings found" as parts that hide on their own (the user, seeing the tiles under the headline:
+    "I do not wish to see the key metrics located inside the briefing") — readable in words without a model; any recorded finding
+    placed through the pin door; publish to a group one belongs to or a role one holds (a version, as is
+    unpublishing), "Shared with you" read-only with "Start my cockpit from this"; and the words door for a
+    cockpit that stands (`POST /cockpits/{id}/ask`, ⚑ one model run) — edits and publishes as proposals, a
+    note or an image never written or chosen by it. The user's three answers: Markdown subset up to 2,000;
+    PNG/JPEG/SVG/GIF/WebP up to 5 MB; any member to their group, a role needs the role.
 
 ---
 

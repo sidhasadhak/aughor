@@ -23,6 +23,7 @@ identified users simply shard out of "local" with no migration.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 from pathlib import Path
@@ -92,6 +93,44 @@ def _map_layout(v: Any) -> dict:
     return out
 
 
+#: The Briefing's sections, in the order the product draws them (the canvas,
+#: docs/COCKPIT_CANVAS_2026-10-08.md, B1). A person shows, hides and orders these and chooses the
+#: cockpit of theirs that rides with the Briefing; the content of a section is never theirs to change.
+#: ``measured`` and ``moves`` are the two parts of the verdict — the day's measured figures and the
+#: row of what the findings found — each hidden on its own, moved with the verdict.
+BRIEFING_SECTIONS = ("verdict", "measured", "moves", "key_metrics", "findings", "synthesis", "cockpit", "patterns")
+_COCKPIT_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
+
+
+def _briefing_sections(v: Any) -> dict:
+    """``{"sections": [{"id": <section>, "on": <bool>}, …], "strip": "<cockpit id>" | ""}``. Every
+    section is listed once; one left out is appended, shown, so a section the product adds later is
+    not hidden by an older preference. ``strip`` names the person's own cockpit drawn under the
+    Briefing, or nothing."""
+    if not isinstance(v, dict):
+        raise ValueError("must be an object with 'sections' and 'strip'")
+    raw = v.get("sections", [])
+    if not isinstance(raw, list):
+        raise ValueError("'sections' must be a list of {id, on}")
+    seen: set[str] = set()
+    out: list[dict] = []
+    for item in raw:
+        sid = str((item or {}).get("id") or "") if isinstance(item, dict) else ""
+        if sid not in BRIEFING_SECTIONS:
+            raise ValueError(f"each section is one of {', '.join(BRIEFING_SECTIONS)}")
+        if sid in seen:
+            raise ValueError(f"'{sid}' is listed twice")
+        seen.add(sid)
+        out.append({"id": sid, "on": bool(item.get("on", True))})
+    for sid in BRIEFING_SECTIONS:
+        if sid not in seen:
+            out.append({"id": sid, "on": True})
+    strip = v.get("strip") or ""
+    if not isinstance(strip, str) or (strip and not _COCKPIT_ID.match(strip)):
+        raise ValueError("'strip' is the id of one of your cockpits, or empty for none")
+    return {"sections": out, "strip": strip}
+
+
 def _timezone(value):
     """A real IANA zone or nothing — a typo'd clock must refuse, never arm a 9am that
     fires at 7 (SP-13)."""
@@ -131,6 +170,11 @@ ALLOWED_KEYS: dict[str, tuple] = {
     "scaling": (_one_of(*LOOK_SCALINGS), "the size of controls and their spacing"),
     "default_connection": (_connection_id, "connection new conversations open on"),
     "ontology_map_layout": (_map_layout, "where you dragged the cards on the ontology map"),
+    # The canvas (B1): the Briefing's switches. Cosmetic and self-scoped — which of its sections
+    # you see and in what order, and which cockpit of yours rides with it; its content is the
+    # platform's, and a send carries the platform's Briefing, not your switches.
+    "briefing_sections": (_briefing_sections, "which of the Briefing's sections you show, in what order, "
+                                              "and which of your cockpits rides with it"),
     # SP-13 — the clock drafts and new schedules speak. Cosmetic-plus: it changes what
     # NEW drafts default to, never what any existing chain does.
     "timezone": (_timezone, "the timezone drafts and new schedules speak (IANA name)"),

@@ -28,7 +28,7 @@ function refused(change: (s: Spec) => void): string {
 }
 
 describe("the catalog", () => {
-  it("declares five components and no action", () => {
+  it("declares seven components and no action", () => {
     expect(cockpitCatalog.componentNames).toEqual([...COMPONENT_NAMES]);
     expect(cockpitCatalog.actionNames).toEqual([]);
   });
@@ -36,12 +36,62 @@ describe("the catalog", () => {
   it("publishes its vocabulary for the server to read", () => {
     expect(vocabulary()).toEqual({
       version: COCKPIT_VOCABULARY_VERSION,
-      components: ["Cockpit", "Tabs", "Tab", "Section", "Card"],
+      components: ["Cockpit", "Tabs", "Tab", "Section", "Card", "Note", "Image"],
       tones: ["good", "warn", "bad", "info", "neutral"],
+      sizes: ["small", "wide", "tall", "large", "full", "hero"],
       range_statuses: ["standing", "final", "provisional", "to_date"],
       card_statuses: ["within", "over", "unmeasured", "withheld"],
       limits: { elements: MAX_ELEMENTS, tabs: MAX_TABS, cards: MAX_CARDS },
     });
+    expect(COCKPIT_VOCABULARY_VERSION).toBe(2);
+  });
+});
+
+describe("a note, an image and a size (the canvas, 2026-10-08)", () => {
+  const withStatics = (): Spec => {
+    const spec = premise();
+    spec.elements["note-1"] = { type: "Note", props: { text: "Target for Q4: under **10%**.", size: "wide" }, children: [] };
+    spec.elements["image-1"] = { type: "Image", props: { object: "ab12cd34ef56", caption: "Q4 promo calendar", size: "tall" }, children: [] };
+    (spec.elements["sec-headline"].children as string[]).push("note-1", "image-1");
+    return spec;
+  };
+
+  it("are placed in a section like a card, counted as elements and not as cards", () => {
+    const check = checkCockpitSpec(withStatics());
+    expect(check.issues).toEqual([]);
+    expect(check.cards).toEqual(["c7f3a001", "c91b2002"]);
+    // A note's words are the person's: they are not reader text a model is held to.
+    expect(check.texts.map(t => t.elementKey)).not.toContain("note-1");
+  });
+
+  it("take a size from the closed set, and only one of its names", () => {
+    const spec = withStatics();
+    (spec.elements["card-rate"].props as Record<string, unknown>).size = "large";
+    expect(checkCockpitSpec(spec).valid).toBe(true);
+    expect(refused(s => { (s.elements["card-rate"].props as Record<string, unknown>).size = "huge"; })).toContain("\"size\"");
+    expect(refused(s => { (s.elements["card-rate"].props as Record<string, unknown>).size = { w: 2, h: 2 }; })).toContain("\"size\"");
+  });
+
+  it("hold nothing and may be shown by a condition", () => {
+    const spec = withStatics();
+    spec.elements["note-1"].visible = { $state: "/range/status", neq: "to_date" };
+    expect(checkCockpitSpec(spec).valid).toBe(true);
+    const said = refused(s => {
+      s.elements["note-1"] = { type: "Note", props: { text: "x" }, children: ["card-net"] };
+      (s.elements["sec-headline"].children as string[]).push("note-1");
+    });
+    expect(said).toContain("A Note holds nothing");
+  });
+
+  it("refuse an empty note, a note too long, an image with no caption and a tab holding a note", () => {
+    expect(refused(s => { s.elements["note-1"] = { type: "Note", props: { text: "" }, children: [] }; (s.elements["sec-headline"].children as string[]).push("note-1"); }))
+      .toContain("\"text\"");
+    expect(refused(s => { s.elements["note-1"] = { type: "Note", props: { text: "x".repeat(2001) }, children: [] }; (s.elements["sec-headline"].children as string[]).push("note-1"); }))
+      .toContain("\"text\"");
+    expect(refused(s => { s.elements["image-1"] = { type: "Image", props: { object: "ab12" }, children: [] }; (s.elements["sec-headline"].children as string[]).push("image-1"); }))
+      .toContain("\"caption\"");
+    expect(refused(s => { s.elements["note-1"] = { type: "Note", props: { text: "x" }, children: [] }; (s.elements["tab-overview"].children as string[]).push("note-1"); }))
+      .toContain("A Tab holds: Section");
   });
 });
 

@@ -2319,6 +2319,27 @@ export async function getDomainInsights(connectionId: string, schema?: string): 
   return res.json();
 }
 
+/** A finding the explorer recorded, by the glossary's word: the wire keeps its older name. */
+export type RecordedFinding = ExplorationInsight;
+
+/** The connection's recorded findings, by domain, as the cockpit's ledger picker reads them
+ *  (the canvas, 2026-10-08): every domain that has one, in name order. */
+export async function listFindingsByDomain(connectionId: string, schema?: string): Promise<{ domain: string; findings: RecordedFinding[] }[]> {
+  const by = await getDomainInsights(connectionId, schema);
+  return Object.entries(by).map(([domain, d]) => ({ domain, findings: d.insights ?? [] }))
+    .filter(g => g.findings.length).sort((a, b) => a.domain.localeCompare(b.domain));
+}
+
+/** Pin a recorded finding as a card — Door 1, by the glossary's word. */
+export function pinFinding(connectionId: string, findingId: string, opts: { scope?: string; scopeRef?: string; schema?: string } = {}) {
+  return pinInsightToDashboard(connectionId, findingId, opts);
+}
+
+/** The finding a card was made from, or "" for a card made from nothing recorded. */
+export function findingOfCard(card: DashboardCard): string {
+  return card.provenance?.insight_id || "";
+}
+
 // ── A run a person starts: capped at the month's exploration budget (2026-10-08) ──────────────
 
 /** The month's exploration budget is spent and the person chose not to run past it. */
@@ -2601,6 +2622,9 @@ export interface CockpitVersion {
   cards: string[];
   changes: { added: string[]; removed: string[]; changed: string[] };
   spec?: unknown;
+  /** Who this version reaches beyond its owner, and who published it (the canvas, B5). */
+  published_to?: { kind: "group" | "role"; id: string; name: string }[];
+  published_by?: string;
 }
 
 /** One of a person's cockpits, as the strip lists it. */
@@ -2651,6 +2675,20 @@ export type CockpitCard = DashboardCard & {
   stated_range?: StatedRange | null;
 };
 
+/** What the cockpit's read says of an image it places: its stamps from the volume's own row, and
+ *  whether this reader may see its bytes. An image that is gone, or not this connection's,
+ *  stands as its caption with `why`. */
+export interface CockpitImageStamp {
+  object: string;
+  file_name: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  content_type: string;
+  bytes: number;
+  readable: boolean;
+  why: string;
+}
+
 export interface PersonCockpit {
   connection_id: string;
   owner: string;
@@ -2662,6 +2700,26 @@ export interface PersonCockpit {
   history: CockpitVersion[];
   /** The symbol a money figure is written with, as the Briefing resolves it. */
   currency_symbol?: string;
+  /** The images the spec places, by object id (the canvas, 2026-10-08). */
+  images?: Record<string, CockpitImageStamp>;
+}
+
+/** Where an image placed on a cockpit is read from: the API, with the reader's own access. */
+export function cockpitImageUrl(connectionId: string, objectId: string): string {
+  return `${getApiBase()}/cockpits/images/${encodeURIComponent(objectId)}?connection_id=${encodeURIComponent(connectionId)}`;
+}
+
+/** Upload an image into this connection's cockpit volume, to be placed on a cockpit by its object
+ *  id. PNG, JPEG, SVG, GIF or WebP up to 5 MB; a refusal says which it failed. */
+export async function uploadCockpitImage(connectionId: string, file: File): Promise<CockpitImageStamp> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(cockpitUrl("/cockpits/images", connectionId), { method: "POST", body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The image could not be uploaded"));
+  }
+  return res.json();
 }
 
 /** What a write answered: kept, unchanged — or a refusal, which arrives as an error. */
@@ -2803,6 +2861,98 @@ export async function restoreCockpit(connectionId: string, cockpitId: string, ve
     body: JSON.stringify({ version }),
   });
   return cockpitWrite(res, "Failed to go back");
+}
+
+/** ⚑ Spends model calls. A change to one of the asker's cockpits, asked for in words: a proposal
+ *  to keep or not — an edit against the version on screen, or a publish. */
+export async function askCockpit(connectionId: string, cockpitId: string, words: string, schema?: string): Promise<CockpitDrafted> {
+  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/ask`, connectionId), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ words, schema_name: schema ?? null }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The change could not be drafted"));
+  }
+  return res.json();
+}
+
+/** A group or a role a cockpit may be published to, or is. */
+export interface CockpitAudience { kind: "group" | "role"; id: string; name: string }
+
+/** The groups the asker belongs to and the roles they hold: who they may publish to. */
+export async function cockpitAudiences(connectionId: string): Promise<{ groups: CockpitAudience[]; roles: CockpitAudience[] }> {
+  const res = await fetch(cockpitUrl("/cockpits/audiences", connectionId));
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read who you may publish to"));
+  }
+  return res.json();
+}
+
+/** Publish the cockpit as it stands to groups and roles. A version, under the asker's name. */
+export async function publishCockpit(connectionId: string, cockpitId: string, to: CockpitAudience[]): Promise<CockpitKept> {
+  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/publish`, connectionId), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to }),
+  });
+  return cockpitWrite(res, "Failed to publish the cockpit");
+}
+
+/** Stop sharing a cockpit. A version too. */
+export async function unpublishCockpit(connectionId: string, cockpitId: string): Promise<CockpitKept> {
+  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/unpublish`, connectionId), { method: "POST" });
+  return cockpitWrite(res, "Failed to unpublish the cockpit");
+}
+
+/** A cockpit someone else published to a group the asker is in or a role they hold. */
+export interface SharedCockpitListed {
+  owner: string;
+  cockpit_id: string;
+  title: string;
+  version: number;
+  kept_at: string;
+  published_by: string;
+  published_to: CockpitAudience[];
+}
+
+export async function listSharedCockpits(connectionId: string): Promise<SharedCockpitListed[]> {
+  const res = await fetch(cockpitUrl("/cockpits/shared", connectionId));
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read the cockpits shared with you"));
+  }
+  return (await res.json()).cockpits as SharedCockpitListed[];
+}
+
+export interface SharedCockpit {
+  connection_id: string;
+  owner: string;
+  cockpit_id: string;
+  cockpit: CockpitVersion;
+  cards: CockpitCard[];
+  range: CockpitRange;
+  ranges_on: boolean;
+  currency_symbol?: string;
+  images?: Record<string, CockpitImageStamp>;
+  published_by: string;
+  published_to: CockpitAudience[];
+}
+
+/** A published cockpit as it stands, read for the asker's own range. */
+export async function getSharedCockpit(connectionId: string, owner: string, cockpitId: string, range?: BriefingRange | null): Promise<SharedCockpit> {
+  const res = await fetch(cockpitUrl(`/cockpits/shared/${encodeURIComponent(owner)}/${encodeURIComponent(cockpitId)}`, connectionId, rangeParams(range)));
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read the shared cockpit"));
+  }
+  return res.json();
+}
+
+/** Start a cockpit of the asker's own from a published one. */
+export async function copySharedCockpit(connectionId: string, owner: string, cockpitId: string): Promise<CockpitKept & { title?: string }> {
+  const res = await fetch(cockpitUrl(`/cockpits/shared/${encodeURIComponent(owner)}/${encodeURIComponent(cockpitId)}/copy`, connectionId), { method: "POST" });
+  return cockpitWrite(res, "Failed to start a cockpit from this one");
 }
 
 /** Retire a cockpit. Its history stays. */
@@ -6415,7 +6565,7 @@ export interface StagedProposal {
   kind: "declared_action" | "integration" | "agent_draft" | "automation_draft"
       | "agent_bundle" | "automation_state" | "agent_grant"
       | "automation_edit" | "monitor_bundle" | "brief_draft" | "outbound_send"
-      | "agent_limit" | "cockpit_draft";
+      | "agent_limit" | "cockpit_draft" | "cockpit_publish";
   /** The connected account an `integration` proposal would act as. "" otherwise. */
   grant_id: string;
   action_id: string;
@@ -7066,13 +7216,21 @@ export interface FindingReask {
   domain: string;
   grain: string;
   measure: string;
-  how: "value" | "total" | "mean" | "";
+  /** "value": one row · "row": the labelled row the finding's statement names (`row`) ·
+   *  "total"/"mean": a series of dates over the range. */
+  how: "value" | "row" | "total" | "mean" | "";
+  /** The labels of the row the finding names ("Shipped"), when its rows are labelled. */
+  row?: string[] | null;
   current: number | null;
   previous: number | null;
   rel: number | null;
   rows_current: number;
   rows_previous: number;
+  /** The finding's own statement cut to the range: the rows `current` is read from. */
   sql: string;
+  /** The same, cut to the compared range: the rows `previous` is read from. Absent from a
+   *  re-ask cached before it was carried. */
+  sql_previous?: string;
 }
 export interface FindingApart { id: string; domain: string; why: string }
 export interface FindingsReask {
