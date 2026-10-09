@@ -191,6 +191,13 @@ export function ProcessBoardPiece({ process }: { process: string }) {
           </div>
         );
       })}
+      {found.leaves && (
+        <div className="aug-fs-xs" data-testid="process-leaves" style={{ color: "var(--t3)" }}>
+          {found.leaves.left != null ? `${formatCount(found.leaves.left)} left the process` : "Objects leave the process"} when{" "}
+          {found.leaves.property} is {found.leaves.values.join(" or ")} — they are not open, and never overdue
+          {found.leaves.unknown ? `; ${formatCount(found.leaves.unknown)} hold no ${found.leaves.property} and are left out` : ""}
+        </div>
+      )}
       <Foot icon="process">{found.measured_at ? `Measured ${formatDateTime(found.measured_at)}` : "Not measured yet"} · {found.entity_id}</Foot>
     </Frame>
   );

@@ -120,6 +120,18 @@ def promise_filters(process: Process, index: int) -> Optional[dict]:
     promise = stage.promise
     if promise is None or not stage.timestamp:
         return None
+    spec = _promise_spec(process, index)
+    if spec is not None and process.leaves is not None:
+        # Arc OC-4 — an object that left the process is not open: still waiting is not the same as gone.
+        path = f"{promise.via}.{process.leaves.property}" if promise.via else process.leaves.property
+        spec["open"] = tuple(spec["open"]) + ({"path": path, "op": "not_in", "values": list(process.leaves.values)},)
+    return spec
+
+
+def _promise_spec(process: Process, index: int) -> Optional[dict]:
+    stage = process.stages[index]
+    promise = stage.promise
+    assert promise is not None
     previous = process.stages[index - 1] if index > 0 else None
     grain = promise.grain or process.entity
     moment = f"{promise.via}.{stage.timestamp}" if promise.via else stage.timestamp

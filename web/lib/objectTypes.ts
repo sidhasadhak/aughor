@@ -879,6 +879,8 @@ export interface ProcessDetail {
   measured_at: string;
   stages: ProcessStageDetail[];
   derived: DerivedRows;
+  /** Arc OC-4 — how an object leaves the process, when a person declared it: no longer open, never overdue. */
+  leaves?: { property: string; values: string[]; left: number | null; missing: string[]; unknown: number | null; note: string };
 }
 
 /** ON-9 — one declared rule, as `GET /ontology/processes` describes it. */
