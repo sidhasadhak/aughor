@@ -324,6 +324,23 @@ class Binding(BaseModel):
         return "query" if (self.sql or "").strip() else "table"
 
 
+class EditStateMachine(BaseModel):
+    """Arc OC-6 — the moves a property the EDIT LAYER holds may make (a review flag, a case's status): its states, the
+    moves between them, and the state an object starts in before any edit sets one (``initial``, "" for none). The
+    action engine ENFORCES it — an action whose edit would make a move not declared is refused before it runs, with the
+    moves allowed — where a source column's lifecycle can only be measured."""
+    states: list[str] = Field(default_factory=list)
+    #: Each a pair ``[from, to]``; ``from`` may be ``initial``.
+    moves: list[list[str]] = Field(default_factory=list)
+    initial: str = ""
+
+    def allows(self, current: str, new: str) -> bool:
+        return current == new or [current, new] in [list(m) for m in self.moves]
+
+    def from_here(self, current: str) -> list[str]:
+        return [m[1] for m in self.moves if m and m[0] == current]
+
+
 class OntologyEntity(BaseModel):
     id: str                                    # PascalCase: "Order", "Customer"
     display_name: str                          # human-readable business name, set/corrected by enricher
@@ -351,6 +368,8 @@ class OntologyEntity(BaseModel):
     #: PENDING item 27 — the properties that must not be summed across time, each with the time property its
     #: readings are taken over (see SemiAdditive). Empty on every graph built before, which loads unchanged.
     semiadditive: dict[str, SemiAdditive] = Field(default_factory=dict)
+    #: Arc OC-6 — the declared moves of the properties the edit layer holds (see EditStateMachine), by property.
+    edit_states: dict[str, EditStateMachine] = Field(default_factory=dict)
     #: ON-7 — where this type came from: `table` (the builder minted it from a profiled table — a PROPOSAL the
     #: business keeps, absorbs or renames), `human` (declared through POST /ontology/entities), `model` (an
     #: explorer's proposal, ON-7b). Every graph built before reads `table`, so it loads unchanged.

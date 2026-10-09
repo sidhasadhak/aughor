@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import threading
 from typing import Literal, Optional
 
@@ -1875,6 +1876,97 @@ def withdraw_semiadditive(
     _invalidate_schema_cache(connection_id)
     forget_declared(connection_id)
     return {"removed": True, "entity": entity_id, "semiadditive": prop}
+
+
+class _EditStates(BaseModel):
+    """Arc OC-6 — the moves a property the edit layer holds may make."""
+    states: list[str]
+    moves: list[list[str]]
+    initial: str = ""
+
+
+def _edit_states_problem(entity, prop: str, spec: "_EditStates") -> str:
+    """Why these moves cannot be declared on ``entity.prop``, or ""."""
+    if not PATH_NAME.match(prop):
+        return "a property name is one word — review_status"
+    source = {n.lower() for n in (entity.properties or {})} | {n.lower() for b in entity.bindings or [] for n in b.properties}
+    if prop.lower() in source:
+        return (f"{prop} is read from {entity.id}'s source — only a property the edit layer holds has declared moves; a "
+                "source column's lifecycle is measured, never enforced")
+    states = [s.strip() for s in spec.states if s.strip()]
+    if not 1 <= len(states) <= 30 or len(set(states)) != len(states):
+        return "declare from 1 to 30 states, each once"
+    allowed = set(states) | {spec.initial}
+    for m in spec.moves:
+        if len(m) != 2 or m[0] not in allowed or m[1] not in states or m[0] == m[1]:
+            return f"each move is [from, to] between two different states it declares ({', '.join(states)}), from the start state too"
+    if not spec.moves:
+        return "declare at least one move"
+    return ""
+
+
+PATH_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+
+
+@router.put("/ontology/entities/{entity_id}/edit-states/{prop}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def declare_edit_states(
+    entity_id: str,
+    prop: str,
+    body: _EditStates,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc OC-6 — declare the moves a property the EDIT LAYER holds may make (a review flag: unset → flagged →
+    reviewed). From then on an action whose edit would make a move not declared is refused before it runs, with the
+    moves allowed from where the object stands. A source column is refused: its lifecycle is measured, not enforced."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.ontology.overrides import OntologyOverride, find_override, save_override
+    effective = _served_scope(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    entity = graph.entities.get(entity_id) if graph is not None else None
+    if entity is None:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    problem = _edit_states_problem(entity, prop, body)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    spec = {"states": [s.strip() for s in body.states if s.strip()], "moves": [list(m) for m in body.moves],
+            "initial": body.initial}
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    fields = dict(existing.fields) if existing is not None else {}
+    fields["edit_states"] = {**(fields.get("edit_states") or {}), prop: spec}
+    ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields=fields,
+                          source=(existing.source if existing is not None else "human"),
+                          binding=dict(existing.binding) if existing is not None else {})
+    save_override(connection_id, effective, ov)
+    return {**_override_result(ov), "edit_states": {"property": prop, **spec}}
+
+
+@router.delete("/ontology/entities/{entity_id}/edit-states/{prop}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def withdraw_edit_states(
+    entity_id: str,
+    prop: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc OC-6 — withdraw a property's declared moves; its edits are no longer checked against them."""
+    from aughor import govern
+    govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
+    from aughor.ontology.overrides import delete_override, find_override, save_override
+    effective = _served_scope(connection_id, schema_name)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    specs = dict((existing.fields.get("edit_states") if existing else None) or {})
+    if existing is None or prop not in specs:
+        raise HTTPException(status_code=404, detail=f"{entity_id} declares no moves for '{prop}'")
+    specs.pop(prop)
+    fields = {k: v for k, v in existing.fields.items() if k != "edit_states"}
+    if specs:
+        fields["edit_states"] = specs
+    if fields:
+        save_override(connection_id, effective, existing.model_copy(update={"fields": fields}))
+    else:
+        delete_override(connection_id, effective, "entity", entity_id)
+    return {"removed": True, "entity": entity_id, "edit_states": prop}
 
 
 @router.post("/ontology/entities/{entity_id}/bindings/{name}/restore", dependencies=[gate(Capability.ONTOLOGY_EDIT)])

@@ -36,6 +36,9 @@ class ExecuteRequest(BaseModel):
     propose_if_gated: bool = False
     #: Where the person was when they asked — shown on the approval card beside the params.
     reasoning: str = ""
+    #: Arc OC-6 — the version of each property this action sets, as the person read it (0: they saw none set). A run
+    #: made against a version since changed is refused (409) and writes nothing.
+    expected: dict[str, int] = Field(default_factory=dict)
 
 
 class ProposeRequest(BaseModel):
@@ -104,7 +107,7 @@ def execute_action(
     from aughor.actions.executor import execute_kinetic_action
     # scope = the connection id — the grain the approval allowlist is keyed on.
     result = execute_kinetic_action(action, body.params, actor=caller(), scope=connection_id,
-                                    schema_name=schema_name or "")
+                                    schema_name=schema_name or "", expected_versions=body.expected or None)
     if result.ok:
         # granted_by (A4) cites the standing grant that auto-allowed an unattended run ('' otherwise),
         # so the citation reaches the caller/receipt, not only the audit ledger.
@@ -346,6 +349,16 @@ def list_annotations(connection_id: str = BUILTIN_ID):
     return {"edits": [e.model_dump() for e in edits_for_connection(connection_id, current_org_id() or "")]}
 
 
+@router.get("/edits/history")
+def get_edit_history(connection_id: str = BUILTIN_ID, object_type: str = "", row_key: str = "", column: str = ""):
+    """Arc OC-6 — every version of the edits on this connection's objects, newest first: who set what, the value it
+    replaced, who withdrew it. Narrowed to one object type, one object (`row_key`) and one property."""
+    from aughor.actions.overlay import edit_history
+    from aughor.org.context import current_org_id
+    return {"history": edit_history(connection_id, object_type=object_type, row_key=row_key, column=column,
+                                    org_id=current_org_id() or None)}
+
+
 @router.delete("/annotations/{edit_id}")
 def withdraw_annotation(edit_id: str, connection_id: str = BUILTIN_ID):
     """ON-4 — withdraw ONE overlay edit: an annotation on a row, or a property an accepted action set on
@@ -359,7 +372,7 @@ def withdraw_annotation(edit_id: str, connection_id: str = BUILTIN_ID):
         raise HTTPException(status_code=400, detail=(
             "An edit is withdrawn on the connection its object lives on, not on an organisation's ontology — "
             "send that connection's id"))
-    gone = withdraw_edit(edit_id, connection_id, current_org_id() or None)
+    gone = withdraw_edit(edit_id, connection_id, current_org_id() or None, actor=caller())
     if gone is None:
         raise HTTPException(status_code=404,
                             detail=f"No overlay edit '{edit_id}' on this connection — it may already be withdrawn")

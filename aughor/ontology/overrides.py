@@ -195,6 +195,8 @@ _EDITABLE: dict[str, set[str]] = {
         # additive-only (the preferred table is ADDED to the schema handed to the
         # model, the deprecated one is never dropped) and existence-bound below.
         "use_instead",
+        # Arc OC-6 — the declared moves of the properties the edit layer holds (`EditStateMachine`), by property.
+        "edit_states",
         # …and its PENDING twin. A proposal captured from a conversation lives in its
         # own field rather than in `use_instead`, so it can never be mistaken for an
         # accepted rule: enforcement reads `use_instead` and nothing else, which makes
@@ -757,6 +759,12 @@ def _apply_entity(ent: OntologyEntity, ov: OntologyOverride, graph: Optional[Ont
             from aughor.ontology.semiadditive import declared_semiadditive
             ent.semiadditive = declared_semiadditive(value, ov.binding.get("semiadditive"))
             if ent.semiadditive:
+                touched.append(field)
+            continue
+        if field == "edit_states":
+            from aughor.ontology.models import EditStateMachine
+            ent.edit_states = {str(k): EditStateMachine.model_validate(v) for k, v in dict(value or {}).items()}
+            if ent.edit_states:
                 touched.append(field)
             continue
         if field == "expressions":

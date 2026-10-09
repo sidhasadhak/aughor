@@ -29,6 +29,8 @@ import operator
 import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
+
+from aughor.actions.overlay import EditConflict
 from urllib.parse import quote
 
 from aughor.ontology.models import KineticAction, SideEffect
@@ -59,6 +61,8 @@ class KineticResult:
             "approval_required": 428, "not_found": 404, "disabled": 404,
             # Arc OC-6 — the action was changed after it was proposed: propose it again, against what will run.
             "action_changed": 409,
+            # Arc OC-6 — the person read an older version of what the action sets: read it again.
+            "edit_conflict": 409,
             # Arc OC-6 (D4) — the action's authority is below "execute with approval" here: a refusal, not a gate.
             "authority_capped": 403,
             # Both mean "the far end refused", so both are 502 rather than the 400
@@ -552,8 +556,40 @@ def fill_edit(template: str, params: dict) -> str:
         raise KineticDispatchError(f"an edit references something the action does not declare: {e}") from e
 
 
+def _expected(expected: Optional[dict], prop: str) -> Optional[int]:
+    """The version of ``prop`` the person read, when they said (0: they saw none set)."""
+    if not expected:
+        return None
+    hit = next((v for k, v in expected.items() if str(k).lower() == prop.lower()), None)
+    try:
+        return int(hit) if hit is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _move_problem(action: KineticAction, params: dict, objects: dict) -> str:
+    """Arc OC-6 — "" when every edit the action makes is a move its property declares (or the property declares none),
+    else the sentence a refusal says: where the object stands, where the edit would take it, what is allowed."""
+    for edit in action.edits or []:
+        target = objects.get(edit.object) or {}
+        spec = (target.get("state_machines") or {}).get(edit.property)
+        if not spec:
+            continue
+        from aughor.ontology.models import EditStateMachine
+        machine = EditStateMachine.model_validate(spec)
+        current = str(((target.get("edited") or {}).get(edit.property) or {}).get("value", machine.initial) or "")
+        new = fill_edit(edit.value, params)
+        if not machine.allows(current, new):
+            here = current or "unset"
+            nexts = machine.from_here(current)
+            return (f"{target.get('object_type', '')} {target.get('pk', '')} has {edit.property} {here}; this action "
+                    f"would set it to {new}, which is not a move {edit.property} allows — from {here} it may move to "
+                    f"{', '.join(nexts) if nexts else 'nothing'}")
+    return ""
+
+
 def _dispatch_object_edits(action: KineticAction, params: dict, scope: str, *, actor: str,
-                           objects: dict) -> dict:
+                           objects: dict, expected: Optional[dict] = None) -> dict:
     """ON-4 — an annotate action's declared edits. Each sets one overlay property on one object the
     action takes, keyed ``(object_type, key, property)`` and stamped with who ran it; the source is
     never written. A property the object already reads from its source is refused here as well, so a
@@ -565,7 +601,10 @@ def _dispatch_object_edits(action: KineticAction, params: dict, scope: str, *, a
         if not target:
             raise KineticDispatchError(f"the edit setting '{edit.property}' needs the object in "
                                        f"'{edit.object}', which was not read")
-        if any(k.lower() == edit.property.lower() for k in (target.get("properties") or {})):
+        # Arc OC-6 (D5) — the object is read with its edits now, so "what it reads from its source" is the source's own
+        # names, when the reader says them; a property the edit layer already holds may be set again
+        source = target["source"] if "source" in target else (target.get("properties") or {})
+        if any(k.lower() == edit.property.lower() for k in source):
             raise KineticDispatchError(f"'{edit.property}' is a column {target.get('object_type')} reads from "
                                        "its source — an edit sets an overlay property, never a source value")
         saved = save_edit(OverlayEdit(
@@ -573,21 +612,21 @@ def _dispatch_object_edits(action: KineticAction, params: dict, scope: str, *, a
             column=edit.property, row_key=str(target["pk"]), key_column=str(target.get("key") or ""),
             kind="property", body=fill_edit(edit.value, params), note=fill_edit(edit.note, params),
             object_type=str(target.get("object_type") or ""), actor=actor, origin=f"action:{action.id}",
-            source="user"))
+            source="user"), expected_version=_expected(expected, edit.property))
         written.append({"object": f"{saved.object_type}:{saved.row_key}", "property": saved.column,
                         "value": saved.body, "id": saved.id, "provenance": saved.provenance()})
     return {"edits": written}
 
 
 def _dispatch_annotate(action: KineticAction, params: dict, scope: str, *, actor: str = "",
-                       objects: Optional[dict] = None) -> dict:
+                       objects: Optional[dict] = None, expected: Optional[dict] = None) -> dict:
     """Write a human overlay edit to the K3 ledger — an annotation/correction merged onto reads,
     never a source mutation. The action's parameters carry the target + body. The row is named by
     ``row_key`` or, when that is absent, by the parameter its ``key_column`` names — an action taking
     ``row_id`` with ``key_column="row_id"`` annotates that object's row, which is how an object
     page pre-fills the object's key."""
     if action.edits:
-        return _dispatch_object_edits(action, params, scope, actor=actor, objects=objects or {})
+        return _dispatch_object_edits(action, params, scope, actor=actor, objects=objects or {}, expected=expected)
     from aughor.actions.overlay import OverlayEdit, save_edit
     if not params.get("table") or not params.get("body"):
         raise KineticDispatchError("annotate requires 'table' and 'body' parameters")
@@ -604,7 +643,7 @@ def _dispatch_annotate(action: KineticAction, params: dict, scope: str, *, actor
 
 
 def default_dispatch(action: KineticAction, params: dict, scope: str = "", *, actor: str = "",
-                     objects: Optional[dict] = None) -> dict:
+                     objects: Optional[dict] = None, expected: Optional[dict] = None) -> dict:
     """The wired-in dispatcher. ``notify``/``webhook`` and ``annotate`` fire now; the rest are
     seams that raise with the PR that will wire them, so a caller sees a clear signal not a no-op."""
     if action.kind == "side_effect":
@@ -622,7 +661,7 @@ def default_dispatch(action: KineticAction, params: dict, scope: str = "", *, ac
                 raise KineticDispatchError(f"unknown side effect kind: {se.kind}")
         return {"side_effects": results}
     if action.kind == "annotate":
-        return _dispatch_annotate(action, params, scope, actor=actor, objects=objects)
+        return _dispatch_annotate(action, params, scope, actor=actor, objects=objects, expected=expected)
     if action.kind == "query":
         raise KineticDispatchError("query dispatch requires read-query wiring (K2b)")
     raise KineticDispatchError(f"unknown action kind: {action.kind}")
@@ -674,6 +713,7 @@ def execute_kinetic_action(
     resolver: Optional[ObjectResolver] = None,
     require_approval: bool = False,
     compensates: str = "",
+    expected_versions: Optional[dict] = None,
 ) -> KineticResult:
     """Run one declared action through the full governed pipeline. ``scope`` is the connection
     id (the grain the approval allowlist is keyed on). Returns a :class:`KineticResult`; never
@@ -728,6 +768,13 @@ def execute_kinetic_action(
                          detail=crit.expr, risk=risk)
             return KineticResult("criterion_failed", False, action.id, message=crit.message,
                                  detail={"expr": crit.expr})
+
+    # 2b — Arc OC-6: an edit that would move a property the edit layer holds along a move its type does not declare is
+    #      refused like a criterion — before any approval is asked for, with the moves allowed from where it stands.
+    moved = _move_problem(action, coerced, objects)
+    if moved:
+        govern.audit(gov_action, scope, "criterion_failed", actor=actor, detail=moved[:500], risk=risk)
+        return KineticResult("criterion_failed", False, action.id, message=moved, detail={"reason": "move_not_declared"})
 
     # 3a — authority (Arc OC-6, D4). The level the record earned and the ceilings a person or a mission set were read
     #      only when widening and by autonomy, never here: a person capping an action at L2 ("prepare") left it as
@@ -802,12 +849,17 @@ def execute_kinetic_action(
         elif action.edits:
             # ON-4 — only an action that sets object properties needs who ran it and what it read;
             # every other dispatch is called exactly as before.
-            outcome = default_dispatch(action, coerced, scope, actor=actor, objects=objects)
+            outcome = default_dispatch(action, coerced, scope, actor=actor, objects=objects,
+                                       expected=expected_versions)
         else:
             outcome = default_dispatch(action, coerced, scope)
     except KineticDispatchError as e:
         govern.audit(gov_action, scope, "dispatch_error", actor=actor, detail=str(e), risk=risk)
         return KineticResult("dispatch_error", False, action.id, message=str(e))
+    except EditConflict as e:
+        # Arc OC-6 — the person read an older version of what this action sets; nothing was written
+        govern.audit(gov_action, scope, "edit_conflict", actor=actor, detail=str(e), risk=risk)
+        return KineticResult("edit_conflict", False, action.id, message=str(e), detail={"current": e.current})
 
     # 4b — the verification read (phase 4 of the 2027 study, §M): the statement the declaration
     #      names, run through the ordinary query door AFTER the change. A read that cannot run is
