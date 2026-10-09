@@ -198,6 +198,9 @@ class CompiledObjectQuery:
     #: into what runs at home, what each other connection is read for, and the aggregation over both
     #: (`aughor.semantic.cross_source`). ``sql`` is then the statement as written, for a reader, and is not run.
     cross_source: Optional[Any] = None
+    #: Arc OC-3 — the objects a keyed metric's statement was read over, as a condition on its entity's table
+    #: (``<key> IN (<their keys>)``, in the dialect); "" when the query selects every object or reads no keyed metric.
+    objects: str = ""
 
     def to_dict(self) -> dict:
         return {"path": "compiled", "sql": self.sql, "dialect": self.dialect,
@@ -2259,11 +2262,14 @@ class _Compiler:
         # per object before (2026-10-09, theLook's live receipt — the value a thousand times over).
         standalone = bool(self._statements) and not grouped and not self._period_specs and all(
             any(token in item for token in self._statements) for item in select)
+        objects = ""
         if self._statements:
             if self.far:
                 raise ObjectQueryRefused("a keyed metric reads its own connection's statement — it is not read across "
                                          "connections")
             keyset = f"SELECT DISTINCT t0.{quote_ident(key)} FROM {source}{where_sql}" if where_sql else ""
+            if keyset:
+                objects = self.render_condition(f"{quote_ident(key)} IN ({keyset})")
             for token, metric in self._statements.items():
                 statement = self.keyed_statement(metric, anchor, key, keyset)
                 select = [item.replace(token, f"({statement})") for item in select]
@@ -2282,7 +2288,7 @@ class _Compiler:
                                    object_type=anchor.api_name,
                                    columns=names, plan=self.plan, links=self.links, caveats=self.caveats,
                                    dimensions=dims, measures=measure_names, overlay=self.overlay,
-                                   bindings=self.bindings, cross_source=cross)
+                                   bindings=self.bindings, cross_source=cross, objects=objects)
 
     def pre_aggregated(self, alias: str, select: str, source: str, outer: str, local: str,
                        columns: list[tuple[str, str]], target: str, label: str) -> str:
@@ -2332,6 +2338,13 @@ class _Compiler:
             return tree.sql(dialect=self.dialect if self.dialect else "duckdb")
         except Exception as exc:  # noqa: BLE001
             raise ObjectQueryRefused(f"the query could not be rendered for {self.dialect} ({exc})") from exc
+
+    def render_condition(self, condition: str) -> str:
+        """One condition, assembled in DuckDB's spelling, rendered as `render` renders a statement."""
+        import sqlglot
+        dialect = self.dialect or "duckdb"
+        where = sqlglot.parse_one(self.render(f"SELECT 1 WHERE {condition}"), read=dialect).args.get("where")
+        return where.this.sql(dialect=dialect)
 
 
 def compile_object_query(query: ObjectQuery | dict, graph: Optional[OntologyGraph], *, dialect: str = "duckdb",

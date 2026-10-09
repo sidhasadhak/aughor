@@ -867,6 +867,12 @@ def frame_question(question: str, graph: Optional[OntologyGraph], *, synonyms: I
                        "key_unique": b.verified if b is not None else None}
     _frame_rules(graph, frame, terms, start, paths)
     _frame_moments(graph, frame, terms)
+    o = frame.outcome
+    if o is not None and o.kind == "metric":
+        # Arc OC-3 — the words naming the chosen keyed metric were spent on it: "revenue" is the approved metric the
+        # question measures, not also Order.revenue to break it down by (theLook's live receipt, 2026-10-09)
+        mine = [(t.start, t.end) for t in terms if t.kind == "metric" and t.target == f"{_KEYED}{o.name}"]
+        spans = {s: v for s, v in spans.items() if not any(a <= s[0] and s[1] <= b for a, b in mine)}
     _frame_drivers(frame, _said_which(graph, frame, terms, spans), start, paths)
     _frame_compiled(graph, frame, dialect, metrics)
     frame.reading = frame_reading(frame)
@@ -1070,7 +1076,34 @@ def _compile(graph: OntologyGraph, query: dict, dialect: str, metrics: Iterable[
         compiled = compile_object_query(query, graph, dialect=dialect, fiscal_start_month=1, metrics=list(metrics))
     except ObjectQueryRefused as exc:
         return {"query": query, "refused": exc.reason}
-    return {"query": query, "sql": compiled.sql, "plan": list(compiled.plan), "caveats": list(compiled.caveats)}
+    return {"query": query, "sql": compiled.sql, "plan": list(compiled.plan), "caveats": list(compiled.caveats),
+            **({"objects": compiled.objects} if compiled.objects else {})}
+
+
+def _keyed_reading(o: FrameOutcome, entry: dict, rules: list, dialect: str, metrics: Iterable[Any]) -> dict:
+    """Arc OC-3 — the keyed metric the frame chose, in the shape an analysis computes a measure in: its one measure
+    (``formula``), the table it is over, the rows its statement keeps (``filters``) and — when the question's rules chose
+    the objects — the condition that keeps only those (``objects``, the object door's own). ``{"why_not": …}`` when the
+    statement is more than one measure over its entity's table (a join, a CTE, a grouping): the whole statement is
+    then the only reading, and an analysis that cuts it by groups and periods cannot take it."""
+    from aughor.sql.metric_filter_guard import measure_of, same_condition
+    m = next((k for k in metrics or () if k.name == o.metric), None)
+    if m is None or not entry.get("sql"):
+        return {}
+    # the door compiled it, so the statement reads the entity's table: one measure over one table is over that one
+    measure = measure_of(getattr(m, "sql", "") or "", dialect)
+    if measure is None or not measure["tables"]:
+        return {"why_not": f"its statement is not one measure over {o.entity}'s table — it joins, groups or builds "
+                           "on a CTE"}
+    if rules and not entry.get("objects"):
+        return {"why_not": "the object door read it over no objects of the question's rules"}
+    filters: list[str] = []
+    for f in [*(getattr(m, "filters", None) or []), *measure["filters"]]:
+        f = str(f).strip()
+        if f and not any(same_condition(f, kept, dialect) for kept in filters):
+            filters.append(f)
+    return {"formula": measure["formula"], "table": measure["tables"][0], "filters": filters,
+            **({"objects": entry["objects"]} if rules else {})}
 
 
 def _definition_queries(o: FrameOutcome, filters: list[dict]) -> dict[str, dict]:
@@ -1097,6 +1130,10 @@ def _frame_compiled(graph: OntologyGraph, frame: Frame, dialect: str, metrics: I
         mine = filters if o is chosen and o.kind != "rule" else []
         for key, query in _definition_queries(o, mine).items():
             frame.compiled[key] = _compile(graph, query, dialect, metrics)
+    if chosen is not None and chosen.kind == "metric" and chosen.metric in frame.compiled:
+        reading = _keyed_reading(chosen, frame.compiled[chosen.metric], filters, dialect, metrics)
+        if reading:
+            frame.compiled[chosen.metric]["reading"] = reading
     if chosen is not None and chosen.kind in ("promise", "lag"):
         measure = ({"name": chosen.metric, "metric": chosen.metric} if chosen.kind == "promise"
                    else {"name": f"avg_{chosen.lag}", "agg": "avg", "path": chosen.lag})

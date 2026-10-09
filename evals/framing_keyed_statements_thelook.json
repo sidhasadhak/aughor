@@ -1,0 +1,47 @@
+{
+  "_about": "Arc OC-3 — the approved statements of theLook's keyed metrics, as the live catalogue held them on 2026-10-09 (read over GET /metrics; ANSI escape codes stripped). `evals/framing_matcher_eval.py --readings` hands them to the frame beside the names and measures which keyed metric a deep analysis can take as declared.",
+  "statements": {
+    "revenue": {
+      "sql": "SELECT (SUM(sale_price)) AS revenue FROM order_items WHERE status <> 'Cancelled'",
+      "filters": [
+        "status <> 'Cancelled'"
+      ]
+    },
+    "return_rate": {
+      "sql": "SELECT (SUM(CASE WHEN returned_at IS NOT NULL THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0)) AS return_rate FROM order_items",
+      "filters": []
+    },
+    "gross_margin_percentage": {
+      "sql": "SELECT 100.0 * SUM(oi.sale_price - ii.cost) / NULLIF(SUM(oi.sale_price), 0) FROM order_items oi JOIN inventory_items ii ON oi.inventory_item_id = ii.id;",
+      "filters": []
+    },
+    "average_order_value_aov": {
+      "sql": "SELECT SAFE_DIVIDE(SUM(sale_price), COUNT(DISTINCT order_id)) AS average_order_value_aov\nFROM order_items\nWHERE status <> 'Cancelled'",
+      "filters": [
+        "status <> 'Cancelled'"
+      ]
+    },
+    "net_merchandise_revenue": {
+      "sql": "SELECT (SUM(sale_price)) AS net_merchandise_revenue FROM order_items WHERE status NOT IN ('Cancelled', 'Returned')",
+      "filters": [
+        "status NOT IN ('Cancelled', 'Returned')"
+      ]
+    },
+    "average_ship_to_delivery_lead_time": {
+      "sql": "SELECT SUM(TIMESTAMP_DIFF(delivered_at, shipped_at, DAY)) / NULLIF(COUNT(*), 0) AS average_ship_to_delivery_lead_time\nFROM order_items\nWHERE shipped_at IS NOT NULL\n  AND delivered_at IS NOT NULL",
+      "filters": []
+    },
+    "repeat_purchase_rate": {
+      "sql": "WITH customer_order_counts AS (\n  SELECT\n    user_id,\n    COUNT(*) AS order_count\n  FROM `orders`\n  GROUP BY user_id\n)\nSELECT\n  SAFE_DIVIDE(\n    COUNTIF(order_count > 1),\n    COUNT(*)\n  ) AS repeat_purchase_rate\nFROM customer_order_counts",
+      "filters": []
+    },
+    "inventory_sell_through_rate": {
+      "sql": "SELECT SUM(CASE WHEN sold_at IS NOT NULL THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS sell_through_rate FROM inventory_items",
+      "filters": []
+    },
+    "session_to_purchase_conversion_rate": {
+      "sql": "SELECT\n  SAFE_DIVIDE(\n    COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN session_id END),\n    COUNT(DISTINCT session_id)\n  ) AS session_to_purchase_conversion_rate\nFROM `events`",
+      "filters": []
+    }
+  }
+}

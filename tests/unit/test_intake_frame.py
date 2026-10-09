@@ -10,15 +10,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace as NS
 
 import pytest
 
 import aughor.agent.framing as AF
 import aughor.agent.investigate as I
-from aughor.agent.investigate import ada_intake as run_intake
+from aughor.agent.investigate import ada_intake as run_intake, framed_rules
 from aughor.agent.prompts_investigate import IntakeOutput
 from aughor.ontology.framing import frame_question
 from aughor.ontology.models import OntologyGraph
+from aughor.semantic import enforcement as E
 
 REPO = Path(__file__).resolve().parents[2]
 OLIST = OntologyGraph.model_validate(json.loads((REPO / "evals" / "ablation_olist_business_ontology.json").read_text()))
@@ -111,3 +113,69 @@ def test_a_framing_failure_is_tolerated_and_the_intake_reads_the_question_as_wri
     out = run_intake({"question": "What is causing a delay in warehouse dispatch?", "schema_context": SCHEMA,
                         "scan_context": "", "connection_id": "", "scope_schema": "ecommerce"}, conn=object())
     assert "ontology_frame" not in out["_ada_intake"] and "QUESTION FRAME" not in intake.prompts[-1]
+
+# ── Arc OC-3 — a keyed metric the frame resolved is taken as declared ────────────────────────────────────────────────
+# Live on theLook (2026-10-09) the model wrote the frame's compiled statement into the metric, the over-count guard read
+# its subquery as unsafe and fell back to SUM(sale_price), and "completed orders" was lost: 2,098,609.88 published where
+# completed orders measure 610,184.21. The rest of the reading is tested in `test_deep_takes_keyed_metric.py`.
+
+THELOOK = OntologyGraph.model_validate(json.loads((REPO / "evals" / "ablation_thelook_business_ontology.json").read_text()))
+QUESTION = "What was revenue from completed orders in 2025?"
+
+
+def _metric(name: str, entity: str, sql: str, filters=()) -> NS:
+    return NS(name=name, label=name.replace("_", " ").capitalize(), entity=entity, sql=sql, filters=list(filters),
+               approved_by="finance", entity_confirmed_by="ana", status="approved")
+
+
+REVENUE = _metric("revenue", "OrderItem", "SELECT (SUM(sale_price)) AS revenue FROM order_items WHERE status <> 'Cancelled'",
+                  ["status <> 'Cancelled'"])
+
+
+class _KeyedModel:
+    """The intake model, writing the frame's compiled statement into the metric — what it did live."""
+    def __init__(self, metric_sql: str):
+        self.metric_sql, self.prompts = metric_sql, []
+
+    def complete(self, **kw):
+        self.prompts.append(kw.get("user", ""))
+        return IntakeOutput(metric_label="Revenue from completed orders", metric_sql=self.metric_sql,
+                            observation_start="2025-01-01", observation_end="2025-12-31", observation_label="2025",
+                            date_column="thelook.order_items.created_at", metric_table="thelook.order_items",
+                            dimensions=["thelook.order_items.status"], intake_notes="")
+
+
+# A declared formula the over-count guard would misread as a product of aggregates: its retry used to replace the
+# whole intake, the taken metric with it.
+LINE_VALUE = _metric("line_value", "OrderItem", "SELECT COUNT(id) * AVG(sale_price) AS line_value FROM order_items")
+
+
+@pytest.mark.parametrize("metric, question, model_writes, taken", [
+    (REVENUE, QUESTION, "statement", ("SUM(sale_price)", ["status <> 'Cancelled'"])),
+    (LINE_VALUE, "What was line value from completed orders in 2025?", "SUM(sale_price)",
+     ("COUNT(id) * AVG(sale_price)", [])),
+])
+def test_the_deep_intake_takes_it_where_it_used_to_fall_back_and_lose_the_rule(monkeypatch, metric, question,
+                                                                               model_writes, taken):
+    frame = frame_question(question, THELOOK, dialect="bigquery", metrics=[metric])
+    assert frame.outcome.name == metric.name
+    model = _KeyedModel(f"({frame.compiled[metric.name]['sql']})" if model_writes == "statement" else model_writes)
+    monkeypatch.setattr(I, "_provider", lambda role: model)
+    monkeypatch.setattr(AF, "frame_from_state", lambda state, dialect="duckdb", provider=None: frame)
+    monkeypatch.setattr(I, "_measure_date_span", lambda *a, **k: ("", ""))
+    import aughor.agent.explore as ex
+    monkeypatch.setattr(ex, "build_analysis_ledger", lambda state: "")
+    schema = "TABLE: thelook.order_items\n  id INT64\n  sale_price FLOAT64\n  status STRING\n  created_at TIMESTAMP\n"
+    with E.answering(question):
+        out = run_intake({"question": question, "schema_context": schema, "scan_context": "", "connection_id": "",
+                          "scope_schema": "thelook"}, conn=object())
+        held = E.rules_for_statement("", dialect="bigquery")
+    spec = out["_ada_intake"]
+    assert len(model.prompts) == 1                                        # no over-count retry: nothing was parsed
+    assert (spec["metric_sql"], spec["metric_filters"]) == taken
+    assert "Metric adjusted for safety" not in json.dumps(out)
+    rows_ = out["investigation_phases"][0]["findings"][0]["rows"]
+    assert any(r[0] == "Computed as" and "rule completed_orders" in r[1] for r in rows_)
+    assert held == framed_rules(spec, question) and held[-1].get("chosen")   # declared for every statement of the run
+    assert out["declared_rules"] == held                                   # and kept for a resumed run to hold again
+    assert E.rules_for_statement("", dialect="bigquery") is None          # and held by the run alone

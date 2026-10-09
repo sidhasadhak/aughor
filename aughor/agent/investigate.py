@@ -4587,6 +4587,9 @@ def _metric_definition_receipt(intake_data: dict) -> str:
         _declared = [str(f) for f in (intake_data.get("metric_filters") or []) if str(f).strip()]
         if _declared:
             parts.append(f"over rows where `{'; '.join(_declared)}` (its declared filter)")
+        _taken = intake_data.get("framed_metric") or {}
+        if _taken.get("said"):
+            parts.append(f"for {_taken['said']}")
         if _metric_is_composite_ratio(sql):
             # Describe the ACTUAL aggregates (a composite ratio can be value-weighted SUM/SUM OR a
             # count-based COUNT/COUNT — the two can diverge, and which was chosen is the silent call
@@ -5969,6 +5972,64 @@ def _crystallize_metric_resolution(connection_id: str, metric_label: str, metric
                       "unaffected", counter="deep_analysis.metric_pin_ledger")
 
 
+def _take_framed_metric(intake, frame, schema: str) -> Optional[str]:
+    """Arc OC-3 — a keyed metric the question frame resolved is TAKEN, not re-parsed: the measure, the table and the
+    rows its approved statement keeps, and the objects the question's rules chose (`framing._keyed_reading`). Mutates
+    ``intake`` and records what it took on ``intake.framed_metric``.
+
+    *What was revenue from completed orders in 2025?* framed to the approved Revenue over the OrderItem objects rule
+    completed_orders admits, and the intake re-parsed it: the model wrote the frame's compiled statement into the
+    metric, the over-count guard read its subquery as unsafe and fell back to ``SUM(sale_price)``, and the rule was
+    lost — 2,098,609.88 (every line not cancelled) published where completed orders measure 608,504.54 (theLook,
+    2026-10-09).
+
+    Returns a note when the frame chose a keyed metric the analysis cannot take — its figures are then its own reading
+    of the question's words, and the reader is told so; None otherwise."""
+    o = frame.outcome if frame is not None else None
+    if o is None or o.kind != "metric" or not o.usable:
+        return None
+    reading = (frame.compiled.get(o.metric) or {}).get("reading") or {}
+    if not reading.get("formula"):
+        why = reading.get("why_not") or "the object door could not compile it"
+        return (f"The question names the approved metric {o.label}, keyed to {o.entity}, but {why} — this analysis "
+                "cannot compute it as declared, so its figures are its own reading of the question's words.")
+    intake.metric_sql = reading["formula"]
+    intake.metric_table = reading["table"]
+    intake.metric_filters = list(reading.get("filters") or [])
+    intake.metric_is_ratio = _metric_is_ratio(reading["formula"], intake.metric_label)
+    taken = {"metric": o.metric, "label": o.label, "entity": o.entity}
+    if reading.get("objects"):
+        taken["objects"] = reading["objects"]
+        taken["said"] = f"the {o.entity} objects " + " and ".join(
+            f"rule {r.id} admits ({r.words}" + (f", through {r.via}" if r.via else "") + ")"
+            for r in frame.rules if r.usable)
+    intake.framed_metric = taken
+    _qualify_intake_table_names(intake, schema)
+    return None
+
+
+def framed_rules(intake: dict, question: str = "") -> list[dict]:
+    """Arc OC-3 — the declared-filter rules a run that took a keyed metric from its frame puts on every statement that
+    computes it (`semantic.enforcement.declare`, `sql.metric_filter_guard`): the rows its statement keeps, and the
+    objects the question's rules chose. [] when the intake took nothing."""
+    intake = intake or {}
+    taken = intake.get("framed_metric") or {}
+    formula = str(intake.get("metric_sql") or "").strip()
+    table = str(intake.get("metric_table") or "").split(".")[-1].strip()
+    if not taken or not formula or not table:
+        return []
+    from aughor.semantic.enforcement import person_words
+    base = {"metric": str(taken.get("metric") or ""), "formula": formula, "tables": [table],
+            "asked": person_words(question)}
+    out = []
+    filters = [str(f) for f in intake.get("metric_filters") or [] if str(f).strip()]
+    if filters:
+        out.append({**base, "filters": filters})
+    if taken.get("objects"):
+        out.append({**base, "filters": [str(taken["objects"])], "chosen": True, "said": str(taken.get("said") or "")})
+    return out
+
+
 def _pin_canonical_metric(intake, connection_id: str, schema_text: str, conn) -> Optional[str]:
     """Pin the intake's ``metric_sql`` to the connection's GOVERNED definition when one matches, so the
     scan decomposes on a stable formula. Mutates ``intake`` in place (metric_sql + metric_is_ratio),
@@ -6559,11 +6620,16 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     if intake is not None:
         _qualify_intake_table_names(intake, schema)
 
+    # Arc OC-3 — a keyed metric the frame resolved is taken as declared, and the guards below that rewrite a PARSED
+    # metric (the over-count fallback, the money retry, the reading clarify, the canonical pin, the leakage flip)
+    # leave it alone: a person approved it and keyed it, and each of them is a guess about a formula nobody declared.
+    _metric_note = _take_framed_metric(intake, _frame, schema) if intake is not None and _frame_block else None
+    _taken = bool(intake is not None and intake.framed_metric)
+
     # Code-level validation: neutralise an over-counting metric (subquery-in-aggregate /
     # product-of-aggregates) — the class that produced -$3.1B per dimension. Retry once for
     # a clean single aggregate, then deterministically simplify and note it.
-    _metric_note = None
-    if intake is not None:
+    if intake is not None and not _taken:
         _unsafe = _unsafe_metric_sql(intake.metric_sql)
         if _unsafe:
             retry_prompt = (
@@ -6589,17 +6655,18 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                                "applies instead", counter="deep_analysis.intake_retry")
         if _unsafe:
             _safe = _safe_metric_fallback(intake.metric_sql)
-            _metric_note = (
+            _safe_note = (
                 f"Metric adjusted for safety: the parsed metric would over-count ({_unsafe}); "
                 f"ranking instead by {_safe} for a trustworthy magnitude."
             )
+            _metric_note = f"{_metric_note} {_safe_note}" if _metric_note else _safe_note
             intake.metric_sql = _safe
 
     # Metric↔question coherence: a money question answered with a COUNT of entities is a
     # premise mismatch (live recurrence: "Where are we losing money?" ran with metric =
     # franchise COUNT(*), so the report concluded "no revenue data exists"). Deterministic
     # detection, one LLM retry with an explicit correction; fail-open if the retry is no better.
-    if intake is not None and re.search(
+    if intake is not None and not _taken and re.search(
             r"\b(money|revenue|sales|cost|price|profit|margin|spend|losing|loss|earn)\w*\b",
             question or "", re.IGNORECASE):
         _msql = intake.metric_sql or ""
@@ -6666,7 +6733,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     _full_schema = state.get("schema_context") or schema
     _resolved_note = None
     _clarify_pending = None
-    if intake is not None:
+    if intake is not None and not _taken:
         _resolved_note = _apply_resolved_metric_reading(intake, _conn_id, conn)
         if _resolved_note:
             _metric_note = f"{_metric_note} {_resolved_note}".strip() if _metric_note else _resolved_note
@@ -6678,7 +6745,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # actually runs. Runs AFTER the safety fallback so a governed formula supersedes a degenerate one;
     # SKIPPED when the reading was already resolved (1) or a clarify is pending (2) — the user's choice
     # binds the metric, not a silent pin. Flag-gated (`deep_analysis.pin_canonical_metric`) + fail-open.
-    if intake is not None and _clarify_pending is None and _resolved_note is None:
+    if intake is not None and not _taken and _clarify_pending is None and _resolved_note is None:
         _pin_note = _pin_canonical_metric(intake, _conn_id, _full_schema, conn)
         if _pin_note:
             _metric_note = f"{_metric_note} {_pin_note}".strip() if _metric_note else _pin_note
@@ -6692,7 +6759,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # ascending, so the deepest-discounted segment surfaces first and is narrated as the
     # BEST performer. Runs after the canonical pin so a governed formula is never
     # second-guessed, and only rewrites the one unambiguous net-over-gross shape.
-    if intake is not None:
+    if intake is not None and not _taken:
         try:
             from aughor.agent.loss_signals import leakage_direction_fix
             _dir = leakage_direction_fix(getattr(intake, "metric_label", ""),
@@ -6872,6 +6939,8 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
 
     if _frame_block and _frame is not None and _frame.reading:
         _spec_rows.append(["Read as", _frame.reading])
+    if intake.framed_metric:
+        _spec_rows.append(["Computed as", _metric_definition_receipt(intake.model_dump())])
 
     # Store the intake spec in state via a synthetic phase (no SQL, just metadata)
     finding = InvestigationFinding(
@@ -6929,6 +6998,13 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     intake_dict["filtered_schema"] = filtered_schema
     if _frame_block and _frame is not None:
         intake_dict["ontology_frame"] = _frame.model_dump(mode="json")
+    # Every statement the run executes from here computes a taken metric over its rows and objects — the filter is put
+    # on the statement, never asked for in a prompt (`sql.metric_filter_guard`); a resumed run reads them back from the
+    # state, its intake not running again.
+    _declared_rules = framed_rules(intake_dict, question)
+    if _declared_rules:
+        from aughor.semantic.enforcement import declare
+        declare(_declared_rules)
     if _loss_sig:
         # The loss signals travel with the intake so the cross-section can forward-chain
         # the lens phases the primary metric leaves uncovered (leakage vs utilization).
@@ -7041,6 +7117,8 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     }
     if plan_dict is not None:
         out["_orchestration_plan"] = plan_dict
+    if _declared_rules:
+        out["declared_rules"] = _declared_rules
     # P4 clarify gate: signal a pending metric-reading clarify so route_after_intake_clarify sends the
     # run through the interrupt gate. Only ever set when the request allows a pause and the readings
     # materially diverge.

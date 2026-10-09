@@ -666,19 +666,23 @@ async def _aiter_sync_with_progress(sync_iter, progress_q, ctx):
         next_graph.cancel()
 
 
-def _investigation_stream(graph_stream):
+def _investigation_stream(graph_stream, declared: Optional[list] = None):
     """The deep-run event iterator: interleaves per-dimension ``phase_progress`` markers
     into the stream, so a scan node reports progress DURING execution and not only at
-    ``phase_complete``."""
+    ``phase_complete``. ``declared`` — the rules a resumed run's intake declared before."""
     import contextvars
 
     from aughor.agent.progress import set_progress_sink
+    from aughor.semantic.enforcement import holding
     from aughor.util.stream_events import set_chain_sink
     loop = asyncio.get_running_loop()
     q: asyncio.Queue = asyncio.Queue(maxsize=2000)
     ctx = contextvars.copy_context()
     ctx.run(set_progress_sink, loop, q)   # bind the sink INSIDE ctx so nodes run with it visible
     ctx.run(set_chain_sink, loop, q)      # FL-2 — the provider chain narrates into the same queue
+    # Arc OC-3 — the rules the run's intake declares (a keyed metric taken from the frame) are held here, so every
+    # node after the intake executes its statements over them (`semantic.enforcement.declare`).
+    ctx.run(holding, declared)
     return _aiter_sync_with_progress(graph_stream, q, ctx)
 
 
@@ -4908,7 +4912,8 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
         _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
         deadline = time.monotonic() + _TIMEOUT
 
-        async for event in _investigation_stream(agent.stream(None, config=config)):
+        async for event in _investigation_stream(agent.stream(None, config=config),
+                                                 declared=merged.get("declared_rules")):
             # Same K1 rule: the resumed job completes server-side despite a client disconnect (bounded by
             # the deadline; explicit stop still cancels). An early abort here wrote an empty receipt too.
             if time.monotonic() > deadline:
