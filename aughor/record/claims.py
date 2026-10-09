@@ -174,6 +174,7 @@ def book(claim: Claim, *, key: str, conn_id: Optional[str] = None,
     _check(claim)
     if not key.startswith("claim:"):
         raise ClaimRefused("a claim's key starts with 'claim:' — use claim_key(...)")
+    claim = _pin_release(claim, conn_id)
     prior = _ledger().artifact_latest(key)
     supersedes = str(prior.get("id") or "") if prior and not prior.get("superseded_by") else ""
     edges = list(lineage or [])
@@ -186,6 +187,23 @@ def book(claim: Claim, *, key: str, conn_id: Optional[str] = None,
                                    created_by_job=created_by_job, lineage=edges)
     _events_out(claim, aid, key, supersedes, conn or "")
     return aid
+
+
+def _pin_release(claim: Claim, conn_id: Optional[str]) -> Claim:
+    """Arc OC-2 — a claim names the ontology release in force when it was booked (`definition_version`), unless its
+    writer named one: the definitions it was computed under can then be read back, and a release that changes their
+    meaning restates it. Off (`ontology.release`), the claim is booked exactly as given."""
+    if claim.definition_version:
+        return claim
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("ontology.release"):
+        return claim
+    conn = conn_id or (claim.about.key if claim.about.kind == "connection" else "")
+    if not conn:
+        return claim
+    from aughor.ontology.release import current_id_for_connection
+    pinned = current_id_for_connection(conn)
+    return claim.model_copy(update={"definition_version": pinned}) if pinned else claim
 
 
 def _events_out(claim: Claim, aid: str, key: str, supersedes: str, conn: str) -> None:

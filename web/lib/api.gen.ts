@@ -11987,6 +11987,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ontology Release
+         * @description Arc OC-2 — the scope's releases and its draft (ROADMAP §3.56): the release consumers read, every earlier one, and
+         *     each change waiting to be published with its class (ERR · MEANING · WARN · SAFE), its reasons, what changed field
+         *     by field, and the automations, claims and cockpit cards it touches. While `ontology.release` is off the draft is
+         *     empty and says so: a declaration is published when it is saved.
+         */
+        get: operations["get_ontology_release_ontology_release_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/release/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard Ontology Draft
+         * @description Arc OC-2 — drop changes from the scope's draft: every one, or the one named. What consumers read is untouched.
+         */
+        post: operations["discard_ontology_draft_ontology_release_discard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/release/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Ontology Release
+         * @description Arc OC-2 — publish the scope's draft as its next release, as the person signed in: every change moves into what
+         *     consumers read, the release is recorded with each element's version, and every claim a change of meaning touches is
+         *     restated. 409 with every reason while a change would break something, a model's proposal is unconfirmed, or the
+         *     draft is empty.
+         */
+        post: operations["publish_ontology_release_ontology_release_publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/routing-proposals": {
         parameters: {
             query?: never;
@@ -42051,6 +42117,105 @@ export interface operations {
         parameters: {
             query?: {
                 connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ontology_release_ontology_release_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_ontology_draft_ontology_release_discard_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+                /** @description with target_id, discard one change; without, all of them */
+                kind?: string | null;
+                target_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_ontology_release_ontology_release_publish_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
                 schema_name?: string | null;
             };
             header?: never;

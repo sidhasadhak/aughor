@@ -35,8 +35,9 @@ BASELINE_NOTE = "on the tree before its history was kept — in force since its 
 
 
 def enabled() -> bool:
+    """On with `ontology.history` — and with `ontology.release`, which pins the versions this keeps."""
     from aughor.kernel.flags import flag_enabled
-    return flag_enabled("ontology.history")
+    return flag_enabled("ontology.history") or flag_enabled("ontology.release")
 
 
 def element_key(conn: str, schema: str, kind: str, target_id: str) -> str:
@@ -66,8 +67,9 @@ def _baseline(conn: str, key: str, prior: Any) -> None:
                      published_at=prior.edited_at or "", note=BASELINE_NOTE, conn_id=conn)
 
 
-def on_save(conn: str, schema: str, prior: Any, ov: Any) -> None:
-    """Record a save that landed. ``prior`` is the declaration as it stood before the write, or None. Off: nothing."""
+def on_save(conn: str, schema: str, prior: Any, ov: Any, *, drafted: bool = False) -> None:
+    """Record a save that landed. ``prior`` is the published declaration as it stood before the write, or None;
+    ``drafted`` when the save waits in the draft (Arc OC-2) — a version that was never in force. Off: nothing."""
     if not enabled():
         return
     from aughor.kernel import lifecycle
@@ -76,10 +78,10 @@ def on_save(conn: str, schema: str, prior: Any, ov: Any) -> None:
     if latest is None and prior is not None:
         _baseline(conn, key, prior)
         latest = _latest(key)
-    body = _body(ov)
-    if latest is not None and latest.state == "published" and latest.body == body:
+    body, state = _body(ov), ("draft" if drafted else "published")
+    if latest is not None and latest.state == state and latest.body == body:
         return                      # a verdict written back, or a save that changed nothing the declaration says
-    lifecycle.record(KIND, key, body, "published", by=_actor(ov), conn_id=conn)
+    lifecycle.record(KIND, key, body, state, by=_actor(ov), conn_id=conn)
 
 
 def on_withdraw(conn: str, schema: str, prior: Any) -> None:
@@ -102,7 +104,8 @@ def _version_out(rev, before) -> dict:
     from aughor.kernel import lifecycle
     changes = [c.describe() for c in lifecycle.changelog(before.body.get("fields", {}), rev.body.get("fields", {}))] \
         if before is not None else []
-    return {"version": rev.version, "state": "withdrawn" if rev.state == "archived" else "declared",
+    state = {"archived": "withdrawn", "draft": "drafted"}.get(rev.state, "declared")
+    return {"version": rev.version, "state": state,
             "in_force_from": _effective(rev), "recorded_at": rev.created_at, "by": rev.by, "note": rev.note,
             "fields": rev.body.get("fields", {}), "source": rev.body.get("source", ""), "changes": changes}
 
@@ -148,7 +151,7 @@ def as_of(conn: str, schema: str, kind: str, target_id: str, when: str) -> dict:
     ``known`` is False when the moment precedes everything kept and the earliest version was found on the tree:
     that is said as not known, never answered as "not declared". Raises ValueError when ``when`` is not a date."""
     at = _moment(when)
-    rows = list(reversed(versions(conn, schema, kind, target_id)))
+    rows = [r for r in reversed(versions(conn, schema, kind, target_id)) if r["state"] != "drafted"]
     in_force = None
     for row in rows:
         start = _moment_or_none(row["in_force_from"])

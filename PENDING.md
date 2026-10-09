@@ -128,7 +128,11 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] OC-0 · the receipt's second half, live — the declared side-effect action *runs, verifies and is undone*.
 - [x] OC-1 · history and stable ids — 2026-10-09, behind `ontology.history`: every save and withdrawal a version (`aughor/ontology/history.py` on `kernel/lifecycle.py`), `GET /ontology/history?as_of=`, the dependents index (`aughor/ontology/dependents.py`, `GET /ontology/dependents`), withdrawals refused with a 409 naming what depends, and `PUT /ontology/processes/{id}`. Receipt on a scratch API (fixture connection): four versions read back, as-of answered, a withdrawal refused naming the automation.
 - [ ] OC-1 · theLook's receipt once merged — a promise changed twice and withdrawn, read back; an entity an automation relies on refused.
-- [ ] OC-2 · the release — draft → validated → published; diff and dependents on screen; claims pin `definition_version`; proposals wait in the draft.
+- [x] OC-2 · the release — 2026-10-09, behind `ontology.release`: the draft layer and its routing (`overrides._route`), the compatibility catalogue (`ontology/compatibility.py`), `ontology/release.py` (changes · publish · discard · restate), `GET /ontology/release` + publish + discard, claims pinning `<connection>/<schema>@<n>`, the explorer at birth writing into the draft, the Ontology layer's release strip. Receipt on the scratch pair through the screen: a MEANING change named its claim and automation, publishing restated the claim.
+- [ ] OC-2 · theLook's receipt once merged — the dispatch promise moved in a draft while the agent and the Briefing read the old; published; the claims computed under it say so.
+- [ ] OC-2 · the falsifier — replay declaration history through the catalogue once the live install keeps it (the tracked tree has only additions).
+- [ ] OC-3 · a claim takes `about` from the frame (deferred from OC-2).
+- [ ] Adjacent, not fixed: on a connection whose configured schema differs from the one its ontology was built under (the scratch fixture: `main` vs `default`), the declare doors write under the configured name while every read falls back to the built graph — a declaration from the screen there reads back as a 500.
 - [ ] OC-3 to OC-9 — §3.56's table; D4–D7 close in OC-6.
 
 ### The agent estate as a product — Arc AO (§3.52; drafted and adopted 2026-10-03, §6 item 38, every clause as recommended; built 2026-10-03 and merged the same day · #564; four live receipts owed)

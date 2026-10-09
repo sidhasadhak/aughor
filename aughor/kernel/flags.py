@@ -120,6 +120,11 @@ FLAG_ENV = {
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
     "ontology.history": "AUGHOR_ONTOLOGY_HISTORY",
+    # Arc OC-2 (ROADMAP §3.56). ON: a change to the ontology waits in a draft and reaches the agent, the Briefing,
+    # metrics and automations only when a person publishes it as a release; claims pin the release they were computed
+    # under, and a release that changes a definition's meaning restates them. OFF: a declaration is served the
+    # moment it is saved, exactly as before.
+    "ontology.release": "AUGHOR_ONTOLOGY_RELEASE",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -379,6 +384,10 @@ FLAG_META = {
     "answers.recheck": {
         "label": "Tell people when an answer they were given changes",
         "description": "Once a day, re-run the query behind each chat answer given in the last 14 days and compare it with what the person was told. When a number moved by 5% or more, say so where they were answered — a reply in the Slack thread, through the departure gate, or on the answer in the web — with the old number, the new one, and whether it is late rows (the day was still settling when we answered) or a restatement. On by default since 2026-09-24 (the user's call); off → nothing is re-run, recorded or sent.",
+    },
+    "ontology.release": {
+        "label": "Publish ontology changes as releases",
+        "description": "A change to the business ontology — a person's, the explorer's or a pack's — waits in a draft that the Ontology screens show, each change classed (breaks something · changes a meaning · worth a look · safe) with the automations, claims and cockpit cards it touches. The agent, the Briefing, metrics and automations keep reading what was published until a person publishes the draft as the next release; a change that would break something is refused, a model's proposal is published only once a person confirms it, and every claim computed under a definition whose meaning changed is restated. Each claim records the release it was computed under. Keeps every declaration's history too. Off by default: a declaration is served the moment it is saved.",
     },
     "ontology.history": {
         "label": "Keep every ontology declaration's history, and refuse a withdrawal something depends on",
@@ -648,6 +657,13 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc OC-2 (ROADMAP §3.56), queued 2026-10-09. No model call and no warehouse query beyond the doors' own.
+    "ontology.release": "receipt: on theLook, the dispatch promise moved from two days to three in a draft — the "
+                        "agent and the Briefing still read two; the draft names the claims, the automation and the "
+                        "cards it touches; after publishing, the claims computed under two days say so, and a "
+                        "change that would break the automation is refused. Falsifier (§3.56): replayed over the "
+                        "declarations' own history, a past change that broke a consumer classed SAFE or MEANING — "
+                        "one miss and the catalogue is wrong",
     # Arc OC-1 (ROADMAP §3.56), queued 2026-10-09. No model call and no warehouse query.
     "ontology.history": "receipt: on theLook, a promise declared, changed twice and withdrawn reads back as "
                         "four versions, and asked as of the day between its two changes says what it said "

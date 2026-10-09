@@ -193,9 +193,9 @@ def refusal(kind: str, target_id: str, rows: list[dict]) -> str:
 
 
 def guard_withdrawal(graph: Optional[OntologyGraph], conn: str, kind: str, target_id: str) -> Any:
-    """Arc OC-1's door check: the dependents when `ontology.history` is on and something depends, else []. Off, it
-    reads nothing — a withdrawal behaves exactly as before."""
-    from aughor.kernel.flags import flag_enabled
-    if not flag_enabled("ontology.history"):
+    """Arc OC-1's door check: the dependents when `ontology.history` (or `ontology.release`, which keeps history) is on
+    and something depends, else []. Off, it reads nothing — a withdrawal behaves exactly as before."""
+    from aughor.ontology import history
+    if not history.enabled():
         return []
     return dependents_of(graph, conn, kind, target_id)

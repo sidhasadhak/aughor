@@ -258,8 +258,10 @@ def run_business_terms(conn_id: str, schema_name: str | None, emit) -> str:
         return "skipped"
     emit("business_terms", "started")
     try:
+        from aughor.ontology.overrides import viewing
         from aughor.routers.ontology import explore_ontology
-        out = explore_ontology(connection_id=conn_id, schema_name=schema_name)
+        with viewing("draft"):          # Arc OC-2: its proposals wait in the draft, and it reads them back there
+            out = explore_ontology(connection_id=conn_id, schema_name=schema_name)
         emit("business_terms", "done", run_id=((out or {}).get("run") or {}).get("id", ""))
         return "done"
     except Exception as exc:  # noqa: BLE001 — the business layer is never a precondition

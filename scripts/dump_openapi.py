@@ -138,7 +138,8 @@ def _isolate_stores() -> None:
     # ON-1b — the ontology's file trees: human overrides (a measure WRITES verdicts back into it), the export beside it,
     # the engine's recommendations, (ON-7b) the explorer's draft record, and (R8) the compiled doc tree. Isolated in
     # tests/conftest.py too.
-    for _tree in ("OVERRIDES", "OVERRIDES_SEED", "EXPORT", "RECOMMENDATIONS", "DRAFTS", "DOCS"):
+    # Arc OC-2 adds the draft layer above the overrides (OVERRIDES_DRAFT).
+    for _tree in ("OVERRIDES", "OVERRIDES_SEED", "OVERRIDES_DRAFT", "EXPORT", "RECOMMENDATIONS", "DRAFTS", "DOCS"):
         os.environ.setdefault(f"AUGHOR_ONTOLOGY_{_tree}_DIR", os.path.join(tmp, f"ontology_{_tree.lower()}"))
 
 

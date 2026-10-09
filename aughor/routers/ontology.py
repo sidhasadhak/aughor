@@ -437,6 +437,15 @@ def _refuse_if_depended(connection_id: str, effective: str, kind: str, target_id
         raise HTTPException(status_code=409, detail=refusal(kind, target_id, rows))
 
 
+def _served_scope(connection_id: str, schema_name: Optional[str]) -> str:
+    """The schema of the graph `GET /ontology` serves for this request — its declarations are the ones the screen
+    shows. A connection browsed under one schema and built under another (the read falls back to the one built graph)
+    reads its declarations, history and releases under the built one."""
+    graph = _get_ontology_graph(connection_id, schema_name)
+    return (graph.schema_name if graph is not None and graph.schema_name else None) or \
+        _resolve_schema(connection_id, schema_name)
+
+
 def _history_kind(kind: str) -> str:
     from typing import get_args
 
@@ -461,7 +470,7 @@ def get_declaration_history(
     that what it said then is not known, never that nothing was declared."""
     from aughor.ontology import history
     kind = _history_kind(kind)
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     out: dict = {"element": history.element_key(connection_id, effective, kind, target_id),
                  "kept": history.enabled(),
                  "versions": history.versions(connection_id, effective, kind, target_id)}
@@ -485,12 +494,62 @@ def get_declaration_dependents(
     of anything listed here is refused."""
     from aughor.ontology.dependents import dependents_of
     kind = _history_kind(kind)
-    effective = _resolve_schema(connection_id, schema_name)
+    effective = _served_scope(connection_id, schema_name)
     graph = _get_ontology_graph(connection_id, effective)
     if graph is None:
         raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
     return {"kind": kind, "target_id": target_id,
             "dependents": dependents_of(graph, connection_id, kind, target_id)}
+
+
+@router.get("/ontology/release")
+def get_ontology_release(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc OC-2 — the scope's releases and its draft (ROADMAP §3.56): the release consumers read, every earlier one, and
+    each change waiting to be published with its class (ERR · MEANING · WARN · SAFE), its reasons, what changed field
+    by field, and the automations, claims and cockpit cards it touches. While `ontology.release` is off the draft is
+    empty and says so: a declaration is published when it is saved."""
+    from aughor.ontology import release as R
+    effective = _served_scope(connection_id, schema_name)
+    return {"enabled": R.enabled(), "connection_id": connection_id, "schema_name": effective,
+            "published": R.current(connection_id, effective), "releases": R.releases(connection_id, effective)[:50],
+            "draft": R.changes(connection_id, effective) if R.enabled() else []}
+
+
+@router.post("/ontology/release/publish", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def publish_ontology_release(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc OC-2 — publish the scope's draft as its next release, as the person signed in: every change moves into what
+    consumers read, the release is recorded with each element's version, and every claim a change of meaning touches is
+    restated. 409 with every reason while a change would break something, a model's proposal is unconfirmed, or the
+    draft is empty."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.ontology import release as R
+    from aughor.org.context import current_actor
+    effective = _served_scope(connection_id, schema_name)
+    try:
+        return R.publish(connection_id, effective, by=current_actor())
+    except R.ReleaseRefused as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.post("/ontology/release/discard", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def discard_ontology_draft(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+    kind: Optional[str] = Query(default=None, description="with target_id, discard one change; without, all of them"),
+    target_id: Optional[str] = Query(default=None),
+):
+    """Arc OC-2 — drop changes from the scope's draft: every one, or the one named. What consumers read is untouched."""
+    from aughor.ontology import release as R
+    effective = _served_scope(connection_id, schema_name)
+    kind = _history_kind(kind) if kind else ""
+    return {"discarded": R.discard(connection_id, effective, kind=kind, target_id=target_id or "")}
 
 
 @router.get("/ontology/census")
