@@ -846,6 +846,9 @@ export interface ProcessPromise {
   note: string;
   segment: string;
   metric: string;
+  /** Arc OC-4 — the segment of the objects still waiting and already past the promise, while cockpits may be built
+   *  from the ontology (`ontology.cockpit_pieces`). */
+  overdue_segment?: string;
 }
 
 export interface ProcessStageDetail {
@@ -1022,6 +1025,10 @@ export interface ReleaseChange {
     claims: { id: string; key: string; text: string; definition_version: string }[];
     cards: { id: string; title: string }[];
     automations: { id: string; name: string; how: string }[];
+    /** Arc OC-3 — the approved metrics keyed to the element. */
+    metrics?: { id: string; name: string; how: string }[];
+    /** Arc OC-4 — the cockpits whose pieces read it, while cockpits may be built from the ontology. */
+    cockpits?: { cockpit: string; title: string; pieces: string[] }[];
   };
   by: string;
 }

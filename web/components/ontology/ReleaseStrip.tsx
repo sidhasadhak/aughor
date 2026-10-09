@@ -26,7 +26,7 @@ import {
 const RULE = "1px solid var(--b1)";
 
 /** The class as a person reads it, and its tag colour. */
-const CLASS_LOOK: Record<ChangeClass, { label: string; tag: string }> = {
+export const CLASS_LOOK: Record<ChangeClass, { label: string; tag: string }> = {
   ERR: { label: "breaks something", tag: "aug-tag-red" },
   MEANING: { label: "changes a meaning", tag: "aug-tag-amber" },
   WARN: { label: "worth a look", tag: "aug-tag-violet" },
@@ -42,6 +42,8 @@ function touchesLine(c: ReleaseChange): string {
   if (c.touches.claims.length) parts.push(countNoun(c.touches.claims.length, "claim"));
   if (c.touches.automations.length) parts.push(countNoun(c.touches.automations.length, "automation"));
   if (c.touches.cards.length) parts.push(countNoun(c.touches.cards.length, "cockpit card"));
+  if (c.touches.metrics?.length) parts.push(countNoun(c.touches.metrics.length, "approved metric"));
+  if (c.touches.cockpits?.length) parts.push(countNoun(c.touches.cockpits.length, "cockpit"));
   return parts.join(" · ");
 }
 
@@ -73,6 +75,7 @@ function ChangeRow({ change, busy, onDiscard }: {
         <p className="aug-fs-xs" style={{ margin: "4px 0 0", color: "var(--t2)" }}>
           Touches {touched}
           {change.touches.automations.length > 0 && <>: {change.touches.automations.map(a => a.name).join(", ")}</>}
+          {(change.touches.cockpits?.length ?? 0) > 0 && <> — {change.touches.cockpits!.map(c => `“${c.title || c.cockpit}”`).join(", ")}</>}
           {change.class === "MEANING" && change.touches.claims.length > 0 && " — publishing restates the claims"}
         </p>
       )}

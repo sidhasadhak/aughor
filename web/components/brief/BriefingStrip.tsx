@@ -91,7 +91,7 @@ export function BriefingStrip({ connectionId, schema, cockpitId, range, onOpenCo
         </div>
       ) : (
         <ComposedCockpit spec={kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}
-          images={images} range={range} schema={schema} />
+          images={images} range={range} schema={schema} connectionId={connectionId} />
       )}
     </div>
   );

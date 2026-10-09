@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """ON-10 — the question frame's MATCHER, measured with no model and no warehouse.
 
-`evals/framing_matcher_set.jsonl` holds questions over the two hosts that declare business definitions — Olist and
-LuxExperience, each graph frozen beside its falsifier set — each with a GOLD frame: the declared definition it means,
+`evals/framing_matcher_set.jsonl` holds questions over the hosts that declare business definitions — Olist and
+LuxExperience, each graph frozen beside its falsifier set, and (Arc OC-3) theLook with its approved metrics keyed to the
+entities they measure — each with a GOLD frame: the declared definition it means,
 the rules that apply, the type the reading starts from, the breakdown it names, and terms that must not appear. Every
 item is tagged with the gap it probes and split dev/test before any measurement: a matcher change is developed against
 dev and measured on test once. `paraphrase` items name a definition in words nobody declared — a deterministic matcher
 cannot reach them (a person's synonym can), so they are reported apart from the in-scope score.
 
+`--keyed` hands the frame theLook's keyed metrics (`evals/framing_keyed_metrics_thelook.json`, names and entities only)
+— the OC-3 falsifier reads the same items with and without it.
+
 Usage:
-    .venv/bin/python evals/framing_matcher_eval.py [--split dev|test|all] [--output results.json]
+    .venv/bin/python evals/framing_matcher_eval.py [--split dev|test|all] [--keyed] [--output results.json]
 """
 from __future__ import annotations
 
@@ -25,7 +29,9 @@ if str(REPO) not in sys.path:
 
 DATASET = REPO / "evals" / "framing_matcher_set.jsonl"
 GRAPHS = {"olist": "evals/ablation_olist_business_ontology.json",
-          "lux": "evals/ablation_luxexperience_business_ontology.json"}
+          "lux": "evals/ablation_luxexperience_business_ontology.json",
+          "thelook": "evals/ablation_thelook_business_ontology.json"}
+KEYED = {"thelook": "evals/framing_keyed_metrics_thelook.json"}
 OUT_OF_SCOPE = {"paraphrase"}
 
 
@@ -59,15 +65,27 @@ def score(frame: dict, expect: dict) -> dict:
                       "named": named, "terms": [(t.get("text"), t.get("kind"), t.get("target")) for t in frame.get("terms", [])]}}
 
 
-def run(split: str = "all") -> dict:
+def load_keyed() -> dict:
+    """Each host's keyed metrics, as the frame is handed them (an object with a name, a label and an entity)."""
+    from types import SimpleNamespace
+    out = {}
+    for host, path in KEYED.items():
+        rows = json.loads((REPO / path).read_text())["metrics"]
+        out[host] = [SimpleNamespace(sql="", approved_by="", entity_confirmed_by="eval", **r) for r in rows]
+    return out
+
+
+def run(split: str = "all", keyed: bool = False) -> dict:
     from aughor.ontology.framing import frame_question
     graphs = load_graphs()
+    metrics = load_keyed() if keyed else {}
     records = [json.loads(line) for line in DATASET.read_text().splitlines() if line.strip()]
     if split != "all":
         records = [r for r in records if r["split"] == split]
     rows = []
     for rec in records:
-        frame = frame_question(rec["question"], graphs[rec["host"]], dialect="duckdb").model_dump(mode="json")
+        frame = frame_question(rec["question"], graphs[rec["host"]], dialect="duckdb",
+                               metrics=metrics.get(rec["host"], ())).model_dump(mode="json")
         rows.append({"id": rec["id"], "host": rec["host"], "gap": rec["gap"], "split": rec["split"],
                      "question": rec["question"], "expect": rec["expect"], **score(frame, rec["expect"])})
     return {"results": rows, "summary": summarize(rows)}
@@ -92,9 +110,10 @@ def summarize(rows: list[dict]) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", choices=("dev", "test", "all"), default="all")
+    ap.add_argument("--keyed", action="store_true", help="hand the frame each host's keyed metrics (Arc OC-3)")
     ap.add_argument("--output", default=None)
     args = ap.parse_args()
-    result = run(args.split)
+    result = run(args.split, keyed=args.keyed)
     for r in result["results"]:
         failed = [k for k, v in r["checks"].items() if not v]
         print(f"{'ok  ' if r['ok'] else 'MISS'} {r['id']:26} {r['split']:4} "

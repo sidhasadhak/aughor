@@ -125,6 +125,15 @@ FLAG_ENV = {
     # under, and a release that changes a definition's meaning restates them. OFF: a declaration is served the
     # moment it is saved, exactly as before.
     "ontology.release": "AUGHOR_ONTOLOGY_RELEASE",
+    # Arc OC-3 (ROADMAP §3.56). ON: an approved metric a person keyed to an entity is read by the object door as its
+    # whole statement over any set of that entity's objects, and the question frame may resolve to it. OFF: the
+    # object door and the frame read exactly as before; the key is still kept and counted.
+    "ontology.keyed_metrics": "AUGHOR_ONTOLOGY_KEYED_METRICS",
+    # Arc OC-4 (ROADMAP §3.56). ON: a cockpit may hold pieces bound to the ontology — a process board, an objects table
+    # over an entity or a segment, an object detail that follows the table, and a button that runs a declared action —
+    # and the object door resolves each promise's overdue segment (`overdue_<noun>`). OFF: the cockpit vocabulary
+    # refuses those pieces and the compiler resolves exactly the names it did; POST /objects/list still lists.
+    "ontology.cockpit_pieces": "AUGHOR_ONTOLOGY_COCKPIT_PIECES",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -385,6 +394,14 @@ FLAG_META = {
         "label": "Tell people when an answer they were given changes",
         "description": "Once a day, re-run the query behind each chat answer given in the last 14 days and compare it with what the person was told. When a number moved by 5% or more, say so where they were answered — a reply in the Slack thread, through the departure gate, or on the answer in the web — with the old number, the new one, and whether it is late rows (the day was still settling when we answered) or a restatement. On by default since 2026-09-24 (the user's call); off → nothing is re-run, recorded or sent.",
     },
+    "ontology.cockpit_pieces": {
+        "label": "Build cockpits from the ontology",
+        "description": "A cockpit may hold pieces bound to the business ontology instead of SQL: a process board (each stage, each promise with how often it is broken and how many objects are open and already past it), an objects table over an entity or a segment — the overdue objects of a promise among them — an object detail that follows the table's selection, and a button that runs a declared action, or proposes it when it needs approval. Each piece names what it reads by id, so a piece whose entity, process or action is gone says so. Off by default: those pieces cannot be added and the object door resolves exactly the names it did.",
+    },
+    "ontology.keyed_metrics": {
+        "label": "Read approved metrics by the entity they measure",
+        "description": "Once a person confirms which entity an approved metric measures (Semantic Layer, or PUT /metrics/{name}/entity), the object door reads the metric's own statement over any set of that entity's objects — a declared segment, a rule, or a filter through a measured link — restricting the statement's table to those objects' keys, so the approved definition is what is computed. Off by default: the object door and the question frame read exactly as before.",
+    },
     "ontology.release": {
         "label": "Publish ontology changes as releases",
         "description": "A change to the business ontology — a person's, the explorer's or a pack's — waits in a draft that the Ontology screens show, each change classed (breaks something · changes a meaning · worth a look · safe) with the automations, claims and cockpit cards it touches. The agent, the Briefing, metrics and automations keep reading what was published until a person publishes the draft as the next release; a change that would break something is refused, a model's proposal is published only once a person confirms it, and every claim computed under a definition whose meaning changed is restated. Each claim records the release it was computed under. Keeps every declaration's history too. Off by default: a declaration is served the moment it is saved.",
@@ -491,6 +508,13 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # Arc OC-3 (ROADMAP §3.56), 2026-10-09. It changes what the question frame hands an analysis, so it is measured
+    # before it graduates.
+    "ontology.keyed_metrics": "does reading an approved metric by the entity it measures — over a declared segment, "
+                              "through the frame — raise how often a question reaches a declared definition, and how "
+                              "often the answer computes the approved one? Falsifier (§3.56): if keying raises neither "
+                              "framing reach nor the declared-definition hit rate, OC-3 stops at the minimum and the "
+                              "flag goes",
     # Arc BR (ROADMAP §3.48). ON: the Briefing reads any date range — Day, Week, Month and Year
     # become presets of one range control — measures APPROVED metrics compiled from their time
     # fields (set automatically, corrected by a person), says whether each figure is final,
@@ -657,6 +681,12 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc OC-4 (ROADMAP §3.56), queued 2026-10-09. No model call; the warehouse is read through the object door only.
+    "ontology.cockpit_pieces": "receipt: on theLook, a late dispatch cockpit — the process board's open-and-overdue "
+                               "count opens a table of exactly that many objects, one opens beside it, and a declared "
+                               "action run from it shows its edit in the table and on the object's own page. "
+                               "Falsifier (§3.56): if the census does not move in the weeks after, the surface was "
+                               "not the bottleneck — the flag goes and the arc is re-surveyed",
     # Arc OC-2 (ROADMAP §3.56), queued 2026-10-09. No model call and no warehouse query beyond the doors' own.
     "ontology.release": "receipt: on theLook, the dispatch promise moved from two days to three in a draft — the "
                         "agent and the Briefing still read two; the draft names the claims, the automation and the "

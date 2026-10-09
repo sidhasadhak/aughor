@@ -78,7 +78,7 @@ def test_the_first_spec_kept_is_version_one(desk):
     assert latest["approved_by"] == "user1"
     assert latest["source"] == "a person's own hand"
     assert latest["note"] == "the first cut"
-    assert latest["vocabulary_version"] == 2
+    assert latest["vocabulary_version"] == 3
     assert latest["cards"] == [desk.rate, desk.net]
     assert latest["changes"] == {"added": sorted(desk.spec()["elements"]), "removed": [], "changed": []}
     assert latest["kept_at"]

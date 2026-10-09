@@ -40,6 +40,9 @@ import {
 
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CockpitTile, SaidTile, WIDE, WithheldTile, tileShape, type TileDoors } from "@/components/cockpit/CockpitTile";
+import {
+  ActionButtonPiece, ObjectDetailPiece, ObjectTablePiece, PiecesProvider, ProcessBoardPiece,
+} from "@/components/cockpit/OntologyPieces";
 import { ImageTile, NoteTile, type ImageStamp, type StaticDoors } from "@/components/cockpit/StaticTile";
 import { Icon } from "@/components/ui/icon";
 import { Refusal } from "@/components/ui/states";
@@ -51,7 +54,10 @@ import { checkCockpitSpec, openingTab } from "@/lib/cockpit/rules";
 
 /** What a cockpit may ask of the page that holds it. The static doors and `onResize` are absent
  *  on a cockpit the reader may not change — a published one, a strip. */
-export interface CockpitDoors extends TileDoors, StaticDoors {}
+export interface CockpitDoors extends TileDoors, StaticDoors {
+  /** Arc OC-4 — place a table of a segment, from a process board's open-and-overdue count. */
+  onPlaceTable?: (entity: string, segment: string) => void;
+}
 
 interface CockpitContextValue {
   elements: Spec["elements"];
@@ -353,6 +359,46 @@ function CockpitImage({ element }: ComponentRenderProps<{ object: string; captio
   );
 }
 
+// ── Arc OC-4 — the pieces bound to the ontology ─────────────────────────────────────────────
+// Each is drawn in a cell like any element; what it reads is `OntologyPieces`'. Left out, a board or a table takes
+// the room its rows ask for, and a detail one column.
+
+function CockpitProcessBoard({ element }: ComponentRenderProps<{ process: string; size?: Size | null }>) {
+  return (
+    <Cell type="ProcessBoard" props={element.props as Record<string, unknown>} size={element.props.size ?? "full"} testid="cockpit-piece-cell">
+      {() => <ProcessBoardPiece process={element.props.process} />}
+    </Cell>
+  );
+}
+
+function CockpitObjectTable({ element }: ComponentRenderProps<{
+  entity: string; segment?: string | null; columns?: string[] | null; sort?: string | null; descending?: boolean | null;
+  size?: Size | null;
+}>) {
+  const size = element.props.size ?? "wide";
+  return (
+    <Cell type="ObjectTable" props={element.props as Record<string, unknown>} size={size} testid="cockpit-piece-cell">
+      {key => (
+        <ObjectTablePiece elementKey={key} entity={element.props.entity} segment={element.props.segment}
+          columns={element.props.columns} sort={element.props.sort} descending={element.props.descending}
+          tall={SPAN[size].h === 2} />
+      )}
+    </Cell>
+  );
+}
+
+function CockpitObjectDetail({ element, children }: ComponentRenderProps<{ follows: string; size?: Size | null }>) {
+  return (
+    <Cell type="ObjectDetail" props={element.props as Record<string, unknown>} size={element.props.size ?? "small"} testid="cockpit-piece-cell">
+      {() => <ObjectDetailPiece follows={element.props.follows}>{children}</ObjectDetailPiece>}
+    </Cell>
+  );
+}
+
+function CockpitActionButton({ element }: ComponentRenderProps<{ action: string }>) {
+  return <ActionButtonPiece action={element.props.action} />;
+}
+
 /** One renderer per catalog component — a missing or an extra name is a type error. */
 const REGISTRY = {
   Cockpit: CockpitRoot,
@@ -362,11 +408,15 @@ const REGISTRY = {
   Card: CockpitCard,
   Note: CockpitNote,
   Image: CockpitImage,
+  ProcessBoard: CockpitProcessBoard,
+  ObjectTable: CockpitObjectTable,
+  ObjectDetail: CockpitObjectDetail,
+  ActionButton: CockpitActionButton,
 } satisfies Record<ComponentName, unknown>;
 
 const NO_IMAGES: Record<string, ImageStamp> = {};
 
-export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = NO_IMAGES, range = null, schema }: {
+export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = NO_IMAGES, range = null, schema, connectionId }: {
   spec: unknown;
   cards: CardState[];
   host: CockpitHostState;
@@ -378,6 +428,8 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
   /** The range the cockpit is read for; a bigger figure shows its metric's trend over it. */
   range?: BriefingRange | null;
   schema?: string;
+  /** The connection the ontology's pieces read (Arc OC-4). */
+  connectionId?: string;
 }) {
   // A spec is known by what it says, not by which object says it: a caller that parses the
   // same JSON again on every render hands over a new object each time, and that must not
@@ -426,9 +478,11 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
 
   return (
     <CockpitContext.Provider value={context}>
-      <JSONUIProvider registry={REGISTRY as ComponentRegistry} store={store}>
-        <Renderer spec={spec as Spec} registry={REGISTRY as ComponentRegistry} />
-      </JSONUIProvider>
+      <PiecesProvider connectionId={connectionId} schema={schema} elements={context.elements} onPlaceTable={doors.onPlaceTable}>
+        <JSONUIProvider registry={REGISTRY as ComponentRegistry} store={store}>
+          <Renderer spec={spec as Spec} registry={REGISTRY as ComponentRegistry} />
+        </JSONUIProvider>
+      </PiecesProvider>
     </CockpitContext.Provider>
   );
 }

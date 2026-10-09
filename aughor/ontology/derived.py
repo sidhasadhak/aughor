@@ -13,6 +13,7 @@ derives names the compiler refuses with the reason rather than names that quietl
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from aughor.ontology.models import BusinessRule, OntologyEntity, OntologyGraph, Process, ProcessStage
@@ -98,6 +99,11 @@ def rate_name(stage: ProcessStage) -> str:
     return f"{promise_noun(stage)}_breach_rate"
 
 
+def overdue_name(stage: ProcessStage) -> str:
+    """Arc OC-4 — the segment of the objects still waiting for a promised stage and already past the promise."""
+    return f"overdue_{promise_noun(stage)}"
+
+
 def _days(n: int) -> str:
     return f"{n} calendar day{'' if n == 1 else 's'}"
 
@@ -136,6 +142,36 @@ def promise_filters(process: Process, index: int) -> Optional[dict]:
                 "open": ({"path": previous.timestamp, "op": "not_null"}, {"path": stage.timestamp, "op": "is_null"}),
                 "words": f"more than {_days(int(promise.within_days))} from {previous.name} to {stage.name}"}
     return None
+
+
+def cutoff_days(as_of: str, days: int) -> str:
+    """The date ``days`` calendar days before ``as_of``'s date: a moment before it is more than ``days`` days back."""
+    try:
+        moment = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+        day = moment.date()
+    except ValueError:
+        day = date.fromisoformat(as_of[:10])
+    return (day - timedelta(days=days)).isoformat()
+
+
+def cutoff_hours(as_of: str, hours: int) -> str:
+    """The moment ``hours`` hours before ``as_of``: a moment before it is more than ``hours`` hours back."""
+    moment = datetime.fromisoformat(as_of.replace("Z", "+00:00").replace("T", " ")).replace(tzinfo=None)
+    return (moment - timedelta(hours=hours)).isoformat(sep=" ", timespec="seconds")
+
+
+def overdue_filters(spec: dict, as_of: str) -> tuple[dict, ...]:
+    """The objects that have not reached a promised stage and are already past the promise as of ``as_of`` — the data's
+    own clock, the moment the promise was measured at: its `open` filters and the deadline, or the start moment more
+    than the promised days or hours back. The one definition the measurement's `open_overdue` counts and the overdue
+    segment lists, so a list and its count cannot drift apart."""
+    if spec.get("deadline"):
+        past = {"path": spec["deadline"], "op": "<", "value": as_of}
+    elif spec.get("within_hours") is not None:
+        past = {"path": spec["start"], "op": "<", "value": cutoff_hours(as_of, spec["within_hours"])}
+    else:
+        past = {"path": spec["start"], "op": "<", "value": cutoff_days(as_of, spec["within_days"])}
+    return tuple(spec["open"]) + (past,)
 
 
 # ── what a process and a rule derive ────────────────────────────────────────────────────────
@@ -220,6 +256,41 @@ def rule_derivations(rule: BusinessRule) -> Derivations:
         name=rule.id, entity=rule.entity, filters=rule_filters(rule), source=source,
         description=rule.description or words, usable=usable, why_not="" if usable else _claim_why(rule.verified, rule.note),
         caveats=tuple(f"rule {rule.id}: {flag}" for flag in rule.flags))])
+
+
+def overdue_derivations(process: Process) -> list[DerivedSegment]:
+    """Arc OC-4 — for each measured promise, the segment of the objects still waiting for its stage and already past it
+    as of the moment it was measured (`overdue_<noun>`): what a process board's *open and overdue* count lists. Not
+    among `process_derivations` — no question, prompt or catalogue reads it — and the compiler resolves it only while
+    `ontology.cockpit_pieces` is on (`find_overdue_segment`). Usable once the promise was measured, with a clock."""
+    out: list[DerivedSegment] = []
+    for i, stage in enumerate(process.stages):
+        spec = promise_filters(process, i)
+        promise = stage.promise
+        if spec is None or promise is None:
+            continue
+        noun = promise_noun(stage)
+        source = f"the {noun} promise of process {process.id}"
+        usable = promise.verified is True and bool(promise.as_of)
+        why = "" if usable else (_claim_why(promise.verified, promise.note) if promise.verified is not True
+                                 else "was measured with no moment to count from")
+        out.append(DerivedSegment(
+            name=overdue_name(stage), entity=spec["grain"],
+            filters=overdue_filters(spec, promise.as_of) if usable else (), source=source,
+            description=(f"the {spec['grain']} objects that have not reached {stage.name} and are already past the "
+                         f"{noun} promise as of {promise.as_of or 'its measurement'}"),
+            usable=usable, why_not=why, caveats=tuple(f"{source}: {flag}" for flag in promise.flags)))
+    return out
+
+
+def find_overdue_segment(graph: Optional[OntologyGraph], entity: OntologyEntity, name: str) -> Optional[DerivedSegment]:
+    """Arc OC-4 — the overdue segment ``name`` on ``entity``, or None (always None while `ontology.cockpit_pieces` is
+    off, so the compiler reads exactly as it did)."""
+    from aughor.kernel.flags import flag_enabled
+    if graph is None or not flag_enabled("ontology.cockpit_pieces"):
+        return None
+    segments = [d for p in (graph.processes or {}).values() for d in overdue_derivations(p) if d.entity == entity.id]
+    return _named(segments, name)
 
 
 def derivations(graph: Optional[OntologyGraph], *, except_process: str = "", except_rule: str = "") -> Derivations:

@@ -82,7 +82,7 @@ CATALOGUE: dict[str, dict[str, Any]] = {
     "ontology.measure": {"what": "a measurement pass ran over a built ontology", "payload": ["ok", "schema", "relationships", "lifecycles"], "emitted_by": "routers/ontology"},
     "ontology.explore": {"what": "the business explorer ran on a scope", "payload": ["ok", "schema", "run", "backend", "model", "said", "written", "refused"], "emitted_by": "routers/ontology"},
     "ontology.build": {"what": "an ontology build ended", "payload": ["ok", "entities", "stage", "error"], "emitted_by": "routers/ontology"},
-    "ontology.census": {"what": "the daily ontology census: what every built scope declares, what the data verified of it, and what leans on it", "payload": ["totals", "scopes", "not_built", "leaned_on"], "emitted_by": "ontology/census.record_if_due"},
+    "ontology.census": {"what": "the daily ontology census: what every built scope declares, what the data verified of it, and what leans on it", "payload": ["totals", "scopes", "not_built", "leaned_on", "keyed"], "emitted_by": "ontology/census.record_if_due"},
     "birth.step": {"what": "a step of a connection's birth", "payload": ["connection_id", "schema"], "emitted_by": "routers/_shared"},
     "birth.done": {"what": "a connection's birth completed", "payload": ["connection_id"], "emitted_by": "routers/_shared"},
     "brief.superseded_automation": {"what": "a Day subscription paused the automation it replaces", "payload": ["automation_id"], "emitted_by": "briefing"},

@@ -29,8 +29,9 @@ import { defineCatalog } from "@json-render/core";
 import { schema } from "@json-render/react/schema";
 import { z } from "zod";
 
-/** Raised when a component or a prop is added, renamed or removed. 2: Note, Image and `size`. */
-export const COCKPIT_VOCABULARY_VERSION = 2;
+/** Raised when a component or a prop is added, renamed or removed. 2: Note, Image and `size`. 3: the ontology's
+ *  pieces — ProcessBoard, ObjectTable, ObjectDetail and ActionButton (Arc OC-4). */
+export const COCKPIT_VOCABULARY_VERSION = 3;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
 export const TONES = ["good", "warn", "bad", "info", "neutral"] as const;
@@ -63,6 +64,14 @@ const CARD_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const OBJECT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 /** A tab's name is an identifier the state holds, never text a reader sees. */
 const TAB_NAME = /^[a-z][a-z0-9_-]{0,31}$/;
+/** An id the ontology declares — an entity, a segment, a process, an action — by its own spelling. */
+const ONTOLOGY_ID = /^[A-Za-z_][A-Za-z0-9_ .-]{0,127}$/;
+/** A property path through to-one links (`status`, `user.country`). */
+const PROPERTY_PATH = /^[A-Za-z_][A-Za-z0-9_.]{0,127}$/;
+/** An element key in the same spec. */
+const ELEMENT_KEY = /^[A-Za-z0-9_-]{1,64}$/;
+/** The most columns an objects table lists beside each object's key. */
+export const MAX_TABLE_COLUMNS = 8;
 
 const size = z.enum(SIZES).nullable().optional();
 
@@ -120,15 +129,47 @@ export const cockpitCatalog = defineCatalog(schema, {
       }),
       description: "An image a person uploaded, by its object id, with a caption. Never chosen by a model, never measured.",
     },
+    ProcessBoard: {
+      props: z.object({ process: z.string().regex(ONTOLOGY_ID), size }),
+      description: "A declared process, by its id: each stage and how many objects reach it, each promise with how often it is broken and how many objects are open and already past it.",
+    },
+    ObjectTable: {
+      props: z.object({
+        entity: z.string().regex(ONTOLOGY_ID),
+        segment: z.string().regex(ONTOLOGY_ID).nullable().optional(),
+        columns: z.array(z.string().regex(PROPERTY_PATH)).max(MAX_TABLE_COLUMNS).nullable().optional(),
+        sort: z.string().regex(PROPERTY_PATH).nullable().optional(),
+        descending: z.boolean().nullable().optional(),
+        size,
+      }),
+      description: "The objects of an entity, or of a segment of it, a page at a time: each object's key and the columns named, read through the object door.",
+    },
+    ObjectDetail: {
+      props: z.object({ follows: z.string().regex(ELEMENT_KEY), size }),
+      description: "The object chosen in the objects table it follows, by that table's element key: its properties, edits marked, and the declared actions it holds.",
+    },
+    ActionButton: {
+      props: z.object({ action: z.string().regex(ONTOLOGY_ID) }),
+      description: "A declared action, by its id, run on the object its detail shows — or proposed for approval when running it needs one.",
+    },
   },
   actions: {},
 });
 
-export type ComponentName = "Cockpit" | "Tabs" | "Tab" | "Section" | "Card" | "Note" | "Image";
-export const COMPONENT_NAMES: readonly ComponentName[] = ["Cockpit", "Tabs", "Tab", "Section", "Card", "Note", "Image"];
+/** Arc OC-4 — the pieces bound to the ontology. A person places them by hand; a model may arrange one and is never
+ *  told how to write one (`grammar.ts` teaches `WRITTEN`). */
+export type PieceName = "ProcessBoard" | "ObjectTable" | "ObjectDetail" | "ActionButton";
+export const PIECE_NAMES: readonly PieceName[] = ["ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton"];
+
+export type WrittenName = "Cockpit" | "Tabs" | "Tab" | "Section" | "Card" | "Note" | "Image";
+/** The components a writer of a cockpit is told about — every one but the ontology's pieces. */
+export const WRITTEN: readonly WrittenName[] = ["Cockpit", "Tabs", "Tab", "Section", "Card", "Note", "Image"];
+
+export type ComponentName = WrittenName | PieceName;
+export const COMPONENT_NAMES: readonly ComponentName[] = [...WRITTEN, ...PIECE_NAMES];
 
 /** The components a section holds — each sized, each in its place. */
-export const PLACED: readonly ComponentName[] = ["Card", "Note", "Image"];
+export const PLACED: readonly ComponentName[] = ["Card", "Note", "Image", "ProcessBoard", "ObjectTable", "ObjectDetail"];
 /** The two that are a person's own: a model arranges them and never makes one. */
 export const STATIC: readonly ComponentName[] = ["Note", "Image"];
 
@@ -141,6 +182,10 @@ export const MAY_HOLD: Record<ComponentName, readonly ComponentName[]> = {
   Card: [],
   Note: [],
   Image: [],
+  ProcessBoard: [],
+  ObjectTable: [],
+  ObjectDetail: ["ActionButton"],
+  ActionButton: [],
 };
 
 /** The components a condition may show or hide. A tab is never conditional. */

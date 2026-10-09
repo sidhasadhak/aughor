@@ -406,6 +406,28 @@ def _save(automation: Automation) -> dict:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+_SOURCE_KINDS = ("source_change", "entity_appears")
+
+
+def _keyed_triggers(payload: dict) -> dict:
+    """Arc OC-3 — a `source_change` / `entity_appears` trigger may name the ENTITY it watches (`config.entity`): its
+    table is read from the entity's backing on the automation's connection and kept beside it, so the trigger is
+    about the entity — the dependents index and a release read it — and still probes a table. 422 when the entity is
+    unknown or backed by a query, which has no table to watch."""
+    for c in payload.get("conditions") or []:
+        cfg = c.get("config") or {} if isinstance(c, dict) else {}
+        if not (isinstance(c, dict) and c.get("kind") in _SOURCE_KINDS and cfg.get("entity")):
+            continue
+        from aughor.ontology.keys import entity_table
+        table = entity_table(str(payload.get("conn_id") or ""), str(cfg["entity"]))
+        if not table:
+            raise HTTPException(status_code=422, detail=(
+                f"no entity '{cfg['entity']}' with a table on connection '{payload.get('conn_id')}' — a trigger "
+                "watches an entity read from a table; one backed by a query has no table to watch"))
+        c["config"] = {**cfg, "table": table}
+    return payload
+
+
 @router.post("/automations")
 def create(body: CreateAutomationRequest):
     """Create an automation. A malformed condition or effect is rejected HERE, at construction —
@@ -418,7 +440,7 @@ def create(body: CreateAutomationRequest):
             # workspace (a pack install) stays honestly unowned.
             from aughor.workspace.context import current_workspace_id
             payload["workspace_id"] = current_workspace_id() or ""
-        automation = Automation(**payload)
+        automation = Automation(**_keyed_triggers(payload))
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
     if automation.agent_id:
@@ -456,7 +478,7 @@ def update(automation_id: str, body: CreateAutomationRequest):
         for kept in ("exposed_as_tool", "timezone"):
             if kept not in body.model_fields_set:
                 authored[kept] = getattr(existing, kept)
-        automation = Automation(**authored, id=automation_id,
+        automation = Automation(**_keyed_triggers(authored), id=automation_id,
                                 created_at=existing.created_at,
                                 agent_id=existing.agent_id,
                                 last_run_at=existing.last_run_at,

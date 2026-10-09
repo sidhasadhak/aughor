@@ -134,6 +134,8 @@
   "aughor/routers/investigations.py::_execute_chat_sql::execute::{label}": {"dialect": "native", "author": "model", "note": "the quick path's model under the writer rules, repaired in db.dialect"},
   "aughor/routers/objects.py::_domain_object_query::execute_guarded::objects": {"dialect": "generated", "author": "mixed", "note": "GM-5: audited — compiled from a person's object query"},
   "aughor/routers/objects.py::post_object_query::execute_guarded::objects": {"dialect": "generated", "author": "mixed", "note": "GM-5: audited — compiled from a person's object query"},
+  "aughor/routers/objects.py::post_object_listing::execute_guarded::objects.list": {"dialect": "generated", "author": "mixed", "note": "Arc OC-4: a page of objects, compiled by the object door's own compiler from a person's listing"},
+  "aughor/routers/objects.py::post_object_listing::execute_guarded::objects.list#2": {"dialect": "generated", "author": "mixed", "note": "Arc OC-4: the listing's total — the same object set, counted"},
   "aughor/routers/ontology.py::get_entity_lifecycle_counts._work::execute::lifecycle_counts": {"dialect": "portable", "author": "mixed", "note": "bare names around the type's active filter, written by a person or the model"},
   "aughor/routers/ontology.py::save_learned_skill._validator::execute::skill_dry_run": {"dialect": "native", "author": "stored", "note": "a skill's SQL behind EXPLAIN — dead on every engine because the validator refuses EXPLAIN, not a dialect defect"},
   "aughor/routers/query.py::column_distinct::execute::__distinct__": {"dialect": "generated", "author": "platform", "note": "db.quoting"},

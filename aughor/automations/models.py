@@ -85,7 +85,10 @@ class Condition(BaseModel):
 
     @model_validator(mode="after")
     def _require_config_keys(self) -> "Condition":
-        missing = [k for k in _CONDITION_REQUIRED.get(self.kind, ()) if not self.config.get(k)]
+        missing = [k for k in _CONDITION_REQUIRED.get(self.kind, ()) if not self.config.get(k)
+                   # Arc OC-3: a source trigger may name its entity instead; the door and the probe read its table
+                   and not (k == "table" and self.kind in ("source_change", "entity_appears")
+                            and self.config.get("entity"))]
         if missing:
             raise ValueError(
                 f"condition kind '{self.kind}' requires config key(s): {', '.join(missing)}"
@@ -120,7 +123,13 @@ class Condition(BaseModel):
         if self.kind == "finding_created":
             dom = str(self.config.get("domain", "") or "")
             return f"finding_created({dom})" if dom else "finding_created"
-        return f"{self.kind}({self.table})"
+        return f"{self.kind}({self.entity or self.table})"
+
+    @property
+    def entity(self) -> str:
+        """Arc OC-3 — the entity a `source_change` / `entity_appears` trigger watches, when it names one; its table is
+        read from the entity's backing (`ontology.keys.entity_table`) and kept in `table` beside it."""
+        return str(self.config.get("entity", "") or "")
 
 
 # ── effects ──────────────────────────────────────────────────────────────────────

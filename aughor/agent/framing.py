@@ -87,7 +87,7 @@ def _read_for_its_shape(frame: Optional[Frame]) -> Optional[Frame]:
 
 def choose_definition(frame: Frame, graph: Any, *, provider: Any = None, synonyms: Any = (),
                       dialect: str = "duckdb", conn_id: str = "", trace_id: str = "",
-                      inv_id: str = "") -> Frame:
+                      inv_id: str = "", metrics: Any = ()) -> Frame:
     """When the question's words fit several declared definitions equally, a model chooses which of them the question
     means. Unambiguous frames are returned untouched and cost no call."""
     if not frame.ambiguous:
@@ -122,7 +122,7 @@ def choose_definition(frame: Frame, graph: Any, *, provider: Any = None, synonym
         frame.notes.append("a model read none of the declared definitions as what the question means")
         return frame
     return _read_for_its_shape(frame_question(frame.question, graph, synonyms=synonyms, hops=frame.hops,
-                                              dialect=dialect, choice=name, chosen_by="model"))
+                                              dialect=dialect, choice=name, chosen_by="model", metrics=metrics))
 
 
 def resolve_frame(question: str, connection_id: str, schema_name: Optional[str] = None, *, dialect: str = "duckdb",
@@ -138,10 +138,12 @@ def resolve_frame(question: str, connection_id: str, schema_name: Optional[str] 
     # of what was ASKED. The context names periods and quotes the last report, and its words are
     # not the person's.
     from aughor.automations.temporal import ask_of
-    frame = frame_question(ask_of(question), graph, synonyms=synonyms, hops=hops, dialect=dialect)
+    from aughor.semantic.object_query import keyed_metrics_for
+    metrics = keyed_metrics_for(connection_id, graph.schema_name)     # Arc OC-3 — empty while the flag is off
+    frame = frame_question(ask_of(question), graph, synonyms=synonyms, hops=hops, dialect=dialect, metrics=metrics)
     if choose and frame.ambiguous:
         frame = choose_definition(frame, graph, provider=provider, synonyms=synonyms, dialect=dialect,
-                                  conn_id=connection_id, trace_id=trace_id, inv_id=inv_id)
+                                  conn_id=connection_id, trace_id=trace_id, inv_id=inv_id, metrics=metrics)
     # PENDING item 12 — a question on a scope that declares definitions and reached none of them is
     # counted (the run's trace id, never the question's text), so how often wording misses is known.
     from aughor.ontology.framing_misses import record as _record_miss
@@ -166,9 +168,12 @@ def frame_from_state(state: dict, *, dialect: str = "duckdb", provider: Any = No
             if not frame.ambiguous:
                 return frame
             graph = served_graph(connection_id, schema)
+            if graph is None:
+                return frame
+            from aughor.semantic.object_query import keyed_metrics_for
             return choose_definition(frame, graph, provider=provider, synonyms=person_synonyms(connection_id),
-                                     dialect=dialect, conn_id=connection_id,
-                                     trace_id=_trace, inv_id=_inv) if graph is not None else frame
+                                     dialect=dialect, conn_id=connection_id, trace_id=_trace, inv_id=_inv,
+                                     metrics=keyed_metrics_for(connection_id, graph.schema_name))
     if not connection_id:
         return None
     return resolve_frame(state.get("question", "") or "", connection_id, schema, dialect=dialect, provider=provider,

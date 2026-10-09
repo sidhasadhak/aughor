@@ -158,6 +158,13 @@ class MetricDefinition(BaseModel):
     time_confirmed_by: Optional[str] = Field(
         default=None, description="The person who confirmed or corrected them; empty = set "
                                   "automatically and not yet confirmed")
+    # Arc OC-3 (ROADMAP §3.56) — the entity whose objects this definition measures, an ontology id (`OrderItem`), so a
+    # release, a cockpit and the question frame read the metric by what it is about rather than by its tables. Empty
+    # until a person confirms it: `aughor/ontology/keys.py` proposes one from the grain's table, never stores it.
+    entity: Optional[str] = Field(
+        default=None, description="The entity whose objects it measures, e.g. 'OrderItem' — confirmed by a person")
+    entity_confirmed_by: Optional[str] = Field(
+        default=None, description="The person who confirmed the entity")
     # Governance lifecycle (B-8) — propose → review → approve → version → audit.
     status: str = Field(default="draft", description="Lifecycle: draft|proposed|approved|deprecated")
     version: int = Field(default=0, description="Revision counter — bumps on each approval")

@@ -1,0 +1,14 @@
+{
+  "_about": "Arc OC-3 — theLook's approved metrics as a person would key them (names, labels and the entity each measures, as their grain proposes on 2026-10-09). Statements are left out: the matcher reads names, never SQL.",
+  "metrics": [
+    {"name": "revenue", "label": "Revenue", "entity": "OrderItem"},
+    {"name": "return_rate", "label": "Return rate", "entity": "OrderItem"},
+    {"name": "gross_margin_percentage", "label": "Gross margin percentage", "entity": "OrderItem"},
+    {"name": "average_order_value_aov", "label": "Average order value (AOV)", "entity": "OrderItem"},
+    {"name": "net_merchandise_revenue", "label": "Net merchandise revenue", "entity": "OrderItem"},
+    {"name": "average_ship_to_delivery_lead_time", "label": "Average ship to delivery lead time", "entity": "OrderItem"},
+    {"name": "repeat_purchase_rate", "label": "Repeat purchase rate", "entity": "Order"},
+    {"name": "inventory_sell_through_rate", "label": "Inventory sell-through rate", "entity": "InventoryItem"},
+    {"name": "session_to_purchase_conversion_rate", "label": "Session to purchase conversion rate", "entity": "Event"}
+  ]
+}

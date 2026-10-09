@@ -23,7 +23,9 @@ rules. What they resolve to is the FRAME:
 
 A builder-made segment or metric is recorded as a term and defines nothing: the validator proves a guessed filter
 EXECUTES, never that the business means it. Only what was declared and measured — a process, a promise, a rule — is a
-definition.
+definition, and (Arc OC-3, behind `ontology.keyed_metrics`) an approved metric a person keyed to the entity it
+measures: the question then starts from that entity, the rules it names apply from there, and the metric's own statement
+is what the object door compiles.
 
 Pure: no model, no database, no store — the graph and a person's synonyms are handed in. A frame that resolved no
 declared definition `defines` nothing and renders nothing, so a question on a connection where nothing was declared
@@ -145,8 +147,9 @@ class FrameTerm(BaseModel):
 
 class FrameOutcome(BaseModel):
     """A declared definition the question may be asking about — its words, its numbers and the names it compiles to."""
-    kind: Literal["promise", "lag", "rule"]
-    #: The name the object door executes: the breach rate for a promise, the lag for a lag, the segment for a rule.
+    kind: Literal["promise", "lag", "rule", "metric"]
+    #: The name the object door executes: the breach rate for a promise, the lag for a lag, the segment for a rule, the
+    #: approved metric for a keyed metric (Arc OC-3).
     name: str
     label: str
     entity: str
@@ -327,8 +330,9 @@ def _property_stems(entity: OntologyEntity, name: str) -> list[tuple[tuple[str, 
     return list(dict.fromkeys(out))
 
 
-def _index(graph: OntologyGraph, synonyms: Iterable[Any]) -> _Index:
+def _index(graph: OntologyGraph, synonyms: Iterable[Any], metrics: Iterable[Any] = ()) -> _Index:
     ix = _Index()
+    keyed = {m.name: m for m in metrics or ()}
     tables: dict[str, str] = {}
     for e in graph.entities.values():
         label = _label(e)
@@ -380,8 +384,20 @@ def _index(graph: OntologyGraph, synonyms: Iterable[Any]) -> _Index:
                 ix.add_stems((stems[-1],), "property", f"{entity.id}.{prop}",
                              f"{_label(entity)} · {prop.replace('_', ' ')}", "short name")
     for mid, m in (graph.metrics or {}).items():
+        if mid in keyed:
+            continue                                  # the approved, keyed definition of the name stands for it
         ix.add(mid, "metric", mid, m.display_name or mid, "name")
         ix.add(m.display_name or "", "metric", mid, m.display_name or mid, "display name")
+    for name, m in keyed.items():                     # Arc OC-3 — an approved metric a person keyed to its entity
+        target, label = f"{_KEYED}{name}", m.label or name
+        ix.add(name, "metric", target, label, "name")
+        ix.add(label, "metric", target, label, "display name")
+        # "Average order value (AOV)": a person writes the words or the abbreviation, rarely both
+        spelled = _PARENTHETICAL.sub(" ", label).strip()
+        if spelled and spelled != label:
+            ix.add(spelled, "metric", target, label, "display name")
+        for abbreviation in _PARENTHETICAL.findall(label):
+            ix.add(abbreviation, "metric", target, label, "short name")
     for s in synonyms or ():
         kind, subject, synonym = _synonym_parts(s)
         target = _synonym_target(graph, tables, kind, subject)
@@ -629,6 +645,31 @@ def _lag_outcome(graph: OntologyGraph, process: Process, index: int) -> Optional
         why_not="" if usable else "its stages have not been measured, or one of them is reached by no object")
 
 
+#: A frame term's target prefix for an approved metric a person keyed to its entity (Arc OC-3).
+_KEYED = "keyed:"
+#: A label's parenthetical — "(AOV)" — read as its own short name.
+_PARENTHETICAL = re.compile(r"\(([^()]+)\)")
+
+
+def _metric_outcome(graph: OntologyGraph, m: Any) -> FrameOutcome:
+    """Arc OC-3 — an approved metric a person keyed to the entity it measures: read from that entity, its own statement
+    compiled by the object door. Unusable, and why, when the scope does not serve its entity."""
+    entity = graph.entities.get(m.entity or "")
+    label = m.label or m.name
+    statement = " ".join((m.sql or "").split())
+    o = FrameOutcome(kind="metric", name=m.name, label=label, entity=m.entity or "",
+                     object_type=entity.api_name if entity is not None else "", metric=m.name,
+                     definition=f"the approved metric {label}" + (f" — {statement[:240]}" if statement else ""),
+                     measured=", ".join(x for x in (f"approved by {m.approved_by}" if m.approved_by else "",
+                                                    f"keyed to {m.entity} by {m.entity_confirmed_by}"
+                                                    if m.entity_confirmed_by else "") if x))
+    if entity is None:
+        o.why_not = f"it is keyed to {m.entity or 'no entity'}, which this scope does not serve"
+    else:
+        o.usable = True
+    return o
+
+
 def _rule_words(rule: BusinessRule) -> str:
     if rule.kind == "value_set":
         return f"{rule.entity}.{rule.property} is one of {', '.join(rule.values)}"
@@ -676,8 +717,9 @@ def _asks(words: list[str], tokens: list[str]) -> _Asks:
 
 
 def _outcomes(graph: OntologyGraph, terms: list[FrameTerm], asks: _Asks, named_groups: list[list[tuple[str, str]]],
-              hops: int) -> list[FrameOutcome]:
+              hops: int, metrics: Iterable[Any] = ()) -> list[FrameOutcome]:
     found: dict[tuple[str, str], FrameOutcome] = {}
+    keyed = {m.name: m for m in metrics or ()}
 
     def keep(o: Optional[FrameOutcome], score: int, said: str) -> None:
         if o is None:
@@ -692,8 +734,13 @@ def _outcomes(graph: OntologyGraph, terms: list[FrameTerm], asks: _Asks, named_g
             held.matched.append(said)
 
     lateness = asks.late or (asks.delay and not asks.duration)
+    # Arc OC-3 — words inside a keyed metric's whole name were spent on that name: "average ship to delivery lead
+    # time" names one approved metric, not the shipped and delivered stages its words also spell
+    spent = [(t.start, t.end) for t in terms if t.kind == "metric" and t.target.startswith(_KEYED)]
     for t in terms:
         if t.kind not in ("promise", "stage", "lag"):
+            continue
+        if any(a <= t.start and t.end <= b and (t.start, t.end) != (a, b) for a, b in spent):
             continue
         process, index = _stage_at(graph, t.target)
         if process is None or index < 0:
@@ -735,6 +782,9 @@ def _outcomes(graph: OntologyGraph, terms: list[FrameTerm], asks: _Asks, named_g
                 if o.entity in entity_terms:
                     score += 1
                 keep(o, score, asks.late_word)
+    for t in terms:                                  # Arc OC-3 — a keyed approved metric the question names
+        if t.kind == "metric" and t.target.startswith(_KEYED) and t.target[len(_KEYED):] in keyed:
+            keep(_metric_outcome(graph, keyed[t.target[len(_KEYED):]]), 2, t.text)
     if not found:
         for t in terms:
             if t.kind == "rule" and t.target in (graph.rules or {}):
@@ -775,24 +825,28 @@ def _choose(outcomes: list[FrameOutcome], choice: str) -> tuple[Optional[int], s
 
 
 def frame_question(question: str, graph: Optional[OntologyGraph], *, synonyms: Iterable[Any] = (),
-                   hops: int = DEFAULT_HOPS, dialect: str = "duckdb", choice: str = "", chosen_by: str = "") -> Frame:
+                   hops: int = DEFAULT_HOPS, dialect: str = "duckdb", choice: str = "", chosen_by: str = "",
+                   metrics: Iterable[Any] = ()) -> Frame:
     """Resolve ``question``'s words against the names declared on ``graph`` and return the frame. ``synonyms`` are a
     person's (`Synonym` rows, or ``(subject_kind, subject_id, synonym)``). ``choice`` names one of the outcome
-    candidates — a model's choice among them; a name that is not a candidate chooses nothing and says so."""
+    candidates — a model's choice among them; a name that is not a candidate chooses nothing and says so. ``metrics``
+    are the approved metrics a person keyed to an entity (Arc OC-3, `object_query.keyed_metrics_for` — empty while
+    `ontology.keyed_metrics` is off, so the frame reads exactly as before)."""
+    metrics = list(metrics or ())
     from aughor.semantic.object_query import MAX_LINK_HOPS
     hops = max(1, min(int(hops or DEFAULT_HOPS), MAX_LINK_HOPS))
     frame = Frame(question=question or "", hops=hops)
     if graph is None or not graph.entities:
         return frame
     frame.connection_id, frame.schema_name = graph.connection_id, graph.schema_name
-    terms, words, tokens = _match(question or "", _index(graph, synonyms))
+    terms, words, tokens = _match(question or "", _index(graph, synonyms, metrics))
     frame.terms = terms
     spans: dict[tuple[int, int], list[tuple[str, str]]] = {}
     for t in terms:
         if t.kind == "property":
             entity_id, prop = t.target.split(".", 1)
             spans.setdefault((t.start, t.end), []).append((entity_id, prop))
-    frame.outcomes = _outcomes(graph, terms, _asks(words, tokens), list(spans.values()), hops)
+    frame.outcomes = _outcomes(graph, terms, _asks(words, tokens), list(spans.values()), hops, metrics)
     frame.chosen, note = _choose(frame.outcomes, choice)
     if note:
         frame.notes.append(note)
@@ -814,7 +868,7 @@ def frame_question(question: str, graph: Optional[OntologyGraph], *, synonyms: I
     _frame_rules(graph, frame, terms, start, paths)
     _frame_moments(graph, frame, terms)
     _frame_drivers(frame, _said_which(graph, frame, terms, spans), start, paths)
-    _frame_compiled(graph, frame, dialect)
+    _frame_compiled(graph, frame, dialect, metrics)
     frame.reading = frame_reading(frame)
     return frame
 
@@ -1010,10 +1064,10 @@ def _compile_candidate(graph: OntologyGraph, query: dict, dialect: str) -> dict:
         return {"query": query, "refused": f"could not compile: {type(exc).__name__}: {exc}"}
 
 
-def _compile(graph: OntologyGraph, query: dict, dialect: str) -> dict:
+def _compile(graph: OntologyGraph, query: dict, dialect: str, metrics: Iterable[Any] = ()) -> dict:
     from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
     try:
-        compiled = compile_object_query(query, graph, dialect=dialect, fiscal_start_month=1)
+        compiled = compile_object_query(query, graph, dialect=dialect, fiscal_start_month=1, metrics=list(metrics))
     except ObjectQueryRefused as exc:
         return {"query": query, "refused": exc.reason}
     return {"query": query, "sql": compiled.sql, "plan": list(compiled.plan), "caveats": list(compiled.caveats)}
@@ -1028,18 +1082,21 @@ def _definition_queries(o: FrameOutcome, filters: list[dict]) -> dict[str, dict]
     if o.kind == "lag":
         return {o.lag: {"object_type": o.object_type, "filters": filters,
                         "measures": [{"name": f"avg_{o.lag}", "agg": "avg", "path": o.lag}]}}
+    if o.kind == "metric":
+        return {o.metric: {"object_type": o.object_type, "filters": filters,
+                           "measures": [{"name": o.metric, "metric": o.metric}]}}
     return {o.segment: {"object_type": o.object_type, "segment": o.segment,
                         "measures": [{"name": o.segment, "agg": "count"}]}}
 
 
-def _frame_compiled(graph: OntologyGraph, frame: Frame, dialect: str) -> None:
+def _frame_compiled(graph: OntologyGraph, frame: Frame, dialect: str, metrics: Iterable[Any] = ()) -> None:
     graph = _qualified(graph)
     chosen = frame.outcome
     filters = [f for r in frame.rules if r.usable for f in r.filters] if chosen is not None else []
     for o in frame.candidates():
         mine = filters if o is chosen and o.kind != "rule" else []
         for key, query in _definition_queries(o, mine).items():
-            frame.compiled[key] = _compile(graph, query, dialect)
+            frame.compiled[key] = _compile(graph, query, dialect, metrics)
     if chosen is not None and chosen.kind in ("promise", "lag"):
         measure = ({"name": chosen.metric, "metric": chosen.metric} if chosen.kind == "promise"
                    else {"name": f"avg_{chosen.lag}", "agg": "avg", "path": chosen.lag})
@@ -1057,6 +1114,32 @@ def _frame_compiled(graph: OntologyGraph, frame: Frame, dialect: str) -> None:
             if r.usable and r.id not in frame.compiled:
                 frame.compiled[r.id] = _compile(graph, {"object_type": _api(graph, r.entity), "segment": r.id,
                                                         "measures": [{"name": r.id, "agg": "count"}]}, dialect)
+
+
+def frame_about(frame: Any) -> dict:
+    """Arc OC-3 — what a run's claims are about, read from its frame (a `Frame` or its dump): the segment a promise or a
+    rule derives, or the entity a lag or a keyed metric starts from, with the rule set the number was computed over and
+    the metric. {} when the frame defines nothing — the claim stays about its connection, as before."""
+    data = frame.model_dump(mode="json") if hasattr(frame, "model_dump") else dict(frame or {})
+    outcomes, chosen = data.get("outcomes") or [], data.get("chosen")
+    o = outcomes[chosen] if isinstance(chosen, int) and 0 <= chosen < len(outcomes) else None
+    rules = [r.get("id") for r in data.get("rules") or [] if r.get("usable") and r.get("id")]
+    if o is not None and o.get("kind") in ("promise", "rule") and o.get("segment"):
+        about = {"kind": "segment", "key": o["segment"]}
+    elif o is not None and o.get("entity"):
+        about = {"kind": "type", "key": o["entity"]}
+    elif o is None and rules:
+        about = {"kind": "segment", "key": rules[0]}
+    elif (data.get("start") or {}).get("entity") and (rules or data.get("moments")):
+        about = {"kind": "type", "key": data["start"]["entity"]}
+    else:
+        return {}
+    over = [r for r in rules if r != about["key"]]
+    if over:
+        about["object_set"] = over[0]
+    if o is not None and o.get("kind") in ("promise", "metric") and o.get("metric"):
+        about["metric"] = o["metric"]
+    return about
 
 
 # ── reading it ──────────────────────────────────────────────────────────────────────────────

@@ -197,6 +197,16 @@ def _ada_sqls(ada) -> list[str]:
     return uniq
 
 
+def _frame_about_of(report) -> dict:
+    """Arc OC-3 — ``{"about": …}`` for a deep report whose question was framed (`answer_report["frame"]`), else {}."""
+    frame = report.get("frame") if isinstance(report, dict) else getattr(report, "frame", None)
+    if not frame:
+        return {}
+    from aughor.ontology.framing import frame_about
+    about = frame_about(frame)
+    return {"about": about} if about else {}
+
+
 def _note_finding_on_graph(*, connection_id: str, receipt_id: str | None,
                            headline: str, sql: str, tables: list[str]) -> None:
     """Land this answer on the connection knowledge graph as a `finding` node.
@@ -4640,7 +4650,7 @@ async def _stream_investigation(
                         headline=(ada.get("headline", "") if isinstance(ada, dict) else ""),
                         schema=full_schema, connection_id=connection_id, canvas_id=canvas_id,
                         guard_edges=_ada_guards,
-                        payload_extra={"investigation_id": inv_id},
+                        payload_extra={"investigation_id": inv_id, **_frame_about_of(ada)},
                     ))
                 # WP-10: hand the UI the unified receipt id so a deep answer opens the same
                 # "Why this number" drawer as a quick answer (GET /receipt/{id}).

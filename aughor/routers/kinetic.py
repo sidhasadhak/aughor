@@ -31,6 +31,11 @@ router = APIRouter(prefix="/kinetic-actions", tags=["kinetic"],
 class ExecuteRequest(BaseModel):
     params: dict = Field(default_factory=dict)
     actor: str = ""                         # ignored: the person signed in is who acts (`authz.caller`)
+    #: Arc OC-4 — when running it needs approval, stage it in the Actions inbox for a person instead of answering 428:
+    #: what a cockpit's action button does. Read only while `ontology.cockpit_pieces` is on.
+    propose_if_gated: bool = False
+    #: Where the person was when they asked — shown on the approval card beside the params.
+    reasoning: str = ""
 
 
 class ProposeRequest(BaseModel):
@@ -82,8 +87,10 @@ def execute_action(
     schema_name: Optional[str] = Query(default=None),
 ):
     """Run one declared action. A criterion failure returns 422 with the authored message; a
-    high-risk action needing approval returns 428 (approve via POST /approvals/allow, then retry);
-    success returns 200 with the dispatch outcome."""
+    high-risk action needing approval returns 428 (approve via POST /approvals/allow, then retry) —
+    or, asked with ``propose_if_gated`` while `ontology.cockpit_pieces` is on, is staged for a person
+    and returns 200 with ``status: proposed`` and the proposal's id (Arc OC-4); success returns 200
+    with the dispatch outcome."""
     # The public store loader already overlays human overrides (so kinetic_actions are applied);
     # a declared action implies the ontology is cached, so the fast path is sufficient here.
     graph = _resolve_graph(connection_id, schema_name)
@@ -102,12 +109,34 @@ def execute_action(
         # so the citation reaches the caller/receipt, not only the audit ledger.
         return {"status": result.status, "action_id": result.action_id,
                 "outcome": result.outcome, "granted_by": result.granted_by}
+    if result.status == "approval_required" and body.propose_if_gated:
+        staged = _propose_gated(action, body, connection_id, schema_name)
+        if staged is not None:
+            return staged
     # Every non-OK outcome maps to an HTTP status carrying the authored message VERBATIM.
     raise HTTPException(
         status_code=result.http_status(),
         detail={"status": result.status, "action_id": result.action_id,
                 "message": result.message, **result.detail},
     )
+
+
+def _propose_gated(action, body: ExecuteRequest, connection_id: str, schema_name: Optional[str]) -> Optional[dict]:
+    """Arc OC-4 — the action a person asked to run, which needs approval, staged for a person to accept: no model is
+    called and nothing runs; accepting it runs it through the governed pipeline as any accepted proposal does. None
+    while `ontology.cockpit_pieces` is off, so the door answers 428 exactly as before."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("ontology.cockpit_pieces"):
+        return None
+    import uuid as _uuid
+
+    from aughor.actions.executor import coerce_params
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    staged = stage_proposal(StagedProposal(
+        connection_id=connection_id, schema_name=schema_name or "", action_id=action.id,
+        params=coerce_params(action, body.params), reasoning=body.reasoning.strip()[:500], proposer=caller(),
+        source="cockpit", run_id=_uuid.uuid4().hex, call_id="0"))
+    return {"status": "proposed", "action_id": action.id, "inbox_id": staged.id}
 
 
 @router.post("/propose")

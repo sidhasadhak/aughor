@@ -13,8 +13,8 @@
  * The server reads it through the validator bundle; it keeps no copy.
  */
 import {
-  COMPONENT_NAMES, MAX_CAPTION, MAX_COLUMNS, MAX_LABEL, MAX_NOTE, MAX_TITLE, MAY_BE_CONDITIONAL, MAY_HOLD, SIZES, SPAN,
-  STATIC, TONES, type ComponentName,
+  MAX_CAPTION, MAX_COLUMNS, MAX_LABEL, MAX_NOTE, MAX_TITLE, MAY_BE_CONDITIONAL, MAY_HOLD, SIZES, SPAN,
+  STATIC, TONES, WRITTEN, type WrittenName,
 } from "@/lib/cockpit/catalog";
 import { CARD_STATUSES, RANGE_STATUSES, RANGE_STATUS_PATH, TAB_PATH } from "@/lib/cockpit/hostState";
 import { MAX_PATCHES } from "@/lib/cockpit/patch";
@@ -45,7 +45,7 @@ export const GRAMMAR_EXAMPLE = {
   },
 } as const;
 
-const HOLDS: Record<ComponentName, string> = {
+const HOLDS: Record<WrittenName, string> = {
   Cockpit: "the root, one in a spec",
   Tabs: "the row of tabs",
   Tab: "one tab",
@@ -57,7 +57,7 @@ const HOLDS: Record<ComponentName, string> = {
 
 const SIZE = `size (optional, one of: ${SIZES.join(", ")}; small when left out)`;
 
-const PROPS: Record<ComponentName, string> = {
+const PROPS: Record<WrittenName, string> = {
   Cockpit: `title (text, up to ${MAX_TITLE} characters)`,
   Tabs: `value, always {"$bindState": "${TAB_PATH}"}`,
   Tab: `name (an identifier: lower-case letters, digits, "-" and "_", beginning with a letter), `
@@ -68,8 +68,10 @@ const PROPS: Record<ComponentName, string> = {
   Image: `object (an uploaded object's id), caption (text, up to ${MAX_CAPTION} characters), ${SIZE}`,
 };
 
-function component(name: ComponentName): string {
-  const may = MAY_HOLD[name];
+function component(name: WrittenName): string {
+  // The ontology's pieces are placed by a person and never taught here (Arc OC-4), so what a component may hold is
+  // told as far as the writer may write it.
+  const may = MAY_HOLD[name].filter(c => (WRITTEN as readonly string[]).includes(c));
   const holds = name === "Cockpit"
     ? "Holds ONE Tabs, or one or more Section, never both."
     : may.length ? `Holds ${may.join(", ")}, at least one.` : "Holds nothing.";
@@ -83,7 +85,7 @@ export function grammar(): string {
       + "and [] when the element holds none. An element carries nothing else, and a prop is written, never computed.",
     "",
     "The components:",
-    ...COMPONENT_NAMES.map(component),
+    ...WRITTEN.map(component),
     "",
     "Every element but the root is held by exactly one other. \"state\" may seed \"tab\" with the name of the tab to open on, "
       + "and nothing else; it is left out when the cockpit has no tabs.",

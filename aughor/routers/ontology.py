@@ -552,6 +552,23 @@ def discard_ontology_draft(
     return {"discarded": R.discard(connection_id, effective, kind=kind, target_id=target_id or "")}
 
 
+@router.get("/ontology/keys")
+def get_ontology_keys(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc OC-3 — how this scope's meaning is keyed to its ontology (ROADMAP §3.56): each metric with the entity a
+    person confirmed it measures, the entity its grain proposes and why — never stored until confirmed through
+    `PUT /metrics/{name}/entity`. Read-only; no model and no warehouse."""
+    from aughor.ontology.keys import metric_keys
+    effective = _served_scope(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, schema_name)
+    entities = sorted(({"id": e.id, "label": e.display_name or e.id} for e in graph.entities.values()),
+                      key=lambda x: x["id"]) if graph is not None else []
+    return {"connection_id": connection_id, "schema_name": effective, "entities": entities,
+            "metrics": metric_keys(connection_id, effective, graph)}
+
+
 @router.get("/ontology/census")
 def get_ontology_census(history_limit: int = Query(default=90, ge=0, le=400)):
     """Arc OC-0 — the ontology census (ROADMAP §3.56): what every built scope declares, what the data verified of
@@ -2217,8 +2234,10 @@ def frame_ontology_question(
         synonyms = [s for s in synonyms_for(connection_id) if s.source == "human"]
     except Exception:  # noqa: BLE001 — synonyms widen what a question may name; the declared names still resolve
         synonyms = []
+    from aughor.semantic.object_query import keyed_metrics_for
     frame = frame_question(question[:2000], graph, synonyms=synonyms, hops=body.hops or DEFAULT_HOPS,
-                           dialect=_frame_dialect(connection_id))
+                           dialect=_frame_dialect(connection_id),
+                           metrics=keyed_metrics_for(connection_id, graph.schema_name))   # Arc OC-3, flag-gated
     return {"connection_id": connection_id, "schema_name": graph.schema_name, "frame": frame.model_dump(mode="json")}
 
 

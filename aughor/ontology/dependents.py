@@ -100,6 +100,13 @@ def _tables_of(entity) -> set[str]:
     return names | {n.rsplit(".", 1)[-1] for n in names}
 
 
+def _keyed_metrics(conn: str, names: set[str]) -> list:
+    """The connection's governed metrics a person keyed to one of ``names`` (Arc OC-3), deprecated ones aside."""
+    from aughor.semantic.metrics import list_metrics
+    return [m for m in list_metrics(connection_id=conn)
+            if m.entity and m.entity in names and m.connection == conn and m.status != "deprecated"]
+
+
 def _automations(conn: str) -> list:
     from aughor.automations.store import list_automations
     return list_automations(conn_id=conn)
@@ -116,12 +123,16 @@ def dependents_of(graph: Optional[OntologyGraph], conn: str, kind: str, target_i
     procs = {pid: process_reach(graph, p) for pid, p in graph.processes.items()}
     actions = {a.id: a for a in graph.declared_actions()}
 
-    def automations_on(process_ids: set[str], action_ids: set[str], tables: set[str], why_suffix: str = "") -> None:
+    def automations_on(process_ids: set[str], action_ids: set[str], tables: set[str], why_suffix: str = "",
+                       entity_names: frozenset = frozenset()) -> None:
         for a in autos:
             for c in a.conditions:
                 pid = str(c.config.get("process") or "")
                 if c.kind == "promise_breached" and pid in process_ids:
                     rows.append(_row("automation", a.id, a.name, f"its trigger watches the process '{pid}'{why_suffix}"))
+                elif c.kind in ("source_change", "entity_appears") and str(c.config.get("entity") or "") in entity_names:
+                    rows.append(_row("automation", a.id, a.name,
+                                     f"its trigger watches {c.config.get('entity')} objects{why_suffix}"))
                 elif c.kind in ("source_change", "entity_appears") and str(c.config.get("table") or "").lower() \
                         .rsplit(".", 1)[-1] in tables:
                     rows.append(_row("automation", a.id, a.name,
@@ -161,7 +172,9 @@ def dependents_of(graph: Optional[OntologyGraph], conn: str, kind: str, target_i
         for mid, m in sorted(graph.metrics.items()):
             if m.entity in names:
                 rows.append(_row("metric", mid, m.display_name, "the metric belongs to it"))
-        automations_on(on_it, about, _tables_of(ent), f", which reads {ent.id}")
+        for m in _keyed_metrics(conn, names):                    # Arc OC-3: a governed metric keyed to it
+            rows.append(_row("metric", m.name, m.label, "the approved metric measures its objects"))
+        automations_on(on_it, about, _tables_of(ent), f", which reads {ent.id}", frozenset(names))
     elif kind == "link":
         on_it = {pid for pid, (_, links) in procs.items() if target_id in links}
         for pid in sorted(on_it):

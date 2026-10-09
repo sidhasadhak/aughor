@@ -20,6 +20,9 @@ import {
   promoteMetric,
   removeProposal,
   restoreProposal,
+  getOntologyKeys,
+  confirmMetricEntity,
+  type OntologyKeys,
   type CatalogueMetric,
   type RemovedProposal,
   type MetricProposals,
@@ -160,6 +163,90 @@ function datesSentence(m: Metric): string {
 
 /** A statement begins with SELECT or WITH; anything else is an expression written before the rule. */
 const isStatement = (sql: string) => /^\s*(select|with)\b/i.test(sql);
+
+/** Arc OC-3 — which entity the metric measures: the one a person confirmed, else the one its grain proposes and why.
+ *  Confirming keys the metric to the ontology, so the object door, the question frame and a release read it by what it
+ *  is about. Its statement, status and version are untouched. A house metric (every connection) is keyed per
+ *  connection, so it shows nothing here. */
+export function EntitySection({ metric, onChanged }: { metric: Metric; onChanged: () => void }) {
+  const conn = metric.connection ?? "*";
+  const schema = homeOf(metric);
+  const [keys, setKeys] = useState<OntologyKeys | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [pick, setPick] = useState(metric.entity ?? "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const me = useMe();
+
+  useEffect(() => {
+    if (conn === "*") return;
+    getOntologyKeys(conn, schema).then(setKeys).catch(() => setKeys(null));
+  }, [conn, schema]);
+
+  if (conn === "*") return null;
+  const proposal = keys?.metrics.find((k) => k.name === metric.name)?.proposal;
+  const confirmed = !!metric.entity;
+
+  const save = async (entity: string) => {
+    setErr("");
+    setBusy(true);
+    try {
+      await confirmMetricEntity(metric.name, conn, schema, entity);
+      setEditing(false);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not key the metric");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-md border border-zinc-700 bg-zinc-800/40 p-3" data-testid="metric-entity">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span className="text-xs font-medium text-zinc-300">Measures</span>
+        <span className="aug-fs-xs px-1.5 rounded border border-zinc-600 text-zinc-400">
+          {confirmed ? `confirmed by ${metric.entity_confirmed_by ?? "a person"}` : proposal?.entity ? "proposed" : "not keyed"}
+        </span>
+      </div>
+      <p className="aug-fs-xs text-zinc-300">
+        {confirmed
+          ? `${metric.entity} — each figure is computed over ${metric.entity} objects.`
+          : proposal?.entity
+            ? `${proposal.entity}${proposal.property ? `, on its ${proposal.property}` : ""} — ${proposal.why}.`
+            : keys ? `No entity proposed — ${proposal?.why ?? "this metric is not read on the scope's ontology"}.`
+              : "Reading the ontology…"}
+      </p>
+      {confirmed && proposal?.entity && proposal.entity !== metric.entity && (
+        <p className="aug-fs-xs text-zinc-500 mt-1">Its grain proposes {proposal.entity}: {proposal.why}.</p>
+      )}
+      {!editing ? (
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          {!confirmed && proposal?.entity && (
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => save(proposal.entity)}>Confirm</Button>
+          )}
+          {keys && keys.entities.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => { setPick(metric.entity ?? proposal?.entity ?? ""); setEditing(true); }}>
+              Correct…
+            </Button>
+          )}
+          {confirmed && <Button size="sm" variant="ghost" disabled={busy} onClick={() => save("")}>Clear</Button>}
+          {me?.actor && <span className="aug-fs-xs text-zinc-500">as {me.actor}</span>}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          <SelectField value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Entity it measures">
+            <option value="">— choose the entity —</option>
+            {(keys?.entities ?? []).map((e) => (
+              <option key={e.id} value={e.id}>{e.label === e.id ? e.id : `${e.label} (${e.id})`}</option>
+            ))}
+          </SelectField>
+          <Button size="sm" variant="secondary" disabled={busy || !pick} onClick={() => save(pick)}>Save</Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+        </div>
+      )}
+      {err && <p className="aug-fs-xs text-red-400 mt-1" role="alert">{err}</p>}
+    </div>
+  );
+}
 
 function DatesSection({ metric, proposals, onChanged }: {
   metric: Metric; proposals: MetricProposals | null; onChanged: () => void;
@@ -1136,6 +1223,7 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
                 }} />
                 <DatesSection key={`${sm.name}:${sm.time_column ?? ""}:${sm.time_confirmed_by ?? ""}`}
                   metric={sm} proposals={proposals} onChanged={load} />
+                <EntitySection key={`${sm.name}:${sm.entity ?? ""}`} metric={sm} onChanged={load} />
               </div>
             ) : null;
           })()}

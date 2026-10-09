@@ -355,3 +355,86 @@ export async function getObjectTitles(
   if (!res.ok) throw new Error(await detailOf(res));
   return res.json();
 }
+
+
+// ── Arc OC-4 — a page of objects, and running a declared action from a cockpit ─────────────────
+
+/** One page of an entity's objects, or of a segment of it, as `POST /objects/list` returns it. */
+export interface ObjectListingPage {
+  path: "listed";
+  connection_id: string;
+  schema_name: string;
+  object_type: string;
+  type_id: string;
+  key: string;
+  /** The column that titles each object; empty when the key does. */
+  title: string;
+  /** One per listed column after the key. `edited` — an accepted edit sets it (or a declared action will). */
+  columns: { name: string; path: string; label: string; type: string; edited: boolean }[];
+  /** The result's own column names, the key first, in the order of each row's cells. */
+  names: string[];
+  rows: unknown[][];
+  /** The objects the set holds — every page's, not this one's. Null when it could not be counted. */
+  total: number | null;
+  offset: number;
+  limit: number;
+  /** The segment read, in words. */
+  segment_said: string;
+  plan: string[];
+  caveats: string[];
+  error: string | null;
+}
+
+export interface ObjectListingRequest {
+  /** The entity listed, by its id or api name. */
+  entity: string;
+  segment?: string;
+  columns?: string[];
+  order_by?: string;
+  descending?: boolean;
+  offset?: number;
+  limit?: number;
+}
+
+export async function listObjects(
+  body: ObjectListingRequest, connectionId?: string, schemaName?: string,
+): Promise<ObjectListingPage | ObjectRefusal> {
+  const res = await fetch(`${getApiBase()}/objects/list${scope(connectionId, schemaName)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** A declared action, as the ontology's actions door returns it (`getDeclaredActions` in `lib/api.ts`). */
+export type { DeclaredAction } from "@/lib/api";
+export { getDeclaredActions } from "@/lib/api";
+
+/** What became of pressing an action's button: it ran; it waits for a person in the Actions inbox; or it was
+ *  refused, in the action's own words. */
+export type ActionOutcome =
+  | { status: "ran"; outcome: Record<string, unknown> }
+  | { status: "proposed"; inbox_id: string }
+  | { status: "refused"; message: string };
+
+/** Run a declared action; when running it needs approval, the door stages it for a person to accept instead. */
+export async function runOrPropose(
+  actionId: string, params: Record<string, unknown>, connectionId: string, schemaName?: string, reasoning = "",
+): Promise<ActionOutcome> {
+  const res = await fetch(`${getApiBase()}/kinetic-actions/${encodeURIComponent(actionId)}/execute${scope(connectionId, schemaName)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ params, propose_if_gated: true, reasoning }),
+  });
+  if (!res.ok) return { status: "refused", message: await refusalOf(res) };
+  const body = (await res.json()) as { status?: string; inbox_id?: string; outcome?: Record<string, unknown> };
+  return body.status === "proposed" ? { status: "proposed", inbox_id: String(body.inbox_id ?? "") }
+    : { status: "ran", outcome: body.outcome ?? {} };
+}
+
+async function refusalOf(res: Response): Promise<string> {
+  const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
+  const d = body?.detail;
+  if (typeof d === "string") return d;
+  if (d && typeof d === "object" && typeof (d as { message?: unknown }).message === "string") return (d as { message: string }).message;
+  return `HTTP ${res.status}`;
+}

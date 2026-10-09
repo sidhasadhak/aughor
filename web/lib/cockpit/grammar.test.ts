@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { COMPONENT_NAMES, MAY_BE_CONDITIONAL, TONES, cockpitCatalog } from "@/lib/cockpit/catalog";
+import { WRITTEN, PIECE_NAMES, MAY_BE_CONDITIONAL, TONES, cockpitCatalog } from "@/lib/cockpit/catalog";
 import { GRAMMAR_EXAMPLE, grammar } from "@/lib/cockpit/grammar";
 import { CARD_STATUSES, RANGE_STATUSES } from "@/lib/cockpit/hostState";
 import { MAX_PATCHES } from "@/lib/cockpit/patch";
@@ -31,7 +31,10 @@ describe("the grammar", () => {
   });
 
   it("names every component, tone, status and limit the catalog holds", () => {
-    for (const name of COMPONENT_NAMES) expect(text).toContain(`- ${name}: `);
+    for (const name of WRITTEN) expect(text).toContain(`- ${name}: `);
+    // Arc OC-4 — the ontology's pieces are a person's to place, by hand: a writer is never taught one, so the text a
+    // model reads is what it was before they existed.
+    for (const name of PIECE_NAMES) expect(text).not.toContain(name);
     expect(text).toContain(`one of: ${TONES.join(", ")}`);
     expect(text).toContain(`one of: ${CARD_STATUSES.join(", ")}`);
     expect(text).toContain(`one of: ${RANGE_STATUSES.join(", ")}`);
