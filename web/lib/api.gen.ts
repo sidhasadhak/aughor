@@ -7983,7 +7983,8 @@ export interface paths {
          *     high-risk action needing approval returns 428 (approve via POST /approvals/allow, then retry) —
          *     or, asked with ``propose_if_gated`` while `ontology.cockpit_pieces` is on, is staged for a person
          *     and returns 200 with ``status: proposed`` and the proposal's id (Arc OC-4); success returns 200
-         *     with the dispatch outcome.
+         *     with the dispatch outcome, what its verification found, and its Action ledger entry — the answer had dropped the
+         *     last two, so a press read "done" whatever its check said.
          */
         post: operations["execute_action_kinetic_actions__action_id__execute_post"];
         delete?: never;
