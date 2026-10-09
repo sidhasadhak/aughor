@@ -1022,6 +1022,8 @@ export interface ReleaseChange {
     claims: { id: string; key: string; text: string; definition_version: string }[];
     cards: { id: string; title: string }[];
     automations: { id: string; name: string; how: string }[];
+    /** Arc OC-3 — the approved metrics keyed to the element. */
+    metrics?: { id: string; name: string; how: string }[];
   };
   by: string;
 }

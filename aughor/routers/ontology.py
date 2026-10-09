@@ -552,6 +552,21 @@ def discard_ontology_draft(
     return {"discarded": R.discard(connection_id, effective, kind=kind, target_id=target_id or "")}
 
 
+@router.get("/ontology/keys")
+def get_ontology_keys(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Arc OC-3 — how this scope's meaning is keyed to its ontology (ROADMAP §3.56): each metric with the entity a
+    person confirmed it measures, the entity its grain proposes and why — never stored until confirmed through
+    `PUT /metrics/{name}/entity`. Read-only; no model and no warehouse."""
+    from aughor.ontology.keys import metric_keys
+    effective = _served_scope(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, schema_name)
+    return {"connection_id": connection_id, "schema_name": effective,
+            "metrics": metric_keys(connection_id, effective, graph)}
+
+
 @router.get("/ontology/census")
 def get_ontology_census(history_limit: int = Query(default=90, ge=0, le=400)):
     """Arc OC-0 — the ontology census (ROADMAP §3.56): what every built scope declares, what the data verified of

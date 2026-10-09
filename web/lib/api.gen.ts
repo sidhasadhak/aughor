@@ -9777,6 +9777,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics/{name}/entity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Confirm Metric Entity
+         * @description Arc OC-3 — confirm which entity a metric measures (`GET /ontology/keys` proposes one from its grain), as the
+         *     person signed in. The entity must be one the metric's dataset serves; empty clears the key. Its statement, status
+         *     and version are untouched: keying says what the metric is about, it does not change what it computes.
+         */
+        put: operations["confirm_metric_entity_metrics__name__entity_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics/{name}/freshness": {
         parameters: {
             query?: never;
@@ -11554,6 +11576,28 @@ export interface paths {
          * @description Return all detected OntologyInterfaces for this schema — keyed by interface id.
          */
         get: operations["get_ontology_interfaces_ontology_interfaces_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ontology Keys
+         * @description Arc OC-3 — how this scope's meaning is keyed to its ontology (ROADMAP §3.56): each metric with the entity a
+         *     person confirmed it measures, the entity its grain proposes and why — never stored until confirmed through
+         *     `PUT /metrics/{name}/entity`. Read-only; no model and no warehouse.
+         */
+        get: operations["get_ontology_keys_ontology_keys_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -20972,6 +21016,14 @@ export interface components {
             };
             /** Merge Ids */
             merge_ids: string[];
+        };
+        /**
+         * _MetricEntity
+         * @description Arc OC-3 — the entity a metric measures, an ontology id; empty clears it.
+         */
+        _MetricEntity: {
+            /** Entity */
+            entity?: string | null;
         };
         /** _MetricOverride */
         _MetricOverride: {
@@ -38321,6 +38373,44 @@ export interface operations {
             };
         };
     };
+    confirm_metric_entity_metrics__name__entity_put: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema?: string | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_MetricEntity"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_metric_freshness_metrics__name__freshness_get: {
         parameters: {
             query: {
@@ -41382,6 +41472,38 @@ export interface operations {
         };
     };
     get_ontology_interfaces_ontology_interfaces_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ontology_keys_ontology_keys_get: {
         parameters: {
             query?: {
                 connection_id?: string;

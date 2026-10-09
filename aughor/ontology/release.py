@@ -151,9 +151,9 @@ def element_names(kind: str, target_id: str, fields: Optional[dict]) -> set[str]
     return names
 
 
-def _touches(conn: str, names: set[str], automations: list[dict]) -> dict:
+def _touches(conn: str, names: set[str], automations: list[dict], metrics: list[dict] = ()) -> dict:
     """What names one of ``names``: the Record's current claims on the connection, cockpit cards, and the automations
-    the dependents index found."""
+    and keyed metrics (Arc OC-3) the dependents index found."""
     claims, cards = [], []
     try:
         from aughor.record.claims import list_claims
@@ -175,7 +175,8 @@ def _touches(conn: str, names: set[str], automations: list[dict]) -> dict:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the cards a change touches could not be read", counter="ontology.release")
     return {"claims": claims, "cards": cards,
-            "automations": [{"id": a["id"], "name": a["name"], "how": a["how"]} for a in automations]}
+            "automations": [{"id": a["id"], "name": a["name"], "how": a["how"]} for a in automations],
+            "metrics": [{"id": m["id"], "name": m["name"], "how": m["how"]} for m in metrics]}
 
 
 def _watched_promises(conn: str, process_id: str) -> set[str]:
@@ -223,8 +224,9 @@ def changes(conn: str, schema: str) -> list[dict]:
             "change": "withdrawn" if drafted is None else ("added" if published is None else "changed"),
             "class": cls, "reasons": reasons,
             "fields": [c.describe() for c in lifecycle.changelog(before or {}, after or {})],
-            "touches": _touches(conn, names, [d for d in deps if d["consumer"] == "automation"])
-            if cls in ("ERR", "MEANING") else {"claims": [], "cards": [], "automations": []},
+            "touches": _touches(conn, names, [d for d in deps if d["consumer"] == "automation"],
+                                [d for d in deps if d["consumer"] == "metric"])
+            if cls in ("ERR", "MEANING") else {"claims": [], "cards": [], "automations": [], "metrics": []},
             "by": (drafted or withdrawn).edited_by if (drafted or withdrawn) is not None else "",
         })
     order = {"ERR": 0, "MEANING": 1, "WARN": 2, "SAFE": 3}

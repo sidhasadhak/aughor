@@ -100,6 +100,13 @@ def _tables_of(entity) -> set[str]:
     return names | {n.rsplit(".", 1)[-1] for n in names}
 
 
+def _keyed_metrics(conn: str, names: set[str]) -> list:
+    """The connection's governed metrics a person keyed to one of ``names`` (Arc OC-3), deprecated ones aside."""
+    from aughor.semantic.metrics import list_metrics
+    return [m for m in list_metrics(connection_id=conn)
+            if m.entity and m.entity in names and m.connection == conn and m.status != "deprecated"]
+
+
 def _automations(conn: str) -> list:
     from aughor.automations.store import list_automations
     return list_automations(conn_id=conn)
@@ -161,6 +168,8 @@ def dependents_of(graph: Optional[OntologyGraph], conn: str, kind: str, target_i
         for mid, m in sorted(graph.metrics.items()):
             if m.entity in names:
                 rows.append(_row("metric", mid, m.display_name, "the metric belongs to it"))
+        for m in _keyed_metrics(conn, names):                    # Arc OC-3: a governed metric keyed to it
+            rows.append(_row("metric", m.name, m.label, "the approved metric measures its objects"))
         automations_on(on_it, about, _tables_of(ent), f", which reads {ent.id}")
     elif kind == "link":
         on_it = {pid for pid, (_, links) in procs.items() if target_id in links}

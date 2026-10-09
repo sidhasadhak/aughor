@@ -468,7 +468,9 @@ def _require_own_organisation(connection: str) -> None:
 #: What a client may not set on a definition: governance is the transitions', and approval and a
 #: date confirmation are stamped with the person signed in.
 _SERVER_OWNED = ("status", "version", "proposed_by", "proposed_at", "approved_by", "approved_at",
-                 "time_confirmed_by", "time_source")
+                 "time_confirmed_by", "time_source",
+                 # Arc OC-3 — the entity is confirmed through its own door, by the person signed in
+                 "entity", "entity_confirmed_by")
 
 
 def _stamp_time_edit(existing, req: MetricRequest) -> dict:
@@ -570,7 +572,8 @@ def update_metric(name: str, req: MetricRequest, schema: Optional[str] = None):
         # Governance state is owned by the transition workflow (B-8), not by edits —
         # carry status/version/stamps forward. But changing the FORMULA of an approved
         # metric un-approves it: it returns to 'proposed' for re-review, and that's audited.
-        for k in ("status", "version", "proposed_by", "proposed_at", "approved_by", "approved_at"):
+        for k in ("status", "version", "proposed_by", "proposed_at", "approved_by", "approved_at",
+                  "entity", "entity_confirmed_by"):        # Arc OC-3: an edit keeps the confirmed entity
             data[k] = getattr(existing, k)
         if existing.status == "approved" and (req.sql or "").strip() != (existing.sql or "").strip():
             data["status"] = "proposed"
@@ -590,6 +593,40 @@ def update_metric(name: str, req: MetricRequest, schema: Optional[str] = None):
     if audit:
         _audit(audit)
     return m.model_dump()
+
+
+class _MetricEntity(BaseModel):
+    """Arc OC-3 — the entity a metric measures, an ontology id; empty clears it."""
+    entity: Optional[str] = None
+
+
+@router.put("/metrics/{name}/entity", dependencies=[gate(Capability.METRICS_DEFINE)])
+def confirm_metric_entity(name: str, req: _MetricEntity, connection_id: str, schema: Optional[str] = None):
+    """Arc OC-3 — confirm which entity a metric measures (`GET /ontology/keys` proposes one from its grain), as the
+    person signed in. The entity must be one the metric's dataset serves; empty clears the key. Its statement, status
+    and version are untouched: keying says what the metric is about, it does not change what it computes."""
+    _require_own_organisation(connection_id)
+    from aughor import govern
+    govern.guard("metric.define", name)
+    existing = _addressed(name, connection_id, _dataset(schema))
+    if existing is None or existing.connection != connection_id:
+        raise HTTPException(status_code=404, detail=f"'{name}' has no definition of its own on connection "
+                                                    f"'{connection_id}' to key")
+    entity = (req.entity or "").strip()
+    if entity:
+        from aughor.routers.ontology import served_ontology_graph
+        dataset = home_schema(existing)
+        graph = served_ontology_graph(connection_id, None if dataset in ("", "*") else dataset)
+        known = sorted(graph.entities) if graph is not None else []
+        if entity not in known:
+            raise HTTPException(status_code=400, detail=(
+                f"no entity '{entity}' on this connection's ontology"
+                + (f" — entities: {', '.join(known)}" if known else " — none is built")))
+    keyed = existing.model_copy(update={"entity": entity or None, "entity_confirmed_by": caller() if entity else None})
+    save_metric(keyed)
+    _audit({"metric": name, "connection": connection_id, "schema_name": home_schema(keyed),
+            "action": "entity_confirmed" if entity else "entity_cleared", "entity": entity})
+    return keyed.model_dump()
 
 
 @router.post("/metrics/{name}/promote", dependencies=[gate(Capability.METRICS_DEFINE)])
