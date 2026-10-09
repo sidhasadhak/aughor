@@ -475,3 +475,48 @@ async function refusalOf(res: Response): Promise<string> {
   if (d && typeof d === "object" && typeof (d as { message?: unknown }).message === "string") return (d as { message: string }).message;
   return `HTTP ${res.status}`;
 }
+
+
+/** Arc OC-6 — one call a declared action made, as the outbox keeps it. */
+export interface ActionSend {
+  id: string;
+  connection_id: string;
+  action_id: string;
+  action_name: string;
+  status: "queued" | "sending" | "delivered" | "unknown" | "dead" | "dismissed";
+  attempts: number;
+  next_at: string;
+  cause: string;
+  last_error: string;
+  reconciled: string;
+  entry: string;
+  params: Record<string, unknown>;
+  effect: { kind: string; lane: string; target: string };
+  created_at: string;
+  updated_at: string;
+  resolved_by: string;
+  note: string;
+}
+
+/** Arc OC-6 — the outbox of a connection's declared actions (empty and `enabled: false` while it is off). */
+export async function getSends(connectionId: string): Promise<{ enabled: boolean; sends: ActionSend[] }> {
+  const res = await fetch(`${getApiBase()}/kinetic-actions/outbox?connection_id=${encodeURIComponent(connectionId)}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Arc OC-6 — a person sends a call that waits for them again, now. */
+export async function retrySend(connectionId: string, sendId: string): Promise<ActionSend> {
+  const res = await fetch(`${getApiBase()}/kinetic-actions/outbox/${encodeURIComponent(sendId)}/retry?connection_id=${encodeURIComponent(connectionId)}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).send;
+}
+
+/** Arc OC-6 — a person leaves a call that waits for them undelivered, with why. */
+export async function dismissSend(connectionId: string, sendId: string, note: string): Promise<ActionSend> {
+  const res = await fetch(`${getApiBase()}/kinetic-actions/outbox/${encodeURIComponent(sendId)}/dismiss?connection_id=${encodeURIComponent(connectionId)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).send;
+}

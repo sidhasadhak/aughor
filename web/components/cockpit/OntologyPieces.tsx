@@ -384,6 +384,8 @@ export function ranSaid(check?: ActionCheck): string {
   if (!check || check.status === "not_declared") return "Done.";
   if (check.status === "passed") return `Done — its check passed: ${check.why}.`;
   if (check.status === "failed") return `It ran, but its check failed: ${check.why}.`;
+  // Arc OC-6 — its calls still in the outbox: the check waits for them to land
+  if (check.status === "pending") return `Done — ${check.why}.`;
   return `Done — its check could not be read: ${check.why}.`;
 }
 

@@ -134,6 +134,8 @@ describe("a late dispatch cockpit (Arc OC-4)", () => {
     expect(ranSaid({ status: "passed", why: "1 row returned" })).toBe("Done — its check passed: 1 row returned.");
     expect(ranSaid({ status: "unavailable", why: "the read failed" })).toBe("Done — its check could not be read: the read failed.");
     expect(ranSaid({ status: "not_declared" })).toBe("Done.");
+    expect(ranSaid({ status: "pending", why: "1 call waits in the outbox; the action's check runs when it lands" }))
+      .toBe("Done — 1 call waits in the outbox; the action's check runs when it lands.");
   });
 
   it("an action that needs approval is proposed in Actions, and nothing is written", async () => {

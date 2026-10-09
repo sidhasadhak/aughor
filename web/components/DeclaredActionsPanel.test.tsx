@@ -20,6 +20,8 @@ import { DeclaredActionsPanel } from "@/components/DeclaredActionsPanel";
 type Call = { url: string; method: string; body: any };
 const calls: Call[] = [];
 let annotations: any[] = [];
+let sends: any[] = [];
+let outboxOn = true;
 
 function jsonResponse(body: unknown) {
   return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) } as Response;
@@ -28,10 +30,16 @@ function jsonResponse(body: unknown) {
 beforeEach(() => {
   calls.length = 0;
   annotations = [];
+  sends = [];
+  outboxOn = true;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
     calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (url.includes("/kinetic-actions/outbox")) {
+      if (method === "POST") { sends = []; return jsonResponse({ send: {} }); }
+      return jsonResponse({ enabled: outboxOn, sends });
+    }
     if (url.includes("/ontology/kinetic-actions")) return jsonResponse({});
     if (url.includes("/kinetic-actions/annotations")) {
       if (method === "DELETE") {
@@ -78,5 +86,32 @@ describe("DeclaredActionsPanel — withdrawing one overlay edit", () => {
     expect(gone.url).toContain("/kinetic-actions/annotations/e1");
     expect(gone.url).toContain("connection_id=c1");
     await waitFor(() => expect(screen.queryByText("known test order")).toBeNull());
+  });
+});
+
+
+describe("DeclaredActionsPanel — the calls that wait for a person (Arc OC-6)", () => {
+  const DEAD = { id: "s1", connection_id: "c1", action_id: "open_claim", action_name: "Open a carrier claim",
+    status: "dead", attempts: 5, next_at: "", cause: "not_delivered", reconciled: "", entry: "e1", params: {},
+    last_error: "refused connection — not delivered after 5 attempts", effect: { kind: "http", lane: "after", target: "" },
+    created_at: "2026-10-10T00:00:00+00:00", updated_at: "2026-10-10T00:05:00+00:00", resolved_by: "", note: "" };
+
+  it("lists a call that could not be delivered, with why, and sends it again on Retry", async () => {
+    sends = [DEAD, { ...DEAD, id: "s2", status: "delivered", attempts: 1, last_error: "" }];
+    const user = userEvent.setup();
+    render(<DeclaredActionsPanel connectionId="c1" />);
+    const rows = await screen.findAllByTestId("send-row");
+    expect(rows[0].textContent).toContain("waits for you · 5 attempts");
+    expect(rows[0].textContent).toContain("not delivered after 5 attempts");
+    expect(screen.getAllByTestId("send-retry")).toHaveLength(1);                 // only the one that waits for a person
+    await user.click(screen.getByTestId("send-retry"));
+    await waitFor(() => expect(calls.some(c => c.method === "POST" && c.url.includes("/kinetic-actions/outbox/s1/retry?connection_id=c1"))).toBe(true));
+  });
+
+  it("says nothing while the outbox is off and holds no call", async () => {
+    outboxOn = false;
+    render(<DeclaredActionsPanel connectionId="c1" />);
+    await waitFor(() => expect(calls.some(c => c.url.includes("/kinetic-actions/outbox"))).toBe(true));
+    expect(screen.queryByText("Sends")).toBeNull();
   });
 });

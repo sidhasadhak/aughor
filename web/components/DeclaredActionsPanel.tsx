@@ -29,6 +29,7 @@ import { ProposalCard } from "@/components/ProposalCard";
 import { SkeletonRows } from "@/components/ui/motion";
 import { toast } from "@/components/ui/toast";
 import { getProposals, type StagedProposal } from "@/lib/api";
+import { dismissSend, getSends, retrySend, type ActionSend } from "@/lib/objects";
 import { claimsOf, getIdToken } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { countNoun, formatCount, formatTimestamp, relTime } from "@/lib/format";
@@ -183,6 +184,85 @@ function ProposeSection({ connectionId, onStaged }: { connectionId: string; onSt
 
 // ── The layer ────────────────────────────────────────────────────────────────────
 
+const SEND_WORDS: Record<ActionSend["status"], string> = {
+  queued: "waiting to be sent again", sending: "being sent", delivered: "delivered",
+  unknown: "no answer — being checked", dead: "waits for you", dismissed: "left undelivered",
+};
+
+/** Arc OC-6 — the outbox of this connection's declared actions: the calls that wait for a person first, with Retry
+ *  and Dismiss, then what was delivered or is being retried and why. Shown while the outbox is on, or holds any call. */
+function SendsSection({ connectionId }: { connectionId: string }) {
+  const [state, setState] = useState<{ enabled: boolean; sends: ActionSend[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState("");
+  const load = useCallback(() => {
+    getSends(connectionId).then(r => { setState({ enabled: !!r?.enabled, sends: r?.sends ?? [] }); setError(null); })
+      .catch(e => setError(String(e.message || e)));
+  }, [connectionId]);
+  useEffect(() => { if (connectionId) load(); }, [connectionId, load]);
+  if (!state || (!state.enabled && state.sends.length === 0)) return error ? <Err e={error} /> : null;
+  const waiting = state.sends.filter(s => s.status === "dead" || s.status === "unknown");
+  const rest = state.sends.filter(s => s.status !== "dead" && s.status !== "unknown").slice(0, 20);
+  const act = async (s: ActionSend, what: "retry" | "dismiss") => {
+    const why = what === "dismiss" ? window.prompt("Why is it left undelivered?") : "";
+    if (why === null) return;                      // cancelled: nothing is dismissed
+    setBusy(s.id);
+    try {
+      if (what === "retry") await retrySend(connectionId, s.id);
+      else await dismissSend(connectionId, s.id, why);
+      load();
+    } catch (e) {
+      toast.error(what === "retry" ? "Not sent" : "Not dismissed", { description: String((e as Error).message || e).slice(0, 240) });
+    } finally { setBusy(""); }
+  };
+  const row = (s: ActionSend, door: boolean) => (
+    <TableRow key={s.id} data-testid="send-row">
+      <TableCell className="aug-actions-id">{s.action_name}<span className="aug-actions-kind">{s.effect.kind}{s.effect.lane === "writeback" ? " · writeback" : ""}</span></TableCell>
+      <TableCell className="aug-ledger-claim">
+        <span className="aug-ledger-text">{SEND_WORDS[s.status]}{s.attempts ? ` · ${countNoun(s.attempts, "attempt")}` : ""}</span>
+        {(s.last_error || s.reconciled) && <span className="aug-ledger-query">{s.last_error || s.reconciled}</span>}
+      </TableCell>
+      <TableCell className="num aug-ledger-when" title={formatTimestamp(s.updated_at)}>{relTime(s.updated_at)}</TableCell>
+      <TableCell className="aug-org-door">
+        {door && (
+          <span style={{ display: "flex", gap: 4 }}>
+            <Button size="xs" variant="outline" disabled={!!busy} data-testid="send-retry" onClick={() => void act(s, "retry")}>
+              Retry
+            </Button>
+            <Button size="xs" variant="ghost" disabled={!!busy} data-testid="send-dismiss" onClick={() => void act(s, "dismiss")}>
+              Dismiss
+            </Button>
+          </span>
+        )}
+      </TableCell>
+    </TableRow>
+  );
+  return (
+    <Section title="Sends" meta={waiting.length ? `${countNoun(waiting.length, "call")} wait${waiting.length === 1 ? "s" : ""} for you`
+      : "a declared action's calls to other systems, delivered through the outbox"}>
+      <Err e={error} />
+      {state.sends.length === 0 ? <p className="aug-brief-note">No call has been sent yet.</p> : (
+        <div className="aug-moves-wrap">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="aug-actions-col-id">action</TableHead>
+                <TableHead>what became of it</TableHead>
+                <TableHead className="num aug-memory-col-when">when</TableHead>
+                <TableHead className="aug-memory-col-door"><span className="sr-only">Retry or dismiss</span></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {waiting.map(s => row(s, true))}
+              {rest.map(s => row(s, false))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </Section>
+  );
+}
+
 export function DeclaredActionsPanel({ connectionId }: { connectionId: string }) {
   const [actions, setActions] = useState<Record<string, any>>({});
   const [actionsErr, setActionsErr] = useState<string | null>(null);
@@ -287,6 +367,8 @@ export function DeclaredActionsPanel({ connectionId }: { connectionId: string })
             </Button>
           )}
         </Section>
+
+        <SendsSection connectionId={connectionId} />
 
         <Section title="Overlay edits" meta="a person's edit over the data — merged when it is read, never written to the source">
           <Err e={editsErr} />

@@ -984,6 +984,10 @@ class SideEffect(BaseModel):
     #: here wrote an adapter for. Still no ``exec``: a template is filled, never evaluated.
     kind: Literal["notify", "webhook", "trigger_investigation", "http"]
     config: dict = Field(default_factory=dict)
+    #: Arc OC-6 — ``writeback``: the one call that must succeed BEFORE the action's edits are written (its failure
+    #: leaves everything unwritten); ``after`` (default): sent once the edits are written — through the outbox while
+    #: `actions.outbox` is on.
+    lane: Literal["after", "writeback"] = "after"
 
 
 #: DS-13 — the config keys of an ``http`` side effect that hold a CREDENTIAL.
@@ -1140,8 +1144,10 @@ class KineticAction(BaseModel):
         loose = [p.name for p in self.params if p.kind == "object" and not p.object_type.strip()]
         if loose:
             raise ValueError(f"object parameter {', '.join(loose)} must name its object_type")
-        if self.edits and self.kind != "annotate":
-            raise ValueError("only an annotate action declares edits")
+        if self.edits and self.kind not in ("annotate", "side_effect"):
+            raise ValueError("only an annotate or a side-effect action declares edits")
+        if sum(1 for se in self.side_effects if se.lane == "writeback") > 1:
+            raise ValueError("an action names at most one writeback — the call its edits wait on")
         for edit in self.edits:
             if edit.object not in taken:
                 raise ValueError(f"the edit setting '{edit.property}' lands on '{edit.object}', "

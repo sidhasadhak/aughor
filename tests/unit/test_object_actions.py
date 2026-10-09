@@ -116,8 +116,8 @@ def test_an_object_parameter_names_one_object_of_its_type(graph):
         assert coerce_params(flag, {"order": passed, "reason": "x"})["order"] == "order:O000123"
     with pytest.raises(ParamError, match="takes an object of type order, not Customer"):
         coerce_params(flag, {"order": "Customer:C00042", "reason": "x"})
-    with pytest.raises(ValueError, match="only an annotate action declares edits"):
-        type(flag).model_validate({**FLAG, "id": "x", "kind": "side_effect"})
+    with pytest.raises(ValueError, match="only an annotate or a side-effect action declares edits"):
+        type(flag).model_validate({**FLAG, "id": "x", "kind": "query", "rule": "SELECT 1"})   # Arc OC-6: two lanes
     with pytest.raises(ValueError, match="not one of this action's object parameters"):
         type(flag).model_validate({**FLAG, "id": "x", "edits": [{"object": "reason", "property": "p"}]})
 

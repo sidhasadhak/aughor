@@ -182,6 +182,26 @@ def book_action(*, action, params: dict, scope: str, actor: str, status: str, ou
                                     conn_id=scope or None, lineage=edges)
 
 
+def restate_verification(entry_id: str, verification: dict, *, scope: str = "") -> str:
+    """Arc OC-6 — book a verification that ran AFTER the execution (its calls went through the outbox and the entry
+    said "pending"): the entry is restated under its key with what the check found, and a failed check demotes the
+    (action, scope) exactly as one found at execution does. Returns the restated entry's id ("" when there is none)."""
+    art = _ledger().artifact_by_id(entry_id)
+    if not art or art.get("kind") != ACTION_KIND:
+        return ""
+    current = _ledger().artifact_latest(str(art.get("natural_key") or "")) or art
+    p = dict(current.get("payload") or {})
+    new = {**p, "verification": dict(verification or {}), "verified_at": _now()}
+    restated = _ledger().artifact_write(ACTION_KIND, str(art.get("natural_key") or ""), new, conn_id=scope or None,
+                                        lineage=[("verification", str(verification.get("status") or ""),
+                                                  str(verification.get("why") or "")[:400])])
+    if verification.get("status") == "failed":
+        demote(str(p.get("action_id") or ""), scope or str(p.get("scope") or ""),
+               why=f"verification failed once its calls landed: {verification.get('why', '')}",
+               evidence={"action_entry": entry_id, "verification": verification})
+    return restated
+
+
 # ── the gateway writes (the close-out, C5) ─────────────────────────────────────────────────
 
 def book_write(*, door: str, action_id: str, scope: str, actor: str, status: str, params: Optional[dict],

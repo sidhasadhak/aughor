@@ -90,7 +90,14 @@ class CriterionError(ValueError):
 
 
 class KineticDispatchError(RuntimeError):
-    """A dispatch handler is not available (a seam not yet wired) or failed."""
+    """A dispatch handler is not available (a seam not yet wired) or failed. ``cause`` (Arc OC-6) says what is known of
+    a call's fate, which is what an outbox retries by: ``not_delivered`` (it never left — safe to send again),
+    ``unknown`` (it left and no answer came back — it may have landed), ``refused`` (the far end, or a setting, said no
+    — sending it again changes nothing). "" when nothing was attempted."""
+
+    def __init__(self, message: str = "", cause: str = ""):
+        super().__init__(message)
+        self.cause = cause
 
 
 # ── safe submission-criterion evaluator ──────────────────────────────────────────
@@ -274,9 +281,9 @@ def _undelivered(what: str, exc: Exception) -> KineticDispatchError:
     detail = f"{type(exc).__name__}: {str(exc)[:200]}"
     if isinstance(exc, (OutboundBlocked, httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout,
                         httpx.UnsupportedProtocol)):
-        return KineticDispatchError(f"the {what} was not delivered — {detail}")
+        return KineticDispatchError(f"the {what} was not delivered — {detail}", cause="not_delivered")
     return KineticDispatchError(f"the {what} may have been delivered — no answer came back ({detail}); "
-                                "check the receiving system before running it again")
+                                "check the receiving system before running it again", cause="unknown")
 
 
 def _dispatch_webhook(se: SideEffect, action: KineticAction, params: dict) -> dict:
@@ -504,9 +511,9 @@ def readable_params(action, params: dict) -> dict:
     return {k: (str(v).split(":", 1)[1] if k in objects and ":" in str(v) else v) for k, v in params.items()}
 
 
-def _not_sent(why: str) -> Exception:
-    """The executor's dispatch error, for a message that did not land — said in words."""
-    return KineticDispatchError(why)
+def _not_sent(why: str, cause: str = "refused") -> Exception:
+    """The executor's dispatch error, for a message that did not land — said in words, with what is known of it."""
+    return KineticDispatchError(why, cause=cause)
 
 
 def _dispatch_destination(se: SideEffect, action, params: dict) -> dict:
@@ -542,9 +549,10 @@ def _dispatch_destination(se: SideEffect, action, params: dict) -> dict:
         raise _not_sent(f"the destination '{trigger.name}' is turned off in Notifications — nothing was sent")
     if log.status == "timeout":
         raise _not_sent(f"the message to '{trigger.name}' may have been delivered — no answer came back; "
-                        "check it before pressing again")
+                        "check it before pressing again", cause="unknown")
     if log.status != "ok":
-        raise _not_sent(f"the message to '{trigger.name}' was not delivered — {log.error or f'HTTP {log.http_status}'}")
+        raise _not_sent(f"the message to '{trigger.name}' was not delivered — {log.error or f'HTTP {log.http_status}'}",
+                        cause="not_delivered")
     return {"kind": se.kind, "destination": trigger.id, "destination_name": trigger.name, "message": message,
             "log_id": log.id, "status": log.status}
 
@@ -642,24 +650,69 @@ def _dispatch_annotate(action: KineticAction, params: dict, scope: str, *, actor
     return {"annotation": edit.target(), "id": edit.id}
 
 
+def dispatch_effect(se: SideEffect, action: KineticAction, params: dict, scope: str = "") -> dict:
+    """ONE side effect, by its kind — what the inline dispatch and the outbox's worker both send."""
+    if se.kind == "notify" and (se.config or {}).get("destination"):
+        return _dispatch_destination(se, action, params)
+    if se.kind in ("notify", "webhook"):
+        return _dispatch_webhook(se, action, params)
+    if se.kind == "http":
+        return _dispatch_http(se, action, params)
+    if se.kind == "trigger_investigation":
+        return _dispatch_trigger_investigation(se, action, params, scope)
+    raise KineticDispatchError(f"unknown side effect kind: {se.kind}")
+
+
+def two_lanes(action: KineticAction) -> bool:
+    """Arc OC-6 — whether a side-effect action runs in two lanes: it declares a writeback or edits, or the outbox is on.
+    Every other action is dispatched exactly as before."""
+    if action.kind != "side_effect":
+        return False
+    if action.edits or any(getattr(se, "lane", "after") == "writeback" for se in action.side_effects):
+        return True
+    from aughor.actions import outbox
+    return outbox.enabled()
+
+
+def _dispatch_lanes(action: KineticAction, params: dict, scope: str, *, actor: str, objects: Optional[dict],
+                    expected: Optional[dict], schema_name: str) -> dict:
+    """Arc OC-6 — two lanes. The writeback (at most one call) runs FIRST, and anything short of a delivered answer
+    leaves everything unwritten; then the edits; then every other call — through the outbox while `actions.outbox` is
+    on (sent at once, finished by its worker), else once, inline, as before."""
+    from aughor.actions import outbox
+    results: list[dict] = []
+    for se in action.side_effects:
+        if getattr(se, "lane", "after") != "writeback":
+            continue
+        done = dispatch_effect(se, action, params, scope)
+        if isinstance(done, dict) and done.get("ok") is False:
+            raise KineticDispatchError(f"the writeback was refused (HTTP {done.get('http_status')}) — nothing else was "
+                                       "done", cause="refused")
+        results.append({**done, "lane": "writeback"})
+    out: dict = {}
+    if action.edits:
+        out.update(_dispatch_object_edits(action, params, scope, actor=actor, objects=objects or {}, expected=expected))
+    after = [(i, se) for i, se in enumerate(action.side_effects) if getattr(se, "lane", "after") != "writeback"]
+    if after and outbox.enabled():
+        sends = [outbox.send_now(outbox.enqueue(action, i, params, scope, schema_name).id) for i, _ in after]
+        out["outbox"] = [{"id": s.id, "status": s.status, "cause": s.cause, "attempts": s.attempts,
+                          "error": s.last_error} for s in sends if s is not None]
+        results += [s.outcome for s in sends if s is not None and s.status == "delivered"]
+    else:
+        results += [dispatch_effect(se, action, params, scope) for _, se in after]
+    out["side_effects"] = results
+    return out
+
+
 def default_dispatch(action: KineticAction, params: dict, scope: str = "", *, actor: str = "",
-                     objects: Optional[dict] = None, expected: Optional[dict] = None) -> dict:
+                     objects: Optional[dict] = None, expected: Optional[dict] = None, schema_name: str = "") -> dict:
     """The wired-in dispatcher. ``notify``/``webhook`` and ``annotate`` fire now; the rest are
     seams that raise with the PR that will wire them, so a caller sees a clear signal not a no-op."""
     if action.kind == "side_effect":
-        results = []
-        for se in action.side_effects:
-            if se.kind == "notify" and (se.config or {}).get("destination"):
-                results.append(_dispatch_destination(se, action, params))
-            elif se.kind in ("notify", "webhook"):
-                results.append(_dispatch_webhook(se, action, params))
-            elif se.kind == "http":
-                results.append(_dispatch_http(se, action, params))
-            elif se.kind == "trigger_investigation":
-                results.append(_dispatch_trigger_investigation(se, action, params, scope))
-            else:
-                raise KineticDispatchError(f"unknown side effect kind: {se.kind}")
-        return {"side_effects": results}
+        if two_lanes(action):
+            return _dispatch_lanes(action, params, scope, actor=actor, objects=objects, expected=expected,
+                                   schema_name=schema_name)
+        return {"side_effects": [dispatch_effect(se, action, params, scope) for se in action.side_effects]}
     if action.kind == "annotate":
         return _dispatch_annotate(action, params, scope, actor=actor, objects=objects, expected=expected)
     if action.kind == "query":
@@ -846,11 +899,11 @@ def execute_kinetic_action(
     try:
         if dispatch is not None:
             outcome = dispatch(action, coerced, scope)
-        elif action.edits:
-            # ON-4 — only an action that sets object properties needs who ran it and what it read;
-            # every other dispatch is called exactly as before.
+        elif action.edits or two_lanes(action):
+            # ON-4 — only an action that sets object properties (or, Arc OC-6, runs in two lanes) needs who ran it,
+            # what it read and where; every other dispatch is called exactly as before.
             outcome = default_dispatch(action, coerced, scope, actor=actor, objects=objects,
-                                       expected=expected_versions)
+                                       expected=expected_versions, schema_name=schema_name)
         else:
             outcome = default_dispatch(action, coerced, scope)
     except KineticDispatchError as e:
@@ -867,10 +920,18 @@ def execute_kinetic_action(
     #      (action, scope) and withdraws its standing grants, as a ledger entry nobody has to notice.
     from aughor.actions import authority
     verification: dict = {"status": "not_declared", "why": "the action declares no verification statement"}
-    try:
-        verification = authority.verify(action, coerced, scope, outcome=outcome)
-    except Exception as exc:  # noqa: BLE001 — the change happened; a verifier that crashed is said
-        verification = {"status": "unavailable", "why": f"the verifier failed: {str(exc)[:160]}"}
+    # Arc OC-6 — a call still in the outbox has not landed: its check waits for it, and never demotes the action first
+    waiting = [s for s in (outcome.get("outbox") or []) if s.get("status") != "delivered"] \
+        if isinstance(outcome, dict) else []
+    if waiting:
+        verification = {"status": "pending",
+                        "why": (f"{len(waiting)} call{'s wait' if len(waiting) != 1 else ' waits'} in the outbox; the "
+                                f"action's check runs when {'they land' if len(waiting) != 1 else 'it lands'}")}
+    else:
+        try:
+            verification = authority.verify(action, coerced, scope, outcome=outcome)
+        except Exception as exc:  # noqa: BLE001 — the change happened; a verifier that crashed is said
+            verification = {"status": "unavailable", "why": f"the verifier failed: {str(exc)[:160]}"}
 
     # 5 — audit the completed run, and book it as an Action in the ledger with what it ran under
     govern.audit(gov_action, scope, "executed", actor=actor,
@@ -886,6 +947,12 @@ def execute_kinetic_action(
         if verification.get("status") == "failed":
             authority.demote(action.id, scope, why=f"verification failed after execution: {verification.get('why', '')}",
                              evidence={"action_entry": entry, "verification": verification})
+        if waiting:
+            # the calls still out are told which entry their check is booked on — and one the worker finished between
+            # the dispatch and this line is checked now, so none is left pending for good
+            from aughor.actions import outbox
+            outbox.link_entry([s["id"] for s in outcome.get("outbox") or []], entry)
+            outbox.finish_entry(entry)
     except Exception as exc:  # noqa: BLE001 — the execution stands; its record is best-effort and said
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the action ran; its ledger entry could not be booked", counter="actions.book_entry",
