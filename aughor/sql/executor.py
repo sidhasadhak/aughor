@@ -304,7 +304,38 @@ def execute_guarded(
                            "written", counter="sql.declared_filter_guard")
         return statement
 
-    sql = _declared(sql)
+    # A period's last day is read whole: a model that repairs a statement rewrites its window as it
+    # likes, and `created_at <= '2025-12-31'` on a TIMESTAMP kept only that day's first instant
+    # (theLook, 2026-10-09: 608,504.54 published where the year reads 610,184.21). The schema says
+    # which columns are timestamps; it is read only when a statement holds such a bound.
+    def _whole_days(statement: str) -> str:
+        try:
+            from aughor.sql.day_window import may_close_on_a_day, read_last_days_whole
+            if not may_close_on_a_day(statement):
+                return statement
+            from aughor.db.schema_render import parse_schema_column_types
+            _rewritten, _read = read_last_days_whole(
+                statement, parse_schema_column_types(schema if schema else conn.get_schema()),
+                dialect=getattr(conn, "dialect", "duckdb"))
+            if not _read or not conn.dry_run(_rewritten)[0]:
+                return statement
+            from aughor.kernel.registries.execution_hooks import emit_guard_receipt
+            emit_guard_receipt(
+                "day_window", "rewrote_sql",
+                detail="; ".join(dict.fromkeys(
+                    f"{r['column']} is a {r['type']}, and a bound of '{r['day']}' kept only that day's first "
+                    f"instant — read through the whole of {r['day']}" for r in _read)),
+                before=statement, after=_rewritten)
+            if "repaired:day-window" not in _steps:
+                _steps.append("repaired:day-window")
+            return _rewritten
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "the last-day window guard is fail-open; the statement executes as written",
+                     counter="sql.day_window_guard")
+            return statement
+
+    sql = _whole_days(_declared(sql))
 
     # AL-01 — route the generated SQL through the one Trust plane's
     # decisive read-only gate before execute: the mutation / DDL / disallowed-function BLOCK the
@@ -612,7 +643,7 @@ def execute_guarded(
             )
             # A repair is a new statement from a model that was not told the declared
             # filter — it takes the same guard the first one did, before it runs.
-            fix.fixed_sql = _declared(fix.fixed_sql)
+            fix.fixed_sql = _whole_days(_declared(fix.fixed_sql))
             with mlflow_tool_span("sql.execute.retry",
                                   {"query_id": query_id, "sql": fix.fixed_sql,
                                    "dialect": getattr(conn, "dialect", "")}):

@@ -333,10 +333,12 @@ def test_id_arithmetic_caveat_in_deterministic_mode():
     assert any("id-arithmetic" in c for c in r.caveats), r.caveats
 
 
-def test_e1_caveats_the_date_boundary_footgun():
-    """The E1 date-boundary footgun (a timestamp bounded by a date-only literal) is
-    caveated on the final SQL — WARN-only, the SQL itself is never rewritten. The
-    checks are permanent (the flag was hardwired 2026-08-01)."""
+def test_the_date_boundary_footgun_is_read_whole_on_the_statement():
+    """The E1 date-boundary footgun (a timestamp bounded by a date-only literal) used to be
+    caveated and run as written. On theLook's live deep analysis (2026-10-09) the caveat never
+    reached the reader and 31 December was dropped from 2025's revenue, so the guard battery now
+    reads the last day whole (`sql.day_window`) — nothing is left to caveat — and E1 still
+    detects the shape wherever the battery does not rewrite it."""
     def _ev_conn():
         conn = DuckDBConnection.__new__(DuckDBConnection)
         conn._path = Path(":memory:")
@@ -349,8 +351,10 @@ def test_e1_caveats_the_date_boundary_footgun():
 
     sql = "SELECT COUNT(*) AS n FROM ev WHERE created_at <= '2024-03-01'"
     r = execute_guarded(_ev_conn(), sql, query_id="p1")
-    assert any("E1-date-boundary" in c for c in r.caveats), r.caveats
-    assert r.sql == sql  # WARN-only — never rewrites
+    assert "created_at < '2024-03-02'" in r.sql and int(r.rows[0][0]) == 1   # 10:00 that day counts
+    assert not any("E1-date-boundary" in c for c in r.caveats), r.caveats
+    from aughor.sql.trust_checks import run_trust_checks
+    assert [i.pattern for i in run_trust_checks(sql, col_types={"ev.created_at": "TIMESTAMP"})] == ["E1-date-boundary"]
 
 
 def test_e1_live_reads_real_types_no_date_false_positive(monkeypatch):
@@ -374,9 +378,13 @@ def test_e1_live_reads_real_types_no_date_false_positive(monkeypatch):
     r_date = execute_guarded(_conn_with("DATE", "acquired_at"), sql_date, query_id="p1")
     assert not any("E1-date-boundary" in c for c in r_date.caveats), r_date.caveats
 
-    # TIMESTAMP column of the same name is a genuine boundary footgun — must still caveat.
-    r_ts = execute_guarded(_conn_with("TIMESTAMP", "acquired_at"), sql_date, query_id="p1")
-    assert any("E1-date-boundary" in c for c in r_ts.caveats), r_ts.caveats
+    # TIMESTAMP column of the same name is a genuine boundary footgun — E1 reads it from the real
+    # types; through the battery the bound is read whole, so the statement no longer carries it.
+    ts = _conn_with("TIMESTAMP", "acquired_at")
+    assert [i.pattern for i in trust_checks.run_trust_checks(
+        sql_date, col_types=trust_checks.connection_column_types(ts._connection_id, ts))] == ["E1-date-boundary"]
+    r_ts = execute_guarded(ts, sql_date, query_id="p1")
+    assert "acquired_at < '2025-12-01'" in r_ts.sql and not any("E1-date-boundary" in c for c in r_ts.caveats)
 
 
 def test_preflight_harden_flags_a_fanout_it_cannot_rewrite(monkeypatch):
