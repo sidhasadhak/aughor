@@ -10,18 +10,23 @@
  * and says which process it withdrew.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@/lib/testing";
 import userEvent from "@testing-library/user-event";
 
-import type { ProcessDetail } from "@/lib/objectTypes";
+import type { ImpactDetail, ProcessDetail } from "@/lib/objectTypes";
 
 const deleteProcess = vi.fn(async (..._args: unknown[]) => undefined);
-const listed: { processes: ProcessDetail[] } = { processes: [] };
+const previewImpact = vi.fn();
+const declareImpact = vi.fn();
+const listed: { processes: ProcessDetail[]; impacts: ImpactDetail[] } = { processes: [], impacts: [] };
 
 vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/objectTypes")>()),
-  getProcesses: async () => ({ connection_id: "c1", schema_name: "s", processes: listed.processes, rules: [] }),
+  getProcesses: async () => ({ connection_id: "c1", schema_name: "s", processes: listed.processes, rules: [],
+                               impacts: listed.impacts }),
   deleteProcess: (...a: unknown[]) => deleteProcess(...a),
+  previewImpact: (...a: unknown[]) => previewImpact(...a),
+  declareImpact: (...a: unknown[]) => declareImpact(...a),
 }));
 
 const keepCockpit = vi.fn(async (..._args: unknown[]) => ({ status: "kept", kept: true, version: 1 }));
@@ -178,5 +183,72 @@ describe("ProcessPanel — a cockpit for a process published earlier", () => {
     listed.processes = [plain];
     panel();
     expect(await screen.findByText("Its board — it promises nothing, so there is nothing to list as overdue.")).toBeTruthy();
+  });
+});
+
+
+// ── Arc OC-5 — what touches a stage, how objects move, and what bears on a promise ───────────────────────────────────
+
+const IMPACT: ImpactDetail = {
+  id: "late_lines_late_delivery", display_name: "Late lines, late delivery", description: "", owner: "",
+  upstream: "order_to_delivery.dispatch", downstream: "order_to_delivery.delivery",
+  upstream_label: "the dispatch promise of Order to delivery", downstream_label: "the delivery promise of Order to delivery",
+  mechanism: "influence", formula: "", evidence: "", window_days: null, lead: "Order", path: "items", to_many: true,
+  objects: 96476, upstream_broke: 6212, upstream_kept: 90264, rate_when_broke: 0.31, rate_when_kept: 0.066,
+  lag_days: null, window: "all of the data, to 2018-10-17", as_of: "2018-10-17 13:22:46", verified: true, flags: [],
+  note: "", reading: "where the dispatch promise of Order to delivery was broken, the delivery promise of Order to delivery was broken 31% of the time, against 7% where it was kept (6,212 and 90,264 Order)",
+};
+
+describe("Arc OC-5 on a process", () => {
+  beforeEach(() => {
+    previewImpact.mockReset();
+    declareImpact.mockReset();
+    const moved: ProcessDetail = {
+      ...olist,
+      stages: olist.stages.map((s) => s.name === "dispatched" ? {
+        ...s, precedes: { approved: 1359, placed: 12 },
+        roles: [{ entity: "Order", role: "goes through the process" },
+                { entity: "OrderItem", role: "the lead object its promise is kept per", why: "every hop to-one" }] } : s),
+      observed: [{ from_stage: "placed", to_stage: "approved", declared: true, objects: 99281 },
+                 { from_stage: "approved", to_stage: "delivered", declared: false, objects: 14 }],
+      conformance: { seen_only_in_data: ["approved → delivered"], never_observed: [], untimed: [] },
+    };
+    listed.processes = [moved];
+    listed.impacts = [IMPACT];
+  });
+
+  it("names what a stage touches, every earlier stage it beats, and the moves nobody declared", async () => {
+    panel();
+    const roles = await screen.findByTestId("process-stage-roles");
+    expect(roles.textContent).toContain("OrderItem(the lead object its promise is kept per)");
+    expect(screen.getAllByTestId("process-stage-precedes").map((e) => e.textContent)).toEqual(["12 reached dispatched before placed"]);
+    const moves = screen.getAllByTestId("process-move").map((e) => e.textContent);
+    expect(moves[1]).toContain("approved → delivered14nobody declared it");
+  });
+
+  it("reads an impact on both of its promises, in its counts, and declares a new one only after counting it", async () => {
+    const user = userEvent.setup();
+    panel();
+    const readings = await screen.findAllByTestId("impact-reading");
+    expect(readings.map((r) => r.textContent)).toEqual([IMPACT.reading, IMPACT.reading]);     // downstream of dispatch, upstream of delivery
+    previewImpact.mockResolvedValue({ ...IMPACT, reading: "counted reading" });
+    declareImpact.mockResolvedValue(IMPACT);
+    await user.click(screen.getAllByTestId("impact-new")[1]);                                  // on the delivery promise
+    const declare = screen.getByTestId("impact-declare");
+    expect(declare).toBeDisabled();                                                            // counted first
+    await user.click(screen.getByTestId("impact-count"));
+    expect(await screen.findByTestId("impact-counted")).toHaveTextContent("counted reading");
+    expect(previewImpact.mock.calls[0][1]).toEqual({ id: "dispatch_bears_on_delivery", upstream: "order_to_delivery.dispatch",
+                                                     downstream: "order_to_delivery.delivery", mechanism: "influence" });
+    await user.click(declare);
+    await waitFor(() => expect(declareImpact).toHaveBeenCalledTimes(1));
+  });
+
+  it("opens the designer on the process to change it", async () => {
+    const user = userEvent.setup();
+    const onChangeProcess = vi.fn();
+    panel({ onChangeProcess });
+    await user.click(await screen.findByTestId("process-change"));
+    expect(onChangeProcess.mock.calls[0][0].id).toBe("order_to_delivery");
   });
 });

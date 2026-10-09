@@ -25,7 +25,7 @@ from aughor.ontology.impacts import (
 )
 from aughor.ontology.overrides import OntologyOverride, apply_overrides, save_override
 from tests.unit.test_object_bindings import ints
-from tests.unit.test_object_processes import FULFILMENT, db, declare, fresh_graph  # noqa: F401 — the warehouse
+from tests.unit.test_object_processes import FULFILMENT, db, declare, door, fresh_graph  # noqa: F401 — the warehouse
 
 WINDOWS = {"id": "fulfilment_days", "display_name": "Fulfilment in days", "entity": "Order", "stages": [
     {"name": "placed", "timestamp": "order_date"},
@@ -275,3 +275,37 @@ def test_a_deadline_before_the_object_entered_the_process_is_flagged_with_its_co
     (early,) = ints(db, f"SELECT COUNT(*) {LINE_JOIN} WHERE i.ship_by < o.shipped_at")
     flags = [f for f in p.stages[1].promise.flags if f.startswith("deadline before entry")]
     assert early > 0 and flags and flags[0].startswith(f"deadline before entry: {early:,} OrderItem objects")
+
+
+# ── the doors ───────────────────────────────────────────────────────────────────────────────────────────────────────
+
+def test_moves_and_impacts_are_declared_counted_changed_and_withdrawn_over_http(door, client, monkeypatch):  # noqa: F811 — the door fixture, by name
+    """The door's model once dropped `leaves` while every function carried it (#589): every new field is read back
+    through the door itself."""
+    from tests.unit.test_object_processes import PARAMS
+    moves = [{"from": "placed", "to": "shipped"}, {"from": "shipped", "to": "delivered"}]
+    made = client.post("/ontology/processes", params=PARAMS, json={**WINDOWS, "transitions": moves})
+    assert made.status_code == 200, made.text
+    read = next(p for p in client.get("/ontology/processes", params=PARAMS).json()["processes"] if p["id"] == WINDOWS["id"])
+    assert [(t["from_stage"], t["to_stage"]) for t in read["transitions"]] == [("placed", "shipped"), ("shipped", "delivered")]
+    assert read["observed"] and "untimed" in read["conformance"]
+    assert all("roles" in s and "precedes" in s for s in read["stages"])
+    later = {**WINDOWS, "stages": [*WINDOWS["stages"][:2], {**WINDOWS["stages"][2], "promise": {"name": "delivery",
+                                                                                             "within_days": 3}}]}
+    assert client.post("/ontology/processes/preview", params=PARAMS, json=later).status_code == 409
+    counted = client.post("/ontology/processes/preview", params={**PARAMS, "replace": "true"}, json=later)
+    assert counted.status_code == 200 and counted.json()["process"]["stages"][2]["promise"]["within_days"] == 3
+    spec = {"id": "late_dispatch_late_delivery", "upstream": "fulfilment_days.dispatch",
+            "downstream": "fulfilment_days.delivery"}
+    preview = client.post("/ontology/impacts/preview", params=PARAMS, json=spec)
+    assert preview.status_code == 200 and preview.json()["impact"]["objects"] > 0, preview.text
+    declared = client.post("/ontology/impacts", params=PARAMS, json=spec)
+    assert declared.status_code == 200, declared.text
+    assert client.post("/ontology/impacts", params=PARAMS, json=spec).status_code == 409
+    listed = client.get("/ontology/processes", params=PARAMS).json()["impacts"]
+    assert [i["id"] for i in listed] == ["late_dispatch_late_delivery"] and listed[0]["reading"]
+    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "ontology.history")
+    refused = client.delete(f"/ontology/processes/{WINDOWS['id']}", params=PARAMS)
+    assert refused.status_code == 409 and "impact 'Late dispatch late delivery'" in refused.text
+    assert client.delete("/ontology/impacts/late_dispatch_late_delivery", params=PARAMS).status_code == 200
+    assert client.get("/ontology/processes", params=PARAMS).json()["impacts"] == []

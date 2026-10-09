@@ -186,7 +186,8 @@ def dependents_of(graph: Optional[OntologyGraph], conn: str, kind: str, target_i
             ends = [w for w, ref in (("upstream", imp.upstream), ("downstream", imp.downstream))
                     if ref.partition(".")[0] == target_id]
             if ends:
-                rows.append(_row("impact", iid, imp.display_name, f"the impact's {' and '.join(ends)} promise is in it"))
+                rows.append(_row("impact", iid, imp.display_name,
+                                 f"the impact's {' and '.join(ends)} promise{'s are' if len(ends) > 1 else ' is'} in it"))
         automations_on({target_id}, set(), set())
     elif kind == "action":
         for aid, act in sorted(actions.items()):

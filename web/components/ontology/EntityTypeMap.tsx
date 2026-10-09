@@ -58,6 +58,7 @@ import {
   type DeclaredEntitySpec,
   type DraftProposal,
   type OntologyDraft,
+  type ProcessDetail,
   type ProcessRow,
   type ProposalTier,
   type RuleRow,
@@ -154,7 +155,7 @@ export function EntityTypeMap({ connectionId, schema, onReleaseChanged }: {
   const [openProcess, setOpenProcess] = useState<string | null>(null);
   // The process designer takes the whole map's place while a process is being designed (2026-10-09): a business process
   // is designed on a page of its own, not in the panel's quarter of the screen. An action is designed the same way.
-  const [designing, setDesigning] = useState<{ kind: "process" | "action"; entity?: string } | null>(null);
+  const [designing, setDesigning] = useState<{ kind: "process" | "action"; entity?: string; editing?: ProcessDetail } | null>(null);
   const openType = (objectType: string) => {
     setOpenProcess(null);
     setSelected(objectType);
@@ -240,7 +241,8 @@ export function EntityTypeMap({ connectionId, schema, onReleaseChanged }: {
     return (
       <div style={{ flex: 1, display: "flex", minWidth: 0, minHeight: 0 }} data-testid="entity-type-map">
         <ProcessDesigner connectionId={connectionId} schema={schema} types={map.object_types} entity={designing.entity}
-          takenIds={(map.processes ?? []).map((p) => p.id)}
+          editing={designing.editing}
+          takenIds={(map.processes ?? []).map((p) => p.id).filter((id) => id !== designing.editing?.id)}
           onClose={() => setDesigning(null)}
           onDeclared={() => { setVersion((v) => v + 1); onReleaseChanged?.(); }}
           onPublished={() => onReleaseChanged?.()} />
@@ -277,7 +279,8 @@ export function EntityTypeMap({ connectionId, schema, onReleaseChanged }: {
         sources={domain ? sources : undefined} />
       {openProcess ? (
         <ProcessPanel connectionId={connectionId} schema={schema} processId={openProcess} version={version}
-          onOpenType={openType} onClose={() => setOpenProcess(null)} onChanged={() => setVersion((v) => v + 1)} />
+          onOpenType={openType} onClose={() => setOpenProcess(null)} onChanged={() => setVersion((v) => v + 1)}
+          onChangeProcess={domain ? undefined : (process) => setDesigning({ kind: "process", editing: process })} />
       ) : (
         <EntityTypePanel connectionId={connectionId} schema={schema} objectType={selected} types={map.object_types}
           version={version} onOpen={openType} onOpenProcess={setOpenProcess} onChanged={() => setVersion((v) => v + 1)}
@@ -804,6 +807,8 @@ function MapCanvas({ map, selected, onSelect, scope, sources }: {
       const proposed = link.origin === "model";
       // ON-8 — a link whose two types live on two connections is read by key, not joined: drawn dotted, and it says so.
       const crosses = link.traversal === "cross-source";
+      // Arc OC-5 — what the declarations route through it: a promise kept through it, a process's stage, an impact.
+      const carried = [...new Set((link.carries ?? []).map((c) => c.promise ?? c.impact ?? c.process_label))];
       const ink = !link.traversable ? "var(--amb4)" : proposed ? "var(--vio4)" : "var(--blue3)";
       return [{
         id: link.relationship, type: "link", source: link.from, target: link.to,
@@ -811,6 +816,7 @@ function MapCanvas({ map, selected, onSelect, scope, sources }: {
         // Only the picked type's links are named: every label at once is what made this map unreadable.
         label: on
           ? `${verb} · ${link.cardinality}${via ? ` · via ${via}` : ""}${crosses ? " · cross-source" : ""}${proposed ? " · proposed" : ""}`
+            + (carried.length ? ` · carries ${carried.join(", ")}` : "")
           : undefined,
         labelShowBg: true,
         labelBgPadding: [6, 3] as [number, number],

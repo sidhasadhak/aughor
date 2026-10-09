@@ -198,6 +198,8 @@ class _DeclaredProcess(BaseModel):
     provenance: Optional[str] = Field(default=None, max_length=200)
     #: Arc OC-4 — how an object leaves it; one that left is no longer open, and never overdue.
     leaves: Optional[_ProcessLeaves] = None
+    #: Arc OC-5 — the moves the business expects, each ``{"from": <stage>, "to": <stage or "left">}``.
+    transitions: Optional[list[dict[str, str]]] = None
 
 
 class _DeclaredImpact(BaseModel):
@@ -2362,6 +2364,7 @@ def preview_declared_process(
     body: _DeclaredProcess,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    replace: bool = Query(default=False, description="count a CHANGE to the declared process of this id (Arc OC-5)"),
 ):
     """Count a draft process exactly as declaring it would (the same checks — 400 with the reason, 409 for a name taken
     — and the same measurement) and say what a person should read before publishing it (`process_design.design_checks`):
@@ -2384,7 +2387,9 @@ def preview_declared_process(
     if graph is None:
         raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
     process_id = str(spec["id"])
-    if process_id in graph.processes:
+    if replace and process_id not in graph.processes:
+        raise HTTPException(status_code=404, detail=f"no declared process '{process_id}'")
+    if not replace and process_id in graph.processes:
         raise HTTPException(status_code=409, detail=f"a process '{process_id}' already exists")
     problem, fields = resolve_process(graph, process_id, process_fields(spec))
     if problem:

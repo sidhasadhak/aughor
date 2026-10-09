@@ -14,13 +14,13 @@ import type { ProcessCandidates, ProcessPreview, TypeMapRow } from "@/lib/object
 
 const calls = vi.hoisted(() => ({
   candidates: vi.fn(), preview: vi.fn(), declare: vi.fn(), release: vi.fn(), publish: vi.fn(),
-  keep: vi.fn(), tab: vi.fn(), list: vi.fn(),
+  keep: vi.fn(), tab: vi.fn(), list: vi.fn(), change: vi.fn(),
 }));
 
 vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/objectTypes")>()),
   getProcessCandidates: calls.candidates, previewProcess: calls.preview, declareProcess: calls.declare,
-  getRelease: calls.release, publishRelease: calls.publish,
+  getRelease: calls.release, publishRelease: calls.publish, changeProcess: calls.change,
 }));
 vi.mock("@/lib/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/api")>()), keepCockpit: calls.keep }));
 vi.mock("@/lib/navigate", () => ({ requestTab: calls.tab }));
@@ -196,5 +196,53 @@ describe("the process designer", () => {
     render(<ProcessDesigner connectionId="c1" schema="s" types={TYPES} takenIds={[]} onClose={() => {}} onDeclared={() => {}} />);
     expect(screen.getByLabelText("Process name")).toHaveValue("Returns handling");
     expect(screen.getByText(/Your draft, as this browser kept it/)).toBeInTheDocument();
+  });
+});
+
+
+// ── Arc OC-5 — a declared process, changed: a promise added, the moves a person expects ───────────────────────────────
+
+describe("changing a declared process", () => {
+  beforeEach(() => {
+    Object.values(calls).forEach(f => f.mockReset());
+    calls.candidates.mockResolvedValue(CANDIDATES);
+    calls.release.mockResolvedValue(null);
+    calls.preview.mockResolvedValue({ ...PREVIEW, process: { ...PREVIEW.process, id: "order_fulfilment",
+      observed: [{ from_stage: "placed", to_stage: "shipped", declared: true, objects: 4600 },
+                 { from_stage: "shipped", to_stage: "left", declared: false, objects: 1100 }] } });
+  });
+
+  const EDITING = {
+    id: "order_fulfilment", display_name: "Order Fulfilment", description: "", entity: "order", entity_id: "Order",
+    owner: "", origin: "human" as const, provenance: "", objects: 5000, verified: true, note: "", measured_at: "",
+    derived: { segments: [], properties: [], metrics: [] },
+    stages: [
+      { name: "placed", display_name: "placed", anchor: { timestamp: "order_date" }, reached: 5000, share: 1,
+        verified: true, note: "", transition: null, promise: null },
+      { name: "shipped", display_name: "shipped", anchor: { timestamp: "shipped_at" }, reached: 4600, share: 0.92,
+        verified: true, note: "", transition: null, promise: null },
+    ],
+  };
+
+  it("counts the change as a change, keeps the id, and saves a mark on a move through the same gate", async () => {
+    const user = userEvent.setup();
+    calls.change.mockResolvedValue({ id: "order_fulfilment" });
+    const onDeclared = vi.fn();
+    render(<ProcessDesigner connectionId="c1" schema="s" types={TYPES} takenIds={[]} editing={EDITING}
+      onClose={() => {}} onDeclared={onDeclared} />);
+    expect(screen.getByText("Change Order Fulfilment")).toBeTruthy();
+    await waitFor(() => expect(calls.preview).toHaveBeenCalled(), { timeout: 4000 });
+    expect(calls.preview.mock.calls[0][3]).toBe(true);                                // counted as a change, never a 409
+    expect(calls.preview.mock.calls[0][1].id).toBe("order_fulfilment");
+    const left = await screen.findByLabelText("Expect shipped to leaves the process");
+    await user.click(left);
+    await waitFor(() => expect(calls.preview.mock.calls.at(-1)?.[1].transitions).toEqual(
+      [{ from: "placed", to: "shipped" }, { from: "shipped", to: "left" }]), { timeout: 4000 });
+    await user.click(screen.getByTestId("designer-review"));
+    await user.click(await screen.findByTestId("designer-declare"));
+    await waitFor(() => expect(calls.change).toHaveBeenCalledTimes(1));
+    expect(calls.declare).not.toHaveBeenCalled();
+    expect(calls.change.mock.calls[0][1].transitions).toEqual([{ from: "placed", to: "shipped" }, { from: "shipped", to: "left" }]);
+    expect(onDeclared).toHaveBeenCalledWith("order_fulfilment");
   });
 });

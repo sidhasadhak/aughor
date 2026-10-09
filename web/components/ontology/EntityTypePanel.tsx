@@ -1750,6 +1750,16 @@ function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged, 
             {link.name} · {link.on}
           </div>
           {link.why_not && <p className="aug-fs-xs" style={{ margin: "3px 0 0", color: "var(--t3)", lineHeight: 1.45 }}>{link.why_not}</p>}
+          {!!link.carries?.length && (
+            <div className="aug-fs-xs" data-testid="link-carries" style={{ marginTop: 3, color: "var(--t2)", lineHeight: 1.45 }}>
+              {link.carries.map((c) => (
+                <div key={`${c.process}:${c.stage ?? c.promise ?? c.impact}`} title={c.how}>
+                  carries {c.promise ? `the ${c.promise} promise of ${c.process_label}`
+                    : c.impact ? `the impact ${c.impact}` : `${c.process_label} (stage ${c.stage})`}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ))}
       <AddRelationship detail={detail} types={types} connectionId={connectionId} schema={schema} onChanged={onChanged} />

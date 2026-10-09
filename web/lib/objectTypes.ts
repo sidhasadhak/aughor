@@ -56,6 +56,8 @@ export interface TypePart {
 
 /** One link between two types, read from → to. */
 export interface TypeMapLink {
+  /** Arc OC-5 — what the declarations route through it (`LinkCarries`). */
+  carries?: LinkCarries[];
   relationship: string;
   from: string;
   to: string;
@@ -226,8 +228,20 @@ export interface ProposedBinding {
   spec: BindingSpec;
 }
 
+/** Arc OC-5 — what a link carries: a process's stage, a promise kept through it, an impact read through it. */
+export interface LinkCarries {
+  process: string;
+  process_label: string;
+  stage?: string;
+  promise?: string;
+  impact?: string;
+  how: string;
+}
+
 /** A link as read from the type it leaves. A refused one carries the compiler's reason. */
 export interface TypeLink {
+  /** Arc OC-5 — what the declarations route through it; absent: nothing declared reads it. */
+  carries?: LinkCarries[];
   name: string;
   business_name: string;
   /** `model` (2026-09-22): the explorer proposed the name; a person confirms it in the draft rail. */
@@ -852,6 +866,14 @@ export interface ProcessPromise {
   overdue_segment?: string;
 }
 
+/** Arc OC-5 — an object a stage touches, and its role: the one that goes through the process, the lead object a
+ *  promise is kept per (with why), the ones a moment or a deadline is read from. */
+export interface StageRole {
+  entity: string;
+  role: string;
+  why?: string;
+}
+
 export interface ProcessStageDetail {
   name: string;
   display_name: string;
@@ -862,6 +884,61 @@ export interface ProcessStageDetail {
   note: string;
   transition: ProcessTransition | null;
   promise: ProcessPromise | null;
+  /** Arc OC-5 — earlier stage → how many objects reached this one BEFORE it (every earlier stage with a moment). */
+  precedes?: Record<string, number>;
+  roles?: StageRole[];
+}
+
+/** Arc OC-5 — a move between two stages, or out of the process (`to_stage` "left"): declared, or seen in the data. */
+export interface ProcessMove {
+  from_stage: string;
+  to_stage: string;
+  declared: boolean;
+  objects: number | null;
+}
+
+/** Arc OC-5 — one promise's bearing on another, as `GET /ontology/processes` describes it. */
+export interface ImpactDetail {
+  id: string;
+  display_name: string;
+  description: string;
+  owner: string;
+  upstream: string;
+  downstream: string;
+  upstream_label: string;
+  downstream_label: string;
+  mechanism: "influence" | "validated" | "formula";
+  formula: string;
+  evidence: string;
+  window_days: number | null;
+  lead: string;
+  path: string;
+  to_many: boolean;
+  objects: number | null;
+  upstream_broke: number | null;
+  upstream_kept: number | null;
+  rate_when_broke: number | null;
+  rate_when_kept: number | null;
+  lag_days: number | null;
+  window: string;
+  as_of: string;
+  verified: boolean | null;
+  flags: string[];
+  note: string;
+  /** The impact in a reader's words, by its mechanism. */
+  reading: string;
+}
+
+/** Arc OC-5 — an impact as a person declares it. */
+export interface DeclaredImpactSpec {
+  id: string;
+  upstream: string;
+  downstream: string;
+  mechanism: ImpactDetail["mechanism"];
+  formula?: string;
+  evidence?: string;
+  window_days?: number;
+  display_name?: string;
 }
 
 /** ON-9 — one declared process, as `GET /ontology/processes` describes it. */
@@ -882,6 +959,10 @@ export interface ProcessDetail {
   derived: DerivedRows;
   /** Arc OC-4 — how an object leaves the process, when a person declared it: no longer open, never overdue. */
   leaves?: { property: string; values: string[]; left: number | null; missing: string[]; unknown: number | null; note: string };
+  /** Arc OC-5 — the moves declared, the moves the data makes, and where they disagree. */
+  transitions?: ProcessMove[];
+  observed?: ProcessMove[];
+  conformance?: { seen_only_in_data?: string[]; never_observed?: string[]; untimed?: string[] };
 }
 
 /** ON-9 — one declared rule, as `GET /ontology/processes` describes it. */
@@ -918,6 +999,8 @@ export interface ProcessesAndRules {
   domain?: string;
   processes: ProcessDetail[];
   rules: RuleDetail[];
+  /** Arc OC-5 — every declared impact between promises. */
+  impacts?: ImpactDetail[];
 }
 
 /** ON-9 — a process a person declares: the type that goes through it and its stages in order. */
@@ -938,6 +1021,8 @@ export interface DeclaredProcessSpec {
   }[];
   /** Arc OC-4 — how an object leaves the process: a property and the values that mean gone. */
   leaves?: { property: string; values: string[] };
+  /** Arc OC-5 — the moves the business expects; absent: each stage to the next. */
+  transitions?: { from: string; to: string }[];
 }
 
 // ── The process designer: the data read for a person designing a process (2026-10-09) ──────────────────────────────
@@ -1022,16 +1107,20 @@ export interface MeasuredStage {
 
 export interface ProcessPreview {
   process: { id: string; entity: string; objects: number | null; stages: MeasuredStage[];
-             leaves?: { property: string; values: string[]; left: number | null; missing: string[]; unknown: number | null } | null };
+             leaves?: { property: string; values: string[]; left: number | null; missing: string[]; unknown: number | null } | null;
+             /** Arc OC-5 — the moves the data makes, and where they disagree with those declared. */
+             observed?: ProcessMove[];
+             conformance?: { seen_only_in_data?: string[]; never_observed?: string[]; untimed?: string[] } };
   checks: DesignCheck[];
   creates: DesignCreate[];
 }
 
-/** Count a draft exactly as declaring it would, and say what to read before publishing it. Nothing is written. */
+/** Count a draft exactly as declaring it would, and say what to read before publishing it. Nothing is written.
+ *  ``replace`` counts a change to the declared process of the same id. */
 export async function previewProcess(
-  connectionId: string, spec: DeclaredProcessSpec, schemaName?: string,
+  connectionId: string, spec: DeclaredProcessSpec, schemaName?: string, replace = false,
 ): Promise<ProcessPreview> {
-  const res = await fetch(`${getApiBase()}/ontology/processes/preview?${scope(connectionId, schemaName)}`,
+  const res = await fetch(`${getApiBase()}/ontology/processes/preview?${scope(connectionId, schemaName, replace ? { replace: "true" } : undefined)}`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
   if (!res.ok) throw new Error(await detailOf(res));
   return res.json();
@@ -1131,6 +1220,43 @@ export async function declareProcess(
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
   if (!res.ok) throw new Error(await detailOf(res));
   return (await res.json()).process;
+}
+
+/** Arc OC-1/OC-5 — change a declared process through the same law as declaring it; each change is a version. */
+export async function changeProcess(
+  connectionId: string, spec: DeclaredProcessSpec, schemaName?: string,
+): Promise<ProcessDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/processes/${encodeURIComponent(spec.id)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).process;
+}
+
+/** Arc OC-5 — count a draft impact exactly as declaring it would; nothing is written. */
+export async function previewImpact(
+  connectionId: string, spec: DeclaredImpactSpec, schemaName?: string,
+): Promise<ImpactDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/impacts/preview?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).impact;
+}
+
+/** Arc OC-5 — declare an impact: both promises resolved, an influence counted, before anything is written. */
+export async function declareImpact(
+  connectionId: string, spec: DeclaredImpactSpec, schemaName?: string,
+): Promise<ImpactDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/impacts?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).impact;
+}
+
+/** Arc OC-5 — withdraw a declared impact. */
+export async function deleteImpact(connectionId: string, impactId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/ontology/impacts/${encodeURIComponent(impactId)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
 }
 
 /** ON-9 — a rule a person declares: a value set (one property's values grouped under one name) or conditions in the
