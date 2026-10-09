@@ -128,7 +128,7 @@ def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
         return _domain_object_page(object_type, pk, domain)
     from aughor.semantic.object_context import object_context
     from aughor.semantic.object_instances import ObjectNotFound, get_object
-    from aughor.semantic.object_query import ObjectQueryRefused
+    from aughor.semantic.object_query import ObjectQueryRefused, keyed_metrics_for
 
     graph = _served_graph(connection_id, schema_name)
     db = _open_scoped(connection_id, schema_name, graph)
@@ -141,7 +141,8 @@ def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
             return {"path": "refused", "refused": exc.reason, "available": exc.available,
                     "connection_id": connection_id, "schema_name": graph.schema_name}
         related = object_context(graph, db, connection_id, graph.schema_name, instance,
-                                 dialect=getattr(db, "dialect", "") or "duckdb")
+                                 dialect=getattr(db, "dialect", "") or "duckdb",
+                                 keyed=keyed_metrics_for(connection_id, graph.schema_name))   # Arc OC-3, flag-gated
         return {"path": "object", "connection_id": connection_id, "schema_name": graph.schema_name,
                 **instance.to_dict(), "related": related}
     finally:

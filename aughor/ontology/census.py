@@ -11,7 +11,9 @@ once cannot say whether a wave moved it. This module counts the same things the 
 * **measured** — of those, how many the data verified: backings, display properties, links counted, bindings,
   segments, computed properties, and properties with a description;
 * **leaned on** — the automations that read the ontology (a promise trigger, a declared-action step), and the
-  Record's claims by what they are about and whether they name a metric, a segment or a definition version.
+  Record's claims by what they are about and whether they name a metric, a segment or a definition version;
+* **the catalogue's replay** — Arc OC-2's falsifier over the kept declaration history (`compatibility.replay`), so
+  each reading says again whether a change that moved what consumers read was ever classed safe.
 
 Read-only and cache-only: a scope whose ontology was never built is listed as not built, never built here (a read
 never builds). `take_census` is the door's live reading; `record_if_due` journals one reading a day as
@@ -157,7 +159,17 @@ def take_census() -> dict[str, Any]:
     from aughor.ontology.keys import keyed_counts
     return {"as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "scopes": scopes, "totals": totals, "not_built": not_built, "leaned_on": consumption(),
-            "keyed": keyed_counts()}
+            "keyed": keyed_counts(), "replay": _replay()}
+
+
+def _replay() -> dict[str, Any]:
+    """Arc OC-2's falsifier over the kept declaration history (`compatibility.replay`), read with every reading so it
+    re-runs itself as history grows; a replay that cannot be read is said, never an empty pass."""
+    from aughor.ontology.compatibility import replay
+    try:
+        return replay()
+    except Exception as exc:  # noqa: BLE001
+        return {"unread_reason": str(exc)[:200]}
 
 
 def history(limit: int = 90) -> list[dict]:
@@ -167,7 +179,8 @@ def history(limit: int = 90) -> list[dict]:
     for ev in Ledger.default().events(kind=EVENT_KIND, limit=limit):
         payload = ev.get("payload") or {}
         out.append({"at": ev.get("at"), "totals": payload.get("totals", {}),
-                    "leaned_on": payload.get("leaned_on", {}), "keyed": payload.get("keyed", {})})
+                    "leaned_on": payload.get("leaned_on", {}), "keyed": payload.get("keyed", {}),
+                    "replay": payload.get("replay", {})})
     return out
 
 
@@ -201,4 +214,4 @@ def record_if_due(now: Optional[datetime] = None) -> Optional[int]:
         return None
     return ledger.emit(EVENT_KIND, {"totals": reading["totals"], "scopes": reading["scopes"],
                                     "not_built": reading["not_built"], "leaned_on": reading["leaned_on"],
-                                    "keyed": reading.get("keyed", {})})
+                                    "keyed": reading.get("keyed", {}), "replay": reading.get("replay", {})})

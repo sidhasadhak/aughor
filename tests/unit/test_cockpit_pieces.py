@@ -235,6 +235,18 @@ def test_asked_and_on_a_gated_action_is_staged_for_a_person_and_nothing_runs(gat
     assert staged.params == {"order": "Order:O000001", "reason": "late"} and staged.reasoning == "from a cockpit"
 
 
+def test_a_run_answers_with_what_its_check_found_and_its_ledger_entry(gated, monkeypatch):
+    """The answer had dropped both, so a press read "done" whatever its verification found; they were readable only
+    through the action's record."""
+    from aughor.actions.executor import KineticResult
+    found = {"status": "failed", "why": "no row returned — the change is not visible"}
+    monkeypatch.setattr("aughor.actions.executor.execute_kinetic_action", lambda action, params, **k: KineticResult(
+        "executed", True, action.id, outcome={"edits": 1}, verification=found, action_entry="ae-1"))
+    r = _press(gated)
+    assert r.status_code == 200, r.text
+    assert (r.json()["verification"], r.json()["action_entry"]) == (found, "ae-1")
+
+
 # ── the release a cockpit was composed against ───────────────────────────────────────────────
 
 def _both_on(monkeypatch):

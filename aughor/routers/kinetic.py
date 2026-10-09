@@ -90,7 +90,8 @@ def execute_action(
     high-risk action needing approval returns 428 (approve via POST /approvals/allow, then retry) —
     or, asked with ``propose_if_gated`` while `ontology.cockpit_pieces` is on, is staged for a person
     and returns 200 with ``status: proposed`` and the proposal's id (Arc OC-4); success returns 200
-    with the dispatch outcome."""
+    with the dispatch outcome, what its verification found, and its Action ledger entry — the answer had dropped the
+    last two, so a press read "done" whatever its check said."""
     # The public store loader already overlays human overrides (so kinetic_actions are applied);
     # a declared action implies the ontology is cached, so the fast path is sufficient here.
     graph = _resolve_graph(connection_id, schema_name)
@@ -108,7 +109,8 @@ def execute_action(
         # granted_by (A4) cites the standing grant that auto-allowed an unattended run ('' otherwise),
         # so the citation reaches the caller/receipt, not only the audit ledger.
         return {"status": result.status, "action_id": result.action_id,
-                "outcome": result.outcome, "granted_by": result.granted_by}
+                "outcome": result.outcome, "granted_by": result.granted_by,
+                "verification": result.verification, "action_entry": result.action_entry}
     if result.status == "approval_required" and body.propose_if_gated:
         staged = _propose_gated(action, body, connection_id, schema_name)
         if staged is not None:

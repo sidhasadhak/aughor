@@ -46,7 +46,7 @@ def test_author_valid_action_persists_and_reads_back_whole():
     # Every reader — the executor, the GET door, the inbox — sees the action through the overlay. The door persisted
     # the phase-4 fields and the overlay dropped them, so a stored side-effect action read back undeclarable: it
     # never graduated and its undo was refused.
-    schema = ONT._resolve_schema("c", None)
+    schema = ONT._served_scope("c", None)          # where the door writes: the schema of the graph it serves
     graph, _ = OV.apply_overrides(OntologyGraph(connection_id="c", schema_name=schema, schema_fingerprint="x"),
                                   "c", schema)
     action = {a.id: a for a in graph.declared_actions()}["refund"]

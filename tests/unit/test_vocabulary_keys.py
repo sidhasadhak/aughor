@@ -64,6 +64,18 @@ def test_the_linker_is_handed_the_table_and_column_and_never_a_name_nothing_matc
     assert "lost words" not in expansion
 
 
+def test_a_word_added_by_any_door_reaches_the_linker_at_once(graph):
+    """The pack and intake doors call `add_synonym` and never cleared the linker's cached hints: their word went unseen
+    until the cache turned over. The store's one write now clears it."""
+    from aughor.tools.schema_linker import build_connection_hints
+    V.add_synonym(CONN, "property", "Order.status", "order state")
+    assert build_connection_hints(CONN)[2]["order state"] == {"orders", "status"}
+    V.add_synonym(CONN, "entity", "Order", "purchases")                                       # cached before this
+    assert build_connection_hints(CONN)[2].get("purchases") == {"orders"}
+    V.remove_synonym(CONN, "entity", "Order", "purchases")
+    assert "purchases" not in build_connection_hints(CONN)[2]
+
+
 def test_a_question_frames_a_keyed_word_onto_its_property(graph):
     words = [V.Synonym(CONN, "property", "Order.status", "order state")]
     frame = frame_question("how many orders by order state", graph, synonyms=words)

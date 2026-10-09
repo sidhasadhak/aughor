@@ -28,7 +28,7 @@ import { withUniqueKeys } from "@/lib/listKeys";
 import { objectHref } from "@/lib/objectLinks";
 import {
   getDeclaredActions, getObjectPage, listObjects, runOrPropose,
-  type DeclaredAction, type ObjectListingPage, type ObjectPage,
+  type ActionCheck, type DeclaredAction, type ObjectListingPage, type ObjectPage,
 } from "@/lib/objects";
 import { getProcesses, type ProcessDetail, type ProcessesAndRules } from "@/lib/objectTypes";
 
@@ -378,6 +378,15 @@ export function ObjectDetailPiece({ follows, children }: { follows: string; chil
 
 const word = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
+/** What a press that ran says: "Done." alone when the action declares no check, else what its check found — a run
+ *  whose check failed is never read as done. */
+export function ranSaid(check?: ActionCheck): string {
+  if (!check || check.status === "not_declared") return "Done.";
+  if (check.status === "passed") return `Done — its check passed: ${check.why}.`;
+  if (check.status === "failed") return `It ran, but its check failed: ${check.why}.`;
+  return `Done — its check could not be read: ${check.why}.`;
+}
+
 export function ActionButtonPiece({ action }: { action: string }) {
   const { connectionId, schema, bump, actions } = usePieces();
   const { page } = useContext(DetailObject);
@@ -411,7 +420,7 @@ export function ActionButtonPiece({ action }: { action: string }) {
       const params: Record<string, unknown> = { [target.name]: page.pk };
       for (const p of [...asked, ...optional]) if (values[p.name]?.trim()) params[p.name] = values[p.name].trim();
       const out = await runOrPropose(declared.id, params, connectionId, schema, `from a cockpit, on ${page.type_name} ${page.pk}`);
-      if (out.status === "ran") { setSaid("Done."); setAsking(false); setValues({}); bump(); }
+      if (out.status === "ran") { setSaid(ranSaid(out.verification)); setAsking(false); setValues({}); bump(); }
       else if (out.status === "proposed") { setSaid("It needs approval — proposed in Actions."); setAsking(false); }
       else setSaid(out.message);
     } catch (e) {

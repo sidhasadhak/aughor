@@ -412,10 +412,14 @@ export async function listObjects(
 export type { DeclaredAction } from "@/lib/api";
 export { getDeclaredActions } from "@/lib/api";
 
-/** What became of pressing an action's button: it ran; it waits for a person in the Actions inbox; or it was
- *  refused, in the action's own words. */
+/** What a run's declared check found: ``passed`` · ``failed`` · ``unavailable`` (the check could not be read — not a
+ *  failed change) · ``not_declared``, with why. */
+export interface ActionCheck { status: string; why?: string }
+
+/** What became of pressing an action's button: it ran, with what its check found; it waits for a person in the
+ *  Actions inbox; or it was refused, in the action's own words. */
 export type ActionOutcome =
-  | { status: "ran"; outcome: Record<string, unknown> }
+  | { status: "ran"; outcome: Record<string, unknown>; verification?: ActionCheck }
   | { status: "proposed"; inbox_id: string }
   | { status: "refused"; message: string };
 
@@ -428,9 +432,11 @@ export async function runOrPropose(
     body: JSON.stringify({ params, propose_if_gated: true, reasoning }),
   });
   if (!res.ok) return { status: "refused", message: await refusalOf(res) };
-  const body = (await res.json()) as { status?: string; inbox_id?: string; outcome?: Record<string, unknown> };
+  const body = (await res.json()) as {
+    status?: string; inbox_id?: string; outcome?: Record<string, unknown>; verification?: ActionCheck;
+  };
   return body.status === "proposed" ? { status: "proposed", inbox_id: String(body.inbox_id ?? "") }
-    : { status: "ran", outcome: body.outcome ?? {} };
+    : { status: "ran", outcome: body.outcome ?? {}, verification: body.verification };
 }
 
 async function refusalOf(res: Response): Promise<string> {
