@@ -120,10 +120,13 @@ class _EntityOverride(BaseModel):
 
 
 class _DeclaredBacking(BaseModel):
-    """ON-7 — the source whose rows ARE a declared type's objects."""
+    """ON-7 — the source whose rows ARE a declared type's objects. Arc OC-6 — or ``kind: platform`` with the
+    ``properties`` the platform holds for it: a type whose objects no warehouse holds (a case, a review)."""
+    kind: Optional[Literal["table", "query", "platform"]] = None
+    properties: Optional[list[dict]] = None
     table: Optional[str] = None
     sql: Optional[str] = None
-    primary_key: str
+    primary_key: str = ""
     #: ON-8 — in an organisation's ontology (`?domain=`): the connection the rows live on, and the schema that
     #: qualifies a bare table there.
     connection_id: Optional[str] = None
@@ -2052,11 +2055,16 @@ def _declare_entity_core(spec: dict, connection_id: str, schema_name: Optional[s
             raise HTTPException(status_code=400, detail=(
                 f"{fields['backing']['table']} already backs {other.id} — a second type over the same rows is a "
                 f"duplicate; rename {other.id}, or bind the table into another type and absorb it"))
-    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
-    try:
-        entry = measure_declared_backing(db, fields, describe_with(db))
-    finally:
-        db.close()
+    if fields["backing"].get("kind") == "platform":
+        # Arc OC-6 — no warehouse holds its objects: there is no source to read or key to count
+        from aughor.ontology.platform_objects import NOTE
+        entry = {"bound": True, "note": NOTE, "primary_key": "id"}
+    else:
+        db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+        try:
+            entry = measure_declared_backing(db, fields, describe_with(db))
+        finally:
+            db.close()
     if not entry.get("bound"):
         raise HTTPException(status_code=400, detail=f"{entity_id} did not bind: {entry.get('note')}")
     ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields=fields, source=fields["origin"],

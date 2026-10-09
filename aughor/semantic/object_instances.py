@@ -293,6 +293,10 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
     its links resolved to a key or a count. ON-8 — on an organisation's ontology ``db`` is None and ``source_db`` hands
     back the connection each read runs on (`_reader`)."""
     entity = find_object_type(graph, object_type)
+    if entity.backing is not None and entity.backing.kind == "platform":
+        # Arc OC-6 — a platform-owned object: read from the edit layer, never a warehouse
+        from aughor.ontology.platform_objects import instance
+        return instance(graph, entity, pk, overlay)
     on = _reader(graph, db, source_db)
     row, columns, repeated = _fetch_row(on(entity), entity, pk)
     key = _key_of(entity)

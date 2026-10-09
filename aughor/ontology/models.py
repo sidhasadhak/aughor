@@ -178,7 +178,9 @@ class Backing(BaseModel):
     says the data agreed (COUNT(DISTINCT key) == COUNT(key) over the backing's rows) —
     measured, never assumed, like every other claim since ON-0a.
     """
-    kind: Literal["table", "query"] = "table"
+    #: Arc OC-6 — ``platform``: the type's objects live in the platform's own edit layer, made and changed by declared
+    #: actions only, every change kept (`ontology.platform_objects`); no warehouse holds them.
+    kind: Literal["table", "query", "platform"] = "table"
     table: Optional[str] = None
     sql: Optional[str] = None
     primary_key: str = ""
@@ -1129,6 +1131,9 @@ class KineticAction(BaseModel):
     #: action sets on the objects it takes (see ObjectEdit).
     object_type: str = ""
     edits: list[ObjectEdit] = Field(default_factory=list)
+    #: Arc OC-6 — a platform-owned type (backing ``platform``) a press MAKES one new object of; the action's edits on the
+    #: object ``created`` set it up ("Open a case" on an order creates a Case about it).
+    creates: str = ""
     #: Phase 4 of the 2027 study (§M) — every declared action carries its reversibility class, the
     #: read that verifies it and the undo that compensates it. Optional on the MODEL so an ontology
     #: declared before phase 4 still loads; REQUIRED at the declare door for a side-effect action
@@ -1149,6 +1154,8 @@ class KineticAction(BaseModel):
         if sum(1 for se in self.side_effects if se.lane == "writeback") > 1:
             raise ValueError("an action names at most one writeback — the call its edits wait on")
         for edit in self.edits:
+            if edit.object == "created" and self.creates:
+                continue
             if edit.object not in taken:
                 raise ValueError(f"the edit setting '{edit.property}' lands on '{edit.object}', "
                                  "which is not one of this action's object parameters")

@@ -389,8 +389,17 @@ def object_context(graph: OntologyGraph, db: Any, connection_id: str, schema_nam
     could not — an unreadable one is skipped, and said, never the end of the list."""
     entity = find_object_type(graph, instance.type_id)
     findings, unread = _object_findings(connection_id, schema_name, graph, entity, instance)
+    from aughor.ontology.platform_objects import is_platform, referring
+    if is_platform(entity):
+        # Arc OC-6 — a platform-owned object has no warehouse row: no metric, finding or row note reads it
+        return {"metrics": [], "findings": [], "notes": [], "actions": object_actions(graph, entity, instance),
+                "platform": []}
+    from aughor.actions.overlay import accepted_object_edits
+    platform = referring(graph, accepted_object_edits(connection_id), entity, instance.pk)
     return {"metrics": object_metrics(graph, db, entity, instance, dialect=dialect, run_cross_source=run_cross_source,
                                       keyed=keyed),
+            # Arc OC-6 — the platform-owned objects that name this one (an order's cases)
+            "platform": platform,
             "findings": findings,
             **({"findings_unread": unread} if unread else {}),
             "notes": object_notes(connection_id, entity, instance),

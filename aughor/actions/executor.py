@@ -741,6 +741,16 @@ def _risk_of(action: KineticAction):
     return getattr(ActionRisk, name)
 
 
+def _created_target(action: KineticAction, scope: str, schema_name: str) -> dict:
+    """The new object of the platform-owned type ``action.creates``, as the object map holds one."""
+    from aughor.ontology.platform_objects import new_target
+    from aughor.ontology.store import load_latest_ontology
+    graph = load_latest_ontology(scope, schema_name or None) or (load_latest_ontology(scope, None) if schema_name else None)
+    if graph is None:
+        raise ValueError(f"no ontology is built for {scope}, so no {action.creates} can be made")
+    return new_target(graph, action.creates)
+
+
 def _authority_level(action, scope: str) -> Optional[dict]:
     """The action's L0–L5 on ``scope`` (`authority.level_for`), or None when the record cannot be read — then the
     approval gate alone decides, as it did before the level was consulted here, and the failure is counted."""
@@ -803,6 +813,13 @@ def execute_kinetic_action(
     except ParamError as e:
         govern.audit(gov_action, scope, "invalid_params", actor=actor, detail=str(e), risk=risk)
         return KineticResult("invalid_params", False, action.id, message=str(e))
+    if action.creates:
+        # Arc OC-6 — the platform-owned object this press makes, with a fresh key and nothing set; its edits set it up
+        try:
+            objects["created"] = _created_target(action, scope, schema_name)
+        except ValueError as e:
+            govern.audit(gov_action, scope, "invalid_params", actor=actor, detail=str(e), risk=risk)
+            return KineticResult("invalid_params", False, action.id, message=str(e))
 
     # 2 — submission criteria, BEFORE the approval gate. Authored message returned verbatim.
     #     Neither a human accept nor a standing grant bypasses this: they pre-approve WHO may run,

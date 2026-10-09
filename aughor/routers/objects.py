@@ -447,6 +447,20 @@ def post_object_listing(
     from aughor.sql.executor import execute_guarded
 
     graph = _served_graph(connection_id, schema_name)
+    from aughor.ontology.platform_objects import is_platform
+    from aughor.ontology.platform_objects import listing as platform_listing
+    from aughor.semantic.object_query import find_object_type
+    try:
+        listed = find_object_type(graph, listing.entity)
+    except ObjectQueryRefused:
+        listed = None
+    if is_platform(listed):
+        # Arc OC-6 — a platform-owned type is listed from the edit layer that holds its objects
+        page = platform_listing(listed, _accepted_edits(connection_id), columns=list(listing.columns),
+                                filters=[f.model_dump() for f in listing.filters], order_by=listing.order_by,
+                                descending=listing.descending, offset=listing.offset, limit=listing.limit,
+                                segment=listing.segment)
+        return {"connection_id": connection_id, "schema_name": graph.schema_name, **page}
     db = _open_scoped(connection_id, schema_name, graph)
     try:
         try:

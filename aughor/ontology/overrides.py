@@ -247,6 +247,8 @@ _EDITABLE: dict[str, set[str]] = {
         "submission_criteria", "side_effects", "risk", "origin",
         # ON-4 — the object type the action is about, and the overlay properties it sets.
         "object_type", "edits",
+        # Arc OC-6 — the platform-owned type a press MAKES one object of (its edits on `created` set it up).
+        "creates",
         # Phase 4 of the 2027 study (§M) — the declare door requires these of a side-effect action and
         # persists them; left off this set, every read dropped them, so a stored action read back as
         # undeclarable, never graduated and could not be undone.

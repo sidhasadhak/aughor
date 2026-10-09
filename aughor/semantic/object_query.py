@@ -590,6 +590,11 @@ def _within(formula: str, condition: str) -> str:
 
 
 def backing_from(entity: OntologyEntity, alias: str) -> str:
+    if entity.backing is not None and entity.backing.kind == "platform":
+        # Arc OC-6 — its objects live in the platform's edit layer, not a warehouse: no SQL reads them
+        from aughor.ontology.platform_objects import NOTE
+        raise ObjectQueryRefused(f"{entity.id} is {NOTE}; it is read on its own page and in its listing, never "
+                                 "compiled into a warehouse query")
     source = object_from(entity, alias)
     if not source:
         raise ObjectQueryRefused(f"object type {entity.id} has no backing to read from")
@@ -757,7 +762,10 @@ class _Compiler:
 
     # ── names ──
     def entity(self, name: str) -> OntologyEntity:
-        return find_object_type(self.g, name)
+        found = find_object_type(self.g, name)
+        if found.backing is not None and found.backing.kind == "platform":
+            backing_from(found, "t")                 # Arc OC-6 — refused here, with why: no warehouse holds its objects
+        return found
 
     def prop(self, entity: OntologyEntity, name: str, path: str) -> EntityProperty:
         p = (find_property(entity, name) or self.virtual_prop(entity, name) or self.derived_prop(entity, name)
