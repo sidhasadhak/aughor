@@ -83,6 +83,10 @@ class Revision:
     artifact_id: str = ""
     created_at: str = ""
     published_at: str = ""
+    #: Who the version is recorded under — the acting person or the caller that named itself; "" when not said.
+    by: str = ""
+    #: What a reader needs to know about how the version was recorded, when that is not the ordinary way.
+    note: str = ""
 
     @property
     def is_published(self) -> bool:
@@ -102,16 +106,21 @@ def _revision(art: Optional[dict]) -> Optional[Revision]:
         artifact_id=art.get("id", ""),
         created_at=meta.get("created_at", ""),
         published_at=meta.get("published_at", ""),
+        by=meta.get("by", ""),
+        note=meta.get("note", ""),
     )
 
 
 def _write(kind: str, natural_key: str, body: dict, state: PublicationState, *,
            published_at: str = "", conn_id: Optional[str] = None,
-           org_id: Optional[str] = None) -> Revision:
-    payload = {
-        "_body": dict(body),
-        "_lifecycle": {"state": state, "created_at": _now(), "published_at": published_at},
-    }
+           org_id: Optional[str] = None, by: str = "", note: str = "",
+           created_at: str = "") -> Revision:
+    meta = {"state": state, "created_at": created_at or _now(), "published_at": published_at}
+    if by:
+        meta["by"] = by
+    if note:
+        meta["note"] = note
+    payload = {"_body": dict(body), "_lifecycle": meta}
     led = _ledger()
     led.artifact_write(kind, natural_key, payload, conn_id=conn_id, org_id=org_id)
     rev = _revision(led.artifact_latest(natural_key))
@@ -160,6 +169,21 @@ def revert(kind: str, natural_key: str, to_version: int, *, publish_now: bool = 
     return _write(kind, natural_key, src.body, state,
                   published_at=_now() if publish_now else "",
                   conn_id=conn_id, org_id=org_id)
+
+
+def record(kind: str, natural_key: str, body: dict, state: PublicationState, *, by: str = "",
+           published_at: str = "", note: str = "", conn_id: Optional[str] = None,
+           org_id: Optional[str] = None) -> Revision:
+    """Keep a version of something whose writes take effect when they are made — a store that has no
+    save≠publish of its own yet (Arc OC-1: an ontology declaration is live the moment its door writes it).
+    A change that took effect is recorded ``published`` — at ``published_at`` when it took effect earlier
+    than it is recorded, else now; a withdrawal ``archived``, its last body kept, so what it said when it
+    went is still readable."""
+    now = _now()
+    if state == "published" and not published_at:
+        published_at = now
+    return _write(kind, natural_key, body, state, published_at=published_at, conn_id=conn_id,
+                  org_id=org_id, by=by, note=note, created_at=now)
 
 
 # ── Reading ───────────────────────────────────────────────────────────────────

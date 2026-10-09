@@ -662,6 +662,30 @@ def test_a_process_and_a_rule_are_declared_counted_read_back_and_withdrawn_over_
         "connection_id": CONN, "schema_name": "ecommerce", "processes": [], "rules": []}
 
 
+def test_a_declared_process_is_changed_in_place_through_the_same_law(door, client):
+    # Arc OC-1: a promise moved from five days to seven is a change of the same process — resolved and counted again —
+    # where before it could only be withdrawn and declared afresh.
+    assert client.post("/ontology/processes", params=PARAMS, json=FULFILMENT).status_code == 200
+    longer = copy.deepcopy(FULFILMENT)
+    longer["stages"][2]["promise"]["within_days"] = 7
+    changed = client.put("/ontology/processes/order_fulfilment", params=PARAMS, json=longer)
+    assert changed.status_code == 200, changed.text
+    delivery = changed.json()["process"]["stages"][2]["promise"]
+    assert delivery["within_days"] == 7 and delivery["verified"] is True
+    listed = client.get("/ontology/processes", params=PARAMS).json()["processes"]
+    assert [p["id"] for p in listed] == ["order_fulfilment"]
+    unknown = client.put("/ontology/processes/other", params=PARAMS, json={**longer, "id": "other"})
+    assert unknown.status_code == 404
+    renamed = client.put("/ontology/processes/order_fulfilment", params=PARAMS, json={**longer, "id": "fulfilment"})
+    assert renamed.status_code == 400 and "does not change" in renamed.json()["detail"]
+    broken = copy.deepcopy(longer)
+    broken["stages"][2]["timestamp"] = "no_such_column"
+    refused = client.put("/ontology/processes/order_fulfilment", params=PARAMS, json=broken)
+    assert refused.status_code == 400
+    assert client.get("/ontology/processes", params=PARAMS).json()["processes"][0]["stages"][2]["promise"][
+        "within_days"] == 7                                         # a refused change writes nothing
+
+
 def test_a_declared_process_and_rule_survive_an_export_and_an_import_into_an_empty_tree(door, client, monkeypatch):
     import aughor.routers.ontology as onto
     from aughor.ontology import overrides as overrides_tree

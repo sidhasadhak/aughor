@@ -168,6 +168,10 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # build the automation step the census counts as leaning on a declared action. The module under test
          # finds that step by the `action_id` it names and does not spell the kind.
          "tests/unit/test_ontology_census.py",
+         # Arc OC-1's history suite (2026-10-09), RC-3's ground: its hits are the existing API's identifiers — the
+         # `KineticAction` class and the graph's `kinetic_actions` field its action fixtures fill, and the frozen
+         # effect kind `kinetic_action` a step is built with. The module under test reads `declared_actions()`.
+         "tests/unit/test_ontology_history.py",
          # DS-17b (2026-09-19), same ground as demo-api.json below: this suite's fixture is
          # the palette's SERVED contract, captured verbatim — every hit is an effect KIND
          # the server ships (`kinetic_action`) at the priority the server gives it. The

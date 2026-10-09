@@ -126,7 +126,8 @@ Just outside the list: the next industry package (insurance has public data to t
 - [x] OC-0 · the ontology's nouns — 2026-10-09: `docs/GLOSSARY.md` §The ontology (entity, object, property, link, binding, part, process, stage, promise, rule, impact, declaration, release, edit layer, platform-owned entity, App); *object type* retired by the vocabulary ratchet (baseline 105) and the six screen strings that said it say *entity*.
 - [x] OC-0 · the census — 2026-10-09: `aughor/ontology/census.py`, `GET /ontology/census`, one reading a day journaled as `ontology.census` behind the flag of that name (graduation queue: seven daily readings, read by OC-1's receipt). On the study's six scopes it reproduced §5's hand count exactly; it also found four built scopes the hand count missed: 52 entities, every one a single table, across ten scopes.
 - [ ] OC-0 · the receipt's second half, live — the declared side-effect action *runs, verifies and is undone*.
-- [ ] OC-1 · history and stable ids — every save and withdrawal kept; a dependents index; withdrawal refused where something depends.
+- [x] OC-1 · history and stable ids — 2026-10-09, behind `ontology.history`: every save and withdrawal a version (`aughor/ontology/history.py` on `kernel/lifecycle.py`), `GET /ontology/history?as_of=`, the dependents index (`aughor/ontology/dependents.py`, `GET /ontology/dependents`), withdrawals refused with a 409 naming what depends, and `PUT /ontology/processes/{id}`. Receipt on a scratch API (fixture connection): four versions read back, as-of answered, a withdrawal refused naming the automation.
+- [ ] OC-1 · theLook's receipt once merged — a promise changed twice and withdrawn, read back; an entity an automation relies on refused.
 - [ ] OC-2 · the release — draft → validated → published; diff and dependents on screen; claims pin `definition_version`; proposals wait in the draft.
 - [ ] OC-3 to OC-9 — §3.56's table; D4–D7 close in OC-6.
 

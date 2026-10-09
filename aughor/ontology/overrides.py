@@ -333,8 +333,27 @@ class OverrideWriteFailed(RuntimeError):
         super().__init__(f"{kind} '{target_id}' was not {action} — the ontology store could not write it ({reason})")
 
 
+def _prior(conn: str, schema: str, kind: TargetKind, target_id: str) -> Optional[OntologyOverride]:
+    """Arc OC-1 — the declaration as it stands before a write, for its history; None without reading anything when
+    `ontology.history` is off, so the store is byte-identical then."""
+    from aughor.ontology import history
+    return find_override(conn, schema, kind, target_id) if history.enabled() else None
+
+
+def _keep(record: Callable[[], None], kind: str, target_id: str) -> None:
+    """Record a version AFTER the file landed. A history that could not be written is said — journaled with the
+    reason by `tolerate` — and never undoes a declaration that did land."""
+    try:
+        record()
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, f"the history of {kind} '{target_id}' could not be kept; the declaration itself was written",
+                 counter="ontology.history")
+
+
 def _write(conn: str, schema: str, ov: OntologyOverride) -> None:
     _refuse_seed_root()
+    prior = _prior(conn, schema, ov.target_kind, ov.target_id)
     p = _path(conn, schema, ov.target_kind, ov.target_id)
     tmp = p.with_name(f".{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     try:
@@ -355,11 +374,14 @@ def _write(conn: str, schema: str, ov: OntologyOverride) -> None:
         # is not a directory unlinking the temp raises too
         with contextlib.suppress(OSError):
             tmp.unlink(missing_ok=True)
+    from aughor.ontology import history
+    _keep(lambda: history.on_save(conn, schema, prior, ov), ov.target_kind, ov.target_id)
 
 
 def _unlink(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
     """Withdraw one declaration. True if one was visible. A shipped one is hidden, never deleted."""
     _refuse_seed_root()
+    prior = _prior(conn, schema, kind, target_id)
     try:
         p = _path(conn, schema, kind, target_id)
         hidden = p.with_name(p.name + _HIDDEN)
@@ -373,9 +395,12 @@ def _unlink(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
         if shipped:
             hidden.parent.mkdir(parents=True, exist_ok=True)
             hidden.write_text("withdrawn on this install; the shipped declaration stays hidden\n")
-        return visible
     except Exception as exc:
         raise OverrideWriteFailed("withdrawn", kind, target_id, exc) from exc
+    if visible:
+        from aughor.ontology import history
+        _keep(lambda: history.on_withdraw(conn, schema, prior), kind, target_id)
+    return visible
 
 
 # ── an organisation's ontology: edited by people only ───────────────────────

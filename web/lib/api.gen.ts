@@ -10850,6 +10850,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/dependents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Declaration Dependents
+         * @description Arc OC-1 — what depends on one declaration (ROADMAP §3.56): automations, processes, rules, actions, declared
+         *     links, parts and metrics, each with how. Read whether or not `ontology.history` is on; with it on, a withdrawal
+         *     of anything listed here is refused.
+         */
+        get: operations["get_declaration_dependents_ontology_dependents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/domains": {
         parameters: {
             query?: never;
@@ -11472,6 +11494,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Declaration History
+         * @description Arc OC-1 — one declaration's history (ROADMAP §3.56): every save and withdrawal kept while `ontology.history`
+         *     is on, newest first, each with what changed and who made it; with ``as_of``, what it said at that moment — or
+         *     that what it said then is not known, never that nothing was declared.
+         */
+        get: operations["get_declaration_history_ontology_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/import": {
         parameters: {
             query?: never;
@@ -11822,7 +11866,14 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /**
+         * Change Declared Process
+         * @description Change a declared process (Arc OC-1) — a promise moved from two days to three, a stage added — through the same
+         *     law as declaring it: every anchor resolved, the whole declaration counted before anything is written, 400 with the
+         *     reason when it cannot be. Until now a promise changed only by withdrawing the process and declaring it again; with
+         *     `ontology.history` on, each change is a version of the same element.
+         */
+        put: operations["change_declared_process_ontology_processes__process_id__put"];
         post?: never;
         /**
          * Delete Declared Process
@@ -40028,6 +40079,40 @@ export interface operations {
             };
         };
     };
+    get_declaration_dependents_ontology_dependents_get: {
+        parameters: {
+            query: {
+                kind: string;
+                target_id: string;
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_ontology_domains_ontology_domains_get: {
         parameters: {
             query?: never;
@@ -41162,6 +41247,42 @@ export interface operations {
             };
         };
     };
+    get_declaration_history_ontology_history_get: {
+        parameters: {
+            query: {
+                kind: string;
+                target_id: string;
+                connection_id?: string;
+                schema_name?: string | null;
+                /** @description an ISO date or moment — what the declaration said then; a bare date reads the end of that day (UTC) */
+                as_of?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     import_ontology_tree_ontology_import_post: {
         parameters: {
             query?: {
@@ -41692,6 +41813,44 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_DeclaredProcess"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_declared_process_ontology_processes__process_id__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                process_id: string;
+            };
             cookie?: never;
         };
         requestBody: {

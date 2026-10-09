@@ -11690,7 +11690,7 @@ from records — no model fills the page.
 
 ---
 
-### 3.56 · Arc OC — the ontology as the contract (DRAFTED 2026-10-09 as §9 of `docs/ONTOLOGY_FIRST_STUDY_2026-10-09.md`, at the user's *"Study it hard"* on an outside implementation roadmap for an ontology-first platform · ✅ ADOPTED the same day — §6 item 50, the user: *"Lets adopt ARC OC into roadmap and contninue building"*; ten calls asked with options, two decided against the recommendation · **OC-0 BUILT** the same day)
+### 3.56 · Arc OC — the ontology as the contract (DRAFTED 2026-10-09 as §9 of `docs/ONTOLOGY_FIRST_STUDY_2026-10-09.md`, at the user's *"Study it hard"* on an outside implementation roadmap for an ontology-first platform · ✅ ADOPTED the same day — §6 item 50, the user: *"Lets adopt ARC OC into roadmap and contninue building"*; ten calls asked with options, two decided against the recommendation · **OC-0 and OC-1 BUILT** the same day)
 
 > **The fact it answers.** Aughor holds most of an operational ontology's parts. It also holds two that the outside
 > document lacks: promises measured against the data, and the scored Record. What it lacks is the ontology as a
@@ -11729,7 +11729,7 @@ from records — no model fills the page.
 | Wave | What | Status |
 |---|---|---|
 | **OC-0** · Preconditions | D1–D3: the action plane keeps and reports its own declarations. The ontology's nouns go into `docs/GLOSSARY.md`, *entity* among them, per decision (h). The study's §5 census becomes a recurring measurement, the baseline every later wave moves. | ✅ **BUILT 2026-10-09.** D1–D3 `742114d7`: declared from the web, read back whole; *runs, verifies and is undone* is still owed live. The nouns are in `docs/GLOSSARY.md` §The ontology, and *object type* is retired by the vocabulary ratchet (baseline 105); the six screen strings that said it say *entity*. The census is `GET /ontology/census`, plus one reading a day in the journal behind `ontology.census` (graduation queue). It reproduced the study's hand count exactly on its six scopes and found four built scopes the hand count missed. **The baseline is 52 entities, every one a single table, across ten scopes:** 54 links, 20 named, 15 of them by a person · 5 processes · 4 promises · 12 rules · 1 declared action |
-| **OC-1** · History and stable ids | Every save and withdrawal is kept on the existing versioning substrate, and every element gets a stable id. A first dependents index is built from what already names ontology things. A withdrawal is refused where something depends on it (the ON-7 promise). | — |
+| **OC-1** · History and stable ids | Every save and withdrawal is kept on the existing versioning substrate, and every element gets a stable id. A first dependents index is built from what already names ontology things. A withdrawal is refused where something depends on it (the ON-7 promise). | ✅ **BUILT 2026-10-09**, behind `ontology.history` (graduation queue). Declarations are versions of lifecycle kind `ontology_declaration`, under `ontology:<connection>/<schema>/<kind>/<id>`. A verdict written back is not a version. A declaration older than its history starts from its last edit, and before that it reads as *not known*. `GET /ontology/history?as_of=` · `GET /ontology/dependents`. The generic lifecycle doors read declarations and refuse to write them. New: `PUT /ontology/processes/{id}`, where before a promise could change only by withdraw-and-redeclare. **Receipt on a scratch API** (isolated state, the fixture connection): a promise at 2 → 3 → 4 days, then withdrawn, reads back as four versions with what changed and who; as of version 1's moment it says 2 days. Withdrawing a declared entity was refused (409) naming the automation *Long-event close watch* and the process. theLook's receipt is owed once merged. No screen yet — OC-2 puts the diff and the dependents on screen |
 | **OC-2** · The release | Draft → validated → published, per scope. The diff and the dependents are shown on screen. A compatibility catalogue treats a meaning-changing release as its own class. Claims pin `definition_version`. The agent and the Briefing read the published release. The explorer's proposals wait in the draft, per decision (f). | — |
 | **OC-3** · One contract | Metrics, triggers, glossary entries and cards are keyed to the entity and property they mean. | — |
 | **OC-4** · The first ontology-bound surface | An entity listing door. The object table, process board, action button and object detail pieces. The screen is shown before the build. | — |
@@ -12411,7 +12411,8 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         applied live on LuxExperience.
 ARC OC  ✅ ADOPTED 2026-10-09 (§3.56; §6 item 50) — the ontology as the contract: declarations with history,
         released per scope, every consumer pinned to what it read; rows never move. OC-0 preconditions
-        ✅ built 2026-10-09 (D1–D3 `742114d7`; glossary nouns; the census daily) → OC-1 history + stable ids →
+        ✅ built 2026-10-09 (D1–D3 `742114d7`; glossary nouns; the census daily) → OC-1 history + stable ids
+        ✅ built 2026-10-09 →
         OC-2 the release → OC-3 one contract ∥ OC-4 the first ontology-bound surface → OC-5 processes
         and flows → OC-6 actions for apps (+ platform-owned entity types, item 50(b)) → OC-7 security
         (earlier when the organisation install arrives) → OC-8 doors for builders → OC-9 Lux. One PR
