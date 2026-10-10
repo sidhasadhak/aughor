@@ -131,7 +131,8 @@ def test_a_packs_map_measured_on_connect_is_booked_into_the_record_as_the_packs_
     graph = _graph(conn)
     report = apply_core_claims(graph, resolve_ontology("core-ecommerce"), "core-ecommerce", None)
     out = book_pack_claims(report, connection_id=conn, schema_name="shop", fingerprint=graph.schema_fingerprint)
-    assert out["booked"] == len(report.claims) and out["by_state"]["supported"] >= 3 and out["by_state"]["open"] >= 5
+    # an action the pack offers is not a statement about the business, so it is not booked (2026-10-10)
+    assert out["booked"] == len([c for c in report.claims if c.kind != "action"]) and out["by_state"]["supported"] >= 3 and out["by_state"]["open"] >= 5
     booked = {(c.extra["claim_kind"], c.extra["subject"]): c for c in pack_claims(conn, pack_id="core-ecommerce")}
     order = booked[("object", "Order")]
     assert order.kind == "hypothesis" and order.state == "supported" and order.tier == "mined" and order.author == "pack:core-ecommerce"
@@ -145,7 +146,7 @@ def test_a_packs_map_measured_on_connect_is_booked_into_the_record_as_the_packs_
     again = record_claims(apply_core_claims(graph, resolve_ontology("core-ecommerce"), "core-ecommerce", None), graph, conn, "shop")
     assert again["booked"] == out["booked"]
     latest = C.latest(order.key)
-    assert latest.version == 2 and latest.supersedes == order.id and len(pack_claims(conn, pack_id="core-ecommerce")) == len(report.claims)
+    assert latest.version == 2 and latest.supersedes == order.id and len(pack_claims(conn, pack_id="core-ecommerce")) == len([c for c in report.claims if c.kind != "action"])
     # a measured-false claim is refuted
     graph.relationships["Order_Customer"].measured_cardinality = "N:N"
     refuted = apply_core_claims(graph, resolve_ontology("core-ecommerce"), "core-ecommerce", None)

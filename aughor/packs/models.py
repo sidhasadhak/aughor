@@ -229,11 +229,16 @@ class PackSurface(_Base):
 
 class ExpectedObject(_Base):
     """An object type the industry map EXPECTS — matched to this schema's tables by name and
-    alias, never invented. `roles` name what the object does (party, transaction, event…)."""
+    alias, never invented. `roles` name what the object does (party, transaction, event…).
+
+    `parts` names the map's objects that are, in this industry, rows OF this one rather than things
+    beside it — a header's lines. Where the data holds both, the pack proposes reading the part's
+    table under this object (`aughor/packs/drafter.py`); where it holds only one, nothing is said."""
     name: str
     roles: list[str] = Field(default_factory=list)
     aliases: list[str] = Field(default_factory=list)
     description: str = ""
+    parts: list[str] = Field(default_factory=list)
 
 
 class ExpectedLink(_Base):
@@ -245,6 +250,11 @@ class ExpectedLink(_Base):
     via: str = ""                       # the key column both sides are expected to carry
     to_side_optional: bool = False      # a from-row may have NO to-row (a parent without a child row)
     description: str = ""
+    #: The business verb, read from→to ("belongs to": a line belongs to its header), and read to→from ("contains").
+    #: A found link is named with the one that matches the way the builder oriented it; neither is ever a fact on
+    #: its own — the name is PROPOSED until a person confirms it.
+    verb: str = ""
+    reverse_verb: str = ""
 
 
 class ExpectedLifecycle(_Base):
@@ -309,6 +319,16 @@ class ExpectedRule(_Base):
     description: str = ""
 
 
+class ExpectedAction(_Base):
+    """A business action the industry usually takes on an object ("Cancel …", "Approve …"). A SUGGESTION: offered
+    on a connection only where its data holds the object, and inert until a person declares it in the action
+    designer with the effect it has — a pack never makes an action runnable."""
+    name: str
+    object: str
+    description: str = ""
+    risk: Literal["low", "medium", "high"] = "medium"
+
+
 class PackOntology(_Base):
     """`ontology.yaml` — the approximate map of an industry, as claims to measure (§3.15 ON-0a)."""
     objects: list[ExpectedObject] = Field(default_factory=list)
@@ -318,6 +338,7 @@ class PackOntology(_Base):
     #: ON-9 — the processes the core expects, with placeholder promises, and the definitions it expects a business to hold.
     processes: list[ExpectedProcess] = Field(default_factory=list)
     rules: list[ExpectedRule] = Field(default_factory=list)
+    actions: list[ExpectedAction] = Field(default_factory=list)
 
 
 class PackEval(_Base):

@@ -171,7 +171,14 @@ def is_key_like(name: str) -> bool:
     """Public: does this column name look like an identifier/key (snake_case OR
     camelCase)? The canonical id-detection — chart/guard code imports this instead
     of the private patterns."""
-    return bool(_KEY_PATTERN.search(name or "") or _KEY_PATTERN_CAMEL.search(name or ""))
+    return bool(_KEY_PATTERN.search(name or "") or _KEY_PATTERN_CAMEL.search(name or "")
+                or _BARE_KEY.match(name or ""))
+
+
+# A column named only `id` (or `uuid`, `guid`, `pk`). _KEY_PATTERN needs a separator before the suffix, so the
+# commonest key spelling of all fell through to the numeric branch: theLook's products, users, events, order_items
+# and inventory_items each typed their own `id` a MEASURE (2026-10-10) — summable, and charted as a number.
+_BARE_KEY = re.compile(r"^(id|uuid|guid|pk)$", re.IGNORECASE)
 
 
 _KEY_PATTERN_CAMEL = re.compile(
@@ -506,7 +513,7 @@ def _semantic_type(
     if concept in ("geo.latitude", "geo.longitude") and _NUMERIC_TYPES.search(dtype or ""):
         return "measure"
 
-    if is_fk or _KEY_PATTERN.search(col_lower) or _KEY_PATTERN_CAMEL.search(col):
+    if is_fk or _KEY_PATTERN.search(col_lower) or _KEY_PATTERN_CAMEL.search(col) or _BARE_KEY.match(col_lower):
         return "key"
     if _BOOL_TYPES.search(dtype):
         return "flag"

@@ -3046,7 +3046,7 @@ def _explore_locked(connection_id: str, effective: str, graph):
     from aughor.db.connection import open_connection_for_with_schema
     from aughor.ontology.drafts import load_draft, save_draft
     from aughor.telemetry import bind_trace
-    from aughor.ontology.explorer import DraftWriters, apply_draft, draft_business, draft_view, record_run
+    from aughor.ontology.explorer import apply_draft, draft_business, draft_view, record_run
     glossary: dict = {}
     try:
         from aughor.semantic.glossary import load_merged_glossary
@@ -3070,17 +3070,7 @@ def _explore_locked(connection_id: str, effective: str, graph):
         raise HTTPException(status_code=502, detail=(f"the explorer's model call failed, so nothing was proposed: "
                                                      f"{type(exc).__name__}: {str(exc)[:300]}"))
     draft = load_draft(connection_id, effective)
-    writers = DraftWriters(
-        declare_entity=lambda spec: _through_door(lambda: _declare_entity_core(spec, connection_id, effective)),
-        bind=lambda entity_id, name, spec, absorb: _through_door(lambda: _bind_entity_core(
-            entity_id, name, {**spec, "absorb": absorb}, connection_id, effective,
-            origin="model", provenance=answerer.provenance)),
-        declare_link=lambda spec: _through_door(lambda: _declare_link_core(spec, connection_id, effective)),
-        name_link=lambda rel_id, name: _through_door(lambda: _name_link_core(
-            connection_id, effective, rel_id, name, origin="model", provenance=answerer.provenance)),
-        served=lambda: _get_ontology_graph(connection_id, effective),
-        declare_process=lambda spec: _through_door(lambda: _declare_process_core(spec, connection_id, effective)),
-        declare_rule=lambda spec: _through_door(lambda: _declare_rule_core(spec, connection_id, effective)))
+    writers = _draft_writers(connection_id, effective, answerer.provenance)
     db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
     try:
         outcomes = apply_draft(said, graph, db, provenance=answerer.provenance, draft=draft, writers=writers)
@@ -3110,6 +3100,101 @@ def _explore_locked(connection_id: str, effective: str, graph):
         logging.getLogger(__name__).debug("ontology.explore emit skipped", exc_info=True)
     return {**draft_view(_get_ontology_graph(connection_id, effective), draft), "run": run.model_dump(),
             "outcomes": [o.row() for o in outcomes]}
+
+
+def _draft_writers(connection_id: str, effective: str, provenance: str):
+    """ON-7's doors as a draft writes through them — the explorer's and a pack's alike: every write a proposal
+    (`origin: model`, the run's own provenance), PROPOSED until a person confirms it."""
+    from aughor.ontology.explorer import DraftWriters
+    return DraftWriters(
+        declare_entity=lambda spec: _through_door(lambda: _declare_entity_core(spec, connection_id, effective)),
+        bind=lambda entity_id, name, spec, absorb: _through_door(lambda: _bind_entity_core(
+            entity_id, name, {**spec, "absorb": absorb}, connection_id, effective,
+            origin="model", provenance=provenance)),
+        declare_link=lambda spec: _through_door(lambda: _declare_link_core(spec, connection_id, effective)),
+        name_link=lambda rel_id, name: _through_door(lambda: _name_link_core(
+            connection_id, effective, rel_id, name, origin="model", provenance=provenance)),
+        served=lambda: _get_ontology_graph(connection_id, effective),
+        declare_process=lambda spec: _through_door(lambda: _declare_process_core(spec, connection_id, effective)),
+        declare_rule=lambda spec: _through_door(lambda: _declare_rule_core(spec, connection_id, effective)))
+
+
+@router.post("/ontology/explore/pack", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def explore_ontology_with_pack(
+    pack: str = Query(..., description="The pack whose structure is proposed, e.g. core-ecommerce"),
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """2026-10-10 — an industry pack proposes its STRUCTURE over the tables this scope holds: which tables are one
+    object (an order and its lines), the verbs its found links are read with, a link it expects where both tables hold
+    the key, and the stages an object moves through (`aughor/packs/drafter.py`). It never proposes an object the data
+    has no table for. No model call: the pack is read deterministically against the built graph. Every proposal goes
+    through the explorer's own path — measured before it lands, written with `pack:<id>@<version>` provenance,
+    PROPOSED until a person confirms it, never proposed again once withdrawn. The answer also lists the actions the
+    pack suggests for the objects this data holds — inert until a person declares one."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.ontology.drafts import DraftUnreadable, load_draft
+    from aughor.packs.ontology_map import load_pack_by_id, resolve_ontology
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=(f"No ontology built for schema '{effective}' on this connection — "
+                                                     "a pack is read against what the build measured, so build it first"))
+    po = resolve_ontology(pack)
+    loaded = load_pack_by_id(pack)
+    if po is None or loaded is None:
+        raise HTTPException(status_code=404, detail=f"no pack '{pack}' with an ontology map")
+    try:
+        load_draft(connection_id, effective, strict=True)
+    except DraftUnreadable as exc:
+        raise HTTPException(status_code=409, detail=(f"this scope's explorer record cannot be read, so it cannot tell "
+                                                     f"what a person withdrew — repair or remove it first: {exc}"))
+    lock = _exploration_lock(connection_id, effective)
+    if not lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail=(f"an exploration of '{effective}' is already running — try again "
+                                                     "when it finishes"))
+    try:
+        return _pack_draft_locked(connection_id, effective, graph, pack, str(loaded.manifest.version or ""), po)
+    finally:
+        lock.release()
+
+
+def _pack_draft_locked(connection_id: str, effective: str, graph, pack: str, version: str, po):
+    """The pack's run itself, under the scope's lock (`explore_ontology_with_pack`)."""
+    import uuid
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.drafts import load_draft, save_draft
+    from aughor.ontology.explorer import Answerer, apply_draft, draft_view, record_run
+    from aughor.packs.drafter import pack_draft
+    from aughor.packs.ontology_map import action_claims, match_objects
+    said = pack_draft(graph, po, pack)
+    answerer = Answerer(backend="pack", model=pack, source="pack", version=version)
+    draft = load_draft(connection_id, effective)
+    writers = _draft_writers(connection_id, effective, answerer.provenance)
+    trace_id = uuid.uuid4().hex
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        outcomes = apply_draft(said, graph, db, provenance=answerer.provenance, draft=draft, writers=writers)
+    finally:
+        db.close()
+    run = record_run(draft, outcomes, answerer, said, trace_id=trace_id)
+    save_draft(draft)
+    _invalidate_schema_cache(connection_id)
+    served = _get_ontology_graph(connection_id, effective)
+    actions = action_claims(po, served, match_objects(po, served), f"pack:{pack}") if served is not None else []
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit("ontology.explore", {"ok": True, "schema": effective, "run": run.id, "source": "pack",
+                                                   "pack": pack, "said": run.said, "written": run.written,
+                                                   "refused": run.refused, "already": run.already,
+                                                   "withdrawn": run.withdrawn},
+                              conn_id=connection_id, trace_id=trace_id)
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).debug("ontology.explore (pack) emit skipped", exc_info=True)
+    return {**draft_view(served, draft), "run": run.model_dump(), "outcomes": [o.row() for o in outcomes],
+            "suggested_actions": [{"subject": c.subject, "tier": c.tier, "note": c.note} for c in actions]}
 
 
 @router.get("/ontology/draft", dependencies=[gate(Capability.ONTOLOGY_VIEW)])

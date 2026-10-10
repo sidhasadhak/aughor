@@ -82,6 +82,15 @@ def test_snake_case_ids_still_keys():
         assert _st(col, "VARCHAR") == "key"
 
 
+def test_a_column_named_only_id_is_a_key():
+    # 2026-10-10: _KEY_PATTERN needs a separator before the suffix, so theLook's own `id` columns — on products, users,
+    # events, order_items and inventory_items — profiled as summable measures.
+    for col in ("id", "ID", "Id", "uuid", "guid", "pk"):
+        assert _st(col, "INT64") == "key", f"{col} should be a key, not a measure"
+    from aughor.tools.profiler import is_key_like
+    assert is_key_like("id") and not is_key_like("idle") and not is_key_like("paid")
+
+
 def test_real_measures_unaffected():
     for col in ("lifetime_spend", "revenue", "quantity", "total_amount"):
         assert _st(col, "DECIMAL") == "measure"

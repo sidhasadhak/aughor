@@ -108,6 +108,20 @@ def load_binding(pack_id: str, connection_id: str, schema: str = "") -> Optional
     }
 
 
+def packs_bound_on(connection_id: str, schema: str = "") -> list[str]:
+    """The ids of the packs bound on (current org, connection, schema), read from this store alone — no pack is
+    loaded, so a caller on a hot path (the birth rite) pays one indexed read when nothing is bound."""
+    c = _conn()
+    try:
+        rows = c.execute(
+            "SELECT pack_id FROM pack_bindings WHERE org_id=? AND connection_id=? AND schema_name=? ORDER BY pack_id",
+            (current_org_id(), connection_id, schema or ""),
+        ).fetchall()
+    finally:
+        c.close()
+    return [r["pack_id"] for r in rows]
+
+
 def purge_connection(connection_id: str) -> int:
     """Delete every pack binding for a connection in the current org (catalog
     delete cascade). Returns the number of bindings removed."""

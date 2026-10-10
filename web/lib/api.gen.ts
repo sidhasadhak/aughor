@@ -11717,6 +11717,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/explore/pack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explore Ontology With Pack
+         * @description 2026-10-10 — an industry pack proposes its STRUCTURE over the tables this scope holds: which tables are one
+         *     object (an order and its lines), the verbs its found links are read with, a link it expects where both tables hold
+         *     the key, and the stages an object moves through (`aughor/packs/drafter.py`). It never proposes an object the data
+         *     has no table for. No model call: the pack is read deterministically against the built graph. Every proposal goes
+         *     through the explorer's own path — measured before it lands, written with `pack:<id>@<version>` provenance,
+         *     PROPOSED until a person confirms it, never proposed again once withdrawn. The answer also lists the actions the
+         *     pack suggests for the objects this data holds — inert until a person declares one.
+         */
+        post: operations["explore_ontology_with_pack_ontology_explore_pack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/export": {
         parameters: {
             query?: never;
@@ -42486,6 +42512,40 @@ export interface operations {
     explore_ontology_ontology_explore_post: {
         parameters: {
             query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    explore_ontology_with_pack_ontology_explore_pack_post: {
+        parameters: {
+            query: {
+                /** @description The pack whose structure is proposed, e.g. core-ecommerce */
+                pack: string;
                 connection_id?: string | null;
                 schema_name?: string | null;
             };

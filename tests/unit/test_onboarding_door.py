@@ -60,7 +60,9 @@ def test_the_shopping_list_names_what_the_data_cannot_answer_and_what_would_unlo
     items = OB.shopping_list(conn, "shop", graph, pack_id="core-ecommerce")
     objects = {i["what"]: i for i in items if i["kind"] == "object"}
     assert "a table for Order" not in objects and "a table for Customer" in objects and "a table for Shipment" in objects
-    assert objects["a table for Customer"]["unlocks"] == ["link Order → Customer"]
+    # the map names a customer on orders, carts and reviews (2026-10-10): each link waits on the table
+    assert objects["a table for Customer"]["unlocks"][0] == "link Order → Customer"
+    assert all("Customer" in u for u in objects["a table for Customer"]["unlocks"])
     assert objects["a table for Customer"]["tried"][:3] == ["Customer", "customers", "customer"]
     missions = [i for i in items if i["kind"] == "mission"]
     assert {m["unlocks"][0] for m in missions} == {"mission template protect_gross_margin", "mission template cut_returns_without_hurting_conversion",

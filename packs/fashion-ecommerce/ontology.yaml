@@ -1,9 +1,7 @@
-# Extends core-ecommerce: inherits its objects, links, lifecycles and aliases; adds what
-# fashion has. An entry with a core name would replace the core's — none does here.
+# Extends core-ecommerce: inherits its objects, links, lifecycles, processes and aliases; adds what
+# fashion has. An entry with a core name replaces the core's — only `order_to_delivery` does, adding approval and
+# where fashion makes its promises. (Brand and Product → Brand moved into the core on 2026-10-10.)
 objects:
-  - name: Brand
-    roles: [catalog]
-    aliases: [brands, brand, labels, designers]
   - name: Season
     roles: [calendar]
     aliases: [seasons, season, collections_seasons]
@@ -14,7 +12,6 @@ objects:
     roles: [catalog]
     aliases: [variants, product_variants, sizes, skus_by_size]
 links:
-  - {from_object: Product,   to_object: Brand,  cardinality: "N:1", via: brand_id}
   - {from_object: Product,   to_object: Season, cardinality: "N:1", via: season}
   - {from_object: OrderItem, to_object: Brand,  cardinality: "N:1", via: brand, description: often denormalised onto the line}
   - {from_object: Variant,   to_object: Product, cardinality: "N:1", via: product_id}

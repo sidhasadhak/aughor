@@ -215,6 +215,62 @@ async def spawn_explorer(
     return {"ok": True, "reason": None, "job_id": job_id}
 
 
+def run_pack_structure(conn_id: str, schema_name: str | None, emit) -> str:
+    """2026-10-10 — the birth rite's pack step: every industry pack DEPLOYED on the scope (active and bound — a
+    person's two acts) proposes its structure over the tables the build found (`POST /ontology/explore/pack`): an
+    order read with its lines, its found links named with the industry's verbs, the stages its objects move
+    through. Run before the business explorer, so the model fills what the pack left. No model call. Returns
+    ``none`` (no pack deployed — no step emitted, the rite exactly what it was) | ``skipped`` | ``done`` | ``failed``."""
+    from aughor.kernel.errors import tolerate
+    try:
+        from aughor.packs.bindings import packs_bound_on
+        from aughor.routers.ontology import resolve_effective_schema
+        effective = resolve_effective_schema(conn_id, schema_name)
+        bound = packs_bound_on(conn_id, effective)      # one indexed read; no pack is loaded unless one is bound
+        packs = []
+        if bound:
+            from aughor.packs.ontology_map import load_pack_by_id, resolve_ontology
+            for pid in bound:
+                pack = load_pack_by_id(pid)
+                if pack is not None and pack.manifest.steers and resolve_ontology(pid) is not None:
+                    packs.append(pid)
+    except Exception as exc:  # noqa: BLE001 — no readable deployment is no pack, never a failed rite
+        tolerate(exc, "the deployed packs could not be read; the rite stands without their structure",
+                 counter="birth.pack_structure.read")
+        return "none"
+    if not packs:
+        return "none"
+    from aughor.licensing.capabilities import Capability
+    from aughor.licensing.resolver import has_capability
+    if not has_capability(Capability.ONTOLOGY_EDIT, conn_id=conn_id):
+        emit("pack_structure", "skipped", reason="this plan does not include ontology edits")
+        return "skipped"
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        built = load_latest_ontology(conn_id, schema_name) is not None
+    except Exception as exc:  # noqa: BLE001
+        tolerate(exc, "the ontology store is unreadable; the pack step will say so itself",
+                 counter="birth.pack_structure.ontology")
+        built = True
+    if not built:
+        emit("pack_structure", "skipped", reason="no ontology is built on this scope yet, so there is nothing to shape")
+        return "skipped"
+    emit("pack_structure", "started", packs=packs)
+    outcome = "done"
+    for pid in packs:
+        try:
+            from aughor.ontology.overrides import viewing
+            from aughor.routers.ontology import explore_ontology_with_pack
+            with viewing("draft"):          # Arc OC-2: its proposals wait in the draft, like the explorer's
+                out = explore_ontology_with_pack(pack=pid, connection_id=conn_id, schema_name=schema_name)
+            emit("pack_structure", "done", pack=pid, run_id=((out or {}).get("run") or {}).get("id", ""))
+        except Exception as exc:  # noqa: BLE001 — the business layer is never a precondition
+            tolerate(exc, "a pack's structure step failed; the rite stands without it", counter="birth.pack_structure")
+            emit("pack_structure", "failed", pack=pid, error=f"{type(exc).__name__}: {str(exc)[:200]}")
+            outcome = "failed"
+    return outcome
+
+
 def run_business_terms(conn_id: str, schema_name: str | None, emit) -> str:
     """PENDING item 11 — the birth rite's business-terms step: run the business explorer once on
     a scope nobody has explored, when ``ontology.explore_on_connect`` is on. Returns what it did
@@ -234,7 +290,10 @@ def run_business_terms(conn_id: str, schema_name: str | None, emit) -> str:
         from aughor.routers.ontology import resolve_effective_schema
         # the scope the explorer itself files its run under (meta's schema when none is named) —
         # reading "default" instead never found the run, and every restart paid again (branch review)
-        if load_draft(conn_id, resolve_effective_schema(conn_id, schema_name)).runs:
+        # a pack's run is not the explorer's (2026-10-10): the pack step runs first and records one, and counting it
+        # here would stop the explorer on every scope a pack is deployed on
+        if any(not str(getattr(r, "provenance", "") or "").startswith("pack:")
+               for r in load_draft(conn_id, resolve_effective_schema(conn_id, schema_name)).runs):
             # a restart re-runs the rite; the explorer ran here already, and a second run would
             # spend a model call to write nothing twice
             emit("business_terms", "skipped", reason="the business explorer already ran on this scope")
@@ -374,6 +433,12 @@ async def run_birth(
         await asyncio.get_running_loop().run_in_executor(
             None, ctx.run, lambda: run_business_terms(conn_id, schema_name, _emit))
 
+    async def _pack_structure_step() -> None:
+        import contextvars
+        ctx = contextvars.copy_context()
+        await asyncio.get_running_loop().run_in_executor(
+            None, ctx.run, lambda: run_pack_structure(conn_id, schema_name, _emit))
+
     async def _exploration_step() -> bool:
         _emit("exploration", "started")
         try:
@@ -433,6 +498,8 @@ async def run_birth(
     # proposal stays PROPOSED until a person confirms it. Off → the rite is exactly what it
     # was, no step emitted.
     if intelligence_ok and not canvas_id:
+        # 2026-10-10 — the packs deployed here shape what the build found first; the explorer fills what they left.
+        await _pack_structure_step()
         await _business_terms_step()
 
     summary = {"connection_id": conn_id, "schema": schema_name,
