@@ -118,6 +118,7 @@ FLAG_ENV = {
     "ontology.census": "AUGHOR_ONTOLOGY_CENSUS",
     "actions.outbox": "AUGHOR_ACTIONS_OUTBOX",
     "ontology.builder_doors": "AUGHOR_ONTOLOGY_BUILDER_DOORS",
+    "ontology.security": "AUGHOR_ONTOLOGY_SECURITY",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -424,6 +425,10 @@ FLAG_META = {
         "label": "Doors for builders: the ontology as a contract outside programs read",
         "description": "Opens the versioned doors an outside program uses: GET /ontology/v1/contract (a JSON Schema per entity and per declared action, stamped with the published release), GET /ontology/v1/types.d.ts (the same as TypeScript declarations), POST /objects/v1/list (a page of objects or a segment of them) and POST /objects/v1/actions/{id}/propose (a proposal staged for a person — never run from there). The MCP server offers the same as tools: list_objects, and one propose tool per declared action. Off by default: every one of those doors answers that it is off.",
     },
+    "ontology.security": {
+        "label": "Security on the ontology: who sees which objects, and which properties",
+        "description": "Enforces what an entity declares about who reads it, on every object door — the cockpit's tables and details, the object pages, the object query and the doors for builders. A row policy names a group and the conditions its members' objects meet; once an entity has any, each reader sees only the objects a policy of one of their groups admits, and is told so. A sensitive property names the groups that read it; for everyone else it is masked — empty, with why — and refused anywhere it would shape an answer. An agent acting for a person reads only what both may. Off by default: every reader sees every object and property, as today.",
+    },
     "cockpit.composed": {
         "label": "A cockpit in each Data Canvas",
         "description": "Adds a Cockpit tab to the Data Canvas, beside Chat, History and Artifacts. It shows the canvas's own cards arranged in tabs and sections, and a card can be set to appear only when a condition holds — for example while a watch is over its limit. The arrangement is kept as versions, so every change can be read and undone. Off: the Data Canvas is unchanged.",
@@ -723,6 +728,12 @@ GRADUATION_QUEUE: dict = {
                               "inbox for a person and nothing runs. Falsifier: a contract a program cannot act on "
                               "without reading the platform's own code is not a contract — the script uses only the "
                               "generated schema and the MCP tools",
+    # Arc OC-7 (ROADMAP §3.56), queued 2026-10-10. No model call.
+    "ontology.security": "receipt: on a scratch install, two people open the same cockpit and see different rows and a "
+                         "masked property, each told why, and an agent acting for one reads no more than she does. "
+                         "Falsifier: a policy test that passes with enforcement off is testing nothing — the suite "
+                         "turns it off and every policy assertion must fail. Live needs sign-in (the organisation "
+                         "install); until then it stays off there",
     # Arc OC-0 (ROADMAP §3.56), queued 2026-10-09. No model call, no warehouse query: it graduates on being READ.
     "ontology.census": "receipt: on the live install, seven daily readings in the journal, each equal to "
                        "GET /ontology/census taken the same hour, and OC-1's receipt quoting its before and "

@@ -326,6 +326,23 @@ class Binding(BaseModel):
         return "query" if (self.sql or "").strip() else "table"
 
 
+class RowPolicy(BaseModel):
+    """Arc OC-7 — which objects of an entity one group may see: those its ``conditions`` admit (each on the entity's own
+    property, ANDed). Once an entity declares any, a reader sees only the objects a policy of one of their groups admits
+    — none when they are in none of those groups, and they are told so. ``group`` "*" is everyone."""
+    group: str
+    conditions: list[dict] = Field(default_factory=list)
+    note: str = ""
+
+
+class Sensitivity(BaseModel):
+    """Arc OC-7 — a property only some groups may read: masked for everyone else on every object door, with why. ``level``
+    names the kind (pii, confidential, …); ``visible_to`` the groups that read it ("*" — everyone)."""
+    level: str = "confidential"
+    visible_to: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
 class EditStateMachine(BaseModel):
     """Arc OC-6 — the moves a property the EDIT LAYER holds may make (a review flag, a case's status): its states, the
     moves between them, and the state an object starts in before any edit sets one (``initial``, "" for none). The
@@ -372,6 +389,10 @@ class OntologyEntity(BaseModel):
     semiadditive: dict[str, SemiAdditive] = Field(default_factory=dict)
     #: Arc OC-6 — the declared moves of the properties the edit layer holds (see EditStateMachine), by property.
     edit_states: dict[str, EditStateMachine] = Field(default_factory=dict)
+    #: Arc OC-7 — who sees which of its objects (see RowPolicy) and which properties are masked for whom (see
+    #: Sensitivity). Enforced at the object doors while `ontology.security` is on; empty on every graph built before.
+    row_policies: list[RowPolicy] = Field(default_factory=list)
+    sensitive: dict[str, Sensitivity] = Field(default_factory=dict)
     #: ON-7 — where this type came from: `table` (the builder minted it from a profiled table — a PROPOSAL the
     #: business keeps, absorbs or renames), `human` (declared through POST /ontology/entities), `model` (an
     #: explorer's proposal, ON-7b). Every graph built before reads `table`, so it loads unchanged.

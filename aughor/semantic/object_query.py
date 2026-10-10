@@ -182,6 +182,11 @@ class ObjectQueryRefused(ValueError):
         self.available = list(available or [])
 
 
+class MaskedProperty(ObjectQueryRefused):
+    """Arc OC-7 — a property the reader may not read: masked in a listing, refused anywhere it would shape an answer
+    (a filter, a grouping, a measure) — the answer would leak it."""
+
+
 @dataclass
 class CompiledObjectQuery:
     sql: str
@@ -430,6 +435,11 @@ def _literal(v: Any, path: str) -> str:
                              f"not {type(v).__name__}")
 
 
+def sql_literal(v: Any, path: str) -> str:
+    """A value as a SQL literal, refused when it is not a string, a finite number or a boolean — the compiler's own."""
+    return _literal(v, path)
+
+
 def typed_literal(v: Any, p: EntityProperty, path: str) -> str:
     """A literal typed by the column it meets: a numeric string to a numeric column is a number, "true"
     to a boolean column is TRUE — so `"400"` and `400` compile alike on every dialect (BigQuery will not
@@ -598,6 +608,12 @@ def backing_from(entity: OntologyEntity, alias: str) -> str:
     source = object_from(entity, alias)
     if not source:
         raise ObjectQueryRefused(f"object type {entity.id} has no backing to read from")
+    # Arc OC-7 — the reader's objects only: every door reads an entity's rows through here, so a row policy holds on
+    # the anchor, every joined link, every EXISTS and every pre-aggregation alike (off: exactly as before)
+    from aughor.ontology.security import row_condition
+    allowed = row_condition(entity, "__rp")
+    if allowed is not None:
+        return f"(SELECT * FROM {object_from(entity, '__rp')} WHERE {allowed}) AS {alias}"
     return source
 
 
@@ -771,6 +787,10 @@ class _Compiler:
         p = (find_property(entity, name) or self.virtual_prop(entity, name) or self.derived_prop(entity, name)
              or self.computed_prop(entity, name))
         if p is not None:
+            from aughor.ontology.security import masked
+            why = masked(entity, p.name)
+            if why:
+                raise MaskedProperty(f"{why} — '{path}' cannot shape an answer it would show")
             return p
         bound = sorted(name for binding in entity.bindings or [] for name in binding.properties)
         derived = sorted(d.name for d in derived_for(self.g, entity).properties)
@@ -1245,6 +1265,13 @@ class _Compiler:
         self.plan.append(line)
 
     # ── joins and columns ──
+    def say_rows(self, entity: OntologyEntity) -> None:
+        """Arc OC-7 — what the reader is told of ``entity``'s objects a row policy withholds from them, once."""
+        from aughor.ontology.security import rows_said
+        said = rows_said(entity)
+        if said and said not in self.caveats:
+            self.caveats.append(said)
+
     def join_one(self, scope: _Scope, from_alias: str, h: ObjectLink) -> str:
         key = (from_alias, h.rel.id, h.name)
         if key in scope.join_alias:
@@ -1257,6 +1284,7 @@ class _Compiler:
         scope.joins.append(f"LEFT JOIN {backing_from(h.target, alias)} "
                            f"ON {from_alias}.{quote_ident(h.local_col)} = {alias}.{quote_ident(h.remote_col)}")
         scope.join_alias[key] = alias
+        self.say_rows(h.target)
         self.note_link(h, "joined", f"link {h.describe()}: joined — to-one by measurement, so it cannot "
                                     f"multiply {h.source.id} rows")
         return alias
@@ -1967,6 +1995,10 @@ class _Compiler:
 
     def prop_measure(self, scope: _Scope, alias: str, p: EntityProperty, hops: list[ObjectLink],
                      t: MeasureTerm, label: str, entity: Optional[OntologyEntity] = None) -> str:
+        from aughor.ontology.security import masked
+        why = masked(entity or (hops[-1].target if hops else scope.entity), p.name)
+        if why:                                    # Arc OC-7 — a measure over a masked property would show it
+            raise MaskedProperty(f"{why} — '{t.path}' cannot shape an answer it would show")
         period = None
         if t.agg == "sum":
             period = self.semiadditive_check(scope, entity or (hops[-1].target if hops else scope.entity), p.name,
@@ -2113,6 +2145,7 @@ class _Compiler:
         if b is not None and b.verified is False:
             self.caveats.append(f"{anchor.id}'s key {key} is not unique ({b.verification_note}) — the listing shows "
                                 f"rows, and the total counts distinct keys")
+        self.say_rows(anchor)
         where = self.object_set(scope)
         from aughor.ontology.display import display_of
         shown = display_of(anchor)
@@ -2135,7 +2168,17 @@ class _Compiler:
                 self.plan.append(f"column {prop}: set by the declared action {action_id} — no {anchor.id} carries "
                                  "it yet")
                 continue
-            col, p, hops = self.column(scope, path, "column")
+            try:
+                col, p, hops = self.column(scope, path, "column")
+            except MaskedProperty as exc:
+                # Arc OC-7 — listed, empty, and said: the column is there, its values are not the reader's to see
+                name = _output_name(names, path.rsplit(".", 1)[-1], path.replace(".", "_"))
+                select.append(f"CAST(NULL AS VARCHAR) AS {quote_ident(name)}")
+                names.append(name)
+                columns.append({"name": name, "path": path, "label": path, "type": "VARCHAR", "edited": False,
+                                "masked": True})
+                self.caveats.append(exc.reason.split(" — '")[0])
+                continue
             end = hops[-1].target if hops else anchor
             edited = find_property(end, p.name) is None and bool(overlay_properties(end, self.overlay_edits)
                                                                    .get(p.name.lower()))
@@ -2210,6 +2253,7 @@ class _Compiler:
             self.caveats.append(f"{anchor.id}'s key {key} is not unique ({b.verification_note}) — a count of "
                                 f"{anchor.id} counts rows, not distinct objects")
 
+        self.say_rows(anchor)
         where = self.object_set(scope)
 
         select: list[str] = []

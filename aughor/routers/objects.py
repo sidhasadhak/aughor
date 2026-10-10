@@ -16,13 +16,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from aughor.db.registry import BUILTIN_ID
+from aughor.ontology.security import acting_agent_from_request
 from aughor.routers.ontology import refuse_organisation_scope
 from aughor.security.authz import connection_owner_guard
 from aughor.semantic.object_query import ObjectListing, ObjectQuery
 
 #: ON-8 — an organisation's ontology is reached through `?domain=` only, never by naming its tree as a connection;
 #: DATA-06 — every connection a door names belongs to the caller's org (identity on).
-router = APIRouter(tags=["objects"], dependencies=[Depends(refuse_organisation_scope), Depends(connection_owner_guard)])
+router = APIRouter(tags=["objects"], dependencies=[Depends(refuse_organisation_scope), Depends(connection_owner_guard),
+                                                  Depends(acting_agent_from_request)])   # Arc OC-7 — an agent reads only what its person may
 
 #: Rows a response carries; `row_count` still says how many the query returned.
 _MAX_ROWS = 1000
@@ -127,7 +129,7 @@ def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
     if domain is not None:
         return _domain_object_page(object_type, pk, domain)
     from aughor.semantic.object_context import object_context
-    from aughor.semantic.object_instances import ObjectNotFound, get_object
+    from aughor.semantic.object_instances import ObjectNotFound, ObjectWithheld, get_object
     from aughor.semantic.object_query import ObjectQueryRefused, keyed_metrics_for
 
     graph = _served_graph(connection_id, schema_name)
@@ -137,6 +139,8 @@ def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
             instance = get_object(graph, db, object_type, pk, overlay=_accepted_edits(connection_id))
         except ObjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ObjectWithheld as exc:   # Arc OC-7 — withheld, said, never missing
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         except ObjectQueryRefused as exc:
             return {"path": "refused", "refused": exc.reason, "available": exc.available,
                     "connection_id": connection_id, "schema_name": graph.schema_name}
@@ -152,7 +156,7 @@ def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
 def _domain_object_page(object_type: str, pk: str, domain: str) -> dict:
     from aughor.ontology.sources import entity_source
     from aughor.semantic.object_context import object_context
-    from aughor.semantic.object_instances import ObjectNotFound, get_object
+    from aughor.semantic.object_instances import ObjectNotFound, ObjectWithheld, get_object
     from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
 
     scope, graph = _domain_served(domain)
@@ -166,6 +170,8 @@ def _domain_object_page(object_type: str, pk: str, domain: str) -> dict:
             instance = get_object(graph, None, entity.api_name, pk, overlay=_domain_edits(graph), source_db=source_db)
         except ObjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ObjectWithheld as exc:   # Arc OC-7 — withheld, said, never missing
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         except ObjectQueryRefused as exc:
             return {"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key,
                     "connection_id": home}

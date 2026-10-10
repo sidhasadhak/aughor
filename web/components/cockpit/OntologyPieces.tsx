@@ -260,7 +260,9 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
             <tr>
               {withUniqueKeys([{ name: page.key, label: page.key, edited: false }, ...page.columns], c => c.name).map(([k, c]) => (
                 <th key={k} style={{ textAlign: "left", fontWeight: 500, color: "var(--t3)", padding: "4px 8px 6px 0", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap" }}>
-                  {c.edited && <Icon name="edit" size={11} label="Set by a declared action" />} {words(c.label)}
+                  {c.edited && <Icon name="edit" size={11} label="Set by a declared action" />}
+                  {"masked" in c && c.masked && <Icon name="lock" size={11} label="Masked for you — the note under the table says why" />}
+                  {" "}{words(c.label)}
                 </th>
               ))}
             </tr>
@@ -285,6 +287,12 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
           </tbody>
         </table>
         {shown === 0 && <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: "8px 0" }}>No objects in this set.</div>}
+        {/* what this reader does not see, and why — a row policy, a masked column — said, never implied (Arc OC-7) */}
+        {page.caveats.length > 0 && (
+          <div className="aug-fs-xs" data-testid="object-table-caveats" style={{ color: "var(--t3)", padding: "6px 0 0" }}>
+            {page.caveats.map(c => <div key={c}>{c}</div>)}
+          </div>
+        )}
       </div>
       <Foot icon="table" aside={
         <span style={{ display: "inline-flex", gap: 4 }}>

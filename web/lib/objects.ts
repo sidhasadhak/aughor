@@ -410,7 +410,9 @@ export interface ObjectListingPage {
   /** The column that titles each object; empty when the key does. */
   title: string;
   /** One per listed column after the key. `edited` — an accepted edit sets it (or a declared action will). */
-  columns: { name: string; path: string; label: string; type: string; edited: boolean }[];
+  columns: { name: string; path: string; label: string; type: string; edited: boolean;
+             /** Arc OC-7 — masked for this reader: listed empty, and the caveats say why. */
+             masked?: boolean }[];
   /** The result's own column names, the key first, in the order of each row's cells. */
   names: string[];
   rows: unknown[][];

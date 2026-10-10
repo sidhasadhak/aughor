@@ -122,6 +122,18 @@ describe("a late dispatch cockpit (Arc OC-4)", () => {
     expect(within(detail()).getByTestId("action-button-said").textContent).toBe("Done.");
   });
 
+  it("a reader is told what a policy keeps from them: the rows it filters and the column it masks (Arc OC-7)", async () => {
+    objects.listObjects.mockImplementation(async () => ({
+      ...page(), columns: [page().columns[0], { name: "total", path: "total", label: "total", type: "VARCHAR", edited: false, masked: true }],
+      caveats: ["only the Order objects user:ana may see are shown — fulfilment: status in ['shipped']",
+                "Order.total is confidential — masked for user:ana; finance may read it"] }));
+    draw();
+    const said = await screen.findByTestId("object-table-caveats");
+    expect(said.textContent).toContain("only the Order objects user:ana may see are shown");
+    expect(said.textContent).toContain("masked for user:ana; finance may read it");
+    expect(screen.getByLabelText("Masked for you — the note under the table says why")).toBeTruthy();
+  });
+
   it("a run says what its check found, and a failed check is never read as done", async () => {
     objects.runOrPropose.mockResolvedValue({ status: "ran", outcome: {},
       verification: { status: "failed", why: "no row returned — the change is not visible" } });
