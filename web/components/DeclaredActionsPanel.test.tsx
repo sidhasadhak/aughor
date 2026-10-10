@@ -122,6 +122,13 @@ describe("DeclaredActionsPanel — the calls that wait for a person (Arc OC-6)",
     expect(sent?.body).toEqual({ note: "the carrier closed that account" });
   });
 
+  it("says who left a call undelivered, and why", async () => {
+    sends = [{ ...DEAD, status: "dismissed", resolved_by: "ana", note: "the carrier closed that account" }];
+    render(<DeclaredActionsPanel connectionId="c1" />);
+    expect((await screen.findByTestId("send-left-by")).textContent).toBe("by ana — the carrier closed that account");
+    expect(screen.queryByTestId("send-dismiss")).toBeNull();                     // nothing left to decide
+  });
+
   it("says the outbox is off, and where to switch it on, when it holds no call", async () => {
     outboxOn = false;
     render(<DeclaredActionsPanel connectionId="c1" />);
