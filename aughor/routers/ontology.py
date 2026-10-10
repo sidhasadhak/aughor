@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import re
 import threading
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -4255,3 +4255,84 @@ def framing_misses(connection_id: str = BUILTIN_ID):
     from aughor.agent.framing import served_graph
     from aughor.ontology.framing_misses import misses
     return misses(connection_id, graph=served_graph(connection_id))
+
+
+# ── Arc OC-8 — an Apache Ossie model imported as proposals a person accepts (decision (j): import only) ──────────────
+
+class _OssieImport(BaseModel):
+    #: The model — its YAML or JSON text, or the parsed mapping.
+    model: Any
+    #: The proposal ids a person accepts (`dataset:<name>`, `relationship:<name>`, `metric:<name>`). Empty: preview.
+    accept: list[str] = Field(default_factory=list)
+
+
+def _ossie_plan(body: "_OssieImport", connection_id: str, schema_name: Optional[str]):
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("ontology.builder_doors"):
+        raise HTTPException(status_code=404, detail=(
+            "The doors for builders are off — an administrator turns them on in Settings → System → Feature flags "
+            "(ontology.builder_doors)."))
+    from aughor.ontology import ossie
+    try:
+        model = ossie.model_from(body.model)
+    except ossie.OssieRefused as exc:
+        raise HTTPException(status_code=422, detail=f"Not an Ossie model this reads: {exc}") from exc
+    graph = served_ontology_graph(connection_id, schema_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="No ontology is built for this scope yet — build it, then import.")
+    from aughor.db.registry import get_dsn
+    try:
+        dialect = get_dsn(connection_id)[0]
+    except Exception:  # noqa: BLE001 — an unknown connection reads Ossie's own dialect and ANSI only
+        dialect = "duckdb"
+    return model, graph, ossie.plan(model, graph, dialect=dialect)
+
+
+@router.post("/ontology/v1/import/ossie/preview", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def preview_ossie_import(body: _OssieImport, connection_id: str = BUILTIN_ID,
+                         schema_name: Optional[str] = Query(default=None)):
+    """What an Ossie model would become on this scope, part by part — a new entity over a table no entity reads, a
+    description for an entity with none, a link, a draft metric — and what it cannot, with why. Nothing is written."""
+    from aughor.ontology import ossie
+    model, _graph, rows = _ossie_plan(body, connection_id, schema_name)
+    return {"model": model.get("name"), "version": model.get("version"), "note": ossie.note(model),
+            "provenance": ossie.provenance(model), "rows": rows, "summary": ossie.summary(rows)}
+
+
+@router.post("/ontology/v1/import/ossie", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def accept_ossie_import(body: _OssieImport, connection_id: str = BUILTIN_ID,
+                        schema_name: Optional[str] = Query(default=None)):
+    """Declare the parts of an Ossie model a person accepted — each through its ordinary door, as that person's
+    declaration with the model as its provenance, into the draft release (nothing is served until it is published).
+    Each part says what became of it; one refused part refuses no other."""
+    from aughor.ontology import ossie
+    model, graph, rows = _ossie_plan(body, connection_id, schema_name)
+    offered = {r["id"]: r for r in ossie.offered(rows)}
+    unknown = [a for a in body.accept if a not in offered]
+    if unknown:
+        raise HTTPException(status_code=400, detail=(
+            f"'{unknown[0]}' is not offered — preview the model and accept from its offered parts "
+            f"({', '.join(sorted(offered)) or 'none'})"))
+    prov = ossie.provenance(model)
+    effective = _served_scope(connection_id, schema_name)
+    results = []
+    for pid in body.accept:
+        row = offered[pid]
+        spec = dict(row["spec"])
+        try:
+            if row["kind"] == "entity":
+                _declare_entity_core({**spec, "origin": "human", "provenance": prov}, connection_id, effective)
+            elif row["kind"] == "describe":
+                override_ontology_entity(row["entity"], _EntityOverride(description=spec["description"]),
+                                         connection_id=connection_id, schema_name=schema_name, domain=None)
+            elif row["kind"] == "link":
+                _declare_link_core({**spec, "origin": "human", "provenance": prov}, connection_id, effective)
+            else:
+                from aughor.routers.metrics import MetricRequest, create_metric
+                create_metric(MetricRequest(connection=connection_id, schema_name=graph.schema_name or None,
+                                            **{k: v for k, v in spec.items() if v is not None}))
+            results.append({"id": pid, "ok": True, "says": row["says"]})
+        except HTTPException as exc:
+            results.append({"id": pid, "ok": False, "refused": str(exc.detail)})
+    return {"model": model.get("name"), "provenance": prov, "results": results,
+            "note": "Declared into the draft release — publish it to serve them; metrics wait for approval."}

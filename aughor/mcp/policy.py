@@ -38,6 +38,7 @@ TOOL_LEVELS: dict[str, Level] = {
     "cancel_job": "act",
     "search_graph": "read",
     "describe_entity": "read",
+    "list_objects": "read",          # Arc OC-8 — a page of objects through /objects/v1/list
     "get_table_health": "read",
     "list_trusted_queries": "read",
     "list_runs": "read",
@@ -67,6 +68,10 @@ ROUTE_LEVELS: dict[tuple[str, str], Level] = {
     # method and exporting an aggregate are acts, by the conservative default for a POST.
     ("POST", "/ledger/v1/claims"): "run",
     ("POST", "/ledger/v1/subscriptions"): "run",
+    # Arc OC-8 — the doors for builders: a listing reads; a proposal stages a change for a person, an act as a
+    # Spotlight draft is (it changes what a person is asked to decide), never a run
+    ("POST", "/objects/v1/list"): "read",
+    ("POST", "/objects/v1/actions/{action_id}/propose"): "act",
 }
 
 #: Spotlight's roster: the Act limb's tools stage changes for a person; everything else on the

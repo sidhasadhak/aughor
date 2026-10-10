@@ -59,6 +59,9 @@ def test_server_registers_the_governed_tools():
         # Phase 7 of the 2027 study — the ledger API through the same door: the contract, claims
         # as recorded, what was restated, and posting a claim with its warrant as oneself.
         "read_contract", "read_claims", "read_restatements", "post_claim",
+        # Arc OC-8 — a page of a business entity's objects through the doors for builders; the propose tools are
+        # registered per declared action (`register_ontology_tools`), never here.
+        "list_objects",
     }
     # No whole-trace tool either, for the same reason as `query`: `GET /traces/{id}` is
     # 1.2 MB for a 1,140-event run, so a tool wrapping it would exhaust the context that

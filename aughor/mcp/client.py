@@ -540,6 +540,20 @@ class AughorClient:
     async def list_trusted_queries(self, connection: str, *, limit: int = 25) -> dict:
         return await self._get(f"/knowledge/{connection}/trusted-queries", params={"limit": limit})
 
+    # ── Arc OC-8: the doors for builders — the published contract, listing, proposing ─────
+    async def ontology_contract(self, connection: str, *, schema: Optional[str] = None) -> dict:
+        return await self._get("/ontology/v1/contract", params={"connection_id": connection, "schema_name": schema})
+
+    async def list_objects(self, connection: str, body: dict, *, schema: Optional[str] = None) -> dict:
+        return await self._post("/objects/v1/list", json_body=body,
+                                params={"connection_id": connection, "schema_name": schema})
+
+    async def propose_action(self, connection: str, action_id: str, params: dict, *, reasoning: str = "",
+                             release: str = "", schema: Optional[str] = None) -> dict:
+        return await self._post(f"/objects/v1/actions/{action_id}/propose",
+                                json_body={"params": params, "reasoning": reasoning, "release": release},
+                                params={"connection_id": connection, "schema_name": schema})
+
 
 def _clean(params: Optional[dict]) -> Optional[dict]:
     """Drop None-valued query params so we never send ``?schema=None``."""

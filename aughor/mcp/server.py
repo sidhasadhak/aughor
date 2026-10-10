@@ -410,6 +410,26 @@ async def describe_entity(
 
 
 @mcp.tool()
+async def list_objects(
+    connection: Annotated[str, Field(description="A connection id from list_connections.")],
+    entity: Annotated[str, Field(description="The entity to list, e.g. 'Order' — as the contract names it.")],
+    segment: Annotated[Optional[str], Field(
+        description="A segment of it the contract names, e.g. 'late_dispatch' or 'overdue_dispatch'.")] = None,
+    columns: Annotated[Optional[list[str]], Field(description="Properties to list beside the key (up to 8).")] = None,
+    limit: Annotated[int, Field(description="Objects per page, at most 200.")] = 25,
+    offset: Annotated[int, Field(description="Where the page starts.")] = 0,
+    schema: Annotated[Optional[str], Field(description="The schema, when the connection has several.")] = None,
+) -> dict:
+    """Arc OC-8 — one page of a business entity's objects, or of a segment of them (late, overdue, a rule's
+    objects), read through the published ontology: the key, the properties asked for, the total the set holds and
+    the release it was read under. Each object is named `<object_type>:<key>` — the form a propose tool takes. Off
+    unless an administrator turned on the doors for builders."""
+    body = {"entity": entity, "segment": segment or "", "columns": list(columns or []), "limit": limit,
+            "offset": offset}
+    return await _client.list_objects(connection, body, schema=schema)
+
+
+@mcp.tool()
 async def get_table_health(
     connection: Annotated[str, Field(description="A connection id from list_connections.")],
     table: Annotated[str, Field(description="The table to report health for.")],
@@ -651,6 +671,85 @@ async def register_agent_tools(client: "AughorClient | None" = None) -> list[str
     return added
 
 
+def ontology_scopes() -> list[tuple[str, str]]:
+    """The scopes whose declared actions this server offers as propose tools: `AUGHOR_MCP_ONTOLOGY`, a comma-separated
+    list of `<connection>` or `<connection>/<schema>`. Empty: no propose tools (the actions are per connection, and a
+    tool must say which connection it proposes on)."""
+    import os
+    out = []
+    for item in (os.environ.get("AUGHOR_MCP_ONTOLOGY") or "").split(","):
+        conn, _, schema = item.strip().partition("/")
+        if conn:
+            out.append((conn, schema))
+    return out
+
+
+def _propose_tool_name(action_id: str, connection: str, taken: set[str]) -> str:
+    name = f"propose_{action_id}"
+    return name if name not in taken else f"{name}__{connection}"
+
+
+async def _ontology_roster(api: "AughorClient") -> list[dict]:
+    """One row per declared action of each configured scope, with the scope and the release it was read under."""
+    rows: list[dict] = []
+    for conn, schema in ontology_scopes():
+        contract = await api.ontology_contract(conn, schema=schema or None)
+        for action_id, action_schema in (contract.get("actions") or {}).items():
+            rows.append({"action_id": action_id, "connection": conn, "schema": schema,
+                         "release": contract.get("release") or "", "schema_json": action_schema})
+    return rows
+
+
+async def register_ontology_tools(client: "AughorClient | None" = None) -> list[str]:
+    """Arc OC-8 — one tool per declared action of each configured scope: `propose_<action>`, whose input is the
+    action's own JSON Schema from the published contract. Calling it PROPOSES — the proposal waits in the Actions inbox
+    for a person, with the action's version pinned; nothing runs. Same posture as the registrars above: never raises,
+    returns what it added, skips a name another tool holds."""
+    api = client or _client
+    try:
+        rows = await _ontology_roster(api)
+    except Exception as exc:                       # the API is down, the doors are off, or the route is old
+        _log.warning("could not read the ontology contract: %s", exc)
+        return []
+    taken = set(getattr(mcp._tool_manager, "_tools", {}) or {})
+    added: list[str] = []
+    for row in rows:
+        name = _propose_tool_name(row["action_id"], row["connection"],
+                                  {t for t in taken if _DYNAMIC.get(t) != "ontology"})
+        if _DYNAMIC.get(name) == "ontology" and name in taken:
+            continue
+        if name in taken:
+            _log.warning("propose tool %r collides with an existing tool — skipped", name)
+            continue
+        from aughor.mcp.policy import DYNAMIC_LEVELS, tool_annotations
+        declared = row["schema_json"]
+        mcp.add_tool(_propose_runner(api, row), name=name,
+                     description=(f"Propose '{declared.get('title')}' on connection {row['connection']} — "
+                                  f"{declared.get('description') or ''} A person approves it in the Actions inbox; "
+                                  f"nothing runs here. Contract {row['release'] or 'unreleased'}."),
+                     annotations=tool_annotations("act"))
+        schema = {k: v for k, v in declared.items() if k in ("type", "properties", "required")}
+        schema["properties"] = {**schema.get("properties", {}), "reasoning": {
+            "type": "string", "description": "Why — shown to the person who decides."}}
+        _declare_arguments(name, schema)
+        DYNAMIC_LEVELS[name] = "act"
+        taken.add(name)
+        added.append(name)
+        _DYNAMIC[name] = "ontology"
+    return added
+
+
+def _propose_runner(api: "AughorClient", row: dict):
+    """A factory, not a loop lambda — the late-binding trap the other runners refuse."""
+    async def _run(**arguments: Any) -> Any:
+        reasoning = str(arguments.pop("reasoning", "") or "")
+        return await api.propose_action(row["connection"], row["action_id"],
+                                        {k: v for k, v in arguments.items() if v is not None},
+                                        reasoning=reasoning, release=row["release"], schema=row["schema"] or None)
+
+    return _run
+
+
 # ── The list is live: what appears and disappears at runtime does so for a connected client ──
 #
 # The three registrars above ran ONCE, at start, so an agent created, an automation exposed or
@@ -670,7 +769,7 @@ _LIVE_SOURCES: set[str] = set()
 
 def enable_live_tools(*sources: str) -> None:
     """Keep these rosters live for a connected client: "automations", "spotlight", "agents"."""
-    _LIVE_SOURCES.update(s for s in sources if s in ("automations", "spotlight", "agents"))
+    _LIVE_SOURCES.update(s for s in sources if s in ("automations", "spotlight", "agents", "ontology"))
 _LIVE_TTL = 30.0
 _live_checked: list[float] = []
 
@@ -682,6 +781,11 @@ def _roster_names(source: str, rows: list) -> set[str]:
                 for r in rows if str(r.get("id") or "")}
     if source == "spotlight":
         return {str(r.get("name")) for r in rows if r.get("name")}
+    if source == "ontology":
+        seen: set[str] = set()
+        for r in rows:
+            seen.add(_propose_tool_name(str(r.get("action_id")), str(r.get("connection")), seen))
+        return seen
     from aughor.custom_agents.reach import mcp_tool_name
     return {mcp_tool_name(_Row(r)) for r in rows if r.get("enabled", True) and r.get("id")}
 
@@ -708,7 +812,8 @@ async def refresh_live_tools(client: "AughorClient | None" = None, *, force: boo
     api = client or _client
     readers = {"automations": (api.list_automation_tools, register_automation_tools),
                "spotlight": (api.list_spotlight_tools, register_spotlight_tools),
-               "agents": (api.list_user_agents, register_agent_tools)}
+               "agents": (api.list_user_agents, register_agent_tools),
+               "ontology": (lambda: _ontology_roster(api), register_ontology_tools)}
     changed = False
     for source in sorted(_LIVE_SOURCES):
         read, register = readers[source]

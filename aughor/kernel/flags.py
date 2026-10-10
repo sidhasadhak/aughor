@@ -117,6 +117,7 @@ FLAG_ENV = {
     # before and after from the journal. OFF: nothing is read or written; GET /ontology/census still reads live.
     "ontology.census": "AUGHOR_ONTOLOGY_CENSUS",
     "actions.outbox": "AUGHOR_ACTIONS_OUTBOX",
+    "ontology.builder_doors": "AUGHOR_ONTOLOGY_BUILDER_DOORS",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -419,6 +420,10 @@ FLAG_META = {
         "label": "Send a declared action's calls through an outbox",
         "description": "A declared action's calls to other systems are kept as rows and delivered by a worker that holds a lease on each, instead of once, inline, in the press. A call that did not go out is retried — by why it failed: a refused connection or a server error again later, a rate limit after a pause, a refusal from the far end never. A call that got no answer is checked with the action's own verification read before anything is sent again, so a call that landed is never made twice. A call that cannot be delivered waits for a person under Actions ▸ Sends, with Retry and Dismiss. An action may also name one call that must succeed BEFORE its edits are written (a writeback); its failure leaves everything unwritten. Off by default: calls go out once, inline, as before.",
     },
+    "ontology.builder_doors": {
+        "label": "Doors for builders: the ontology as a contract outside programs read",
+        "description": "Opens the versioned doors an outside program uses: GET /ontology/v1/contract (a JSON Schema per entity and per declared action, stamped with the published release), GET /ontology/v1/types.d.ts (the same as TypeScript declarations), POST /objects/v1/list (a page of objects or a segment of them) and POST /objects/v1/actions/{id}/propose (a proposal staged for a person — never run from there). The MCP server offers the same as tools: list_objects, and one propose tool per declared action. Off by default: every one of those doors answers that it is off.",
+    },
     "cockpit.composed": {
         "label": "A cockpit in each Data Canvas",
         "description": "Adds a Cockpit tab to the Data Canvas, beside Chat, History and Artifacts. It shows the canvas's own cards arranged in tabs and sections, and a card can be set to appear only when a condition holds — for example while a watch is over its limit. The arrangement is kept as versions, so every change can be read and undone. Off: the Data Canvas is unchanged.",
@@ -712,6 +717,12 @@ GRADUATION_QUEUE: dict = {
                       "delivery whose outcome nobody can state is the failure this exists to remove — count the "
                       "sends left `unknown` after reconciliation; any that a person cannot resolve from the screen "
                       "and the flag goes back",
+    # Arc OC-8 (ROADMAP §3.56), queued 2026-10-10. No model call.
+    "ontology.builder_doors": "receipt: a script outside the platform reads theLook's contract, lists the late orders "
+                              "and proposes Flag for review through the MCP server; the proposal waits in the Actions "
+                              "inbox for a person and nothing runs. Falsifier: a contract a program cannot act on "
+                              "without reading the platform's own code is not a contract — the script uses only the "
+                              "generated schema and the MCP tools",
     # Arc OC-0 (ROADMAP §3.56), queued 2026-10-09. No model call, no warehouse query: it graduates on being READ.
     "ontology.census": "receipt: on the live install, seven daily readings in the journal, each equal to "
                        "GET /ontology/census taken the same hour, and OC-1's receipt quoting its before and "
