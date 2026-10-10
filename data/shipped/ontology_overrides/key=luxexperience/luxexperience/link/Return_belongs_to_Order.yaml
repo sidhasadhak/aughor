@@ -1,0 +1,32 @@
+target_kind: link
+target_id: Return_belongs_to_Order
+fields:
+  declared: true
+  name: belongs_to
+  from_entity: Return
+  to_entity: Order
+  from_column: order_id
+  to_column: order_id
+  cardinality: N:1
+  reverse_name: order_to_return
+  origin: human
+  provenance: ''
+source: human
+edited_by: ''
+edited_at: '2026-10-10T00:00:00+00:00'
+note: 'shipped for LuxExperience (Arc OC-5, 2026-10-10): a link a person declared on the
+  live install after the 2026-09-15 snapshot was frozen, added to that snapshot
+  (evals/ablation_luxexperience_business_ontology.json) so the framed_impact arm could
+  read a return''s order; the counts are the ones the live graph measured on the warehouse.'
+binding:
+  link:
+    bound: true
+    measured_cardinality: N:1
+    value_overlap: 1.0
+    from_table: luxexperience.returns
+    from_column: order_id
+    to_table: luxexperience.orders
+    to_column: order_id
+    note: 'measured N:1: Return.order_id 42,941 distinct over 50,048 non-null rows (N);
+      Order.order_id 112,439 distinct over 112,439 non-null rows (1); 100% of Return''s
+      keys are held by Order'

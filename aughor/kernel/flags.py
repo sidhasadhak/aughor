@@ -116,6 +116,7 @@ FLAG_ENV = {
     # data verified of it, and what leans on it — is journaled as `ontology.census`, so a later wave reads its
     # before and after from the journal. OFF: nothing is read or written; GET /ontology/census still reads live.
     "ontology.census": "AUGHOR_ONTOLOGY_CENSUS",
+    "actions.outbox": "AUGHOR_ACTIONS_OUTBOX",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -414,6 +415,10 @@ FLAG_META = {
         "label": "Keep a daily ontology census",
         "description": "Once a day, count what every built ontology declares (entities, links and their names, processes, promises, rules, segments, declared actions), what the data verified of it, and what leans on it (automations that read it, and the Record's claims by what they are about and whether they name a metric, a segment or a definition version), and keep the reading in the journal. Each later Arc OC wave is judged against these readings. Reads cached ontologies only — nothing is built and no warehouse is queried. Off by default: nothing is kept; GET /ontology/census still counts on request.",
     },
+    "actions.outbox": {
+        "label": "Send a declared action's calls through an outbox",
+        "description": "A declared action's calls to other systems are kept as rows and delivered by a worker that holds a lease on each, instead of once, inline, in the press. A call that did not go out is retried — by why it failed: a refused connection or a server error again later, a rate limit after a pause, a refusal from the far end never. A call that got no answer is checked with the action's own verification read before anything is sent again, so a call that landed is never made twice. A call that cannot be delivered waits for a person under Actions ▸ Sends, with Retry and Dismiss. An action may also name one call that must succeed BEFORE its edits are written (a writeback); its failure leaves everything unwritten. Off by default: calls go out once, inline, as before.",
+    },
     "cockpit.composed": {
         "label": "A cockpit in each Data Canvas",
         "description": "Adds a Cockpit tab to the Data Canvas, beside Chat, History and Artifacts. It shows the canvas's own cards arranged in tabs and sections, and a card can be set to appear only when a condition holds — for example while a watch is over its limit. The arrangement is kept as versions, so every change can be read and undone. Off: the Data Canvas is unchanged.",
@@ -700,6 +705,13 @@ GRADUATION_QUEUE: dict = {
                         "then; withdrawing an entity an automation relies on is refused with the automation "
                         "named. Falsifier (§3.56): if what *late* meant on a past day cannot be answered from "
                         "it, it is not history — then the flag goes and the store is redesigned",
+    # Arc OC-6 (ROADMAP §3.56), queued 2026-10-10. No model call.
+    "actions.outbox": "receipt: on the live install, a cockpit's call to another system goes through the outbox, "
+                      "a forced timeout is reconciled by the action's verification read (delivered, never sent "
+                      "twice), and a refused call waits under Sends for a person. Falsifier (§3.56, OC-6): a "
+                      "delivery whose outcome nobody can state is the failure this exists to remove — count the "
+                      "sends left `unknown` after reconciliation; any that a person cannot resolve from the screen "
+                      "and the flag goes back",
     # Arc OC-0 (ROADMAP §3.56), queued 2026-10-09. No model call, no warehouse query: it graduates on being READ.
     "ontology.census": "receipt: on the live install, seven daily readings in the journal, each equal to "
                        "GET /ontology/census taken the same hour, and OC-1's receipt quoting its before and "

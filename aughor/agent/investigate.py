@@ -1769,6 +1769,12 @@ def _frame_breakdowns(frame_dump, schema: str = "") -> dict:
     out = {}
     for d in sorted(frame.drivers or [], key=lambda d: not d.named):      # named first, stable
         entry = frame.compiled.get(f"by {d.path}") or {}
+        if getattr(d, "impact", "") and entry.get("sql"):
+            # Arc OC-5 — a declared, measured impact into the chosen promise: its rate where the upstream promise
+            # broke beside its rate overall, ranked before every driver the frame reached by hops alone
+            out[f"impact.{d.impact}"] = {"sql": entry["sql"], "label": f"{chosen.metric} where {d.label} broke",
+                                         "named": False, "path": d.path, "impact": d.impact, "reading": d.reading}
+            continue
         if d.table and entry.get("sql"):
             table = mapping.get(_bare(d.table), d.table)
             key = f"{table}.{d.property}".lower()
@@ -1807,10 +1813,11 @@ def _declared_breakdown_findings(state: "AgentState", conn, intake_data: dict, *
             continue
         out.append(InvestigationFinding(
             finding_id=f"{tag}_breakdown_{i}",
-            title=f"{compiled['label']} by {col} (declared{', candidate driver' if candidates else ''})",
+            title=(f"{compiled['label']} (declared impact, an association)" if compiled.get("impact") else
+                   f"{compiled['label']} by {col} (declared{', candidate driver' if candidates else ''})"),
             sql=r.sql, columns=r.columns, rows=r.rows[:50],
             row_count=r.row_count, error=None,
-            interpretation="", key_numbers=[], chart_type="auto",
+            interpretation=compiled.get("reading", ""), key_numbers=[], chart_type="auto",
             stat_note=None, is_significant=False,
         ))
     return out

@@ -68,6 +68,8 @@ def entity_spec_problem(spec: Any) -> str:
     backing = spec.get("backing")
     if not isinstance(backing, dict):
         return "an entity names the source that holds one row per object in `backing` — {table | sql, primary_key}"
+    if backing.get("kind") == "platform":
+        return _platform_problem(backing)
     table, sql = str(backing.get("table") or "").strip(), str(backing.get("sql") or "").strip()
     if bool(table) == bool(sql):
         return "a backing reads exactly one of `table` or `sql`"
@@ -87,9 +89,34 @@ def entity_spec_problem(spec: Any) -> str:
     return ""
 
 
+def _platform_problem(backing: dict) -> str:
+    """Arc OC-6 — why a platform-owned type's properties cannot be declared as written, or ""."""
+    if backing.get("table") or backing.get("sql"):
+        return "a platform-owned type reads no table and no SELECT — its objects live in the platform's edit layer"
+    props = backing.get("properties")
+    if not isinstance(props, list) or not 1 <= len(props) <= 30:
+        return "a platform-owned type declares from 1 to 30 properties in `backing.properties` — each {name, data_type}"
+    names = [str((p or {}).get("name") or "").strip() for p in props if isinstance(p, dict)]
+    if len(names) != len(props) or not all(COLUMN_PATTERN.match(n) for n in names):
+        return "each property of a platform-owned type has a `name` — status, assignee"
+    if len(set(names)) != len(names) or "id" in names:
+        return "each property is named once, and `id` is the key every platform-owned object already carries"
+    return ""
+
+
 def entity_fields(spec: dict) -> dict:
     """The override fields a declaration stores — trimmed, the empty parts dropped. Idempotent."""
     backing = spec["backing"]
+    if backing.get("kind") == "platform":
+        out = {"declared": True, "display_name": str(spec["display_name"]).strip(), "origin": spec.get("origin") or "human",
+               "backing": {"kind": "platform", "primary_key": "id",
+                           "properties": [{"name": str(p["name"]).strip(), "data_type": str(p.get("data_type") or "VARCHAR"),
+                                           **({"description": str(p["description"])} if p.get("description") else {})}
+                                          for p in backing["properties"]]}}
+        for field in ("description", "domain", "entity_type", "provenance"):
+            if str(spec.get(field) or "").strip():
+                out[field] = spec[field]
+        return out
     table, sql = str(backing.get("table") or "").strip(), str(backing.get("sql") or "").strip()
     schema = str(backing.get("schema_name") or "").strip()
     stored: dict = {"kind": "table" if table else "query", "primary_key": str(backing["primary_key"]).strip()}
@@ -152,6 +179,16 @@ def declared_entity(ov, graph: Optional[OntologyGraph]) -> Optional[OntologyEnti
     spec = fields.get("backing") if isinstance(fields.get("backing"), dict) else {}
     if not fields.get("declared") or entry.get("bound") is not True or not spec:
         return None
+    if spec.get("kind") == "platform":
+        # Arc OC-6 — its objects live in the edit layer; it reads no source, so nothing was measured but its shape
+        from aughor.ontology.platform_objects import KEY, NOTE, declared_properties
+        return OntologyEntity(
+            id=ov.target_id, display_name=str(fields.get("display_name") or ov.target_id),
+            description=str(fields.get("description") or ""), source_tables=[], identity_key=KEY, grain_verified=True,
+            backing=Backing(kind="platform", primary_key=KEY, verified=True, verification_note=NOTE),
+            domain=fields.get("domain") or None, entity_type=fields.get("entity_type") or "business_object",
+            origin=fields.get("origin") or "human", provenance=str(fields.get("provenance") or ""),
+            properties=declared_properties(list(spec.get("properties") or [])))
     columns = entry.get("columns") if isinstance(entry.get("columns"), dict) else {}
     table, sql = str(spec.get("table") or "").strip(), str(spec.get("sql") or "").strip()
     key = str(entry.get("primary_key") or spec.get("primary_key") or "").strip()

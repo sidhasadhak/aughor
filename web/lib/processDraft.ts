@@ -6,7 +6,7 @@
  * (`idFrom`), each unique where it must be, and a draft that cannot be counted yet always says why (`notReady`) — never
  * a disabled button with nothing beside it.
  */
-import type { DeclaredProcessSpec } from "@/lib/objectTypes";
+import type { DeclaredProcessSpec, ProcessDetail } from "@/lib/objectTypes";
 
 export type Anchor =
   | { kind: "moment"; path: string }
@@ -20,6 +20,14 @@ export interface StageDraft {
   label: string;
   anchor: Anchor | null;
   promise: PromiseDraft | null;
+  /** A declared stage's own name, kept while it is changed — renaming one renames everything it derives. */
+  id?: string;
+}
+
+/** A move a person expects between two stages, by the stages' names, or out of the process (`to: "left"`). */
+export interface MoveDraft {
+  from: string;
+  to: string;
 }
 
 export interface ProcessDraft {
@@ -31,12 +39,48 @@ export interface ProcessDraft {
   leaves: { property: string; values: string[] } | null;
   /** The questions a person answered "they really are late" to, by check id. */
   late: string[];
+  /** Arc OC-5 — the moves a person declared as expected; null: each stage to the next (none declared). */
+  moves?: MoveDraft[] | null;
+  /** Set while a declared process is changed: its id never changes. */
+  id?: string;
 }
+
+/** The word a move's `to` uses for leaving the process. */
+export const LEFT = "left";
 
 export const EMPTY_STAGE: StageDraft = { label: "", anchor: null, promise: null };
 
 export function emptyDraft(entity = ""): ProcessDraft {
-  return { name: "", entity, owner: "", description: "", stages: [{ ...EMPTY_STAGE }, { ...EMPTY_STAGE }], leaves: null, late: [] };
+  return { name: "", entity, owner: "", description: "", stages: [{ ...EMPTY_STAGE }, { ...EMPTY_STAGE }], leaves: null, late: [],
+           moves: null };
+}
+
+/** The stage's name as the declaration writes it: a declared stage keeps its own. */
+export function stageId(s: StageDraft): string {
+  return s.id || idFrom(s.label);
+}
+
+function percent(target: number | null): string {
+  return target == null ? "" : String(Math.round(target * 1000) / 10);
+}
+
+/** A declared process as a draft to change — every stage keeping its name, so nothing it derives is renamed. */
+export function draftFromProcess(p: ProcessDetail): ProcessDraft {
+  return {
+    id: p.id, name: p.display_name, entity: p.entity_id, owner: p.owner, description: p.description, late: [],
+    stages: p.stages.map(s => {
+      const anchor: Anchor = "timestamp" in s.anchor ? { kind: "moment", path: s.anchor.timestamp }
+        : { kind: "state", property: s.anchor.property, values: [...s.anchor.state] };
+      const q = s.promise;
+      const promise: PromiseDraft | null = !q ? null : q.kind === "deadline"
+        ? { kind: "deadline", deadline: q.deadline, name: q.name, target: percent(q.target) }
+        : { kind: q.kind === "within_hours" ? "hours" : "days", name: q.name, target: percent(q.target),
+            amount: String((q.kind === "within_hours" ? q.within_hours : q.within_days) ?? "") };
+      return { id: s.name, label: s.display_name || s.name, anchor, promise };
+    }),
+    leaves: p.leaves ? { property: p.leaves.property, values: [...p.leaves.values] } : null,
+    moves: p.transitions?.length ? p.transitions.map(t => ({ from: t.from_stage, to: t.to_stage })) : null,
+  };
 }
 
 /** A lower-case id made from a person's words: "Delivery time" → `delivery_time`, "2-day dispatch" → `p_2_day_dispatch`. */
@@ -94,22 +138,24 @@ export function notReady(d: ProcessDraft): string {
     }
     if (p.target.trim() && !(Number(p.target) > 0 && Number(p.target) <= 100)) return `The target on ${which} is a percentage above 0, at most 100.`;
   }
-  const ids = d.stages.map(s => idFrom(s.label));
+  const ids = d.stages.map(stageId);
   const twice = ids.find((id, i) => ids.indexOf(id) !== i);
   if (twice) return `Two stages are named alike (${twice}) — name each stage differently.`;
+  const gone = (d.moves ?? []).find(m => !ids.includes(m.from) || ![...ids, LEFT].includes(m.to));
+  if (gone) return `A move you expect names a stage that is not here (${gone.from} → ${gone.to}) — mark the moves again.`;
   return "";
 }
 
 /** The declaration a ready draft becomes — ids made from the words, the words kept as the names a reader sees. */
 export function toSpec(d: ProcessDraft, takenIds: Iterable<string> = []): DeclaredProcessSpec {
-  const id = freshId(idFrom(d.name), takenIds);
+  const id = d.id || freshId(idFrom(d.name), takenIds);
   const spec: DeclaredProcessSpec = {
     id, display_name: d.name.trim(), entity: d.entity,
     ...(d.owner.trim() ? { owner: d.owner.trim() } : {}),
     ...(d.description.trim() ? { description: d.description.trim() } : {}),
     stages: d.stages.map(s => {
       const anchor = s.anchor;
-      const base = { name: idFrom(s.label), display_name: s.label.trim() };
+      const base = { name: stageId(s), display_name: s.label.trim() };
       const at = !anchor ? {} : anchor.kind === "moment" ? { timestamp: anchor.path }
         : { property: anchor.property, state: [...anchor.values] };
       const p = s.promise;
@@ -121,6 +167,7 @@ export function toSpec(d: ProcessDraft, takenIds: Iterable<string> = []): Declar
       return { ...base, ...at, promise: { ...named, ...terms, ...target } };
     }),
     ...(d.leaves && d.leaves.values.length ? { leaves: { property: d.leaves.property, values: [...d.leaves.values] } } : {}),
+    ...(d.moves && d.moves.length ? { transitions: d.moves.map(m => ({ from: m.from, to: m.to })) } : {}),
   };
   return spec;
 }
@@ -144,4 +191,14 @@ export function keptDraft(connectionId: string, schema?: string): ProcessDraft |
 
 export function dropDraft(connectionId: string, schema?: string): void {
   try { localStorage.removeItem(KEY(connectionId, schema)); } catch { /* nothing kept, nothing to drop */ }
+}
+
+
+/** The moves a draft declares after a person marks ``move`` expected or not: the moves the data shows as declared
+ *  (none declared: each stage to the next) are the starting set, so the first mark keeps the rest as they read. */
+export function toggledMoves(d: ProcessDraft, shown: { from_stage: string; to_stage: string; declared: boolean }[],
+                             move: MoveDraft, expected: boolean): MoveDraft[] {
+  const start = d.moves ?? shown.filter(m => m.declared).map(m => ({ from: m.from_stage, to: m.to_stage }));
+  const rest = start.filter(m => !(m.from === move.from && m.to === move.to));
+  return expected ? [...rest, move] : rest;
 }

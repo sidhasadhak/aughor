@@ -112,8 +112,9 @@ describe("a late dispatch cockpit (Arc OC-4)", () => {
     await waitFor(() => expect(within(detail()).getByText("48377")).toBeTruthy());
     const button = await within(detail()).findByRole("button", { name: /Flag for review/ });
     await act(async () => { fireEvent.click(button); });
+    // Arc OC-6 — the version of the property the action sets, as this detail read it: none set yet, so 0
     expect(objects.runOrPropose).toHaveBeenCalledWith("flag_for_review", { order: "48377" }, "thelook", "thelook",
-      "from a cockpit, on Order 48377");
+      "from a cockpit, on Order 48377", { flagged_for_review: 0 });
     await waitFor(() => expect(within(detail()).getByTestId("object-detail-edit").textContent).toContain("ana via flag_for_review"));
     const rows = screen.getAllByTestId("object-table-row").map(r => r.textContent);
     expect(rows[1]).toContain("yes");
@@ -133,6 +134,8 @@ describe("a late dispatch cockpit (Arc OC-4)", () => {
     expect(ranSaid({ status: "passed", why: "1 row returned" })).toBe("Done — its check passed: 1 row returned.");
     expect(ranSaid({ status: "unavailable", why: "the read failed" })).toBe("Done — its check could not be read: the read failed.");
     expect(ranSaid({ status: "not_declared" })).toBe("Done.");
+    expect(ranSaid({ status: "pending", why: "1 call waits in the outbox; the action's check runs when it lands" }))
+      .toBe("Done — 1 call waits in the outbox; the action's check runs when it lands.");
   });
 
   it("an action that needs approval is proposed in Actions, and nothing is written", async () => {

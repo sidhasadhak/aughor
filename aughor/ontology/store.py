@@ -268,9 +268,13 @@ def measure_latest(connection_id: str, schema_name: str, db, pack_id: Optional[s
                                            overlay_human_overrides(graph.model_copy(deep=True), connection_id, schema_name))
     rules = measure_override_rules(connection_id, schema_name, db,
                                    overlay_human_overrides(graph.model_copy(deep=True), connection_id, schema_name))
+    # Arc OC-5 — impacts last, over a third overlay: each reads the promises this pass just counted.
+    from aughor.ontology.impacts import measure_override_impacts
+    impacts = measure_override_impacts(connection_id, schema_name, db,
+                                       overlay_human_overrides(graph.model_copy(deep=True), connection_id, schema_name))
     return {"relationships": relationships, "lifecycles": lifecycles, "backings": backings, "claims": claims,
             "display_properties": displays, "bindings": bindings, "declared_links": links_declared,
-            "processes": processes, "rules": rules}
+            "processes": processes, "rules": rules, "impacts": impacts}
 
 
 def patch_action(
@@ -455,6 +459,9 @@ def get_or_build_ontology(
                     measure_override_processes(connection_id, graph.schema_name, _vdb, overlay_human_overrides(
                         graph.model_copy(deep=True), connection_id, graph.schema_name))
                     measure_override_rules(connection_id, graph.schema_name, _vdb, overlay_human_overrides(
+                        graph.model_copy(deep=True), connection_id, graph.schema_name))
+                    from aughor.ontology.impacts import measure_override_impacts
+                    measure_override_impacts(connection_id, graph.schema_name, _vdb, overlay_human_overrides(
                         graph.model_copy(deep=True), connection_id, graph.schema_name))
                     # ON-0a: the packs DEPLOYED on this connection are the core it extends —
                     # every claim in their maps is evaluated here, never rendered.

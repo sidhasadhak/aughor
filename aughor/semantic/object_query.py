@@ -590,6 +590,11 @@ def _within(formula: str, condition: str) -> str:
 
 
 def backing_from(entity: OntologyEntity, alias: str) -> str:
+    if entity.backing is not None and entity.backing.kind == "platform":
+        # Arc OC-6 — its objects live in the platform's edit layer, not a warehouse: no SQL reads them
+        from aughor.ontology.platform_objects import NOTE
+        raise ObjectQueryRefused(f"{entity.id} is {NOTE}; it is read on its own page and in its listing, never "
+                                 "compiled into a warehouse query")
     source = object_from(entity, alias)
     if not source:
         raise ObjectQueryRefused(f"object type {entity.id} has no backing to read from")
@@ -757,7 +762,10 @@ class _Compiler:
 
     # ── names ──
     def entity(self, name: str) -> OntologyEntity:
-        return find_object_type(self.g, name)
+        found = find_object_type(self.g, name)
+        if found.backing is not None and found.backing.kind == "platform":
+            backing_from(found, "t")                 # Arc OC-6 — refused here, with why: no warehouse holds its objects
+        return found
 
     def prop(self, entity: OntologyEntity, name: str, path: str) -> EntityProperty:
         p = (find_property(entity, name) or self.virtual_prop(entity, name) or self.derived_prop(entity, name)
@@ -1498,14 +1506,20 @@ class _Compiler:
                 entity = h.target
                 continue
             if f.value_path:
+                # Arc OC-5 — two properties of the SAME linked row ("an order with a line handed over after that line's
+                # limit"): both paths cross this very link, so they are compared inside its EXISTS, on one row.
+                vsegs = _split(f.value_path, "filter")
+                if vsegs[:i + 1] == segs[:i + 1] and len(vsegs) > i + 1:
+                    return self.exists(scope, alias, h, ".".join(segs[i + 1:]), f, value_rest=".".join(vsegs[i + 1:]))
                 raise ObjectQueryRefused(
                     f"filter '{f.path} {f.op} {f.value_path}' crosses {h.describe()}, a to-many link — two properties "
-                    f"are compared at the object's own grain; anchor the query on {h.target.id} and reach "
-                    f"{h.source.id} through its link")
+                    f"are compared at the object's own grain, or on one linked row when both cross the same link; anchor "
+                    f"the query on {h.target.id} and reach {h.source.id} through its link")
             return self.exists(scope, alias, h, ".".join(segs[i + 1:]), f)
         raise ObjectQueryRefused(f"filter path '{f.path}' did not resolve")
 
-    def exists(self, scope: _Scope, outer_alias: str, h: ObjectLink, rest: str, f: ObjectFilter) -> str:
+    def exists(self, scope: _Scope, outer_alias: str, h: ObjectLink, rest: str, f: ObjectFilter,
+               value_rest: str = "") -> str:
         target_source = entity_source(self.g, h.target)
         if outer_alias in self.far_paths or (target_source != self.at(scope) and scope is not self.top):
             raise ObjectQueryRefused(
@@ -1513,12 +1527,17 @@ class _Compiler:
                 "key, a pre-aggregated link or an EXISTS — a keyed EXISTS is read from the query's own level; anchor the "
                 f"query on {h.source.id}")
         if target_source != self.at(scope):
+            if value_rest:
+                raise ObjectQueryRefused(f"filter '{f.path} {f.op} {f.value_path}' compares two properties of a "
+                                         f"{h.target.id} on another connection — read by key, its rows are not "
+                                         "compared one by one")
             return self.far_exists(scope, outer_alias, h, rest, f, target_source)
         inner = _Scope(entity=h.target, alias=self._alias("e"), source=scope.source)
         conds = [f"{inner.alias}.{quote_ident(h.remote_col)} = {outer_alias}.{quote_ident(h.local_col)}"]
         negate = False
         if rest:
-            conds.append(self.condition(inner, ObjectFilter(path=rest, op=f.op, value=f.value, values=f.values)))
+            conds.append(self.condition(inner, ObjectFilter(path=rest, op=f.op, value=f.value, values=f.values,
+                                                            value_path=value_rest)))
         else:
             negate = f.op == "not_exists"
         joins = "".join(f" {j}" for j in inner.joins)

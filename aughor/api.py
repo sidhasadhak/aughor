@@ -172,6 +172,7 @@ async def _lifespan(app: "FastAPI"):
         # The ontology auto-refresh is a clock too, and it now really rebuilds (profiles, extraction, a model
         # call to enrich), so it runs only where the other clocks do.
         await _start_ontology_refresh_loop()
+        await _start_outbox_worker()
         await _start_continuous_exploration_loop()
         await _start_monitor_scheduler()
         await _start_automation_heartbeat()
@@ -915,6 +916,29 @@ async def _ontology_refresh_loop() -> None:
 
 async def _start_ontology_refresh_loop() -> None:
     asyncio.create_task(_ontology_refresh_loop(), name="ontology-refresh")
+
+
+#: Arc OC-6 — how often the outbox's worker looks for a call that is due (a no-op while `actions.outbox` is off).
+_OUTBOX_EVERY_S = 15
+
+
+async def _outbox_worker_loop() -> None:
+    """Arc OC-6 — the outbox's worker: each pass claims the calls that are due under a lease and delivers them (a call
+    whose fate is unknown is checked first). Off, nothing is read."""
+    import uuid as _uuid
+    worker = f"api:{os.getpid()}:{_uuid.uuid4().hex[:6]}"
+    while True:
+        await asyncio.sleep(_OUTBOX_EVERY_S)
+        try:
+            from aughor.actions import outbox
+            if outbox.enabled():
+                await asyncio.get_running_loop().run_in_executor(None, lambda: outbox.work_once(worker))
+        except Exception as exc:
+            logger.warning("Outbox pass failed: %s", exc)
+
+
+async def _start_outbox_worker() -> None:
+    asyncio.create_task(_outbox_worker_loop(), name="outbox-worker")
 
 
 async def _continuous_exploration_loop() -> None:

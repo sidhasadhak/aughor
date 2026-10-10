@@ -181,6 +181,7 @@ def _register_purge_hooks() -> None:
     ph.register_purge_hook("ambiguity_ledger", _ambiguity_conn)
     ph.register_purge_hook("overlay_ledger", _overlay_conn)
     ph.register_purge_hook("kinetic_inbox", _kinetic_inbox_conn)
+    ph.register_purge_hook("action_outbox", _action_outbox_conn)
     ph.register_purge_hook("kinetic_grants", _kinetic_grants_conn)
     ph.register_purge_hook("qdrant", _qdrant_conn)
     # Idea 1 (2026-10-04) — three stores a deleted connection outlived, measured on the live
@@ -309,6 +310,12 @@ def _overlay_conn(conn_id, org_id):
     # so they die with the connection.
     from aughor.actions import overlay
     return {"overlay_edits": overlay.purge_connections([conn_id], org_id=org_id)}
+
+
+def _action_outbox_conn(conn_id, org_id):
+    # Arc OC-6: a declared action's calls on this connection, delivered or waiting — they die with it.
+    from aughor.actions import outbox
+    return {"action_outbox": outbox.purge_connections([conn_id])}
 
 
 def _kinetic_inbox_conn(conn_id, org_id):

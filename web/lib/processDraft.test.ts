@@ -6,7 +6,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  cockpitIdFor, dropDraft, emptyDraft, freshId, idFrom, keepDraft, keptDraft, notReady, toSpec, type ProcessDraft,
+  cockpitIdFor, draftFromProcess, dropDraft, emptyDraft, freshId, idFrom, keepDraft, keptDraft, notReady, toSpec,
+  toggledMoves, type ProcessDraft,
 } from "@/lib/processDraft";
 
 const ready: ProcessDraft = {
@@ -119,5 +120,50 @@ describe("a draft kept in this browser", () => {
     expect(keptDraft("c1", "s")).toBeNull();
     vi.stubGlobal("localStorage", { setItem: () => { throw new Error("private mode"); }, getItem: () => null, removeItem: () => {} });
     expect(keepDraft("c1", "s", ready)).toBe(false);
+  });
+});
+
+// ── Arc OC-5 — changing a declared process, and the moves a person expects ──────────────────────────────────────────
+
+describe("a declared process changed in the designer", () => {
+  const declared = {
+    id: "order_fulfilment", display_name: "Order Fulfilment", description: "", entity: "order", entity_id: "Order",
+    owner: "", origin: "human" as const, provenance: "", objects: 10, verified: true, note: "", measured_at: "",
+    derived: { segments: [], properties: [], metrics: [] },
+    leaves: { property: "status", values: ["Cancelled"], left: 1, missing: [], unknown: 0, note: "" },
+    transitions: [{ from_stage: "placed", to_stage: "dispatched", declared: true, objects: 5 }],
+    stages: [
+      { name: "placed", display_name: "placed", anchor: { timestamp: "created_at" }, reached: 10, share: 1, verified: true,
+        note: "", transition: null, promise: null },
+      { name: "dispatched", display_name: "Shipped", anchor: { timestamp: "shipped_at" }, reached: 8, share: 0.8,
+        verified: true, note: "", transition: null,
+        promise: { name: "dispatch", kind: "within_days" as const, deadline: "", within_days: 2, grain: "order",
+                   grain_id: "Order", via: "", target: 0.95, objects: 10, reached: 8, breached: 1, kept: 7, open: 2,
+                   open_overdue: 1, breach_rate: 0.125, as_of: "", verified: true, flags: [], note: "",
+                   segment: "late_dispatch", metric: "dispatch_breach_rate" } },
+    ],
+  };
+
+  it("reads back as the declaration it came from — the id and every stage's name kept", () => {
+    const d = draftFromProcess(declared);
+    expect(notReady(d)).toBe("");
+    expect(toSpec(d, ["order_fulfilment"])).toEqual({
+      id: "order_fulfilment", display_name: "Order Fulfilment", entity: "Order",
+      stages: [{ name: "placed", display_name: "placed", timestamp: "created_at" },
+               { name: "dispatched", display_name: "Shipped", timestamp: "shipped_at",
+                 promise: { name: "dispatch", within_days: 2, target: 0.95 } }],
+      leaves: { property: "status", values: ["Cancelled"] },
+      transitions: [{ from: "placed", to: "dispatched" }],
+    });
+  });
+
+  it("starts the moves from those the data shows as expected, and a move to a stage taken away is said", () => {
+    const d = { ...draftFromProcess(declared), moves: null };
+    const shown = [{ from_stage: "placed", to_stage: "dispatched", declared: true },
+                   { from_stage: "dispatched", to_stage: "left", declared: false }];
+    expect(toggledMoves(d, shown, { from: "dispatched", to: "left" }, true))
+      .toEqual([{ from: "placed", to: "dispatched" }, { from: "dispatched", to: "left" }]);
+    expect(toggledMoves(d, shown, { from: "placed", to: "dispatched" }, false)).toEqual([]);
+    expect(notReady({ ...d, moves: [{ from: "placed", to: "gone" }] })).toContain("names a stage that is not here");
   });
 });

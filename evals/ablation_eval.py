@@ -32,6 +32,11 @@ Three arms run on the SAME question against the SAME warehouse:
                     equally (`aughor.agent.framing`, one extra call, counted). A question that reaches
                     nothing declared gets no frame, so the arm IS raw there and spends no call. The
                     movement's falsifier: on records labelled `definition: declared` it must beat raw.
+  * **framed_impact** — Arc OC-5's arm: the framed arm with the graph's declared impacts measured on the dataset's
+                    warehouse first (`aughor.ontology.impacts`), so a question framed to a promise another one bears on
+                    also gets the upstream promise's measured reading — what the product's frame carries now. The
+                    `framed` arm reads the same graph with no impact, as before OC-5. A question no measured impact
+                    reaches gets the framed arm's block unchanged and is scored as framed, never spent on.
   * **injected**  — the full intelligence-injected pipeline (`generate_sql_full_pipeline`:
                     exploration annotations + KB + metrics + de-fan + retry). Included to
                     surface, honestly, that LLM-DERIVED context is a SEPARATE axis that can
@@ -156,11 +161,13 @@ def _classify_guarded(score: dict, sql: str | None, fired: list[str]) -> str:
 
 
 #: `framed_guarded` — the framed arm's SQL through the guard battery, as the product ships a framed answer.
+#: `framed_impact` — the framed arm with the graph's declared impacts measured and read (Arc OC-5).
 #: `notes` — HB-4's arm: the schema plus the ranked, provenance-stamped conversation-notes
 #: block (aughor/hub — what people SAID, enveloped). The injection gate
 #: (hub/injection.INJECTABLE_SOURCE_KINDS) flips only on this arm's measured lift; until
 #: then notes are stored and shown, never injected. Inert-dropped when no notes exist.
-ARMS: tuple[str, ...] = ("raw", "guarded", "ontology", "ontology_guarded", "framed", "framed_guarded", "injected", "objects", "notes")
+ARMS: tuple[str, ...] = ("raw", "guarded", "ontology", "ontology_guarded", "framed", "framed_guarded", "framed_impact",
+                         "injected", "objects", "notes")
 _NO_SQL = {"error": "Generation failed", "execution_success": 0.0}
 
 
@@ -403,6 +410,38 @@ def _arms_after_frame_check(arms: tuple[str, ...], graph) -> tuple[tuple[str, ..
     return tuple(a for a in arms if a not in dropped), dropped
 
 
+def measured_impacts(db, graph) -> tuple[object, object, list[dict]]:
+    """Arc OC-5 — the graph each framed arm reads: ``(without, with_impacts, readings)``. Every impact the graph
+    declares is resolved on it and counted on this warehouse, as the product's measure pass does; ``without`` is the
+    same graph with none, the framed arm's. An impact that does not resolve or count is kept out and said in its
+    reading, never guessed."""
+    from aughor.ontology.impacts import impact_fields, measure_impact, resolve_impact
+    without = graph.model_copy(update={"impacts": {}})
+    measured, readings = {}, []
+    for impact_id, declared in sorted((getattr(graph, "impacts", None) or {}).items()):
+        problem, fields = resolve_impact(graph, impact_id, impact_fields(declared.model_dump()))
+        if problem:
+            readings.append({"id": impact_id, "verified": None, "note": f"not resolved: {problem}"})
+            continue
+        try:
+            impact = measure_impact(db, graph, impact_id, fields)
+        except Exception as exc:  # noqa: BLE001 — one impact that cannot be counted is said, never the end of the run
+            readings.append({"id": impact_id, "verified": None, "note": f"not measured: {type(exc).__name__}: {exc}"[:300]})
+            continue
+        measured[impact_id] = impact
+        readings.append({"id": impact_id, "verified": impact.verified, "note": impact.note, "objects": impact.objects,
+                         "rate_when_broke": impact.rate_when_broke, "rate_when_kept": impact.rate_when_kept})
+    return without, graph.model_copy(update={"impacts": measured}), readings
+
+
+def _arms_after_impact_check(arms: tuple[str, ...], readings: list[dict]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Drop the framed_impact arm when no declared impact measured true: no frame would read one, and the arm would be
+    the framed arm under another name."""
+    if "framed_impact" not in arms or any(r.get("verified") is True for r in readings):
+        return arms, ()
+    return tuple(a for a in arms if a != "framed_impact"), ("framed_impact",)
+
+
 def check_references(db, records: list[dict]) -> tuple[list[dict], list[dict]]:
     """Execute every reference (and accept_sql) BEFORE any model call.
 
@@ -532,7 +571,7 @@ def run(dataset: str, limit: int | None, output: str | None,
     if limit:
         records = records[:limit]
     arms = tuple(a for a in ARMS if a in arms)          # canonical order, unknown names dropped
-    if "framed_guarded" in arms and "framed" not in arms:
+    if ("framed_guarded" in arms or "framed_impact" in arms) and "framed" not in arms:
         arms = tuple(a for a in ARMS if a in arms or a == "framed")
     if ("guarded" in arms or "framed" in arms) and "raw" not in arms:
         arms = ("raw",) + arms
@@ -594,6 +633,17 @@ def run(dataset: str, limit: int | None, output: str | None,
         print(f"  ⚠ the ontology for {label} (source: {graph_source}) declares no process and no rule — the `framed` "
               f"arm would equal raw, so it is DROPPED, not spent on. Pass --graph-json {label}=<the JSON of GET /ontology>.")
         dropped = tuple(dropped) + frame_dropped
+        arms = tuple(a for a in arms if a != "framed_impact")
+    impact_graph, impact_readings = None, []
+    if "framed" in arms:
+        graph, impact_graph, impact_readings = measured_impacts(db, graph)
+        for reading in impact_readings:
+            print(f"  impact {reading['id']}: verified={reading['verified']} — {reading['note']}")
+    arms, impact_dropped = _arms_after_impact_check(arms, impact_readings)
+    if impact_dropped:
+        print(f"  ⚠ no declared impact measured true on {label} — the `framed_impact` arm would equal framed, so it is "
+              f"DROPPED, not spent on.")
+        dropped = tuple(dropped) + impact_dropped
     notes_ctx = notes_context(conn_id) if "notes" in arms else ""
     arms, notes_dropped = _arms_after_notes_check(arms, notes_ctx)
     if notes_dropped:
@@ -676,6 +726,23 @@ def run(dataset: str, limit: int | None, output: str | None,
                 row["framed_guarded"] = {"sql": fg_sql, "class": _classify_guarded(fg_score, fg_sql, fg_fired),
                                          "guards_fired": fg_fired, "match": round(fg_score.get("result_set_match", 0.0), 3),
                                          **({"via": row["framed"]["via"]} if row["framed"].get("via") else {})}
+            if "framed_impact" in arms:
+                i_block, i_frame, i_calls = _quiet(lambda: framed_context(
+                    q, impact_graph, dialect=getattr(db, "dialect", "") or "duckdb", choose=choose), ("", None, 0))
+                framing_calls += i_calls
+                if i_block and i_block != block:
+                    i_sql = _quiet(lambda: generate_sql_chat(q, conn_id, schema_text + "\n\n" + i_block,
+                                                                dialect_rules=dialect_rules), None)
+                    i_score = score_single(db, rec, i_sql) if i_sql else dict(_NO_SQL)
+                    row["framed_impact"] = {"sql": i_sql, "class": _classify_plain(i_score, i_sql),
+                                            "match": round(i_score.get("result_set_match", 0.0), 3),
+                                            "impacts": [d["impact"] for d in (i_frame or {}).get("drivers", [])
+                                                        if d.get("impact")],
+                                            "block_chars": len(i_block)}
+                else:
+                    # no measured impact reached the question: the block is the framed arm's, so is the answer
+                    row["framed_impact"] = {**{k: v for k, v in row["framed"].items() if k != "frame"},
+                                            "via": "framed (no measured impact reached the question)"}
 
         if "injected" in arms:
             inj_sql = _quiet(lambda: generate_sql_full_pipeline(q, conn_id, db), None)
@@ -706,6 +773,7 @@ def run(dataset: str, limit: int | None, output: str | None,
     summary["arms_dropped"] = list(dropped)
     if "framed" in arms:
         summary["framing_model_calls"] = framing_calls
+        summary["impacts"] = impact_readings
     _print_report(rows, summary, arms)
     result = {"results": rows, "summary": summary}
     if output:
@@ -759,6 +827,17 @@ def _summarize(rows: list[dict], arms: tuple[str, ...] = ARMS) -> dict:
             fgc = counts["framed_guarded"]
             out["framed_guarded_safe_rate"] = round((fgc["correct"] + fgc["caught"]) / n, 3)
             out["framed_guarded_silent_wrong"] = fgc["silent-wrong"]
+        if "framed_impact" in arms:
+            # OC-5's question: on the questions a measured impact reached, did its reading help the answer, hurt it,
+            # or do nothing — every other question is the framed arm's own answer, never spent on
+            ic = counts["framed_impact"]
+            out["framed_impact_accuracy"] = round(ic["correct"] / n, 3)
+            out["framed_impact_silent_wrong"] = ic["silent-wrong"]
+            out["impact_reached"] = [r["id"] for r in rows if not r["framed_impact"].get("via")]
+            out["impact_gains"] = [r["id"] for r in rows if r["framed"]["class"] != "correct"
+                                   and r["framed_impact"]["class"] == "correct"]
+            out["impact_losses"] = [r["id"] for r in rows if r["framed"]["class"] == "correct"
+                                    and r["framed_impact"]["class"] != "correct"]
         # the movement's falsifier (ROADMAP §3.15 ON-10): on the questions whose definition is declared and NOT in the
         # schema, the framed arm must answer more of them correctly than raw — or the framing is retired
         by_definition: dict = {}
@@ -771,6 +850,8 @@ def _summarize(rows: list[dict], arms: tuple[str, ...] = ARMS) -> dict:
                 entry["guarded_safe"] = sum(r["guarded"]["class"] in ("correct", "caught") for r in subset)
             if "framed_guarded" in arms:
                 entry["framed_guarded_safe"] = sum(r["framed_guarded"]["class"] in ("correct", "caught") for r in subset)
+            if "framed_impact" in arms:
+                entry["framed_impact_correct"] = sum(r["framed_impact"]["class"] == "correct" for r in subset)
             by_definition[label] = entry
         out["by_definition"] = by_definition
         declared = by_definition.get("declared")
@@ -850,6 +931,10 @@ def _print_report(rows: list[dict], s: dict, arms: tuple[str, ...] = ARMS) -> No
             verdict = "HOLDS — framed beats raw" if s["falsifier"]["framed_beats_raw_on_declared"] else "FIRES — no lift"
             print(f"    falsifier      : {verdict} on the declared-definition questions; "
                   f"controls lost {s['falsifier']['controls_lost']}")
+    if "framed_impact" in arms:
+        print(f"  Framed + impact  : {s['framed_impact_accuracy']:.0%} correct   {s['framed_impact']}   "
+              f"(an impact reached: {s['impact_reached']})")
+        print(f"    vs framed      : gains {s['impact_gains']}  losses {s['impact_losses']}")
     if "injected" in arms:
         print(f"  Injected         : {s['injected_accuracy']:.0%} correct   {s['injected']}")
     if "objects" in arms:
@@ -871,7 +956,7 @@ def _print_report(rows: list[dict], s: dict, arms: tuple[str, ...] = ARMS) -> No
     if s.get("reference_failed"):
         print(f"  Skipped (reference SQL failed): {[f['id'] for f in s['reference_failed']]}")
     if s.get("arms_dropped"):
-        print(f"  Dropped arms (no ontology to inject — not spent on): {s['arms_dropped']}")
+        print(f"  Dropped arms (nothing to inject, each said above — not spent on): {s['arms_dropped']}")
     llm = s.get("llm") or {}
     print(f"  Model: {llm.get('backend')} · {llm.get('model')}   fallback chain: "
           f"{llm.get('fallback_chain') or 'none'}   ontology source: {s.get('ontology_source')}")

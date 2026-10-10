@@ -22,7 +22,7 @@ from typing import Any, Optional
 from aughor.ontology.models import OntologyGraph, Process
 
 
-def _entity(graph: OntologyGraph, name: str):
+def entity_named(graph: OntologyGraph, name: str):
     from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
     try:
         return find_object_type(graph, name) if name else None
@@ -30,7 +30,7 @@ def _entity(graph: OntologyGraph, name: str):
         return None
 
 
-def _path_reach(graph: OntologyGraph, entity, path: str) -> list:
+def path_reach(graph: OntologyGraph, entity, path: str) -> list:
     """The links a property path crosses from ``entity``, by the compiler's law; [] when it does not resolve — a path
     the compiler cannot read depends on nothing it could break."""
     from aughor.semantic.object_query import ObjectQueryRefused, property_at
@@ -43,7 +43,7 @@ def _path_reach(graph: OntologyGraph, entity, path: str) -> list:
     return list(hops)
 
 
-def _via_reach(graph: OntologyGraph, grain, via: str, home) -> list:
+def via_reach(graph: OntologyGraph, grain, via: str, home) -> list:
     """The hops a promise's objects take from its grain to the process's type, as its measurement walks them: the
     links `via` names one by one, or — `via` unset — the only measured to-one link between the two types."""
     from aughor.semantic.object_query import link_problem, object_links
@@ -66,7 +66,7 @@ def _via_reach(graph: OntologyGraph, grain, via: str, home) -> list:
 def process_reach(graph: OntologyGraph, process: Process) -> tuple[set[str], set[str]]:
     """Every entity id and relationship id a process reads: its own type, and what each stage's anchor and each
     promise's grain, deadline and `via` cross."""
-    home = graph.entities.get(process.entity) or _entity(graph, process.entity)
+    home = graph.entities.get(process.entity) or entity_named(graph, process.entity)
     entities: set[str] = {home.id} if home is not None else set()
     links: set[str] = set()
 
@@ -76,16 +76,16 @@ def process_reach(graph: OntologyGraph, process: Process) -> tuple[set[str], set
             entities.add(h.target.id)
 
     for stage in process.stages:
-        take(_path_reach(graph, home, stage.timestamp))
-        take(_path_reach(graph, home, stage.property))
+        take(path_reach(graph, home, stage.timestamp))
+        take(path_reach(graph, home, stage.property))
         promise = stage.promise
         if promise is None:
             continue
-        grain = _entity(graph, promise.grain) if promise.grain else home
+        grain = entity_named(graph, promise.grain) if promise.grain else home
         if grain is not None:
             entities.add(grain.id)
-        take(_path_reach(graph, grain, promise.deadline))
-        take(_via_reach(graph, grain, promise.via, home))
+        take(path_reach(graph, grain, promise.deadline))
+        take(via_reach(graph, grain, promise.via, home))
     return entities, links
 
 
@@ -143,7 +143,7 @@ def dependents_of(graph: Optional[OntologyGraph], conn: str, kind: str, target_i
                     rows.append(_row("automation", a.id, a.name, f"a step runs the declared action '{aid}'{why_suffix}"))
 
     if kind == "entity":
-        ent = graph.entities.get(target_id) or _entity(graph, target_id)
+        ent = graph.entities.get(target_id) or entity_named(graph, target_id)
         if ent is None:
             return []
         names = {ent.id, ent.api_name}
@@ -182,6 +182,12 @@ def dependents_of(graph: Optional[OntologyGraph], conn: str, kind: str, target_i
                              "a stage or a promise of the process is read through it"))
         automations_on(on_it, set(), set(), ", which is read through this link")
     elif kind == "process":
+        for iid, imp in sorted((graph.impacts or {}).items()):        # Arc OC-5: an impact names its promises
+            ends = [w for w, ref in (("upstream", imp.upstream), ("downstream", imp.downstream))
+                    if ref.partition(".")[0] == target_id]
+            if ends:
+                rows.append(_row("impact", iid, imp.display_name,
+                                 f"the impact's {' and '.join(ends)} promise{'s are' if len(ends) > 1 else ' is'} in it"))
         automations_on({target_id}, set(), set())
     elif kind == "action":
         for aid, act in sorted(actions.items()):

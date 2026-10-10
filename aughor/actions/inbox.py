@@ -341,6 +341,16 @@ def stage_proposal(p: StagedProposal) -> StagedProposal:
         p.org_id = current_org_id()
     if not p.expires_at:
         p.expires_at = _deadline_from(p.created_at)
+    if p.kind == "declared_action" and "action_pin" not in p.detail:
+        # Arc OC-6 — the version of the action this proposes, so an accept runs what was approved or says it changed
+        try:
+            from aughor.actions.pins import action_pin
+            action = _load_action(p.connection_id, p.schema_name, p.action_id)
+            if action is not None:
+                p.detail = {**p.detail, "action_pin": action_pin(action, p.connection_id, p.schema_name)}
+        except Exception as exc:  # noqa: BLE001 — an unpinned proposal is accepted as before, and counted
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a proposal could not pin its action's version", counter="inbox.action_pin")
     # MI-2 — default the trace from the ambient run, exactly as `automation_runs` does, so no
     # caller threads it through. An explicit value always wins, so a replayed or
     # reconstructed proposal keeps the trace it was originally raised under rather than
@@ -766,6 +776,11 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
         return KineticResult("dispatch_error", False, p.action_id,
                              message="declared action no longer exists"), ""
 
+    from aughor.actions.pins import action_pin, changed_since
+    moved = changed_since((p.detail or {}).get("action_pin"), action_pin(action, p.connection_id, p.schema_name))
+    if moved:
+        _record_outcome(proposal_id, "failed", moved, {})
+        return _executor_result()("action_changed", False, p.action_id, message=moved), ""
     result = execute_kinetic_action(action, p.params, actor=actor, scope=p.connection_id,
                                     approved=True, schema_name=p.schema_name)
     _record_outcome(proposal_id, result.status if result.ok else result.status,

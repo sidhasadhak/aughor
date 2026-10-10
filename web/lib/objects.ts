@@ -18,7 +18,9 @@ export interface ObjectProperty {
   unit: string;
   description: string;
   /** ON-4 — set by an accepted action and merged at read time: who, when, and why. */
-  overlay?: { by: string; at: string; note: string; origin: string; provenance: string; id: string };
+  overlay?: { by: string; at: string; note: string; origin: string; provenance: string; id: string;
+              /** Arc OC-6 — how many times it has been set or withdrawn; a press sends the version it read. */
+              version?: number };
   /** PENDING item 27 — a formula evaluated for this object: an expression a person declared, or a computed property
    *  the builder verified. Not a column of the source row. */
   formula?: { expression: string; kind: "expression" | "computed" };
@@ -127,6 +129,18 @@ export interface ObjectRelated {
   findings_unread?: number;
   notes: ObjectNote[];
   actions: ObjectAction[];
+  /** Arc OC-6 — the platform-owned objects that name this one (an order's cases), newest first. */
+  platform?: ObjectReferrer[];
+}
+
+/** Arc OC-6 — one platform-owned object naming this one in a property (`via`), with what else it holds. */
+export interface ObjectReferrer {
+  object_type: string;
+  type_id: string;
+  type_name: string;
+  pk: string;
+  via: string;
+  summary: Record<string, unknown>;
 }
 
 /** ON-3b — which property titles this object, and on what warrant: a person's declaration (`human`), a proposal
@@ -327,6 +341,30 @@ export async function withdrawEdit(editId: string, connectionId?: string): Promi
 }
 
 
+/** Arc OC-6 — one version of an edit on an object: who set what (and what it replaced), or who withdrew it. */
+export interface EditHistoryRow {
+  event: "set" | "withdrawn";
+  version: number;
+  column: string;
+  body: string;
+  previous: string;
+  note: string;
+  actor: string;
+  origin: string;
+  at: string;
+}
+
+/** Arc OC-6 — every version of the edits on one object (and one property), newest first. */
+export async function getEditHistory(
+  connectionId: string, objectType: string, rowKey: string, column = "",
+): Promise<EditHistoryRow[]> {
+  const q = new URLSearchParams({ connection_id: connectionId, object_type: objectType, row_key: rowKey });
+  if (column) q.set("column", column);
+  const res = await fetch(`${getApiBase()}/actions/edits/history?${q}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).history;
+}
+
 /** ON-3b — what a set of keys is NAMED: one query over the backing per type. `titles` omits a key nothing
  *  matched, and a type named by its own key resolves nothing and says so in `note`. */
 export interface ObjectTitles {
@@ -426,10 +464,13 @@ export type ActionOutcome =
 /** Run a declared action; when running it needs approval, the door stages it for a person to accept instead. */
 export async function runOrPropose(
   actionId: string, params: Record<string, unknown>, connectionId: string, schemaName?: string, reasoning = "",
+  expected?: Record<string, number>,
 ): Promise<ActionOutcome> {
   const res = await fetch(`${getApiBase()}/kinetic-actions/${encodeURIComponent(actionId)}/execute${scope(connectionId, schemaName)}`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ params, propose_if_gated: true, reasoning }),
+    // Arc OC-6 — the version of each property the action sets, as this page read it: a run against a version
+    // someone changed since is refused (409) and writes nothing
+    body: JSON.stringify({ params, propose_if_gated: true, reasoning, ...(expected ? { expected } : {}) }),
   });
   if (!res.ok) return { status: "refused", message: await refusalOf(res) };
   const body = (await res.json()) as {
@@ -445,4 +486,49 @@ async function refusalOf(res: Response): Promise<string> {
   if (typeof d === "string") return d;
   if (d && typeof d === "object" && typeof (d as { message?: unknown }).message === "string") return (d as { message: string }).message;
   return `HTTP ${res.status}`;
+}
+
+
+/** Arc OC-6 — one call a declared action made, as the outbox keeps it. */
+export interface ActionSend {
+  id: string;
+  connection_id: string;
+  action_id: string;
+  action_name: string;
+  status: "queued" | "sending" | "delivered" | "unknown" | "dead" | "dismissed";
+  attempts: number;
+  next_at: string;
+  cause: string;
+  last_error: string;
+  reconciled: string;
+  entry: string;
+  params: Record<string, unknown>;
+  effect: { kind: string; lane: string; target: string };
+  created_at: string;
+  updated_at: string;
+  resolved_by: string;
+  note: string;
+}
+
+/** Arc OC-6 — the outbox of a connection's declared actions (empty and `enabled: false` while it is off). */
+export async function getSends(connectionId: string): Promise<{ enabled: boolean; sends: ActionSend[] }> {
+  const res = await fetch(`${getApiBase()}/actions/outbox?connection_id=${encodeURIComponent(connectionId)}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Arc OC-6 — a person sends a call that waits for them again, now. */
+export async function retrySend(connectionId: string, sendId: string): Promise<ActionSend> {
+  const res = await fetch(`${getApiBase()}/actions/outbox/${encodeURIComponent(sendId)}/retry?connection_id=${encodeURIComponent(connectionId)}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).send;
+}
+
+/** Arc OC-6 — a person leaves a call that waits for them undelivered, with why. */
+export async function dismissSend(connectionId: string, sendId: string, note: string): Promise<ActionSend> {
+  const res = await fetch(`${getApiBase()}/actions/outbox/${encodeURIComponent(sendId)}/dismiss?connection_id=${encodeURIComponent(connectionId)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).send;
 }

@@ -47,8 +47,45 @@ def _object_edits(c: sqlite3.Connection) -> None:
         add_column_if_missing(c, "overlay_edits", column, "TEXT NOT NULL DEFAULT ''")
 
 
+def _edit_history(c: sqlite3.Connection) -> None:
+    """Arc OC-6 — the edit layer keeps every change: each edit's version, and a history row per save and withdrawal."""
+    add_column_if_missing(c, "overlay_edits", "version", "INTEGER NOT NULL DEFAULT 0")
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS overlay_edit_history (
+            id             TEXT PRIMARY KEY,
+            edit_id        TEXT NOT NULL,
+            org_id         TEXT NOT NULL DEFAULT '',
+            connection_id  TEXT NOT NULL,
+            object_type    TEXT NOT NULL DEFAULT '',
+            "table"        TEXT NOT NULL DEFAULT '',
+            column         TEXT NOT NULL DEFAULT '',
+            row_key        TEXT NOT NULL DEFAULT '',
+            event          TEXT NOT NULL,
+            body           TEXT NOT NULL DEFAULT '',
+            previous       TEXT NOT NULL DEFAULT '',
+            note           TEXT NOT NULL DEFAULT '',
+            actor          TEXT NOT NULL DEFAULT '',
+            origin         TEXT NOT NULL DEFAULT '',
+            source         TEXT NOT NULL DEFAULT '',
+            version        INTEGER NOT NULL DEFAULT 0,
+            at             TEXT NOT NULL
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS ix_overlay_history_edit ON overlay_edit_history (edit_id, version)")
+    c.execute("CREATE INDEX IF NOT EXISTS ix_overlay_history_conn ON overlay_edit_history (connection_id, object_type)")
+
+
 #: Forward-only; append the next Migration when the schema evolves.
-_MIGRATIONS: list = [Migration(2, "object edits: object_type, note, actor, origin", _object_edits)]
+_MIGRATIONS: list = [Migration(2, "object edits: object_type, note, actor, origin", _object_edits),
+                     Migration(3, "the edit layer's history and versions", _edit_history)]
+
+
+class EditConflict(Exception):
+    """Arc OC-6 — an edit made against a version that is no longer the current one: someone changed it since."""
+
+    def __init__(self, message: str, current: int):
+        super().__init__(message)
+        self.current = current
 
 
 class OverlayEdit(BaseModel):
@@ -66,6 +103,8 @@ class OverlayEdit(BaseModel):
     note: str = ""                          # ON-4 — the human text beside a property's value
     actor: str = ""                         # ON-4 — who ran the action that wrote it
     origin: str = ""                        # ON-4 — "action:<id>" when a declared action wrote it
+    #: Arc OC-6 — how many times this target has been set or withdrawn; a save names the version it read.
+    version: int = 0
     id: str = ""                            # deterministic natural-key hash (auto)
     created_at: str = ""
     last_used_at: Optional[str] = None
@@ -131,10 +170,30 @@ def _row_to_edit(row: sqlite3.Row) -> OverlayEdit:
 
 # ── write path (authority-gated) ───────────────────────────────────────────────
 
-def save_edit(edit: OverlayEdit) -> OverlayEdit:
+def _history_version(c: sqlite3.Connection, edit_id: str) -> int:
+    row = c.execute("SELECT MAX(version) AS v FROM overlay_edit_history WHERE edit_id = ?", (edit_id,)).fetchone()
+    return int(row["v"] or 0) if row is not None else 0
+
+
+def _record(c: sqlite3.Connection, edit: OverlayEdit, event: str, previous: str, version: int) -> None:
+    import uuid
+    c.execute("""
+        INSERT INTO overlay_edit_history (id, edit_id, org_id, connection_id, object_type, "table", column, row_key,
+                                          event, body, previous, note, actor, origin, source, version, at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (uuid.uuid4().hex, edit.id, edit.org_id, edit.connection_id, edit.object_type, edit.table, edit.column,
+          edit.row_key, event, edit.body if event == "set" else "", previous, edit.note, edit.actor, edit.origin,
+          edit.source, version, _now()))
+
+
+def save_edit(edit: OverlayEdit, *, expected_version: Optional[int] = None) -> OverlayEdit:
     """Persist an overlay edit (idempotent by natural key). A re-edit of the same target updates
     the same row and **only overwrites when it arrives with >= authority** (verified > user >
-    machine), so a machine annotation never clobbers a human one. created_at/use_count survive."""
+    machine), so a machine annotation never clobbers a human one. created_at/use_count survive.
+
+    Arc OC-6 — every save is a new version of the target, kept in its history with the value it replaced; with
+    ``expected_version`` (the version the person read; 0 when they saw none) a save made against another raises
+    `EditConflict` and writes nothing."""
     edit.table = (edit.table or "").strip().lower()
     if not edit.org_id:
         # Stamp the current tenant so an edit is found by a read in the same org — the reader
@@ -148,8 +207,12 @@ def save_edit(edit: OverlayEdit) -> OverlayEdit:
         c = _conn()
         try:
             existing = c.execute(
-                "SELECT source, created_at, use_count FROM overlay_edits WHERE id=?",
+                "SELECT source, created_at, use_count, version, body FROM overlay_edits WHERE id=?",
                 (edit.id,)).fetchone()
+            current = int(existing["version"] or 0) if existing is not None else _history_version(c, edit.id)
+            if expected_version is not None and int(expected_version) != current:
+                raise EditConflict(f"{edit.column or edit.table} was changed since it was read — read at version "
+                                   f"{expected_version}, it is at version {current} now; read it again", current)
             if existing is not None:
                 if _SOURCE_RANK.get(edit.source, 0) < _SOURCE_RANK.get(existing["source"], 0):
                     return _row_to_edit(c.execute(
@@ -159,16 +222,18 @@ def save_edit(edit: OverlayEdit) -> OverlayEdit:
                     # provenance states; an annotation keeps the day it was first written.
                     edit.created_at = existing["created_at"]
                 edit.use_count = existing["use_count"]
+            edit.version = current + 1
             c.execute("""
                 INSERT OR REPLACE INTO overlay_edits
                     (id, org_id, connection_id, "table", column, row_key, key_column,
                      kind, body, source, created_at, last_used_at, use_count,
-                     object_type, note, actor, origin)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     object_type, note, actor, origin, version)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (edit.id, edit.org_id, edit.connection_id, edit.table, edit.column,
                   edit.row_key, edit.key_column, edit.kind, edit.body, edit.source,
                   edit.created_at, edit.last_used_at, edit.use_count,
-                  edit.object_type, edit.note, edit.actor, edit.origin))
+                  edit.object_type, edit.note, edit.actor, edit.origin, edit.version))
+            _record(c, edit, "set", str(existing["body"]) if existing is not None else "", edit.version)
             c.commit()
             return edit
         finally:
@@ -214,7 +279,8 @@ def accepted_object_edits(connection_id: str) -> list[OverlayEdit]:
         return []
 
 
-def withdraw_edit(edit_id: str, connection_id: str = "", org_id: Optional[str] = None) -> Optional[OverlayEdit]:
+def withdraw_edit(edit_id: str, connection_id: str = "", org_id: Optional[str] = None, *,
+                  actor: str = "") -> Optional[OverlayEdit]:
     """Remove ONE edit — the single-row sibling of `purge_connections`, which until now was the only way
     to unsay an annotation and took the whole connection with it.
 
@@ -223,7 +289,8 @@ def withdraw_edit(edit_id: str, connection_id: str = "", org_id: Optional[str] =
     in scope carries that id — the caller answers 404 rather than reporting a delete that deleted nothing.
 
     Withdrawing restores nothing, because nothing was ever written: the source value is what it always
-    was, and the next read simply stops merging the overlay over it.
+    was, and the next read simply stops merging the overlay over it. Arc OC-6 — the withdrawal is a version of the
+    target too, kept in its history with who withdrew it and the value it ended: the current row goes, the record stays.
     """
     if not edit_id:
         return None
@@ -243,6 +310,8 @@ def withdraw_edit(edit_id: str, connection_id: str = "", org_id: Optional[str] =
                 return None
             edit = _row_to_edit(row)
             c.execute("DELETE FROM overlay_edits WHERE id = ?", (edit.id,))
+            withdrawn = edit.model_copy(update={"actor": actor or edit.actor, "note": ""})
+            _record(c, withdrawn, "withdrawn", edit.body, int(edit.version or 0) + 1)
             c.commit()
             return edit
         finally:
@@ -264,10 +333,34 @@ def purge_connections(connection_ids: list[str], org_id: Optional[str] = None) -
                 sql += " AND org_id = ?"
                 args.append(org_id)
             n = c.execute(sql, args).rowcount
+            # the connection is gone: its edits' history goes with it (the catalog-delete cascade)
+            c.execute(sql.replace("overlay_edits", "overlay_edit_history", 1), args)
             c.commit()
             return n
         finally:
             c.close()
+
+
+def edit_history(connection_id: str, *, object_type: str = "", row_key: str = "", column: str = "",
+                 org_id: Optional[str] = None, limit: int = 200) -> list[dict]:
+    """Arc OC-6 — every version of the edits on a connection's objects, newest first: who set what, what it replaced,
+    who withdrew it — narrowed to one entity, one object, one property."""
+    sql, args = "SELECT * FROM overlay_edit_history WHERE connection_id = ?", [connection_id]
+    if org_id is not None:
+        sql += " AND org_id = ?"
+        args.append(org_id)
+
+    def word(name: str) -> str:
+        return "".join(ch for ch in (name or "").lower() if ch.isalnum())
+    with _LOCK:
+        c = _conn()
+        try:
+            rows = [dict(r) for r in c.execute(sql + " ORDER BY at DESC, version DESC", args).fetchall()]
+        finally:
+            c.close()
+    out = [r for r in rows if (not object_type or word(r["object_type"]) == word(object_type))
+           and (not row_key or str(r["row_key"]) == str(row_key)) and (not column or r["column"].lower() == column.lower())]
+    return out[:limit]
 
 
 # ── read-time merge ─────────────────────────────────────────────────────────────

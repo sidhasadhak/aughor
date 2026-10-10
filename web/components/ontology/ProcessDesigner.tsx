@@ -31,6 +31,7 @@ import { withUniqueKeys } from "@/lib/listKeys";
 import { requestTab } from "@/lib/navigate";
 import { listObjects, type ObjectListingPage } from "@/lib/objects";
 import {
+  changeProcess,
   declareProcess,
   getProcessCandidates,
   getRelease,
@@ -38,6 +39,7 @@ import {
   publishRelease,
   type DesignCheck,
   type ProcessCandidates,
+  type ProcessDetail,
   type ProcessMoment,
   type ProcessPreview,
   type ReleaseState,
@@ -45,6 +47,8 @@ import {
 } from "@/lib/objectTypes";
 import {
   EMPTY_STAGE,
+  LEFT,
+  draftFromProcess,
   dropDraft,
   emptyDraft,
   freshId,
@@ -53,6 +57,7 @@ import {
   keptDraft,
   notReady,
   toSpec,
+  toggledMoves,
   type Anchor,
   type ProcessDraft,
   type PromiseDraft,
@@ -101,10 +106,13 @@ export const cockpitSpecFor = processCockpitSpec;
 
 type Phase = { at: "draft" } | { at: "declared"; id: string } | { at: "published"; id: string; release: number };
 
-export function ProcessDesigner({ connectionId, schema, types, entity, takenIds, onClose, onDeclared, onPublished }: {
+export function ProcessDesigner({ connectionId, schema, types, entity, takenIds, editing, onClose, onDeclared, onPublished }: {
   connectionId: string;
   schema?: string;
   types: TypeMapRow[];
+  /** Arc OC-5 — a declared process being CHANGED (a promise added, the moves expected): its id and its stages' names
+   *  stay; saving counts it again and writes a new version of it. */
+  editing?: ProcessDetail;
   /** The type a person started from, when they did. */
   entity?: string;
   /** Ids of the processes already declared — a new one is never named like them. */
@@ -115,10 +123,11 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
   onPublished?: () => void;
 }) {
   const [draft, setDraft] = useState<ProcessDraft>(() => {
+    if (editing) return draftFromProcess(editing);
     const kept = keptDraft(connectionId, schema);
     return kept && (!entity || kept.entity === entity) ? kept : emptyDraft(entity ?? "");
   });
-  const [restored] = useState(() => !!keptDraft(connectionId, schema) && draft.name !== "");
+  const [restored] = useState(() => !editing && !!keptDraft(connectionId, schema) && draft.name !== "");
   const [cands, setCands] = useState<ProcessCandidates | null>(null);
   const [candsProblem, setCandsProblem] = useState("");
   // A count is shown only beside the draft it counted — a stage changed since reads "—" until it is counted again.
@@ -164,7 +173,7 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
     const t = setTimeout(() => {
       setCounting(true);
       setCountProblem("");
-      previewProcess(connectionId, asking, schema)
+      previewProcess(connectionId, asking, schema, !!editing)
         .then(p => { if (n === asked.current) setCounted({ key: JSON.stringify(asking), preview: p }); })
         .catch(e => { if (n === asked.current) { setCounted(null); setCountProblem(errorText(e)); } })
         .finally(() => { if (n === asked.current) setCounting(false); });
@@ -215,13 +224,13 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
     if (!spec) return;
     setBusy("declare");
     try {
-      const made = await declareProcess(connectionId, spec, schema);
-      dropDraft(connectionId, schema);
+      const made = editing ? await changeProcess(connectionId, spec, schema) : await declareProcess(connectionId, spec, schema);
+      if (!editing) dropDraft(connectionId, schema);
       setPhase({ at: "declared", id: made.id });
       setReviewing(false);
       onDeclared(made.id);
       setRelease(await getRelease(connectionId, schema).catch(() => null));
-      toast.success("Declared. It reaches readers when the release is published.");
+      toast.success(`${editing ? "Changed" : "Declared"}. It reaches readers when the release is published.`);
     } catch (e) {
       toast.error(...refusal("Not declared", e));
     } finally { setBusy(""); }
@@ -262,16 +271,18 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
         <span className="aug-fs-xs" style={{ ...HINT, display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
           Ontology <Icon name="chevr" size={11} /> Processes <Icon name="chevr" size={11} />
         </span>
-        <span style={{ fontWeight: 500, color: "var(--t1)" }}>{draft.name.trim() || "New process"}</span>
+        <span style={{ fontWeight: 500, color: "var(--t1)" }}>
+          {editing ? `Change ${editing.display_name}` : draft.name.trim() || "New process"}
+        </span>
         <span className="aug-tag aug-tag-gray" data-testid="designer-state">{stateLabel}</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          {phase.at === "draft" && (
+          {phase.at === "draft" && !editing && (
             <Button size="xs" variant="ghost" onClick={() => toast.success(keepDraft(connectionId, schema, draft)
               ? "Draft kept in this browser." : "This browser would not keep the draft.")}>Save draft</Button>
           )}
           {phase.at === "draft" && (
             <Button size="xs" variant="secondary" data-testid="designer-review" onClick={() => setReviewing(true)}>
-              Review and publish
+              {editing ? "Review the change" : "Review and publish"}
             </Button>
           )}
           <Button size="xs" variant="ghost" onClick={onClose}>Close</Button>
@@ -292,13 +303,15 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
             {problem ? <span>Not ready to publish: {problem}</span> : (
               <>
                 <span>
-                  Declaring <b>{draft.name.trim()}</b>{" "}counts it once more and writes it to the draft of this connection&apos;s
+                  {editing ? "Saving the change to " : "Declaring "}<b>{draft.name.trim()}</b>{" "}counts it once more and writes it to the draft of this connection&apos;s
                   ontology; it reaches the agent, the Briefing and cockpits when the release is published.
                   {openAsks.length > 0 && ` ${openAsks.length === 1 ? "One question below is" : `${openAsks.length} questions below are`} not answered — the numbers would be published as they stand.`}
                 </span>
                 <span style={{ display: "flex", gap: 6 }}>
                   <Button size="xs" disabled={!!busy || counting} data-testid="designer-declare" onClick={() => void declare()}>
-                    {busy === "declare" ? "Declaring…" : openAsks.length ? "Declare it anyway" : "Declare the process"}
+                    {busy === "declare" ? (editing ? "Saving…" : "Declaring…")
+                      : editing ? (openAsks.length ? "Save it anyway" : "Save the change")
+                      : openAsks.length ? "Declare it anyway" : "Declare the process"}
                   </Button>
                   <Button size="xs" variant="ghost" onClick={() => setReviewing(false)}>Not yet</Button>
                 </span>
@@ -333,7 +346,7 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
         </div>
         <div>
           <p className="aug-fs-xs" style={LABEL}>What moves through it</p>
-          <SelectField value={draft.entity} aria-label="What moves through the process" disabled={phase.at !== "draft"}
+          <SelectField value={draft.entity} aria-label="What moves through the process" disabled={phase.at !== "draft" || !!editing}
             onChange={e => edit({ entity: e.target.value, stages: [{ ...EMPTY_STAGE }, { ...EMPTY_STAGE }], leaves: null, late: [] })}>
             <option value="">Choose a type…</option>
             {types.filter(t => !t.absorbed_into).map(t => (
@@ -417,6 +430,10 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
           <p className="aug-fs-xs" style={{ ...HINT, margin: "8px 0 0" }}>Not read: {cands.unread.join("; ")}</p>
         ) : null}
       </section>
+
+      {/* the last count's moves stay listed while a mark is counted again — the marks are the draft's own */}
+      <MovesSection draft={draft} preview={counted?.preview ?? null} disabled={phase.at !== "draft"}
+        onMark={(move, expected) => edit({ moves: toggledMoves(draft, counted?.preview.process.observed ?? [], move, expected) })} />
 
       <section style={CARD} data-testid="designer-checks">
         <div style={{ fontWeight: 500, color: "var(--t1)", marginBottom: 8 }}>Before you publish</div>
@@ -704,5 +721,59 @@ function Sample({ page }: { page: ObjectListingPage }) {
       </table>
       {page.total != null && <span style={HINT}>{formatCount(page.total)} in all</span>}
     </div>
+  );
+}
+
+
+/** Arc OC-5 — how objects move between the stages, as the data counts it, with the moves a person expects marked: none
+ *  marked, each stage to the next is expected. A move the data makes that nobody expects, and one expected that never
+ *  happens, are both said. */
+function MovesSection({ draft, preview, disabled, onMark }: {
+  draft: ProcessDraft;
+  preview: ProcessPreview | null;
+  disabled: boolean;
+  onMark: (move: { from: string; to: string }, expected: boolean) => void;
+}) {
+  const observed = preview?.process.observed ?? [];
+  const conformance = preview?.process.conformance ?? {};
+  const label = (id: string) => (id === LEFT ? "leaves the process"
+    : draft.stages.find(s => (s.id || idFrom(s.label)) === id)?.label.trim() || id);
+  return (
+    <section style={CARD} data-testid="designer-moves">
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        <span style={{ fontWeight: 500, color: "var(--t1)" }}>How objects move</span>
+        <span className="aug-fs-xs" style={HINT}>
+          {draft.moves ? "the moves you expect are ticked" : "none marked — each stage to the next is expected"}
+        </span>
+      </div>
+      {!observed.length ? (
+        <p className="aug-fs-sm" style={{ ...HINT, margin: 0 }}>
+          {preview ? "No moves between stages with a moment were counted." : "The moves appear once the draft is counted."}
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {withUniqueKeys(observed, m => `${m.from_stage}>${m.to_stage}`).map(([k, m]) => {
+            const expected = draft.moves ? draft.moves.some(x => x.from === m.from_stage && x.to === m.to_stage) : m.declared;
+            return (
+            <label key={k} className="aug-fs-sm" data-testid="designer-move"
+              style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t1)" }}>
+              <Checkbox checked={expected} disabled={disabled}
+                aria-label={`Expect ${label(m.from_stage)} to ${label(m.to_stage)}`}
+                onChange={e => onMark({ from: m.from_stage, to: m.to_stage }, e.target.checked)} />
+              <span>{label(m.from_stage)} → {label(m.to_stage)}</span>
+              <span className="aug-fs-xs" style={HINT}>{formatCount(m.objects)}</span>
+              {!expected && !!m.objects && <span className="aug-tag aug-tag-amber">nobody expects it</span>}
+              {expected && !m.objects && <span className="aug-tag aug-tag-gray">never happens</span>}
+            </label>
+            );
+          })}
+        </div>
+      )}
+      {!!conformance.untimed?.length && (
+        <p className="aug-fs-xs" style={{ ...HINT, margin: "6px 0 0" }}>
+          Not counted as moves: {conformance.untimed.join(", ")} — reached by a status, which has no moment.
+        </p>
+      )}
+    </section>
   );
 }

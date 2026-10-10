@@ -88,7 +88,7 @@ def test_the_guide_is_read_from_the_models_and_names_the_gates():
     assert "never code" in g["principle"] and g["limits"]["files"] == KIT.MAX_FILES and R.get_pack_kit()["version"] == g["version"]
 
 
-def test_a_packs_record_counts_what_installs_found_and_demotes_only_on_the_record():
+def test_a_packs_record_counts_what_installs_found_and_demotes_only_on_the_record(monkeypatch):
     from aughor.ontology.models import OntologyEntity, OntologyGraph, OntologyRelationship
     from aughor.packs.ontology_map import apply_core_claims, record_claims, resolve_ontology
     pid = "rec-" + uuid.uuid4().hex[:6]
@@ -117,8 +117,11 @@ def test_a_packs_record_counts_what_installs_found_and_demotes_only_on_the_recor
         PR.demote(pid, by="user:ana")
     with pytest.raises(ValueError, match="says why"):
         PR.demote(pid, by="user:ana", force=True)
+    pushed: list = []          # Arc OC-6, D6 — listed subscribable, and now pushed to the people subscribed to it
+    monkeypatch.setattr("aughor.record.subscriptions.notify", lambda kind, payload, conn_id="": pushed.append((kind, payload["text"])))
     out = PR.demote(pid, by="user:ana", force=True, why="the author withdrew it")
     assert out["status"] == "deprecated" and out["demoted"] and any(j["kind"] == "pack.demoted" and j.get("forced") for j in out["journal"])
+    assert pushed == [("pack.demoted", f"The pack {pid} was demoted to deprecated: the author withdrew it")]
     listed = {p["id"]: p for p in PR.listing()}
     assert listed[pid]["status"] == "deprecated" and listed[pid]["claims"]["measured"] == 3 and "core-ecommerce" in listed
     door = R.get_pack_listing()

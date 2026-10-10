@@ -64,6 +64,9 @@ def promise_chain_findings(conn_id: str) -> list[dict]:
                          + (f" ({recovered} recovered)" if recovered else "") + ".")
         if not closed:
             parts.append("No outcome recorded yet.")
+        upstream = _upstream(conn_id, ref.split(":", 1)[1])
+        if upstream:
+            parts.append(f"Upstream of it: {upstream}.")
 
         slug = ref.split(":", 1)[1].replace(".", "_")[:40]
         out.append({
@@ -78,3 +81,18 @@ def promise_chain_findings(conn_id: str) -> list[dict]:
             "promise_chain": True,
         })
     return out
+
+
+def _upstream(conn_id: str, promise: str) -> str:
+    """Arc OC-5 — what is declared and measured upstream of a promise (``<process>.<promise>``), in its counts, so a
+    promise that moved is read beside what moves it; "" when nothing measured is upstream of it."""
+    try:
+        from aughor.ontology.impacts import impact_words, impacts_into
+        from aughor.ontology.store import load_latest_ontology
+        graph = load_latest_ontology(conn_id)
+        process_id, _, noun = promise.partition(".")
+        return "; ".join(impact_words(graph, i) for i in impacts_into(graph, process_id, noun)
+                         if i.verified is True)[:600]
+    except Exception as exc:  # noqa: BLE001 — the chain stands without its upstream
+        tolerate(exc, "a promise's upstream impacts could not be read", counter="brief.promise_upstream")
+        return ""

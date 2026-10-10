@@ -1,0 +1,1295 @@
+{
+  "datasets": [
+    {
+      "results": [
+        {
+          "id": "ob01_dispatch_breach_pct",
+          "trap": "promise",
+          "question": "What percentage of order lines broke the dispatch promise? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(COUNT(CASE WHEN oi.shipping_limit_date < o.order_delivered_customer_date THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS broken_dispatch_promise_pct FROM ecommerce.orders o JOIN ecommerce.order_items oi ON o.order_id = oi.order_id WHERE o.order_delivered_customer_date IS NOT NULL",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(100.0 * SUM(CASE WHEN j1.order_delivered_carrier_date > t0.shipping_limit_date THEN 1 ELSE 0 END) / NULLIF(COUNT(CASE WHEN j1.order_delivered_carrier_date IS NOT NULL AND t0.shipping_limit_date IS NOT NULL THEN 1 END), 0), 2) AS dispatch_breach_percentage FROM ecommerce.order_items AS t0 LEFT JOIN ecommerce.orders AS j1 ON t0.order_id = j1.order_id",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "dispatch_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "dispatch_breach_rate"
+              ],
+              "rules": [],
+              "moments": [],
+              "start": "OrderItem",
+              "drivers": []
+            },
+            "block_chars": 4108
+          },
+          "framed_impact": {
+            "sql": "SELECT ROUND(100.0 * SUM(CASE WHEN j1.order_delivered_carrier_date > t0.shipping_limit_date THEN 1 ELSE 0 END) / NULLIF(COUNT(CASE WHEN j1.order_delivered_carrier_date IS NOT NULL AND t0.shipping_limit_date IS NOT NULL THEN 1 END), 0), 2) AS dispatch_breach_percentage FROM ecommerce.order_items AS t0 LEFT JOIN ecommerce.orders AS j1 ON t0.order_id = j1.order_id",
+            "class": "correct",
+            "match": 1.0,
+            "block_chars": 4108,
+            "via": "framed (no measured impact reached the question)"
+          },
+          "latency_s": 3.3,
+          "definition": "declared"
+        },
+        {
+          "id": "ob02_dispatch_by_category",
+          "trap": "promise",
+          "question": "Which five product categories, among those with at least 1,000 order lines, break the dispatch promise most often? Ignore lines whose product has no category. Return the category and its breach percentage rounded to two decimals, worst first.",
+          "raw": {
+            "sql": "WITH category_performance AS (\n    SELECT \n        p.product_category_name,\n        COUNT(*) AS total_orders,\n        SUM(CASE WHEN o.order_delivered_customer_date > o.order_estimated_delivery_date THEN 1 ELSE 0 END) AS breach_count\n    FROM ecommerce.order_items oi\n    JOIN ecommerce.products p ON oi.product_id = p.product_id\n    JOIN ecommerce.orders o ON oi.order_id = o.order_id\n    WHERE p.product_category_name IS NOT NULL\n    GROUP BY p.product_category_name\n    HAVING COUNT(*) >= 1000\n),\nranked_categories AS (\n    SELECT \n        product_category_name,\n        ROUND(breach_count * 100.0 / total_orders, 2) AS breach_percentage,\n        RANK() OVER (ORDER BY (breach_count * 100.0 / total_orders) DESC) AS rnk\n    FROM category_performance\n)\nSELECT \n    product_category_name,\n    breach_percentage\nFROM ranked_categories\nWHERE rnk <= 5\nORDER BY breach_percentage DESC",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "WITH category_stats AS (\n    SELECT \n        p.product_category_name,\n        COUNT(*) AS total_lines,\n        100.0 * SUM(CASE WHEN o.order_delivered_carrier_date > oi.shipping_limit_date THEN 1 ELSE 0 END) / \n        NULLIF(COUNT(CASE WHEN o.order_delivered_carrier_date IS NOT NULL AND oi.shipping_limit_date IS NOT NULL THEN 1 END), 0) AS breach_rate\n    FROM ecommerce.order_items AS oi\n    JOIN ecommerce.products AS p ON oi.product_id = p.product_id\n    JOIN ecommerce.orders AS o ON oi.order_id = o.order_id\n    WHERE p.product_category_name IS NOT NULL\n    GROUP BY p.product_category_name\n    HAVING COUNT(*) >= 1000\n)\nSELECT \n    product_category_name, \n    ROUND(breach_rate, 2) AS breach_percentage\nFROM category_stats\nORDER BY breach_rate DESC\nLIMIT 5",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "dispatch_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "dispatch_breach_rate"
+              ],
+              "rules": [],
+              "moments": [],
+              "start": "OrderItem",
+              "drivers": [
+                "order_item_to_product.product_category_name"
+              ]
+            },
+            "block_chars": 4132
+          },
+          "framed_impact": {
+            "sql": "WITH category_stats AS (\n    SELECT \n        p.product_category_name,\n        COUNT(*) AS total_lines,\n        100.0 * SUM(CASE WHEN o.order_delivered_carrier_date > oi.shipping_limit_date THEN 1 ELSE 0 END) / \n        NULLIF(COUNT(CASE WHEN o.order_delivered_carrier_date IS NOT NULL AND oi.shipping_limit_date IS NOT NULL THEN 1 END), 0) AS breach_rate\n    FROM ecommerce.order_items AS oi\n    JOIN ecommerce.products AS p ON oi.product_id = p.product_id\n    JOIN ecommerce.orders AS o ON oi.order_id = o.order_id\n    WHERE p.product_category_name IS NOT NULL\n    GROUP BY p.product_category_name\n    HAVING COUNT(*) >= 1000\n)\nSELECT \n    product_category_name, \n    ROUND(breach_rate, 2) AS breach_percentage\nFROM category_stats\nORDER BY breach_rate DESC\nLIMIT 5",
+            "class": "correct",
+            "match": 1.0,
+            "block_chars": 4132,
+            "via": "framed (no measured impact reached the question)"
+          },
+          "latency_s": 3.8,
+          "definition": "declared"
+        },
+        {
+          "id": "ob03_southeast_dispatch_pct",
+          "trap": "rule",
+          "question": "What percentage of order lines sold by Southeast sellers broke the dispatch promise? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN o.order_delivered_customer_date > o.order_estimated_delivery_date THEN 1 END) / NULLIF(COUNT(*), 0), 2) AS broken_promise_percentage FROM ecommerce.order_items oi JOIN ecommerce.orders o ON oi.order_id = o.order_id JOIN ecommerce.sellers s ON oi.seller_id = s.seller_id WHERE s.seller_state IN ('SP', 'RJ', 'MG', 'ES')",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN (j2.order_delivered_carrier_date > t0.shipping_limit_date) THEN 1 END) / NULLIF(COUNT(CASE WHEN (NOT j2.order_delivered_carrier_date IS NULL) AND (NOT t0.shipping_limit_date IS NULL) THEN 1 END), 0), 2) AS dispatch_breach_percentage FROM ecommerce.order_items AS t0 LEFT JOIN ecommerce.sellers AS j1 ON t0.seller_id = j1.seller_id LEFT JOIN ecommerce.orders AS j2 ON t0.order_id = j2.order_id WHERE (j1.seller_state IN ('SP', 'RJ', 'MG', 'ES'))",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "dispatch_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "dispatch_breach_rate"
+              ],
+              "rules": [
+                "southeast"
+              ],
+              "moments": [],
+              "start": "OrderItem",
+              "drivers": []
+            },
+            "block_chars": 5010
+          },
+          "framed_impact": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN (j2.order_delivered_carrier_date > t0.shipping_limit_date) THEN 1 END) / NULLIF(COUNT(CASE WHEN (NOT j2.order_delivered_carrier_date IS NULL) AND (NOT t0.shipping_limit_date IS NULL) THEN 1 END), 0), 2) AS dispatch_breach_percentage FROM ecommerce.order_items AS t0 LEFT JOIN ecommerce.sellers AS j1 ON t0.seller_id = j1.seller_id LEFT JOIN ecommerce.orders AS j2 ON t0.order_id = j2.order_id WHERE (j1.seller_state IN ('SP', 'RJ', 'MG', 'ES'))",
+            "class": "correct",
+            "match": 1.0,
+            "block_chars": 5010,
+            "via": "framed (no measured impact reached the question)"
+          },
+          "latency_s": 2.9,
+          "definition": "declared"
+        },
+        {
+          "id": "ob04_delivery_breach_pct",
+          "trap": "promise",
+          "question": "What percentage of orders broke the delivery promise? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(COUNT(CASE WHEN order_delivered_customer_date > order_estimated_delivery_date THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) FROM ecommerce.orders WHERE order_status = 'delivered' AND order_delivered_customer_date IS NOT NULL AND order_estimated_delivery_date IS NOT NULL",
+            "class": "correct",
+            "match": 1.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN order_delivered_customer_date > order_estimated_delivery_date THEN 1 END) / NULLIF(COUNT(CASE WHEN order_delivered_customer_date IS NOT NULL AND order_estimated_delivery_date IS NOT NULL THEN 1 END), 0), 2) AS delivery_breach_percentage FROM ecommerce.orders",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "delivery_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "delivery_breach_rate"
+              ],
+              "rules": [],
+              "moments": [],
+              "start": "Order",
+              "drivers": []
+            },
+            "block_chars": 2545
+          },
+          "framed_impact": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN order_delivered_customer_date > order_estimated_delivery_date THEN 1 END) / NULLIF(COUNT(CASE WHEN order_delivered_customer_date IS NOT NULL AND order_estimated_delivery_date IS NOT NULL THEN 1 END), 0), 2) AS delivery_breach_percentage FROM ecommerce.orders",
+            "class": "correct",
+            "match": 1.0,
+            "impacts": [
+              "late_dispatch_late_delivery"
+            ],
+            "block_chars": 4086
+          },
+          "latency_s": 3.7,
+          "definition": "declared"
+        },
+        {
+          "id": "ob05_delivery_by_customer_state",
+          "trap": "promise",
+          "question": "For the five customer states with the worst delivery promise record, among states with at least 1,000 orders, return the state and the breach percentage rounded to two decimals, worst first.",
+          "raw": {
+            "sql": "WITH state_stats AS (\n    SELECT \n        c.customer_state,\n        COUNT(o.order_id) AS total_orders,\n        SUM(CASE WHEN o.order_delivered_customer_date > o.order_estimated_delivery_date THEN 1 ELSE 0 END) AS breach_count\n    FROM ecommerce.orders o\n    JOIN ecommerce.customer c ON o.customer_id = c.customer_id\n    WHERE o.order_status = 'delivered'\n    GROUP BY c.customer_state\n),\nranked_states AS (\n    SELECT \n        customer_state,\n        ROUND(breach_count * 100.0 / NULLIF(total_orders, 0), 2) AS breach_percentage,\n        RANK() OVER (ORDER BY (breach_count * 100.0 / NULLIF(total_orders, 0)) DESC) AS rnk\n    FROM state_stats\n    WHERE total_orders >= 1000\n)\nSELECT \n    customer_state,\n    breach_percentage\nFROM ranked_states\nWHERE rnk <= 5\nORDER BY breach_percentage DESC",
+            "class": "correct",
+            "match": 1.0
+          },
+          "framed": {
+            "sql": "WITH state_metrics AS (\n    SELECT \n        c.customer_state,\n        COUNT(o.order_id) AS total_orders,\n        100.0 * COUNT(CASE WHEN o.order_delivered_customer_date > o.order_estimated_delivery_date THEN 1 END) / \n        NULLIF(COUNT(CASE WHEN o.order_delivered_customer_date IS NOT NULL AND o.order_estimated_delivery_date IS NOT NULL THEN 1 END), 0) AS breach_pct\n    FROM ecommerce.orders AS o\n    JOIN ecommerce.customer AS c ON o.customer_id = c.customer_id\n    WHERE o.order_delivered_customer_date IS NOT NULL \n      AND o.order_estimated_delivery_date IS NOT NULL\n    GROUP BY c.customer_state\n    HAVING COUNT(o.order_id) >= 1000\n),\nranked_states AS (\n    SELECT \n        customer_state,\n        ROUND(breach_pct, 2) AS breach_percentage,\n        RANK() OVER (ORDER BY breach_pct DESC) AS rnk\n    FROM state_metrics\n)\nSELECT \n    customer_state,\n    breach_percentage\nFROM ranked_states\nWHERE rnk <= 5\nORDER BY breach_percentage DESC",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "delivery_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "delivery_breach_rate"
+              ],
+              "rules": [],
+              "moments": [],
+              "start": "Order",
+              "drivers": [
+                "order_to_customer.customer_state"
+              ]
+            },
+            "block_chars": 2569
+          },
+          "framed_impact": {
+            "sql": "WITH state_stats AS (\n    SELECT \n        j1.customer_state,\n        COUNT(*) AS total_orders,\n        100.0 * COUNT(CASE WHEN t0.order_delivered_customer_date > t0.order_estimated_delivery_date THEN 1 END) / NULLIF(COUNT(*), 0) AS breach_pct\n    FROM ecommerce.orders AS t0\n    JOIN ecommerce.customer AS j1 ON t0.customer_id = j1.customer_id\n    WHERE t0.order_delivered_customer_date IS NOT NULL \n      AND t0.order_estimated_delivery_date IS NOT NULL\n    GROUP BY j1.customer_state\n    HAVING COUNT(*) >= 1000\n),\nranked_states AS (\n    SELECT \n        customer_state,\n        ROUND(breach_pct, 2) AS breach_percentage,\n        RANK() OVER (ORDER BY breach_pct DESC) AS rnk\n    FROM state_stats\n)\nSELECT \n    customer_state,\n    breach_percentage\nFROM ranked_states\nWHERE rnk <= 5\nORDER BY breach_percentage DESC",
+            "class": "correct",
+            "match": 1.0,
+            "impacts": [
+              "late_dispatch_late_delivery"
+            ],
+            "block_chars": 4110
+          },
+          "latency_s": 4.8,
+          "definition": "declared"
+        },
+        {
+          "id": "ob06_avg_dispatch_lag",
+          "trap": "lag",
+          "question": "What is our average dispatch lag in days? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(AVG(date_diff('day', order_purchase_timestamp, order_delivered_carrier_date)), 2) AS avg_dispatch_lag_days FROM ecommerce.orders WHERE order_purchase_timestamp IS NOT NULL AND order_delivered_carrier_date IS NOT NULL",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(AVG(DATE_DIFF('day', CAST(order_approved_at AS DATE), CAST(order_delivered_carrier_date AS DATE))), 2) AS avg_dispatch_lag_days FROM ecommerce.orders WHERE order_approved_at IS NOT NULL AND order_delivered_carrier_date IS NOT NULL",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "dispatch_lag_days",
+              "chosen_by": "names",
+              "candidates": [
+                "dispatch_lag_days"
+              ],
+              "rules": [],
+              "moments": [],
+              "start": "Order",
+              "drivers": []
+            },
+            "block_chars": 1593
+          },
+          "framed_impact": {
+            "sql": "SELECT ROUND(AVG(DATE_DIFF('day', CAST(order_approved_at AS DATE), CAST(order_delivered_carrier_date AS DATE))), 2) AS avg_dispatch_lag_days FROM ecommerce.orders WHERE order_approved_at IS NOT NULL AND order_delivered_carrier_date IS NOT NULL",
+            "class": "correct",
+            "match": 1.0,
+            "block_chars": 1593,
+            "via": "framed (no measured impact reached the question)"
+          },
+          "latency_s": 2.8,
+          "definition": "declared"
+        },
+        {
+          "id": "ob07_fulfilled_orders_2017",
+          "trap": "rule",
+          "question": "How many fulfilled orders were placed in 2017?",
+          "raw": {
+            "sql": "SELECT COUNT(order_id) FROM ecommerce.orders WHERE order_status = 'delivered' AND EXTRACT(YEAR FROM order_purchase_timestamp) = 2017",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT COUNT(*) AS fulfilled_orders FROM ecommerce.orders WHERE order_status NOT IN ('canceled', 'unavailable') AND order_purchase_timestamp >= '2017-01-01 00:00:00' AND order_purchase_timestamp < '2018-01-01 00:00:00'",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "fulfilled_orders",
+              "chosen_by": "names",
+              "candidates": [
+                "fulfilled_orders"
+              ],
+              "rules": [
+                "fulfilled_orders"
+              ],
+              "moments": [
+                "placed"
+              ],
+              "start": "Order",
+              "drivers": []
+            },
+            "block_chars": 1158
+          },
+          "framed_impact": {
+            "sql": "SELECT COUNT(*) AS fulfilled_orders FROM ecommerce.orders WHERE order_status NOT IN ('canceled', 'unavailable') AND order_purchase_timestamp >= '2017-01-01 00:00:00' AND order_purchase_timestamp < '2018-01-01 00:00:00'",
+            "class": "correct",
+            "match": 1.0,
+            "block_chars": 1158,
+            "via": "framed (no measured impact reached the question)"
+          },
+          "latency_s": 2.5,
+          "definition": "declared"
+        },
+        {
+          "id": "ob08_fulfilled_line_revenue_by_year",
+          "trap": "rule",
+          "question": "What was the total of line prices (excluding freight) on fulfilled orders, by the year the order was placed? Return the year and the total rounded to two decimals, by year.",
+          "raw": {
+            "sql": "SELECT\n  EXTRACT(YEAR FROM t1.order_purchase_timestamp) AS order_year,\n  ROUND(SUM(t2.price), 2) AS total_line_price\nFROM ecommerce.orders AS t1\nJOIN ecommerce.order_items AS t2\n  ON t1.order_id = t2.order_id\nWHERE\n  t1.order_status = 'delivered'\nGROUP BY\n  1\nORDER BY\n  1 ASC",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT EXTRACT(YEAR FROM t1.order_purchase_timestamp) AS order_year, ROUND(SUM(t2.price), 2) AS total_price FROM ecommerce.orders AS t1 JOIN ecommerce.order_items AS t2 ON t1.order_id = t2.order_id WHERE t1.order_status NOT IN ('canceled', 'unavailable') GROUP BY 1 ORDER BY 1 ASC",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "fulfilled_orders",
+              "chosen_by": "names",
+              "candidates": [
+                "fulfilled_orders"
+              ],
+              "rules": [
+                "fulfilled_orders"
+              ],
+              "moments": [
+                "placed"
+              ],
+              "start": "Order",
+              "drivers": []
+            },
+            "block_chars": 1302
+          },
+          "framed_impact": {
+            "sql": "SELECT EXTRACT(YEAR FROM t1.order_purchase_timestamp) AS order_year, ROUND(SUM(t2.price), 2) AS total_price FROM ecommerce.orders AS t1 JOIN ecommerce.order_items AS t2 ON t1.order_id = t2.order_id WHERE t1.order_status NOT IN ('canceled', 'unavailable') GROUP BY 1 ORDER BY 1 ASC",
+            "class": "correct",
+            "match": 1.0,
+            "block_chars": 1302,
+            "via": "framed (no measured impact reached the question)"
+          },
+          "latency_s": 61.6,
+          "definition": "declared"
+        },
+        {
+          "id": "ob09_fulfilled_orders_delivered_pct",
+          "trap": "rule+moment",
+          "question": "What percentage of fulfilled orders were delivered? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(COUNT(CASE WHEN order_status = 'delivered' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) FROM ecommerce.orders WHERE order_status IN ('delivered', 'shipped', 'canceled', 'unavailable', 'invoiced', 'processing', 'created', 'approved') AND order_status IS NOT NULL",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(COUNT(CASE WHEN order_delivered_customer_date IS NOT NULL THEN 1 END) * 100.0 / COUNT(*), 2) FROM ecommerce.orders WHERE order_status NOT IN ('canceled', 'unavailable') AND order_status IS NOT NULL",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "fulfilled_orders",
+              "chosen_by": "names",
+              "candidates": [
+                "fulfilled_orders"
+              ],
+              "rules": [
+                "fulfilled_orders"
+              ],
+              "moments": [
+                "delivered"
+              ],
+              "start": "Order",
+              "drivers": []
+            },
+            "block_chars": 1169
+          },
+          "framed_impact": {
+            "sql": "SELECT ROUND(COUNT(CASE WHEN order_delivered_customer_date IS NOT NULL THEN 1 END) * 100.0 / COUNT(*), 2) FROM ecommerce.orders WHERE order_status NOT IN ('canceled', 'unavailable') AND order_status IS NOT NULL",
+            "class": "correct",
+            "match": 1.0,
+            "block_chars": 1169,
+            "via": "framed (no measured impact reached the question)"
+          },
+          "latency_s": 2.5,
+          "definition": "declared"
+        },
+        {
+          "id": "ob10_worst_seller_states_dispatch",
+          "trap": "promise",
+          "question": "Which three seller states, among those with at least 1,000 order lines, have the worst dispatch record? Return the state and its breach percentage rounded to two decimals, worst first.",
+          "raw": {
+            "sql": "WITH seller_performance AS (\n    SELECT \n        s.seller_state,\n        COUNT(*) AS total_orders,\n        SUM(CASE WHEN o.order_delivered_customer_date > oi.shipping_limit_date THEN 1 ELSE 0 END) AS breached_orders\n    FROM ecommerce.order_items oi\n    JOIN ecommerce.orders o ON oi.order_id = o.order_id\n    JOIN ecommerce.sellers s ON oi.seller_id = s.seller_id\n    WHERE o.order_delivered_customer_date IS NOT NULL \n      AND oi.shipping_limit_date IS NOT NULL\n    GROUP BY s.seller_state\n    HAVING COUNT(*) >= 1000\n)\nSELECT \n    seller_state, \n    ROUND(breached_orders * 100.0 / total_orders, 2) AS breach_percentage\nFROM seller_performance\nORDER BY breach_percentage DESC\nLIMIT 3",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "WITH state_stats AS (\n    SELECT \n        s.seller_state,\n        COUNT(*) AS total_lines,\n        100.0 * SUM(CASE WHEN o.order_delivered_carrier_date > oi.shipping_limit_date THEN 1 ELSE 0 END) / COUNT(*) AS breach_rate\n    FROM ecommerce.order_items AS oi\n    JOIN ecommerce.sellers AS s ON oi.seller_id = s.seller_id\n    JOIN ecommerce.orders AS o ON oi.order_id = o.order_id\n    WHERE o.order_delivered_carrier_date IS NOT NULL \n      AND oi.shipping_limit_date IS NOT NULL\n    GROUP BY s.seller_state\n    HAVING COUNT(*) >= 1000\n),\nranked_states AS (\n    SELECT \n        seller_state,\n        ROUND(breach_rate, 2) AS breach_percentage,\n        RANK() OVER (ORDER BY breach_rate DESC) AS rnk\n    FROM state_stats\n)\nSELECT \n    seller_state,\n    breach_percentage\nFROM ranked_states\nWHERE rnk <= 3\nORDER BY breach_percentage DESC",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "dispatch_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "dispatch_breach_rate"
+              ],
+              "rules": [],
+              "moments": [],
+              "start": "OrderItem",
+              "drivers": [
+                "order_item_to_seller.seller_state"
+              ]
+            },
+            "block_chars": 4132
+          },
+          "framed_impact": {
+            "sql": "WITH state_stats AS (\n    SELECT \n        s.seller_state,\n        COUNT(*) AS total_lines,\n        100.0 * SUM(CASE WHEN o.order_delivered_carrier_date > oi.shipping_limit_date THEN 1 ELSE 0 END) / COUNT(*) AS breach_rate\n    FROM ecommerce.order_items AS oi\n    JOIN ecommerce.sellers AS s ON oi.seller_id = s.seller_id\n    JOIN ecommerce.orders AS o ON oi.order_id = o.order_id\n    WHERE o.order_delivered_carrier_date IS NOT NULL \n      AND oi.shipping_limit_date IS NOT NULL\n    GROUP BY s.seller_state\n    HAVING COUNT(*) >= 1000\n),\nranked_states AS (\n    SELECT \n        seller_state,\n        ROUND(breach_rate, 2) AS breach_percentage,\n        RANK() OVER (ORDER BY breach_rate DESC) AS rnk\n    FROM state_stats\n)\nSELECT \n    seller_state,\n    breach_percentage\nFROM ranked_states\nWHERE rnk <= 3\nORDER BY breach_percentage DESC",
+            "class": "correct",
+            "match": 1.0,
+            "block_chars": 4132,
+            "via": "framed (no measured impact reached the question)"
+          },
+          "latency_s": 3.3,
+          "definition": "declared"
+        },
+        {
+          "id": "ob11_open_lines_past_promise",
+          "trap": "promise",
+          "question": "How many order lines have not been dispatched yet but are already past their dispatch promise, as of the latest dispatch in the data?",
+          "raw": {
+            "sql": "SELECT COUNT(*) FROM ecommerce.order_items oi JOIN ecommerce.orders o ON oi.order_id = o.order_id WHERE o.order_delivered_carrier_date IS NULL AND oi.shipping_limit_date < (SELECT MAX(order_delivered_carrier_date) FROM ecommerce.orders)",
+            "class": "correct",
+            "match": 1.0
+          },
+          "framed": {
+            "sql": "SELECT COUNT(*) AS late_undispatched_count FROM ecommerce.order_items AS t0 LEFT JOIN ecommerce.orders AS j1 ON t0.order_id = j1.order_id WHERE j1.order_delivered_carrier_date IS NULL AND t0.shipping_limit_date < '2018-09-11 19:48:28'",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "dispatch_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "dispatch_breach_rate"
+              ],
+              "rules": [],
+              "moments": [],
+              "start": "OrderItem",
+              "drivers": []
+            },
+            "block_chars": 4121
+          },
+          "framed_impact": {
+            "sql": "SELECT COUNT(*) AS late_undispatched_count FROM ecommerce.order_items AS t0 LEFT JOIN ecommerce.orders AS j1 ON t0.order_id = j1.order_id WHERE j1.order_delivered_carrier_date IS NULL AND t0.shipping_limit_date < '2018-09-11 19:48:28'",
+            "class": "correct",
+            "match": 1.0,
+            "block_chars": 4121,
+            "via": "framed (no measured impact reached the question)"
+          },
+          "latency_s": 3.3,
+          "definition": "declared"
+        },
+        {
+          "id": "ob12_worst_2018_month_dispatch",
+          "trap": "promise",
+          "question": "In which month of 2018, by the order's purchase date, did order lines break the dispatch promise most often by breach percentage? Return the month number and the percentage rounded to two decimals.",
+          "raw": {
+            "sql": "WITH monthly_breaches AS (\n    SELECT \n        DATE_TRUNC('month', o.order_purchase_timestamp) AS purchase_month,\n        COUNT(*) AS total_items,\n        SUM(CASE WHEN oi.shipping_limit_date < o.order_delivered_customer_date THEN 1 ELSE 0 END) AS breach_count\n    FROM ecommerce.orders o\n    JOIN ecommerce.order_items oi ON o.order_id = oi.order_id\n    WHERE o.order_purchase_timestamp >= '2018-01-01' AND o.order_purchase_timestamp < '2019-01-01'\n    GROUP BY 1\n),\nranked_months AS (\n    SELECT \n        purchase_month,\n        ROUND(breach_count * 100.0 / NULLIF(total_items, 0), 2) AS breach_pct,\n        RANK() OVER (ORDER BY (breach_count * 100.0 / NULLIF(total_items, 0)) DESC) AS rnk\n    FROM monthly_breaches\n)\nSELECT \n    EXTRACT(MONTH FROM purchase_month) AS month_number,\n    breach_pct\nFROM ranked_months\nWHERE rnk = 1",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "WITH monthly_breach AS (\n    SELECT \n        DATE_PART('month', j1.order_purchase_timestamp) AS month,\n        100.0 * COUNT(CASE WHEN (j1.order_delivered_carrier_date > t0.shipping_limit_date) THEN 1 END) / \n        NULLIF(COUNT(CASE WHEN (NOT j1.order_delivered_carrier_date IS NULL) AND (NOT t0.shipping_limit_date IS NULL) THEN 1 END), 0) AS breach_rate\n    FROM ecommerce.order_items AS t0 \n    LEFT JOIN ecommerce.orders AS j1 ON t0.order_id = j1.order_id \n    WHERE j1.order_purchase_timestamp >= '2018-01-01 00:00:00' \n      AND j1.order_purchase_timestamp < '2019-01-01 00:00:00'\n    GROUP BY 1\n),\nranked_months AS (\n    SELECT \n        month, \n        ROUND(breach_rate, 2) AS breach_rate,\n        RANK() OVER (ORDER BY breach_rate DESC) AS rnk\n    FROM monthly_breach\n)\nSELECT month, breach_rate FROM ranked_months WHERE rnk = 1",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "dispatch_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "dispatch_breach_rate"
+              ],
+              "rules": [],
+              "moments": [],
+              "start": "OrderItem",
+              "drivers": []
+            },
+            "block_chars": 4108
+          },
+          "framed_impact": {
+            "sql": "WITH monthly_breach AS (\n    SELECT \n        DATE_PART('month', j1.order_purchase_timestamp) AS month,\n        100.0 * COUNT(CASE WHEN (j1.order_delivered_carrier_date > t0.shipping_limit_date) THEN 1 END) / \n        NULLIF(COUNT(CASE WHEN (NOT j1.order_delivered_carrier_date IS NULL) AND (NOT t0.shipping_limit_date IS NULL) THEN 1 END), 0) AS breach_rate\n    FROM ecommerce.order_items AS t0 \n    LEFT JOIN ecommerce.orders AS j1 ON t0.order_id = j1.order_id \n    WHERE j1.order_purchase_timestamp >= '2018-01-01 00:00:00' \n      AND j1.order_purchase_timestamp < '2019-01-01 00:00:00'\n    GROUP BY 1\n),\nranked_months AS (\n    SELECT \n        month, \n        ROUND(breach_rate, 2) AS breach_rate,\n        RANK() OVER (ORDER BY breach_rate DESC) AS rnk\n    FROM monthly_breach\n)\nSELECT month, breach_rate FROM ranked_months WHERE rnk = 1",
+            "class": "correct",
+            "match": 1.0,
+            "block_chars": 4108,
+            "via": "framed (no measured impact reached the question)"
+          },
+          "latency_s": 3.7,
+          "definition": "declared"
+        },
+        {
+          "id": "ob13_sellers_per_state",
+          "trap": "control",
+          "question": "How many sellers are there in each state? Return the state and the count, largest first.",
+          "raw": {
+            "sql": "SELECT seller_state, COUNT(seller_id) AS seller_count FROM ecommerce.sellers GROUP BY seller_state ORDER BY seller_count DESC",
+            "class": "correct",
+            "match": 1.0
+          },
+          "framed": {
+            "sql": "SELECT seller_state, COUNT(seller_id) AS seller_count FROM ecommerce.sellers GROUP BY seller_state ORDER BY seller_count DESC",
+            "class": "correct",
+            "match": 1.0,
+            "via": "raw (the question reached nothing declared)",
+            "frame": {
+              "defines": false,
+              "outcome": null,
+              "chosen_by": null,
+              "candidates": [],
+              "rules": [],
+              "moments": [],
+              "start": "Seller",
+              "drivers": [
+                "seller_state"
+              ]
+            }
+          },
+          "framed_impact": {
+            "sql": "SELECT seller_state, COUNT(seller_id) AS seller_count FROM ecommerce.sellers GROUP BY seller_state ORDER BY seller_count DESC",
+            "class": "correct",
+            "match": 1.0,
+            "via": "framed (no measured impact reached the question)"
+          },
+          "latency_s": 1.0,
+          "definition": "schema"
+        },
+        {
+          "id": "ob14_avg_review_score",
+          "trap": "control",
+          "question": "What is the average review score? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(AVG(review_score), 2) FROM ecommerce.order_reviews",
+            "class": "correct",
+            "match": 1.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(AVG(review_score), 2) FROM ecommerce.order_reviews",
+            "class": "correct",
+            "match": 1.0,
+            "via": "raw (the question reached nothing declared)",
+            "frame": {
+              "defines": false,
+              "outcome": null,
+              "chosen_by": null,
+              "candidates": [],
+              "rules": [],
+              "moments": [],
+              "start": null,
+              "drivers": []
+            }
+          },
+          "framed_impact": {
+            "sql": "SELECT ROUND(AVG(review_score), 2) FROM ecommerce.order_reviews",
+            "class": "correct",
+            "match": 1.0,
+            "via": "framed (no measured impact reached the question)"
+          },
+          "latency_s": 1.0,
+          "definition": "schema"
+        },
+        {
+          "id": "ob15_orders_per_status",
+          "trap": "control",
+          "question": "How many orders are there in each order status? Return the status and the count, largest first.",
+          "raw": {
+            "sql": "SELECT order_status, COUNT(*) AS order_count FROM ecommerce.orders GROUP BY order_status ORDER BY order_count DESC",
+            "class": "correct",
+            "match": 1.0
+          },
+          "framed": {
+            "sql": "SELECT order_status, COUNT(*) AS order_count FROM ecommerce.orders GROUP BY order_status ORDER BY order_count DESC",
+            "class": "correct",
+            "match": 1.0,
+            "via": "raw (the question reached nothing declared)",
+            "frame": {
+              "defines": false,
+              "outcome": null,
+              "chosen_by": null,
+              "candidates": [],
+              "rules": [],
+              "moments": [],
+              "start": "Order",
+              "drivers": [
+                "order_status"
+              ]
+            }
+          },
+          "framed_impact": {
+            "sql": "SELECT order_status, COUNT(*) AS order_count FROM ecommerce.orders GROUP BY order_status ORDER BY order_count DESC",
+            "class": "correct",
+            "match": 1.0,
+            "via": "framed (no measured impact reached the question)"
+          },
+          "latency_s": 1.3,
+          "definition": "schema"
+        }
+      ],
+      "summary": {
+        "n": 15,
+        "arms": [
+          "raw",
+          "framed",
+          "framed_impact"
+        ],
+        "raw": {
+          "silent-wrong": 9,
+          "correct": 6
+        },
+        "framed": {
+          "correct": 15
+        },
+        "framed_impact": {
+          "correct": 15
+        },
+        "raw_accuracy": 0.4,
+        "raw_silent_wrong": 9,
+        "framed_accuracy": 1.0,
+        "framed_silent_wrong": 0,
+        "framed_gains": [
+          "ob01_dispatch_breach_pct",
+          "ob02_dispatch_by_category",
+          "ob03_southeast_dispatch_pct",
+          "ob06_avg_dispatch_lag",
+          "ob07_fulfilled_orders_2017",
+          "ob08_fulfilled_line_revenue_by_year",
+          "ob09_fulfilled_orders_delivered_pct",
+          "ob10_worst_seller_states_dispatch",
+          "ob12_worst_2018_month_dispatch"
+        ],
+        "framed_losses": [],
+        "framed_no_frame": [
+          "ob13_sellers_per_state",
+          "ob14_avg_review_score",
+          "ob15_orders_per_status"
+        ],
+        "framed_impact_accuracy": 1.0,
+        "framed_impact_silent_wrong": 0,
+        "impact_reached": [
+          "ob04_delivery_breach_pct",
+          "ob05_delivery_by_customer_state"
+        ],
+        "impact_gains": [],
+        "impact_losses": [],
+        "by_definition": {
+          "declared": {
+            "n": 12,
+            "raw_correct": 3,
+            "framed_correct": 12,
+            "framed_impact_correct": 12
+          },
+          "schema": {
+            "n": 3,
+            "raw_correct": 3,
+            "framed_correct": 3,
+            "framed_impact_correct": 3
+          }
+        },
+        "falsifier": {
+          "framed_beats_raw_on_declared": true,
+          "declared": {
+            "n": 12,
+            "raw_correct": 3,
+            "framed_correct": 12,
+            "framed_impact_correct": 12
+          },
+          "controls_lost": []
+        },
+        "dataset": "/Users/amitkamlapure/dev/aughor/.claude/worktrees/ontology-first-platform-2417bc/evals/ablation_olist_business.jsonl",
+        "connection": "baef6c3e/ecommerce",
+        "reference_failed": [],
+        "llm": {
+          "backend": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "role": "coder",
+          "fallback_chain": []
+        },
+        "ontology_available": null,
+        "ontology_source": "file:/Users/amitkamlapure/dev/aughor/.claude/worktrees/ontology-first-platform-2417bc/evals/ablation_olist_business_ontology.json",
+        "ontology_context_chars": 0,
+        "arms_dropped": [],
+        "framing_model_calls": 0,
+        "impacts": [
+          {
+            "id": "late_dispatch_late_delivery",
+            "verified": true,
+            "note": "of the 96,476 Order objects that reached delivered with the delivery promise in force (all of the data, to 2018-10-17), 8,725 saw the dispatch promise broken and 24.39% of those broke delivery, against 6.49% of the 87,750 that saw it kept",
+            "objects": 96476,
+            "rate_when_broke": 0.243897,
+            "rate_when_kept": 0.064934
+          }
+        ]
+      }
+    },
+    {
+      "results": [
+        {
+          "id": "lb01_completed_orders_fy2024",
+          "trap": "rule",
+          "question": "How many completed orders were placed in fiscal year 2024?",
+          "raw": {
+            "sql": "SELECT COUNT(*) FROM luxexperience.orders WHERE fiscal_year = 2024 AND status = 'shipped'",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT COUNT(*) AS completed_orders FROM luxexperience.orders WHERE status IN ('shipped', 'returned') AND fiscal_year = 2024",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "completed_orders",
+              "chosen_by": "names",
+              "candidates": [
+                "completed_orders"
+              ],
+              "rules": [
+                "completed_orders"
+              ],
+              "moments": [
+                "placed"
+              ],
+              "start": "Order",
+              "drivers": [
+                "fiscal_year"
+              ]
+            },
+            "block_chars": 1249
+          },
+          "latency_s": 11.0,
+          "definition": "declared"
+        },
+        {
+          "id": "lb02_completed_return_rate_fy2025",
+          "trap": "rule",
+          "question": "What percentage of completed orders placed in fiscal year 2025 had a return? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(COUNT(DISTINCT CASE WHEN r.order_id IS NOT NULL THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) FROM luxexperience.orders o LEFT JOIN luxexperience.returns r ON o.order_id = r.order_id WHERE o.fiscal_year = 2025 AND o.status = 'shipped'",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "WITH completed_orders AS (\n    SELECT order_id\n    FROM luxexperience.orders\n    WHERE status IN ('shipped', 'returned')\n      AND fiscal_year = 2025\n),\nreturned_orders AS (\n    SELECT DISTINCT order_id\n    FROM luxexperience.returns\n    WHERE order_id IN (SELECT order_id FROM completed_orders)\n)\nSELECT ROUND(COUNT(DISTINCT r.order_id) * 100.0 / NULLIF(COUNT(DISTINCT c.order_id), 0), 2) AS return_percentage\nFROM completed_orders c\nLEFT JOIN returned_orders r ON c.order_id = r.order_id",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "completed_orders",
+              "chosen_by": "names",
+              "candidates": [
+                "completed_orders"
+              ],
+              "rules": [
+                "completed_orders"
+              ],
+              "moments": [
+                "placed"
+              ],
+              "start": "Return",
+              "drivers": [
+                "belongs_to.fiscal_year"
+              ]
+            },
+            "block_chars": 1463
+          },
+          "latency_s": 31.6,
+          "definition": "declared"
+        },
+        {
+          "id": "lb03_vip_gmv_share_fy2025",
+          "trap": "rule",
+          "question": "What percentage of fiscal year 2025 GMV came from VIP customers? Count every order placed in the year. Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(SUM(CASE WHEN c.tier = 'VIP' THEN o.gmv_eur ELSE 0 END) * 100.0 / NULLIF(SUM(o.gmv_eur), 0), 2) AS vip_gmv_percentage FROM luxexperience.orders o JOIN luxexperience.customers c ON o.customer_id = c.customer_id WHERE o.fiscal_year = 2025",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(SUM(CASE WHEN c.tier IN ('VIP', 'Top Customer') THEN o.gmv_eur ELSE 0 END) * 100.0 / NULLIF(SUM(o.gmv_eur), 0), 2) AS vip_gmv_percentage FROM luxexperience.orders AS o JOIN luxexperience.customers AS c ON o.customer_id = c.customer_id WHERE o.fiscal_year = 2025",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "vip_customers",
+              "chosen_by": "names",
+              "candidates": [
+                "vip_customers"
+              ],
+              "rules": [
+                "vip_customers"
+              ],
+              "moments": [
+                "placed"
+              ],
+              "start": "Order",
+              "drivers": [
+                "fiscal_year"
+              ]
+            },
+            "block_chars": 1193
+          },
+          "latency_s": 2.6,
+          "definition": "declared"
+        },
+        {
+          "id": "lb04_vip_customers_by_region",
+          "trap": "rule",
+          "question": "How many VIP customers are there in each customer region? Return the region and the count, largest first.",
+          "raw": {
+            "sql": "SELECT region, COUNT(*) AS vip_customer_count FROM luxexperience.customers WHERE tier = 'VIP' GROUP BY region ORDER BY vip_customer_count DESC",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT region, COUNT(*) AS vip_customers FROM luxexperience.customers WHERE tier IN ('VIP', 'Top Customer') GROUP BY region ORDER BY vip_customers DESC",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "vip_customers",
+              "chosen_by": "names",
+              "candidates": [
+                "vip_customers"
+              ],
+              "rules": [
+                "vip_customers"
+              ],
+              "moments": [],
+              "start": "Customer",
+              "drivers": [
+                "region"
+              ]
+            },
+            "block_chars": 1015
+          },
+          "latency_s": 2.1,
+          "definition": "declared"
+        },
+        {
+          "id": "lb05_eu_market_orders_fy2025",
+          "trap": "rule",
+          "question": "How many orders placed in fiscal year 2025 were destined for EU markets? Count every order, cancelled ones included.",
+          "raw": {
+            "sql": "SELECT COUNT(*) FROM luxexperience.orders WHERE fiscal_year = 2025 AND ship_region = 'Europe'",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT COUNT(*) FROM luxexperience.orders WHERE fiscal_year = 2025 AND ship_country IN ('Austria', 'Belgium', 'Denmark', 'France', 'Germany', 'Greece', 'Ireland', 'Italy', 'Netherlands', 'Portugal', 'Spain', 'Sweden')",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "eu_markets",
+              "chosen_by": "names",
+              "candidates": [
+                "eu_markets"
+              ],
+              "rules": [
+                "eu_markets"
+              ],
+              "moments": [
+                "placed"
+              ],
+              "start": "Order",
+              "drivers": [
+                "fiscal_year"
+              ]
+            },
+            "block_chars": 1545
+          },
+          "latency_s": 2.1,
+          "definition": "declared"
+        },
+        {
+          "id": "lb06_top_eu_markets_gmv_fy2025",
+          "trap": "rule",
+          "question": "Which three EU markets had the highest GMV in fiscal year 2025? Return the country and its GMV rounded to two decimals, highest first.",
+          "raw": {
+            "sql": "WITH eu_orders AS (\n    SELECT \n        o.ship_country, \n        SUM(o.gmv_eur) AS total_gmv\n    FROM luxexperience.orders o\n    JOIN luxexperience.countries c ON o.ship_country = c.country\n    WHERE o.fiscal_year = 2025 \n      AND c.region = 'Europe'\n    GROUP BY o.ship_country\n),\nranked_markets AS (\n    SELECT \n        ship_country, \n        total_gmv,\n        RANK() OVER (ORDER BY total_gmv DESC) AS rnk\n    FROM eu_orders\n)\nSELECT \n    ship_country, \n    ROUND(total_gmv, 2) AS gmv_eur\nFROM ranked_markets\nWHERE rnk <= 3\nORDER BY gmv_eur DESC",
+            "class": "silent-wrong",
+            "match": 0.5
+          },
+          "framed": {
+            "sql": "WITH eu_gmv AS (\n    SELECT \n        ship_country, \n        SUM(gmv_eur) AS total_gmv\n    FROM luxexperience.orders\n    WHERE ship_country IN ('Austria', 'Belgium', 'Denmark', 'France', 'Germany', 'Greece', 'Ireland', 'Italy', 'Netherlands', 'Portugal', 'Spain', 'Sweden')\n      AND fiscal_year = 2025\n    GROUP BY ship_country\n),\nranked_gmv AS (\n    SELECT \n        ship_country, \n        total_gmv,\n        RANK() OVER (ORDER BY total_gmv DESC) AS rnk\n    FROM eu_gmv\n)\nSELECT \n    ship_country, \n    ROUND(total_gmv, 2) AS total_gmv\nFROM ranked_gmv\nWHERE rnk <= 3\nORDER BY total_gmv DESC",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "eu_markets",
+              "chosen_by": "names",
+              "candidates": [
+                "eu_markets"
+              ],
+              "rules": [
+                "eu_markets"
+              ],
+              "moments": [],
+              "start": "Order",
+              "drivers": [
+                "fiscal_year",
+                "ship_country"
+              ]
+            },
+            "block_chars": 1486
+          },
+          "latency_s": 3.1,
+          "definition": "declared"
+        },
+        {
+          "id": "lb07_ynap_gmv_fy2025",
+          "trap": "rule",
+          "question": "What was YNAP's total GMV in fiscal year 2025? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(SUM(gmv_eur), 2) FROM luxexperience.orders WHERE fiscal_year = 2025 AND \"group\" = 'Richemont (YNAP)'",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(SUM(gmv_eur), 2) AS total_gmv FROM luxexperience.orders WHERE platform IN ('YOOX', 'THE OUTNET', 'NET-A-PORTER', 'MR PORTER') AND fiscal_year = 2025",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "ynap_platforms",
+              "chosen_by": "names",
+              "candidates": [
+                "ynap_platforms"
+              ],
+              "rules": [
+                "ynap_platforms"
+              ],
+              "moments": [],
+              "start": "Order",
+              "drivers": [
+                "fiscal_year"
+              ]
+            },
+            "block_chars": 1212
+          },
+          "latency_s": 1.9,
+          "definition": "declared"
+        },
+        {
+          "id": "lb08_controllable_return_share",
+          "trap": "rule",
+          "question": "What percentage of returns were controllable? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(COUNT(CASE WHEN reason IN ('size_fit', 'not_as_expected', 'changed_mind') THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS controllable_return_pct FROM luxexperience.returns",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(COUNT(CASE WHEN reason IN ('quality', 'not_as_expected', 'late_delivery') THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS controllable_return_percentage FROM luxexperience.returns",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "controllable_returns",
+              "chosen_by": "names",
+              "candidates": [
+                "controllable_returns"
+              ],
+              "rules": [
+                "controllable_returns"
+              ],
+              "moments": [],
+              "start": "Return",
+              "drivers": []
+            },
+            "block_chars": 1424
+          },
+          "latency_s": 2.1,
+          "definition": "declared"
+        },
+        {
+          "id": "lb09_high_risk_payment_share",
+          "trap": "rule",
+          "question": "What percentage of payments were high-risk? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(COUNT(CASE WHEN fraud_flag = TRUE THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS high_risk_payment_pct FROM luxexperience.payments",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(COUNT(CASE WHEN fraud_score >= 0.2 THEN 1 END) * 100.0 / COUNT(*), 2) AS high_risk_payment_pct FROM luxexperience.payments",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "high_risk_payments",
+              "chosen_by": "names",
+              "candidates": [
+                "high_risk_payments"
+              ],
+              "rules": [
+                "high_risk_payments"
+              ],
+              "moments": [],
+              "start": "Payment",
+              "drivers": []
+            },
+            "block_chars": 976
+          },
+          "latency_s": 1.9,
+          "definition": "declared"
+        },
+        {
+          "id": "lb10_accessories_division_share_fy2025",
+          "trap": "rule",
+          "question": "What percentage of the order lines on orders placed in fiscal year 2025 belong to the accessories division? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(SUM(CASE WHEN oi.category = 'accessories' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS accessories_percentage FROM luxexperience.order_items oi JOIN luxexperience.orders o ON oi.order_id = o.order_id WHERE o.fiscal_year = 2025",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(SUM(CASE WHEN t1.category IN ('bags', 'shoes', 'accessories', 'jewelry_watches') THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) AS accessories_division_pct FROM luxexperience.order_items AS t1 JOIN luxexperience.orders AS t2 ON t1.order_id = t2.order_id WHERE t2.fiscal_year = 2025",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "accessories_division",
+              "chosen_by": "names",
+              "candidates": [
+                "accessories_division"
+              ],
+              "rules": [
+                "accessories_division"
+              ],
+              "moments": [
+                "placed"
+              ],
+              "start": "OrderItem",
+              "drivers": [
+                "order_item_to_order.fiscal_year"
+              ]
+            },
+            "block_chars": 1473
+          },
+          "latency_s": 44.5,
+          "definition": "declared"
+        },
+        {
+          "id": "lb11_refund_promise_breach",
+          "trap": "promise",
+          "question": "What percentage of returns broke the refund promise? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(COUNT(CASE WHEN rl.refund_completed_date > r.return_date THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) FROM luxexperience.returns r JOIN luxexperience.return_logistics rl ON r.return_id = rl.return_id",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN (DATE_DIFF('DAY', CAST(j1.received_date AS DATE), CAST(j1.refund_completed_date AS DATE)) > 10) THEN 1 END) / NULLIF(COUNT(CASE WHEN (NOT j1.received_date IS NULL) AND (NOT j1.refund_completed_date IS NULL) THEN 1 END), 0), 2) AS refund_breach_pct FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "refund_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "refund_breach_rate"
+              ],
+              "rules": [],
+              "moments": [],
+              "start": "Return",
+              "drivers": []
+            },
+            "block_chars": 4039
+          },
+          "latency_s": 2.4,
+          "definition": "declared"
+        },
+        {
+          "id": "lb12_refund_promise_by_carrier",
+          "trap": "promise",
+          "question": "For each return carrier, what percentage of its returns broke the refund promise? Return the carrier and the percentage rounded to two decimals, worst first.",
+          "raw": {
+            "sql": "SELECT carrier, ROUND(SUM(CASE WHEN refund_completed_date > return_date THEN 1.0 ELSE 0.0 END) * 100.0 / COUNT(*), 2) AS broken_promise_pct FROM luxexperience.return_logistics JOIN luxexperience.returns ON luxexperience.return_logistics.return_id = luxexperience.returns.return_id GROUP BY carrier ORDER BY broken_promise_pct DESC",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT b1.carrier, ROUND(100.0 * (COUNT(CASE WHEN (DATE_DIFF('DAY', CAST(j1.received_date AS DATE), CAST(j1.refund_completed_date AS DATE)) > 10) THEN 1 END)) / NULLIF(COUNT(CASE WHEN (NOT j1.received_date IS NULL) AND (NOT j1.refund_completed_date IS NULL) THEN 1 END), 0), 2) AS refund_breach_pct FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS b1 ON t0.return_id = b1.return_id LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id GROUP BY 1 ORDER BY 2 DESC",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "refund_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "refund_breach_rate"
+              ],
+              "rules": [],
+              "moments": [],
+              "start": "Return",
+              "drivers": [
+                "carrier"
+              ]
+            },
+            "block_chars": 4544
+          },
+          "latency_s": 2.5,
+          "definition": "declared"
+        },
+        {
+          "id": "lb13_average_refund_lag",
+          "trap": "lag",
+          "question": "What is our average refund lag in days? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(AVG(date_diff('day', r.return_date, rl.refund_completed_date)), 2) AS average_refund_lag_days FROM luxexperience.returns r JOIN luxexperience.return_logistics rl ON r.return_id = rl.return_id WHERE rl.refund_completed_date IS NOT NULL AND r.return_date IS NOT NULL",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(AVG(DATE_DIFF('day', CAST(j1.received_date AS DATE), CAST(j1.refund_completed_date AS DATE))), 2) AS avg_refund_lag_days FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "refund_lag_days",
+              "chosen_by": "names",
+              "candidates": [
+                "refund_lag_days"
+              ],
+              "rules": [],
+              "moments": [],
+              "start": "Return",
+              "drivers": []
+            },
+            "block_chars": 2634
+          },
+          "latency_s": 2.0,
+          "definition": "declared"
+        },
+        {
+          "id": "lc01_cancelled_orders_fy2025",
+          "trap": "control",
+          "question": "How many orders were cancelled in fiscal year 2025?",
+          "raw": {
+            "sql": "SELECT COUNT(*) FROM luxexperience.orders WHERE status = 'cancelled' AND fiscal_year = 2025",
+            "class": "correct",
+            "match": 1.0
+          },
+          "framed": {
+            "sql": "SELECT COUNT(*) FROM luxexperience.orders WHERE status = 'cancelled' AND fiscal_year = 2025",
+            "class": "correct",
+            "match": 1.0,
+            "via": "raw (the question reached nothing declared)",
+            "frame": {
+              "defines": false,
+              "outcome": null,
+              "chosen_by": null,
+              "candidates": [],
+              "rules": [],
+              "moments": [],
+              "start": "Order",
+              "drivers": [
+                "fiscal_year"
+              ]
+            }
+          },
+          "latency_s": 1.0,
+          "definition": "schema"
+        },
+        {
+          "id": "lc02_tickets_by_category",
+          "trap": "control",
+          "question": "How many customer service tickets were opened in each category? Return the category and the count, largest first.",
+          "raw": {
+            "sql": "SELECT category, COUNT(*) AS ticket_count FROM luxexperience.customer_service GROUP BY category ORDER BY ticket_count DESC",
+            "class": "correct",
+            "match": 1.0
+          },
+          "framed": {
+            "sql": "SELECT category, COUNT(*) AS ticket_count FROM luxexperience.customer_service GROUP BY category ORDER BY ticket_count DESC",
+            "class": "correct",
+            "match": 1.0,
+            "via": "raw (the question reached nothing declared)",
+            "frame": {
+              "defines": false,
+              "outcome": null,
+              "chosen_by": null,
+              "candidates": [],
+              "rules": [],
+              "moments": [],
+              "start": "CustomerService",
+              "drivers": [
+                "category"
+              ]
+            }
+          },
+          "latency_s": 0.9,
+          "definition": "schema"
+        },
+        {
+          "id": "lc03_express_shipments_by_warehouse",
+          "trap": "control",
+          "question": "How many express shipments left each warehouse? Return the warehouse and the count, largest first.",
+          "raw": {
+            "sql": "SELECT warehouse, COUNT(*) AS shipment_count FROM luxexperience.shipments WHERE service_level = 'express' GROUP BY warehouse ORDER BY shipment_count DESC",
+            "class": "correct",
+            "match": 1.0
+          },
+          "framed": {
+            "sql": "SELECT warehouse, COUNT(*) AS shipment_count FROM luxexperience.shipments WHERE service_level = 'express' GROUP BY warehouse ORDER BY shipment_count DESC",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": null,
+              "chosen_by": null,
+              "candidates": [],
+              "rules": [],
+              "moments": [
+                "shipped"
+              ],
+              "start": "Order",
+              "drivers": []
+            },
+            "block_chars": 618
+          },
+          "latency_s": 1.8,
+          "definition": "schema"
+        }
+      ],
+      "summary": {
+        "n": 16,
+        "arms": [
+          "raw",
+          "framed"
+        ],
+        "raw": {
+          "silent-wrong": 13,
+          "correct": 3
+        },
+        "framed": {
+          "correct": 16
+        },
+        "raw_accuracy": 0.188,
+        "raw_silent_wrong": 13,
+        "framed_accuracy": 1.0,
+        "framed_silent_wrong": 0,
+        "framed_gains": [
+          "lb01_completed_orders_fy2024",
+          "lb02_completed_return_rate_fy2025",
+          "lb03_vip_gmv_share_fy2025",
+          "lb04_vip_customers_by_region",
+          "lb05_eu_market_orders_fy2025",
+          "lb06_top_eu_markets_gmv_fy2025",
+          "lb07_ynap_gmv_fy2025",
+          "lb08_controllable_return_share",
+          "lb09_high_risk_payment_share",
+          "lb10_accessories_division_share_fy2025",
+          "lb11_refund_promise_breach",
+          "lb12_refund_promise_by_carrier",
+          "lb13_average_refund_lag"
+        ],
+        "framed_losses": [],
+        "framed_no_frame": [
+          "lc01_cancelled_orders_fy2025",
+          "lc02_tickets_by_category"
+        ],
+        "by_definition": {
+          "declared": {
+            "n": 13,
+            "raw_correct": 0,
+            "framed_correct": 13
+          },
+          "schema": {
+            "n": 3,
+            "raw_correct": 3,
+            "framed_correct": 3
+          }
+        },
+        "falsifier": {
+          "framed_beats_raw_on_declared": true,
+          "declared": {
+            "n": 13,
+            "raw_correct": 0,
+            "framed_correct": 13
+          },
+          "controls_lost": []
+        },
+        "dataset": "/Users/amitkamlapure/dev/aughor/.claude/worktrees/ontology-first-platform-2417bc/evals/ablation_luxexperience_business.jsonl",
+        "connection": "914df862/luxexperience",
+        "reference_failed": [],
+        "llm": {
+          "backend": "gemini",
+          "model": "gemini-3.1-flash-lite",
+          "role": "coder",
+          "fallback_chain": []
+        },
+        "ontology_available": null,
+        "ontology_source": "file:/Users/amitkamlapure/dev/aughor/.claude/worktrees/ontology-first-platform-2417bc/evals/ablation_luxexperience_business_ontology.json",
+        "ontology_context_chars": 0,
+        "arms_dropped": [
+          "framed_impact"
+        ],
+        "framing_model_calls": 0,
+        "impacts": [
+          {
+            "id": "late_shipping_late_refund",
+            "verified": false,
+            "note": "too few to read: the shipping promise was broken on fewer than 30 of the 50,048 Return objects",
+            "objects": 50048,
+            "rate_when_broke": null,
+            "rate_when_kept": 0.232737
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -184,6 +184,19 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # `KineticAction` class and the graph's `kinetic_actions` field its action fixtures fill, and the frozen
          # effect kind `kinetic_action` a step is built with. The module under test reads `declared_actions()`.
          "tests/unit/test_ontology_history.py",
+         # Arc OC-6 (2026-10-10), RC-3's ground: the outbox rebuilds the `KineticAction` a call was made by in ONE
+         # place (`Send.declared`) and catches `KineticDispatchError` from the one executor's dispatch; the suites of
+         # the outbox, the edit layer, authority at execution, action pins and the platform-owned Case build
+         # `KineticAction` fixtures, drive `execute_kinetic_action`, reuse `test_kinetic_inbox`'s fixtures by name, and
+         # the RBAC suite names the frozen `/kinetic-actions/{action_id}/execute` door. Every line a reader sees says
+         # "declared action" and "call"; the OC-6 doors themselves live under `/actions/`.
+         "aughor/actions/outbox.py",
+         "tests/unit/test_action_outbox.py",
+         "tests/unit/test_edit_layer.py",
+         "tests/unit/test_authority_at_execution.py",
+         "tests/unit/test_action_pins.py",
+         "tests/unit/test_platform_owned_case.py",
+         "tests/unit/test_rbac_policy.py",
          # DS-17b (2026-09-19), same ground as demo-api.json below: this suite's fixture is
          # the palette's SERVED contract, captured verbatim — every hit is an effect KIND
          # the server ships (`kinetic_action`) at the priority the server gives it. The

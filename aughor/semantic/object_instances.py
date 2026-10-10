@@ -293,6 +293,10 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
     its links resolved to a key or a count. ON-8 — on an organisation's ontology ``db`` is None and ``source_db`` hands
     back the connection each read runs on (`_reader`)."""
     entity = find_object_type(graph, object_type)
+    if entity.backing is not None and entity.backing.kind == "platform":
+        # Arc OC-6 — a platform-owned object: read from the edit layer, never a warehouse
+        from aughor.ontology.platform_objects import instance
+        return instance(graph, entity, pk, overlay)
     on = _reader(graph, db, source_db)
     row, columns, repeated = _fetch_row(on(entity), entity, pk)
     key = _key_of(entity)
@@ -327,7 +331,7 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
                            "unit": "", "description": mine.note,
                            "overlay": {"by": mine.actor or mine.source, "at": mine.created_at, "note": mine.note,
                                        "origin": mine.origin, "provenance": mine.provenance(),
-                                       "id": mine.id}})
+                                       "id": mine.id, "version": mine.version}})
     shown = display_of(entity)
     # Read off the ASSEMBLED properties, not the backing row: ON-1b lets a name live on a static binding, and
     # `_bound_properties` has already fetched it. The backing row is still where a backing property comes from.
@@ -490,13 +494,22 @@ def object_resolver(connection_id: str, schema_name: str = ""):
         entity = find_object_type(graph, object_type)
         db = open_connection_for_with_schema(connection_id, graph.schema_name or schema_name)
         try:
-            instance = get_object(graph, db, entity.api_name, key)
+            # Arc OC-6, D5 — read WITH the accepted edits, so a criterion can be gated on state another action set
+            from aughor.actions.overlay import accepted_object_edits
+            instance = get_object(graph, db, entity.api_name, key, overlay=accepted_object_edits(connection_id))
         finally:
             db.close()
         table = ((entity.backing.table if entity.backing is not None else "")
                  or (entity.source_tables[0] if entity.source_tables else entity.api_name))
+        edited = {p["name"]: {"value": p["value"], "version": p["overlay"].get("version", 0), "by": p["overlay"].get("by")}
+                  for p in instance.properties if p.get("overlay")}
         return {"object_type": instance.object_type, "type_id": instance.type_id, "pk": instance.pk,
                 "key": instance.key, "table": table.rsplit(".", 1)[-1].strip('"').lower(),
                 "title": instance.title,
-                "properties": {p["name"]: typed_value(p["value"], p.get("data_type", "")) for p in instance.properties}}
+                "properties": {p["name"]: typed_value(p["value"], p.get("data_type", "")) for p in instance.properties},
+                # what the source holds, apart from what the edit layer set — an edit may set only the latter
+                "source": sorted(p["name"] for p in instance.properties if not p.get("overlay")),
+                "edited": edited,
+                # Arc OC-6 — the moves an edit-layer property declares, enforced by the executor
+                "state_machines": {k: v.model_dump() for k, v in (getattr(entity, "edit_states", None) or {}).items()}}
     return resolve

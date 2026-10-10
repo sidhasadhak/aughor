@@ -178,7 +178,9 @@ class Backing(BaseModel):
     says the data agreed (COUNT(DISTINCT key) == COUNT(key) over the backing's rows) —
     measured, never assumed, like every other claim since ON-0a.
     """
-    kind: Literal["table", "query"] = "table"
+    #: Arc OC-6 — ``platform``: the type's objects live in the platform's own edit layer, made and changed by declared
+    #: actions only, every change kept (`ontology.platform_objects`); no warehouse holds them.
+    kind: Literal["table", "query", "platform"] = "table"
     table: Optional[str] = None
     sql: Optional[str] = None
     primary_key: str = ""
@@ -324,6 +326,23 @@ class Binding(BaseModel):
         return "query" if (self.sql or "").strip() else "table"
 
 
+class EditStateMachine(BaseModel):
+    """Arc OC-6 — the moves a property the EDIT LAYER holds may make (a review flag, a case's status): its states, the
+    moves between them, and the state an object starts in before any edit sets one (``initial``, "" for none). The
+    action engine ENFORCES it — an action whose edit would make a move not declared is refused before it runs, with the
+    moves allowed — where a source column's lifecycle can only be measured."""
+    states: list[str] = Field(default_factory=list)
+    #: Each a pair ``[from, to]``; ``from`` may be ``initial``.
+    moves: list[list[str]] = Field(default_factory=list)
+    initial: str = ""
+
+    def allows(self, current: str, new: str) -> bool:
+        return current == new or [current, new] in [list(m) for m in self.moves]
+
+    def from_here(self, current: str) -> list[str]:
+        return [m[1] for m in self.moves if m and m[0] == current]
+
+
 class OntologyEntity(BaseModel):
     id: str                                    # PascalCase: "Order", "Customer"
     display_name: str                          # human-readable business name, set/corrected by enricher
@@ -351,6 +370,8 @@ class OntologyEntity(BaseModel):
     #: PENDING item 27 — the properties that must not be summed across time, each with the time property its
     #: readings are taken over (see SemiAdditive). Empty on every graph built before, which loads unchanged.
     semiadditive: dict[str, SemiAdditive] = Field(default_factory=dict)
+    #: Arc OC-6 — the declared moves of the properties the edit layer holds (see EditStateMachine), by property.
+    edit_states: dict[str, EditStateMachine] = Field(default_factory=dict)
     #: ON-7 — where this type came from: `table` (the builder minted it from a profiled table — a PROPOSAL the
     #: business keeps, absorbs or renames), `human` (declared through POST /ontology/entities), `model` (an
     #: explorer's proposal, ON-7b). Every graph built before reads `table`, so it loads unchanged.
@@ -711,6 +732,20 @@ class ProcessStage(BaseModel):
     p50_days: Optional[float] = None
     p90_days: Optional[float] = None
     p95_days: Optional[float] = None
+    #: Arc OC-5 — measured against EVERY earlier stage that carries a moment, not only the previous one: earlier
+    #: stage → how many objects reached this stage before it. A timestamp is checked before it is believed.
+    precedes: dict[str, int] = Field(default_factory=dict)
+
+
+class ProcessTransition(BaseModel):
+    """Arc OC-5 — one move between two stages of a process, or out of it (``to_stage`` "left"). DECLARED, the moves the
+    business expects (none declared: each stage to the next, and leaving from any); MEASURED from the stages' moments —
+    an object moved from one stage to another when it carries both moments and none of a stage between them. What the
+    data does that nobody declared, and what was declared and never happens, are both said (`Process.conformance`)."""
+    from_stage: str
+    to_stage: str
+    declared: bool = False
+    objects: Optional[int] = None
 
 
 class ProcessExit(BaseModel):
@@ -748,6 +783,12 @@ class Process(BaseModel):
     provenance: str = ""
     #: Arc OC-4 — how an object leaves the process (see ProcessExit). None: no object leaves it.
     leaves: Optional[ProcessExit] = None
+    #: Arc OC-5 — the moves declared between its stages (see ProcessTransition); empty: each stage to the next.
+    transitions: list[ProcessTransition] = Field(default_factory=list)
+    #: Measured: every move seen between stages that carry a moment, and out of the process, with its objects.
+    observed: list[ProcessTransition] = Field(default_factory=list)
+    #: Measured: ``{"seen_only_in_data": ["placed → delivered", …], "never_observed": [...], "untimed": [...]}``.
+    conformance: dict[str, list[str]] = Field(default_factory=dict)
     #: Measured: the process's objects, the verdict over every stage and promise, and when it was counted.
     objects: Optional[int] = None
     verified: Optional[bool] = None
@@ -789,6 +830,63 @@ class BusinessRule(BaseModel):
     verified: Optional[bool] = None
     flags: list[str] = Field(default_factory=list)
     note: str = ""
+
+
+class Impact(BaseModel):
+    """Arc OC-5 — what one promise does to another, declared with its mechanism and measured (the study's §8.4).
+
+    ``upstream`` and ``downstream`` each name a promise as ``<process id>.<promise noun>``
+    (``order_fulfilment.dispatch``). The mechanism is said, never implied:
+
+    * **influence** — an association, MEASURED: of the downstream promise's objects (its lead object, the type it is
+      kept per) that reached its stage with it in force, the share that broke it when the upstream promise broke on
+      them, against when it was kept — with how many objects each share is of, the lag between the two moments, and
+      the window read. The upstream promise is reached from the lead object through the graph's links: a to-one link
+      reads the one upstream object, a to-many link reads "at least one of them broke it" (an order whose lines missed
+      dispatch), so nothing is counted twice;
+    * **validated** — an influence a person promoted on recorded evidence (``evidence``: a decision's outcome or an
+      intervention in the Record). It is measured exactly as an influence is;
+    * **formula** — exact by definition (``formula``, in words): not an association, so nothing is measured, and a
+      reader is told so.
+
+    An association is never a cause: the platform words it by mechanism wherever it is read, and the departure gate
+    already holds causal language that has no licence. Lives in the overrides tree (``impact/<id>.yaml``) with what its
+    measurement recorded, like a process.
+    """
+    id: str
+    display_name: str = ""
+    description: str = ""
+    owner: str = ""
+    upstream: str
+    downstream: str
+    mechanism: Literal["influence", "validated", "formula"] = "influence"
+    formula: str = ""
+    evidence: str = ""
+    #: Read only the downstream objects whose moment falls in the last N days of the data (its own clock). None: all.
+    window_days: Optional[int] = None
+    origin: Literal["human", "model", "pack"] = "human"
+    provenance: str = ""
+    #: Resolved on declaration: the downstream promise's lead object, and the link path from it to the upstream
+    #: promise's (empty when both are kept per the same object), and whether that path crosses a to-many link.
+    lead: str = ""
+    path: str = ""
+    to_many: bool = False
+    #: Measured (influence and validated) — None until counted. ``objects``: the lead objects that reached the
+    #: downstream stage with its promise in force (in the window); of them ``upstream_broke`` and ``upstream_kept``,
+    #: each with its downstream breach rate; ``lag_days``: the median days from the upstream stage's moment to the
+    #: downstream's, when both are moments of the lead object.
+    objects: Optional[int] = None
+    upstream_broke: Optional[int] = None
+    upstream_kept: Optional[int] = None
+    rate_when_broke: Optional[float] = None
+    rate_when_kept: Optional[float] = None
+    lag_days: Optional[float] = None
+    window: str = ""
+    as_of: str = ""
+    verified: Optional[bool] = None
+    flags: list[str] = Field(default_factory=list)
+    note: str = ""
+    measured_at: str = ""
 
 
 class ActionParameter(BaseModel):
@@ -888,6 +986,10 @@ class SideEffect(BaseModel):
     #: here wrote an adapter for. Still no ``exec``: a template is filled, never evaluated.
     kind: Literal["notify", "webhook", "trigger_investigation", "http"]
     config: dict = Field(default_factory=dict)
+    #: Arc OC-6 — ``writeback``: the one call that must succeed BEFORE the action's edits are written (its failure
+    #: leaves everything unwritten); ``after`` (default): sent once the edits are written — through the outbox while
+    #: `actions.outbox` is on.
+    lane: Literal["after", "writeback"] = "after"
 
 
 #: DS-13 — the config keys of an ``http`` side effect that hold a CREDENTIAL.
@@ -1029,6 +1131,9 @@ class KineticAction(BaseModel):
     #: action sets on the objects it takes (see ObjectEdit).
     object_type: str = ""
     edits: list[ObjectEdit] = Field(default_factory=list)
+    #: Arc OC-6 — a platform-owned type (backing ``platform``) a press MAKES one new object of; the action's edits on the
+    #: object ``created`` set it up ("Open a case" on an order creates a Case about it).
+    creates: str = ""
     #: Phase 4 of the 2027 study (§M) — every declared action carries its reversibility class, the
     #: read that verifies it and the undo that compensates it. Optional on the MODEL so an ontology
     #: declared before phase 4 still loads; REQUIRED at the declare door for a side-effect action
@@ -1044,9 +1149,13 @@ class KineticAction(BaseModel):
         loose = [p.name for p in self.params if p.kind == "object" and not p.object_type.strip()]
         if loose:
             raise ValueError(f"object parameter {', '.join(loose)} must name its object_type")
-        if self.edits and self.kind != "annotate":
-            raise ValueError("only an annotate action declares edits")
+        if self.edits and self.kind not in ("annotate", "side_effect"):
+            raise ValueError("only an annotate or a side-effect action declares edits")
+        if sum(1 for se in self.side_effects if se.lane == "writeback") > 1:
+            raise ValueError("an action names at most one writeback — the call its edits wait on")
         for edit in self.edits:
+            if edit.object == "created" and self.creates:
+                continue
             if edit.object not in taken:
                 raise ValueError(f"the edit setting '{edit.property}' lands on '{edit.object}', "
                                  "which is not one of this action's object parameters")
@@ -1106,6 +1215,8 @@ class OntologyGraph(BaseModel):
     #: an old cached graph deserialises with both empty.
     processes: dict[str, Process] = Field(default_factory=dict)
     rules: dict[str, BusinessRule] = Field(default_factory=dict)
+    #: Arc OC-5 — what one declared promise does to another (see Impact), overlaid the same way. Additive.
+    impacts: dict[str, Impact] = Field(default_factory=dict)
 
     # Fast-lookup reverse maps
     entity_to_tables: dict[str, list[str]] = Field(default_factory=dict)
