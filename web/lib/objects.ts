@@ -462,6 +462,8 @@ export async function listObjects(
 /** An object query in the door's shape (`ObjectQuery` in `aughor/semantic/object_query.py`). */
 export interface ObjectQueryRequest {
   object_type: string;
+  /** A segment of the entity — a rule's, a process's, a verified one (Arc AP-2: a set keeps one). */
+  segment?: string;
   filters?: Record<string, unknown>[];
   measures: { name: string; agg: string; path?: string }[];
   by?: string[];

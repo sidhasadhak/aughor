@@ -36,7 +36,8 @@ import {
   anyFilter, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, entityKey, figureText, onDays, plural, splitOnDays,
   ticks, toggled, topValues, windowEnd, type Filters,
 } from "@/lib/cockpit/objectView";
-import { rowsTall } from "@/lib/cockpit/catalog";
+import { MAX_TICKED_RUNS, rowsTall } from "@/lib/cockpit/catalog";
+import { choicesOf, doorConditions, isRefused, pieceSet, type DoorCondition, type WireSpec } from "@/lib/cockpit/sets";
 import { formatCount, formatDateTime, isNumericType, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { objectHref } from "@/lib/objectLinks";
@@ -52,9 +53,20 @@ export interface Picked { objectType: string; typeId: string; pk: string }
 interface PiecesValue {
   connectionId?: string;
   schema?: string;
-  /** Each table's chosen object, by the table's element key. */
+  /** Each table's chosen object, by the choice it names (`chooses`) or else the table's element key. */
   picked: Record<string, Picked>;
-  pick: (table: string, p: Picked | null) => void;
+  pick: (choice: string, p: Picked | null) => void;
+  /** Arc AP-2 — the objects ticked in each table that collects them, by the choice it names (`ticks`). */
+  ticked: Record<string, Picked[]>;
+  tickOne: (choice: string, p: Picked, on: boolean) => void;
+  tickNone: (choice: string) => void;
+  /** Arc AP-2 — the set a figure shows in a table's stead, by the choice it names (`shows`). */
+  shown: Record<string, string>;
+  show: (choice: string, set: string | null) => void;
+  /** Arc AP-2 — the cockpit's sets and values, and its elements, which the pieces read by name. */
+  wire: WireSpec;
+  /** The names a detail may follow: each table's element key, and each object a table's click chooses. */
+  followable: Set<string>;
   /** Raised after an action runs, so every piece reads again. */
   tick: number;
   bump: () => void;
@@ -73,7 +85,7 @@ interface PiecesValue {
 
 const PiecesContext = createContext<PiecesValue | null>(null);
 
-function usePieces(): PiecesValue {
+export function usePieces(): PiecesValue {
   const ctx = useContext(PiecesContext);
   if (!ctx) throw new Error("an ontology piece was drawn outside its cockpit");
   return ctx;
@@ -90,22 +102,29 @@ function remembered(cockpit?: string): Filters {
   } catch { return {}; }
 }
 
-export function PiecesProvider({ connectionId, schema, elements, onPlaceTable, cockpitId, children }: {
+export function PiecesProvider({ connectionId, schema, elements, sets, values, onPlaceTable, cockpitId, children }: {
   connectionId?: string;
   schema?: string;
   elements: Record<string, { type?: string; props?: Record<string, unknown> } | undefined>;
+  /** Arc AP-2 — the sets and values the cockpit names, read by its pieces. */
+  sets?: WireSpec["sets"];
+  values?: WireSpec["values"];
   onPlaceTable?: (entity: string, segment: string) => void;
   /** The cockpit drawn — the key a reader's filters are remembered under; none, and they last while it is open. */
   cockpitId?: string;
   children: ReactNode;
 }) {
   const [picked, setPicked] = useState<Record<string, Picked>>({});
+  const [ticked, setTicked] = useState<Record<string, Picked[]>>({});
+  const [shown, setShown] = useState<Record<string, string>>({});
   const [filters, setFilters] = useState<Filters>(() => remembered(cockpitId));
   useEffect(() => { setFilters(remembered(cockpitId)); }, [cockpitId]);
   const keep = useCallback((next: Filters) => {
     setFilters(next);
-    // a reader's choice changes a row they chose from: the detail is chosen again from what the table now lists
+    // a reader's choice changes a row they chose from: the detail is chosen again from what the table now lists, and
+    // nothing stays ticked that the table may no longer list
     setPicked({});
+    setTicked({});
     if (!cockpitId) return;
     try { localStorage.setItem(filtersKey(cockpitId), JSON.stringify(next)); } catch { /* it lasts while the cockpit is open */ }
   }, [cockpitId]);
@@ -118,11 +137,39 @@ export function PiecesProvider({ connectionId, schema, elements, onPlaceTable, c
     keep(next);
   }, [filters, keep]);
   const [tick, setTick] = useState(0);
-  const pick = useCallback((table: string, p: Picked | null) => setPicked(prev => {
+  const pick = useCallback((choice: string, p: Picked | null) => setPicked(prev => {
     const next = { ...prev };
-    if (p) next[table] = p; else delete next[table];
+    if (p) next[choice] = p; else delete next[choice];
     return next;
   }), []);
+  const tickOne = useCallback((choice: string, p: Picked, on: boolean) => setTicked(prev => {
+    const had = prev[choice] ?? [];
+    const rest = had.filter(x => x.pk !== p.pk);
+    return { ...prev, [choice]: on ? [...rest, p] : rest };
+  }), []);
+  const tickNone = useCallback((choice: string) => setTicked(prev => ({ ...prev, [choice]: [] })), []);
+  // a figure switching the list: what was chosen and ticked in the tables it switches is of another set now, and is let
+  // go — a detail never goes on showing an object the list no longer holds
+  const shownNow = useRef(shown);
+  useEffect(() => { shownNow.current = shown; }, [shown]);
+  const show = useCallback((choice: string, set: string | null) => {
+    const switched = Object.entries(elements).filter(([, el]) => el?.type === "ObjectTable" && el.props?.set_from === choice);
+    // what the list shows now: the set a figure showed in it, else the table's own
+    const before = shownNow.current[choice] ?? (switched.length ? String(switched[0][1]?.props?.set ?? "") : null);
+    if (before === set) return;
+    const chooses = switched.flatMap(([key, el]) => [key, ...(typeof el?.props?.chooses === "string" ? [el.props.chooses] : [])]);
+    const ticks = switched.flatMap(([, el]) => (typeof el?.props?.ticks === "string" ? [el.props.ticks] : []));
+    if (chooses.length) setPicked(p => Object.fromEntries(Object.entries(p).filter(([k]) => !chooses.includes(k))));
+    if (ticks.length) setTicked(t => Object.fromEntries(Object.entries(t).filter(([k]) => !ticks.includes(k))));
+    setShown(prev => {
+      const next = { ...prev };
+      if (set) next[choice] = set; else delete next[choice];
+      return next;
+    });
+  }, [elements]);
+  const wire = useMemo<WireSpec>(() => ({ sets: sets ?? {}, values: values ?? {}, elements }), [sets, values, elements]);
+  const followable = useMemo(() => new Set(Object.entries(elements).flatMap(([key, el]) => (el?.type === "ObjectTable"
+    ? [key, ...(typeof el.props?.chooses === "string" ? [el.props.chooses] : [])] : []))), [elements]);
   const bump = useCallback(() => setTick(t => t + 1), []);
   const tables = useMemo(() => Object.entries(elements)
     .filter(([, el]) => el?.type === "ObjectTable")
@@ -145,9 +192,41 @@ export function PiecesProvider({ connectionId, schema, elements, onPlaceTable, c
     ? once(`actions|${schema ?? ""}`, () => getDeclaredActions(connectionId, schema))
     : Promise.reject(new Error("This cockpit names no connection."))), [connectionId, schema, once]);
   const value = useMemo<PiecesValue>(() => ({
-    connectionId, schema, picked, pick, tick, bump, tables, onPlaceTable, processes, actions, filters, toggle, clear,
-  }), [connectionId, schema, picked, pick, tick, bump, tables, onPlaceTable, processes, actions, filters, toggle, clear]);
+    connectionId, schema, picked, pick, ticked, tickOne, tickNone, shown, show, wire, followable, tick, bump, tables, onPlaceTable,
+    processes, actions, filters, toggle, clear,
+  }), [connectionId, schema, picked, pick, ticked, tickOne, tickNone, shown, show, wire, followable, tick, bump, tables, onPlaceTable,
+    processes, actions, filters, toggle, clear]);
   return <PiecesContext.Provider value={value}>{children}</PiecesContext.Provider>;
+}
+
+/** What a piece reads, as the object door reads it (Arc AP-2): the entity and segment of its set — its named set, the
+ *  one a figure shows in its stead, or every object of the entity it names — and the conditions down that set, the
+ *  object it links to and the reader's own filters over its entity. A set of what a chosen object links to waits on
+ *  the choice while nothing is chosen. */
+export type SetQuery =
+  | { entity: string; segment: string; conditions: DoorCondition[]; label: string; set: string; narrowed: boolean }
+  | { waiting: string; label: string }
+  | { refused: string };
+
+export function useSetQuery(props: Record<string, unknown>, { reader: withReader = true }: { reader?: boolean } = {}): SetQuery {
+  const { wire, picked, shown, filters } = usePieces();
+  const r = pieceSet(wire, props, c => shown[c] ?? null);
+  if (isRefused(r)) return r;
+  const read = doorConditions(r, c => picked[c]?.pk ?? null);
+  if ("waiting" in read) return { waiting: read.waiting, label: r.label };
+  // the whole of a set, beside what a reader's filters leave of it, is read without them
+  const reader = withReader ? conditionsFor(filters, r.entity) as unknown as DoorCondition[] : [];
+  return { entity: r.entity, segment: r.segment, conditions: [...read.filters, ...reader], label: r.label, set: r.name,
+    narrowed: reader.length > 0 };
+}
+
+/** What a piece reading a chosen object's links says while nothing is chosen: "Choose an order in its table to see its
+ *  lines here." — the choice's entity in words, never its name. */
+export function WaitingWords({ choice, what }: { choice: string; what: string }) {
+  const { wire } = usePieces();
+  const entity = words(choicesOf(wire).get(choice)?.entity || "one").toLowerCase();
+  const an = /^[aeiou]/.test(entity) ? "an" : "a";
+  return <>Choose {an} {entity} in its table to see {what ? `its ${what.replace(/^its\s+/i, "").toLowerCase()}` : "what it links to"} here.</>;
 }
 
 /** Whether a reader's filter is on anywhere in the cockpit — and so whether `entity`'s pieces are narrowed by one.
@@ -155,6 +234,16 @@ export function PiecesProvider({ connectionId, schema, elements, onPlaceTable, c
 export function useFiltering(entity?: string): { on: boolean; narrows: boolean } {
   const ctx = useContext(PiecesContext);
   if (!ctx) return { on: false, narrows: false };
+  return { on: anyFilter(ctx.filters), narrows: !!entity && conditionsFor(ctx.filters, entity).length > 0 };
+}
+
+/** `useFiltering` for a piece that may read a set (Arc AP-2): its entity is its set's — so a piece reading a set of the
+ *  filtered entity is narrowed, and says nothing; one over another entity says it is not filtered. */
+export function usePieceFiltering(props: Record<string, unknown>): { on: boolean; narrows: boolean } {
+  const ctx = useContext(PiecesContext);
+  if (!ctx) return { on: false, narrows: false };
+  const r = pieceSet(ctx.wire, props, c => ctx.shown[c] ?? null);
+  const entity = isRefused(r) ? "" : r.entity;
   return { on: anyFilter(ctx.filters), narrows: !!entity && conditionsFor(ctx.filters, entity).length > 0 };
 }
 
@@ -198,7 +287,7 @@ function Reading({ what }: { what: string }) {
   );
 }
 
-const words = (id: string) => id.replace(/_/g, " ");
+const words = (id: string) => id.replace(/[_-]+/g, " ");
 
 // ── the process board ───────────────────────────────────────────────────────────────────────
 
@@ -303,16 +392,23 @@ function cell(v: unknown): string {
   return String(v);
 }
 
-export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, descending, tall }: {
+export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, chooses, ticks, columns, sort, descending, tall }: {
   elementKey: string | null;
-  entity: string;
+  entity?: string | null;
   segment?: string | null;
+  /** Arc AP-2 — the set it lists, the set a figure shows in its stead, and the choices a click and a tick make. */
+  set?: string | null;
+  setFrom?: string | null;
+  chooses?: string | null;
+  ticks?: string | null;
   columns?: string[] | null;
   sort?: string | null;
   descending?: boolean | null;
   tall: boolean;
 }) {
-  const { connectionId, schema, tick, picked, pick, filters } = usePieces();
+  const { connectionId, schema, tick, picked, pick, ticked, tickOne, tickNone } = usePieces();
+  const query = useSetQuery({ entity, segment, set, set_from: setFrom });
+  const target = "entity" in query ? query : null;
   const [offset, setOffset] = useState(0);
   const [page, setPage] = useState<ObjectListingPage | null>(null);
   const [refused, setRefused] = useState("");
@@ -321,13 +417,13 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
   const box = useCellBox();
   const fits = box.onGrid ? Math.max(1, Math.floor((rowsTall(box.h) - TABLE_CHROME_PX) / TABLE_ROW_PX)) : null;
   const limit = useSettled(fits ?? (tall ? 12 : 6), 350);
-  const narrowed = conditionsFor(filters, entity);
-  const asked = JSON.stringify([entity, segment, columns, sort, descending, narrowed]);
+  const asked = JSON.stringify([target?.entity, target?.segment, columns, sort, descending, target?.conditions]);
   useEffect(() => { setOffset(0); }, [asked]);
   useEffect(() => {
+    if (!target) { setPage(null); return; }
     let alive = true;
-    listObjects({ entity, segment: segment ?? "", columns: columns ?? [], order_by: sort ?? "",
-                  descending: !!descending, offset, limit, filters: narrowed }, connectionId, schema)
+    listObjects({ entity: target.entity, segment: target.segment, columns: columns ?? [], order_by: sort ?? "",
+                  descending: !!descending, offset, limit, filters: target.conditions }, connectionId, schema)
       .then(out => {
         if (!alive) return;
         if (out.path === "refused") { setRefused(out.refused); setPage(null); return; }
@@ -338,10 +434,25 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what the table asks
   }, [asked, offset, limit, connectionId, schema, tick]);
 
+  if ("refused" in query) return <Unread what="This table cannot be read">{query.refused}</Unread>;
+  if ("waiting" in query) {
+    return (
+      <Frame testid="object-table">
+        <Title title={query.label || "Objects"} />
+        <div className="aug-fs-sm" data-testid="object-table-waiting" style={{ color: "var(--t3)" }}>
+          <WaitingWords choice={query.waiting} what={query.label} />
+        </div>
+      </Frame>
+    );
+  }
   if (refused && !page) return <Unread what="This table cannot be read">{refused}</Unread>;
   if (!page) return <Reading what="the objects" />;
-  const chosen = elementKey ? picked[elementKey] : undefined;
-  const heading = `${words(page.type_id)}${segment ? ` · ${words(segment)}` : ""}`;
+  // the choice a click makes — named (Arc AP-2), or the table's own key as before — and the ticks it collects
+  const choice = chooses || elementKey;
+  const chosen = choice ? picked[choice] : undefined;
+  const ticks_ = ticks ? ticked[ticks] ?? [] : [];
+  const full = ticks_.length >= MAX_TICKED_RUNS;
+  const heading = query.label || `${words(page.type_id)}${target?.segment ? ` · ${words(target.segment)}` : ""}`;
   const shown = page.rows.length;
   return (
     <Frame testid="object-table">
@@ -354,6 +465,7 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
         <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "collapse", tableLayout: "auto" }}>
           <thead>
             <tr>
+              {ticks && <th aria-label="Ticked" style={{ width: 22, borderBottom: "1px solid var(--b1)" }} />}
               {withUniqueKeys([{ name: page.key, label: page.key, edited: false }, ...page.columns], c => c.name).map(([k, c]) => (
                 <th key={k} style={{ textAlign: "type" in c && isNumericType(c.type) ? "right" : "left", fontWeight: 500, color: "var(--t3)", padding: "4px 8px 6px 0", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap" }}>
                   {c.edited && <Icon name="edit" size={11} label="Set by a declared action" />}
@@ -368,10 +480,18 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
             {withUniqueKeys(page.rows, r => String(r[0])).map(([rowKey, row]) => {
               const pk = String(row[0]);
               const on = chosen?.pk === pk;
+              const object = { objectType: page.object_type, typeId: page.type_id, pk };
+              const isTicked = ticks_.some(t => t.pk === pk);
               return (
                 <tr key={rowKey} data-testid="object-table-row" aria-selected={on}
-                  onClick={() => elementKey && pick(elementKey, on ? null : { objectType: page.object_type, typeId: page.type_id, pk })}
-                  style={{ cursor: elementKey ? "pointer" : undefined, background: on ? "var(--bg-sel)" : undefined }}>
+                  onClick={() => choice && pick(choice, on ? null : object)}
+                  style={{ cursor: choice ? "pointer" : undefined, background: on ? "var(--bg-sel)" : undefined }}>
+                  {ticks && (
+                    <td onClick={e => e.stopPropagation()} style={{ padding: "5px 6px 5px 0", borderBottom: "1px solid var(--b1)" }}>
+                      <Checkbox checked={isTicked} disabled={!isTicked && full} aria-label={`Tick ${pk}`}
+                        onChange={e => tickOne(ticks, object, e.target.checked)} />
+                    </td>
+                  )}
                   {row.map((v, i) => {
                     // the key in mono; every other cell written as its column's type reads (a moment, a number)
                     const type = i > 0 ? page.columns[i - 1]?.type : "";
@@ -408,6 +528,12 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
         </span>}>
         {shown ? `${formatCount(offset + 1)}–${formatCount(offset + shown)}` : "0"}{page.total != null ? ` of ${formatCount(page.total)}` : ""}
         {sort ? ` · by ${words(sort)}${descending ? ", highest first" : ""}` : ""}
+        {ticks && ticks_.length > 0 && (
+          <span data-testid="object-table-ticked">
+            {" · "}{formatCount(ticks_.length)} ticked{full ? ` (the most one press runs on)` : ""}{" "}
+            <Button size="xs" variant="ghost" onClick={() => tickNone(ticks)}>Clear</Button>
+          </span>
+        )}
       </Foot>
     </Frame>
   );
@@ -419,7 +545,7 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
 const DetailObject = createContext<{ page: ObjectPage | null; table: string }>({ page: null, table: "" });
 
 export function ObjectDetailPiece({ follows, children }: { follows: string; children?: ReactNode }) {
-  const { connectionId, schema, picked, tick, tables } = usePieces();
+  const { connectionId, schema, picked, tick, followable } = usePieces();
   const chosen = picked[follows];
   const [page, setPage] = useState<ObjectPage | null>(null);
   const [problem, setProblem] = useState("");
@@ -436,8 +562,8 @@ export function ObjectDetailPiece({ follows, children }: { follows: string; chil
     return () => { alive = false; };
   }, [chosen?.objectType, chosen?.pk, connectionId, schema, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!tables.some(t => t.key === follows)) {
-    return <Unread what="Follows no table">This detail follows “{follows}”, which is not a table on this cockpit.</Unread>;
+  if (!followable.has(follows)) {
+    return <Unread what="Follows no table">This detail follows “{follows}”, which is not a table on this cockpit, nor an object one chooses.</Unread>;
   }
   if (!chosen) {
     return (
@@ -752,32 +878,53 @@ export function FilterBar({ entity, properties }: { entity: string; properties: 
 }
 
 /** One figure over an entity's objects, narrowed by the reader's filters, and said beside the whole. */
-export function ObjectFigurePiece({ entity, label, agg, path, format, sym }: {
-  entity: string; label: string; agg: string; path?: string | null; format?: string | null; sym: string;
+export function ObjectFigurePiece({ entity, set, of, shows, label, agg, path, format, sym }: {
+  entity?: string | null; label: string; agg: string; path?: string | null; format?: string | null; sym: string;
+  /** Arc AP-2 — the set it measures, the set it is said beside, and the choice a click shows its set in. */
+  set?: string | null; of?: string | null; shows?: string | null;
 }) {
-  const { filters } = usePieces();
+  const { shown, show, wire } = usePieces();
   const { onGrid } = useCellBox();
-  const noun = useNoun(entity);
   const measure = { name: "v", agg, path: path ?? "" };
-  const narrowed = conditionsFor(filters, entity);
-  const every = useObjectQuery({ object_type: entity, measures: [measure] });
-  const some = useObjectQuery(narrowed.length ? { object_type: entity, measures: [measure], filters: narrowed } : null);
-  const shown = narrowed.length ? some : every;
-  if (shown && "refused" in shown) return <Unread what={`${label} cannot be read`}>{shown.refused}</Unread>;
-  const value = shown && "rows" in shown ? num(shown.rows[0]?.[0]) : null;
-  const whole = every && "rows" in every ? num(every.rows[0]?.[0]) : null;
-  const text = (v: number | null) => figureText(v, agg, format, sym);
-  const beside = !narrowed.length ? "" : agg === "count" || agg === "count_distinct" || agg === "sum"
-    ? `of ${text(whole)}` : `all ${noun} ${text(whole)}`;
+  const query = useSetQuery({ entity, set });
+  const whole = useSetQuery({ entity, set }, { reader: false });
+  const besideSet = useSetQuery(of ? { set: of } : { entity: "" });
+  const target = "entity" in query ? query : null;
+  const noun = useNoun(target?.entity ?? entity ?? "");
+  const body = (q: SetQuery): ObjectQueryRequest | null => ("entity" in q && q.entity
+    ? { object_type: q.entity, measures: [measure], ...(q.segment ? { segment: q.segment } : {}), ...(q.conditions.length ? { filters: q.conditions } : {}) }
+    : null);
+  const value = useObjectQuery(body(query));
+  // said beside it: the same measure over the set the author named — "of 6,788 placed" — or, with none named, over the
+  // whole of its own set while a reader's filters narrow it, as a figure did before sets
+  const beside = useObjectQuery(of ? body(besideSet) : target?.narrowed ? body(whole) : null);
+  // a figure that switches a list is lit while its set is the one the table shows — the table's own set before a click
+  const shownSet = shows ? shown[shows] ?? String(Object.values(wire.elements).find(el => el?.type === "ObjectTable"
+    && el.props?.set_from === shows)?.props?.set ?? "") : "";
+  const lit = !!shows && !!set && shownSet === set;
+  if ("refused" in query) return <Unread what={`${label} cannot be read`}>{query.refused}</Unread>;
+  if (value && "refused" in value) return <Unread what={`${label} cannot be read`}>{value.refused}</Unread>;
+  const v = value && "rows" in value ? num(value.rows[0]?.[0]) : null;
+  const w = beside && "rows" in beside ? num(beside.rows[0]?.[0]) : null;
+  const text = (x: number | null) => figureText(x, agg, format, sym);
+  const besideWords = "waiting" in query ? `once ${words(query.waiting)} is chosen`
+    : of ? (beside ? `of ${text(w)} ${("label" in besideSet && besideSet.label ? besideSet.label : words(of)).toLowerCase()}` : "")
+      : !target?.narrowed ? "" : agg === "count" || agg === "count_distinct" || agg === "sum" ? `of ${text(w)}` : `all ${noun} ${text(w)}`;
   return (
     <Frame testid="object-figure">
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, ...(onGrid ? { flex: 1, justifyContent: "center", minHeight: 0 } : {}) }}>
-        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{label}</div>
+      <div role={shows ? "button" : undefined} aria-pressed={shows ? lit : undefined} tabIndex={shows ? 0 : undefined}
+        data-testid={shows ? "object-figure-shows" : undefined}
+        title={shows ? `Show ${label} in the list` : undefined}
+        onClick={shows && set ? () => show(shows, set) : undefined}
+        onKeyDown={shows && set ? e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show(shows, set); } } : undefined}
+        style={{ display: "flex", flexDirection: "column", gap: 6, cursor: shows ? "pointer" : undefined, borderRadius: "var(--r2)",
+          boxShadow: lit ? "inset 0 -2px 0 var(--accent)" : undefined, ...(onGrid ? { flex: 1, justifyContent: "center", minHeight: 0 } : {}) }}>
+        <div className="aug-fs-xs" style={{ color: lit ? "var(--t1)" : "var(--t3)" }}>{label}</div>
         <div className="aug-fs-display" data-testid="object-figure-value"
           style={{ color: "var(--t1)", fontWeight: 600, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
-          {shown ? text(value) : "…"}
+          {"waiting" in query ? "—" : value ? text(v) : "…"}
         </div>
-        <div className="aug-fs-xs" data-testid="object-figure-whole" style={{ color: "var(--t3)", minHeight: 16 }}>{beside}</div>
+        <div className="aug-fs-xs" data-testid="object-figure-whole" style={{ color: "var(--t3)", minHeight: 16 }}>{besideWords}</div>
       </div>
     </Frame>
   );
@@ -797,9 +944,11 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
  *  line behind — or, with no filter on, all of them as bars. A bar may measure an aggregate of a property instead of a
  *  count, and be split by a property: its most common values stacked in fixed colours, the rest as Other (Arc AP-1).
  *  Each bar says its day and what it holds when pointed at. */
-export function ObjectChartPiece({ entity, label, time, days, agg, path, format, split, top, sym = "$" }: {
-  entity: string; label: string; time: string; days: number;
+export function ObjectChartPiece({ entity, set, label, time, days, agg, path, format, split, top, sym = "$" }: {
+  entity?: string | null; label: string; time: string; days: number;
   agg?: string | null; path?: string | null; format?: string | null; split?: string | null; top?: number | null; sym?: string;
+  /** Arc AP-2 — the set it draws, in place of every object of an entity. */
+  set?: string | null;
 }) {
   const { filters } = usePieces();
   const box = useCellBox();
@@ -807,20 +956,37 @@ export function ObjectChartPiece({ entity, label, time, days, agg, path, format,
   const width = room.width || W;
   const height = box.onGrid ? Math.max(120, room.height || H) : Math.round((width * H) / W);
   const RIGHT = width - PAD_RIGHT, BASE = height - PAD_BOTTOM;
-  const noun = useNoun(entity);
-  const narrowed = conditionsFor(filters, entity);
+  // its set, as a reader's filters leave it, and the whole of it behind — every object of its entity, before sets
+  const query = useSetQuery({ entity, set });
+  const whole = useSetQuery({ entity, set }, { reader: false });
+  const base = "entity" in whole ? whole : null;
+  const narrowedBy = "entity" in query && query.narrowed ? query : null;
+  const ent = base?.entity ?? entity ?? "";
+  const noun = useNoun(ent);
   const how = agg || "count";
   const by = split ? [split] : [];
-  const last = useObjectQuery({ object_type: entity, measures: [{ name: "t", agg: "max", path: time }] });
+  const scope = (q: { entity: string; segment: string }) => ({ object_type: q.entity, ...(q.segment ? { segment: q.segment } : {}) });
+  const last = useObjectQuery(base ? { ...scope(base), measures: [{ name: "t", agg: "max", path: time }],
+    ...(base.conditions.length ? { filters: base.conditions } : {}) } : null);
   const end = last && "rows" in last ? windowEnd(String(last.rows[0]?.[0] ?? "")) : "";
   const window = end ? daysBefore(end, days) : [];
-  const per = (f: Record<string, unknown>[]): ObjectQueryRequest | null => end ? {
-    object_type: entity, measures: [{ name: "n", agg: how, path: path ?? "" }], time, grain: "day", start: window[0], end,
-    filters: f, ...(by.length ? { by } : {}) } : null;
-  const every = useObjectQuery(per([]));
-  const some = useObjectQuery(narrowed.length ? per(narrowed) : null);
+  const per = (q: { entity: string; segment: string; conditions: DoorCondition[] }): ObjectQueryRequest | null => end ? {
+    ...scope(q), measures: [{ name: "n", agg: how, path: path ?? "" }], time, grain: "day", start: window[0], end,
+    filters: q.conditions, ...(by.length ? { by } : {}) } : null;
+  const every = useObjectQuery(base ? per(base) : null);
+  const some = useObjectQuery(narrowedBy ? per(narrowedBy) : null);
+  const narrowed = narrowedBy ? narrowedBy.conditions : [];
   const [hover, setHover] = useState<number | null>(null);
   const failed = [last, every, some].find(r => r && "refused" in r) as { refused: string } | undefined;
+  if ("refused" in query) return <Unread what={`${label} cannot be read`}>{query.refused}</Unread>;
+  if ("waiting" in query) {
+    return (
+      <Frame testid="object-chart">
+        <div className="aug-fs-chrome" style={{ color: "var(--t1)", fontWeight: 500 }}>{label}</div>
+        <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Choose one in {words(query.waiting)} to see it here.</div>
+      </Frame>
+    );
+  }
   if (failed) return <Unread what={`${label} cannot be read`}>{failed.refused}</Unread>;
   const everyRows = every && "rows" in every ? every.rows : null;
   const someRows = narrowed.length ? (some && "rows" in some ? some.rows : null) : everyRows;
@@ -841,7 +1007,7 @@ export function ObjectChartPiece({ entity, label, time, days, agg, path, format,
           {split
             ? <>{values.map((v, j) => <span key={v} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>{swatch(SERIES[j])}{v}</span>)}
               {others && <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>{swatch(OTHER)}Other</span>}</>
-            : <>{swatch("var(--chart-1)")}{chosenWords(filters, entity)}</>}
+            : <>{swatch("var(--chart-1)")}{chosenWords(filters, ent)}</>}
           {narrowed.length > 0 && <><i style={{ width: 14, height: 2, background: "var(--chart-deemph)", display: "inline-block", marginLeft: 8 }} />All {noun}</>}
         </span>
       )}
@@ -877,7 +1043,7 @@ export function ObjectChartPiece({ entity, label, time, days, agg, path, format,
   const said = (i: number) => {
     const day = dayLabel(window[i]);
     const parts = split ? stacks[i].map((v, j) => (v > 0 ? `${j < values.length ? values[j] : "Other"} ${tick(v)}` : "")).filter(Boolean) : [];
-    const what = narrowed.length ? `${text(bars[i])} ${chosenWords(filters, entity)} of ${text(all[i])}` : text(bars[i]);
+    const what = narrowed.length ? `${text(bars[i])} ${chosenWords(filters, ent)} of ${text(all[i])}` : text(bars[i]);
     return `${day}: ${what}${parts.length ? ` — ${parts.join(" · ")}` : ""}`;
   };
   return (
@@ -887,7 +1053,7 @@ export function ObjectChartPiece({ entity, label, time, days, agg, path, format,
         onMouseLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" data-testid="object-chart-svg"
           style={box.onGrid ? { position: "absolute", left: 0, top: 0 } : { display: "block" }}
-          aria-label={`${label}, last ${days} days${split ? `, split by its ${values.length} most common values` : ""}${narrowed.length ? `: ${chosenWords(filters, entity)} as bars, all ${noun} as a line` : ""}`}>
+          aria-label={`${label}, last ${days} days${split ? `, split by its ${values.length} most common values` : ""}${narrowed.length ? `: ${chosenWords(filters, ent)} as bars, all ${noun} as a line` : ""}`}>
           {axis.map(t => (
             <g key={t}>
               <line x1={LEFT} x2={RIGHT} y1={y(t)} y2={y(t)} stroke="var(--chart-grid)" />

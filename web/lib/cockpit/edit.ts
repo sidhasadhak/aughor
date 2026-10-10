@@ -14,8 +14,10 @@
  * No model, no figure. A title a person types is theirs; the server keeps it as theirs.
  */
 import {
-  FILTER_WIDTH, GRID, LIMITS, MAX_CAPTION, MAX_LABEL, MAX_NOTE, MAX_TITLE, PLACED, SPAN, type GridKind, type Size,
+  FILTER_WIDTH, GRID, LIMITS, MAX_CAPTION, MAX_LABEL, MAX_NOTE, MAX_TITLE, PLACED, SPAN, type CockpitSetDef, type CockpitValueDef,
+  type GridKind, type Size,
 } from "@/lib/cockpit/catalog";
+import { choicesOf, readersOf } from "@/lib/cockpit/sets";
 
 export interface Element {
   type: string;
@@ -28,6 +30,9 @@ export interface CockpitSpec {
   root: string;
   state?: Record<string, unknown>;
   elements: Record<string, Element>;
+  /** Arc AP-2 — the sets and values a wired cockpit's pieces read, by name. */
+  sets?: Record<string, CockpitSetDef>;
+  values?: Record<string, CockpitValueDef>;
 }
 
 export interface SectionRef { key: string; title: string; tabKey: string | null; tabLabel: string | null }
@@ -57,11 +62,12 @@ const AUTO_COLUMNS = 4;
 /** The size an element draws at when it says none, by kind — as `ComposedCockpit` draws it. */
 const DEFAULT_SIZE: Record<GridKind, Size> = {
   Card: "small", Note: "small", Image: "small", ProcessBoard: "full", ObjectTable: "wide", ObjectDetail: "small",
-  ObjectFigure: "small", ObjectChart: "full",
+  ObjectFigure: "small", ObjectChart: "full", ActionButtons: "small",
 };
 /** The rows a kind takes on the grid when nothing measured it: about the room one row of its size gave it. */
 const ROWS: Record<GridKind, number> = {
   Card: 4, Note: 3, Image: 5, ProcessBoard: 7, ObjectTable: 8, ObjectDetail: 7, ObjectFigure: 3, ObjectChart: 6,
+  ActionButtons: 2,
 };
 
 const clamp = (lo: number, hi: number, v: number) => Math.max(lo, Math.min(hi, v));
@@ -288,13 +294,13 @@ export function placeImage(spec: unknown, objectId: string, caption: string, sec
  *  the new element's key — a detail names the table it follows by that key. An action button goes in a detail
  *  (`addAction`), never in a section. */
 export function placePiece(
-  spec: unknown, type: "ProcessBoard" | "ObjectTable" | "ObjectDetail", props: Record<string, unknown>, sectionKey?: string,
+  spec: unknown, type: "ProcessBoard" | "ObjectTable" | "ObjectDetail" | "ActionButtons", props: Record<string, unknown>, sectionKey?: string,
 ): { spec: CockpitSpec; key: string | null } {
   const s = copy(spec);
   const target = sectionKey ?? sectionsOf(s)[0]?.key;
   if (!target || s.elements[target]?.type !== "Section") return { spec: s, key: null };
   const base = type === "ProcessBoard" ? `board-${props.process}` : type === "ObjectTable"
-    ? `table-${props.segment || props.entity}` : `detail-${props.follows}`;
+    ? `table-${props.segment || props.entity || props.set}` : type === "ActionButtons" ? "buttons" : `detail-${props.follows}`;
   const key = freshKey(s, String(base));
   const kept = Object.fromEntries(Object.entries(props).filter(([, v]) => v !== undefined && v !== null && v !== ""
     && !(Array.isArray(v) && !v.length)));
@@ -508,4 +514,46 @@ export function outline(spec: unknown): OutlineLine[] {
   };
   walk(s.root, 0, new Set());
   return out;
+}
+
+// ── Arc AP-2 — a cockpit's sets and values, by hand ─────────────────────────────────────────────────────────────────
+
+/** A name for a new set, value or choice, made from what a person calls it — "Shipped late" → `shipped-late` — and
+ *  never one the cockpit already uses for anything. */
+export function freshWireName(spec: unknown, label: string): string {
+  const s = spec as CockpitSpec;
+  const used = new Set([...Object.keys(s.sets ?? {}), ...Object.keys(s.values ?? {}), ...choicesOf(s).keys()]);
+  const base = (label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/^[^a-z]+/, "") || "set").slice(0, 32);
+  if (!used.has(base)) return base;
+  for (let i = 2; ; i++) if (!used.has(`${base}-${i}`)) return `${base}-${i}`;
+}
+
+/** The set `name` added, or changed to `def`. */
+export function putSet(spec: unknown, name: string, def: CockpitSetDef): CockpitSpec {
+  const s = copy(spec);
+  s.sets = { ...(s.sets ?? {}), [name]: def };
+  return s;
+}
+
+/** The value `name` added, or changed to `def`. */
+export function putValue(spec: unknown, name: string, def: CockpitValueDef): CockpitSpec {
+  const s = copy(spec);
+  s.values = { ...(s.values ?? {}), [name]: def };
+  return s;
+}
+
+/** Take a set or a value away — only one nothing reads; one something reads is left as it is, and `readersOf` says
+ *  what reads it. A cockpit left with none carries no empty map. */
+export function dropWire(spec: unknown, name: string): CockpitSpec {
+  const s = copy(spec);
+  const readers = readersOf(s, name);
+  if (readers.elements.length || readers.sets.length) return s;
+  for (const k of ["sets", "values"] as const) {
+    const map = s[k];
+    if (map && name in map) {
+      delete map[name];
+      if (!Object.keys(map).length) delete s[k];
+    }
+  }
+  return s;
 }

@@ -23,6 +23,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { CanvasScale } from "@/components/cockpit/cellBox";
 import type { CockpitHandle } from "@/components/cockpit/ComposedCockpit";
 import { PieceSetup } from "@/components/cockpit/PieceSetup";
+import { ChoiceSetup, DataPane, SetSetup, ValueSetup } from "@/components/cockpit/WiringSetup";
+import { Segmented } from "@/components/ui/segmented";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { toast } from "@/components/ui/toast";
@@ -30,7 +32,8 @@ import { FILTER_DEFAULT_PX, FILTER_WIDTH, GRADE, LIMITS, type GridKind } from "@
 import {
   canMove, moveWithin, outline, setFilterWidth, takeOffAll, type Box, type CockpitSpec,
 } from "@/lib/cockpit/edit";
-import { nameOf } from "@/lib/cockpit/names";
+import { nameOf, setTitles } from "@/lib/cockpit/names";
+import { readersOf } from "@/lib/cockpit/sets";
 import { checkCockpitSpec } from "@/lib/cockpit/rules";
 import { cachedObjectCatalog } from "@/lib/objects";
 
@@ -79,7 +82,7 @@ export function LayoutTree({ spec, selected, onSelect, cardTitle, entityTitle }:
   return (
     <div role="tree" aria-label="The cockpit's layout" data-testid="builder-layout" style={{ padding: "0 6px 8px" }}>
       {lines.map(line => {
-        const { kind, title } = nameOf(spec.elements, line.key, cardTitle, entityTitle);
+        const { kind, title } = nameOf(spec.elements, line.key, cardTitle, entityTitle, setTitles(spec));
         const el = spec.elements[line.key];
         const room = el.props.w && el.props.h ? `${el.props.w} × ${el.props.h}` : "";
         const on = selected === line.key;
@@ -120,7 +123,7 @@ function Steps({ label, value, least, most, onStep }: { label: string; value: nu
 
 const Rule = () => <span aria-hidden="true" style={{ width: 1, height: 16, background: "var(--b2)", margin: "0 6px" }} />;
 
-export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, aside, above, connectionId, schema, children }: {
+export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, aside, above, connectionId, schema, wiringOn = false, children }: {
   spec: CockpitSpec;
   /** Every change, as the next spec and the version's note. */
   onChange: (next: CockpitSpec, note: string) => void;
@@ -137,14 +140,24 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
   above?: ReactNode;
   connectionId: string;
   schema?: string;
-  /** The cockpit, drawn with the element chosen, the door that chooses one, and the handle the steps use. */
-  children: (p: { selected: string | null; onSelect: (key: string) => void; handle: { current: CockpitHandle | null } }) => ReactNode;
+  /** Arc AP-2 — whether this install wires cockpits: the Data tab, and what pieces read, then. */
+  wiringOn?: boolean;
+  /** The cockpit, drawn with the element chosen, the door that chooses one, the handle the steps use, and — while a
+   *  set, a value or a choice is chosen — the pieces that read it. */
+  children: (p: { selected: string | null; onSelect: (key: string) => void; handle: { current: CockpitHandle | null }; reads: string[] }) => ReactNode;
 }) {
   const [chosen, setSelected] = useState<string | null>(null);
+  const [tab, setTab] = useState<"layout" | "data">("layout");
+  // a set, a value or a choice chosen in the Data tab: `set:<name>`, `value:<name>`, `choice:<name>`
+  const [wire, setWire] = useState<string | null>(null);
+  const wireName = wire ? wire.slice(wire.indexOf(":") + 1) : "";
+  const wireKind = wire ? wire.slice(0, wire.indexOf(":")) : "";
+  const reads = wire ? readersOf(spec, wireName).elements : [];
   const entityTitle = useEntityTitles(connectionId);
   const handle = useRef<CockpitHandle | null>(null);
-  // an element taken off, by hand or by an undo, is no longer chosen
-  const selected = chosen && spec.elements[chosen] ? chosen : null;
+  // an element taken off, by hand or by an undo, is no longer chosen; nor is an element while a set is
+  const selected = !wire && chosen && spec.elements[chosen] ? chosen : null;
+  const choose = (key: string) => { setWire(null); setSelected(key); };
 
   /** Hand a change on — or say why the rules refuse it, and draw nothing of it. */
   const apply = (next: CockpitSpec, note: string) => {
@@ -185,7 +198,7 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
     setBox(kind && selected ? handle.current?.room(selected) ?? null : null);
   }, [kind, selected, spec, room.width]);
   const filterGrades = el?.type === "ObjectFilters" ? Number(el.props.w) || Math.round(FILTER_DEFAULT_PX / GRADE) : null;
-  const named = selected ? nameOf(spec.elements, selected, cardTitle, entityTitle) : null;
+  const named = selected ? nameOf(spec.elements, selected, cardTitle, entityTitle, setTitles(spec)) : null;
   const movable = !!selected && el?.type !== "Cockpit";
   const lines = useMemo(() => outline(spec).length, [spec]);
 
@@ -198,8 +211,21 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
       {bar}
       <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "232px minmax(0, 1fr) 304px" }}>
         <aside aria-label="Layout" style={{ minHeight: 0, overflow: "auto", borderRight: "1px solid var(--b1)", background: "var(--bg-1)", display: "flex", flexDirection: "column" }}>
-          <PaneLabel>Layout · {lines} {lines === 1 ? "line" : "lines"}</PaneLabel>
-          <LayoutTree spec={spec} selected={selected} onSelect={setSelected} cardTitle={cardTitle} entityTitle={entityTitle} />
+          {wiringOn && (
+            <div style={{ padding: "10px 10px 0" }}>
+              <Segmented label="The left pane" value={tab} options={[{ value: "layout", label: "Layout" }, { value: "data", label: "Data" }]}
+                onChange={v => { setTab(v as "layout" | "data"); if (v === "layout") setWire(null); }} />
+            </div>
+          )}
+          {tab === "data" && wiringOn ? (
+            <DataPane spec={spec} selected={wire} onSelect={key => { setWire(key); setSelected(null); }} onChange={apply}
+              connectionId={connectionId} schema={schema} />
+          ) : (
+            <>
+              <PaneLabel>Layout · {lines} {lines === 1 ? "line" : "lines"}</PaneLabel>
+              <LayoutTree spec={spec} selected={selected} onSelect={choose} cardTitle={cardTitle} entityTitle={entityTitle} />
+            </>
+          )}
           {add && (
             <>
               <PaneLabel>Add</PaneLabel>
@@ -213,7 +239,17 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
         <div style={{ minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
           <div data-testid="builder-selection" className="aug-fs-sm"
             style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 12px", borderBottom: "1px solid var(--b1)", minHeight: 40, flexWrap: "wrap" }}>
-            {named ? (
+            {wire ? (
+              <>
+                <span className="aug-fs-xs" style={{ color: "var(--accent-11)", textTransform: "uppercase", letterSpacing: ".06em", marginRight: 6 }}>
+                  {wireKind === "set" ? "Set" : wireKind === "value" ? "Value" : "Chosen"}
+                </span>
+                <span style={{ color: "var(--t1)" }}>{wireKind === "set" ? spec.sets?.[wireName]?.label : wireKind === "value" ? spec.values?.[wireName]?.label : wireName.replace(/[-_]/g, " ")}</span>
+                <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: 10, flex: 1 }}>
+                  {reads.length ? `the ${reads.length === 1 ? "piece that reads it is" : `${reads.length} pieces that read it are`} dashed` : "nothing on the cockpit reads it yet"}
+                </span>
+              </>
+            ) : named ? (
               <>
                 <span className="aug-fs-xs" style={{ color: "var(--accent-11)", textTransform: "uppercase", letterSpacing: ".06em", marginRight: 6 }}>{named.kind}</span>
                 <span style={{ color: "var(--t1)", minWidth: 0, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{named.title}</span>
@@ -261,7 +297,7 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
               <div ref={page} data-testid="builder-page" data-zoom={zoom}
                 style={{ width: layout, transform: scale < 1 ? `scale(${scale})` : undefined, transformOrigin: "0 0" }}>
                 <CanvasScale.Provider value={scale}>
-                  {children({ selected, onSelect: setSelected, handle })}
+                  {children({ selected, onSelect: choose, handle, reads })}
                 </CanvasScale.Provider>
               </div>
             </div>
@@ -270,8 +306,11 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
 
         <aside aria-label="Setup" data-testid="builder-setup"
           style={{ minHeight: 0, overflow: "auto", borderLeft: "1px solid var(--b1)", background: "var(--bg-1)" }}>
-          {aside ?? <PieceSetup spec={spec} selected={selected} onChange={apply} connectionId={connectionId} schema={schema} cardTitle={cardTitle}
-            entityTitle={entityTitle} />}
+          {aside ?? (wireKind === "set" ? <SetSetup spec={spec} name={wireName} onChange={apply} onGone={() => setWire(null)} connectionId={connectionId} schema={schema} />
+            : wireKind === "value" ? <ValueSetup spec={spec} name={wireName} onChange={apply} onGone={() => setWire(null)} />
+              : wireKind === "choice" ? <ChoiceSetup spec={spec} name={wireName} />
+                : <PieceSetup spec={spec} selected={selected} onChange={apply} connectionId={connectionId} schema={schema} cardTitle={cardTitle}
+                  entityTitle={entityTitle} wiringOn={wiringOn} />)}
         </aside>
       </div>
     </div>

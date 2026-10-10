@@ -19,9 +19,11 @@ import { validateSpec, type Spec } from "@json-render/core";
 import type { z } from "zod";
 
 import {
-  COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, GRADE, GRID, LIMITS, MAY_BE_CONDITIONAL, MAY_HOLD, PLACED, READER_TEXT, SPLIT_AGGS,
-  SIZES, TONES, cockpitCatalog, type ComponentName, type GridKind,
+  COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, GRADE, GRID, LIMITS, MAX_SETS, MAX_VALUES, MAY_BE_CONDITIONAL, MAY_HOLD, PLACED,
+  READER_TEXT, SPLIT_AGGS, SIZES, TONES, cockpitCatalog, cockpitSet, cockpitValue, type ActionButtonDef, type ComponentName,
+  type GridKind,
 } from "@/lib/cockpit/catalog";
+import { choicesOf, isRefused, readSet, type WireSpec } from "@/lib/cockpit/sets";
 import { CARD_STATUSES, RANGE_STATUSES, TAB_PATH, publishedPath } from "@/lib/cockpit/hostState";
 
 export const MAX_ELEMENTS = 200;
@@ -173,6 +175,137 @@ function checkChart(key: string, props: Obj, out: CockpitIssue[]): void {
   }
 }
 
+/** Arc AP-2 and AP-3 — the wiring, by name: every set, value and choice a piece names is one the cockpit holds, sets
+ *  form no ring and keep one segment, a condition says what its operator needs, a set of what a chosen object links to
+ *  waits on a chosen object, one name is one thing, and every source a button's parameter names is there. Whether a
+ *  set compiles, and whether a source holds what a parameter takes, are the server's to say (it knows the ontology). */
+function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; props: Obj; children: string[] }>, clean: Set<string>,
+  choices: ReturnType<typeof choicesOf>, issues: CockpitIssue[]): void {
+  const sets = isObj(spec.sets) ? spec.sets as Record<string, unknown> : spec.sets == null ? {} : null;
+  const values = isObj(spec.values) ? spec.values as Record<string, unknown> : spec.values == null ? {} : null;
+  if (sets === null) issues.push({ code: "bad_prop", message: "The spec's \"sets\" is not a map of named sets." });
+  if (values === null) issues.push({ code: "bad_prop", message: "The spec's \"values\" is not a map of named values." });
+  const setNames = Object.keys(sets ?? {});
+  const valueNames = Object.keys(values ?? {});
+  if (setNames.length > MAX_SETS) issues.push({ code: "too_large", message: `The cockpit holds ${setNames.length} sets. It holds at most ${MAX_SETS}.` });
+  if (valueNames.length > MAX_VALUES) issues.push({ code: "too_large", message: `The cockpit holds ${valueNames.length} values. It holds at most ${MAX_VALUES}.` });
+  const sound_ = new Set<string>();
+  for (const [name, raw] of Object.entries(values ?? {})) {
+    const parsed = cockpitValue.safeParse(raw);
+    if (!parsed.success) {
+      issues.push({ code: "bad_prop", message: `The value ${q(name)} has a problem: ${parsed.error.issues.map(i => `${i.path.join(".") || "it"} ${i.message}`).join("; ")}.` });
+      continue;
+    }
+    const v = parsed.data;
+    if ((v.kind === "days" || v.kind === "number") && typeof v.value !== "number") {
+      issues.push({ code: "bad_prop", message: `The value ${q(name)} is a ${v.kind} and holds ${JSON.stringify(v.value)}. A ${v.kind} holds a number.` });
+    } else if (v.kind === "days" && (!Number.isInteger(v.value) || (v.value as number) < 1)) {
+      issues.push({ code: "bad_prop", message: `The value ${q(name)} counts ${JSON.stringify(v.value)} days. Days are a whole number, one or more.` });
+    } else if (v.kind === "text" && typeof v.value !== "string") {
+      issues.push({ code: "bad_prop", message: `The value ${q(name)} is a word and holds a number.` });
+    }
+  }
+  for (const [name, raw] of Object.entries(sets ?? {})) {
+    const parsed = cockpitSet.safeParse(raw);
+    if (!parsed.success) {
+      issues.push({ code: "bad_prop", message: `The set ${q(name)} has a problem: ${parsed.error.issues.map(i => `${i.path.join(".") || "it"} ${i.message}`).join("; ")}.` });
+      continue;
+    }
+    sound_.add(name);
+    const set = parsed.data;
+    for (const c of set.where ?? []) {
+      const said = `The set ${q(name)} keeps ${c.path} ${c.op}`;
+      const lit = c.value !== undefined && c.value !== null;
+      if ((c.op === "is_null" || c.op === "not_null") && (lit || c.values?.length || c.value_from)) {
+        issues.push({ code: "bad_prop", message: `${said} with something to compare. ${c.op} compares with nothing.` });
+      } else if ((c.op === "in" || c.op === "not_in") && !(c.values?.length) && !c.value_from) {
+        issues.push({ code: "bad_prop", message: `${said} and lists no values.` });
+      } else if (c.op === "in_last" && !c.value_from && !(typeof c.value === "number" && Number.isInteger(c.value) && c.value >= 1)) {
+        issues.push({ code: "bad_prop", message: `${said} without a whole number of days, or a value of days to count by.` });
+      } else if (!["is_null", "not_null", "in", "not_in", "in_last"].includes(c.op) && !lit && !c.value_from) {
+        issues.push({ code: "bad_prop", message: `${said} and compares with nothing.` });
+      }
+    }
+    if (set.linked_to && choices.get(set.linked_to.choice)?.kind !== "chosen") {
+      issues.push({ code: "bad_prop", message: `The set ${q(name)} reads what ${q(set.linked_to.choice)} links to, and no table's click chooses ${q(set.linked_to.choice)}.` });
+    }
+  }
+  for (const name of sound_) {
+    const r = readSet(spec, name);
+    if (isRefused(r)) issues.push({ code: "bad_prop", message: r.refused });
+  }
+  // one name, one thing: a set, a value and a choice never share a name, and an object is chosen by one table
+  for (const [name, c] of choices) {
+    if (setNames.includes(name) || valueNames.includes(name)) {
+      issues.push({ code: "bad_prop", elementKey: c.madeBy[0], message: `${q(name)} names a set or a value and a choice. One name is one thing.` });
+    }
+    if (c.kind !== "shown" && c.madeBy.length > 1) {
+      issues.push({ code: "bad_prop", elementKey: c.madeBy[1], message: `${q(name)} is made by ${c.madeBy.map(q).join(" and ")}. An object is chosen or ticked in one table.` });
+    }
+  }
+  for (const name of setNames) {
+    if (valueNames.includes(name)) issues.push({ code: "bad_prop", message: `${q(name)} names a set and a value. One name is one thing.` });
+  }
+  const kindsOf = new Map<string, Set<string>>();
+  for (const [key, el] of sound) {
+    for (const [prop, kind] of [["chooses", "chosen"], ["ticks", "ticked"], ["shows", "shown"]] as const) {
+      const n = el.props[prop];
+      if (typeof n === "string") kindsOf.set(n, (kindsOf.get(n) ?? new Set()).add(kind));
+    }
+    void key;
+  }
+  for (const [n, kinds] of kindsOf) {
+    if (kinds.size > 1) issues.push({ code: "bad_prop", message: `${q(n)} is made as ${[...kinds].join(" and ")}. A choice is one kind of thing.` });
+  }
+  const isSet = (n: unknown) => typeof n === "string" && setNames.includes(n);
+  for (const [key, el] of sound) {
+    if (!clean.has(key)) continue;
+    const p = el.props;
+    const what = `The ${el.type === "ObjectTable" ? "objects table" : el.type === "ObjectFigure" ? "figure" : el.type === "ObjectChart" ? "chart" : el.type.toLowerCase()} ${q(key)}`;
+    if (el.type === "ObjectTable" || el.type === "ObjectFigure" || el.type === "ObjectChart") {
+      const named = [p.entity ? "an entity" : "", p.set ? "a set" : ""].filter(Boolean);
+      if (named.length !== 1) {
+        issues.push({ code: "bad_prop", elementKey: key, message: `${what} names ${named.length ? named.join(" and ") : "neither an entity nor a set"}. It reads one: an entity, or a set.` });
+      } else if (p.set && !isSet(p.set)) {
+        issues.push({ code: "bad_prop", elementKey: key, message: `${what} reads the set ${q(String(p.set))}, which this cockpit does not hold.` });
+      } else if (p.set && p.segment) {
+        issues.push({ code: "bad_prop", elementKey: key, message: `${what} reads a set and also names a segment. A set keeps its own segment.` });
+      }
+    }
+    if (el.type === "ObjectFigure" && p.of != null && !isSet(p.of)) {
+      issues.push({ code: "bad_prop", elementKey: key, message: `${what} is said beside the set ${q(String(p.of))}, which this cockpit does not hold.` });
+    }
+    if (el.type === "ObjectFigure" && p.shows != null && !p.set) {
+      issues.push({ code: "bad_prop", elementKey: key, message: `${what} shows its set in a table and reads no set. A figure that switches a list reads a set.` });
+    }
+    if (el.type === "ObjectTable" && p.set_from != null) {
+      if (choices.get(String(p.set_from))?.kind !== "shown") {
+        issues.push({ code: "bad_prop", elementKey: key, message: `${what} lists the set a figure shows in ${q(String(p.set_from))}, and no figure shows a set there.` });
+      } else if (!p.set) {
+        issues.push({ code: "bad_prop", elementKey: key, message: `${what} lists the set a figure shows, and names no set to list before one is shown.` });
+      }
+    }
+    if (el.type === "ActionButtons") {
+      ((p.buttons as ActionButtonDef[] | undefined) ?? []).forEach((b, i) => {
+        const which = `The button ${i + 1} of ${q(key)} (${b.label || b.action})`;
+        for (const [param, src] of Object.entries(b.params ?? {})) {
+          if ("from" in src) {
+            const c = choices.get(src.from);
+            if (!c || c.kind === "shown") {
+              issues.push({ code: "bad_prop", elementKey: key, message: `${which} takes ${q(param)} from ${q(src.from)}, which is not an object a table's click chooses or its ticks collect.` });
+            }
+          } else if ("set" in src && !isSet(src.set)) {
+            issues.push({ code: "bad_prop", elementKey: key, message: `${which} takes ${q(param)} from the set ${q(src.set)}, which this cockpit does not hold.` });
+          }
+        }
+        for (const n of b.after?.read ?? []) {
+          if (!isSet(n)) issues.push({ code: "bad_prop", elementKey: key, message: `${which} reads the set ${q(n)} again after it runs, and this cockpit does not hold it.` });
+        }
+      });
+    }
+  }
+}
+
 function checkCondition(key: string, cond: unknown, out: CockpitIssue[], stateCards: Set<string>): void {
   const refuse = (message: string) => out.push({ code: "bad_condition", elementKey: key, message });
   if (Array.isArray(cond)) {
@@ -241,10 +374,10 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
       message: "A cockpit spec is an object with a \"root\" and a map of \"elements\"." });
     return done();
   }
-  const extra = Object.keys(spec).filter(k => !["root", "elements", "state"].includes(k));
+  const extra = Object.keys(spec).filter(k => !["root", "elements", "state", "sets", "values"].includes(k));
   if (extra.length) {
     issues.push({ code: "not_a_spec",
-      message: `The spec carries ${list(extra.map(q))}. It holds "root", "elements" and "state".` });
+      message: `The spec carries ${list(extra.map(q))}. It holds "root", "elements", "state", and the "sets" and "values" its pieces read.` });
   }
   const elements = spec.elements as Record<string, unknown>;
   const keys = Object.keys(elements);
@@ -391,15 +524,20 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
     }
   }
 
-  // Arc OC-4 — an object detail follows an objects table in the same cockpit, by its key.
+  // Arc OC-4 — an object detail follows an objects table in the same cockpit, by its key — or, since Arc AP-2, the
+  // object a table's click chooses, by the choice's name.
+  const wire = spec as unknown as WireSpec;
+  const choices = choicesOf(wire);
   for (const [key, el] of sound) {
     if (el.type !== "ObjectDetail" || !clean.has(key)) continue;
     const follows = el.props.follows as string;
-    if (sound.get(follows)?.type !== "ObjectTable") {
+    if (sound.get(follows)?.type !== "ObjectTable" && choices.get(follows)?.kind !== "chosen") {
       issues.push({ code: "bad_prop", elementKey: key,
-        message: `The object detail ${q(key)} follows ${q(follows)}, which is not an objects table in this cockpit.` });
+        message: `The object detail ${q(key)} follows ${q(follows)}, which is neither an objects table in this cockpit nor an object a table's click chooses.` });
     }
   }
+
+  checkWiring(wire, sound, clean, choices, issues);
 
   // Arc AP-1 — a section on the grid places each element by w columns and h rows, within what its kind may take; a
   // section that is not says sizes by name, and a w or an h there would be read by nothing.

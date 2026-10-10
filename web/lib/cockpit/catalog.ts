@@ -38,8 +38,10 @@ import { z } from "zod";
  *  pieces — ProcessBoard, ObjectTable, ObjectDetail and ActionButton (Arc OC-4). 4: a cockpit started from an object —
  *  ObjectFilters, ObjectFigure and ObjectChart (2026-10-10). 5: a cockpit built in place (Arc AP-1, 2026-10-10) — sizes
  *  one grade at a time (a section's `grid`, each placed element's `w` and `h`, the filter column's `w`) and a chart's
- *  measure and split (`agg`, `path`, `format`, `split`, `top`). */
-export const COCKPIT_VOCABULARY_VERSION = 5;
+ *  measure and split (`agg`, `path`, `format`, `split`, `top`). 6: a cockpit wired as an App (Arc AP-2, AP-3, 2026-10-11) —
+ *  named `sets` and `values` the pieces read, the objects a reader chooses and ticks named and read by others
+ *  (`chooses`, `ticks`, `shows`, `set_from`, `of`), and ActionButtons whose parameters come from them. */
+export const COCKPIT_VOCABULARY_VERSION = 6;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
 export const TONES = ["good", "warn", "bad", "info", "neutral"] as const;
@@ -86,6 +88,7 @@ export const LIMITS = {
   ObjectDetail: { w: [2, 12], h: [3, 16] },
   ObjectFigure: { w: [2, 6], h: [2, 4] },
   ObjectChart: { w: [3, 12], h: [4, 14] },
+  ActionButtons: { w: [2, 12], h: [2, 6] },
 } as const satisfies Record<string, { w: readonly [number, number]; h: readonly [number, number] }>;
 export type GridKind = keyof typeof LIMITS;
 
@@ -105,6 +108,79 @@ const ONTOLOGY_ID = /^[A-Za-z_][A-Za-z0-9_ .-]{0,127}$/;
 const PROPERTY_PATH = /^[A-Za-z_][A-Za-z0-9_.]{0,127}$/;
 /** An element key in the same spec. */
 const ELEMENT_KEY = /^[A-Za-z0-9_-]{1,64}$/;
+/** A set's, a value's or a choice's name (Arc AP-2) — an identifier the spec holds, never text a reader sees. */
+export const WIRE_NAME = /^[a-z][a-z0-9_-]{0,39}$/;
+/** A declared action's parameter, by its own spelling. */
+const PARAM_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+export const MAX_SETS = 12;
+export const MAX_VALUES = 8;
+/** The conditions a set keeps of its own, beside the set it starts from. */
+export const MAX_WHERE = 6;
+export const MAX_BUTTONS = 6;
+/** The most ticked objects one press runs an action on — each run its own, through the executor (the user's call 5). */
+export const MAX_TICKED_RUNS = 50;
+/** What a set's condition may say: the object door's own operators, and `in_last` — the last N days, today included. */
+export const SET_OPS = ["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "is_null", "not_null", "in_last"] as const;
+export type SetOp = (typeof SET_OPS)[number];
+/** What a value is: a number of days a condition counts back, a number, or a word. */
+export const VALUE_KINDS = ["days", "number", "text"] as const;
+
+const literal = z.union([z.string().max(120), z.number().finite(), z.boolean()]);
+
+/** One condition a set keeps (Arc AP-2): a property, an operator and what it compares with — a literal, a list, or a
+ *  value the author set once (`value_from`). */
+export const setCondition = z.object({
+  path: z.string().regex(PROPERTY_PATH),
+  op: z.enum(SET_OPS),
+  value: literal.nullable().optional(),
+  values: z.array(z.union([z.string().max(120), z.number().finite()])).max(30).nullable().optional(),
+  value_from: z.string().regex(WIRE_NAME).nullable().optional(),
+}).strict();
+
+/** A named set of objects pieces read (Arc AP-2): an entity, or another set it starts from, kept to one segment and
+ *  the author's conditions, and — for a set of what an object links to — to the objects whose `path` is the key of the
+ *  object a reader chose (`linked_to`). The reader's filter column narrows it too. */
+export const cockpitSet = z.object({
+  label: z.string().min(1).max(MAX_LABEL),
+  entity: z.string().regex(ONTOLOGY_ID).nullable().optional(),
+  from: z.string().regex(WIRE_NAME).nullable().optional(),
+  segment: z.string().regex(ONTOLOGY_ID).nullable().optional(),
+  where: z.array(setCondition).max(MAX_WHERE).nullable().optional(),
+  linked_to: z.object({ choice: z.string().regex(WIRE_NAME), path: z.string().regex(PROPERTY_PATH) }).strict().nullable().optional(),
+}).strict();
+export type CockpitSetDef = z.infer<typeof cockpitSet>;
+
+/** A value the author sets once and sets read (Arc AP-2): "Window · 14 days". */
+export const cockpitValue = z.object({
+  label: z.string().min(1).max(MAX_LABEL),
+  kind: z.enum(VALUE_KINDS),
+  value: z.union([z.number().finite(), z.string().max(120)]),
+}).strict();
+export type CockpitValueDef = z.infer<typeof cockpitValue>;
+
+/** Where one parameter of a button's action comes from (Arc AP-3): the object a reader chose or the ones they ticked
+ *  (`from` a choice), every object of a set (`set` — asks first), the form (`ask`), or the same value every time. */
+export const paramSource = z.union([
+  z.object({ from: z.string().regex(WIRE_NAME) }).strict(),
+  z.object({ set: z.string().regex(WIRE_NAME) }).strict(),
+  z.object({ ask: z.literal(true) }).strict(),
+  z.object({ value: z.union([z.string().max(200), z.number().finite(), z.boolean()]) }).strict(),
+]);
+export type ParamSource = z.infer<typeof paramSource>;
+
+/** One button (Arc AP-3): a declared action, each of its parameters from one source, whether it asks first, what it
+ *  does when it cannot run, and the sets read again after it runs. The declaration owns who may press it, its
+ *  criteria, its risk and its approval; nothing here loosens them. */
+export const actionButton = z.object({
+  action: z.string().regex(ONTOLOGY_ID),
+  label: z.string().min(1).max(MAX_LABEL).nullable().optional(),
+  primary: z.boolean().nullable().optional(),
+  params: z.record(z.string().regex(PARAM_NAME), paramSource).nullable().optional(),
+  ask: z.enum(["form", "run"]).nullable().optional(),
+  blocked: z.enum(["disable", "hide"]).nullable().optional(),
+  after: z.object({ read: z.array(z.string().regex(WIRE_NAME)).max(MAX_SETS) }).strict().nullable().optional(),
+}).strict();
+export type ActionButtonDef = z.infer<typeof actionButton>;
 /** The most columns an objects table lists beside each object's key. */
 export const MAX_TABLE_COLUMNS = 8;
 /** The most properties a filter column offers. */
@@ -188,7 +264,12 @@ export const cockpitCatalog = defineCatalog(schema, {
     },
     ObjectTable: {
       props: z.object({
-        entity: z.string().regex(ONTOLOGY_ID),
+        entity: z.string().regex(ONTOLOGY_ID).nullable().optional(),
+        /** Arc AP-2 — a named set in place of an entity, the set a figure shows in its stead, and the choices it makes. */
+        set: z.string().regex(WIRE_NAME).nullable().optional(),
+        set_from: z.string().regex(WIRE_NAME).nullable().optional(),
+        chooses: z.string().regex(WIRE_NAME).nullable().optional(),
+        ticks: z.string().regex(WIRE_NAME).nullable().optional(),
         segment: z.string().regex(ONTOLOGY_ID).nullable().optional(),
         columns: z.array(z.string().regex(PROPERTY_PATH)).max(MAX_TABLE_COLUMNS).nullable().optional(),
         sort: z.string().regex(PROPERTY_PATH).nullable().optional(),
@@ -221,7 +302,11 @@ export const cockpitCatalog = defineCatalog(schema, {
     },
     ObjectFigure: {
       props: z.object({
-        entity: z.string().regex(ONTOLOGY_ID),
+        entity: z.string().regex(ONTOLOGY_ID).nullable().optional(),
+        /** Arc AP-2 — a named set in place of an entity, the set it is said beside, and the choice a click shows it in. */
+        set: z.string().regex(WIRE_NAME).nullable().optional(),
+        of: z.string().regex(WIRE_NAME).nullable().optional(),
+        shows: z.string().regex(WIRE_NAME).nullable().optional(),
         label: z.string().min(1).max(MAX_LABEL),
         agg: z.enum(FIGURE_AGGS),
         path: z.string().regex(PROPERTY_PATH).nullable().optional(),
@@ -232,7 +317,9 @@ export const cockpitCatalog = defineCatalog(schema, {
     },
     ObjectChart: {
       props: z.object({
-        entity: z.string().regex(ONTOLOGY_ID),
+        entity: z.string().regex(ONTOLOGY_ID).nullable().optional(),
+        /** Arc AP-2 — a named set in place of an entity. */
+        set: z.string().regex(WIRE_NAME).nullable().optional(),
         label: z.string().min(1).max(MAX_LABEL),
         time: z.string().regex(PROPERTY_PATH),
         days: z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(60), z.literal(90)]).nullable().optional(),
@@ -247,6 +334,10 @@ export const cockpitCatalog = defineCatalog(schema, {
       }),
       description: "An entity's objects per day over its last days — the reader's filtered objects as bars, all of them as a line behind. A bar may measure a property's aggregate, and be split by a property's most common values.",
     },
+    ActionButtons: {
+      props: z.object({ buttons: z.array(actionButton).min(1).max(MAX_BUTTONS), size, w, h }),
+      description: "A row of buttons, each a declared action run on what a reader chose or ticked, on a set, or with what they fill in — the declaration's own criteria, risk and approval holding every run.",
+    },
   },
   actions: {},
 });
@@ -254,9 +345,9 @@ export const cockpitCatalog = defineCatalog(schema, {
 /** Arc OC-4 — the pieces bound to the ontology. A person places them by hand; a model may arrange one and is never
  *  told how to write one (`grammar.ts` teaches `WRITTEN`). */
 export type PieceName = "ProcessBoard" | "ObjectTable" | "ObjectDetail" | "ActionButton" | "ObjectFilters" | "ObjectFigure"
-  | "ObjectChart";
+  | "ObjectChart" | "ActionButtons";
 export const PIECE_NAMES: readonly PieceName[] = [
-  "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure", "ObjectChart",
+  "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure", "ObjectChart", "ActionButtons",
 ];
 
 export type WrittenName = "Cockpit" | "Tabs" | "Tab" | "Section" | "Card" | "Note" | "Image";
@@ -268,7 +359,7 @@ export const COMPONENT_NAMES: readonly ComponentName[] = [...WRITTEN, ...PIECE_N
 
 /** The components a section holds — each sized, each in its place. */
 export const PLACED: readonly ComponentName[] = [
-  "Card", "Note", "Image", "ProcessBoard", "ObjectTable", "ObjectDetail", "ObjectFigure", "ObjectChart",
+  "Card", "Note", "Image", "ProcessBoard", "ObjectTable", "ObjectDetail", "ObjectFigure", "ObjectChart", "ActionButtons",
 ];
 /** The two that are a person's own: a model arranges them and never makes one. */
 export const STATIC: readonly ComponentName[] = ["Note", "Image"];
@@ -289,6 +380,7 @@ export const MAY_HOLD: Record<ComponentName, readonly ComponentName[]> = {
   ObjectFilters: [],
   ObjectFigure: [],
   ObjectChart: [],
+  ActionButtons: [],
 };
 
 /** The components a condition may show or hide. A tab is never conditional. */

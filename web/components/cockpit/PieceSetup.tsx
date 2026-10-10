@@ -25,10 +25,13 @@ import {
   SPLIT_AGGS, TONES,
 } from "@/lib/cockpit/catalog";
 import {
-  editNote, moveCardTo, moveCardToNewSection, moveSectionTo, recaption, rename, sectionsOf, setProps, tabsOf,
+  editNote, freshWireName, moveCardTo, moveCardToNewSection, moveSectionTo, recaption, rename, sectionsOf, setProps, tabsOf,
   type CockpitSpec,
 } from "@/lib/cockpit/edit";
-import { lineOf, nameOf } from "@/lib/cockpit/names";
+import { lineOf, nameOf, setTitles } from "@/lib/cockpit/names";
+import { choicesOf, isRefused, pieceSet } from "@/lib/cockpit/sets";
+import { ButtonsSetup } from "@/components/cockpit/ButtonsSetup";
+import { Checkbox as Tick } from "@/components/ui/checkbox";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { getDeclaredActions, type DeclaredAction } from "@/lib/objects";
 import { getObjectType, getProcesses, type ObjectTypeDetail, type TypeProperty } from "@/lib/objectTypes";
@@ -227,11 +230,13 @@ function TableSetup({ p, ef, set, noun }: { p: Props; ef: EntityFields; set: (pa
   };
   return (
     <>
-      <Row label="Lists" hint={p.segment ? "The segment's objects only, a page at a time." : "Every object, a page at a time."}>
-        <Pick label="Segment" value={String(p.segment ?? "")} none={`Every ${noun}`}
-          options={keeping(ef.segments.map(s => ({ value: s, label: words(s) })), p.segment as string)}
-          onPick={v => set({ segment: v || null }, "a table's segment chosen by hand")} />
-      </Row>
+      {!p.set && (
+        <Row label="Lists" hint={p.segment ? "The segment's objects only, a page at a time." : "Every object, a page at a time."}>
+          <Pick label="Segment" value={String(p.segment ?? "")} none={`Every ${noun}`}
+            options={keeping(ef.segments.map(s => ({ value: s, label: words(s) })), p.segment as string)}
+            onPick={v => set({ segment: v || null }, "a table's segment chosen by hand")} />
+        </Row>
+      )}
       <Row label="Columns" right={`${chosen.length} of ${MAX_TABLE_COLUMNS}`} testid="setup-columns"
         hint="Beside each object's key, in the order chosen.">
         <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 260, overflow: "auto" }}>
@@ -417,9 +422,78 @@ function ActionSetup({ spec, k, p, connectionId, schema, set }: {
   );
 }
 
+// ── Arc AP-2 — what a piece reads, and what it chooses ───────────────────────────────────────────────────────────────
+
+/** Which set a table, a figure or a chart reads: every object of its entity, or a set the cockpit names. */
+function ReadsRow({ spec, k, p, entity, onChange }: { spec: CockpitSpec; k: string; p: Props; entity: string; onChange: Change }) {
+  const sets = Object.entries(spec.sets ?? {});
+  const value = p.set ? `set:${String(p.set)}` : `entity:${entity}`;
+  return (
+    <Row label="Reads" testid="setup-reads" hint="A set is named in the Data tab: an entity narrowed by a segment, conditions, or a chosen object.">
+      <Pick label="Reads" value={value}
+        options={[{ value: `entity:${entity}`, label: `Every ${words(entity).toLowerCase()}` }, ...sets.map(([n, d]) => ({ value: `set:${n}`, label: d.label }))]}
+        onPick={v => onChange(setProps(spec, k, v.startsWith("set:") ? { set: v.slice(4), entity: null, segment: null } : { entity, set: null, set_from: null }),
+          "what a piece reads chosen by hand")} />
+    </Row>
+  );
+}
+
+/** What a click in a table chooses and what its ticks collect — each a choice other pieces read — and whether figures
+ *  switch the set it lists. */
+function ChoicesRows({ spec, k, p, noun, set }: { spec: CockpitSpec; k: string; p: Props; noun: string; set: (patch: Props, note: string) => void }) {
+  const shown = [...choicesOf(spec).values()].filter(c => c.kind === "shown");
+  void k;
+  return (
+    <>
+      <Row label="A click" testid="setup-chooses" hint={p.chooses ? `Chooses the ${words(String(p.chooses))}: a detail, a set or a button reads it.` : "Chooses a row for this table alone."}>
+        <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t2)" }}>
+          <Tick checked={!!p.chooses} aria-label="A click chooses for the cockpit"
+            onChange={e => set({ chooses: e.target.checked ? freshWireName(spec, `chosen ${noun}`) : null }, "what a click chooses named by hand")} />
+          Names the {noun.toLowerCase()} it chooses, for other pieces
+        </label>
+      </Row>
+      <Row label="Ticks" testid="setup-ticks" hint={p.ticks ? `Collects the ${words(String(p.ticks))} — a button runs once for each, at most 50.` : undefined}>
+        <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t2)" }}>
+          <Tick checked={!!p.ticks} aria-label="Ticks collect rows"
+            onChange={e => set({ ticks: e.target.checked ? freshWireName(spec, `ticked ${noun}`) : null }, "what ticks collect named by hand")} />
+          A tick beside each row
+        </label>
+      </Row>
+      {!!p.set && shown.length > 0 && (
+        <Row label="Figures switch it" hint="A figure clicked shows its set here; the set above stands until one is.">
+          <Pick label="Figures switch it" value={String(p.set_from ?? "")} none="No" options={shown.map(c => ({ value: c.name, label: `Yes — ${words(c.name)}` }))}
+            onPick={v => set({ set_from: v || null }, "what switches a table chosen by hand")} />
+        </Row>
+      )}
+    </>
+  );
+}
+
+/** What a figure is said beside, and the list a click shows its set in. */
+function FigureWiring({ spec, p, set }: { spec: CockpitSpec; p: Props; set: (patch: Props, note: string) => void }) {
+  const sets = Object.entries(spec.sets ?? {});
+  const shown = [...choicesOf(spec).values()].filter(c => c.kind === "shown");
+  return (
+    <>
+      <Row label="Said beside" hint="The same measure over another set — 1,375 of 6,788 placed.">
+        <Pick label="Said beside" value={String(p.of ?? "")} none="Nothing, or the whole while filtered" options={sets.map(([n, d]) => ({ value: n, label: `of ${d.label}` }))}
+          onPick={v => set({ of: v || null }, "what a figure is said beside chosen by hand")} />
+      </Row>
+      {!!p.set && (
+        <Row label="A click" testid="setup-shows" hint="Shows this figure's set in a table that figures switch.">
+          <Pick label="A click shows it" value={String(p.shows ?? "")} none="Does nothing"
+            options={[...shown.map(c => ({ value: c.name, label: `Shows it in ${words(c.name)}` })),
+              ...(shown.length ? [] : [{ value: freshWireName(spec, "shown"), label: "Shows it in a list (new)" }])]}
+            onPick={v => set({ shows: v || null }, "what a figure's click shows chosen by hand")} />
+        </Row>
+      )}
+    </>
+  );
+}
+
 // ── the panel ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export function PieceSetup({ spec, selected, onChange, connectionId, schema, cardTitle, entityTitle }: {
+export function PieceSetup({ spec, selected, onChange, connectionId, schema, cardTitle, entityTitle, wiringOn = false }: {
   spec: CockpitSpec;
   selected: string | null;
   onChange: Change;
@@ -428,9 +502,14 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
   cardTitle?: (id: string) => string | undefined;
   /** The name the ontology gives an entity, where the caller knows it. */
   entityTitle?: (id: string) => string | undefined;
+  /** Arc AP-2 — whether this install wires cockpits: what a piece reads and what it chooses are set up here then. */
+  wiringOn?: boolean;
 }) {
   const el = selected ? spec.elements[selected] : undefined;
-  const entity = el && ["ObjectTable", "ObjectFigure", "ObjectChart", "ObjectFilters"].includes(el.type) ? String(el.props.entity ?? "") : undefined;
+  // the entity a piece reads: its set's (Arc AP-2), or the one it names
+  const read = el ? pieceSet(spec, el.props) : null;
+  const entity = el && ["ObjectTable", "ObjectFigure", "ObjectChart", "ObjectFilters"].includes(el.type)
+    ? (el.type !== "ObjectFilters" && read && !isRefused(read) ? read.entity : String(el.props.entity ?? "")) : undefined;
   const ef = useEntityFields(entity, connectionId, schema);
   if (!selected || !el) {
     return (
@@ -443,7 +522,7 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
   const k = selected;
   const p = el.props as Props;
   const set = (patch: Props, note: string) => onChange(setProps(spec, k, patch), note);
-  const named = nameOf(spec.elements, k, cardTitle, entityTitle);
+  const named = nameOf(spec.elements, k, cardTitle, entityTitle, setTitles(spec));
   const noun = entity ? entityTitle?.(entity) ?? words(entity) : "";
   const kind = named.kind.charAt(0).toUpperCase() + named.kind.slice(1);
   const title = named.title;
@@ -501,10 +580,15 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
       {el.type === "ObjectDetail" && (
         <Row label="Shows the object chosen in">
           <Pick label="Follows" value={String(p.follows ?? "")} onPick={v => v && set({ follows: v }, "a detail's table chosen by hand")}
-            options={Object.keys(spec.elements).filter(x => spec.elements[x].type === "ObjectTable").map(x => ({ value: x, label: lineOf(spec.elements, x) }))} />
+            options={[...Object.keys(spec.elements).filter(x => spec.elements[x].type === "ObjectTable").map(x => ({ value: x, label: lineOf(spec.elements, x, undefined, undefined, setTitles(spec)) })),
+              ...[...choicesOf(spec).values()].filter(c => c.kind === "chosen").map(c => ({ value: c.name, label: `The chosen ${words(c.name)}` }))]} />
         </Row>
       )}
       {el.type === "ActionButton" && <ActionSetup spec={spec} k={k} p={p} connectionId={connectionId} schema={schema} set={set} />}
+      {wiringOn && ["ObjectTable", "ObjectFigure", "ObjectChart"].includes(el.type) && <ReadsRow spec={spec} k={k} p={p} entity={entity ?? ""} onChange={onChange} />}
+      {wiringOn && el.type === "ObjectTable" && <ChoicesRows spec={spec} k={k} p={p} noun={noun} set={set} />}
+      {wiringOn && el.type === "ObjectFigure" && <FigureWiring spec={spec} p={p} set={set} />}
+      {el.type === "ActionButtons" && <ButtonsSetup spec={spec} k={k} onChange={onChange} connectionId={connectionId} schema={schema} />}
       {needsFields && el.type === "ObjectTable" && fieldsBody(f => <TableSetup p={p} ef={f} set={set} noun={noun} />)}
       {needsFields && el.type === "ObjectFigure" && fieldsBody(f => <FigureSetup p={p} ef={f} set={set} />)}
       {needsFields && el.type === "ObjectChart" && fieldsBody(f => <ChartSetup p={p} ef={f} set={set} />)}

@@ -55,6 +55,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import {
   CockpitRefused, acceptProposal, askCockpit, cockpitAudiences, cockpitImageUrl, copySharedCockpit, draftCockpit, findingOfCard,
+  getDeclaredActions,
   getCockpit, getProposalById, getSharedCockpit, getSystemFlags, keepCockpit, listCockpits, listSharedCockpits, moveCanvasCockpit,
   publishCockpit, rejectProposal, restoreCockpit, retireCockpit, runDashboardCard, startMyCockpit, unpublishCockpit,
   uploadCockpitImage,
@@ -672,6 +673,8 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [objectsOn, setObjectsOn] = useState(false);
   // Arc AP-1 — a cockpit built in place, while `cockpit.builder` is on: read first, and Edit opens the builder.
   const [builderOn, setBuilderOn] = useState(false);
+  // Arc AP-2 and AP-3 — sets, choices and action buttons, while `cockpit.wiring` is on
+  const [wiringOn, setWiringOn] = useState(false);
   const [editing, setEditing] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -701,6 +704,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
       if (alive) {
         setRangesOn(!!f["briefing.ranges"]?.value); setPiecesOn(!!f["ontology.cockpit_pieces"]?.value);
         setObjectsOn(!!f["ontology.object_cockpits"]?.value); setBuilderOn(!!f["cockpit.builder"]?.value);
+        setWiringOn(!!f["cockpit.wiring"]?.value);
       }
     }).catch(() => { if (alive) { setRangesOn(false); setPiecesOn(false); } });
     return () => { alive = false; };
@@ -1029,6 +1033,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     return (
       <div data-testid="briefing-cockpits" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <CockpitBuilder spec={current} onChange={change} cardTitle={id => lines.get(id)?.title} connectionId={connectionId} schema={schema}
+          wiringOn={wiringOn}
           bar={(
             <EditBar saved={saved} canUndo={stacks.past.length > 0} canRedo={stacks.future.length > 0} onUndo={undo} onRedo={redo} onDone={done}
               picker={(
@@ -1078,6 +1083,23 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                   <Icon name="plus" /> From the ontology
                 </Button>
               )}
+              {wiringOn && (
+                <Button size="xs" variant="ghost" disabled={busy} data-testid="cockpit-buttons-new"
+                  title="Buttons that run declared actions on what a reader chose or ticked — wired in their setup."
+                  onClick={async () => {
+                    shut();
+                    try {
+                      const declared = Object.values(await getDeclaredActions(connectionId, schema));
+                      if (!declared.length) { toast.error("No action is declared here", { description: "Declare one in Ontology ▸ Actions, then place its button." }); return; }
+                      const placed = placePiece(current, "ActionButtons", { buttons: [{ action: declared[0].id }] });
+                      if (placed.key) change(placed.spec, "action buttons placed by hand");
+                    } catch (e) {
+                      toast.error("The declared actions could not be read", { description: (e as Error).message.slice(0, 160) });
+                    }
+                  }}>
+                  <Icon name="plus" /> Action buttons
+                </Button>
+              )}
             </>
           )}
           aside={showHistory ? (
@@ -1114,10 +1136,10 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               )}
             </>
           )}>
-          {({ selected, onSelect, handle }) => (
+          {({ selected, onSelect, handle, reads }) => (
             <ComposedCockpit spec={current} cards={cards} host={host} doors={{ ...editDoors, onSelect }} sym={data.currency_symbol || "$"}
               images={images} range={range} schema={schema} connectionId={connectionId} cockpitId={`${connectionId}:${chosen}`}
-              selected={selected} handle={handle} />
+              selected={selected} handle={handle} reads={reads} />
           )}
         </CockpitBuilder>
       </div>

@@ -147,6 +147,11 @@ FLAG_ENV = {
     # every piece set up there, never typed as a spec. OFF: a cockpit is arranged by its six sizes and Arrange, the
     # server refuses a section on the grid, and the writer of a cockpit is told nothing about the grid.
     "cockpit.builder": "AUGHOR_COCKPIT_BUILDER",
+    # Arc AP-2 and AP-3 (ROADMAP §3.57). ON: a cockpit may name sets and values its pieces read, a table may name what a
+    # click chooses and ticks collect, a figure may switch a list, and action buttons run declared actions on what a
+    # reader chose or ticked, on a set, or with what they fill in. OFF: the server refuses a spec that says any of it,
+    # and the builder offers none of it.
+    "cockpit.wiring": "AUGHOR_COCKPIT_WIRING",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -507,6 +512,16 @@ FLAG_META = {
                        "want. Filters are each reader's own and never change the cockpit. Saved cards "
                        "beside them say they are not filtered. Off: these pieces cannot be added.",
     },
+    "cockpit.wiring": {
+        "label": "Wire a cockpit's pieces and actions",
+        "summary": "Pieces read named sets, and a row chosen in one is read by the others. Buttons run actions on "
+                   "the chosen or ticked rows.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Queries your warehouse"}],
+        "description": "A set is a named group of objects, such as orders waiting past their promise. A button runs a "
+                       "declared action, with its own checks and approvals, once per chosen or ticked row. Off: a "
+                       "cockpit's pieces read only their own entity.",
+    },
     "cockpit.builder": {
         "label": "Build cockpits in place",
         "summary": "A cockpit opens to be read, and Edit shows it between its outline and the setup of what you "
@@ -756,6 +771,11 @@ INTENTIONALLY_OFF: dict = {
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
     # Arc AP-1, 2026-10-10. It changes where a cockpit is changed, so it is watched before it graduates.
+    # Arc AP-2 and AP-3, 2026-10-11. It changes what a cockpit can do — an action a reader runs from it — so it is watched
+    # before it graduates.
+    "cockpit.wiring": "does a wired cockpit become a place work is done — of the wired cockpits, is an action run from "
+                      "one at least weekly? Falsifiers (§3.57): a cockpit drawn before the wiring renders differently "
+                      "with it on, or a run reaches the executor without its declared criteria — either stops it",
     "cockpit.builder": "is the setup where people change a cockpit — of the cockpits started from an object, is one in "
                        "five or more edited within two weeks of starting? Falsifier (§3.57): fewer than one in five, "
                        "and the setup is not where people look",

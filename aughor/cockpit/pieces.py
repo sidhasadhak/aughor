@@ -19,21 +19,23 @@ import json
 from typing import Any, Optional
 
 PIECES = ("ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure",
-          "ObjectChart")
+          "ObjectChart", "ActionButtons")
 FLAG = "ontology.cockpit_pieces"
 #: The pieces of a cockpit started from an object — refused unless its flag is on too.
 FROM_OBJECT = ("ObjectFilters", "ObjectFigure", "ObjectChart")
 _WORDS = {"ProcessBoard": "process board", "ObjectTable": "objects table", "ObjectDetail": "object detail",
           "ActionButton": "action button", "ObjectFilters": "filter column", "ObjectFigure": "figure",
-          "ObjectChart": "chart"}
+          "ObjectChart": "chart", "ActionButtons": "action buttons"}
 
 
 def title_of(kind: str, props: dict) -> str:
     """A piece as a person approving an edit reads it, by what it names: "Process board · order fulfilment"."""
     named = {"ProcessBoard": props.get("process"), "ActionButton": props.get("action"),
-             "ObjectTable": ", ".join(str(v) for v in (props.get("entity"), props.get("segment")) if v),
+             "ObjectTable": ", ".join(str(v) for v in (props.get("entity") or props.get("set"), props.get("segment")) if v),
              "ObjectFilters": props.get("entity"), "ObjectFigure": props.get("label"),
-             "ObjectChart": props.get("label")}.get(kind)
+             "ObjectChart": props.get("label"),
+             "ActionButtons": ", ".join(str(b.get("label") or b.get("action")) for b in props.get("buttons") or []
+                                        if isinstance(b, dict))}.get(kind)
     words = _WORDS.get(kind, kind).capitalize()
     return f"{words} · {str(named).replace('_', ' ')}" if named else words
 
@@ -50,7 +52,18 @@ def _graph(connection_id: str):
     return served_ontology_graph(connection_id, None)
 
 
-def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None) -> list[str]:
+def _scope(props: dict, sets: dict) -> tuple[str, str, list]:
+    """The entity, segment and conditions a piece reads (Arc AP-2): its named set's, read as the web reads it, or the
+    entity and segment it names itself — an unread set reading as nothing, its own refusal said by the wiring check."""
+    name = props.get("set")
+    if name:
+        s = sets.get(name) or {}
+        return str(s.get("entity") or ""), str(s.get("segment") or ""), list(s.get("filters") or [])
+    return str(props.get("entity") or ""), str(props.get("segment") or ""), []
+
+
+def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
+                 wiring: Optional[dict] = None) -> list[str]:
     """A sentence for each ontology piece a spec holds that this connection cannot draw — what a keep is refused
     with. Empty when the spec holds none, whatever the flag says, so a cockpit without them keeps as it always did."""
     pieces = pieces_of(spec)
@@ -71,14 +84,18 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None) 
     from aughor.semantic.object_query import ObjectQueryRefused, compile_object_listing, find_object_type
     said: list[str] = []
     tables: dict[str, str] = {}
+    sets = (wiring or {}).get("sets") or {}
     for key, (kind, props) in pieces.items():
+        if props.get("set") and not (sets.get(props["set"]) or {}).get("entity"):
+            continue                                    # a set that cannot be read is said once, by the wiring check
         if kind in FROM_OBJECT:
-            said += _from_object_read(key, kind, props, graph, connection_id)
+            said += _from_object_read(key, kind, props, graph, connection_id, sets)
         if kind == "ProcessBoard" and props.get("process") not in (graph.processes or {}):
             said.append(f'The process board "{key}" names the process "{props.get("process")}", which this '
                         "connection does not declare.")
         elif kind == "ObjectTable":
-            body = {"entity": props.get("entity"), "segment": props.get("segment") or "",
+            entity, segment, conditions = _scope(props, sets)
+            body = {"entity": entity, "segment": segment, "filters": conditions,
                     "columns": list(props.get("columns") or []), "order_by": props.get("sort") or "",
                     "descending": bool(props.get("descending")), "limit": 1}
             try:
@@ -106,29 +123,32 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None) 
     return said
 
 
-def _from_object_probes(kind: str, props: dict) -> list[tuple[str, dict]]:
-    """The object queries a filter column, a figure or a chart makes, each as what a refusal names and its body."""
-    entity = props.get("entity")
+def _from_object_probes(kind: str, props: dict, sets: Optional[dict] = None) -> list[tuple[str, dict]]:
+    """The object queries a filter column, a figure or a chart makes, each as what a refusal names and its body — over
+    its named set's entity, segment and conditions when it reads one (Arc AP-2)."""
+    entity, segment, conditions = _scope(props, sets or {})
+    scope = {"segment": segment, "filters": conditions} if (segment or conditions) else {}
     count = {"name": "n", "agg": "count"}
     if kind == "ObjectFilters":
         paths = [p.get("path") if isinstance(p, dict) else p for p in props.get("properties") or []]
         return [(f'its filter on "{p}"', {"object_type": entity, "measures": [count], "by": [p]}) for p in paths]
     if kind == "ObjectFigure":
-        return [("it", {"object_type": entity, "measures": [{"name": "n", "agg": props.get("agg") or "count",
-                                                              "path": props.get("path") or ""}]})]
+        return [("it", {"object_type": entity, **scope, "measures": [{"name": "n", "agg": props.get("agg") or "count",
+                                                                       "path": props.get("path") or ""}]})]
     # a chart's bars: how many objects, or what its measure says (Arc AP-1), per day — split by a property when it says one
     measure = {"name": "n", "agg": props.get("agg") or "count", "path": props.get("path") or ""}
     split = {"by": [props["split"]]} if props.get("split") else {}
-    return [("it", {"object_type": entity, "measures": [measure], "time": props.get("time") or "", "grain": "day",
-                    **split})]
+    return [("it", {"object_type": entity, **scope, "measures": [measure], "time": props.get("time") or "",
+                    "grain": "day", **split})]
 
 
-def _from_object_read(key: str, kind: str, props: dict, graph: Any, connection_id: str) -> list[str]:
+def _from_object_read(key: str, kind: str, props: dict, graph: Any, connection_id: str,
+                      sets: Optional[dict] = None) -> list[str]:
     """A sentence for each query a filter column, a figure or a chart would make that the compiler refuses — compiled
     over the served ontology, never run."""
     from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
     said = []
-    for what, body in _from_object_probes(kind, props):
+    for what, body in _from_object_probes(kind, props, sets):
         try:
             compile_object_query(body, graph, overlay=_accepted_edits(connection_id))
         except ObjectQueryRefused as exc:
@@ -179,6 +199,31 @@ def _named(props: dict) -> str:
 
 # ── the release a cockpit was composed against (the study's §8.7: checked against the release it is pinned to) ──
 
+def _set_scope(spec: Any, name: str) -> tuple[str, str]:
+    """The entity and segment a named set reads, down the sets it starts from (Arc AP-2) — what a release a piece reads
+    through a set is tracked by. Its conditions are read by the web (`sets.ts`); an entity and a segment are all a
+    release names."""
+    sets = (spec.get("sets") if isinstance(spec, dict) else None) or {}
+    seen: set[str] = set()
+    segment = ""
+    while name and name not in seen and isinstance(sets.get(name), dict):
+        seen.add(name)
+        s = sets[name]
+        segment = segment or str(s.get("segment") or "")
+        if s.get("entity"):
+            return str(s["entity"]), segment
+        name = str(s.get("from") or "")
+    return "", segment
+
+
+def _effective(spec: Any, props: dict) -> dict:
+    """A piece's props with a named set's entity and segment in place, for what reads an entity and a segment."""
+    if not props.get("set"):
+        return props
+    entity, segment = _set_scope(spec, str(props["set"]))
+    return {**props, "entity": entity, "segment": segment}
+
+
 def depends(spec: Any, graph: Any) -> dict[tuple[str, str], list[str]]:
     """The ontology elements a spec's pieces read, as release elements ``(kind, id)`` — each with the pieces that read
     it. A table reads its entity and, for a segment, the declaration that derives it: a rule's own, a process's (its
@@ -189,6 +234,7 @@ def depends(spec: Any, graph: Any) -> dict[tuple[str, str], list[str]]:
         if target:
             out.setdefault((kind, target), []).append(key)
     for key, (kind, props) in pieces_of(spec).items():
+        props = _effective(spec, props)
         if kind == "ProcessBoard":
             add("process", str(props.get("process") or ""), key)
         elif kind == "ActionButton":
@@ -294,7 +340,8 @@ def cockpits_reading(connection_id: str, names: set[str], *, graph: Optional[Any
             continue
         reads = depends(spec, graph)
         hit = sorted({key for (_, t), keys in reads.items() if t in names for key in keys}
-                     | {key for key, (k, p) in pieces_of(spec).items() if k == "ObjectTable" and p.get("segment") in names})
+                     | {key for key, (k, p) in pieces_of(spec).items()
+                        if k == "ObjectTable" and _effective(spec, p).get("segment") in names})
         if hit:
             key = str(row.get("natural_key") or "")
             out.append({"cockpit": key.rsplit(":", 1)[-1], "title": title_of(spec), "pieces": hit})

@@ -25,6 +25,7 @@ export const KIND_WORDS: Record<ComponentName, string> = {
   ObjectFilters: "filter column",
   ObjectFigure: "figure",
   ObjectChart: "chart",
+  ActionButtons: "action buttons",
 };
 
 /** A component's word, or the type itself when it is none of the catalog's. */
@@ -32,7 +33,14 @@ export function kindWord(type: string | undefined): string {
   return KIND_WORDS[type as ComponentName] ?? String(type ?? "");
 }
 
-const words = (id: unknown): string => String(id ?? "").replace(/_/g, " ").trim();
+const words = (id: unknown): string => String(id ?? "").replace(/[_-]+/g, " ").trim();
+/** A set's, a value's or a choice's name in words: `chosen-order` → "chosen order". */
+export const wireWords = (name: string): string => words(name);
+/** What each set of a spec is called — for `nameOf`'s `setTitle`. */
+export function setTitles(spec: unknown): (name: string) => string | undefined {
+  const sets = (spec as { sets?: Record<string, { label?: string }> } | null)?.sets ?? {};
+  return name => sets[name]?.label;
+}
 const cut = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n)}…` : s);
 
 type El = { type?: string; props?: Record<string, unknown>; children?: string[] };
@@ -42,7 +50,8 @@ type El = { type?: string; props?: Record<string, unknown>; children?: string[] 
  *  from `entityTitle`, else by its id in words; a section or a tab by its own title. */
 export function nameOf(elements: Record<string, El | undefined>, key: string,
   cardTitle: (id: string) => string | undefined = () => undefined,
-  entityTitle: (id: string) => string | undefined = () => undefined): { kind: string; title: string } {
+  entityTitle: (id: string) => string | undefined = () => undefined,
+  setTitle: (name: string) => string | undefined = () => undefined): { kind: string; title: string } {
   const el = elements[key];
   const type = el?.type ?? "";
   const p = el?.props ?? {};
@@ -57,13 +66,20 @@ export function nameOf(elements: Record<string, El | undefined>, key: string,
       case "Image": return String(p.caption ?? "");
       case "ProcessBoard": return words(p.process);
       case "ActionButton": return words(p.action);
-      case "ObjectTable": return [entity(p.entity), p.segment ? words(p.segment) : ""].filter(Boolean).join(", ");
+      case "ObjectTable":
+        // a table reading a set is called by the set (Arc AP-2)
+        if (p.set) return setTitle(String(p.set)) ?? words(p.set);
+        return [entity(p.entity), p.segment ? words(p.segment) : ""].filter(Boolean).join(", ");
       case "ObjectDetail": {
         const table = elements[String(p.follows ?? "")];
-        return table?.type === "ObjectTable" ? `of ${nameOf(elements, String(p.follows), cardTitle, entityTitle).title}` : "";
+        if (table?.type === "ObjectTable") return `of ${nameOf(elements, String(p.follows), cardTitle, entityTitle, setTitle).title}`;
+        // a detail following an object a click chooses is called by it: "of the chosen order"
+        return p.follows ? `of the ${words(p.follows).replace(/^chosen\s+/, "chosen ")}` : "";
       }
       case "ObjectFilters": return entity(p.entity);
       case "ObjectFigure": case "ObjectChart": return String(p.label ?? "");
+      case "ActionButtons": return (Array.isArray(p.buttons) ? p.buttons as { action?: unknown; label?: unknown }[] : [])
+        .map(b => String(b.label ?? "") || words(b.action)).filter(Boolean).join(" · ");
       default: return "";
     }
   })();
@@ -72,8 +88,9 @@ export function nameOf(elements: Record<string, El | undefined>, key: string,
 
 /** One line: "Objects table · Order, overdue dispatch", or the kind alone when nothing names it. */
 export function lineOf(elements: Record<string, El | undefined>, key: string,
-  cardTitle?: (id: string) => string | undefined, entityTitle?: (id: string) => string | undefined): string {
-  const { kind, title } = nameOf(elements, key, cardTitle, entityTitle);
+  cardTitle?: (id: string) => string | undefined, entityTitle?: (id: string) => string | undefined,
+  setTitle?: (name: string) => string | undefined): string {
+  const { kind, title } = nameOf(elements, key, cardTitle, entityTitle, setTitle);
   const Kind = kind.charAt(0).toUpperCase() + kind.slice(1);
   return title ? `${Kind} · ${title}` : Kind;
 }

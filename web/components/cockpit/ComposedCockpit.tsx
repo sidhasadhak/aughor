@@ -41,9 +41,10 @@ import {
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CanvasScale, CellBoxContext, OFF_GRID, type CellBox } from "@/components/cockpit/cellBox";
 import { CockpitTile, SaidTile, WIDE, WithheldTile, tileShape, type TileDoors } from "@/components/cockpit/CockpitTile";
+import { ActionButtonsPiece } from "@/components/cockpit/ActionButtonsPiece";
 import {
   ActionButtonPiece, FilterBar, NotFiltered, ObjectChartPiece, ObjectDetailPiece, ObjectFigurePiece,
-  ObjectFiltersPiece, ObjectTablePiece, PiecesProvider, ProcessBoardPiece, useFiltering, type FilterProperty,
+  ObjectFiltersPiece, ObjectTablePiece, PiecesProvider, ProcessBoardPiece, useFiltering, usePieceFiltering, type FilterProperty,
 } from "@/components/cockpit/OntologyPieces";
 import { ImageTile, NoteTile, type ImageStamp, type StaticDoors } from "@/components/cockpit/StaticTile";
 import { Icon } from "@/components/ui/icon";
@@ -51,12 +52,13 @@ import { Refusal } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { BriefingRange, CockpitCard } from "@/lib/api";
 import {
-  FILTER_DEFAULT_PX, FILTER_WIDTH, GRADE, GRID, LIMITS, SPAN, rowsTall, sizeOf, type ComponentName, type GridKind, type Size,
-  type Tone,
+  FILTER_DEFAULT_PX, FILTER_WIDTH, GRADE, GRID, LIMITS, SPAN, rowsTall, sizeOf, type ActionButtonDef, type ComponentName,
+  type GridKind, type Size, type Tone,
 } from "@/lib/cockpit/catalog";
 import { boxOf, clampBox, type Box } from "@/lib/cockpit/edit";
 import { stateModel, type CockpitHostState } from "@/lib/cockpit/hostState";
 import { checkCockpitSpec, openingTab } from "@/lib/cockpit/rules";
+import type { WireSpec } from "@/lib/cockpit/sets";
 
 /** What a cockpit may ask of the page that holds it. The static doors and `onResize` are absent
  *  on a cockpit the reader may not change — a published one, a strip. */
@@ -94,6 +96,8 @@ interface CockpitContextValue {
   schema?: string;
   /** The element chosen in the builder, outlined where it is drawn. */
   selected: string | null;
+  /** Arc AP-2 — the elements that read the set, value or choice chosen in the builder, dashed where they are drawn. */
+  reads: Set<string>;
   /** Each drawn element's room and steps, by key, for the builder's − and + (`CockpitHandle`). */
   steppers: Map<string, Stepper>;
 }
@@ -496,7 +500,7 @@ function Cell({ type, props, size, testid, extra, children }: {
   extra?: { attrs?: Record<string, string | undefined>; style?: Record<string, unknown> };
   children: (key: string | null) => ReactNode;
 }) {
-  const { doors, selected, steppers } = useCockpit();
+  const { doors, selected, steppers, reads } = useCockpit();
   const { columns, grid: gridded, stacked } = useContext(SectionKeys);
   const key = useElementKey(type, props);
   const ref = useRef<HTMLDivElement>(null);
@@ -543,7 +547,7 @@ function Cell({ type, props, size, testid, extra, children }: {
         minHeight: (corner ?? span).h > 1 ? TALL_MIN : undefined,
         boxShadow: corner ? "0 0 0 2px var(--blue3) inset" : undefined };
   // a drag's landing in blue; the builder's chosen element in the accent
-  const ring = preview ? "2px solid var(--blue3)" : chosen ? "2px solid var(--accent)" : undefined;
+  const ring = preview ? "2px solid var(--blue3)" : chosen ? "2px solid var(--accent)" : key !== null && reads.has(key) ? "2px dashed var(--accent)" : undefined;
   return (
     <div ref={ref} className="group" data-testid={testid} data-element={key ?? undefined} data-size={gridded ? undefined : size}
       data-w={gridded ? box.w : undefined} data-h={gridded ? box.h : undefined} data-selected={chosen || undefined} {...extra?.attrs}
@@ -646,17 +650,18 @@ function CockpitProcessBoard({ element }: ComponentRenderProps<{ process: string
 }
 
 function CockpitObjectTable({ element }: ComponentRenderProps<{
-  entity: string; segment?: string | null; columns?: string[] | null; sort?: string | null; descending?: boolean | null;
-  size?: Size | null;
+  entity?: string | null; segment?: string | null; columns?: string[] | null; sort?: string | null; descending?: boolean | null;
+  size?: Size | null; set?: string | null; set_from?: string | null; chooses?: string | null; ticks?: string | null;
 }>) {
-  const size = element.props.size ?? "wide";
-  const filtering = useFiltering(element.props.entity);
+  const p = element.props;
+  const size = p.size ?? "wide";
+  const filtering = usePieceFiltering(p as Record<string, unknown>);
   return (
-    <Cell type="ObjectTable" props={element.props as Record<string, unknown>} size={size} testid="cockpit-piece-cell">
+    <Cell type="ObjectTable" props={p as Record<string, unknown>} size={size} testid="cockpit-piece-cell">
       {key => (<>
         {filtering.on && !filtering.narrows && <NotFiltered />}
-        <ObjectTablePiece elementKey={key} entity={element.props.entity} segment={element.props.segment}
-          columns={element.props.columns} sort={element.props.sort} descending={element.props.descending}
+        <ObjectTablePiece elementKey={key} entity={p.entity} segment={p.segment} set={p.set} setFrom={p.set_from}
+          chooses={p.chooses} ticks={p.ticks} columns={p.columns} sort={p.sort} descending={p.descending}
           tall={SPAN[size].h === 2} />
       </>)}
     </Cell>
@@ -683,31 +688,43 @@ function CockpitObjectFilters({ element }: ComponentRenderProps<{ entity: string
 }
 
 function CockpitObjectFigure({ element }: ComponentRenderProps<{
-  entity: string; label: string; agg: string; path?: string | null; format?: string | null; size?: Size | null;
+  entity?: string | null; label: string; agg: string; path?: string | null; format?: string | null; size?: Size | null;
+  set?: string | null; of?: string | null; shows?: string | null;
 }>) {
   const { sym } = useCockpit();
-  const filtering = useFiltering(element.props.entity);
+  const p = element.props;
+  const filtering = usePieceFiltering(p as Record<string, unknown>);
   return (
-    <Cell type="ObjectFigure" props={element.props as Record<string, unknown>} size={element.props.size ?? "small"} testid="cockpit-piece-cell">
+    <Cell type="ObjectFigure" props={p as Record<string, unknown>} size={p.size ?? "small"} testid="cockpit-piece-cell">
       {() => <>{filtering.on && !filtering.narrows && <NotFiltered />}
-        <ObjectFigurePiece entity={element.props.entity} label={element.props.label} agg={element.props.agg}
-          path={element.props.path} format={element.props.format} sym={sym} /></>}
+        <ObjectFigurePiece entity={p.entity} set={p.set} of={p.of} shows={p.shows} label={p.label} agg={p.agg}
+          path={p.path} format={p.format} sym={sym} /></>}
     </Cell>
   );
 }
 
 function CockpitObjectChart({ element }: ComponentRenderProps<{
-  entity: string; label: string; time: string; days?: number | null; size?: Size | null;
-  agg?: string | null; path?: string | null; format?: string | null; split?: string | null; top?: number | null;
+  entity?: string | null; label: string; time: string; days?: number | null; size?: Size | null;
+  agg?: string | null; path?: string | null; format?: string | null; split?: string | null; top?: number | null; set?: string | null;
 }>) {
   const { sym } = useCockpit();
-  const filtering = useFiltering(element.props.entity);
   const p = element.props;
+  const filtering = usePieceFiltering(p as Record<string, unknown>);
   return (
     <Cell type="ObjectChart" props={p as Record<string, unknown>} size={p.size ?? "full"} testid="cockpit-piece-cell">
       {() => <>{filtering.on && !filtering.narrows && <NotFiltered />}
-        <ObjectChartPiece entity={p.entity} label={p.label} time={p.time} days={p.days ?? 30} agg={p.agg} path={p.path}
+        <ObjectChartPiece entity={p.entity} set={p.set} label={p.label} time={p.time} days={p.days ?? 30} agg={p.agg} path={p.path}
           format={p.format} split={p.split} top={p.top} sym={sym} /></>}
+    </Cell>
+  );
+}
+
+// ── Arc AP-3 — buttons that run declared actions on what a reader chose or ticked ─────────────────────────────────
+
+function CockpitActionButtons({ element }: ComponentRenderProps<{ buttons: ActionButtonDef[]; size?: Size | null }>) {
+  return (
+    <Cell type="ActionButtons" props={element.props as Record<string, unknown>} size={element.props.size ?? "small"} testid="cockpit-piece-cell">
+      {() => <ActionButtonsPiece buttons={element.props.buttons} />}
     </Cell>
   );
 }
@@ -728,12 +745,14 @@ const REGISTRY = {
   ObjectFilters: CockpitObjectFilters,
   ObjectFigure: CockpitObjectFigure,
   ObjectChart: CockpitObjectChart,
+  ActionButtons: CockpitActionButtons,
 } satisfies Record<ComponentName, unknown>;
 
 const NO_IMAGES: Record<string, ImageStamp> = {};
+const NO_READS: readonly string[] = [];
 
 export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = NO_IMAGES, range = null, schema, connectionId, cockpitId,
-  selected = null, handle }: {
+  selected = null, handle, reads = NO_READS }: {
   spec: unknown;
   cards: CardState[];
   host: CockpitHostState;
@@ -753,6 +772,8 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
   selected?: string | null;
   /** Arc AP-1 — filled with what the builder may ask of the elements drawn. */
   handle?: Ref<CockpitHandle>;
+  /** Arc AP-2 — the elements that read what the builder has chosen in its Data tab. */
+  reads?: readonly string[];
 }) {
   // A spec is known by what it says, not by which object says it: a caller that parses the
   // same JSON again on every render hands over a new object each time, and that must not
@@ -790,8 +811,9 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
     schema,
     selected,
     steppers,
+    reads: new Set(reads),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what the spec and the range say
-  }), [check.valid, written, cards, host, doors, sym, images, rangeKey, schema, selected, steppers]);
+  }), [check.valid, written, cards, host, doors, sym, images, rangeKey, schema, selected, steppers, reads.join("|")]);
 
   if (!check.valid) {
     return (
@@ -810,6 +832,7 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
   return (
     <CockpitContext.Provider value={context}>
       <PiecesProvider connectionId={connectionId} schema={schema} elements={context.elements} onPlaceTable={doors.onPlaceTable}
+        sets={check.valid ? (spec as WireSpec).sets : undefined} values={check.valid ? (spec as WireSpec).values : undefined}
         cockpitId={cockpitId}>
         <JSONUIProvider registry={REGISTRY as ComponentRegistry} store={store}>
           <Renderer spec={spec as Spec} registry={REGISTRY as ComponentRegistry} />

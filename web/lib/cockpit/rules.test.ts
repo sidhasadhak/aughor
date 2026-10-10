@@ -37,7 +37,8 @@ describe("the catalog", () => {
     expect(vocabulary()).toEqual({
       version: COCKPIT_VOCABULARY_VERSION,
       components: ["Cockpit", "Tabs", "Tab", "Section", "Card", "Note", "Image",
-                   "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure", "ObjectChart"],
+                   "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure", "ObjectChart",
+                   "ActionButtons"],
       tones: ["good", "warn", "bad", "info", "neutral"],
       sizes: ["small", "wide", "tall", "large", "full", "hero"],
       grid: { columns: 12, grade: 40 },
@@ -45,7 +46,7 @@ describe("the catalog", () => {
       card_statuses: ["within", "over", "unmeasured", "withheld"],
       limits: { elements: MAX_ELEMENTS, tabs: MAX_TABS, cards: MAX_CARDS },
     });
-    expect(COCKPIT_VOCABULARY_VERSION).toBe(5);         // 5: sizes one grade at a time (Arc AP-1)
+    expect(COCKPIT_VOCABULARY_VERSION).toBe(6);         // 5: sizes one grade at a time (Arc AP-1); 6: the wiring (AP-2, AP-3)
   });
 });
 
@@ -435,7 +436,7 @@ describe("the ontology's pieces (Arc OC-4)", () => {
 
   it("refuses a detail that follows anything but a table in the same cockpit", () => {
     expect(refused(s => withPieces(s, { follows: "b1" })))
-      .toContain('The object detail "d1" follows "b1", which is not an objects table in this cockpit.');
+      .toContain('The object detail "d1" follows "b1", which is neither an objects table in this cockpit nor an object a table\'s click chooses.');
   });
 
   it("refuses an action button anywhere but in a detail", () => {
@@ -444,7 +445,7 @@ describe("the ontology's pieces (Arc OC-4)", () => {
       s.elements.d1.children = [];
       const section = Object.keys(s.elements).find(k => s.elements[k].type === "Section") as string;
       (s.elements[section].children as string[]).push("a1");
-    })).toContain('holds "a1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart.');
+    })).toContain('holds "a1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart, ActionButtons.');
   });
 
   it("refuses an expression where an id belongs, as for every prop", () => {
@@ -504,7 +505,7 @@ describe("a cockpit started from an object (2026-10-10)", () => {
 
   it("refuses a filter column inside a section", () => {
     expect(refused(s => placed(s, "f1", structuredClone(FILTERS))))
-      .toContain('holds "f1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart.');
+      .toContain('holds "f1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart, ActionButtons.');
   });
 
   it("refuses a filter whose entry says more than its path, label and object", () => {

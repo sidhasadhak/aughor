@@ -47,6 +47,7 @@ import difflib
 import math
 import re
 from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationError
@@ -76,7 +77,10 @@ from aughor.semantic.cross_source import KeyedRead
 
 AggName = Literal["count", "count_distinct", "sum", "avg", "min", "max"]
 FilterOp = Literal["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "between",
-                   "is_null", "not_null", "exists", "not_exists"]
+                   "is_null", "not_null", "exists", "not_exists", "in_last"]
+#: Arc AP-2 — `in_last` keeps the objects whose date or time falls in the last N days, today (UTC) included: resolved
+#: to a date where the query is compiled, so "placed in the last 14 days" reads the same fortnight whoever asks today.
+MAX_IN_LAST_DAYS = 3660
 Grain = Literal["", "hour", "day", "week", "month", "quarter", "year"]
 
 _MAX_LIMIT = 10_000
@@ -454,8 +458,28 @@ def typed_literal(v: Any, p: EntityProperty, path: str) -> str:
     return _literal(v, path)
 
 
+def _today_utc() -> date:
+    """The day `in_last` counts back from — one function, so a test can hold it still."""
+    return datetime.now(timezone.utc).date()
+
+
+def _in_last_start(f: ObjectFilter) -> str:
+    """The first day `in_last` keeps, as an ISO date: today (UTC) and the N - 1 days before it."""
+    n = f.value
+    if isinstance(n, bool) or not isinstance(n, (int, float, str)) or not str(n).strip().isdigit():
+        raise ObjectQueryRefused(f"filter '{f.path} in_last' needs a whole number of days, not {n!r}")
+    days = int(str(n).strip())
+    if not 1 <= days <= MAX_IN_LAST_DAYS:
+        raise ObjectQueryRefused(f"filter '{f.path} in_last' takes 1 to {MAX_IN_LAST_DAYS} days, not {days}")
+    return (_today_utc() - timedelta(days=days - 1)).isoformat()
+
+
 def _predicate(col: str, p: EntityProperty, f: ObjectFilter) -> str:
     op = f.op
+    if op == "in_last":
+        if not _is_temporal(p):
+            raise ObjectQueryRefused(f"filter '{f.path} in_last' reads a date or a time, and '{f.path}' is neither")
+        return f"{col} >= {_literal(_in_last_start(f), f.path)}"
     if op == "is_null":
         return f"{col} IS NULL"
     if op == "not_null":

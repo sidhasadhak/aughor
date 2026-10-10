@@ -14,6 +14,8 @@
  *   { "op": "patch", "spec": …,    → { ok, spec, issues: [{ index, message }] } — the edit
  *     "patches": [ … ] }              applied strictly, all or nothing (CT-5). The result is
  *                                     NOT checked here; the caller sends it back as a "check".
+ *   { "op": "wiring", "spec": … }  → { sets, buttons } — each set as the object door would read it, each
+ *                                     button's parameters with their source's kind and entity (Arc AP-2/3)
  *   { "op": "grammar",             → { text } — what the writer of a cockpit is told (CT-5); the
  *     "grid": bool }                   grid only while cockpits are built in place (Arc AP-1)
  *
@@ -23,6 +25,7 @@
 import { grammar } from "@/lib/cockpit/grammar";
 import { applyCockpitPatches } from "@/lib/cockpit/patch";
 import { checkCockpitSpec, vocabulary } from "@/lib/cockpit/rules";
+import { wiring, type WireSpec } from "@/lib/cockpit/sets";
 
 async function main(): Promise<void> {
   const chunks: Buffer[] = [];
@@ -39,6 +42,10 @@ async function main(): Promise<void> {
   }
   if (payload.op === "patch") {
     process.stdout.write(JSON.stringify(applyCockpitPatches(payload.spec, payload.patches)));
+    return;
+  }
+  if (payload.op === "wiring") {
+    process.stdout.write(JSON.stringify(wiring(payload.spec as WireSpec)));
     return;
   }
   if (payload.op === "grammar") {
