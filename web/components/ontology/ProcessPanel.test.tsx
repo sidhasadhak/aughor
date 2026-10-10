@@ -244,6 +244,15 @@ describe("Arc OC-5 on a process", () => {
     await waitFor(() => expect(declareImpact).toHaveBeenCalledTimes(1));
   });
 
+  it("says once what was measured when an impact did not hold", async () => {
+    const note = "of the 43,941 Order objects, 7,311 saw dispatch broken — the data does not show delivery broken more often";
+    listed.impacts = [{ ...IMPACT, verified: false, note,
+                        reading: `the dispatch promise of Order to delivery is declared to bear on the delivery promise — ${note}` }];
+    panel();
+    const lines = await screen.findAllByTestId("impact-line");
+    for (const line of lines) expect(line.textContent!.split(note).length - 1).toBe(1);
+  });
+
   it("opens the designer on the process to change it", async () => {
     const user = userEvent.setup();
     const onChangeProcess = vi.fn();

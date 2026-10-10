@@ -250,7 +250,7 @@ def measure_impact(db: Any, graph: OntologyGraph, impact_id: str, fields: dict, 
         impact.note = f"no {lead_word} object reached {stage.name} with the {down_noun} promise in force ({impact.window})"
         return impact
     if impact.to_many:
-        impact.flags.append(f"read through a to-many link: a {lead_word} counts as broken upstream when at least one "
+        impact.flags.append(f"read through a to-many link: each {lead_word} counts as broken upstream when at least one "
                             f"of its linked objects broke the {up_noun} promise")
     small = [side for side, n in (("broken", n_broke), ("kept", impact.upstream_kept)) if n < MIN_GROUP]
     if small:

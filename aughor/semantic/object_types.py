@@ -291,6 +291,8 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
         "key": {"property": key, "verified": b.verified if b is not None else None,
                 "rows": b.rows if b is not None else None, "note": b.verification_note if b is not None else ""},
         "display_property": display_of(entity),
+        # Arc OC-6 — its objects live in the edit layer: no warehouse to count a key or a title over
+        "platform": bool(b is not None and b.kind == "platform"),
         "time": entity.created_at_col or "",
         "properties": properties[:_MAX_PROPERTIES],
         "properties_truncated": len(properties) > _MAX_PROPERTIES,

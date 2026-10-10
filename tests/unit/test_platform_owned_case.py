@@ -44,11 +44,17 @@ def cases(graph):  # noqa: F811
     OV.save_override(CONN, "ecommerce", OV.OntologyOverride(target_kind="entity", target_id="Case", fields=fields,
                                                             binding={"backing": {"bound": True, "primary_key": "id"}}))
     OV.apply_overrides(graph, CONN, "ecommerce")
-    graph.entities["Case"].edit_states = {"status": EditStateMachine(
-        states=["open", "working", "resolved"], moves=[["", "open"], ["open", "working"], ["working", "resolved"]])}
-    _declare(graph, "open_case", OPEN)
-    _declare(graph, "start_work", _move("working"))
-    _declare(graph, "resolve", _move("resolved"))
+    # Every declaration goes through the doors' own checks — the body each door reads and the problem it refuses with.
+    # A first draft set these on the graph directly, and the doors refused all four live on theLook (2026-10-10).
+    from aughor.routers.ontology import _checked_action, _DeclaredActionBody, _edit_states_problem, _EditStates
+    moves = _EditStates(states=["open", "working", "resolved"],
+                        moves=[["", "open"], ["open", "working"], ["working", "resolved"]])
+    assert _edit_states_problem(graph.entities["Case"], "status", moves) == ""
+    graph.entities["Case"].edit_states = {"status": EditStateMachine(states=moves.states, moves=moves.moves)}
+    for action_id, spec in (("open_case", OPEN), ("start_work", _move("working")), ("resolve", _move("resolved"))):
+        fields = {k: v for k, v in _DeclaredActionBody(**spec).model_dump().items() if v is not None}
+        _checked_action(action_id, fields, graph)
+        _declare(graph, action_id, fields)
     return graph
 
 
@@ -100,3 +106,26 @@ def test_a_platform_owned_type_declares_its_properties_and_reads_no_source():
     assert entity_fields(CASE)["backing"] == {"kind": "platform", "primary_key": "id", "properties": [
         {"name": "about", "data_type": "VARCHAR"}, {"name": "status", "data_type": "VARCHAR"},
         {"name": "assignee", "data_type": "VARCHAR"}]}
+
+
+def test_the_moves_door_takes_a_platform_owned_property_and_refuses_its_key(cases):
+    """Found live on theLook (2026-10-10): the door refused moves on the Case's `status` as "read from Case's source" —
+    every property a platform-owned type declares is held by the edit layer; only its key, and a name it does not
+    declare, are refused."""
+    from aughor.routers.ontology import _edit_states_problem, _EditStates
+    spec = _EditStates(states=["open", "working", "resolved"], moves=[["", "open"], ["open", "working"]])
+    case = cases.entities["Case"]
+    assert _edit_states_problem(case, "status", spec) == ""
+    assert "no property 'id'" in _edit_states_problem(case, "id", spec)
+    assert "no property 'priority'" in _edit_states_problem(case, "priority", spec)
+    assert "read from Order's source" in _edit_states_problem(cases.entities["Order"], "status", spec)
+
+
+def test_a_platform_owned_key_is_unique_by_construction_and_its_type_says_where_it_lives(cases):
+    """Found live (2026-10-10): the Case's key read "not yet measured" with a Measure button beside its title — there is
+    no warehouse to count either over; the platform mints every key."""
+    from aughor.semantic.object_types import describe_object_type
+    assert cases.entities["Case"].backing.verified is True
+    detail = describe_object_type(cases, "Case")
+    assert detail["platform"] is True and detail["key"]["verified"] is True
+    assert describe_object_type(cases, "Order")["platform"] is False

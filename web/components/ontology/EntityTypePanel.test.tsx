@@ -608,4 +608,12 @@ describe("the moves the edit layer allows", () => {
       states: ["open", "working", "resolved"], initial: "",
       moves: [["", "open"], ["open", "working"], ["working", "resolved"]] }]);
   });
+
+  it("asks nothing a warehouse answers of a platform-owned type — no title to measure", async () => {
+    shown.detail = { ...detail, platform: true };
+    panel();
+    await screen.findByTestId("edit-states-new");
+    expect(screen.queryByTestId("entity-display-property")).toBeNull();
+    shown.detail = { ...detail };
+  });
 });
