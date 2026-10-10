@@ -310,12 +310,21 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The ${el.type.toLowerCase()} ${q(key)} holds ${list(stray.map(q))}. `
           + (may.length ? `A ${el.type} holds: ${list(may)}.` : `A ${el.type} holds nothing.`) });
-    } else if (el.type === "Cockpit" && new Set(kinds).size > 1) {
+    } else if (el.type === "Cockpit" && new Set(kinds.filter(k => k !== "ObjectFilters")).size > 1) {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The cockpit ${q(key)} holds tabs and sections side by side. It holds one Tabs, or sections, not both.` });
     } else if (el.type === "Cockpit" && kinds.filter(k => k === "Tabs").length > 1) {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The cockpit ${q(key)} holds more than one Tabs. It holds one.` });
+    } else if (el.type === "Cockpit" && kinds.filter(k => k === "ObjectFilters").length > 1) {
+      issues.push({ code: "bad_child", elementKey: key,
+        message: `The cockpit ${q(key)} holds more than one filter column. It holds one, as its first child.` });
+    } else if (el.type === "Cockpit" && kinds.includes("ObjectFilters") && kinds[0] !== "ObjectFilters") {
+      issues.push({ code: "bad_child", elementKey: key,
+        message: `The cockpit ${q(key)} holds its filter column after its tabs or sections. A filter column is the cockpit's first child, drawn beside the rest.` });
+    } else if (el.type === "Cockpit" && kinds.length > 0 && kinds.every(k => k === "ObjectFilters")) {
+      issues.push({ code: "bad_child", elementKey: key,
+        message: `The cockpit ${q(key)} holds a filter column and nothing it narrows. It holds one Tabs, or sections, beside it.` });
     } else if (MAY_HOLD[el.type].length && !PLACED.includes(el.type) && !el.children.length) {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The ${el.type.toLowerCase()} ${q(key)} holds nothing. An empty ${el.type} is refused.` });

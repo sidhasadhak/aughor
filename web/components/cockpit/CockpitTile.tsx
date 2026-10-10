@@ -140,7 +140,9 @@ export function Frame({ testid, shape, over, dashed, children, doors }: {
     <div className="group" data-testid={testid} data-shape={shape} style={{
       position: "relative", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column",
       gap: 6, padding: "14px 16px 12px", background: "var(--bg-2)", borderRadius: "var(--r3)",
-      border: `1px ${dashed ? "dashed" : "solid"} ${over ? "color-mix(in srgb, var(--red4) 55%, var(--b1))" : "var(--b1)"}`,
+      // a card stands on the page by its fill; an edge is drawn only where it says something — dashed for a piece
+      // that cannot be read, red for a figure over its limit (CLARITY.md, "cards on the ground")
+      border: `1px ${dashed ? "dashed" : "solid"} ${over ? "color-mix(in srgb, var(--red4) 55%, var(--b1))" : dashed ? "var(--b1)" : "var(--card-edge)"}`,
     }}>
       {children}
       {doors}

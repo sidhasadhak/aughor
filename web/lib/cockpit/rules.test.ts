@@ -37,14 +37,14 @@ describe("the catalog", () => {
     expect(vocabulary()).toEqual({
       version: COCKPIT_VOCABULARY_VERSION,
       components: ["Cockpit", "Tabs", "Tab", "Section", "Card", "Note", "Image",
-                   "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton"],
+                   "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure", "ObjectChart"],
       tones: ["good", "warn", "bad", "info", "neutral"],
       sizes: ["small", "wide", "tall", "large", "full", "hero"],
       range_statuses: ["standing", "final", "provisional", "to_date"],
       card_statuses: ["within", "over", "unmeasured", "withheld"],
       limits: { elements: MAX_ELEMENTS, tabs: MAX_TABS, cards: MAX_CARDS },
     });
-    expect(COCKPIT_VOCABULARY_VERSION).toBe(3);
+    expect(COCKPIT_VOCABULARY_VERSION).toBe(4);
   });
 });
 
@@ -443,7 +443,7 @@ describe("the ontology's pieces (Arc OC-4)", () => {
       s.elements.d1.children = [];
       const section = Object.keys(s.elements).find(k => s.elements[k].type === "Section") as string;
       (s.elements[section].children as string[]).push("a1");
-    })).toContain('holds "a1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail.');
+    })).toContain('holds "a1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart.');
   });
 
   it("refuses an expression where an id belongs, as for every prop", () => {
@@ -457,5 +457,68 @@ describe("the ontology's pieces (Arc OC-4)", () => {
     s.elements.d1.children = [];
     delete s.elements.a1;
     expect(checkCockpitSpec(s).issues).toEqual([]);
+  });
+});
+
+
+describe("a cockpit started from an object (2026-10-10)", () => {
+  const FILTERS = { type: "ObjectFilters", props: { entity: "Order", properties: [
+    { path: "status", label: "Status" }, { path: "order_to_user.country", label: "Customer country", via: "Customer" }] }, children: [] };
+  const withColumn = (s: Spec) => {
+    s.elements.f1 = structuredClone(FILTERS);
+    (s.elements.cockpit.children as string[]).unshift("f1");
+  };
+  const placed = (s: Spec, key: string, el: Record<string, unknown>) => {
+    s.elements[key] = el;
+    (s.elements["sec-headline"].children as string[]).push(key);
+  };
+  const FIGURE = { type: "ObjectFigure", props: { entity: "Order", label: "Revenue", agg: "sum", path: "revenue", format: "money" }, children: [] };
+  const CHART = { type: "ObjectChart", props: { entity: "Order", label: "Orders per day", time: "created_at", days: 30, size: "full" }, children: [] };
+
+  it("accepts a filter column as the cockpit's first child, beside its tabs, with a figure and a chart", () => {
+    const s = premise();
+    withColumn(s);
+    placed(s, "g1", structuredClone(FIGURE));
+    placed(s, "c1", structuredClone(CHART));
+    expect(checkCockpitSpec(s).issues).toEqual([]);
+  });
+
+  it("refuses a filter column anywhere but first", () => {
+    expect(refused(s => { withColumn(s); s.elements.cockpit.children = ["tabs", "f1"]; }))
+      .toContain('The cockpit "cockpit" holds its filter column after its tabs or sections. A filter column is the cockpit\'s first child');
+  });
+
+  it("refuses a second filter column", () => {
+    expect(refused(s => {
+      withColumn(s);
+      s.elements.f2 = structuredClone(FILTERS);
+      (s.elements.cockpit.children as string[]).splice(1, 0, "f2");
+    })).toContain('The cockpit "cockpit" holds more than one filter column. It holds one, as its first child.');
+  });
+
+  it("refuses a filter column that narrows nothing", () => {
+    expect(refused(s => { withColumn(s); s.elements.cockpit.children = ["f1"]; }))
+      .toContain('The cockpit "cockpit" holds a filter column and nothing it narrows.');
+  });
+
+  it("refuses a filter column inside a section", () => {
+    expect(refused(s => placed(s, "f1", structuredClone(FILTERS))))
+      .toContain('holds "f1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart.');
+  });
+
+  it("refuses a filter whose entry says more than its path, label and object", () => {
+    expect(refused(s => {
+      withColumn(s);
+      (s.elements.f1.props as { properties: Record<string, unknown>[] }).properties[0].sql = "1=1";
+    })).toMatch(/The objectfilters "f1" has a problem with "properties\.0"/);
+  });
+
+  it("refuses a figure with an aggregate the object door does not know, and a chart over a span it does not offer", () => {
+    const said = refused(s => {
+      placed(s, "g1", { ...structuredClone(FIGURE), props: { ...FIGURE.props, agg: "median" } });
+      placed(s, "c1", { ...structuredClone(CHART), props: { ...CHART.props, days: 45 } });
+    });
+    expect(said).toMatch(/The objectfigure "g1" has a problem with "agg"/);
+    expect(said).toMatch(/The objectchart "c1" has a problem with "days"/);
   });
 });

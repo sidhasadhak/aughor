@@ -14,6 +14,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 
+import { MakeCockpit } from "@/components/cockpit/MakeCockpit";
 import { DerivedList } from "@/components/ontology/ProcessPanel";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -185,6 +186,10 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
                 : detail.provenance ? `declared — first proposed by ${detail.provenance}` : "declared by a person"}>
               {detail.origin === "model" ? "proposed" : "declared"}
             </span>
+          )}
+          {/* a cockpit started from this object — not for one the platform holds, nor across an organisation's connections */}
+          {!detail.platform && !inDomain && (
+            <MakeCockpit connectionId={connectionId} schema={schema} entity={detail.object_type} name={detail.display_name} />
           )}
         </div>
         <div className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)", marginTop: 2 }}>{detail.object_type}</div>

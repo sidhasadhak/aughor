@@ -137,6 +137,11 @@ FLAG_ENV = {
     # and the object door resolves each promise's overdue segment (`overdue_<noun>`). OFF: the cockpit vocabulary
     # refuses those pieces and the compiler resolves exactly the names it did; POST /objects/list still lists.
     "ontology.cockpit_pieces": "AUGHOR_ONTOLOGY_COCKPIT_PIECES",
+    # The cockpit started from an object (2026-10-10, design-mockups/cockpit-from-object.html). ON: a cockpit may hold
+    # a filter column over an entity's categories, figures and a chart of its objects, every piece narrowed by the
+    # reader's own filters; and a person may start a cockpit from an object, its pieces proposed from what the object
+    # holds. OFF: the cockpit vocabulary refuses those three pieces and nothing is proposed.
+    "ontology.object_cockpits": "AUGHOR_ONTOLOGY_OBJECT_COCKPITS",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -487,6 +492,16 @@ FLAG_META = {
                        "proposed, not run. A piece whose source is gone says so. Off: these pieces "
                        "cannot be added.",
     },
+    "ontology.object_cockpits": {
+        "label": "Start a cockpit from an object",
+        "summary": "Pick an object and get a cockpit of its filters, figures, a daily chart and its "
+                   "objects. A click on a filter narrows every piece.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Queries your warehouse"}],
+        "description": "The pieces are proposed from what the object holds, and you tick the ones you "
+                       "want. Filters are each reader's own and never change the cockpit. Saved cards "
+                       "beside them say they are not filtered. Off: these pieces cannot be added.",
+    },
     "ontology.keyed_metrics": {
         "label": "Compute approved metrics for any segment",
         "summary": "Link a metric to the entity it measures. Then its approved definition is used "
@@ -725,6 +740,12 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # The cockpit started from an object, 2026-10-10. It is a new way to read objects, so it is watched before it
+    # graduates.
+    "ontology.object_cockpits": "does a cockpit started from an object get read again — opened on three or more "
+                                "days in its first two weeks — more often than one started empty or for a "
+                                "process? Falsifier: started cockpits are opened no more than the others, and "
+                                "the starter and its three pieces go",
     # Arc OC-3 (ROADMAP §3.56), 2026-10-09. It changes what the question frame hands an analysis, so it is measured
     # before it graduates.
     "ontology.keyed_metrics": "does reading an approved metric by the entity it measures — over a declared segment, "

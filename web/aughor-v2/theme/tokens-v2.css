@@ -94,6 +94,9 @@
   --b2: var(--gray-7);
   --b3: var(--gray-8);
   --bfocus: var(--focus-8);
+  /* a card's edge: none in dark, where a card stands on the page by its own fill (CLARITY.md, "cards on the
+     ground"); the hairline in light, where a white card on a white page would otherwise not be there at all */
+  --card-edge: transparent;
 
   /* text — Radix has two text steps; t2 and t3 share the quieter one. t4 is never text */
   --t1: var(--gray-12);
@@ -204,6 +207,8 @@
   --chart-6: #C50F1F;
   --chart-7: #DC1E98;       /* the KIND accent: #B73BCD sat 5.0 ΔE from the new blue under CVD; this clears 6 */
   --chart-deemph: #AEB5BA;
+
+  --card-edge: var(--b1);
 
   /* near-black at a third of dark's opacity; on the grid a --b1 rule does more than any shadow */
   --shadow-sm: 0 1px 2px rgba(31, 31, 31, .10);

@@ -29,8 +29,8 @@
  * The Briefing draws a person's cockpits with it (`BriefingCockpits`), behind `cockpit.composed`.
  */
 import {
-  Component, createContext, useContext, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent,
-  type ReactNode, type RefObject,
+  Children, Component, createContext, useContext, useEffect, useMemo, useRef, useState,
+  type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject,
 } from "react";
 import { evaluateVisibility, type Spec, type VisibilityCondition } from "@json-render/core";
 import {
@@ -41,7 +41,8 @@ import {
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CockpitTile, SaidTile, WIDE, WithheldTile, tileShape, type TileDoors } from "@/components/cockpit/CockpitTile";
 import {
-  ActionButtonPiece, ObjectDetailPiece, ObjectTablePiece, PiecesProvider, ProcessBoardPiece,
+  ActionButtonPiece, FilterBar, NotFiltered, ObjectChartPiece, ObjectDetailPiece, ObjectFigurePiece,
+  ObjectFiltersPiece, ObjectTablePiece, PiecesProvider, ProcessBoardPiece, useFiltering, type FilterProperty,
 } from "@/components/cockpit/OntologyPieces";
 import { ImageTile, NoteTile, type ImageStamp, type StaticDoors } from "@/components/cockpit/StaticTile";
 import { Icon } from "@/components/ui/icon";
@@ -101,11 +102,32 @@ const TONE_RULE: Record<Tone, string> = {
   good: "var(--grn3)", warn: "var(--amb3)", bad: "var(--red3)", info: "var(--blue3)", neutral: "var(--b2)",
 };
 
+/** The filter column's width beside the pieces it narrows (the approved mockup's). */
+const FILTER_COLUMN = 272;
+
 function CockpitRoot({ element, children }: ComponentRenderProps<{ title: string }>) {
   // The title names the cockpit for a screen reader and for the history. It is not drawn as a
   // header: the strip of cockpits above it already carries the name, and a panel does not
   // repeat its own title.
-  return <div role="region" aria-label={element.props.title} data-testid="cockpit">{children}</div>;
+  const { elements } = useCockpit();
+  const first = elements[element.children?.[0] ?? ""];
+  if (first?.type !== "ObjectFilters") {
+    return <div role="region" aria-label={element.props.title} data-testid="cockpit">{children}</div>;
+  }
+  // A cockpit started from an object: its filter column at the left, the pieces it narrows beside it, and above them
+  // what is chosen and how many objects that leaves (the rules hold the column to the root's first child, once).
+  const [column, ...rest] = Children.toArray(children);
+  const props = first.props as { entity: string; properties: FilterProperty[] };
+  return (
+    <div role="region" aria-label={element.props.title} data-testid="cockpit"
+      style={{ display: "grid", gridTemplateColumns: `${FILTER_COLUMN}px minmax(0, 1fr)`, gap: 14, alignItems: "start" }}>
+      {column}
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+        <FilterBar entity={props.entity} properties={props.properties} />
+        {rest}
+      </div>
+    </div>
+  );
 }
 
 function CockpitTabs({ element, children, bindings }: ComponentRenderProps<{ value: string }>) {
@@ -176,6 +198,10 @@ function useColumns(asked: number | null | undefined): [RefObject<HTMLDivElement
 
 function CockpitSection({ element, children }: ComponentRenderProps<{ title: string; columns?: number | null }>) {
   const { elements } = useCockpit();
+  // A section named as the cockpit is named says nothing new: its heading is not drawn (a cockpit started from an
+  // object holds one such section).
+  const named = Object.values(elements).find(el => el?.type === "Cockpit")?.props as { title?: string } | undefined;
+  const heading = element.props.title !== named?.title;
   const waiting = useWaiting(element.children);
   const [ref, columns] = useColumns(element.props.columns);
   const held = element.children ?? [];
@@ -185,9 +211,9 @@ function CockpitSection({ element, children }: ComponentRenderProps<{ title: str
     [elements, held]);
   const keys = useMemo(() => ({ key, columns, children: held }), [key, columns, held]);
   return (
-    <section data-testid="cockpit-section" style={{ marginTop: 20 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
-        <div className="aug-fs-h2" style={{ fontWeight: 600, color: "var(--t1)" }}>{element.props.title}</div>
+    <section data-testid="cockpit-section" aria-label={element.props.title} style={{ marginTop: heading ? 20 : 0 }}>
+      <div style={{ display: heading || waiting > 0 ? "flex" : "none", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
+        <div className="aug-fs-h2" style={{ fontWeight: 600, color: "var(--t1)" }}>{heading ? element.props.title : ""}</div>
         {waiting > 0 && (
           <div className="aug-fs-sm" data-testid="cockpit-waiting" style={{ color: "var(--t3)", display: "flex", alignItems: "center", gap: 6 }}>
             <Icon name="eyeoff" size={13} />
@@ -314,11 +340,13 @@ function CockpitCard({ element }: ComponentRenderProps<{ card: string; tone?: To
   // A card that says no size takes what its shape asks, as it did before sizes: a chart or a
   // table two columns, a figure one.
   const size: Size = element.props.size ?? (!!cs && WIDE[tileShape(cs)] ? "wide" : "small");
+  // a saved card is a fixed query: the reader's filters cannot narrow it, and it says so while one is on
+  const filtering = useFiltering();
   return (
     <Cell type="Card" props={element.props as Record<string, unknown>} size={size} testid="cockpit-card"
       extra={{ attrs: { "data-card": id, "data-tone": tone ?? undefined },
         style: { boxShadow: tone ? `inset 3px 0 0 ${TONE_RULE[tone]}` : undefined, paddingLeft: tone ? 3 : 0 } }}>
-      {key => status === "withheld"
+      {key => <>{filtering.on && <NotFiltered />}{status === "withheld"
         ? <WithheldTile />
         : !cs
           ? <SaidTile what="Not one of your cards">The cockpit places a card you do not have.</SaidTile>
@@ -327,7 +355,7 @@ function CockpitCard({ element }: ComponentRenderProps<{ card: string; tone?: To
               <CockpitTile cs={cs as CardState & { card: CockpitCard }} status={status} sym={sym} doors={doors}
                 place={{ elementKey: key, size, range, schema }} />
             </CardBoundary>
-          )}
+          )}</>}
     </Cell>
   );
 }
@@ -364,9 +392,10 @@ function CockpitImage({ element }: ComponentRenderProps<{ object: string; captio
 // the room its rows ask for, and a detail one column.
 
 function CockpitProcessBoard({ element }: ComponentRenderProps<{ process: string; size?: Size | null }>) {
+  const filtering = useFiltering();
   return (
     <Cell type="ProcessBoard" props={element.props as Record<string, unknown>} size={element.props.size ?? "full"} testid="cockpit-piece-cell">
-      {() => <ProcessBoardPiece process={element.props.process} />}
+      {() => <>{filtering.on && <NotFiltered />}<ProcessBoardPiece process={element.props.process} /></>}
     </Cell>
   );
 }
@@ -376,13 +405,15 @@ function CockpitObjectTable({ element }: ComponentRenderProps<{
   size?: Size | null;
 }>) {
   const size = element.props.size ?? "wide";
+  const filtering = useFiltering(element.props.entity);
   return (
     <Cell type="ObjectTable" props={element.props as Record<string, unknown>} size={size} testid="cockpit-piece-cell">
-      {key => (
+      {key => (<>
+        {filtering.on && !filtering.narrows && <NotFiltered />}
         <ObjectTablePiece elementKey={key} entity={element.props.entity} segment={element.props.segment}
           columns={element.props.columns} sort={element.props.sort} descending={element.props.descending}
           tall={SPAN[size].h === 2} />
-      )}
+      </>)}
     </Cell>
   );
 }
@@ -399,6 +430,40 @@ function CockpitActionButton({ element }: ComponentRenderProps<{ action: string 
   return <ActionButtonPiece action={element.props.action} />;
 }
 
+// ── a cockpit started from an object (2026-10-10) ─────────────────────────────────────────────────
+// The filter column is drawn by the root, beside the rest; a figure and a chart are drawn in cells like any piece.
+
+function CockpitObjectFilters({ element }: ComponentRenderProps<{ entity: string; properties: FilterProperty[] }>) {
+  return <ObjectFiltersPiece entity={element.props.entity} properties={element.props.properties} />;
+}
+
+function CockpitObjectFigure({ element }: ComponentRenderProps<{
+  entity: string; label: string; agg: string; path?: string | null; format?: string | null; size?: Size | null;
+}>) {
+  const { sym } = useCockpit();
+  const filtering = useFiltering(element.props.entity);
+  return (
+    <Cell type="ObjectFigure" props={element.props as Record<string, unknown>} size={element.props.size ?? "small"} testid="cockpit-piece-cell">
+      {() => <>{filtering.on && !filtering.narrows && <NotFiltered />}
+        <ObjectFigurePiece entity={element.props.entity} label={element.props.label} agg={element.props.agg}
+          path={element.props.path} format={element.props.format} sym={sym} /></>}
+    </Cell>
+  );
+}
+
+function CockpitObjectChart({ element }: ComponentRenderProps<{
+  entity: string; label: string; time: string; days?: number | null; size?: Size | null;
+}>) {
+  const filtering = useFiltering(element.props.entity);
+  return (
+    <Cell type="ObjectChart" props={element.props as Record<string, unknown>} size={element.props.size ?? "full"} testid="cockpit-piece-cell">
+      {() => <>{filtering.on && !filtering.narrows && <NotFiltered />}
+        <ObjectChartPiece entity={element.props.entity} label={element.props.label} time={element.props.time}
+          days={element.props.days ?? 30} /></>}
+    </Cell>
+  );
+}
+
 /** One renderer per catalog component — a missing or an extra name is a type error. */
 const REGISTRY = {
   Cockpit: CockpitRoot,
@@ -412,11 +477,14 @@ const REGISTRY = {
   ObjectTable: CockpitObjectTable,
   ObjectDetail: CockpitObjectDetail,
   ActionButton: CockpitActionButton,
+  ObjectFilters: CockpitObjectFilters,
+  ObjectFigure: CockpitObjectFigure,
+  ObjectChart: CockpitObjectChart,
 } satisfies Record<ComponentName, unknown>;
 
 const NO_IMAGES: Record<string, ImageStamp> = {};
 
-export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = NO_IMAGES, range = null, schema, connectionId }: {
+export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = NO_IMAGES, range = null, schema, connectionId, cockpitId }: {
   spec: unknown;
   cards: CardState[];
   host: CockpitHostState;
@@ -430,6 +498,8 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
   schema?: string;
   /** The connection the ontology's pieces read (Arc OC-4). */
   connectionId?: string;
+  /** The cockpit drawn: a reader's filters are remembered under it, in their browser. */
+  cockpitId?: string;
 }) {
   // A spec is known by what it says, not by which object says it: a caller that parses the
   // same JSON again on every render hands over a new object each time, and that must not
@@ -478,7 +548,8 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
 
   return (
     <CockpitContext.Provider value={context}>
-      <PiecesProvider connectionId={connectionId} schema={schema} elements={context.elements} onPlaceTable={doors.onPlaceTable}>
+      <PiecesProvider connectionId={connectionId} schema={schema} elements={context.elements} onPlaceTable={doors.onPlaceTable}
+        cockpitId={cockpitId}>
         <JSONUIProvider registry={REGISTRY as ComponentRegistry} store={store}>
           <Renderer spec={spec as Spec} registry={REGISTRY as ComponentRegistry} />
         </JSONUIProvider>

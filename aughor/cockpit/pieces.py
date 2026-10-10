@@ -8,22 +8,32 @@ serves now. A piece whose id stops resolving later says so where it is drawn.
 
 And one law about who places them: a person, by hand. A model arranges a piece — moves it, resizes it, takes it off —
 and never adds one or changes what it names, the canvas's law for a note and an image.
+
+Since 2026-10-10 three more read an entity's objects for a cockpit started from an object
+(`aughor/cockpit/from_object.py`): a filter column over its categories, a figure and a chart of objects per day. They
+are checked the same way, and need their own flag beside this one.
 """
 from __future__ import annotations
 
 import json
 from typing import Any, Optional
 
-PIECES = ("ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton")
+PIECES = ("ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure",
+          "ObjectChart")
 FLAG = "ontology.cockpit_pieces"
+#: The pieces of a cockpit started from an object — refused unless its flag is on too.
+FROM_OBJECT = ("ObjectFilters", "ObjectFigure", "ObjectChart")
 _WORDS = {"ProcessBoard": "process board", "ObjectTable": "objects table", "ObjectDetail": "object detail",
-          "ActionButton": "action button"}
+          "ActionButton": "action button", "ObjectFilters": "filter column", "ObjectFigure": "figure",
+          "ObjectChart": "chart"}
 
 
 def title_of(kind: str, props: dict) -> str:
     """A piece as a person approving an edit reads it, by what it names: "Process board · order fulfilment"."""
     named = {"ProcessBoard": props.get("process"), "ActionButton": props.get("action"),
-             "ObjectTable": ", ".join(str(v) for v in (props.get("entity"), props.get("segment")) if v)}.get(kind)
+             "ObjectTable": ", ".join(str(v) for v in (props.get("entity"), props.get("segment")) if v),
+             "ObjectFilters": props.get("entity"), "ObjectFigure": props.get("label"),
+             "ObjectChart": props.get("label")}.get(kind)
     words = _WORDS.get(kind, kind).capitalize()
     return f"{words} · {str(named).replace('_', ' ')}" if named else words
 
@@ -50,6 +60,11 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None) 
     if not flag_enabled(FLAG):
         return [f"The cockpit holds {len(pieces)} piece(s) bound to the ontology, and building cockpits from the "
                 "ontology is off on this install."]
+    from aughor.cockpit.from_object import FLAG as FROM_OBJECT_FLAG
+    late = [key for key, (kind, _) in pieces.items() if kind in FROM_OBJECT]
+    if late and not flag_enabled(FROM_OBJECT_FLAG):
+        return [f"The cockpit holds {len(late)} filter column, figure or chart piece(s), and starting a cockpit from "
+                "an object is off on this install."]
     graph = graph if graph is not None else _graph(connection_id)
     if graph is None:
         return ["The cockpit holds pieces bound to the ontology, and no ontology is built for this connection."]
@@ -57,6 +72,8 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None) 
     said: list[str] = []
     tables: dict[str, str] = {}
     for key, (kind, props) in pieces.items():
+        if kind in FROM_OBJECT:
+            said += _from_object_read(key, kind, props, graph, connection_id)
         if kind == "ProcessBoard" and props.get("process") not in (graph.processes or {}):
             said.append(f'The process board "{key}" names the process "{props.get("process")}", which this '
                         "connection does not declare.")
@@ -86,6 +103,32 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None) 
             if on != tables[table]:
                 said.append(f'The action button "{key}" runs "{action.id}" on {on or "no entity"}, and the detail it '
                             f"sits in shows {tables[table]} objects.")
+    return said
+
+
+def _from_object_probes(kind: str, props: dict) -> list[tuple[str, dict]]:
+    """The object queries a filter column, a figure or a chart makes, each as what a refusal names and its body."""
+    entity = props.get("entity")
+    count = {"name": "n", "agg": "count"}
+    if kind == "ObjectFilters":
+        paths = [p.get("path") if isinstance(p, dict) else p for p in props.get("properties") or []]
+        return [(f'its filter on "{p}"', {"object_type": entity, "measures": [count], "by": [p]}) for p in paths]
+    if kind == "ObjectFigure":
+        return [("it", {"object_type": entity, "measures": [{"name": "n", "agg": props.get("agg") or "count",
+                                                              "path": props.get("path") or ""}]})]
+    return [("it", {"object_type": entity, "measures": [count], "time": props.get("time") or "", "grain": "day"})]
+
+
+def _from_object_read(key: str, kind: str, props: dict, graph: Any, connection_id: str) -> list[str]:
+    """A sentence for each query a filter column, a figure or a chart would make that the compiler refuses — compiled
+    over the served ontology, never run."""
+    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+    said = []
+    for what, body in _from_object_probes(kind, props):
+        try:
+            compile_object_query(body, graph, overlay=_accepted_edits(connection_id))
+        except ObjectQueryRefused as exc:
+            said.append(f'The {_WORDS[kind]} "{key}" cannot be read — {what}: {exc.reason}.')
     return said
 
 
@@ -142,6 +185,8 @@ def depends(spec: Any, graph: Any) -> dict[tuple[str, str], list[str]]:
             add("process", str(props.get("process") or ""), key)
         elif kind == "ActionButton":
             add("action", str(props.get("action") or ""), key)
+        elif kind in FROM_OBJECT:
+            add("entity", _entity_id(graph, str(props.get("entity") or "")), key)
         elif kind == "ObjectTable":
             entity = _entity_id(graph, str(props.get("entity") or ""))
             add("entity", entity, key)

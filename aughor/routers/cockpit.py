@@ -223,6 +223,32 @@ def copy_shared_cockpit(request: Request, owner: str, cockpit_id: str, connectio
     return _answer(out["kept"], cockpit_id=out["cockpit_id"], title=out["title"])
 
 
+@router.get("/cockpits/from-object")
+def propose_from_object(entity: str, connection_id: str, schema_name: Optional[str] = None) -> dict:
+    """What a cockpit started from ``entity`` is offered (2026-10-10): its categories as filters, its numbers as
+    figures, a chart of its objects per day, a table of them and the actions declared on them — each measured through
+    the object door, with a preview. Nothing is kept and no model is asked; the person ticks what they want and keeps
+    it as any new cockpit is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path."""
+    _on()
+    from aughor.cockpit import from_object, pieces
+    from aughor.kernel.flags import flag_enabled
+    from aughor.routers.ontology import served_ontology_graph
+    from aughor.semantic.object_query import ObjectQueryRefused
+    if not (flag_enabled(pieces.FLAG) and flag_enabled(from_object.FLAG)):
+        raise HTTPException(status_code=404, detail="Starting a cockpit from an object is off on this install.")
+    graph = served_ontology_graph(connection_id, schema_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="No ontology is built for this connection yet.")
+    try:
+        with from_object.reader(connection_id, schema_name, graph) as run:
+            proposal = from_object.propose(graph, entity, run)
+    except ObjectQueryRefused as exc:
+        raise HTTPException(status_code=422, detail={"refused": exc.reason, "available": exc.available})
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=f"The warehouse did not answer: {exc}")
+    return {"connection_id": connection_id, "schema_name": graph.schema_name, **proposal}
+
+
 @router.get("/cockpits/{cockpit_id}")
 def read_cockpit(request: Request, cockpit_id: str, connection_id: str, preset: Optional[str] = None,
                  start: Optional[str] = None, end: Optional[str] = None,

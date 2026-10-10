@@ -30,8 +30,9 @@ import { schema } from "@json-render/react/schema";
 import { z } from "zod";
 
 /** Raised when a component or a prop is added, renamed or removed. 2: Note, Image and `size`. 3: the ontology's
- *  pieces — ProcessBoard, ObjectTable, ObjectDetail and ActionButton (Arc OC-4). */
-export const COCKPIT_VOCABULARY_VERSION = 3;
+ *  pieces — ProcessBoard, ObjectTable, ObjectDetail and ActionButton (Arc OC-4). 4: a cockpit started from an object —
+ *  ObjectFilters, ObjectFigure and ObjectChart (2026-10-10). */
+export const COCKPIT_VOCABULARY_VERSION = 4;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
 export const TONES = ["good", "warn", "bad", "info", "neutral"] as const;
@@ -72,6 +73,14 @@ const PROPERTY_PATH = /^[A-Za-z_][A-Za-z0-9_.]{0,127}$/;
 const ELEMENT_KEY = /^[A-Za-z0-9_-]{1,64}$/;
 /** The most columns an objects table lists beside each object's key. */
 export const MAX_TABLE_COLUMNS = 8;
+/** The most properties a filter column offers. */
+export const MAX_FILTERS = 6;
+/** The aggregates a figure may take — the object door's own (`AggName` in `aughor/semantic/object_query.py`). */
+export const FIGURE_AGGS = ["count", "count_distinct", "sum", "avg", "min", "max"] as const;
+/** How a figure's value is written. */
+export const FIGURE_FORMATS = ["number", "money"] as const;
+/** The days a chart of objects per day may span (the `days` prop's literals, below). */
+export const CHART_DAYS = [7, 14, 30, 60, 90] as const;
 
 const size = z.enum(SIZES).nullable().optional();
 
@@ -152,14 +161,50 @@ export const cockpitCatalog = defineCatalog(schema, {
       props: z.object({ action: z.string().regex(ONTOLOGY_ID) }),
       description: "A declared action, by its id, run on the object its detail shows — or proposed for approval when running it needs one.",
     },
+    ObjectFilters: {
+      props: z.object({
+        entity: z.string().regex(ONTOLOGY_ID),
+        properties: z.array(z.object({
+          path: z.string().regex(PROPERTY_PATH),
+          label: z.string().min(1).max(MAX_LABEL),
+          /** The object a property is read through, when it is not the entity's own ("via Customer"). */
+          via: z.string().max(MAX_LABEL).nullable().optional(),
+        }).strict()).min(1).max(MAX_FILTERS),
+      }),
+      description: "The cockpit's filter column: each property's values with how many objects hold each. A reader's click narrows every piece over the same entity, for that reader only. The cockpit's first child, at most one.",
+    },
+    ObjectFigure: {
+      props: z.object({
+        entity: z.string().regex(ONTOLOGY_ID),
+        label: z.string().min(1).max(MAX_LABEL),
+        agg: z.enum(FIGURE_AGGS),
+        path: z.string().regex(PROPERTY_PATH).nullable().optional(),
+        format: z.enum(FIGURE_FORMATS).nullable().optional(),
+        size,
+      }),
+      description: "One figure over an entity's objects — a count, or an aggregate of a property — read through the object door, narrowed by the reader's filters and said beside the whole.",
+    },
+    ObjectChart: {
+      props: z.object({
+        entity: z.string().regex(ONTOLOGY_ID),
+        label: z.string().min(1).max(MAX_LABEL),
+        time: z.string().regex(PROPERTY_PATH),
+        days: z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(60), z.literal(90)]).nullable().optional(),
+        size,
+      }),
+      description: "An entity's objects per day over its last days — the reader's filtered objects as bars, all of them as a line behind.",
+    },
   },
   actions: {},
 });
 
 /** Arc OC-4 — the pieces bound to the ontology. A person places them by hand; a model may arrange one and is never
  *  told how to write one (`grammar.ts` teaches `WRITTEN`). */
-export type PieceName = "ProcessBoard" | "ObjectTable" | "ObjectDetail" | "ActionButton";
-export const PIECE_NAMES: readonly PieceName[] = ["ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton"];
+export type PieceName = "ProcessBoard" | "ObjectTable" | "ObjectDetail" | "ActionButton" | "ObjectFilters" | "ObjectFigure"
+  | "ObjectChart";
+export const PIECE_NAMES: readonly PieceName[] = [
+  "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure", "ObjectChart",
+];
 
 export type WrittenName = "Cockpit" | "Tabs" | "Tab" | "Section" | "Card" | "Note" | "Image";
 /** The components a writer of a cockpit is told about — every one but the ontology's pieces. */
@@ -169,13 +214,15 @@ export type ComponentName = WrittenName | PieceName;
 export const COMPONENT_NAMES: readonly ComponentName[] = [...WRITTEN, ...PIECE_NAMES];
 
 /** The components a section holds — each sized, each in its place. */
-export const PLACED: readonly ComponentName[] = ["Card", "Note", "Image", "ProcessBoard", "ObjectTable", "ObjectDetail"];
+export const PLACED: readonly ComponentName[] = [
+  "Card", "Note", "Image", "ProcessBoard", "ObjectTable", "ObjectDetail", "ObjectFigure", "ObjectChart",
+];
 /** The two that are a person's own: a model arranges them and never makes one. */
 export const STATIC: readonly ComponentName[] = ["Note", "Image"];
 
 /** What each component may hold. A cockpit's shape is fixed so that a reader can predict it. */
 export const MAY_HOLD: Record<ComponentName, readonly ComponentName[]> = {
-  Cockpit: ["Tabs", "Section"],
+  Cockpit: ["Tabs", "Section", "ObjectFilters"],
   Tabs: ["Tab"],
   Tab: ["Section"],
   Section: PLACED,
@@ -186,6 +233,9 @@ export const MAY_HOLD: Record<ComponentName, readonly ComponentName[]> = {
   ObjectTable: [],
   ObjectDetail: ["ActionButton"],
   ActionButton: [],
+  ObjectFilters: [],
+  ObjectFigure: [],
+  ObjectChart: [],
 };
 
 /** The components a condition may show or hide. A tab is never conditional. */

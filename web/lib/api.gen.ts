@@ -3087,6 +3087,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cockpits/from-object": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Propose From Object
+         * @description What a cockpit started from ``entity`` is offered (2026-10-10): its categories as filters, its numbers as
+         *     figures, a chart of its objects per day, a table of them and the actions declared on them — each measured through
+         *     the object door, with a preview. Nothing is kept and no model is asked; the person ticks what they want and keeps
+         *     it as any new cockpit is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path.
+         */
+        get: operations["propose_from_object_cockpits_from_object_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cockpits/images": {
         parameters: {
             query?: never;
@@ -28001,6 +28024,41 @@ export interface operations {
                 "application/json": components["schemas"]["DraftRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_from_object_cockpits_from_object_get: {
+        parameters: {
+            query: {
+                entity: string;
+                connection_id: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

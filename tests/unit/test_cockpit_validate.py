@@ -179,9 +179,10 @@ def test_a_spec_that_is_not_json_is_refused_before_anything_runs(premise):
 @needs_rules
 def test_the_server_reads_the_vocabulary_the_web_declares():
     vocab = V.vocabulary()
-    assert vocab["version"] == 3                 # 3: the ontology's pieces (Arc OC-4)
+    assert vocab["version"] == 4                 # 3: the ontology's pieces (Arc OC-4); 4: a cockpit from an object
     assert vocab["components"] == ["Cockpit", "Tabs", "Tab", "Section", "Card", "Note", "Image",
-                                   "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton"]
+                                   "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton",
+                                   "ObjectFilters", "ObjectFigure", "ObjectChart"]
     assert vocab["sizes"] == ["small", "wide", "tall", "large", "full", "hero"]
     assert vocab["range_statuses"] == ["standing", "final", "provisional", "to_date"]
     assert vocab["card_statuses"] == ["within", "over", "unmeasured", "withheld"]

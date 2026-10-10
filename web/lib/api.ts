@@ -2914,6 +2914,40 @@ export async function startMyCockpit(connectionId: string): Promise<CockpitKept>
   return cockpitWrite(res, "Failed to start your cockpit");
 }
 
+/** What a cockpit started from an object is offered (2026-10-10, `aughor/cockpit/from_object.py`): each piece with a
+ *  preview the object door measured. Nothing is kept and no model is asked. */
+export interface CockpitFromObject {
+  connection_id: string;
+  schema_name: string;
+  entity: string;
+  type_id: string;
+  /** The object's name; `title` is its plural, what the count is called. */
+  name: string;
+  title: string;
+  total: number | null;
+  /** Each category: its path, label, the object it is read through ("" for its own) and its top values. */
+  filters: { path: string; label: string; via: string; values: [unknown, number | null][] }[];
+  figures: { label: string; agg: "count" | "count_distinct" | "sum" | "avg" | "min" | "max"; path: string;
+             format: "number" | "money"; value: number | null }[];
+  /** Objects per day over the last whole days they hold, ending (exclusive) at `end`. */
+  chart: { time: string; label: string; days: number; end: string; bars: number[] } | null;
+  table: { columns: string[]; labels: string[] };
+  actions: { id: string; label: string }[];
+  caveats: string[];
+}
+
+export async function getCockpitFromObject(connectionId: string, entity: string, schema?: string): Promise<CockpitFromObject> {
+  const q = new URLSearchParams({ entity });
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(cockpitUrl("/cockpits/from-object", connectionId, q));
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
+    const d = body?.detail;
+    throw new Error(typeof d === "string" ? d : (d as { refused?: string } | undefined)?.refused ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 /** ⚑ Spends model calls. Draft a new cockpit for an area the person names. */
 export async function draftCockpit(connectionId: string, area: string, schema?: string): Promise<CockpitDrafted> {
   const res = await fetch(cockpitUrl("/cockpits/draft", connectionId), {

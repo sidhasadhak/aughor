@@ -30,6 +30,7 @@ import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CockpitArrange, type CardLine } from "@/components/cockpit/CockpitArrange";
 import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/ComposedCockpit";
 import { FindingPicker } from "@/components/cockpit/FindingPicker";
+import { ObjectCockpitStarter } from "@/components/cockpit/ObjectCockpitStarter";
 import { OntologyPieceComposer } from "@/components/cockpit/OntologyPieceComposer";
 import { PinStrip } from "@/components/cockpit/PinStrip";
 import { METRICS_COCKPIT, MetricsCockpit } from "@/components/cockpit/MetricsCockpit";
@@ -62,6 +63,7 @@ import {
 import { hostStateOf } from "@/lib/cockpit/hostStatus";
 import { emptyCockpitSpec, overdueSegmentOf, processCockpitHolds, processCockpitSpec, startCockpit } from "@/lib/cockpit/start";
 import { formatDateTime } from "@/lib/format";
+import { cachedObjectCatalog } from "@/lib/objects";
 import { getProcesses, type ProcessDetail } from "@/lib/objectTypes";
 
 /** The name the Briefing gives when it keeps something for a person. The server writes the
@@ -268,10 +270,23 @@ function DraftReview({ connectionId, cockpitId, result, proposal, held, onKept, 
 /** A new cockpit, three ways (2026-10-09): empty — its name and a first note in the person's words, since a cockpit
  *  holding nothing is refused; for a declared process — its board, its open-and-overdue objects and one beside them;
  *  or drafted by a model for an area, the one way here that asks one. The walk-through found only the last. */
-function NewCockpit({ connectionId, schema, onKept, onClose }: {
+function NewCockpit({ connectionId, schema, fromObject, sym, onKept, onClose }: {
   connectionId: string; schema?: string; onKept: (cockpitId: string) => void; onClose: () => void;
+  /** Whether a cockpit may start from an object here (`ontology.object_cockpits`). */
+  fromObject: boolean;
+  sym: string;
 }) {
-  const [way, setWay] = useState<"empty" | "process" | "draft">("empty");
+  const [way, setWay] = useState<"empty" | "object" | "process" | "draft">("empty");
+  const [types, setTypes] = useState<{ object_type: string; display_name: string }[] | null>(null);
+  const [entity, setEntity] = useState("");
+  useEffect(() => {
+    if (way !== "object" || types) return;
+    let live = true;
+    cachedObjectCatalog(connectionId)
+      .then(c => { if (live) setTypes(c?.object_types ?? []); })
+      .catch(() => { if (live) setTypes([]); });
+    return () => { live = false; };
+  }, [way, types, connectionId]);
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [processes, setProcesses] = useState<ProcessDetail[] | null>(null);
@@ -311,7 +326,8 @@ function NewCockpit({ connectionId, schema, onKept, onClose }: {
   return (
     <div data-testid="cockpit-new" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16 }}>
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
-        {([["empty", "Start empty"], ["process", "For a process"], ["draft", "Draft it with a model"]] as const).map(([w, label]) => (
+        {([["empty", "Start empty"], ...(fromObject ? [["object", "From an object"] as const] : []), ["process", "For a process"],
+           ["draft", "Draft it with a model"]] as const).map(([w, label]) => (
           <Button key={w} size="xs" variant={way === w ? "secondary" : "ghost"} aria-pressed={way === w}
             data-testid={`cockpit-new-${w}`} disabled={drafting || starting || !!proposal} onClick={() => setWay(w)}>{label}</Button>
         ))}
@@ -334,6 +350,24 @@ function NewCockpit({ connectionId, schema, onKept, onClose }: {
                 : "Then add cards, findings and pieces from the toolbar. No model is asked."}
             </span>
           </span>
+        </div>
+      )}
+
+      {way === "object" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 760 }}>
+          {types === null ? <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Reading the objects…</span>
+            : types.length === 0 ? (
+              <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>No object is built for this connection yet.</span>
+            ) : (
+              <SelectField value={entity} aria-label="The object" onChange={e => setEntity(e.target.value)} style={{ maxWidth: 320 }}>
+                <option value="">Choose an object…</option>
+                {types.map(t => <option key={t.object_type} value={t.object_type}>{t.display_name || t.object_type}</option>)}
+              </SelectField>
+            )}
+          {entity && (
+            <ObjectCockpitStarter connectionId={connectionId} schema={schema} entity={entity} sym={sym}
+              onKept={onKept} onCancel={() => setEntity("")} />
+          )}
         </div>
       )}
 
@@ -584,7 +618,7 @@ function SharedCockpitView({ connectionId, schema, owner, cockpitId, range, chos
       </div>
       {data.ontology && <PinStrip pin={data.ontology} spec={data.cockpit.spec} />}
       <ComposedCockpit spec={data.cockpit.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}
-        images={images} range={range} schema={schema} connectionId={connectionId} />
+        images={images} range={range} schema={schema} connectionId={connectionId} cockpitId={`shared:${owner}:${cockpitId}`} />
     </div>
   );
 }
@@ -623,6 +657,8 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [picking, setPicking] = useState(false);
   // Arc OC-4 — a piece bound to the ontology, placed by hand, while `ontology.cockpit_pieces` is on.
   const [piecesOn, setPiecesOn] = useState(false);
+  // A cockpit started from an object (2026-10-10), while `ontology.object_cockpits` is on.
+  const [objectsOn, setObjectsOn] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [shared, setShared] = useState<SharedCockpitListed[]>([]);
@@ -638,7 +674,10 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   useEffect(() => {
     let alive = true;
     getSystemFlags().then(f => {
-      if (alive) { setRangesOn(!!f["briefing.ranges"]?.value); setPiecesOn(!!f["ontology.cockpit_pieces"]?.value); }
+      if (alive) {
+        setRangesOn(!!f["briefing.ranges"]?.value); setPiecesOn(!!f["ontology.cockpit_pieces"]?.value);
+        setObjectsOn(!!f["ontology.object_cockpits"]?.value);
+      }
     }).catch(() => { if (alive) { setRangesOn(false); setPiecesOn(false); } });
     return () => { alive = false; };
   }, []);
@@ -837,6 +876,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
 
       {newOpen && (
         <NewCockpit connectionId={connectionId} schema={schema} onClose={() => setNewOpen(false)}
+          fromObject={piecesOn && objectsOn} sym={data?.currency_symbol || "$"}
           onKept={id => { setNewOpen(false); choose(id); reload(); }} />
       )}
 
@@ -1059,7 +1099,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               <div aria-busy={reading || undefined}
                 style={{ opacity: reading ? 0.45 : 1, transition: "opacity 120ms ease-out", pointerEvents: reading ? "none" : undefined }}>
                 <ComposedCockpit spec={kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}
-                  images={images} range={range} schema={schema} connectionId={connectionId} />
+                  images={images} range={range} schema={schema} connectionId={connectionId} cockpitId={`${connectionId}:${chosen}`} />
               </div>
             </>
           )}

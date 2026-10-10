@@ -459,6 +459,36 @@ export async function listObjects(
   return res.json();
 }
 
+/** An object query in the door's shape (`ObjectQuery` in `aughor/semantic/object_query.py`). */
+export interface ObjectQueryRequest {
+  object_type: string;
+  filters?: Record<string, unknown>[];
+  measures: { name: string; agg: string; path?: string }[];
+  by?: string[];
+  time?: string;
+  grain?: "" | "day" | "week" | "month";
+  start?: string;
+  end?: string;
+  order_by?: string;
+  descending?: boolean;
+  limit?: number;
+}
+
+/** What `POST /objects/query` answers: the rows, or a refusal with why. */
+export type ObjectQueryResult =
+  | { path: "compiled"; columns: string[]; rows: unknown[][]; caveats: string[]; error: string | null }
+  | ObjectRefusal;
+
+export async function queryObjects(
+  body: ObjectQueryRequest, connectionId?: string, schemaName?: string,
+): Promise<ObjectQueryResult> {
+  const res = await fetch(`${getApiBase()}/objects/query${scope(connectionId, schemaName)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
 /** A declared action, as the ontology's actions door returns it (`getDeclaredActions` in `lib/api.ts`). */
 export type { DeclaredAction } from "@/lib/api";
 export { getDeclaredActions } from "@/lib/api";
