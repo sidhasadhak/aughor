@@ -39955,7 +39955,6 @@ export interface operations {
                 schema_name?: string | null;
                 max_hops?: number;
                 domain?: string | null;
-                request: unknown;
             };
             header?: never;
             path?: never;
@@ -39985,11 +39984,10 @@ export interface operations {
     };
     get_object_type_map_object_types_get: {
         parameters: {
-            query: {
+            query?: {
                 connection_id?: string;
                 schema_name?: string | null;
                 domain?: string | null;
-                request: unknown;
             };
             header?: never;
             path?: never;
@@ -40019,11 +40017,10 @@ export interface operations {
     };
     get_object_type_object_types__object_type__get: {
         parameters: {
-            query: {
+            query?: {
                 connection_id?: string;
                 schema_name?: string | null;
                 domain?: string | null;
-                request: unknown;
             };
             header?: never;
             path: {
@@ -40055,11 +40052,10 @@ export interface operations {
     };
     get_object_catalog_objects_catalog_get: {
         parameters: {
-            query: {
+            query?: {
                 connection_id?: string;
                 schema_name?: string | null;
                 domain?: string | null;
-                request: unknown;
             };
             header?: never;
             path?: never;
@@ -40089,12 +40085,11 @@ export interface operations {
     };
     post_object_listing_objects_list_post: {
         parameters: {
-            query: {
+            query?: {
                 connection_id?: string;
                 schema_name?: string | null;
                 /** @description False returns the compiled SQL and plan without running it */
                 execute?: boolean;
-                request: unknown;
             };
             header?: never;
             path?: never;
@@ -40128,14 +40123,13 @@ export interface operations {
     };
     post_object_query_objects_query_post: {
         parameters: {
-            query: {
+            query?: {
                 connection_id?: string;
                 schema_name?: string | null;
                 /** @description False returns the compiled SQL and plan without running it */
                 execute?: boolean;
                 /** @description ON-8 — query an organisation's ontology, whose types may live on several connections */
                 domain?: string | null;
-                request: unknown;
             };
             header?: never;
             path?: never;
@@ -40169,11 +40163,10 @@ export interface operations {
     };
     post_object_titles_objects_titles_post: {
         parameters: {
-            query: {
+            query?: {
                 connection_id?: string;
                 schema_name?: string | null;
                 domain?: string | null;
-                request: unknown;
             };
             header?: never;
             path?: never;
@@ -40207,10 +40200,9 @@ export interface operations {
     };
     propose_declared_action_objects_v1_actions__action_id__propose_post: {
         parameters: {
-            query: {
+            query?: {
                 connection_id?: string;
                 schema_name?: string | null;
-                request: unknown;
             };
             header?: never;
             path: {
@@ -40246,10 +40238,9 @@ export interface operations {
     };
     post_objects_v1_list_objects_v1_list_post: {
         parameters: {
-            query: {
+            query?: {
                 connection_id?: string;
                 schema_name?: string | null;
-                request: unknown;
             };
             header?: never;
             path?: never;
@@ -40283,11 +40274,10 @@ export interface operations {
     };
     get_object_page_objects__object_type___pk__get: {
         parameters: {
-            query: {
+            query?: {
                 connection_id?: string;
                 schema_name?: string | null;
                 domain?: string | null;
-                request: unknown;
             };
             header?: never;
             path: {
@@ -40320,13 +40310,12 @@ export interface operations {
     };
     get_object_links_page_objects__object_type___pk__links__link__get: {
         parameters: {
-            query: {
+            query?: {
                 connection_id?: string;
                 schema_name?: string | null;
                 limit?: number;
                 offset?: number;
                 domain?: string | null;
-                request: unknown;
             };
             header?: never;
             path: {
@@ -44079,10 +44068,9 @@ export interface operations {
     };
     get_action_schema_ontology_v1_actions__action_id__schema_get: {
         parameters: {
-            query: {
+            query?: {
                 connection_id?: string;
                 schema_name?: string | null;
-                request: unknown;
             };
             header?: never;
             path: {
@@ -44114,10 +44102,9 @@ export interface operations {
     };
     get_ontology_contract_ontology_v1_contract_get: {
         parameters: {
-            query: {
+            query?: {
                 connection_id?: string;
                 schema_name?: string | null;
-                request: unknown;
             };
             header?: never;
             path?: never;
@@ -44219,10 +44206,9 @@ export interface operations {
     };
     get_ontology_typescript_ontology_v1_types_d_ts_get: {
         parameters: {
-            query: {
+            query?: {
                 connection_id?: string;
                 schema_name?: string | null;
-                request: unknown;
             };
             header?: never;
             path?: never;
