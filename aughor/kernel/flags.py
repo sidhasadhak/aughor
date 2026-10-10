@@ -527,16 +527,39 @@ FLAG_META = {
                        "nothing is recorded, and a count is still available on request.",
     },
     "actions.outbox": {
-        "label": "Send a declared action's calls through an outbox",
-        "description": "A declared action's calls to other systems are kept as rows and delivered by a worker that holds a lease on each, instead of once, inline, in the press. A call that did not go out is retried — by why it failed: a refused connection or a server error again later, a rate limit after a pause, a refusal from the far end never. A call that got no answer is checked with the action's own verification read before anything is sent again, so a call that landed is never made twice. A call that cannot be delivered waits for a person under Actions ▸ Sends, with Retry and Dismiss. An action may also name one call that must succeed BEFORE its edits are written (a writeback); its failure leaves everything unwritten. Off by default: calls go out once, inline, as before.",
+        "label": "Send action calls through an outbox",
+        "summary": "Calls a declared action makes to other systems are queued and retried by a worker. "
+                   "A call that landed is never sent twice.",
+        "facts": [{"kind": "sends", "text": "Calls other systems"},
+                  {"kind": "free", "text": "No model calls"}],
+        "description": "A failed call is retried by why it failed; a refusal is never retried. A call with "
+                       "no answer is checked with the action's verification read before any resend. An "
+                       "undeliverable call waits under Actions → Sends for a person. An action may also "
+                       "require one call to succeed before its edits are written. Off: calls go out once, "
+                       "inline, as before.",
     },
     "ontology.builder_doors": {
-        "label": "Doors for builders: the ontology as a contract outside programs read",
-        "description": "Opens the versioned doors an outside program uses: GET /ontology/v1/contract (a JSON Schema per entity and per declared action, stamped with the published release), GET /ontology/v1/types.d.ts (the same as TypeScript declarations), POST /objects/v1/list (a page of objects or a segment of them) and POST /objects/v1/actions/{id}/propose (a proposal staged for a person — never run from there). The MCP server offers the same as tools: list_objects, and one propose tool per declared action. Off by default: every one of those doors answers that it is off.",
+        "label": "Let outside programs read the ontology",
+        "summary": "Outside programs can read your objects and their types, and propose an action for "
+                   "a person to approve. Nothing runs from outside.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "route", "text": "Also offered over MCP"}],
+        "description": "Programs read a versioned contract: a schema per object and per declared action, "
+                       "also as TypeScript types. They can list objects or a segment. A proposed action "
+                       "waits for a person and never runs from there. Off: an outside program is told "
+                       "these doors are off.",
     },
     "ontology.security": {
-        "label": "Security on the ontology: who sees which objects, and which properties",
-        "description": "Enforces what an entity declares about who reads it, on every object door — the cockpit's tables and details, the object pages, the object query and the doors for builders. A row policy names a group and the conditions its members' objects meet; once an entity has any, each reader sees only the objects a policy of one of their groups admits, and is told so. A sensitive property names the groups that read it; for everyone else it is masked — empty, with why — and refused anywhere it would shape an answer. An agent acting for a person reads only what both may. Off by default: every reader sees every object and property, as today.",
+        "label": "Limit who sees which objects and properties",
+        "summary": "Each reader sees only the objects their groups may see. Sensitive properties are "
+                   "masked for everyone else.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Readers are told what is hidden"}],
+        "description": "A row policy names a group and the conditions its objects meet. A sensitive "
+                       "property names the groups that may read it; others see it empty, with the reason, "
+                       "and it cannot shape an answer. An agent acting for a person reads only what both "
+                       "may. It applies to cockpits, object pages and outside programs. Off: every reader "
+                       "sees every object and property.",
     },
     "cockpit.composed": {
         "label": "A cockpit in each Data Canvas",
