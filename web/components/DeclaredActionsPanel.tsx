@@ -200,7 +200,19 @@ function SendsSection({ connectionId }: { connectionId: string }) {
       .catch(e => setError(String(e.message || e)));
   }, [connectionId]);
   useEffect(() => { if (connectionId) load(); }, [connectionId, load]);
-  if (!state || (!state.enabled && state.sends.length === 0)) return error ? <Err e={error} /> : null;
+  if (!state) return error ? <Err e={error} /> : null;
+  if (!state.enabled && state.sends.length === 0) {
+    // Off is said, never implied: a section that hid itself read as a feature that does not exist (2026-10-10).
+    return (
+      <Section title="Sends" meta="the outbox is off">
+        <p className="aug-brief-note" data-testid="sends-off">
+          A declared action's calls to other systems go out once, when it is pressed, and are not kept. Switch the outbox
+          on in Settings → System → Feature flags to keep each call, retry it by why it failed, and hand you the ones
+          that need a person.
+        </p>
+      </Section>
+    );
+  }
   const waiting = state.sends.filter(s => s.status === "dead" || s.status === "unknown");
   const rest = state.sends.filter(s => s.status !== "dead" && s.status !== "unknown").slice(0, 20);
   const act = async (s: ActionSend, what: "retry" | "dismiss") => {
