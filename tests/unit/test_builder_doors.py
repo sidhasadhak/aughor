@@ -39,9 +39,40 @@ def test_the_contract_says_what_an_object_holds_and_what_a_proposal_carries(grap
                                 "object_type": "order", "creates": "", "sets": ["review_flag"],
                                 "release": f"{CONN}/ecommerce@3", "proposes_only": True}
     ts = typescript(contract)
-    assert f"export const RELEASE = '{CONN}/ecommerce@3' as const;" in ts
+    assert f'export type Release = "{CONN}/ecommerce@3";' in ts
     assert "export interface Order {" in ts and "  order_id: string;" in ts and "  total_amount: number | null;" in ts
     assert "export interface FlagOrderForReviewParams {" in ts and "export type ActionId = 'flag_order_for_review';" in ts
+
+
+def test_the_declarations_compile_and_a_program_written_against_them_does(graph, tmp_path):  # noqa: F811
+    """The live receipt found `export const RELEASE = … as const` in a .d.ts — which TypeScript refuses. Compiled here
+    with the web's own tsc, where it is installed."""
+    import pathlib
+    import subprocess
+    tsc = pathlib.Path(__file__).resolve().parents[2] / "web" / "node_modules" / ".bin" / "tsc"
+    if not tsc.exists():
+        pytest.skip("the web's TypeScript is not installed here")
+    (tmp_path / "shop.d.ts").write_text(typescript(ontology_contract(graph, f"{CONN}/ecommerce@3")))
+    (tmp_path / "use.ts").write_text(
+        'import type { ActionId, FlagOrderForReviewParams, Order, OrderSegment, Release } from "./shop";\n'
+        f'export const release: Release = "{CONN}/ecommerce@3";\n'
+        'export const action: ActionId = "flag_order_for_review";\n'
+        'export const segment: OrderSegment | undefined = undefined;\n'
+        'export const params = (o: Pick<Order, "order_id">): FlagOrderForReviewParams =>\n'
+        '  ({ order: `order:${o.order_id}`, reason: "late" });\n')
+    ran = subprocess.run([str(tsc), "--noEmit", "--strict", "--target", "es2020", "--moduleResolution", "node",
+                          str(tmp_path / "use.ts")], capture_output=True, text=True, timeout=120)
+    assert ran.returncode == 0, ran.stdout + ran.stderr
+
+
+def test_an_action_declared_on_Order_asks_for_the_name_a_listing_hands_out(graph):  # noqa: F811
+    """theLook's Flag for review names its type `Order`; its listing names objects `order:<key>` — the contract must ask
+    for what the listing gives, or a program that follows it is refused."""
+    action = _action(graph).model_copy(deep=True)
+    action.object_type = action.params[0].object_type = "Order"
+    schema = action_schema(action, "", graph)
+    assert schema["properties"]["order"]["pattern"] == "^order:.+$" and schema["x-aughor"]["object_type"] == "order"
+    assert validate_params(schema, {"order": f"order:{ORDER}", "reason": "late"}) is None
 
 
 def test_a_proposal_that_does_not_fit_the_action_is_refused_in_words(graph):  # noqa: F811
@@ -53,7 +84,7 @@ def test_a_proposal_that_does_not_fit_the_action_is_refused_in_words(graph):  # 
 
 
 def test_with_the_flag_off_every_door_says_it_is_off(graph, client, monkeypatch):  # noqa: F811
-    monkeypatch.delenv("AUGHOR_ONTOLOGY_BUILDER_DOORS", raising=False)
+    monkeypatch.setenv("AUGHOR_ONTOLOGY_BUILDER_DOORS", "0")                # default-on since it graduated
     for method, path in (("get", "/ontology/v1/contract"), ("get", "/ontology/v1/types.d.ts"),
                          ("post", "/objects/v1/list"), ("post", "/objects/v1/actions/flag_order_for_review/propose")):
         body = {"entity": "Order"} if path.endswith("list") else {"params": {}}
@@ -81,6 +112,20 @@ def test_a_program_lists_objects_and_proposes_an_action_a_person_then_decides(do
     assert (staged.action_id, staged.source, staged.params["reason"]) == ("flag_order_for_review", "builder",
                                                                           "late and unshipped")
     assert OVL.object_edits(CONN) == []                                         # nothing ran: a person decides
+    from aughor.org.context import DEFAULT_ORG_ID
+    from aughor.orgsettings.agent_policy import clear_agent_policy, save_agent_policy
+    program = {"X-Aughor-Agent": "mcp", "X-Aughor-Tool": "propose_flag_order_for_review"}
+    held = client.post("/objects/v1/actions/flag_order_for_review/propose", params=PARAMS, headers=program,
+                       json={"params": {"order": f"order:{ORDER}", "reason": "late"}})
+    assert held.status_code == 403                                          # the default policy, `run`, holds it
+    save_agent_policy(DEFAULT_ORG_ID, level="act", set_by="test")
+    try:
+        by_program = client.post("/objects/v1/actions/flag_order_for_review/propose", params=PARAMS, headers=program,
+                                 json={"params": {"order": f"order:{ORDER}", "reason": "late"}})
+    finally:
+        clear_agent_policy(DEFAULT_ORG_ID)
+    [theirs] = [p for p in list_proposals(connection_id=CONN, status="pending") if p.id == by_program.json()["proposal_id"]]
+    assert theirs.proposer.startswith("agent:propose_flag_order_for_review for ")   # a program, said as one
     wrong = client.post("/objects/v1/actions/flag_order_for_review/propose", params=PARAMS,
                         json={"params": {"order": "customer:C1", "reason": "x"}})
     assert wrong.status_code == 422 and "names an object as order" in wrong.json()["detail"]

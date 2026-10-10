@@ -314,6 +314,30 @@ FLAG_DEFAULT: dict = {
     # disposition rather than deletion because its off-path is ALIVE: the deterministic
     # quick body is still what an ineligible turn runs, so the flag remains an operator
     # kill switch while fresh installs get authoring out of the box.
+    # Arc OC graduated 2026-10-10 (§3.56, the user's call: "those with receipts met"). Each off-path is ALIVE and
+    # byte-identical, so each is a graduation with a kill switch (its env var = 0), not a deletion; each entry is the
+    # receipt that graduated it and the falsifier that turns it back off. `ontology.security` stays queued until
+    # sign-in, `ontology.census` until seven daily readings are read.
+    "ontology.history": "OC-1, live on theLook 2026-10-09: a declaration read back as four versions with what changed "
+                        "and who, as-of answered both ways; the withdrawal refused over a dependent stands on the "
+                        "scratch receipt (nothing on theLook depends on one). Falsifier: what *late* meant on a past "
+                        "day cannot be answered from it",
+    "ontology.release": "OC-2, live on theLook 2026-10-09: draft isolation, a SAFE change published as release 2, the "
+                        "promise moved 2 → 3 days classed MEANING with the published one unchanged, discard; replayed "
+                        "over the live history, no change that moved a consumer classed SAFE. Falsifier: one past "
+                        "change that broke a consumer classed SAFE or MEANING",
+    "ontology.cockpit_pieces": "OC-4, live on theLook 2026-10-09: the Late dispatch board's open-and-overdue count "
+                               "(25,051) opened a table of exactly that many; an object flagged from the cockpit showed "
+                               "in the table, the detail and its page. Falsifier: the census does not move in the "
+                               "weeks after (armed: read on 2026-11-07)",
+    "actions.outbox": "OC-6, live 2026-10-10: a delivered call checked, a no-answer call reconciled by the action's "
+                      "check and never sent twice, a refused call queued and delivered on its retry, a guard-refused "
+                      "one waiting under Sends for a person. Falsifier: a send left `unknown` after reconciliation "
+                      "that a person cannot resolve from the screen",
+    "ontology.builder_doors": "OC-8, live on theLook 2026-10-10: a program outside the platform launched the MCP "
+                              "server, read 24,872 overdue objects through `list_objects` and proposed Open a "
+                              "case through `propose_open_case`; the proposal waited in the Actions inbox and nothing "
+                              "ran. Falsifier: a contract a program cannot act on without reading the platform's code",
     "ask.converse": "SP-14 (2026-09-16): 26/26 staged drafts honest across SP-M's two "
                     "recordings; 81% of real asks behaved correctly on the richer "
                     "fixture; the residual is the step-budget knob, accepted as-is.",
@@ -696,38 +720,6 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
-    # Arc OC-4 (ROADMAP §3.56), queued 2026-10-09. No model call; the warehouse is read through the object door only.
-    "ontology.cockpit_pieces": "receipt: on theLook, a late dispatch cockpit — the process board's open-and-overdue "
-                               "count opens a table of exactly that many objects, one opens beside it, and a declared "
-                               "action run from it shows its edit in the table and on the object's own page. "
-                               "Falsifier (§3.56): if the census does not move in the weeks after, the surface was "
-                               "not the bottleneck — the flag goes and the arc is re-surveyed",
-    # Arc OC-2 (ROADMAP §3.56), queued 2026-10-09. No model call and no warehouse query beyond the doors' own.
-    "ontology.release": "receipt: on theLook, the dispatch promise moved from two days to three in a draft — the "
-                        "agent and the Briefing still read two; the draft names the claims, the automation and the "
-                        "cards it touches; after publishing, the claims computed under two days say so, and a "
-                        "change that would break the automation is refused. Falsifier (§3.56): replayed over the "
-                        "declarations' own history, a past change that broke a consumer classed SAFE or MEANING — "
-                        "one miss and the catalogue is wrong",
-    # Arc OC-1 (ROADMAP §3.56), queued 2026-10-09. No model call and no warehouse query.
-    "ontology.history": "receipt: on theLook, a promise declared, changed twice and withdrawn reads back as "
-                        "four versions, and asked as of the day between its two changes says what it said "
-                        "then; withdrawing an entity an automation relies on is refused with the automation "
-                        "named. Falsifier (§3.56): if what *late* meant on a past day cannot be answered from "
-                        "it, it is not history — then the flag goes and the store is redesigned",
-    # Arc OC-6 (ROADMAP §3.56), queued 2026-10-10. No model call.
-    "actions.outbox": "receipt: on the live install, a cockpit's call to another system goes through the outbox, "
-                      "a forced timeout is reconciled by the action's verification read (delivered, never sent "
-                      "twice), and a refused call waits under Sends for a person. Falsifier (§3.56, OC-6): a "
-                      "delivery whose outcome nobody can state is the failure this exists to remove — count the "
-                      "sends left `unknown` after reconciliation; any that a person cannot resolve from the screen "
-                      "and the flag goes back",
-    # Arc OC-8 (ROADMAP §3.56), queued 2026-10-10. No model call.
-    "ontology.builder_doors": "receipt: a script outside the platform reads a connection's contract, lists the objects "
-                              "of a segment and proposes a declared action through the MCP server; the proposal waits in the Actions "
-                              "inbox for a person and nothing runs. Falsifier: a contract a program cannot act on "
-                              "without reading the platform's own code is not a contract — the script uses only the "
-                              "generated schema and the MCP tools",
     # Arc OC-7 (ROADMAP §3.56), queued 2026-10-10. No model call.
     "ontology.security": "receipt: on a scratch install, two people open the same cockpit and see different rows and a "
                          "masked property, each told why, and an agent acting for one reads no more than that person does. "

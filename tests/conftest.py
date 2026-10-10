@@ -28,6 +28,11 @@ os.environ.setdefault("AUGHOR_CORS_ORIGINS", "*")
 # gate (`tests/test_govern_actions.py`, `test_govern_action_coverage.py`) unset or set the
 # variable themselves, so the default is still proven. setdefault: an operator's own value wins.
 os.environ.setdefault("AUGHOR_ACTION_APPROVAL", "0")
+# Arc OC's graduated flags (2026-10-10) are default-on for an install; the suite was written against their off path,
+# byte-identical by construction, so it runs there unless a test turns one on — each flag's own tests do.
+for _oc_flag_var in ("AUGHOR_ONTOLOGY_HISTORY", "AUGHOR_ONTOLOGY_RELEASE", "AUGHOR_ONTOLOGY_COCKPIT_PIECES",
+                     "AUGHOR_ACTIONS_OUTBOX", "AUGHOR_ONTOLOGY_BUILDER_DOORS"):
+    os.environ.setdefault(_oc_flag_var, "0")
 # Hermetic kernel ledger — tests must never write to data/system.db.
 #
 # ⚠️ ASSIGNED, NOT `setdefault`, and every store path below follows the same rule. An

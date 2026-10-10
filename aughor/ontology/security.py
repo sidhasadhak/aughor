@@ -158,19 +158,32 @@ def rows_said(entity: OntologyEntity, who: Optional[Reader] = None) -> Optional[
         if not mine:
             return (f"{entity.id} is shown by group, and {principal} is in none of its groups ({', '.join(groups)}) — "
                     f"no {entity.id} object is shown; ask an administrator to add {principal} to one")
-    said = "; ".join(f"{p.group}: {_words(p.conditions)}" for p in entity.row_policies
-                     if any(p in _admitted(entity, who.groups.get(pr, {EVERYONE})) for pr in who.principals))
-    return (f"only the {entity.id} objects {who.words()} may see are shown — {said}"
+    return (f"only the {entity.id} objects {who.words()} may see are shown — {_policies_said(entity, who)}"
             + (" (both the person's and the agent's)" if len(who.principals) > 1 else ""))
 
 
-def counts_said(entity: OntologyEntity, who: Optional[Reader] = None) -> Optional[str]:
-    """What a reader is told of a count read over every object of ``entity`` (a process's measurement, kept once for
-    every reader) while their own rows are restricted — or None."""
-    if not enabled() or not entity.row_policies:
+def _policies_said(entity: OntologyEntity, who: Reader) -> str:
+    return "; ".join(f"{p.group}: {_words(p.conditions)}" for p in entity.row_policies
+                     if any(p in _admitted(entity, who.groups.get(pr, {EVERYONE})) for pr in who.principals))
+
+
+def restricts(entity: OntologyEntity) -> bool:
+    """Whether a reader's objects of ``entity`` are a policy's — the flag on and a row policy declared."""
+    return enabled() and bool(entity.row_policies)
+
+
+def counts_said(entity: OntologyEntity, who: Optional[Reader] = None, *, own: bool = False) -> Optional[str]:
+    """What a reader is told of counts over ``entity`` while a policy restricts their objects, or None: ``own`` when
+    the counts were taken over their objects alone, else the counts are the measurement kept for every reader."""
+    if not restricts(entity):
         return None
-    return (f"counted over every {entity.id}, not only the ones {(who or reader()).words()} may see — a table of "
-            "them lists only those")
+    who = who or reader()
+    if own:
+        said = _policies_said(entity, who)
+        return (f"counted over only the {entity.id} objects {who.words()} may see"
+                + (f" — {said}" if said else f" — none: {who.words()} is in none of its groups"))
+    return (f"counted over every {entity.id}, not only the ones {who.words()} may see — a table of them lists only "
+            "those")
 
 
 def _words(conditions: list[dict]) -> str:

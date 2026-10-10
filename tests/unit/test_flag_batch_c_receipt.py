@@ -82,8 +82,9 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # Arc OC-7 and OC-8, the same day: `ontology.security` (row policies and masked properties; its receipt is on a
     # scratch install until sign-in) and `ontology.builder_doors` (the contract, listed and proposed on from outside).
     # Neither calls a model; each entry names its receipt and the falsifier.
+    # …and on 2026-10-10 history, release, cockpit_pieces, outbox and builder_doors graduated on their receipts
+    # (FLAG_DEFAULT, each a kill switch): security waits for sign-in, the census for seven daily readings.
     assert set(GRADUATION_QUEUE) == {"cockpit.composed", "slack.managed_supervisor", "ontology.census",
-                                     "ontology.history", "ontology.release", "ontology.cockpit_pieces",
-                                     "actions.outbox", "ontology.security", "ontology.builder_doors"}
+                                     "ontology.security"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

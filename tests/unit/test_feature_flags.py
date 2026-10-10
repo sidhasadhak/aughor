@@ -88,10 +88,13 @@ def test_specialist_packs_left_the_registry_for_good():
     # switch. The user's call of 2026-09-24 entered four more, each with its off-path
     # alive as a kill switch: briefing.by_period, answers.recheck,
     # ontology.explore_on_connect and chat.buttons_reach_agent. The guard keeps its real
-    # claim: nothing ELSE drifts back in.
+    # claim: nothing ELSE drifts back in. Arc OC graduated five on 2026-10-10 (the user's call, "those with receipts
+    # met"), each with its off-path alive as a kill switch and its receipt on its entry.
     assert set(FLAG_DEFAULT) == {"ask.converse", "semops.banded_cascade",
                                  "briefing.by_period", "answers.recheck",
-                                 "ontology.explore_on_connect", "chat.buttons_reach_agent"}
+                                 "ontology.explore_on_connect", "chat.buttons_reach_agent",
+                                 "ontology.history", "ontology.release", "ontology.cockpit_pieces",
+                                 "actions.outbox", "ontology.builder_doors"}
 
 
 def test_default_on_flag_env_semantics(monkeypatch, synthetic_default_on):

@@ -184,3 +184,42 @@ def test_off_every_reader_sees_every_order_and_every_amount_as_before(secured, d
                                    dialect="duckdb")
     assert compiled.sql == plain.sql and compiled.caveats == plain.caveats
     assert get_object(secured, db, "order", ORDER).properties                 # no withheld, no mask
+
+
+# ── a process board counts what its reader may see (the user's call, 2026-10-10) ───────────────────────────────────
+
+from tests.unit.test_object_processes import FULFILMENT, PARAMS as PROCESS_PARAMS, door  # noqa: E402,F401
+from tests.unit.test_object_processes import _isolated_overrides  # noqa: E402,F401 — an autouse fixture, by name
+
+
+def test_a_board_counts_the_readers_own_objects_and_the_kept_measurement_counts_every_one(door, client, monkeypatch):  # noqa: F811
+    from aughor.ontology.overrides import find_override
+    from aughor.rbac.groups import add_member, upsert_group
+    monkeypatch.setenv("AUGHOR_ONTOLOGY_SECURITY", "1")
+    upsert_group("default", "warehouse", "Warehouse")
+    add_member("default", "warehouse", "user:ana")
+    samples = door()
+    every, waiting = (int(samples.execute("t", sql).rows[0][0]) for sql in (
+        "SELECT COUNT(*) FROM ecommerce.orders",
+        "SELECT COUNT(*) FROM ecommerce.orders WHERE status IN ('pending', 'processing')"))
+    samples.close()
+    assert 0 < waiting < every
+    put = client.put("/ontology/entities/Order/row-policies", params=PROCESS_PARAMS, json={"policies": [
+        {"group": "warehouse", "conditions": [{"path": "status", "op": "in", "values": ["pending", "processing"]}]}]})
+    assert put.status_code == 200, put.text
+    _as(monkeypatch, "ana")
+    declared = client.post("/ontology/processes", params=PROCESS_PARAMS, json=FULFILMENT)   # declared BY a restricted reader
+    assert declared.status_code == 200, declared.text
+    kept = find_override(PROCESS_PARAMS["connection_id"], "ecommerce", "process", "order_fulfilment").binding["process"]["measured"]
+    assert kept["objects"] == every                                       # the platform's measurement: every order
+    board = {p["id"]: p for p in client.get("/ontology/processes", params=PROCESS_PARAMS).json()["processes"]}
+    mine = board["order_fulfilment"]
+    assert mine["objects"] == waiting                                     # ana's board: her orders only
+    assert mine["counted_over"] == ("counted over only the Order objects user:ana may see — warehouse: status in "
+                                    "pending, processing")
+    _as(monkeypatch, "carl")
+    carl = {p["id"]: p for p in client.get("/ontology/processes", params=PROCESS_PARAMS).json()["processes"]}
+    assert carl["order_fulfilment"]["objects"] == 0 and "in none of its groups" in carl["order_fulfilment"]["counted_over"]
+    monkeypatch.delenv("AUGHOR_ONTOLOGY_SECURITY")
+    off = {p["id"]: p for p in client.get("/ontology/processes", params=PROCESS_PARAMS).json()["processes"]}
+    assert off["order_fulfilment"]["objects"] == every and "counted_over" not in off["order_fulfilment"]

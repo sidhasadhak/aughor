@@ -673,10 +673,18 @@ def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Proce
                        if promise.open_overdue is not None else ""))
 
 
-def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict, *, open_source: Any = None) -> Process:
+def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict, *, open_source: Any = None,
+                    for_reader: bool = False) -> Process:
     """Count a (resolved) declaration against the warehouse through the object door's compiler and return the process
     with every number and verdict stamped. Raises `NotMeasurable` when a count cannot be taken. On an organisation's
-    ontology ``db`` is None and ``open_source`` opens each count's connection (`ObjectCounter`)."""
+    ontology ``db`` is None and ``open_source`` opens each count's connection (`ObjectCounter`).
+
+    Arc OC-7 — the measurement is the platform's, kept once for every reader, so it counts every object whoever asked
+    for it; ``for_reader`` counts only the objects the request's reader may see, for that reader alone."""
+    if not for_reader:
+        from aughor.ontology.security import unfiltered
+        with unfiltered():
+            return measure_process(db, graph, process_id, fields, open_source=open_source, for_reader=True)
     process = process_from_fields(process_id, fields)
     work = graph.model_copy()
     work.processes = {**(graph.processes or {}), process_id: provisional(process)}

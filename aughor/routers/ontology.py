@@ -2341,7 +2341,6 @@ def list_ontology_processes(
     each transition timed, each promise with its breaches and the names it derives — and every declared rule. ON-8 —
     with ``domain``, the organisation's ontology's."""
     from aughor.ontology.business_rules import describe_rule
-    from aughor.ontology.processes import describe_process
     if domain is not None:
         from aughor.ontology.domains import domain_graph
         scope = _domain_scope(domain)
@@ -2352,16 +2351,40 @@ def list_ontology_processes(
             raise HTTPException(status_code=404, detail="Ontology not available")
         where = {"connection_id": connection_id, "schema_name": graph.schema_name}
     from aughor.ontology.impacts import describe_impact
-    from aughor.ontology.security import counts_said
-    processes = [describe_process(graph, p) for _, p in sorted(graph.processes.items())]
-    for described in processes:                      # Arc OC-7 — a count over objects the reader may not see says so
-        entity = graph.entities.get(str(described.get("entity_id") or ""))
-        said = counts_said(entity) if entity is not None else None
-        if said:
-            described["counted_over"] = said
+    processes = [_described_for_reader(graph, pid, p, connection_id if domain is None else None)
+                 for pid, p in sorted(graph.processes.items())]
     return {**where, "processes": processes,
             "rules": [describe_rule(graph, r) for _, r in sorted(graph.rules.items())],
             "impacts": [describe_impact(graph, i) for _, i in sorted((graph.impacts or {}).items())]}
+
+
+def _described_for_reader(graph, process_id: str, process, connection_id: Optional[str]) -> dict:
+    """Arc OC-7 — a process as this reader may read it. Where a row policy restricts the objects it counts, it is
+    counted again over the reader's own objects and says so; when that count cannot be taken, the measurement kept
+    for every reader is shown and says that instead."""
+    from aughor.ontology.processes import (NotMeasurable, describe_process, measure_process, process_fields,
+                                           resolve_process)
+    from aughor.ontology.security import counts_said, restricts
+    entity = graph.entities.get(process.entity)
+    if entity is None or not restricts(entity):
+        return describe_process(graph, process)
+    if connection_id is not None:
+        problem, fields = resolve_process(graph, process_id, process_fields(process.model_dump(mode="json")))
+        if not problem:
+            from aughor.db.connection import open_connection_for_with_schema
+            db = None
+            try:
+                db = open_connection_for_with_schema(connection_id, graph.schema_name or "default")
+                mine = measure_process(db, graph, process_id, fields, for_reader=True)
+                return {**describe_process(graph, mine), "counted_over": counts_said(entity, own=True)}
+            except (NotMeasurable, Exception) as exc:  # noqa: BLE001 — the shared measurement, said as such
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, f"process {process_id} could not be counted for this reader; the shared measurement "
+                              "is shown and says so", counter="ontology.process_for_reader")
+            finally:
+                if db is not None:
+                    db.close()
+    return {**describe_process(graph, process), "counted_over": counts_said(entity)}
 
 
 class _FrameQuestion(BaseModel):
