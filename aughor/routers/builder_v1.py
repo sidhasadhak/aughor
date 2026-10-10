@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
@@ -106,7 +106,7 @@ class ProposalBody(BaseModel):
 
 
 @router.post("/objects/v1/actions/{action_id}/propose")
-def propose_declared_action(action_id: str, body: ProposalBody, connection_id: str = BUILTIN_ID,
+def propose_declared_action(action_id: str, body: ProposalBody, request: Request, connection_id: str = BUILTIN_ID,
                             schema_name: Optional[str] = Query(default=None)):
     """Propose a declared action: checked against its schema and its own criteria, then staged in the Actions inbox
     for a person, with the action's version pinned (Arc OC-6). Never runs here — `status` is `awaiting_approval`."""
@@ -133,6 +133,11 @@ def propose_declared_action(action_id: str, body: ProposalBody, connection_id: s
                                                      else "The proposal did not validate."))
     from aughor.actions.inbox import StagedProposal, stage_proposal
     who = caller()
+    from aughor.rbac.agent_gate import is_agent_request
+    if is_agent_request(request):
+        # the person who decides sees that a program proposed it, not that their own hand did
+        from aughor.mcp.client import TOOL_HEADER
+        who = f"agent:{(request.headers.get(TOOL_HEADER) or '').strip() or 'outside program'} for {who}"
     staged = stage_proposal(StagedProposal(
         connection_id=connection_id, schema_name=schema, action_id=checked.action_id, params=checked.params,
         reasoning=body.reasoning or f"proposed by {who} through /objects/v1", proposer=who, source="builder",

@@ -84,7 +84,7 @@ def test_a_proposal_that_does_not_fit_the_action_is_refused_in_words(graph):  # 
 
 
 def test_with_the_flag_off_every_door_says_it_is_off(graph, client, monkeypatch):  # noqa: F811
-    monkeypatch.delenv("AUGHOR_ONTOLOGY_BUILDER_DOORS", raising=False)
+    monkeypatch.setenv("AUGHOR_ONTOLOGY_BUILDER_DOORS", "0")                # default-on since it graduated
     for method, path in (("get", "/ontology/v1/contract"), ("get", "/ontology/v1/types.d.ts"),
                          ("post", "/objects/v1/list"), ("post", "/objects/v1/actions/flag_order_for_review/propose")):
         body = {"entity": "Order"} if path.endswith("list") else {"params": {}}
@@ -112,6 +112,20 @@ def test_a_program_lists_objects_and_proposes_an_action_a_person_then_decides(do
     assert (staged.action_id, staged.source, staged.params["reason"]) == ("flag_order_for_review", "builder",
                                                                           "late and unshipped")
     assert OVL.object_edits(CONN) == []                                         # nothing ran: a person decides
+    from aughor.org.context import DEFAULT_ORG_ID
+    from aughor.orgsettings.agent_policy import clear_agent_policy, save_agent_policy
+    program = {"X-Aughor-Agent": "mcp", "X-Aughor-Tool": "propose_flag_order_for_review"}
+    held = client.post("/objects/v1/actions/flag_order_for_review/propose", params=PARAMS, headers=program,
+                       json={"params": {"order": f"order:{ORDER}", "reason": "late"}})
+    assert held.status_code == 403                                          # the default policy, `run`, holds it
+    save_agent_policy(DEFAULT_ORG_ID, level="act", set_by="test")
+    try:
+        by_program = client.post("/objects/v1/actions/flag_order_for_review/propose", params=PARAMS, headers=program,
+                                 json={"params": {"order": f"order:{ORDER}", "reason": "late"}})
+    finally:
+        clear_agent_policy(DEFAULT_ORG_ID)
+    [theirs] = [p for p in list_proposals(connection_id=CONN, status="pending") if p.id == by_program.json()["proposal_id"]]
+    assert theirs.proposer.startswith("agent:propose_flag_order_for_review for ")   # a program, said as one
     wrong = client.post("/objects/v1/actions/flag_order_for_review/propose", params=PARAMS,
                         json={"params": {"order": "customer:C1", "reason": "x"}})
     assert wrong.status_code == 422 and "names an object as order" in wrong.json()["detail"]
