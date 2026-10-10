@@ -940,7 +940,15 @@ def execute_kinetic_action(
     # Arc OC-6 — a call still in the outbox has not landed: its check waits for it, and never demotes the action first
     waiting = [s for s in (outcome.get("outbox") or []) if s.get("status") != "delivered"] \
         if isinstance(outcome, dict) else []
-    if waiting:
+    # A call the outbox gave up on is not on its way: it waits for a person, and says why (live, 2026-10-10: a call the
+    # SSRF guard refused was answered "1 call waits in the outbox; the action's check runs when it lands")
+    stuck = [s for s in waiting if s.get("status") == "dead"]
+    if stuck:
+        verification = {"status": "waits_for_a_person",
+                        "why": (f"{len(stuck)} call{'s' if len(stuck) != 1 else ''} it makes did not go out and "
+                                f"wait{'' if len(stuck) != 1 else 's'} for a person in Sends — "
+                                f"{stuck[0].get('error') or 'refused'}; its check runs if one is sent again")}
+    elif waiting:
         verification = {"status": "pending",
                         "why": (f"{len(waiting)} call{'s wait' if len(waiting) != 1 else ' waits'} in the outbox; the "
                                 f"action's check runs when {'they land' if len(waiting) != 1 else 'it lands'}")}

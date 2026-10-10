@@ -124,9 +124,13 @@ def test_an_unknown_call_its_check_does_not_find_is_sent_again_and_one_it_cannot
 ])
 def test_what_happens_next_follows_why_the_call_failed(far_end, on, answer, status, cause):
     far_end["answers"] = [answer]
-    _press("ob-6")
+    r = _press("ob-6")
     [send] = outbox.list_sends("ob-6")
     assert (send.status, send.cause) == (status, cause)
+    # the press says which: a call on its way is pending; one the outbox gave up on waits for a person, never "lands"
+    assert r.verification["status"] == ("waits_for_a_person" if status == "dead" else "pending")
+    if status == "dead":
+        assert "waits for a person in Sends" in r.verification["why"] and "lands" not in r.verification["why"]
     if cause == "rate_limited":
         wait = datetime.fromisoformat(send.next_at) - datetime.fromisoformat(send.updated_at)
         assert wait >= timedelta(seconds=60)
