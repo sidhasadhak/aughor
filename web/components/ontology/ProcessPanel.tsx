@@ -384,7 +384,10 @@ function ImpactLine({ impact: i, side, connectionId, schema, onChanged }: {
         </Button>
       </div>
       <div className="aug-fs-xs" style={{ color: "var(--t1)", lineHeight: 1.45 }} data-testid="impact-reading">{i.reading}</div>
-      {i.verified !== true && i.note && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{i.note}</div>}
+      {/* a reading that did not hold already ends with what was measured — said once */}
+      {i.verified !== true && i.note && !i.reading.includes(i.note) && (
+        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{i.note}</div>
+      )}
       {i.flags.map((f) => <div key={f} className="aug-fs-xs" style={{ color: "var(--t3)" }}>{f}</div>)}
       {i.window && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>read over {i.window}</div>}
     </div>
@@ -453,7 +456,9 @@ function ImpactForm({ downstream, scope, connectionId, schema, onDone }: {
       {counted && (
         <div className="aug-fs-xs" data-testid="impact-counted" style={{ color: "var(--t1)", lineHeight: 1.45 }}>
           {counted.reading}
-          {counted.verified === false && <div style={{ color: "var(--t3)" }}>{counted.note}</div>}
+          {counted.verified === false && !counted.reading.includes(counted.note) && (
+            <div style={{ color: "var(--t3)" }}>{counted.note}</div>
+          )}
         </div>
       )}
       {(problem || notReady) && <div className="aug-fs-xs" style={{ color: problem ? "var(--red5)" : "var(--t3)" }}>{problem || notReady}</div>}

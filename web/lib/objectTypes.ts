@@ -325,6 +325,8 @@ export async function withdrawEditStates(
 export interface ObjectTypeDetail {
   /** Arc OC-6 — the declared moves of each property the edit layer holds, by property. */
   edit_states?: Record<string, EditStates>;
+  /** Arc OC-6 — a platform-owned type: its objects live in the edit layer, so nothing about it is counted on a warehouse. */
+  platform?: boolean;
   /** 2026-09-22 — the expression properties a person declared on this type, verified or not. */
   expressions?: TypeExpression[];
   /** 2026-09-22 — what a person withdrew on this type: builder-found bindings and found links, restorable. */

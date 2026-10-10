@@ -745,6 +745,10 @@ def _apply_entity(ent: OntologyEntity, ov: OntologyOverride, graph: Optional[Ont
             spec["verification_note"] = (b.get("note") or b.get("unique_note")
                                          or ("bound; key uniqueness not yet measured" if spec["verified"] is None else ""))
             spec["rows"] = b.get("rows")
+            if spec.get("kind") == "platform":
+                # Arc OC-6 — the platform mints every key it holds: unique by construction, nothing to count
+                from aughor.ontology.platform_objects import NOTE
+                spec["verified"], spec["verification_note"] = True, NOTE
             ent.backing = Backing(**{k: v for k, v in spec.items() if k in Backing.model_fields})
             touched.append(field)
             continue

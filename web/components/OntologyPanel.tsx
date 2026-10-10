@@ -590,7 +590,9 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
 
   // ── Header bar ──────────────────────────────────────────────────────────────
   const headerBar = (
-    <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-700/70 shrink-0 bg-zinc-900/40">
+    // It wraps: on a narrower window its controls used to overflow a container that hides overflow, and focusing a
+    // field in the type panel scrolled the whole layer sideways with no way back (seen at 1440px, 2026-10-10).
+    <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-zinc-700/70 shrink-0 bg-zinc-900/40">
       <p className="text-xs font-semibold text-zinc-300">Business Ontology</p>
 
       {/* The scope, stated. Everything on this screen — entities, relationships,
@@ -640,7 +642,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
       </div>
 
       {!orgMode && !domainMode && graph && (
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex flex-wrap items-center gap-2 ml-auto">
           {graph.enriched ? (
             <span className="aug-fs-xs text-emerald-400 border border-emerald-500/20 bg-emerald-500/8 rounded-[var(--r-chip)] px-2 py-0.5">
               described in business terms

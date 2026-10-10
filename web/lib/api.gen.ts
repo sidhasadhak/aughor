@@ -21058,6 +21058,8 @@ export interface components {
          * @description Wave K5 — author a DECLARED KineticAction (distinct from the read-side _ActionOverride).
          */
         _DeclaredActionBody: {
+            /** Creates */
+            creates?: string | null;
             /** Description */
             description?: string | null;
             /** Display Name */

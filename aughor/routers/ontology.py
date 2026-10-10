@@ -264,6 +264,8 @@ class _DeclaredActionBody(BaseModel):
     reversibility: Optional[str] = None              # undoable | compensable | irreversible
     verification: Optional[dict] = None              # {sql, expects, value, note}
     undo: Optional[dict] = None                      # {action_id, window_hours, params, note}
+    #: Arc OC-6 — the platform-owned entity a run makes one of; its edits name it as "created"
+    creates: Optional[str] = None
 
 
 class _MergeEntitiesRequest(BaseModel):
@@ -1892,7 +1894,15 @@ def _edit_states_problem(entity, prop: str, spec: "_EditStates") -> str:
     """Why these moves cannot be declared on ``entity.prop``, or ""."""
     if not PATH_NAME.match(prop):
         return "a property name is one word — review_status"
-    source = {n.lower() for n in (entity.properties or {})} | {n.lower() for b in entity.bindings or [] for n in b.properties}
+    from aughor.ontology.platform_objects import KEY, is_platform
+    if is_platform(entity):
+        # every property a platform-owned type declares is held by the edit layer — its key is the one it never sets
+        if prop == KEY or prop not in (entity.properties or {}):
+            return (f"{entity.id} declares no property {prop!r} the edit layer sets — "
+                    f"{', '.join(n for n in entity.properties if n != KEY) or 'none'}")
+        source = set()
+    else:
+        source = {n.lower() for n in (entity.properties or {})} | {n.lower() for b in entity.bindings or [] for n in b.properties}
     if prop.lower() in source:
         return (f"{prop} is read from {entity.id}'s source — only a property the edit layer holds has declared moves; a "
                 "source column's lifecycle is measured, never enforced")
@@ -3337,14 +3347,26 @@ def _object_types_problem(declared, graph) -> str:
         return ""
     if graph is None:
         return "an object parameter needs an ontology built for this scope"
+    from aughor.ontology.platform_objects import KEY, is_platform
     try:
         types = {p.name: find_object_type(graph, p.object_type) for p in wanted}
         if declared.object_type:
             find_object_type(graph, declared.object_type)
+        if declared.creates:
+            types["created"] = find_object_type(graph, declared.creates)
     except ObjectQueryRefused as exc:
         return exc.reason
+    if declared.creates and not is_platform(types["created"]):
+        return (f"{types['created'].id} reads a warehouse — only a platform-owned entity's objects are made by an "
+                "action")
     for edit in declared.edits:
         entity = types[edit.object]
+        if is_platform(entity):
+            # Arc OC-6 — every property a platform-owned type declares is held by the edit layer, all but its key
+            if edit.property == KEY or edit.property not in (entity.properties or {}):
+                return (f"{entity.id} declares no property {edit.property!r} an action sets — "
+                        f"{', '.join(n for n in entity.properties if n != KEY) or 'none'}")
+            continue
         if find_property(entity, edit.property) is not None:
             return (f"'{edit.property}' is a column {entity.id} reads from its source — an edit sets an "
                     "overlay property and never rewrites a source value")

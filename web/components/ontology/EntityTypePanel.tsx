@@ -207,7 +207,9 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
         {declared && <WithdrawEntity detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
       </header>
       <KeySection detail={detail} />
-      <DisplaySection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} readOnly={inDomain} />
+      {!detail.platform && (
+        <DisplaySection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} readOnly={inDomain} />
+      )}
       <PropertiesSection detail={detail} />
       {!inDomain && <ExpressionsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
       <BindingsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} sources={sources} />

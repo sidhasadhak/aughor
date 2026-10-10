@@ -124,6 +124,26 @@ def test_a_keyed_metric_the_intake_cannot_take_is_said_and_the_parse_stands():
     assert (intake.metric_sql, intake.framed_metric, framed_rules(intake.model_dump())) == ("SUM(sale_price)", {}, [])
 
 
+OLIST = OntologyGraph.model_validate(json.loads((REPO / "evals" / "ablation_olist_business_ontology.json").read_text()))
+
+
+def test_a_declared_promise_is_taken_over_the_type_it_is_kept_per_and_one_read_through_a_link_is_said():
+    """Arc OC-5 — measured live on theLook (2026-10-10): *What is causing delivery delays?* framed to the delivery
+    promise kept per Order and compiled over `orders`; the intake re-parsed it and the model put the same rate over
+    `order_items`, whose item-level timestamps disagree with the order's. The promise is taken now, as a keyed metric is."""
+    f = frame_question("What percentage of orders broke the delivery promise?", OLIST)
+    intake = _intake(metric_table="order_items")
+    assert _take_framed_metric(intake, f, "TABLE: ecommerce.orders\n  order_id VARCHAR\n") is None
+    reading = f.compiled["delivery_breach_rate"]["reading"]
+    assert (intake.metric_sql, intake.metric_table) == (reading["formula"], "ecommerce.orders")
+    assert intake.framed_metric == {"metric": "delivery_breach_rate", "label": f.outcome.label, "entity": "Order"}
+    lines = frame_question("What percentage of order lines broke the dispatch promise?", OLIST)
+    intake = _intake(metric_sql="AVG(x)")
+    note = _take_framed_metric(intake, lines, "")
+    assert "the declared promise" in note and "kept per OrderItem" in note and "read through a link" in note
+    assert (intake.metric_sql, intake.framed_metric) == ("AVG(x)", {})
+
+
 # ── the guard puts the objects on every statement that computes it ─────────────────────────────────────────────────
 
 OBJECTS = ("id IN (SELECT DISTINCT t0.id FROM thelook.order_items AS t0 LEFT JOIN thelook.orders AS j1 "

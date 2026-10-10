@@ -5993,13 +5993,17 @@ def _take_framed_metric(intake, frame, schema: str) -> Optional[str]:
     Returns a note when the frame chose a keyed metric the analysis cannot take — its figures are then its own reading
     of the question's words, and the reader is told so; None otherwise."""
     o = frame.outcome if frame is not None else None
-    if o is None or o.kind != "metric" or not o.usable:
+    if o is None or o.kind not in ("metric", "promise") or not o.usable:
         return None
+    # Arc OC-5 — a declared promise is taken the same way: its breach rate over the type it is kept per
+    # (`framing._promise_reading`), never the model's guess at which table holds its moments.
     reading = (frame.compiled.get(o.metric) or {}).get("reading") or {}
     if not reading.get("formula"):
         why = reading.get("why_not") or "the object door could not compile it"
-        return (f"The question names the approved metric {o.label}, keyed to {o.entity}, but {why} — this analysis "
-                "cannot compute it as declared, so its figures are its own reading of the question's words.")
+        named = (f"the declared promise {o.label}, kept per {o.entity}" if o.kind == "promise"
+                 else f"the approved metric {o.label}, keyed to {o.entity}")
+        return (f"The question names {named}, but {why} — this analysis cannot compute it as declared, so its "
+                "figures are its own reading of the question's words.")
     intake.metric_sql = reading["formula"]
     intake.metric_table = reading["table"]
     intake.metric_filters = list(reading.get("filters") or [])
