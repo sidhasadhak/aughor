@@ -26,15 +26,17 @@ def action_pin(action: Any, connection_id: str, schema_name: str = "") -> dict:
             kept = history.versions(connection_id, schema, "action", action.id)
             if kept and kept[0].get("version") is not None:
                 pin["version"] = kept[0]["version"]
-    except Exception:  # noqa: BLE001 — the hash is the pin; the version is for a reader
-        pass
+    except Exception as exc:  # noqa: BLE001 — the hash is the pin; the version is for a reader
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an action's pin could not read its declaration's version", counter="pins.version")
     try:
         from aughor.ontology.release import current_id
         release = current_id(connection_id, schema)
         if release:
             pin["release"] = release
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — the release is for a reader too
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an action's pin could not read the release in force", counter="pins.release")
     return pin
 
 

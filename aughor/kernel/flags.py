@@ -706,7 +706,7 @@ GRADUATION_QUEUE: dict = {
                         "named. Falsifier (§3.56): if what *late* meant on a past day cannot be answered from "
                         "it, it is not history — then the flag goes and the store is redesigned",
     # Arc OC-6 (ROADMAP §3.56), queued 2026-10-10. No model call.
-    "actions.outbox": "receipt: on the live install, a cockpit's call to a carrier system goes through the outbox, "
+    "actions.outbox": "receipt: on the live install, a cockpit's call to another system goes through the outbox, "
                       "a forced timeout is reconciled by the action's verification read (delivered, never sent "
                       "twice), and a refused call waits under Sends for a person. Falsifier (§3.56, OC-6): a "
                       "delivery whose outcome nobody can state is the failure this exists to remove — count the "

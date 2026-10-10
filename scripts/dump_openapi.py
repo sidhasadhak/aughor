@@ -55,7 +55,7 @@ def _isolate_stores() -> None:
         "LEARNING", "INTAKE", "USER_PREFS", "DEPARTURES", "HUB_LINKS",
         "AGENTS", "AGENT_ALERTS", "EVALS", "MATCACHE", "ORGS", "DECISIONS",
         "ORG_LLM", "AMBIGUITY_LEDGER", "OVERLAY_LEDGER", "GOVERN_TAGS", "GOVERN_CAPS",
-        "QUALITY", "IDENTITY", "OVERVIEW_DRILLS", "POPULARITY", "DASHBOARD",
+        "QUALITY", "IDENTITY", "OVERVIEW_DRILLS", "POPULARITY", "DASHBOARD", "ACTION_OUTBOX",
     ):
         os.environ.setdefault(f"AUGHOR_{name}_DB", os.path.join(tmp, f"{name.lower()}.db"))
     # The runtime LLM config (a model chosen in Settings, and its encrypted keys). Isolated
