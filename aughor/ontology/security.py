@@ -164,11 +164,20 @@ def rows_said(entity: OntologyEntity, who: Optional[Reader] = None) -> Optional[
             + (" (both the person's and the agent's)" if len(who.principals) > 1 else ""))
 
 
+def counts_said(entity: OntologyEntity, who: Optional[Reader] = None) -> Optional[str]:
+    """What a reader is told of a count read over every object of ``entity`` (a process's measurement, kept once for
+    every reader) while their own rows are restricted — or None."""
+    if not enabled() or not entity.row_policies:
+        return None
+    return (f"counted over every {entity.id}, not only the ones {(who or reader()).words()} may see — a table of "
+            "them lists only those")
+
+
 def _words(conditions: list[dict]) -> str:
     out = []
     for c in conditions:
         op, path = str(c.get("op") or "="), str(c.get("path"))
-        rhs = c.get("values") if op in ("in", "not_in") else c.get("value")
+        rhs = ", ".join(map(str, c.get("values") or [])) if op in ("in", "not_in") else c.get("value")
         out.append(f"{path} {op}" + ("" if op in ("is_null", "not_null") else f" {rhs}"))
     return " and ".join(out) or "every object"
 

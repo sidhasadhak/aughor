@@ -20,6 +20,7 @@ import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Foot, Frame, Title } from "@/components/cockpit/CockpitTile";
+import { Masked } from "@/components/objects/Masked";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -198,6 +199,11 @@ export function ProcessBoardPiece({ process }: { process: string }) {
           {found.leaves.unknown ? `; ${formatCount(found.leaves.unknown)} hold no ${found.leaves.property} and are left out` : ""}
         </div>
       )}
+      {found.counted_over && (
+        <div className="aug-fs-xs" data-testid="process-counted-over" style={{ color: "var(--t3)", display: "flex", gap: 4 }}>
+          <Icon name="lock" size={11} /> {found.counted_over}
+        </div>
+      )}
       <Foot icon="process">{found.measured_at ? `Measured ${formatDateTime(found.measured_at)}` : "Not measured yet"} · {found.entity_id}</Foot>
     </Frame>
   );
@@ -364,7 +370,7 @@ export function ObjectDetailPiece({ follows, children }: { follows: string; chil
             </dt>
             <dd className="aug-fs-sm" data-testid={p.overlay ? "object-detail-edit" : undefined}
               style={{ margin: 0, overflowWrap: "anywhere", color: p.value == null ? "var(--t3)" : "var(--t1)" }}>
-              {cell(p.value)}
+              {p.withheld ? <Masked why={p.withheld} /> : cell(p.value)}
               {p.overlay && (
                 <span className="aug-fs-xs" style={{ display: "block", color: "var(--t3)" }}>
                   {p.overlay.provenance}{p.overlay.note ? ` — ${p.overlay.note}` : ""}

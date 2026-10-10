@@ -20,6 +20,7 @@ import {
 } from "@/components/objects/objectColumnLinks";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Masked } from "@/components/objects/Masked";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
@@ -39,6 +40,7 @@ import {
   type ObjectLink,
   type ObjectMetric,
   type ObjectMissing,
+  type ObjectWithheld,
   type ObjectNote,
   type ObjectPage,
   type ObjectReferrer,
@@ -146,7 +148,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
   connectionId?: string;
   schemaName?: string;
 }) {
-  const [loaded, setLoaded] = useState<ObjectPage | ObjectRefusal | ObjectMissing | null>(null);
+  const [loaded, setLoaded] = useState<ObjectPage | ObjectRefusal | ObjectMissing | ObjectWithheld | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
 
@@ -182,6 +184,13 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
     body = <div style={{ maxWidth: 1180, margin: "0 auto", padding: 24 }}><SkeletonRows rows={8} /></div>;
   } else if (loaded.path === "missing") {
     body = <EmptyState icon="search" title={`No ${objectType} ${pk}`} action={toWorkbench}>{loaded.detail}</EmptyState>;
+  } else if (loaded.path === "withheld") {
+    body = (
+      <EmptyState icon="lock" title={`${objectType} ${pk} is withheld from you`}>
+        {/* the server's words open with the title's own; the reason after them is what this adds */}
+        {loaded.detail.replace(/^.*? is withheld from you — /, "")}
+      </EmptyState>
+    );
   } else if (loaded.path === "refused") {
     body = (
       <EmptyState icon="info" title={`No entity “${objectType}” here`} action={toWorkbench}>
@@ -215,7 +224,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
           <span className="aug-fs-ui" style={{ color: "var(--t2)" }}>{objectType} {pk}</span>
         )}
         <div style={{ flex: 1 }} />
-        {loaded && loaded.path !== "missing" && loaded.schema_name && (
+        {loaded && loaded.path !== "missing" && loaded.path !== "withheld" && loaded.schema_name && (
           <span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>{loaded.schema_name}</span>
         )}
       </div>
@@ -375,7 +384,7 @@ function PropertiesCard({ page, scope, reload }: { page: ObjectPage; scope: Scop
               <dd className="aug-fs-sm"
                 style={{ margin: 0, overflowWrap: "anywhere", color: p.value == null ? "var(--t3)" : "var(--t1)",
                          ...(isKey ? MONO : {}) }}>
-                {named ? (
+                {p.withheld ? <Masked why={p.withheld} /> : named ? (
                   <Link href={objectHref(named, String(p.value), scope.connectionId, scope.schemaName)}
                     style={{ ...MONO, color: "var(--blue3)" }} title={`Open ${named} ${String(p.value)}`}>
                     {String(p.value)}

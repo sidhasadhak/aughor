@@ -56,7 +56,7 @@ def test_two_people_list_the_same_orders_and_see_different_rows_and_a_masked_amo
     _as(monkeypatch, "ana")
     compiled, rows, ana_total = _listing(secured, db)
     assert rows and {r[1] for r in rows} <= SHIPPED and all(r[2] is None for r in rows)
-    assert any("only the Order objects user:ana may see are shown — fulfilment: status in" in c for c in compiled.caveats)
+    assert any("only the Order objects user:ana may see are shown — fulfilment: status in delivered, shipped" in c for c in compiled.caveats)
     assert any("Order.total_amount is confidential — masked for user:ana; finance may read it" in c
                for c in compiled.caveats)
     assert [c.get("masked") for c in compiled.columns] == [None, True]
@@ -145,6 +145,29 @@ def test_the_declare_doors_take_own_properties_and_never_mask_the_key(graph, cli
     assert served.entities["Order"].row_policies[0].group == "eu"
     assert served.entities["Order"].sensitive["total_amount"].level == "pii"
     assert client.delete("/ontology/entities/Order/sensitive/total_amount", params=params).status_code == 200
+
+
+def test_a_count_kept_for_every_reader_says_it_spans_objects_this_one_may_not_see(secured, monkeypatch):
+    from aughor.ontology.security import counts_said
+    _as(monkeypatch, "ana")
+    assert counts_said(secured.entities["Order"]) == ("counted over every Order, not only the ones user:ana may see — "
+                                                     "a table of them lists only those")
+    assert counts_said(secured.entities["Customer"]) is None                   # no policy: nothing to say
+    monkeypatch.delenv("AUGHOR_ONTOLOGY_SECURITY")
+    assert counts_said(secured.entities["Order"]) is None
+
+
+def test_a_release_says_who_sees_what_before_a_person_publishes_it():
+    from aughor.ontology.compatibility import classify
+    rows = [{"group": "warehouse", "conditions": [{"path": "status", "op": "in", "values": ["pending"]}]}]
+    masked = {"total_amount": {"level": "confidential", "visible_to": ["finance"]}}
+    first, why = classify("entity", None, {"description": "x", "row_policies": rows, "sensitive": masked})
+    said = " | ".join(w["why"] for w in why)
+    assert first == "WARN" and "who sees which of its objects changes — warehouse: status in pending" in said
+    assert "total_amount is masked except for finance" in said
+    lifted, why = classify("entity", {"row_policies": rows, "sensitive": masked}, {"row_policies": [], "sensitive": {}})
+    assert lifted == "WARN" and "every reader sees every object" in why[0]["why"] and "no longer masked" in why[1]["why"]
+    assert not any("does not class it" in w["why"] for w in why)
 
 
 def test_off_every_reader_sees_every_order_and_every_amount_as_before(secured, db, monkeypatch):  # noqa: F811

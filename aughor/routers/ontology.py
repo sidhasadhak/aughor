@@ -2352,7 +2352,14 @@ def list_ontology_processes(
             raise HTTPException(status_code=404, detail="Ontology not available")
         where = {"connection_id": connection_id, "schema_name": graph.schema_name}
     from aughor.ontology.impacts import describe_impact
-    return {**where, "processes": [describe_process(graph, p) for _, p in sorted(graph.processes.items())],
+    from aughor.ontology.security import counts_said
+    processes = [describe_process(graph, p) for _, p in sorted(graph.processes.items())]
+    for described in processes:                      # Arc OC-7 — a count over objects the reader may not see says so
+        entity = graph.entities.get(str(described.get("entity_id") or ""))
+        said = counts_said(entity) if entity is not None else None
+        if said:
+            described["counted_over"] = said
+    return {**where, "processes": processes,
             "rules": [describe_rule(graph, r) for _, r in sorted(graph.rules.items())],
             "impacts": [describe_impact(graph, i) for _, i in sorted((graph.impacts or {}).items())]}
 
