@@ -13,7 +13,9 @@
  *
  * No model, no figure. A title a person types is theirs; the server keeps it as theirs.
  */
-import { MAX_CAPTION, MAX_LABEL, MAX_NOTE, MAX_TITLE, PLACED, type Size } from "@/lib/cockpit/catalog";
+import {
+  FILTER_WIDTH, GRID, LIMITS, MAX_CAPTION, MAX_LABEL, MAX_NOTE, MAX_TITLE, PLACED, SPAN, type GridKind, type Size,
+} from "@/lib/cockpit/catalog";
 
 export interface Element {
   type: string;
@@ -45,6 +47,66 @@ function parentOf(s: CockpitSpec, key: string): string | null {
 function tabsElement(s: CockpitSpec): string | null {
   const root = s.elements[s.root];
   return (root?.children ?? []).find(k => s.elements[k]?.type === "Tabs") ?? null;
+}
+
+/** An element's room on a section's grid: columns across, rows down (Arc AP-1). */
+export interface Box { w: number; h: number }
+
+/** The columns a section draws when it says none (`ComposedCockpit`'s most). */
+const AUTO_COLUMNS = 4;
+/** The size an element draws at when it says none, by kind — as `ComposedCockpit` draws it. */
+const DEFAULT_SIZE: Record<GridKind, Size> = {
+  Card: "small", Note: "small", Image: "small", ProcessBoard: "full", ObjectTable: "wide", ObjectDetail: "small",
+  ObjectFigure: "small", ObjectChart: "full",
+};
+/** The rows a kind takes on the grid when nothing measured it: about the room one row of its size gave it. */
+const ROWS: Record<GridKind, number> = {
+  Card: 4, Note: 3, Image: 5, ProcessBoard: 7, ObjectTable: 8, ObjectDetail: 7, ObjectFigure: 3, ObjectChart: 6,
+};
+
+const clamp = (lo: number, hi: number, v: number) => Math.max(lo, Math.min(hi, v));
+
+/** A box held to what its kind may take (`LIMITS`), in whole grades. */
+export function clampBox(type: string, box: Box): Box {
+  const lim = LIMITS[type as GridKind];
+  const w = Math.round(box.w), h = Math.round(box.h);
+  return lim ? { w: clamp(lim.w[0], lim.w[1], w), h: clamp(lim.h[0], lim.h[1], h) } : { w, h };
+}
+
+/** The room an element has: its own w and h on the grid, else the room its size gives it on a section of `columns`. */
+export function boxOf(el: Element, columns = AUTO_COLUMNS): Box {
+  if (typeof el.props.w === "number" && typeof el.props.h === "number") return { w: el.props.w, h: el.props.h };
+  const kind = el.type as GridKind;
+  const span = SPAN[(el.props.size as Size | undefined) ?? DEFAULT_SIZE[kind] ?? "small"] ?? SPAN.small;
+  const c = Math.max(1, columns);
+  const rows = ROWS[kind] ?? 4;
+  return clampBox(el.type, { w: (GRID.columns * Math.min(span.w, c)) / c, h: span.h === 2 ? rows * 2 + 1 : rows });
+}
+
+/** The named size nearest a box, for an element leaving the grid for a section that sizes by name. */
+export function sizeNear(box: Box): Size {
+  const wide = box.w >= 9 ? 3 : box.w >= 5 ? 2 : 1;
+  const tall = box.h >= 8 ? 2 : 1;
+  return (Object.keys(SPAN) as Size[]).find(s => SPAN[s].w === wide && SPAN[s].h === tall) ?? "small";
+}
+
+export function onGrid(spec: unknown, sectionKey: string): boolean {
+  return (spec as CockpitSpec).elements[sectionKey]?.props.grid === GRID.columns;
+}
+
+/** Fit an element to the section it now stands in: on the grid it says its room in columns and rows; off it, by name. */
+function fitTo(s: CockpitSpec, sectionKey: string, key: string): void {
+  const el = s.elements[key];
+  if (!el || !(el.type in LIMITS)) return;
+  if (onGrid(s, sectionKey)) {
+    const box = boxOf(el);
+    const { size: _size, ...rest } = el.props;
+    el.props = { ...rest, w: box.w, h: box.h };
+  } else if (typeof el.props.w === "number" || typeof el.props.h === "number") {
+    const { w: _w, h: _h, ...rest } = el.props;
+    const near = sizeNear(boxOf(el));
+    el.props = near === "small" ? rest : { ...rest, size: near };
+  }
 }
 
 /** A key no element has, made from `base`. */
@@ -161,6 +223,7 @@ export function moveCardTo(spec: unknown, key: string, sectionKey: string): Cock
   detach(s, key, false);
   if (!(sectionKey in s.elements)) return copy(spec);         // the section went with the card: nothing moved
   s.elements[sectionKey].children.push(key);
+  fitTo(s, sectionKey, key);
   return settle(s);
 }
 
@@ -172,11 +235,13 @@ export function moveCardToNewSection(spec: unknown, key: string, title: string):
   const name = title.trim().slice(0, MAX_TITLE);
   if (!from || !holder || !name) return s;
   const section = freshKey(s, `sec-${name}`);
-  s.elements[section] = { type: "Section", props: { title: name }, children: [] };
+  // a section started from one on the grid is on the grid too: what moves keeps its room
+  s.elements[section] = { type: "Section", props: onGrid(s, from) ? { title: name, grid: GRID.columns } : { title: name }, children: [] };
   const siblings = s.elements[holder].children;
   siblings.splice(siblings.indexOf(from) + 1, 0, section);
   detach(s, key, false);
   s.elements[section].children.push(key);
+  fitTo(s, section, key);
   return settle(s);
 }
 
@@ -188,6 +253,7 @@ export function placeCard(spec: unknown, cardId: string, sectionKey?: string): C
   const key = freshKey(s, `card-${cardId}`);
   s.elements[key] = { type: "Card", props: { card: cardId }, children: [] };
   s.elements[target].children.push(key);
+  fitTo(s, target, key);
   return s;
 }
 
@@ -201,6 +267,7 @@ export function placeNote(spec: unknown, text: string, sectionKey?: string): Coc
   const key = freshKey(s, "note");
   s.elements[key] = { type: "Note", props: { text: words }, children: [] };
   s.elements[target].children.push(key);
+  fitTo(s, target, key);
   return s;
 }
 
@@ -213,6 +280,7 @@ export function placeImage(spec: unknown, objectId: string, caption: string, sec
   const key = freshKey(s, "image");
   s.elements[key] = { type: "Image", props: { object: objectId, caption: said }, children: [] };
   s.elements[target].children.push(key);
+  fitTo(s, target, key);
   return s;
 }
 
@@ -232,6 +300,7 @@ export function placePiece(
     && !(Array.isArray(v) && !v.length)));
   s.elements[key] = { type, props: kept, children: [] };
   s.elements[target].children.push(key);
+  fitTo(s, target, key);
   return { spec: s, key };
 }
 
@@ -278,6 +347,48 @@ export function resize(spec: unknown, key: string, size: Size): CockpitSpec {
   return s;
 }
 
+/** Arc AP-1 — put a section on the grid: each element it places takes the room `measured` says it had on screen (a
+ *  person's eye judged the cockpit as drawn), else the room its size gave it; its `columns` goes, and each `size`, which
+ *  the grid would read by nothing. A section already on the grid is left as it is. */
+export function toGrid(spec: unknown, sectionKey: string, measured: Record<string, Box> = {}): CockpitSpec {
+  const s = copy(spec);
+  const sec = s.elements[sectionKey];
+  if (!sec || sec.type !== "Section" || onGrid(s, sectionKey)) return s;
+  const columns = typeof sec.props.columns === "number" ? sec.props.columns : AUTO_COLUMNS;
+  for (const k of sec.children) {
+    const el = s.elements[k];
+    if (!el || !(el.type in LIMITS)) continue;
+    const box = clampBox(el.type, measured[k] ?? boxOf(el, columns));
+    const { size: _size, ...rest } = el.props;
+    el.props = { ...rest, w: box.w, h: box.h };
+  }
+  const { columns: _columns, ...props } = sec.props;
+  sec.props = { ...props, grid: GRID.columns };
+  return s;
+}
+
+/** Arc AP-1 — give an element its room on its section's grid, held to what its kind may take. A section not yet on the
+ *  grid moves onto it first, every other element keeping the room `measured` says it had. Nothing else changes. */
+export function regrid(spec: unknown, key: string, box: Box, measured: Record<string, Box> = {}): CockpitSpec {
+  const section = parentOf(spec as CockpitSpec, key);
+  if (!section || (spec as CockpitSpec).elements[section]?.type !== "Section") return copy(spec);
+  const s = toGrid(spec, section, measured);
+  const el = s.elements[key];
+  if (!el || !(el.type in LIMITS)) return s;
+  const fitted = clampBox(el.type, box);
+  el.props = { ...el.props, w: fitted.w, h: fitted.h };
+  return s;
+}
+
+/** Arc AP-1 — the filter column's width in grades of 40 px, held to its least and most. */
+export function setFilterWidth(spec: unknown, w: number): CockpitSpec {
+  const s = copy(spec);
+  const key = (s.elements[s.root]?.children ?? []).find(k => s.elements[k]?.type === "ObjectFilters");
+  if (!key) return s;
+  s.elements[key].props = { ...s.elements[key].props, w: clamp(FILTER_WIDTH.least, FILTER_WIDTH.most, Math.round(w)) };
+  return s;
+}
+
 /** The keys of the notes and images a spec holds, in the order its sections place them. */
 export function staticsPlaced(spec: unknown): string[] {
   const s = spec as CockpitSpec;
@@ -317,11 +428,14 @@ export function moveSectionToNewTab(spec: unknown, sectionKey: string, label: st
   let tabs = tabsElement(s);
   if (!tabs) {
     const root = s.elements[s.root];
+    // the filter column stays the cockpit's own first child, beside the tabs: a tab holds sections only
+    const column = root.children.filter(k => s.elements[k]?.type === "ObjectFilters");
     const first = freshKey(s, "tab-overview");
-    s.elements[first] = { type: "Tab", props: { name: "overview", label: "Overview" }, children: [...root.children] };
+    s.elements[first] = { type: "Tab", props: { name: "overview", label: "Overview" },
+      children: root.children.filter(k => !column.includes(k)) };
     tabs = freshKey(s, "tabs");
     s.elements[tabs] = { type: "Tabs", props: { value: { $bindState: "/tab" } }, children: [first] };
-    root.children = [tabs];
+    root.children = [...column, tabs];
     s.state = { ...(s.state ?? {}), tab: "overview" };
   }
   const names = new Set(tabsOf(s).map(t => t.name));

@@ -39,6 +39,7 @@ import {
 } from "@json-render/react";
 
 import type { CardState } from "@/components/brief/PinnedCardBody";
+import { CellBoxContext, OFF_GRID, type CellBox } from "@/components/cockpit/cellBox";
 import { CockpitTile, SaidTile, WIDE, WithheldTile, tileShape, type TileDoors } from "@/components/cockpit/CockpitTile";
 import {
   ActionButtonPiece, FilterBar, NotFiltered, ObjectChartPiece, ObjectDetailPiece, ObjectFigurePiece,
@@ -49,7 +50,11 @@ import { Icon } from "@/components/ui/icon";
 import { Refusal } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { BriefingRange, CockpitCard } from "@/lib/api";
-import { SPAN, sizeOf, type ComponentName, type Size, type Tone } from "@/lib/cockpit/catalog";
+import {
+  FILTER_DEFAULT_PX, FILTER_WIDTH, GRADE, GRID, LIMITS, SPAN, rowsTall, sizeOf, type ComponentName, type GridKind, type Size,
+  type Tone,
+} from "@/lib/cockpit/catalog";
+import { boxOf, clampBox, type Box } from "@/lib/cockpit/edit";
 import { stateModel, type CockpitHostState } from "@/lib/cockpit/hostState";
 import { checkCockpitSpec, openingTab } from "@/lib/cockpit/rules";
 
@@ -58,6 +63,11 @@ import { checkCockpitSpec, openingTab } from "@/lib/cockpit/rules";
 export interface CockpitDoors extends TileDoors, StaticDoors {
   /** Arc OC-4 — place a table of a segment, from a process board's open-and-overdue count. */
   onPlaceTable?: (entity: string, segment: string) => void;
+  /** Arc AP-1 — give an element its room on its section's grid, one grade at a time. `measured` is the room every element
+   *  of a section not yet on the grid has on screen, so moving it onto the grid keeps what the reader saw. */
+  onRegrid?: (key: string, box: Box, measured: Record<string, Box>) => void;
+  /** Arc AP-1 — the filter column's width, in grades of 40 px. */
+  onFilterWidth?: (grades: number) => void;
 }
 
 interface CockpitContextValue {
@@ -65,6 +75,8 @@ interface CockpitContextValue {
   cards: Map<string, CardState>;
   host: CockpitHostState;
   doors: CockpitDoors;
+  /** The doors a tile is handed: the size picked by name goes where the grid's handles resize instead (Arc AP-1). */
+  tileDoors: CockpitDoors;
   sym: string;
   images: Record<string, ImageStamp>;
   range: BriefingRange | null;
@@ -76,7 +88,8 @@ const CockpitContext = createContext<CockpitContextValue | null>(null);
 /** The section an element is drawn in: its key, how many columns it draws, and the keys it
  *  holds in order. The renderer hands a component its element and not its key, so the key of
  *  what is drawn is found here, among the section's children, by what the element says. */
-const SectionKeys = createContext<{ key: string | null; columns: number; children: string[] }>({ key: null, columns: 1, children: [] });
+const SectionKeys = createContext<{ key: string | null; columns: number; children: string[]; grid: boolean; stacked: boolean }>(
+  { key: null, columns: 1, children: [], grid: false, stacked: false });
 
 function useCockpit(): CockpitContextValue {
   const ctx = useContext(CockpitContext);
@@ -102,26 +115,37 @@ const TONE_RULE: Record<Tone, string> = {
   good: "var(--grn3)", warn: "var(--amb3)", bad: "var(--red3)", info: "var(--blue3)", neutral: "var(--b2)",
 };
 
-/** The filter column's width beside the pieces it narrows (the approved mockup's). */
-const FILTER_COLUMN = 272;
+/** The filter column's width beside the pieces it narrows, when a person has set none (the approved mockup's). */
+const FILTER_COLUMN = FILTER_DEFAULT_PX;
 
 function CockpitRoot({ element, children }: ComponentRenderProps<{ title: string }>) {
   // The title names the cockpit for a screen reader and for the history. It is not drawn as a
   // header: the strip of cockpits above it already carries the name, and a panel does not
   // repeat its own title.
-  const { elements } = useCockpit();
+  const { elements, doors } = useCockpit();
   const first = elements[element.children?.[0] ?? ""];
+  const [preview, setPreview] = useState<number | null>(null);
   if (first?.type !== "ObjectFilters") {
     return <div role="region" aria-label={element.props.title} data-testid="cockpit">{children}</div>;
   }
   // A cockpit started from an object: its filter column at the left, the pieces it narrows beside it, and above them
   // what is chosen and how many objects that leaves (the rules hold the column to the root's first child, once).
   const [column, ...rest] = Children.toArray(children);
-  const props = first.props as { entity: string; properties: FilterProperty[] };
+  const props = first.props as { entity: string; properties: FilterProperty[]; w?: number | null };
+  // Arc AP-1 — its width in grades of 40 px, when a person set one; else as it was drawn before
+  const grades = preview ?? props.w ?? null;
+  const width = grades ? grades * GRADE : FILTER_COLUMN;
   return (
     <div role="region" aria-label={element.props.title} data-testid="cockpit"
-      style={{ display: "grid", gridTemplateColumns: `${FILTER_COLUMN}px minmax(0, 1fr)`, gap: 14, alignItems: "start" }}>
-      {column}
+      style={{ display: "grid", gridTemplateColumns: `${width}px minmax(0, 1fr)`, gap: 14, alignItems: "start" }}>
+      <div className="group" data-testid="cockpit-filter-column" data-width={width}
+        style={{ position: "relative", alignSelf: "stretch", minWidth: 0 }}>
+        {column}
+        {doors.onFilterWidth && (
+          <WidthHandle from={grades ?? Math.round(FILTER_COLUMN / GRADE)} onPreview={setPreview}
+            onDone={g => doors.onFilterWidth?.(g)} />
+        )}
+      </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
         <FilterBar entity={props.entity} properties={props.properties} />
         {rest}
@@ -178,10 +202,12 @@ const GAP = 12;
 const MAX_AUTO_COLUMNS = 4;
 /** The room a second row gives a tile when nothing beside it sets the row's height. */
 const TALL_MIN = 320;
+/** A section on the grid narrower than this draws its elements one under another, each across its whole width. */
+const NARROW_GRID = 560;
 
-/** How many columns a section draws: the spec's, when it says, never more than fit. Width 0 is
+/** How many columns a section draws: the spec's, when it says, never more than fit — and how wide it is. Width 0 is
  *  a section not yet measured (or a test's DOM), and draws as asked. */
-function useColumns(asked: number | null | undefined): [RefObject<HTMLDivElement | null>, number] {
+function useColumns(asked: number | null | undefined): [RefObject<HTMLDivElement | null>, number, number] {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   useEffect(() => {
@@ -193,23 +219,26 @@ function useColumns(asked: number | null | undefined): [RefObject<HTMLDivElement
     return () => ro.disconnect();
   }, []);
   const fit = width > 0 ? Math.max(1, Math.floor((width + GAP) / (MIN_TILE + GAP))) : MAX_AUTO_COLUMNS;
-  return [ref, Math.min(asked ?? MAX_AUTO_COLUMNS, fit)];
+  return [ref, Math.min(asked ?? MAX_AUTO_COLUMNS, fit), width];
 }
 
-function CockpitSection({ element, children }: ComponentRenderProps<{ title: string; columns?: number | null }>) {
+function CockpitSection({ element, children }: ComponentRenderProps<{ title: string; columns?: number | null; grid?: number | null }>) {
   const { elements } = useCockpit();
   // A section named as the cockpit is named says nothing new: its heading is not drawn (a cockpit started from an
   // object holds one such section).
   const named = Object.values(elements).find(el => el?.type === "Cockpit")?.props as { title?: string } | undefined;
   const heading = element.props.title !== named?.title;
   const waiting = useWaiting(element.children);
-  const [ref, columns] = useColumns(element.props.columns);
+  const [ref, columns, width] = useColumns(element.props.columns);
+  // Arc AP-1 — on the grid: twelve columns and rows of one grade, each element placed by its w and h
+  const gridded = element.props.grid === GRID.columns;
+  const stacked = gridded && width > 0 && width < NARROW_GRID;
   const held = element.children ?? [];
   // A section's children are its own — each element is held by exactly one — so the list names it.
   const key = useMemo(
     () => Object.keys(elements).find(k => elements[k]?.type === "Section" && sameList(elements[k]?.children, held)) ?? null,
     [elements, held]);
-  const keys = useMemo(() => ({ key, columns, children: held }), [key, columns, held]);
+  const keys = useMemo(() => ({ key, columns, children: held, grid: gridded, stacked }), [key, columns, held, gridded, stacked]);
   return (
     <section data-testid="cockpit-section" aria-label={element.props.title} style={{ marginTop: heading ? 20 : 0 }}>
       <div style={{ display: heading || waiting > 0 ? "flex" : "none", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
@@ -221,9 +250,13 @@ function CockpitSection({ element, children }: ComponentRenderProps<{ title: str
           </div>
         )}
       </div>
-      <div ref={ref} data-columns={columns} style={{
-        display: "grid", gap: GAP, alignItems: "stretch", gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-      }}>
+      <div ref={ref} data-columns={gridded ? GRID.columns : columns} data-grid={gridded ? GRID.columns : undefined}
+        style={gridded ? {
+          display: "grid", gap: GRID.gap, alignItems: "stretch", gridAutoRows: `${GRID.row}px`,
+          gridTemplateColumns: `repeat(${stacked ? 1 : GRID.columns}, minmax(0, 1fr))`,
+        } : {
+          display: "grid", gap: GAP, alignItems: "stretch", gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+        }}>
         <SectionKeys.Provider value={keys}>{children}</SectionKeys.Provider>
       </div>
     </section>
@@ -294,37 +327,208 @@ function ResizeCorner({ cell, columns, from, onPreview, onDone }: {
   );
 }
 
-/** The cell an element is drawn in: its place in the grid, by its size, and the corner that
- *  changes it. `children` is handed the element's key, which only this cell knows. */
+/** What every element of a section measures on screen, as columns (twelfths of the section) and rows of one grade —
+ *  so a section moving onto the grid keeps the room each element had for the reader (Arc AP-1). */
+function measureSection(grid: HTMLElement): Record<string, Box> {
+  const colW = (grid.clientWidth - GRID.gap * (GRID.columns - 1)) / GRID.columns;
+  const out: Record<string, Box> = {};
+  if (colW <= 0) return out;
+  for (const child of Array.from(grid.children) as HTMLElement[]) {
+    const key = child.dataset.element;
+    const r = child.getBoundingClientRect();
+    if (!key || !r.width || !r.height) continue;
+    out[key] = { w: Math.round((r.width + GRID.gap) / (colW + GRID.gap)), h: Math.round((r.height + GRID.gap) / GRADE) };
+  }
+  return out;
+}
+
+type Edge = "w" | "h" | "both";
+
+/** A handle's look: a short bar on the edge it moves, in the accent, shown while the element is pointed at or focused. */
+const HANDLE = "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 group-focus:opacity-100";
+
+/** The handles a person drags to resize an element one grade at a time (Arc AP-1; the user, 2026-10-10: "adjusted one
+ *  grade point at a time"): the right edge for its columns, the bottom edge for its rows, the corner for both. Each
+ *  snaps grade by grade, says the size it would land on, and lands once, on release. On a section not yet on the grid
+ *  every element is measured first, so moving the section onto the grid keeps what the reader saw. */
+function GridHandles({ cell, kind, from, gridded, onPreview, onDone }: {
+  cell: RefObject<HTMLDivElement | null>;
+  kind: GridKind;
+  /** The element's room now: its own on the grid; null off it, where it is measured when a drag begins. */
+  from: Box | null;
+  gridded: boolean;
+  onPreview: (b: Box | null, columnPx: number) => void;
+  onDone: (b: Box, measured: Record<string, Box>) => void;
+}) {
+  const [said, setSaid] = useState<Box | null>(null);
+  const lim = LIMITS[kind];
+  const down = (edge: Edge) => (ev: ReactPointerEvent<HTMLSpanElement>) => {
+    const el = cell.current;
+    const grid = el?.parentElement;
+    if (!el || !grid) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const target = ev.currentTarget;
+    const measured = gridded ? {} : measureSection(grid);
+    const start = from ?? measured[el.dataset.element ?? ""];
+    if (!start) return;
+    const colW = (grid.clientWidth - GRID.gap * (GRID.columns - 1)) / GRID.columns;
+    const x0 = ev.clientX, y0 = ev.clientY;
+    let w = start.w, h = start.h;
+    try { target.setPointerCapture(ev.pointerId); } catch { /* an engine without capture still sends the moves over the handle */ }
+    const move = (mv: PointerEvent) => {
+      const nw = edge === "h" ? start.w : clamp(lim.w[0], lim.w[1], start.w + Math.round((mv.clientX - x0) / (colW + GRID.gap)));
+      const nh = edge === "w" ? start.h : clamp(lim.h[0], lim.h[1], start.h + Math.round((mv.clientY - y0) / GRADE));
+      if (nw !== w || nh !== h) { w = nw; h = nh; onPreview({ w, h }, colW); setSaid({ w, h }); }
+    };
+    const up = () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      onPreview(null, colW);
+      setSaid(null);
+      if (w !== start.w || h !== start.h) onDone({ w, h }, measured);
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
+  };
+  const bar = (edge: Edge, place: Record<string, string | number>, cursor: string, title: string) => (
+    <span key={edge} data-testid={`grid-handle-${edge}`} title={title} aria-hidden="true" onPointerDown={down(edge)} className={HANDLE}
+      style={{ position: "absolute", zIndex: 3, background: "var(--accent)", borderRadius: 3, cursor, touchAction: "none", ...place }} />
+  );
+  return (
+    <>
+      {bar("w", { right: -4, top: "50%", width: 5, height: 30, transform: "translateY(-50%)" }, "ew-resize", "Drag: one column at a time")}
+      {bar("h", { bottom: -4, left: "50%", height: 5, width: 30, transform: "translateX(-50%)" }, "ns-resize", "Drag: one row at a time")}
+      {bar("both", { right: -5, bottom: -5, width: 11, height: 11 }, "nwse-resize", "Drag: columns and rows · Alt+arrows: one grade")}
+      {said && (
+        <span data-testid="grid-size-said" className="aug-fs-sm" style={{ position: "absolute", right: 12, bottom: 10, zIndex: 4,
+          background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", borderRadius: "var(--r2)", padding: "1px 8px",
+          fontVariantNumeric: "tabular-nums", pointerEvents: "none" }}>
+          {said.w} × {said.h}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** The filter column's handle: its right edge, moved one grade of 40 px at a time, between 200 and 400 px (Arc AP-1). */
+function WidthHandle({ from, onPreview, onDone }: { from: number; onPreview: (g: number | null) => void; onDone: (g: number) => void }) {
+  const [said, setSaid] = useState<number | null>(null);
+  const down = (ev: ReactPointerEvent<HTMLSpanElement>) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const target = ev.currentTarget;
+    const x0 = ev.clientX;
+    let g = from;
+    try { target.setPointerCapture(ev.pointerId); } catch { /* the moves still come over the handle */ }
+    const move = (mv: PointerEvent) => {
+      const ng = clamp(FILTER_WIDTH.least, FILTER_WIDTH.most, from + Math.round((mv.clientX - x0) / GRADE));
+      if (ng !== g) { g = ng; onPreview(g); setSaid(g); }
+    };
+    const up = () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      onPreview(null);
+      setSaid(null);
+      if (g !== from) onDone(g);
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
+  };
+  return (
+    <>
+      <span data-testid="filter-width-handle" title="Drag: 40 px at a time" aria-hidden="true" onPointerDown={down} className={HANDLE}
+        style={{ position: "absolute", right: -9, top: 40, width: 5, height: 30, zIndex: 3, background: "var(--accent)", borderRadius: 3,
+          cursor: "ew-resize", touchAction: "none" }} />
+      {said !== null && (
+        <span data-testid="filter-width-said" className="aug-fs-sm" style={{ position: "absolute", right: 4, top: 8, zIndex: 4,
+          background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", borderRadius: "var(--r2)", padding: "1px 8px",
+          fontVariantNumeric: "tabular-nums", pointerEvents: "none" }}>{said * GRADE} px</span>
+      )}
+    </>
+  );
+}
+
+/** Alt+arrows: one grade wider, narrower, taller or shorter. */
+const STEP: Record<string, [number, number]> = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] };
+
+/** The cell an element is drawn in: its place in the grid, by its size, and the handles that change it. `children` is
+ *  handed the element's key, which only this cell knows.
+ *
+ *  Off the grid (a section sized by name) it spans the columns and rows its size names, as before. On the grid it spans
+ *  its own w columns and h rows, and what it draws is told its box (`CellBoxContext`) so it fills it. Where the reader
+ *  may resize — the cockpit's own — its handles move it one grade at a time, and so do Alt+arrows on it. */
 function Cell({ type, props, size, testid, extra, children }: {
   type: ComponentName;
   props: Record<string, unknown>;
-  /** The size drawn: the element's own, or — for a card that says none — what its shape asks. */
+  /** The size drawn off the grid: the element's own, or — for a card that says none — what its shape asks. */
   size: Size;
   testid: string;
   extra?: { attrs?: Record<string, string | undefined>; style?: Record<string, unknown> };
   children: (key: string | null) => ReactNode;
 }) {
   const { doors } = useCockpit();
-  const { columns } = useContext(SectionKeys);
+  const { columns, grid: gridded, stacked } = useContext(SectionKeys);
   const key = useElementKey(type, props);
   const ref = useRef<HTMLDivElement>(null);
-  const [preview, setPreview] = useState<{ w: number; h: number } | null>(null);
-  const span = preview ?? SPAN[size];
-  const w = Math.min(span.w, columns), h = span.h;
-  const resizable = !!doors.onResize && key !== null;
+  const [preview, setPreview] = useState<Box | null>(null);
+  const [ghostColumn, setGhostColumn] = useState(0);
+  // the size-by-name corner's own preview, where the grid is not offered
+  const [corner, setCorner] = useState<{ w: number; h: number } | null>(null);
+  const kind = type in LIMITS ? (type as GridKind) : null;
+  const own: Box | null = gridded ? { w: Number(props.w) || 1, h: Number(props.h) || 1 } : null;
+  const regrid = !!doors.onRegrid && key !== null && kind !== null;
+  // the size picked by name stays only where the grid is not offered
+  const resizable = !regrid && !!doors.onResize && key !== null;
+  const span = SPAN[size];
+
+  const done = (b: Box, measured: Record<string, Box>) => { if (key) doors.onRegrid?.(key, b, measured); };
+  const step = (dw: number, dh: number) => {
+    if (!kind || !key) return;
+    const grid = ref.current?.parentElement;
+    const measured = gridded || !grid ? {} : measureSection(grid);
+    const from = own ?? measured[key] ?? boxOf({ type, props, children: [] }, columns);
+    const next = clampBox(type, { w: from.w + dw, h: from.h + dh });
+    if (next.w !== from.w || next.h !== from.h) done(next, measured);
+  };
+
+  const box: CellBox = gridded ? { onGrid: true, w: (preview ?? own ?? { w: 1 }).w, h: (preview ?? own ?? { h: 1 }).h } : OFF_GRID;
+  const style: Record<string, unknown> = gridded
+    ? { gridColumn: `span ${stacked ? 1 : Math.min(box.w, GRID.columns)}`, gridRow: `span ${box.h}`, minHeight: 0,
+        outline: preview ? "2px solid var(--blue3)" : undefined, outlineOffset: 2 }
+    : { gridColumn: Math.min((corner ?? span).w, columns) > 1 ? `span ${Math.min((corner ?? span).w, columns)}` : undefined,
+        gridRow: (corner ?? span).h > 1 ? `span ${(corner ?? span).h}` : undefined,
+        minHeight: (corner ?? span).h > 1 ? TALL_MIN : undefined,
+        boxShadow: corner ? "0 0 0 2px var(--blue3) inset" : undefined };
   return (
-    <div ref={ref} className="group" data-testid={testid} data-element={key ?? undefined} data-size={size} {...extra?.attrs} style={{
-      position: "relative", borderRadius: "var(--r3)", minWidth: 0,
-      gridColumn: w > 1 ? `span ${w}` : undefined,
-      gridRow: h > 1 ? `span ${h}` : undefined,
-      minHeight: h > 1 ? TALL_MIN : undefined,
-      boxShadow: preview ? "0 0 0 2px var(--blue3) inset" : undefined,
-      ...extra?.style,
-    }}>
-      {children(key)}
+    <div ref={ref} className="group" data-testid={testid} data-element={key ?? undefined} data-size={gridded ? undefined : size}
+      data-w={gridded ? box.w : undefined} data-h={gridded ? box.h : undefined} {...extra?.attrs}
+      tabIndex={regrid ? 0 : undefined}
+      aria-label={regrid ? "Alt and the arrow keys resize this one grade at a time" : undefined}
+      onKeyDown={regrid ? e => {
+        const d = e.altKey ? STEP[e.key] : undefined;
+        if (!d || e.target !== e.currentTarget) return;
+        e.preventDefault();
+        step(d[0], d[1]);
+      } : undefined}
+      style={{ position: "relative", borderRadius: "var(--r3)", minWidth: 0, ...style, ...extra?.style }}>
+      <CellBoxContext.Provider value={box}>{children(key)}</CellBoxContext.Provider>
+      {/* off the grid a drag draws where the element would land, until the section moves onto the grid on release */}
+      {preview && !gridded && ghostColumn > 0 && (
+        <span data-testid="grid-ghost" aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, zIndex: 2, pointerEvents: "none",
+          width: preview.w * ghostColumn + (preview.w - 1) * GRID.gap, height: rowsTall(preview.h),
+          border: "2px dashed var(--blue3)", borderRadius: "var(--r3)" }} />
+      )}
+      {regrid && kind && (
+        <GridHandles cell={ref} kind={kind} from={own} gridded={gridded}
+          onPreview={(b, col) => { setPreview(b); setGhostColumn(col); }} onDone={done} />
+      )}
       {resizable && (
-        <ResizeCorner cell={ref} columns={columns} from={{ w: Math.min(SPAN[size].w, columns), h: SPAN[size].h }} onPreview={setPreview}
+        <ResizeCorner cell={ref} columns={columns} from={{ w: Math.min(span.w, columns), h: span.h }} onPreview={setCorner}
           onDone={(nw, nh) => { const s = sizeOf(nw, nh); if (s && key) doors.onResize?.(key, s); }} />
       )}
     </div>
@@ -332,7 +536,7 @@ function Cell({ type, props, size, testid, extra, children }: {
 }
 
 function CockpitCard({ element }: ComponentRenderProps<{ card: string; tone?: Tone | null; size?: Size | null }>) {
-  const { cards, host, doors, sym, range, schema } = useCockpit();
+  const { cards, host, tileDoors: doors, sym, range, schema } = useCockpit();
   const id = element.props.card;
   const tone = element.props.tone ?? null;
   const cs = cards.get(id);
@@ -361,7 +565,7 @@ function CockpitCard({ element }: ComponentRenderProps<{ card: string; tone?: To
 }
 
 function CockpitNote({ element }: ComponentRenderProps<{ text: string; size?: Size | null; author?: string; written_at?: string }>) {
-  const { doors } = useCockpit();
+  const { tileDoors: doors } = useCockpit();
   const own = !!(doors.onTakeOff || doors.onEditNote || doors.onResize);
   return (
     <Cell type="Note" props={element.props as Record<string, unknown>} size={element.props.size ?? "small"} testid="cockpit-note-cell">
@@ -374,7 +578,7 @@ function CockpitNote({ element }: ComponentRenderProps<{ text: string; size?: Si
 }
 
 function CockpitImage({ element }: ComponentRenderProps<{ object: string; caption: string; size?: Size | null }>) {
-  const { doors, images } = useCockpit();
+  const { tileDoors: doors, images } = useCockpit();
   const own = !!(doors.onTakeOff || doors.onRecaption || doors.onResize);
   return (
     <Cell type="Image" props={element.props as Record<string, unknown>} size={element.props.size ?? "small"} testid="cockpit-image-cell"
@@ -525,6 +729,7 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
     cards: new Map(cards.map(c => [c.card.id, c])),
     host,
     doors,
+    tileDoors: doors.onRegrid ? { ...doors, onResize: undefined } : doors,
     sym,
     images,
     range,

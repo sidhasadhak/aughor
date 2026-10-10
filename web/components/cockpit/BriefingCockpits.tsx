@@ -57,8 +57,9 @@ import {
 } from "@/lib/api";
 import { MAX_CAPTION, MAX_NOTE, type Size } from "@/lib/cockpit/catalog";
 import {
-  cardsPlaced, editNote, placeCard, placeImage, placeNote, placePiece, recaption, resize, sectionsOf, takeOff, takeOffCard,
+  cardsPlaced, editNote, placeCard, placeImage, placeNote, placePiece, recaption, regrid, resize, sectionsOf, setFilterWidth, takeOff, takeOffCard,
   type CockpitSpec,
+  type Box,
 } from "@/lib/cockpit/edit";
 import { hostStateOf } from "@/lib/cockpit/hostStatus";
 import { emptyCockpitSpec, overdueSegmentOf, processCockpitHolds, processCockpitSpec, startCockpit } from "@/lib/cockpit/start";
@@ -623,6 +624,9 @@ function SharedCockpitView({ connectionId, schema, owner, cockpitId, range, chos
   );
 }
 
+/** How long after the last step of a resize it is kept: a burst of steps is ONE version (Arc AP-1). */
+const KEEP_AFTER_MS = 900;
+
 export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidence }: {
   connectionId: string;
   schema?: string;
@@ -756,6 +760,8 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   }, [reload]);
 
   const choose = (id: string) => {
+    if (burst.current.timer) sendBurst();
+    setDraft(null);
     setChosen(id); remember(connectionId, id); setArranging(null); setShowHistory(false); setRefusal(null); setProblem("");
     setPicking(false); setPublishing(false); setNoting(false); setImaging(false); setComposing(false);
   };
@@ -784,6 +790,43 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     void write(() => keepCockpit(connectionId, data.cockpit_id, change(data.cockpit.spec as CockpitSpec), note), () => said);
   }, [connectionId, data, write]);
 
+  // Arc AP-1 — a resize is drawn at once and kept as ONE version per burst of steps, a moment after the last. The cards
+  // are not read again: the room changed, and nothing measured did. Keeps go one after another, never two at once, and
+  // a newer burst is never undone by an older one landing.
+  const [draft, setDraft] = useState<CockpitSpec | null>(null);
+  const burst = useRef<{ spec: CockpitSpec | null; cockpit: string; note: string; timer: ReturnType<typeof setTimeout> | null;
+    chain: Promise<void>; since: boolean }>({ spec: null, cockpit: "", note: "", timer: null, chain: Promise.resolve(), since: false });
+  const sendBurst = useCallback(() => {
+    const b = burst.current;
+    if (b.timer) { clearTimeout(b.timer); b.timer = null; }
+    const sent = b.spec, cockpit = b.cockpit, note = b.note;
+    if (!sent || !cockpit) return;
+    b.chain = b.chain.then(async () => {
+      try {
+        const k = await keepCockpit(connectionId, cockpit, sent, note);
+        setData(d => (d && d.cockpit_id === cockpit ? { ...d, cockpit: { ...d.cockpit, spec: sent, version: k.version ?? d.cockpit.version } } : d));
+        burst.current.since = true;
+      } catch (e) {
+        if (e instanceof CockpitRefused) setRefusal(e.outcome);
+        else toast.error("The new size was not kept", { description: (e as Error).message.slice(0, 160) });
+      } finally {
+        if (burst.current.spec === sent) { burst.current.spec = null; setDraft(null); }
+      }
+    });
+  }, [connectionId]);
+  const keepSoon = useCallback((change: (s: CockpitSpec) => CockpitSpec, note: string) => {
+    if (!data?.cockpit.spec) return;
+    const b = burst.current;
+    const same = b.spec && b.cockpit === data.cockpit_id;
+    const next = change((same ? b.spec : data.cockpit.spec) as CockpitSpec);
+    b.spec = next; b.cockpit = data.cockpit_id; b.note = note;
+    setDraft(next);
+    if (b.timer) clearTimeout(b.timer);
+    b.timer = setTimeout(sendBurst, KEEP_AFTER_MS);
+  }, [data, sendBurst]);
+  // a burst still waiting is kept before the page leaves it
+  useEffect(() => () => { if (burst.current.timer) sendBurst(); }, [sendBurst]);
+
   const doors = useMemo<CockpitDoors>(() => ({
     onRemove: takeOffOne, onRefresh: refreshOne, onOpenSource, onEvidence,
     onTakeOff: (key: string) => edit(s => takeOff(s, key), "taken off by hand", "Taken off. The version before keeps it."),
@@ -793,7 +836,9 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     onRecaption: (key: string, caption: string) => edit(s => recaption(s, key, caption), "an image's caption changed by hand", "Kept."),
     onPlaceTable: piecesOn ? (entity: string, segment: string) => edit(s => placePiece(s, "ObjectTable", { entity, segment, size: "wide" }).spec,
       "an objects table placed from a process board", "Placed: the objects still waiting and already past the promise.") : undefined,
-  }), [takeOffOne, refreshOne, onOpenSource, onEvidence, edit, piecesOn]);
+    onRegrid: (key: string, box: Box, measured: Record<string, Box>) => keepSoon(s => regrid(s, key, box, measured), "resized by hand"),
+    onFilterWidth: (grades: number) => keepSoon(s => setFilterWidth(s, grades), "the filter column resized by hand"),
+  }), [takeOffOne, refreshOne, onOpenSource, onEvidence, edit, piecesOn, keepSoon]);
   const host = useMemo(() => hostStateOf(data?.range.status ?? "standing", cards), [data?.range.status, cards]);
   // Where each image's bytes are read from: the API, with this reader's own access.
   const images = useMemo<Record<string, ImageStamp>>(() => Object.fromEntries(
@@ -968,7 +1013,11 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                   <Icon name="sliders" /> Arrange
                 </Button>
               )}
-              <Button size="xs" variant="ghost" aria-expanded={showHistory} onClick={() => setShowHistory(s => !s)}>
+              <Button size="xs" variant="ghost" aria-expanded={showHistory} onClick={() => {
+                // a resize kept since the page was read is not in its history yet: read it again once
+                if (!showHistory && burst.current.since) { burst.current.since = false; reload(); }
+                setShowHistory(s => !s);
+              }}>
                 <Icon name="history" /> {showHistory ? "Hide history" : "History"}
               </Button>
               {!arranging && (
@@ -1098,7 +1147,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               )}
               <div aria-busy={reading || undefined}
                 style={{ opacity: reading ? 0.45 : 1, transition: "opacity 120ms ease-out", pointerEvents: reading ? "none" : undefined }}>
-                <ComposedCockpit spec={kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}
+                <ComposedCockpit spec={draft ?? kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}
                   images={images} range={range} schema={schema} connectionId={connectionId} cockpitId={`${connectionId}:${chosen}`} />
               </div>
             </>

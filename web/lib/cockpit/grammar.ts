@@ -13,6 +13,7 @@
  * The server reads it through the validator bundle; it keeps no copy.
  */
 import {
+  GRID,
   MAX_CAPTION, MAX_COLUMNS, MAX_LABEL, MAX_NOTE, MAX_TITLE, MAY_BE_CONDITIONAL, MAY_HOLD, SIZES, SPAN,
   STATIC, TONES, WRITTEN, type WrittenName,
 } from "@/lib/cockpit/catalog";
@@ -62,7 +63,7 @@ const PROPS: Record<WrittenName, string> = {
   Tabs: `value, always {"$bindState": "${TAB_PATH}"}`,
   Tab: `name (an identifier: lower-case letters, digits, "-" and "_", beginning with a letter), `
     + `label (text, up to ${MAX_LABEL} characters)`,
-  Section: `title (text, up to ${MAX_TITLE} characters), columns (1 to ${MAX_COLUMNS}, optional)`,
+  Section: `title (text, up to ${MAX_TITLE} characters), columns (1 to ${MAX_COLUMNS}, optional), grid (optional: ${GRID.columns})`,
   Card: `card (a card id), tone (optional, one of: ${TONES.join(", ")}), ${SIZE}`,
   Note: `text (the person's words, up to ${MAX_NOTE} characters), ${SIZE}; author and written_at are the server's`,
   Image: `object (an uploaded object's id), caption (text, up to ${MAX_CAPTION} characters), ${SIZE}`,
@@ -103,7 +104,8 @@ export function grammar(): string {
       + "A figure appears inside a card, where it is measured.",
     "",
     `Sizes. Every Card, Note and Image in a section has a size: ${SIZES.map(s => `${s} (${SPAN[s].w}×${SPAN[s].h})`).join(", ")} — `
-      + "columns across by rows down. A bigger size gives the same thing more room; it measures nothing new.",
+      + "columns across by rows down. A bigger size gives the same thing more room; it measures nothing new. "
+      + `In a section with "grid": ${GRID.columns}, each element says w (1 to ${GRID.columns} columns) and h (rows) instead, and keeps them when moved.`,
     "",
     `A ${STATIC.join(" and an ")} are the person's own. You may move one, resize it or take it off, because that is arrangement. `
       + "You may not add one, change a note's text or choose an image: an edit that does is refused. A new cockpit holds none.",

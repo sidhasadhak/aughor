@@ -32,6 +32,7 @@ import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { type ChartCustom } from "@/components/Chart";
 import { type VizConfig } from "@/components/charts/vizConfig";
 import { VegaChart } from "@/components/charts/vega/VegaChart";
+import { useCellBox, useMeasured } from "@/components/cockpit/cellBox";
 import { SizePick } from "@/components/cockpit/SizePick";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
@@ -139,6 +140,8 @@ export function Frame({ testid, shape, over, dashed, children, doors }: {
   return (
     <div className="group" data-testid={testid} data-shape={shape} style={{
       position: "relative", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column",
+      // on a section's grid the box is fixed: what it holds stays inside it, and a piece's own body scrolls (Arc AP-1)
+      minHeight: 0, overflow: "hidden",
       gap: 6, padding: "14px 16px 12px", background: "var(--bg-2)", borderRadius: "var(--r3)",
       // a card stands on the page by its fill; an edge is drawn only where it says something — dashed for a piece
       // that cannot be read, red for a figure over its limit (CLARITY.md, "cards on the ground")
@@ -228,6 +231,14 @@ function Moved({ value, previous, card }: { value: number; previous: CardRunPrev
   );
 }
 
+/** How tall a chart in a tile is drawn: on a section's grid, the height its box leaves it, followed as the box is
+ *  resized one grade at a time; off the grid, the height its size names, as before (Arc AP-1). */
+function useChartHeight(offGrid: number): [(el: HTMLDivElement | null) => void, number] {
+  const box = useCellBox();
+  const [ref, room] = useMeasured<HTMLDivElement>();
+  return [ref, box.onGrid && room.height > 0 ? Math.max(60, room.height) : offGrid];
+}
+
 /** A metric's trend over the ranges before the one the cockpit is read for — what a bigger figure
  *  tile has the room to show (the user, 2026-10-08: "a bigger tile shows the same figure larger, with
  *  its trend"). Read once per card and range; nothing is re-measured, and the figure above it is
@@ -252,10 +263,11 @@ function MetricTrendStrip({ card, place, sym }: { card: CockpitCard; place: Tile
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
   }, [card.id, card.connection_id, metric, rangeKey, place.schema]);
   const spec = useMemo(() => (got?.trend ? trendSpec(got.trend, card, sym, got.labels) : null), [got, card, sym]);
+  const [room, height] = useChartHeight(SPAN[place.size].h === 2 ? 220 : 110);
   if (!spec) return null;
   return (
-    <div data-testid="tile-trend" style={{ flex: 1, minHeight: 0, marginTop: 4 }}>
-      <VegaChart spec={spec} tier={2} height={SPAN[place.size].h === 2 ? 220 : 110} />
+    <div ref={room} data-testid="tile-trend" style={{ flex: 1, minHeight: 0, marginTop: 4 }}>
+      <VegaChart spec={spec} tier={2} height={height} />
     </div>
   );
 }
@@ -274,9 +286,12 @@ function FigureTile({ cs, status, sym, doors, place }: { cs: CardState & { card:
   // Standing: what it moved by since the card last ran, if it did.
   const standingPrev = !ranged ? (run?.refresh?.prev_value ?? null) : null;
   const caveats = run?.caveats ?? [];
-  // A bigger tile shows the same figure larger — and, for a metric read for a range, its trend.
+  // A bigger tile shows the same figure larger — and, for a metric read for a range, its trend. On the grid, bigger is
+  // five columns or five rows and more (Arc AP-1).
+  const box = useCellBox();
   const span = SPAN[place.size];
-  const big = span.w > 1 || span.h > 1;
+  const big = box.onGrid ? box.w >= 5 || box.h >= 5 : span.w > 1 || span.h > 1;
+  const widest = box.onGrid ? box.w >= 9 : span.w >= 3;
   const withTrend = big && ranged && !errored && (card.made_from === "metric" || !!card.provenance.metric) && !!place.range;
 
   return (
@@ -288,7 +303,7 @@ function FigureTile({ cs, status, sym, doors, place }: { cs: CardState & { card:
       ) : shown ? (
         <div className="aug-fs-display" data-testid="tile-figure" data-size={place.size} title={shown.outside ? `Outside what its unit states (${card.unit})` : undefined}
           style={{ fontWeight: 600, lineHeight: 1.15, color: over ? "var(--red4)" : "var(--t1)", fontVariantNumeric: "tabular-nums",
-            fontSize: span.w >= 3 ? "2.6em" : big ? "2.1em" : undefined }}>
+            fontSize: widest ? "2.6em" : big ? "2.1em" : undefined }}>
           {shown.text}
         </div>
       ) : (
@@ -379,13 +394,14 @@ function TrendTile({ cs, trend, status, sym, doors, place }: { cs: CardState & {
   const spec = useMemo(() => trendSpec(trend, card, sym), [trend, card, sym]);
   const n = trend.values.length;
   const newest = `${fmtDate(trend.dates[n - 1], trend.gran)} · ${figureText(trend.values[n - 1], card, sym).text}`;
+  const [room, height] = useChartHeight(SPAN[place.size].h === 2 ? 340 : 170);
   return (
     <Frame testid="cockpit-tile" shape="trend" over={status === "over"} doors={<Doors card={card} doors={doors} place={place} />}>
       <Title title={card.title} right={
         <span className="aug-fs-sm" data-testid="tile-newest" style={{ color: "var(--t1)", fontWeight: 500, whiteSpace: "nowrap" }}>{newest}</span>
       } />
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <VegaChart spec={spec} tier={2} height={SPAN[place.size].h === 2 ? 340 : 170} />
+      <div ref={room} style={{ flex: 1, minHeight: 0 }}>
+        <VegaChart spec={spec} tier={2} height={height} />
       </div>
       <Foot icon={source.icon}>{source.words}, by {trend.gran}</Foot>
     </Frame>
@@ -399,14 +415,15 @@ function RowsTile({ cs, doors, place }: { cs: CardState & { card: CockpitCard };
   const render = (card.render || {}) as {
     chartType?: string; chartConfig?: Record<string, unknown>; custom?: ChartCustom; showDataLabels?: boolean; viz?: VizConfig;
   };
+  const [room, height] = useChartHeight(SPAN[place.size].h === 2 ? 400 : 200);
   return (
     <Frame testid="cockpit-tile" shape="rows" doors={<Doors card={card} doors={doors} place={place} />}>
       <Title title={card.title} />
-      <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+      <div ref={room} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
         {run && (
           <ResultChartCard columns={run.columns} rows={run.rows as unknown[][]}
             chartType={render.chartType ?? null} chartConfig={render.chartConfig ?? null} custom={render.custom ?? null}
-            defaultShowLabels={render.showDataLabels} fillHeight={SPAN[place.size].h === 2 ? 400 : 200} config={render.viz ?? null} onConfigChange={persistViz} />
+            defaultShowLabels={render.showDataLabels} fillHeight={height} config={render.viz ?? null} onConfigChange={persistViz} />
         )}
       </div>
       <Foot icon={source.icon}>{source.words}{run?.scoped && !run.scoped.standing ? `, for ${run.scoped.covers}` : ""}</Foot>

@@ -19,8 +19,8 @@ import { validateSpec, type Spec } from "@json-render/core";
 import type { z } from "zod";
 
 import {
-  COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, MAY_BE_CONDITIONAL, MAY_HOLD, PLACED, READER_TEXT, SIZES, TONES,
-  cockpitCatalog, type ComponentName,
+  COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, GRADE, GRID, LIMITS, MAY_BE_CONDITIONAL, MAY_HOLD, PLACED, READER_TEXT,
+  SIZES, TONES, cockpitCatalog, type ComponentName, type GridKind,
 } from "@/lib/cockpit/catalog";
 import { CARD_STATUSES, RANGE_STATUSES, TAB_PATH, publishedPath } from "@/lib/cockpit/hostState";
 
@@ -63,6 +63,8 @@ export interface CockpitVocabulary {
   components: readonly string[];
   tones: readonly string[];
   sizes: readonly string[];
+  /** Arc AP-1 — the grid a resized section is laid on: its columns, and the height of one grade in px. */
+  grid: { columns: number; grade: number };
   range_statuses: readonly string[];
   card_statuses: readonly string[];
   limits: { elements: number; tabs: number; cards: number };
@@ -74,6 +76,7 @@ export function vocabulary(): CockpitVocabulary {
     components: COMPONENT_NAMES,
     tones: TONES,
     sizes: SIZES,
+    grid: { columns: GRID.columns, grade: GRADE },
     range_statuses: RANGE_STATUSES,
     card_statuses: CARD_STATUSES,
     limits: { elements: MAX_ELEMENTS, tabs: MAX_TABS, cards: MAX_CARDS },
@@ -375,6 +378,46 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
     if (sound.get(follows)?.type !== "ObjectTable") {
       issues.push({ code: "bad_prop", elementKey: key,
         message: `The object detail ${q(key)} follows ${q(follows)}, which is not an objects table in this cockpit.` });
+    }
+  }
+
+  // Arc AP-1 — a section on the grid places each element by w columns and h rows, within what its kind may take; a
+  // section that is not says sizes by name, and a w or an h there would be read by nothing.
+  for (const [key, el] of sound) {
+    if (el.type !== "Section" || !clean.has(key)) continue;
+    const gridded = el.props.grid === GRID.columns;
+    if (gridded && el.props.columns != null) {
+      issues.push({ code: "bad_prop", elementKey: key,
+        message: `The section ${q(key)} is on the grid and also says ${el.props.columns} columns. `
+          + `On the grid a section has ${GRID.columns} columns; it says none of its own.` });
+    }
+    for (const child of el.children) {
+      const c = sound.get(child);
+      if (!c || !clean.has(child)) continue;
+      const w = c.props.w, h = c.props.h;
+      const said = [w != null ? `w ${String(w)}` : "", h != null ? `h ${String(h)}` : ""].filter(Boolean).join(" and ");
+      if (!gridded) {
+        if (said) {
+          issues.push({ code: "bad_prop", elementKey: child,
+            message: `The ${c.type.toLowerCase()} ${q(child)} says ${said}, and its section ${q(key)} is not on the grid. `
+              + `Columns and rows are said only in a section with "grid": ${GRID.columns}; elsewhere a size is said by name.` });
+        }
+        continue;
+      }
+      const lim = LIMITS[c.type as GridKind];
+      if (!lim) continue;
+      if (typeof w !== "number" || typeof h !== "number") {
+        issues.push({ code: "bad_prop", elementKey: child,
+          message: `The ${c.type.toLowerCase()} ${q(child)} is on the grid of section ${q(key)} and does not say its `
+            + `${typeof w !== "number" && typeof h !== "number" ? "w and h" : typeof w !== "number" ? "w" : "h"}. `
+            + "On the grid each element says how many columns (w) and rows (h) it takes." });
+        continue;
+      }
+      if (w < lim.w[0] || w > lim.w[1] || h < lim.h[0] || h > lim.h[1]) {
+        issues.push({ code: "bad_prop", elementKey: child,
+          message: `The ${c.type.toLowerCase()} ${q(child)} takes ${w} × ${h}. A ${c.type} takes ${lim.w[0]} to ${lim.w[1]} `
+            + `columns and ${lim.h[0]} to ${lim.h[1]} rows, so it is never too small to read or too large for what it holds.` });
+      }
     }
   }
 

@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { choose, fireEvent, render, screen, waitFor, within } from "@/lib/testing";
+import { act, choose, fireEvent, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BriefingCockpits } from "@/components/cockpit/BriefingCockpits";
@@ -487,6 +487,60 @@ describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => 
 
     // The images the read answered with reach the drawing with where to read each from.
     expect(drawn.props.at(-1)!.images).toEqual({});
+  });
+
+  it("sizes one grade at a time: each step is drawn at once, a burst is kept as ONE version, and nothing is read again (Arc AP-1)", async () => {
+    show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    const reads = api.getCockpit.mock.calls.length;
+    const runs = api.runDashboardCard.mock.calls.length;
+    type Doors = { onRegrid: (k: string, b: { w: number; h: number }, m: Record<string, { w: number; h: number }>) => void };
+    const step = (w: number, h: number) => act(() => { (drawn.props.at(-1)!.doors as Doors).onRegrid("card-net", { w, h }, {}); });
+    step(4, 4);
+    step(5, 4);
+    step(6, 5);
+    // drawn at once, on the grid, before anything is kept
+    const shown = drawn.props.at(-1)!.spec as { elements: Record<string, { props: Record<string, unknown> }> };
+    expect(shown.elements["card-net"].props).toMatchObject({ w: 6, h: 5 });
+    expect(shown.elements["sec-headline"].props.grid).toBe(12);
+    expect(api.keepCockpit).not.toHaveBeenCalled();
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    const kept = api.keepCockpit.mock.calls[0][2] as { elements: Record<string, { props: Record<string, unknown> }> };
+    expect(kept.elements["card-net"].props).toMatchObject({ w: 6, h: 5 });
+    expect(api.keepCockpit.mock.calls[0][3]).toBe("resized by hand");
+    // the room changed and nothing measured did: the cockpit is not read again, nor any card run again
+    await new Promise(r => setTimeout(r, 50));
+    expect(api.getCockpit.mock.calls.length).toBe(reads);
+    expect(api.runDashboardCard.mock.calls.length).toBe(runs);
+    expect((drawn.props.at(-1)!.spec as typeof kept).elements["card-net"].props).toMatchObject({ w: 6, h: 5 });
+  });
+
+  it("a newer burst is never undone by an older one landing after it", async () => {
+    let land: (v: unknown) => void = () => {};
+    api.keepCockpit.mockImplementationOnce(() => new Promise(r => { land = r; }));
+    show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    type Doors = { onRegrid: (k: string, b: { w: number; h: number }, m: object) => void };
+    const step = (w: number) => act(() => { (drawn.props.at(-1)!.doors as Doors).onRegrid("card-net", { w, h: 5 }, {}); });
+    step(6);
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1), { timeout: 3000 });   // the first is on its way
+    step(9);                                                                                   // a second burst begins
+    await act(async () => { land({ status: "kept", kept: true, version: 4, artifact_id: "a4", sentences: [] }); });
+    const shown = () => (drawn.props.at(-1)!.spec as { elements: Record<string, { props: Record<string, unknown> }> }).elements["card-net"].props;
+    expect(shown()).toMatchObject({ w: 9 });                                                   // still the newer size
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    expect((api.keepCockpit.mock.calls[1][2] as { elements: Record<string, { props: Record<string, unknown> }> }).elements["card-net"].props).toMatchObject({ w: 9 });
+  });
+
+  it("a burst the server refuses is drawn back as it was kept, and the refusal is said", async () => {
+    api.keepCockpit.mockRejectedValue(new (await import("@/lib/api")).CockpitRefused(
+      { status: "refused", kept: false, version: null, artifact_id: "", sentences: ["Refused for a reason."] }));
+    show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    act(() => { (drawn.props.at(-1)!.doors as { onRegrid: (k: string, b: { w: number; h: number }, m: object) => void }).onRegrid("card-net", { w: 6, h: 5 }, {}); });
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    await waitFor(() => expect(drawn.props.at(-1)!.spec).toEqual(SPEC));
+    expect(await screen.findByText(/Refused for a reason/)).toBeInTheDocument();
   });
 });
 

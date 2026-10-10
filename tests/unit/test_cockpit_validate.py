@@ -179,13 +179,35 @@ def test_a_spec_that_is_not_json_is_refused_before_anything_runs(premise):
 @needs_rules
 def test_the_server_reads_the_vocabulary_the_web_declares():
     vocab = V.vocabulary()
-    assert vocab["version"] == 4                 # 3: the ontology's pieces (Arc OC-4); 4: a cockpit from an object
+    assert vocab["version"] == 5                 # 3: the ontology's pieces (Arc OC-4); 4: a cockpit from an object; 5: sizes one grade at a time (Arc AP-1)
     assert vocab["components"] == ["Cockpit", "Tabs", "Tab", "Section", "Card", "Note", "Image",
                                    "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton",
                                    "ObjectFilters", "ObjectFigure", "ObjectChart"]
     assert vocab["sizes"] == ["small", "wide", "tall", "large", "full", "hero"]
     assert vocab["range_statuses"] == ["standing", "final", "provisional", "to_date"]
     assert vocab["card_statuses"] == ["within", "over", "unmeasured", "withheld"]
+
+
+@needs_rules
+def test_the_server_holds_a_section_on_the_grid_to_the_same_rules(premise):
+    """Arc AP-1 — sizes one grade at a time: the server keeps a section on the grid only when each element says its w
+    and h within what its kind may take — the browser's own rule, run here from the same file."""
+    gridded = copy.deepcopy(premise)
+    gridded["elements"]["sec-headline"]["props"] = {"title": "Headline", "grid": 12}
+    for key, (w, h) in {"alert-rate": (3, 4), "card-rate": (3, 4), "card-net": (6, 6)}.items():
+        gridded["elements"][key]["props"].update({"w": w, "h": h})
+    verdict = V.check_spec(gridded, known_cards=CARDS)
+    assert verdict.status == V.ACCEPTED, said(verdict)
+
+    too_wide = copy.deepcopy(gridded)
+    too_wide["elements"]["card-net"]["props"]["h"] = 17          # a card is at most 16 rows
+    refused = V.check_spec(too_wide, known_cards=CARDS)
+    assert refused.status == V.REFUSED
+    assert 'The card "card-net" takes 6 × 17. A Card takes 2 to 12 columns and 2 to 16 rows' in said(refused)
+
+    unsaid = copy.deepcopy(gridded)
+    del unsaid["elements"]["card-rate"]["props"]["w"]
+    assert 'does not say its w' in said(V.check_spec(unsaid, known_cards=CARDS))
 
 
 @needs_rules

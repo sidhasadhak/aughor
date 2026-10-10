@@ -342,7 +342,7 @@ screens. (`build.palantir.com` catalogue)
 *Piece* stays the word for what a person places. *Widget*, *module* and *application* stay out of anything a reader
 sees: the glossary already rules them out.
 
-### 4.3 The spec, vocabulary v5 (a sketch)
+### 4.3 The spec, vocabulary v6 (a sketch; v5 is AP-1's sizes)
 
 ```jsonc
 {
@@ -557,7 +557,7 @@ small."*
 **Each piece fills its box:**
 
 - a chart draws at the box's height;
-- a table shows as many rows as the height holds — one grade, one more row;
+- a table lists as many rows as the height holds, read again once a resize settles (6 rows at 8 grades, 10 at 11 on theLook);
 - a figure keeps its value centred.
 
 **Saving.** A burst of steps is kept as one version, about a second after the last.

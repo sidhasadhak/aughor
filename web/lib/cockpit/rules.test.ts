@@ -40,11 +40,12 @@ describe("the catalog", () => {
                    "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure", "ObjectChart"],
       tones: ["good", "warn", "bad", "info", "neutral"],
       sizes: ["small", "wide", "tall", "large", "full", "hero"],
+      grid: { columns: 12, grade: 40 },
       range_statuses: ["standing", "final", "provisional", "to_date"],
       card_statuses: ["within", "over", "unmeasured", "withheld"],
       limits: { elements: MAX_ELEMENTS, tabs: MAX_TABS, cards: MAX_CARDS },
     });
-    expect(COCKPIT_VOCABULARY_VERSION).toBe(4);
+    expect(COCKPIT_VOCABULARY_VERSION).toBe(5);         // 5: sizes one grade at a time (Arc AP-1)
   });
 });
 

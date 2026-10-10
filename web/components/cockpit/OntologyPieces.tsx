@@ -25,6 +25,7 @@
 import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { useCellBox, useMeasured, useSettled } from "@/components/cockpit/cellBox";
 import { Foot, Frame, Title } from "@/components/cockpit/CockpitTile";
 import { Masked } from "@/components/objects/Masked";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ import {
   anyFilter, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, entityKey, figureText, onDays, plural, ticks,
   toggled, windowEnd, type Filters,
 } from "@/lib/cockpit/objectView";
+import { rowsTall } from "@/lib/cockpit/catalog";
 import { formatCount, formatDateTime, isNumericType, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { objectHref } from "@/lib/objectLinks";
@@ -177,6 +179,17 @@ function Unread({ what, children }: { what: string; children: ReactNode }) {
   );
 }
 
+/** What a piece holds between its title and its foot. On a section's grid it fills the box and scrolls when it holds
+ *  more; off the grid it is as tall as what it holds, as before (Arc AP-1). */
+function Body({ children, gap = 6, testid }: { children: ReactNode; gap?: number; testid?: string }) {
+  const box = useCellBox();
+  return (
+    <div data-testid={testid} style={{ display: "flex", flexDirection: "column", gap, minHeight: 0, ...(box.onGrid ? { flex: 1, overflow: "auto" } : {}) }}>
+      {children}
+    </div>
+  );
+}
+
 function Reading({ what }: { what: string }) {
   return (
     <Frame testid="ontology-piece-reading">
@@ -210,6 +223,7 @@ export function ProcessBoardPiece({ process }: { process: string }) {
     <Frame testid="process-board">
       <Title title={found.display_name || words(found.id)}
         right={<span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>Process board</span>} />
+      <Body>
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, found.stages.length)}, minmax(0, 1fr))`, gap: 8 }}>
         {withUniqueKeys(found.stages, st => st.name).map(([k, stage]) => (
           <div key={k} data-testid="process-stage" style={{ background: "var(--bg-1)", borderRadius: "var(--r2)", padding: "8px 10px", minWidth: 0 }}>
@@ -269,12 +283,18 @@ export function ProcessBoardPiece({ process }: { process: string }) {
           <Icon name="lock" size={11} /> {found.counted_over}
         </div>
       )}
+      </Body>
       <Foot icon="process">{found.measured_at ? `Measured ${formatDateTime(found.measured_at)}` : "Not measured yet"} · {found.entity_id}</Foot>
     </Frame>
   );
 }
 
 // ── the objects table ──────────────────────────────────────────────────────────────────────
+
+/** A table row as drawn, and everything else a table's box holds — its padding, title, header row and foot: what the
+ *  rows that fit are counted from (6 rows in 8 grades, 10 in 11, as measured on theLook 2026-10-10). */
+const TABLE_ROW_PX = 29;
+const TABLE_CHROME_PX = 110;
 
 function cell(v: unknown): string {
   if (v === null || v === undefined || v === "" || v === "NULL") return "—";
@@ -296,7 +316,11 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
   const [offset, setOffset] = useState(0);
   const [page, setPage] = useState<ObjectListingPage | null>(null);
   const [refused, setRefused] = useState("");
-  const limit = tall ? 12 : 6;
+  // Arc AP-1 — on the grid, as many rows as the box holds, read from its height once a resize settles (a drag reads
+  // once, not once a grade). Off the grid, six (twelve tall), as before.
+  const box = useCellBox();
+  const fits = box.onGrid ? Math.max(1, Math.floor((rowsTall(box.h) - TABLE_CHROME_PX) / TABLE_ROW_PX)) : null;
+  const limit = useSettled(fits ?? (tall ? 12 : 6), 350);
   const narrowed = conditionsFor(filters, entity);
   const asked = JSON.stringify([entity, segment, columns, sort, descending, narrowed]);
   useEffect(() => { setOffset(0); }, [asked]);
@@ -326,7 +350,7 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
           style={{ color: "var(--t3)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
           {page.total == null ? "not counted" : formatCount(page.total)}
         </span>} />
-      <div style={{ overflowX: "auto", minHeight: 0 }}>
+      <div style={{ overflowX: "auto", minHeight: 0, ...(box.onGrid ? { flex: 1, overflowY: "auto" } : {}) }}>
         <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "collapse", tableLayout: "auto" }}>
           <thead>
             <tr>
@@ -436,6 +460,7 @@ export function ObjectDetailPiece({ follows, children }: { follows: string; chil
           style={{ color: "var(--blue3)", display: "inline-flex", alignItems: "center", gap: 4 }}>
           Open page <Icon name="external" size={11} />
         </Link>} />
+      <Body>
       <dl style={{ display: "grid", gridTemplateColumns: "minmax(90px, max-content) minmax(0, 1fr)", columnGap: 12, rowGap: 4, margin: 0 }}>
         {withUniqueKeys(props, x => x.name).map(([k, p]) => (
           <div key={k} style={{ display: "contents" }}>
@@ -459,6 +484,7 @@ export function ObjectDetailPiece({ follows, children }: { follows: string; chil
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>{children}</div>
         </DetailObject.Provider>
       )}
+      </Body>
       <Foot icon="eye">Follows the table · read live</Foot>
     </Frame>
   );
@@ -730,6 +756,7 @@ export function ObjectFigurePiece({ entity, label, agg, path, format, sym }: {
   entity: string; label: string; agg: string; path?: string | null; format?: string | null; sym: string;
 }) {
   const { filters } = usePieces();
+  const { onGrid } = useCellBox();
   const noun = useNoun(entity);
   const measure = { name: "v", agg, path: path ?? "" };
   const narrowed = conditionsFor(filters, entity);
@@ -744,23 +771,31 @@ export function ObjectFigurePiece({ entity, label, agg, path, format, sym }: {
     ? `of ${text(whole)}` : `all ${noun} ${text(whole)}`;
   return (
     <Frame testid="object-figure">
-      <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{label}</div>
-      <div className="aug-fs-display" data-testid="object-figure-value"
-        style={{ color: "var(--t1)", fontWeight: 600, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
-        {shown ? text(value) : "…"}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, ...(onGrid ? { flex: 1, justifyContent: "center", minHeight: 0 } : {}) }}>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{label}</div>
+        <div className="aug-fs-display" data-testid="object-figure-value"
+          style={{ color: "var(--t1)", fontWeight: 600, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+          {shown ? text(value) : "…"}
+        </div>
+        <div className="aug-fs-xs" data-testid="object-figure-whole" style={{ color: "var(--t3)", minHeight: 16 }}>{beside}</div>
       </div>
-      <div className="aug-fs-xs" data-testid="object-figure-whole" style={{ color: "var(--t3)", minHeight: 16 }}>{beside}</div>
     </Frame>
   );
 }
 
-// the chart's frame, in its own units (the mockup's): drawn to the card's width
-const W = 640, H = 210, LEFT = 40, RIGHT = 632, BASE = 184, TOP = 26;
+// the chart's frame in px, drawn at the size its card gives it (Arc AP-1): off the grid at the mockup's shape, 640 × 210
+// scaled to the card's width; on the grid at the box's own width and height — its text always at its own size
+const W = 640, H = 210, LEFT = 40, TOP = 26, PAD_RIGHT = 8, PAD_BOTTOM = 26;
 
 /** An entity's objects per day over its last whole days: the reader's filtered objects as bars, all of them as a
  *  line behind — or, with no filter on, all of them as bars. Each bar says its day and its count when pointed at. */
 export function ObjectChartPiece({ entity, label, time, days }: { entity: string; label: string; time: string; days: number }) {
   const { filters } = usePieces();
+  const box = useCellBox();
+  const [plot, room] = useMeasured<HTMLDivElement>();
+  const width = room.width || W;
+  const height = box.onGrid ? Math.max(120, room.height || H) : Math.round((width * H) / W);
+  const RIGHT = width - PAD_RIGHT, BASE = height - PAD_BOTTOM;
   const noun = useNoun(entity);
   const narrowed = conditionsFor(filters, entity);
   const last = useObjectQuery({ object_type: entity, measures: [{ name: "t", agg: "max", path: time }] });
@@ -786,7 +821,13 @@ export function ObjectChartPiece({ entity, label, time, days }: { entity: string
       )}
     </div>
   );
-  if (!bars || !all) return <Frame testid="object-chart">{head}<div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Reading…</div></Frame>;
+  if (!bars || !all) {
+    return (
+      <Frame testid="object-chart">{head}
+        <div ref={plot} className="aug-fs-sm" style={{ color: "var(--t3)", ...(box.onGrid ? { flex: 1, minHeight: 0 } : {}) }}>Reading…</div>
+      </Frame>
+    );
+  }
   const axis = ticks(Math.max(1, ...all, ...bars));
   const top = axis[axis.length - 1] || 1;
   const y = (v: number) => BASE - (v / top) * (BASE - TOP);
@@ -808,8 +849,10 @@ export function ObjectChartPiece({ entity, label, time, days }: { entity: string
   return (
     <Frame testid="object-chart">
       {head}
-      <div style={{ position: "relative" }} onMouseLeave={() => setHover(null)}>
-        <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" data-testid="object-chart-svg"
+      <div ref={plot} style={{ position: "relative", overflow: "hidden", ...(box.onGrid ? { flex: 1, minHeight: 0 } : {}) }}
+        onMouseLeave={() => setHover(null)}>
+        <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" data-testid="object-chart-svg"
+          style={box.onGrid ? { position: "absolute", left: 0, top: 0 } : { display: "block" }}
           aria-label={`${label}, last ${days} days${narrowed.length ? `: ${chosenWords(filters, entity)} as bars, all ${noun} as a line` : ""}`}>
           {axis.map(t => (
             <g key={t}>
@@ -820,7 +863,7 @@ export function ObjectChartPiece({ entity, label, time, days }: { entity: string
           {bars.map((v, i) => (
             <g key={window[i]}>
               <path d={bar(i, v)} fill="var(--chart-1)" opacity={hover === null || hover === i ? 1 : 0.55} />
-              {i % 7 === 0 && <text x={mid(i)} y={H - 8} textAnchor="middle" fill="var(--chart-tick)" style={{ font: "10px Inter, system-ui, sans-serif" }}>{dayLabel(window[i])}</text>}
+              {i % 7 === 0 && <text x={mid(i)} y={height - 8} textAnchor="middle" fill="var(--chart-tick)" style={{ font: "10px Inter, system-ui, sans-serif" }}>{dayLabel(window[i])}</text>}
               <rect data-testid="object-chart-hit" x={LEFT + i * slot} y={TOP - 10} width={slot} height={BASE - TOP + 10} fill="transparent"
                 onMouseEnter={() => setHover(i)}><title>{said(i)}</title></rect>
             </g>
@@ -836,7 +879,7 @@ export function ObjectChartPiece({ entity, label, time, days }: { entity: string
         </svg>
         {hover !== null && (
           <div data-testid="object-chart-tip" className="aug-fs-xs" role="status" style={{
-            position: "absolute", top: 0, left: `${(mid(hover) / W) * 100}%`, transform: `translateX(${hover > lastI / 2 ? "-100%" : "0"})`,
+            position: "absolute", top: 0, left: `${(mid(hover) / width) * 100}%`, transform: `translateX(${hover > lastI / 2 ? "-100%" : "0"})`,
             background: "var(--bg-3)", border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: "4px 8px", color: "var(--t1)",
             whiteSpace: "nowrap", pointerEvents: "none", boxShadow: "var(--shadow-sm)" }}>
             {said(hover)}

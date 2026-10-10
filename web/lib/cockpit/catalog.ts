@@ -17,6 +17,11 @@
  * component size adjustable… without losing the elegance and robustness"): a column span of 1
  * to 3 and a row span of 1 or 2, six names, never free pixels. Left out, an element is small.
  *
+ * A section a person has resized is on the GRID instead (Arc AP, the user 2026-10-10: "they become
+ * either too large or small.. The size needs to be adjusted one grade point at a time"): twelve
+ * columns and rows of one grade, each element placed by `w` columns and `h` rows, within what its
+ * kind may take (`LIMITS`). Still never pixels — the spec says grid units, and the screen draws them.
+ *
  * What the library's own `catalog.validate` checks, measured in CT-1: component NAMES and the
  * shape of an element. It does not check a prop against its schema — a tone outside the list,
  * a number where a card id belongs and a prop nobody declared all pass. `rules.ts` checks
@@ -31,8 +36,9 @@ import { z } from "zod";
 
 /** Raised when a component or a prop is added, renamed or removed. 2: Note, Image and `size`. 3: the ontology's
  *  pieces — ProcessBoard, ObjectTable, ObjectDetail and ActionButton (Arc OC-4). 4: a cockpit started from an object —
- *  ObjectFilters, ObjectFigure and ObjectChart (2026-10-10). */
-export const COCKPIT_VOCABULARY_VERSION = 4;
+ *  ObjectFilters, ObjectFigure and ObjectChart (2026-10-10). 5: sizes one grade at a time — a section's `grid`, each
+ *  placed element's `w` and `h`, the filter column's `w` (Arc AP-1, 2026-10-10). */
+export const COCKPIT_VOCABULARY_VERSION = 5;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
 export const TONES = ["good", "warn", "bad", "info", "neutral"] as const;
@@ -59,6 +65,33 @@ export function sizeOf(w: number, h: number): Size | null {
   return SIZES.find(s => SPAN[s].w === w && SPAN[s].h === h) ?? null;
 }
 
+/** The grid a resized section is laid on (Arc AP-1): twelve columns, and rows whose GRADE — a row and the gap under
+ *  it — is 40 px, so one step of height is always 40 px and one step of width one column. */
+export const GRID = { columns: 12, row: 28, gap: 12 } as const;
+export const GRADE = GRID.row + GRID.gap;
+/** How tall `h` rows are drawn: the rows and the gaps between them. */
+export const rowsTall = (h: number): number => h * GRID.row + Math.max(0, h - 1) * GRID.gap;
+/** The most rows anything may take. */
+export const MAX_ROWS = 30;
+
+/** What each kind may take on the grid — columns and rows, least and most — so nothing becomes too small to read or
+ *  too large for what it holds (the user, 2026-10-10). A card may be a figure or a chart, so it takes either's room. */
+export const LIMITS = {
+  Card: { w: [2, 12], h: [2, 16] },
+  Note: { w: [2, 12], h: [2, 16] },
+  Image: { w: [2, 12], h: [3, 16] },
+  ProcessBoard: { w: [3, 12], h: [4, 14] },
+  ObjectTable: { w: [4, 12], h: [4, 20] },
+  ObjectDetail: { w: [2, 12], h: [3, 16] },
+  ObjectFigure: { w: [2, 6], h: [2, 4] },
+  ObjectChart: { w: [3, 12], h: [4, 14] },
+} as const satisfies Record<string, { w: readonly [number, number]; h: readonly [number, number] }>;
+export type GridKind = keyof typeof LIMITS;
+
+/** The filter column's width, in grades of 40 px: 200 to 400 px. Left out, it is 272 px, as it was drawn before. */
+export const FILTER_WIDTH = { least: 5, most: 10 } as const;
+export const FILTER_DEFAULT_PX = 272;
+
 /** A card id as the card store writes it: eight hex characters, or an id its caller chose. */
 const CARD_ID = /^[A-Za-z0-9_-]{1,64}$/;
 /** An uploaded object's id, as the volume store writes it. */
@@ -83,6 +116,9 @@ export const FIGURE_FORMATS = ["number", "money"] as const;
 export const CHART_DAYS = [7, 14, 30, 60, 90] as const;
 
 const size = z.enum(SIZES).nullable().optional();
+/** An element's room on a section's grid: columns across and rows down (Arc AP-1). */
+const w = z.number().int().min(1).max(GRID.columns).nullable().optional();
+const h = z.number().int().min(1).max(MAX_ROWS).nullable().optional();
 
 export const cockpitCatalog = defineCatalog(schema, {
   components: {
@@ -108,22 +144,24 @@ export const cockpitCatalog = defineCatalog(schema, {
       props: z.object({
         title: z.string().min(1).max(MAX_TITLE),
         columns: z.number().int().min(1).max(MAX_COLUMNS).nullable().optional(),
+        /** On the grid: twelve columns and rows of one grade, each element placed by `w` and `h`. */
+        grid: z.literal(GRID.columns).nullable().optional(),
       }),
       slots: ["default"],
-      description: "A titled group of cards, notes and images. May be shown by a condition.",
+      description: "A titled group of cards, notes and images. May be shown by a condition. On the grid (grid: 12), each element it holds says its w and h.",
     },
     Card: {
       props: z.object({
         card: z.string().regex(CARD_ID),
         tone: z.enum(TONES).nullable().optional(),
-        size,
+        size, w, h,
       }),
       description: "One card from the card store, by its id. Never a figure, never SQL. May be shown by a condition.",
     },
     Note: {
       props: z.object({
         text: z.string().min(1).max(MAX_NOTE),
-        size,
+        size, w, h,
         // Stamped by the server when the note is kept; whatever a client sends here is replaced.
         author: z.string().max(120).optional(),
         written_at: z.string().max(40).optional(),
@@ -134,12 +172,12 @@ export const cockpitCatalog = defineCatalog(schema, {
       props: z.object({
         object: z.string().regex(OBJECT_ID),
         caption: z.string().min(1).max(MAX_CAPTION),
-        size,
+        size, w, h,
       }),
       description: "An image a person uploaded, by its object id, with a caption. Never chosen by a model, never measured.",
     },
     ProcessBoard: {
-      props: z.object({ process: z.string().regex(ONTOLOGY_ID), size }),
+      props: z.object({ process: z.string().regex(ONTOLOGY_ID), size, w, h }),
       description: "A declared process, by its id: each stage and how many objects reach it, each promise with how often it is broken and how many objects are open and already past it.",
     },
     ObjectTable: {
@@ -149,12 +187,12 @@ export const cockpitCatalog = defineCatalog(schema, {
         columns: z.array(z.string().regex(PROPERTY_PATH)).max(MAX_TABLE_COLUMNS).nullable().optional(),
         sort: z.string().regex(PROPERTY_PATH).nullable().optional(),
         descending: z.boolean().nullable().optional(),
-        size,
+        size, w, h,
       }),
       description: "The objects of an entity, or of a segment of it, a page at a time: each object's key and the columns named, read through the object door.",
     },
     ObjectDetail: {
-      props: z.object({ follows: z.string().regex(ELEMENT_KEY), size }),
+      props: z.object({ follows: z.string().regex(ELEMENT_KEY), size, w, h }),
       description: "The object chosen in the objects table it follows, by that table's element key: its properties, edits marked, and the declared actions it holds.",
     },
     ActionButton: {
@@ -170,6 +208,8 @@ export const cockpitCatalog = defineCatalog(schema, {
           /** The object a property is read through, when it is not the entity's own ("via Customer"). */
           via: z.string().max(MAX_LABEL).nullable().optional(),
         }).strict()).min(1).max(MAX_FILTERS),
+        /** Its width in grades of 40 px (Arc AP-1); left out, 272 px. */
+        w: z.number().int().min(FILTER_WIDTH.least).max(FILTER_WIDTH.most).nullable().optional(),
       }),
       description: "The cockpit's filter column: each property's values with how many objects hold each. A reader's click narrows every piece over the same entity, for that reader only. The cockpit's first child, at most one.",
     },
@@ -180,7 +220,7 @@ export const cockpitCatalog = defineCatalog(schema, {
         agg: z.enum(FIGURE_AGGS),
         path: z.string().regex(PROPERTY_PATH).nullable().optional(),
         format: z.enum(FIGURE_FORMATS).nullable().optional(),
-        size,
+        size, w, h,
       }),
       description: "One figure over an entity's objects — a count, or an aggregate of a property — read through the object door, narrowed by the reader's filters and said beside the whole.",
     },
@@ -190,7 +230,7 @@ export const cockpitCatalog = defineCatalog(schema, {
         label: z.string().min(1).max(MAX_LABEL),
         time: z.string().regex(PROPERTY_PATH),
         days: z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(60), z.literal(90)]).nullable().optional(),
-        size,
+        size, w, h,
       }),
       description: "An entity's objects per day over its last days — the reader's filtered objects as bars, all of them as a line behind.",
     },
