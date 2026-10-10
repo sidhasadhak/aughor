@@ -32,10 +32,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import {
-  anyFilter, chosenWords, conditionsFor, dayLabel, daysBefore, entityKey, figureText, onDays, plural, ticks, toggled,
-  windowEnd, type Filters,
+  anyFilter, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, entityKey, figureText, onDays, plural, ticks,
+  toggled, windowEnd, type Filters,
 } from "@/lib/cockpit/objectView";
-import { formatCount, formatDateTime, pct } from "@/lib/format";
+import { formatCount, formatDateTime, isNumericType, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { objectHref } from "@/lib/objectLinks";
 import {
@@ -331,7 +331,7 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
           <thead>
             <tr>
               {withUniqueKeys([{ name: page.key, label: page.key, edited: false }, ...page.columns], c => c.name).map(([k, c]) => (
-                <th key={k} style={{ textAlign: "left", fontWeight: 500, color: "var(--t3)", padding: "4px 8px 6px 0", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap" }}>
+                <th key={k} style={{ textAlign: "type" in c && isNumericType(c.type) ? "right" : "left", fontWeight: 500, color: "var(--t3)", padding: "4px 8px 6px 0", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap" }}>
                   {c.edited && <Icon name="edit" size={11} label="Set by a declared action" />}
                   {"masked" in c && c.masked && <Icon name="lock" size={11} label="Masked for you — the note under the table says why" />}
                   {" "}{words(c.label)}
@@ -348,12 +348,19 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
                 <tr key={rowKey} data-testid="object-table-row" aria-selected={on}
                   onClick={() => elementKey && pick(elementKey, on ? null : { objectType: page.object_type, typeId: page.type_id, pk })}
                   style={{ cursor: elementKey ? "pointer" : undefined, background: on ? "var(--bg-sel)" : undefined }}>
-                  {row.map((v, i) => (
-                    <td key={page.names[i] ?? i} style={{ padding: "5px 8px 5px 0", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap",
-                      color: cell(v) === "—" ? "var(--t3)" : "var(--t1)", fontVariantNumeric: "tabular-nums" }}>
-                      {i > 0 && page.columns[i - 1]?.edited && cell(v) !== "—" && <Icon name="edit" size={11} label="Edited" />} {cell(v)}
-                    </td>
-                  ))}
+                  {row.map((v, i) => {
+                    // the key in mono; every other cell written as its column's type reads (a moment, a number)
+                    const type = i > 0 ? page.columns[i - 1]?.type : "";
+                    const text = cellText(v, type);
+                    const num = i > 0 && isNumericType(type);
+                    return (
+                      <td key={page.names[i] ?? i} className={i === 0 ? "aug-mono" : undefined} style={{
+                        padding: "5px 8px 5px 0", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap",
+                        textAlign: num ? "right" : undefined, color: text === "—" ? "var(--t3)" : "var(--t1)", fontVariantNumeric: "tabular-nums" }}>
+                        {i > 0 && page.columns[i - 1]?.edited && text !== "—" && <Icon name="edit" size={11} label="Edited" />} {text}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}

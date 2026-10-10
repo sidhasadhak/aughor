@@ -127,7 +127,10 @@ def test_a_window_ends_today_unless_the_objects_stop_before_it():
 def test_the_table_lists_what_the_filters_and_figures_read(order):
     cols = order["table"]["columns"]
     assert len(cols) <= FO.MAX_TABLE_COLUMNS and cols[0] == "status" and cols[1] == "order_date"
-    assert len(order["table"]["labels"]) == len(cols)
+    labels = dict(zip(cols, order["table"]["labels"]))
+    assert len(labels) == len(cols)
+    # each column is named as its property is: `item_count` is also averaged as a figure, and stays "Item Count"
+    assert labels["item_count"] == "Item Count" and labels["order_date"] == "Order Date"
 
 
 def test_only_the_actions_declared_on_this_object_are_offered(order):

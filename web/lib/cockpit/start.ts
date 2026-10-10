@@ -62,7 +62,6 @@ export async function startCockpit(connectionId: string, title: string, spec: un
   return id;
 }
 
-
 /** What a person ticked of a cockpit proposed from an object. */
 export interface ObjectCockpitChoice {
   filters: string[];
@@ -114,8 +113,10 @@ export function objectCockpitSpec(p: CockpitFromObject, c: ObjectCockpitChoice):
     sec.children.push("chart");
   }
   if (c.table) {
+    // newest first, by the object's own date, when it has one the table lists
+    const newest = p.chart && p.table.columns.includes(p.chart.time) ? { sort: p.chart.time, descending: true } : {};
     els.table = { type: "ObjectTable", children: [], props: {
-      entity: p.entity, ...(p.table.columns.length ? { columns: p.table.columns } : {}), size: "wide" } };
+      entity: p.entity, ...(p.table.columns.length ? { columns: p.table.columns } : {}), ...newest, size: "wide" } };
     els.detail = { type: "ObjectDetail", props: { follows: "table", size: "small" }, children: [] };
     sec.children.push("table", "detail");
     for (const id of p.actions.map(a => a.id).filter(a => c.actions.includes(a))) {

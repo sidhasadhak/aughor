@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import type { CockpitFromObject } from "@/lib/api";
 import {
-  anyFilter, chosenWords, conditionsFor, dayLabel, daysBefore, figureText, onDays, plural, ticks, toggled, windowEnd,
-  type Filters,
+  anyFilter, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, figureText, onDays, plural, ticks, toggled,
+  windowEnd, type Filters,
 } from "@/lib/cockpit/objectView";
 import { checkCockpitSpec } from "@/lib/cockpit/rules";
 import { everything, holdsAPiece, objectCockpitSpec } from "@/lib/cockpit/start";
@@ -59,6 +59,23 @@ describe("a chart of objects per day", () => {
   });
 });
 
+describe("a table cell", () => {
+  const now = new Date(Date.UTC(2026, 9, 10, 15));
+
+  it("writes a moment short — its time this year, its year otherwise — and in UTC, as the warehouse holds it", () => {
+    expect(cellText("2026-10-10 00:32:11+00:00", "TIMESTAMP", now)).toBe("Oct 10, 00:32");
+    expect(cellText("2024-05-16 09:49:39+00:00", "TIMESTAMP", now)).toBe("May 16, 2024");
+    expect(cellText("2026-09-01", "DATE", now)).toBe("Sep 1");
+  });
+
+  it("writes a number with separators and at most two decimals, and nothing as a dash", () => {
+    expect(cellText("32.990001678466", "FLOAT64", now)).toBe("32.99");
+    expect(cellText("125080", "INT64", now)).toBe("125,080");
+    expect(cellText(null, "FLOAT64", now)).toBe("—");
+    expect(cellText("Shipped", "STRING", now)).toBe("Shipped");
+  });
+});
+
 describe("a figure", () => {
   it("writes a count with separators, money short, anything else to two decimals", () => {
     expect(figureText(125080, "count", "number", "$")).toBe("125,080");
@@ -101,6 +118,8 @@ describe("the cockpit a person's ticks make", () => {
     expect(els.sec.props.title).toBe(els.cockpit.props.title);          // so its heading is not drawn
     expect(els["figure-0"].props).toEqual({ entity: "order", label: "Orders", agg: "count", format: "number", size: "small" });
     expect(els.detail.children).toEqual(["action-flag_for_review"]);
+    // the table lists the newest objects first, by the date its chart reads
+    expect(els.table.props).toMatchObject({ sort: "created_at", descending: true });
   });
 
   it("is accepted whatever is left out, as long as something is there to narrow", () => {

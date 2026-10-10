@@ -220,9 +220,12 @@ def propose(graph: Any, entity_name: str, run: Run, *, today: Optional[date] = N
         if path and path not in columns:
             columns.append(path)
     columns = columns[:MAX_TABLE_COLUMNS]
-    labels = {f["path"]: f["label"] for f in filters + figures if f["path"]}
-    if chart:
-        labels[time] = _label(tp)
+    # a column is named as its property is — never as a figure that aggregates it ("Average …" is not a column)
+    labels = {f["path"]: f["label"] for f in filters}
+    for path in columns:
+        p = find_property(entity, path) if path not in labels else None
+        if p is not None:
+            labels[path] = _label(p)
 
     # ── the actions declared on it ──
     actions = [{"id": a.id, "label": a.display_name or a.id.replace("_", " ")} for a in graph.declared_actions()

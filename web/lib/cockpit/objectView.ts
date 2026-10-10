@@ -5,7 +5,7 @@
  *
  * A reader's filters are their own (the user, 2026-10-10): held per cockpit in their browser, never in the spec.
  */
-import { compactNumber, formatCount, formatMetricValue, formatMoney } from "@/lib/format";
+import { columnTypeKind, compactNumber, formatCount, formatMetricValue, formatMoney } from "@/lib/format";
 
 /** A reader's filters: entity → property path → the values chosen. */
 export type Filters = Record<string, Record<string, string[]>>;
@@ -100,4 +100,29 @@ export function figureText(value: number | null | undefined, agg: string, format
   if (format === "money") return Math.abs(value) >= 1e3 ? `${value < 0 ? "-" : ""}${sym}${compactNumber(Math.abs(value), 2)}` : formatMoney(value, sym);
   if (agg === "count" || agg === "count_distinct") return formatCount(Math.round(value));
   return formatMetricValue(value);
+}
+
+/** A table cell as a reader reads it, by its column's SQL type: a moment as "Oct 10, 00:32" (with its year when it is
+ *  not this year's — "May 16, 2024"), a number with separators and at most two decimals, a flag as yes or no, nothing
+ *  as "—". Moments are read and written in UTC, as the warehouse holds them. */
+export function cellText(v: unknown, type: string | null | undefined, now: Date = new Date()): string {
+  if (v === null || v === undefined || v === "" || v === "NULL") return "—";
+  if (v === true || v === "true" || v === "True") return "yes";
+  if (v === false || v === "false" || v === "False") return "no";
+  const kind = columnTypeKind(type);
+  if (kind === "num") {
+    const n = Number(v);
+    if (Number.isNaN(n)) return String(v);
+    return n.toLocaleString("en-US", { maximumFractionDigits: Number.isInteger(n) ? 0 : 2 });
+  }
+  if (kind === "date" || kind === "time") {
+    const s = String(v);
+    const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00Z` : s.replace(" ", "T").replace(/\+00(:00)?$/, "Z"));
+    if (Number.isNaN(d.getTime())) return s;
+    const thisYear = d.getUTCFullYear() === now.getUTCFullYear();
+    const timed = /\d{2}:\d{2}/.test(s);
+    const day = d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC", ...(thisYear ? {} : { year: "numeric" }) });
+    return thisYear && timed ? `${day}, ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" })}` : day;
+  }
+  return String(v);
 }
