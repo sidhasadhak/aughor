@@ -8481,6 +8481,12 @@ export interface SystemFlag {
   source: "run" | "runtime" | "env" | "default";
   env_var: string;
   label: string;
+  /** What the person gets — at most two short sentences, always shown. */
+  summary?: string;
+  /** What it costs and touches, drawn as chips (kinds: model · free · schedule · sends ·
+   *  warehouse · needs · private · route). */
+  facts?: Array<{ kind: string; text: string }>;
+  /** The rest, behind "Details" — ends by saying what Off means. */
   description: string;
   // Capabilities Auto-mode (Wave 1 · E3) — present on every flag:
   state?: CapabilityState;          // effective tri-state
