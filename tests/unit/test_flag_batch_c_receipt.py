@@ -79,8 +79,11 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # Arc OC-6, 2026-10-10: `actions.outbox` — a declared action's calls through an outbox, retried by cause and an
     # unknown one checked before it is sent again. No model call; it graduates on its live receipt (a forced timeout
     # reconciled by the action's check), and its entry names the falsifier that sends it back.
+    # Arc OC-7 and OC-8, the same day: `ontology.security` (row policies and masked properties; its receipt is on a
+    # scratch install until sign-in) and `ontology.builder_doors` (the contract, listed and proposed on from outside).
+    # Neither calls a model; each entry names its receipt and the falsifier.
     assert set(GRADUATION_QUEUE) == {"cockpit.composed", "slack.managed_supervisor", "ontology.census",
                                      "ontology.history", "ontology.release", "ontology.cockpit_pieces",
-                                     "actions.outbox"}
+                                     "actions.outbox", "ontology.security", "ontology.builder_doors"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

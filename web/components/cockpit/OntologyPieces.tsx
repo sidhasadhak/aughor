@@ -20,6 +20,7 @@ import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Foot, Frame, Title } from "@/components/cockpit/CockpitTile";
+import { Masked } from "@/components/objects/Masked";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -198,6 +199,11 @@ export function ProcessBoardPiece({ process }: { process: string }) {
           {found.leaves.unknown ? `; ${formatCount(found.leaves.unknown)} hold no ${found.leaves.property} and are left out` : ""}
         </div>
       )}
+      {found.counted_over && (
+        <div className="aug-fs-xs" data-testid="process-counted-over" style={{ color: "var(--t3)", display: "flex", gap: 4 }}>
+          <Icon name="lock" size={11} /> {found.counted_over}
+        </div>
+      )}
       <Foot icon="process">{found.measured_at ? `Measured ${formatDateTime(found.measured_at)}` : "Not measured yet"} · {found.entity_id}</Foot>
     </Frame>
   );
@@ -260,7 +266,9 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
             <tr>
               {withUniqueKeys([{ name: page.key, label: page.key, edited: false }, ...page.columns], c => c.name).map(([k, c]) => (
                 <th key={k} style={{ textAlign: "left", fontWeight: 500, color: "var(--t3)", padding: "4px 8px 6px 0", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap" }}>
-                  {c.edited && <Icon name="edit" size={11} label="Set by a declared action" />} {words(c.label)}
+                  {c.edited && <Icon name="edit" size={11} label="Set by a declared action" />}
+                  {"masked" in c && c.masked && <Icon name="lock" size={11} label="Masked for you — the note under the table says why" />}
+                  {" "}{words(c.label)}
                 </th>
               ))}
             </tr>
@@ -285,6 +293,12 @@ export function ObjectTablePiece({ elementKey, entity, segment, columns, sort, d
           </tbody>
         </table>
         {shown === 0 && <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: "8px 0" }}>No objects in this set.</div>}
+        {/* what this reader does not see, and why — a row policy, a masked column — said, never implied (Arc OC-7) */}
+        {page.caveats.length > 0 && (
+          <div className="aug-fs-xs" data-testid="object-table-caveats" style={{ color: "var(--t3)", padding: "6px 0 0" }}>
+            {page.caveats.map(c => <div key={c}>{c}</div>)}
+          </div>
+        )}
       </div>
       <Foot icon="table" aside={
         <span style={{ display: "inline-flex", gap: 4 }}>
@@ -356,7 +370,7 @@ export function ObjectDetailPiece({ follows, children }: { follows: string; chil
             </dt>
             <dd className="aug-fs-sm" data-testid={p.overlay ? "object-detail-edit" : undefined}
               style={{ margin: 0, overflowWrap: "anywhere", color: p.value == null ? "var(--t3)" : "var(--t1)" }}>
-              {cell(p.value)}
+              {p.withheld ? <Masked why={p.withheld} /> : cell(p.value)}
               {p.overlay && (
                 <span className="aug-fs-xs" style={{ display: "block", color: "var(--t3)" }}>
                   {p.overlay.provenance}{p.overlay.note ? ` — ${p.overlay.note}` : ""}

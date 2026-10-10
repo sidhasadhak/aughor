@@ -51,6 +51,10 @@ class ObjectNotFound(LookupError):
     """No instance has that key — an answer, not a failure."""
 
 
+class ObjectWithheld(LookupError):
+    """Arc OC-7 — the object exists and a row policy keeps it from this reader: said as withheld, never as missing."""
+
+
 @dataclass
 class ObjectInstance:
     object_type: str                    # the type's api name
@@ -300,7 +304,11 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
         from aughor.ontology.platform_objects import instance
         return instance(graph, entity, pk, overlay)
     on = _reader(graph, db, source_db)
-    row, columns, repeated = _fetch_row(on(entity), entity, pk)
+    try:
+        row, columns, repeated = _fetch_row(on(entity), entity, pk)
+    except ObjectNotFound:
+        _say_withheld(on(entity), entity, pk)
+        raise
     key = _key_of(entity)
     caveats: list[str] = []
     if repeated:
@@ -334,6 +342,7 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
                            "overlay": {"by": mine.actor or mine.source, "at": mine.created_at, "note": mine.note,
                                        "origin": mine.origin, "provenance": mine.provenance(),
                                        "id": mine.id, "version": mine.version}})
+    _mask(entity, properties, caveats)
     shown = display_of(entity)
     # Read off the ASSEMBLED properties, not the backing row: ON-1b lets a name live on a static binding, and
     # `_bound_properties` has already fetched it. The backing row is still where a backing property comes from.
@@ -344,6 +353,33 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
                           title=str(title) if title is not None else None,
                           properties=properties, links=links, caveats=caveats, timeseries=series,
                           display={**shown, "value": str(title) if title is not None else None})
+
+
+def _say_withheld(db: Any, entity: OntologyEntity, pk: str) -> None:
+    """Arc OC-7 — raise `ObjectWithheld` when a row policy hides an object that exists: the reader is told it is
+    withheld and why, never that it does not exist. Silent when no policy restricts the reader."""
+    from aughor.ontology.security import rows_said, unfiltered
+    said = rows_said(entity)
+    if not said:
+        return
+    with unfiltered():
+        try:
+            _fetch_row(db, entity, pk)
+        except ObjectNotFound:
+            return
+    raise ObjectWithheld(f"{entity.id} {pk} is withheld from you — {said}")
+
+
+def _mask(entity: OntologyEntity, properties: list[dict], caveats: list[str]) -> None:
+    """Arc OC-7 — a sensitive property the reader may not read: its value emptied, why said beside it and once above."""
+    from aughor.ontology.security import masked
+    for prop in properties:
+        why = masked(entity, str(prop.get("name") or ""))
+        if why:
+            prop["value"] = None
+            prop["withheld"] = why
+            if why not in caveats:
+                caveats.append(why)
 
 
 #: The most keys one titling call resolves. An answer table shows a page of rows, not a warehouse; a

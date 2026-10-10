@@ -197,6 +197,9 @@ _EDITABLE: dict[str, set[str]] = {
         "use_instead",
         # Arc OC-6 — the declared moves of the properties the edit layer holds (`EditStateMachine`), by property.
         "edit_states",
+        # Arc OC-7 — who sees which objects (`RowPolicy`) and which properties are masked for whom (`Sensitivity`).
+        "row_policies",
+        "sensitive",
         # …and its PENDING twin. A proposal captured from a conversation lives in its
         # own field rather than in `use_instead`, so it can never be mistaken for an
         # accepted rule: enforcement reads `use_instead` and nothing else, which makes
@@ -771,6 +774,18 @@ def _apply_entity(ent: OntologyEntity, ov: OntologyOverride, graph: Optional[Ont
             from aughor.ontology.models import EditStateMachine
             ent.edit_states = {str(k): EditStateMachine.model_validate(v) for k, v in dict(value or {}).items()}
             if ent.edit_states:
+                touched.append(field)
+            continue
+        if field == "row_policies":
+            from aughor.ontology.models import RowPolicy
+            ent.row_policies = [RowPolicy.model_validate(v) for v in list(value or [])]
+            if ent.row_policies:
+                touched.append(field)
+            continue
+        if field == "sensitive":
+            from aughor.ontology.models import Sensitivity
+            ent.sensitive = {str(k): Sensitivity.model_validate(v) for k, v in dict(value or {}).items()}
+            if ent.sensitive:
                 touched.append(field)
             continue
         if field == "expressions":

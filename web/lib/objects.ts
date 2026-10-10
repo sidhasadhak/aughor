@@ -17,6 +17,8 @@ export interface ObjectProperty {
   data_type: string;
   unit: string;
   description: string;
+  /** Arc OC-7 — the value is masked for this reader (a sensitive property): why, and who may read it. */
+  withheld?: string;
   /** ON-4 — set by an accepted action and merged at read time: who, when, and why. */
   overlay?: { by: string; at: string; note: string; origin: string; provenance: string; id: string;
               /** Arc OC-6 — how many times it has been set or withdrawn; a press sends the version it read. */
@@ -213,6 +215,12 @@ export interface ObjectMissing {
   detail: string;
 }
 
+/** Arc OC-7 — the object exists and a row policy keeps it from this reader; `detail` says which and why. */
+export interface ObjectWithheld {
+  path: "withheld";
+  detail: string;
+}
+
 export interface LinkedObjectsPage {
   path: "links";
   connection_id: string;
@@ -289,9 +297,10 @@ function objectPath(objectType: string, pk: string): string {
 
 export async function getObjectPage(
   objectType: string, pk: string, connectionId?: string, schemaName?: string,
-): Promise<ObjectPage | ObjectRefusal | ObjectMissing> {
+): Promise<ObjectPage | ObjectRefusal | ObjectMissing | ObjectWithheld> {
   const res = await fetch(`${objectPath(objectType, pk)}${scope(connectionId, schemaName)}`);
   if (res.status === 404) return { path: "missing", detail: await detailOf(res) };
+  if (res.status === 403) return { path: "withheld", detail: await detailOf(res) };
   if (!res.ok) throw new Error(await detailOf(res));
   return res.json();
 }
@@ -410,7 +419,9 @@ export interface ObjectListingPage {
   /** The column that titles each object; empty when the key does. */
   title: string;
   /** One per listed column after the key. `edited` — an accepted edit sets it (or a declared action will). */
-  columns: { name: string; path: string; label: string; type: string; edited: boolean }[];
+  columns: { name: string; path: string; label: string; type: string; edited: boolean;
+             /** Arc OC-7 — masked for this reader: listed empty, and the caveats say why. */
+             masked?: boolean }[];
   /** The result's own column names, the key first, in the order of each row's cells. */
   names: string[];
   rows: unknown[][];

@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import re
 import threading
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -2352,7 +2352,14 @@ def list_ontology_processes(
             raise HTTPException(status_code=404, detail="Ontology not available")
         where = {"connection_id": connection_id, "schema_name": graph.schema_name}
     from aughor.ontology.impacts import describe_impact
-    return {**where, "processes": [describe_process(graph, p) for _, p in sorted(graph.processes.items())],
+    from aughor.ontology.security import counts_said
+    processes = [describe_process(graph, p) for _, p in sorted(graph.processes.items())]
+    for described in processes:                      # Arc OC-7 — a count over objects the reader may not see says so
+        entity = graph.entities.get(str(described.get("entity_id") or ""))
+        said = counts_said(entity) if entity is not None else None
+        if said:
+            described["counted_over"] = said
+    return {**where, "processes": processes,
             "rules": [describe_rule(graph, r) for _, r in sorted(graph.rules.items())],
             "impacts": [describe_impact(graph, i) for _, i in sorted((graph.impacts or {}).items())]}
 
@@ -4255,3 +4262,198 @@ def framing_misses(connection_id: str = BUILTIN_ID):
     from aughor.agent.framing import served_graph
     from aughor.ontology.framing_misses import misses
     return misses(connection_id, graph=served_graph(connection_id))
+
+
+# ── Arc OC-8 — an Apache Ossie model imported as proposals a person accepts (decision (j): import only) ──────────────
+
+class _OssieImport(BaseModel):
+    #: The model — its YAML or JSON text, or the parsed mapping.
+    model: Any
+    #: The proposal ids a person accepts (`dataset:<name>`, `relationship:<name>`, `metric:<name>`). Empty: preview.
+    accept: list[str] = Field(default_factory=list)
+
+
+def _ossie_plan(body: "_OssieImport", connection_id: str, schema_name: Optional[str]):
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("ontology.builder_doors"):
+        raise HTTPException(status_code=404, detail=(
+            "The doors for builders are off — an administrator turns them on in Settings → System → Feature flags "
+            "(ontology.builder_doors)."))
+    from aughor.ontology import ossie
+    try:
+        model = ossie.model_from(body.model)
+    except ossie.OssieRefused as exc:
+        raise HTTPException(status_code=422, detail=f"Not an Ossie model this reads: {exc}") from exc
+    graph = served_ontology_graph(connection_id, schema_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="No ontology is built for this scope yet — build it, then import.")
+    from aughor.db.registry import get_dsn
+    try:
+        dialect = get_dsn(connection_id)[0]
+    except Exception:  # noqa: BLE001 — an unknown connection reads Ossie's own dialect and ANSI only
+        dialect = "duckdb"
+    return model, graph, ossie.plan(model, graph, dialect=dialect)
+
+
+@router.post("/ontology/v1/import/ossie/preview", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def preview_ossie_import(body: _OssieImport, connection_id: str = BUILTIN_ID,
+                         schema_name: Optional[str] = Query(default=None)):
+    """What an Ossie model would become on this scope, part by part — a new entity over a table no entity reads, a
+    description for an entity with none, a link, a draft metric — and what it cannot, with why. Nothing is written."""
+    from aughor.ontology import ossie
+    model, _graph, rows = _ossie_plan(body, connection_id, schema_name)
+    return {"model": model.get("name"), "version": model.get("version"), "note": ossie.note(model),
+            "provenance": ossie.provenance(model), "rows": rows, "summary": ossie.summary(rows)}
+
+
+@router.post("/ontology/v1/import/ossie", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def accept_ossie_import(body: _OssieImport, connection_id: str = BUILTIN_ID,
+                        schema_name: Optional[str] = Query(default=None)):
+    """Declare the parts of an Ossie model a person accepted — each through its ordinary door, as that person's
+    declaration with the model as its provenance, into the draft release (nothing is served until it is published).
+    Each part says what became of it; one refused part refuses no other."""
+    from aughor.ontology import ossie
+    model, graph, rows = _ossie_plan(body, connection_id, schema_name)
+    offered = {r["id"]: r for r in ossie.offered(rows)}
+    unknown = [a for a in body.accept if a not in offered]
+    if unknown:
+        raise HTTPException(status_code=400, detail=(
+            f"'{unknown[0]}' is not offered — preview the model and accept from its offered parts "
+            f"({', '.join(sorted(offered)) or 'none'})"))
+    prov = ossie.provenance(model)
+    effective = _served_scope(connection_id, schema_name)
+    results = []
+    for pid in body.accept:
+        row = offered[pid]
+        spec = dict(row["spec"])
+        try:
+            if row["kind"] == "entity":
+                _declare_entity_core({**spec, "origin": "human", "provenance": prov}, connection_id, effective)
+            elif row["kind"] == "describe":
+                override_ontology_entity(row["entity"], _EntityOverride(description=spec["description"]),
+                                         connection_id=connection_id, schema_name=schema_name, domain=None)
+            elif row["kind"] == "link":
+                _declare_link_core({**spec, "origin": "human", "provenance": prov}, connection_id, effective)
+            else:
+                from aughor.routers.metrics import MetricRequest, create_metric
+                create_metric(MetricRequest(connection=connection_id, schema_name=graph.schema_name or None,
+                                            **{k: v for k, v in spec.items() if v is not None}))
+            results.append({"id": pid, "ok": True, "says": row["says"]})
+        except HTTPException as exc:
+            results.append({"id": pid, "ok": False, "refused": str(exc.detail)})
+    return {"model": model.get("name"), "provenance": prov, "results": results,
+            "note": "Declared into the draft release — publish it to serve them; metrics wait for approval."}
+
+
+# ── Arc OC-7 — security on the contract: who sees which objects, which properties are masked for whom ───────────────
+
+class _RowPolicies(BaseModel):
+    """The whole set of an entity's row policies — replaced together, so what a reader sees is read in one place."""
+    policies: list[dict] = Field(default_factory=list)
+
+
+def _set_entity_field(connection_id: str, effective: str, entity_id: str, field: str, value: Any) -> dict:
+    """Set — or, with an empty value, clear — one field of an entity's declaration; the release routes it."""
+    from aughor.ontology.overrides import OntologyOverride, delete_override, find_override, save_override
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    fields = {k: v for k, v in (existing.fields if existing is not None else {}).items() if k != field}
+    if value:
+        fields[field] = value
+    if fields:
+        ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields=fields,
+                              source=(existing.source if existing is not None else "human"),
+                              binding=dict(existing.binding) if existing is not None else {})
+        save_override(connection_id, effective, ov)
+        return _override_result(ov)
+    if existing is not None:
+        delete_override(connection_id, effective, "entity", entity_id)
+    return {"cleared": field, "entity": entity_id}
+
+
+def _security_entity(connection_id: str, schema_name: Optional[str], entity_id: str):
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    effective = _served_scope(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    entity = graph.entities.get(entity_id) if graph is not None else None
+    if entity is None:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    if entity.backing is not None and entity.backing.kind == "platform":
+        raise HTTPException(status_code=400, detail=(
+            f"{entity_id} is held by the platform, read on its own page — a row policy or a mask is declared on an "
+            "entity a warehouse holds"))
+    return effective, entity
+
+
+def _group_problem(group: str) -> str:
+    from aughor.ontology.security import EVERYONE
+    from aughor.rbac.groups import valid_group_id
+    return "" if group == EVERYONE or valid_group_id(group) else (
+        f"'{group}' is not a group id — lowercase letters, digits, - and _ (or * for everyone)")
+
+
+@router.put("/ontology/entities/{entity_id}/row-policies", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def declare_row_policies(entity_id: str, body: _RowPolicies, connection_id: str = BUILTIN_ID,
+                         schema_name: Optional[str] = Query(default=None)):
+    """Arc OC-7 — which objects of an entity each group sees: each policy names a group and the conditions on the
+    entity's own properties its objects meet. Once any is declared, a reader sees only the objects a policy of one of
+    their groups admits — none, and told which groups would, when they are in none. An empty list withdraws them all.
+    Enforced at the object doors while `ontology.security` is on."""
+    from aughor.ontology.models import RowPolicy
+    from aughor.ontology.security import condition_problem
+    effective, entity = _security_entity(connection_id, schema_name, entity_id)
+    kept = []
+    for raw in body.policies:
+        try:
+            policy = RowPolicy.model_validate(raw)
+        except Exception as exc:  # noqa: BLE001 — the shape refused in words
+            raise HTTPException(status_code=400, detail=f"a row policy names a group and its conditions: {exc}") from exc
+        problem = _group_problem(policy.group) or next(
+            (p for p in (condition_problem(entity, c) for c in policy.conditions) if p), "")
+        if problem:
+            raise HTTPException(status_code=400, detail=problem)
+        kept.append(policy.model_dump())
+    return {**_set_entity_field(connection_id, effective, entity_id, "row_policies", kept), "row_policies": kept}
+
+
+@router.put("/ontology/entities/{entity_id}/sensitive/{prop}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def declare_sensitive_property(entity_id: str, prop: str, body: dict, connection_id: str = BUILTIN_ID,
+                               schema_name: Optional[str] = Query(default=None)):
+    """Arc OC-7 — a property only some groups read (`visible_to`; * — everyone): masked for everyone else on every
+    object door — empty, with why — and refused anywhere it would shape an answer. The key cannot be masked: it is
+    how an object is named."""
+    from aughor.ontology.models import Sensitivity
+    effective, entity = _security_entity(connection_id, schema_name, entity_id)
+    found = (entity.properties or {}).get(prop)
+    if found is None:
+        raise HTTPException(status_code=400, detail=f"{entity_id} has no property '{prop}'")
+    if found.is_primary_key:
+        raise HTTPException(status_code=400, detail=f"{prop} is {entity_id}'s key — an object is named by it, so it "
+                                                    "is never masked")
+    try:
+        spec = Sensitivity.model_validate(body)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"a sensitive property says its level and visible_to: {exc}") from exc
+    problem = next((p for p in (_group_problem(g) for g in spec.visible_to) if p), "")
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    from aughor.ontology.overrides import find_override
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    current = dict((existing.fields.get("sensitive") if existing is not None else None) or {})
+    current[prop] = spec.model_dump()
+    return {**_set_entity_field(connection_id, effective, entity_id, "sensitive", current),
+            "sensitive": {"property": prop, **spec.model_dump()}}
+
+
+@router.delete("/ontology/entities/{entity_id}/sensitive/{prop}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def withdraw_sensitive_property(entity_id: str, prop: str, connection_id: str = BUILTIN_ID,
+                                schema_name: Optional[str] = Query(default=None)):
+    """Arc OC-7 — unmask a property: every reader reads it again."""
+    from aughor.ontology.overrides import find_override
+    effective, _entity = _security_entity(connection_id, schema_name, entity_id)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    current = dict((existing.fields.get("sensitive") if existing is not None else None) or {})
+    if prop not in current:
+        raise HTTPException(status_code=404, detail=f"{entity_id}.{prop} is not declared sensitive")
+    current.pop(prop)
+    return _set_entity_field(connection_id, effective, entity_id, "sensitive", current)

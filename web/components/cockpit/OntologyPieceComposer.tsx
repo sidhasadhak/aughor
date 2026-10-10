@@ -37,6 +37,19 @@ function actionsOn(actions: Record<string, DeclaredAction>, entity: string): Dec
   return Object.values(actions).filter(a => a.params.some(p => p.kind === "object" && word(p.object_type) === word(entity)));
 }
 
+/** The properties a table of ``type`` may list: its own, and each one a declared action's edit writes on an object OF
+ *  THIS TYPE. An edit on another parameter's object, or on the object an action creates (the case it opens), lands on
+ *  that type, never this one — found on Lux (2026-10-10): a return's table offered the case's about, status and
+ *  assignee as the return's. */
+export function columnsOffered(type: Pick<ObjectTypeDetail, "id" | "properties">, actions: Record<string, DeclaredAction>) {
+  const own = type.properties.filter(p => !p.is_key).map(p => ({ name: p.name, label: p.display_name || p.name, edited: false }));
+  const edits = actionsOn(actions, type.id).flatMap(a => (a.edits ?? [])
+    .filter(e => a.params.some(p => p.name === e.object && p.kind === "object" && word(p.object_type) === word(type.id)))
+    .map(e => ({ name: e.property, label: words(e.property), edited: true })));
+  const seen = new Set<string>();
+  return [...own, ...edits].filter(c => (seen.has(c.name) ? false : (seen.add(c.name), true)));
+}
+
 export function OntologyPieceComposer({ connectionId, schema, spec, busy, onPlace, onClose }: {
   connectionId: string;
   schema?: string;
@@ -108,15 +121,7 @@ export function OntologyPieceComposer({ connectionId, schema, spec, busy, onPlac
     return [...out].map(([name, says]) => ({ name, says }));
   }, [type, processes]);
 
-  /** The properties a table may list: the entity's own, and each one a declared action's edit writes. */
-  const offered = useMemo(() => {
-    if (!type) return [] as { name: string; label: string; edited: boolean }[];
-    const own = type.properties.filter(p => !p.is_key).map(p => ({ name: p.name, label: p.display_name || p.name, edited: false }));
-    const edits = actionsOn(actions, type.id).flatMap(a =>
-      (a.edits ?? []).map(e => ({ name: e.property, label: words(e.property), edited: true })));
-    const seen = new Set<string>();
-    return [...own, ...edits].filter(c => (seen.has(c.name) ? false : (seen.add(c.name), true)));
-  }, [type, actions]);
+  const offered = useMemo(() => (type ? columnsOffered(type, actions) : []), [type, actions]);
 
   const toggle = (list: string[], set: (v: string[]) => void, name: string, max = Infinity) =>
     set(list.includes(name) ? list.filter(n => n !== name) : list.length < max ? [...list, name] : list);

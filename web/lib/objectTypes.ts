@@ -975,6 +975,8 @@ export interface DeclaredImpactSpec {
 /** ON-9 — one declared process, as `GET /ontology/processes` describes it. */
 export interface ProcessDetail {
   id: string;
+  /** Arc OC-7 — set when the reader's rows of its entity are restricted: the counts are over every object. */
+  counted_over?: string;
   display_name: string;
   description: string;
   entity: string;

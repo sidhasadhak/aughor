@@ -13,8 +13,9 @@ import asyncio
 import os
 import sys
 
-from aughor.mcp.server import (enable_live_tools, mcp, register_agent_tools,
-                               register_automation_tools, register_spotlight_tools, serve_http)
+from aughor.mcp.server import (ontology_scopes, enable_live_tools, mcp, register_agent_tools,
+                               register_automation_tools, register_ontology_tools, register_spotlight_tools,
+                               serve_http)
 
 _TOKEN_HELP = (
     "[aughor.mcp] --http needs AUGHOR_MCP_TOKEN. Every HTTP client presents it as "
@@ -80,10 +81,18 @@ def main() -> None:
             print(f"[aughor.mcp] exposed {len(added_ag)} custom agent(s) as tools: "
                   f"{', '.join(added_ag)}", file=sys.stderr)
 
+    # Arc OC-8 — one propose tool per declared action of the scopes AUGHOR_MCP_ONTOLOGY names, never fatal.
+    if ontology_scopes():
+        added_on = asyncio.run(register_ontology_tools())
+        if added_on:
+            print(f"[aughor.mcp] exposed {len(added_on)} declared action(s) as propose tools: "
+                  f"{', '.join(added_on)}", file=sys.stderr)
+
     # The list stays live for a connected client — the rosters asked for above, and only those.
     enable_live_tools(*[s for s, skip in (("automations", args.no_automations),
                                           ("spotlight", args.no_spotlight),
-                                          ("agents", getattr(args, "no_agents", False))) if not skip])
+                                          ("agents", getattr(args, "no_agents", False)),
+                                          ("ontology", not ontology_scopes())) if not skip])
 
     if args.http:
         # DE-2a — a door on the HTTP transport, and the transport security built for the host actually served

@@ -64,8 +64,34 @@ def _entity(before: dict, after: dict) -> list[tuple[str, str]]:
                                    "a property adds up, is different"))
         elif k in ("absorbed_into", "withdrawn_bindings"):
             out.append(("WARN", f"its {k.replace('_', ' ')} changed"))
+        elif k in ("row_policies", "sensitive"):
+            continue                                            # said once, below
         else:
             out.append(("WARN", f"'{k}' changed — the catalogue does not class it; read it before publishing"))
+    return out + _security(before, after)
+
+
+def _security(before: dict, after: dict) -> list[tuple[str, str]]:
+    """Arc OC-7 — what a reader may see changes: worth a look, and said in the reader's terms."""
+    out = []
+    old_rows, new_rows = before.get("row_policies") or [], after.get("row_policies") or []
+    if old_rows != new_rows:
+        if new_rows:
+            said = "; ".join(f"{p.get('group')}: " + " and ".join(
+                f"{c.get('path')} {c.get('op') or '='} "
+                f"{', '.join(map(str, c['values'])) if c.get('values') else c.get('value', '')}".rstrip()
+                for c in p.get("conditions") or []) for p in new_rows)
+            out.append(("WARN", f"who sees which of its objects changes — {said}; a reader in none of these groups "
+                                "sees none of them"))
+        else:
+            out.append(("WARN", "its row policies are withdrawn — every reader sees every object"))
+    old_s, new_s = before.get("sensitive") or {}, after.get("sensitive") or {}
+    for prop in sorted(set(old_s) | set(new_s)):
+        o, n = old_s.get(prop), new_s.get(prop)
+        if n and n != o:
+            out.append(("WARN", f"{prop} is masked except for {', '.join(n.get('visible_to') or []) or 'no group'}"))
+        elif o and not n:
+            out.append(("WARN", f"{prop} is no longer masked — every reader sees it"))
     return out
 
 
@@ -258,6 +284,8 @@ def classify(kind: str, before: Optional[dict], after: Optional[dict], *, depend
             reasons.append(("SAFE", "it is withdrawn, and nothing relies on it"))
     elif before is None:
         reasons.append(("SAFE", "it is added"))
+        if kind == "entity":
+            reasons.extend(_security({}, after))
     else:
         handler = {"entity": _entity, "link": _link, "rule": _rule, "action": _action, "impact": _impact}.get(kind)
         if kind == "process":
