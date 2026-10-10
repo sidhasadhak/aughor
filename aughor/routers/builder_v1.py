@@ -77,7 +77,7 @@ def get_action_schema(action_id: str, connection_id: str = BUILTIN_ID, schema_na
     action = next((a for a in graph.declared_actions() if a.id == action_id), None)
     if action is None:
         raise HTTPException(status_code=404, detail=f"No declared action '{action_id}' in this scope")
-    return action_schema(action, release)
+    return action_schema(action, release, graph)
 
 
 @router.post("/objects/v1/list")
@@ -120,7 +120,7 @@ def propose_declared_action(action_id: str, body: ProposalBody, connection_id: s
     action = next((a for a in graph.declared_actions() if a.id == action_id), None)
     if action is None:
         raise HTTPException(status_code=404, detail=f"No declared action '{action_id}' in this scope")
-    problem = validate_params(action_schema(action, release), dict(body.params))
+    problem = validate_params(action_schema(action, release, graph), dict(body.params))
     if problem:
         raise HTTPException(status_code=422, detail=problem)
     from aughor.actions.propose import ProposedAction, validate_proposals
