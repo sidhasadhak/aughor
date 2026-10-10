@@ -327,7 +327,7 @@ FLAG_DEFAULT: dict = {
                         "over the live history, no change that moved a consumer classed SAFE. Falsifier: one past "
                         "change that broke a consumer classed SAFE or MEANING",
     "ontology.cockpit_pieces": "OC-4, live on theLook 2026-10-09: the Late dispatch board's open-and-overdue count "
-                               "(25,051) opened a table of exactly that many; an order flagged from the cockpit showed "
+                               "(25,051) opened a table of exactly that many; an object flagged from the cockpit showed "
                                "in the table, the detail and its page. Falsifier: the census does not move in the "
                                "weeks after (armed: read on 2026-11-07)",
     "actions.outbox": "OC-6, live 2026-10-10: a delivered call checked, a no-answer call reconciled by the action's "
@@ -335,7 +335,7 @@ FLAG_DEFAULT: dict = {
                       "one waiting under Sends for a person. Falsifier: a send left `unknown` after reconciliation "
                       "that a person cannot resolve from the screen",
     "ontology.builder_doors": "OC-8, live on theLook 2026-10-10: a program outside the platform launched the MCP "
-                              "server, read 24,872 overdue-dispatch orders through `list_objects` and proposed Open a "
+                              "server, read 24,872 overdue objects through `list_objects` and proposed Open a "
                               "case through `propose_open_case`; the proposal waited in the Actions inbox and nothing "
                               "ran. Falsifier: a contract a program cannot act on without reading the platform's code",
     "ask.converse": "SP-14 (2026-09-16): 26/26 staged drafts honest across SP-M's two "
