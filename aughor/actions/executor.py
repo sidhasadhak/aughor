@@ -948,6 +948,11 @@ def execute_kinetic_action(
                         "why": (f"{len(stuck)} call{'s' if len(stuck) != 1 else ''} it makes did not go out and "
                                 f"wait{'' if len(stuck) != 1 else 's'} for a person in Sends — "
                                 f"{stuck[0].get('error') or 'refused'}; its check runs if one is sent again")}
+    elif any(s.get("status") == "unknown" for s in waiting):
+        # no answer came back: it may have landed — the outbox reads the action's check before sending anything again
+        verification = {"status": "pending",
+                        "why": ("a call it makes got no answer and may have landed; the outbox reads the action's check "
+                                "before it sends anything again")}
     elif waiting:
         verification = {"status": "pending",
                         "why": (f"{len(waiting)} call{'s wait' if len(waiting) != 1 else ' waits'} in the outbox; the "

@@ -96,7 +96,8 @@ def test_a_call_that_did_not_go_out_goes_again_later_and_its_check_is_booked_whe
 
 def test_a_call_with_no_answer_is_checked_before_anything_is_sent_again(far_end, on):
     far_end["answers"] = [KineticDispatchError("read timeout", cause="unknown")]
-    _press("ob-3")
+    r = _press("ob-3")
+    assert "may have landed" in r.verification["why"] and "before it sends anything again" in r.verification["why"]
     [send] = outbox.list_sends("ob-3")
     assert send.status == "unknown"
     [done] = outbox.work_once("w1", now=LATER)

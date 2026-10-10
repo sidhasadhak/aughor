@@ -241,7 +241,13 @@ function SendsSection({ connectionId }: { connectionId: string }) {
             {[s.resolved_by && `by ${s.resolved_by}`, s.note].filter(Boolean).join(" — ")}
           </span>
         )}
-        {(s.last_error || s.reconciled) && <span className="aug-ledger-query">{s.last_error || s.reconciled}</span>}
+        {/* a call that landed says what settled it — its check found it, nothing sent again — not the error before;
+            the line wraps: unwrapped, a long reason pushed the "when" column off the table (live, 2026-10-10) */}
+        {(s.status === "delivered" ? s.reconciled : s.last_error || s.reconciled) && (
+          <span className="aug-ledger-query" data-testid="send-said" style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+            {s.status === "delivered" ? s.reconciled : s.last_error || s.reconciled}
+          </span>
+        )}
       </TableCell>
       <TableCell className="num aug-ledger-when" title={formatTimestamp(s.updated_at)}>{relTime(s.updated_at)}</TableCell>
       <TableCell className="aug-org-door">
