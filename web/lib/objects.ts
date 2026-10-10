@@ -192,6 +192,8 @@ export interface ObjectPage {
   links: ObjectLink[];
   caveats: string[];
   timeseries?: ObjectTimeseries[];
+  /** Arc OC-6 — held by the platform: no warehouse row, every property set by a declared action. */
+  platform?: boolean;
   related: ObjectRelated;
 }
 

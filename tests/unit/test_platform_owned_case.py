@@ -73,6 +73,8 @@ def test_a_case_is_opened_on_an_order_and_moves_only_as_its_type_declares(cases,
     said = {p["name"]: p["value"] for p in page.properties}
     assert said == {"id": case_id, "about": f"order:{ORDER}", "status": "open", "assignee": "ben"}
     assert [(link["name"], link["to"], link["pk"]) for link in page.links] == [("about", "order", ORDER)]
+    assert page.to_dict()["platform"] is True                     # the page says it is held, never "read live"
+    assert "platform" not in get_object(cases, db, "order", ORDER).to_dict()
     early = _run(cases, "resolve", {"case": f"case:{case_id}"})
     assert early.status == "criterion_failed" and "from open it may move to working" in early.message
     assert _run(cases, "start_work", {"case": f"case:{case_id}"}).status == "executed"

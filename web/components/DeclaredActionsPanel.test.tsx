@@ -108,10 +108,25 @@ describe("DeclaredActionsPanel — the calls that wait for a person (Arc OC-6)",
     await waitFor(() => expect(calls.some(c => c.method === "POST" && c.url.includes("/actions/outbox/s1/retry?connection_id=c1"))).toBe(true));
   });
 
-  it("says nothing while the outbox is off and holds no call", async () => {
+  it("asks on the row why a call is left undelivered, and sends nothing until a person says", async () => {
+    sends = [DEAD];
+    const user = userEvent.setup();
+    render(<DeclaredActionsPanel connectionId="c1" />);
+    await user.click(await screen.findByTestId("send-dismiss"));
+    const confirm = screen.getByTestId("send-dismiss-confirm");
+    expect(confirm).toBeDisabled();                                              // a reason first
+    await user.type(screen.getByLabelText("Why it is left undelivered"), "the carrier closed that account");
+    await user.click(confirm);
+    await waitFor(() => expect(calls.some(c => c.method === "POST" && c.url.includes("/actions/outbox/s1/dismiss"))).toBe(true));
+    const sent = calls.find(c => c.method === "POST" && c.url.includes("/dismiss"));
+    expect(sent?.body).toEqual({ note: "the carrier closed that account" });
+  });
+
+  it("says the outbox is off, and where to switch it on, when it holds no call", async () => {
     outboxOn = false;
     render(<DeclaredActionsPanel connectionId="c1" />);
-    await waitFor(() => expect(calls.some(c => c.url.includes("/actions/outbox"))).toBe(true));
-    expect(screen.queryByText("Sends")).toBeNull();
+    const off = await screen.findByTestId("sends-off");
+    expect(off.textContent).toContain("Settings → System → Feature flags");
+    expect(screen.queryAllByTestId("send-row")).toHaveLength(0);
   });
 });

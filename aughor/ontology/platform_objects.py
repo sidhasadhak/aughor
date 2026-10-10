@@ -102,7 +102,7 @@ def instance(graph: OntologyGraph, entity: OntologyEntity, pk: str, overlay: Opt
     title = str(_value(edits[title_prop])) if title_prop else None
     return ObjectInstance(object_type=entity.api_name, type_id=entity.id, type_name=entity.display_name or entity.id,
                           key=KEY, pk=str(pk), title=title, properties=properties, links=links,
-                          caveats=[f"{entity.display_name or entity.id} is {NOTE}"],
+                          caveats=[f"{entity.display_name or entity.id} is {NOTE}"], platform=True,
                           display={"property": title_prop or KEY, "is_key": not title_prop,
                                    "value": title if title is not None else str(pk)})
 

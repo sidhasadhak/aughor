@@ -195,28 +195,43 @@ function SendsSection({ connectionId }: { connectionId: string }) {
   const [state, setState] = useState<{ enabled: boolean; sends: ActionSend[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
+  // the call a person is leaving undelivered, and why — asked on the row, never in a native prompt (an embedded
+  // browser refuses `window.prompt`, and the button then did nothing; 2026-10-10)
+  const [leaving, setLeaving] = useState<{ id: string; why: string } | null>(null);
   const load = useCallback(() => {
     getSends(connectionId).then(r => { setState({ enabled: !!r?.enabled, sends: r?.sends ?? [] }); setError(null); })
       .catch(e => setError(String(e.message || e)));
   }, [connectionId]);
   useEffect(() => { if (connectionId) load(); }, [connectionId, load]);
-  if (!state || (!state.enabled && state.sends.length === 0)) return error ? <Err e={error} /> : null;
+  if (!state) return error ? <Err e={error} /> : null;
+  if (!state.enabled && state.sends.length === 0) {
+    // Off is said, never implied: a section that hid itself read as a feature that does not exist (2026-10-10).
+    return (
+      <Section title="Sends" meta="the outbox is off">
+        <p className="aug-brief-note" data-testid="sends-off">
+          A declared action's calls to other systems go out once, when it is pressed, and are not kept. Switch the outbox
+          on in Settings → System → Feature flags to keep each call, retry it by why it failed, and hand you the ones
+          that need a person.
+        </p>
+      </Section>
+    );
+  }
   const waiting = state.sends.filter(s => s.status === "dead" || s.status === "unknown");
   const rest = state.sends.filter(s => s.status !== "dead" && s.status !== "unknown").slice(0, 20);
-  const act = async (s: ActionSend, what: "retry" | "dismiss") => {
-    const why = what === "dismiss" ? window.prompt("Why is it left undelivered?") : "";
-    if (why === null) return;                      // cancelled: nothing is dismissed
+  const act = async (s: ActionSend, what: "retry" | "dismiss", why = "") => {
     setBusy(s.id);
     try {
       if (what === "retry") await retrySend(connectionId, s.id);
       else await dismissSend(connectionId, s.id, why);
+      setLeaving(null);
       load();
     } catch (e) {
       toast.error(what === "retry" ? "Not sent" : "Not dismissed", { description: String((e as Error).message || e).slice(0, 240) });
     } finally { setBusy(""); }
   };
   const row = (s: ActionSend, door: boolean) => (
-    <TableRow key={s.id} data-testid="send-row">
+    <React.Fragment key={s.id}>
+    <TableRow data-testid="send-row">
       <TableCell className="aug-actions-id">{s.action_name}<span className="aug-actions-kind">{s.effect.kind}{s.effect.lane === "writeback" ? " · writeback" : ""}</span></TableCell>
       <TableCell className="aug-ledger-claim">
         <span className="aug-ledger-text">{SEND_WORDS[s.status]}{s.attempts ? ` · ${countNoun(s.attempts, "attempt")}` : ""}</span>
@@ -229,13 +244,30 @@ function SendsSection({ connectionId }: { connectionId: string }) {
             <Button size="xs" variant="outline" disabled={!!busy} data-testid="send-retry" onClick={() => void act(s, "retry")}>
               Retry
             </Button>
-            <Button size="xs" variant="ghost" disabled={!!busy} data-testid="send-dismiss" onClick={() => void act(s, "dismiss")}>
+            <Button size="xs" variant="ghost" disabled={!!busy} data-testid="send-dismiss"
+              onClick={() => setLeaving({ id: s.id, why: "" })}>
               Dismiss
             </Button>
           </span>
         )}
       </TableCell>
     </TableRow>
+    {leaving?.id === s.id && (
+      <TableRow data-testid="send-dismiss-form">
+        <TableCell colSpan={4}>
+          <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <Input value={leaving.why} aria-label="Why it is left undelivered" placeholder="Why is it left undelivered?"
+              onChange={(e) => setLeaving({ id: s.id, why: e.target.value })} />
+            <Button size="xs" variant="outline" disabled={!!busy || !leaving.why.trim()} data-testid="send-dismiss-confirm"
+              onClick={() => void act(s, "dismiss", leaving.why.trim())}>
+              Leave it undelivered
+            </Button>
+            <Button size="xs" variant="ghost" onClick={() => setLeaving(null)}>Cancel</Button>
+          </span>
+        </TableCell>
+      </TableRow>
+    )}
+    </React.Fragment>
   );
   return (
     <Section title="Sends" meta={waiting.length ? `${countNoun(waiting.length, "call")} wait${waiting.length === 1 ? "s" : ""} for you`

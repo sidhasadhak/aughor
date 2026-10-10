@@ -66,12 +66,14 @@ class ObjectInstance:
     display: dict = field(default_factory=dict)
     #: ON-5 — one entry per timeseries binding: the readings behind its latest value, newest first.
     timeseries: list[dict] = field(default_factory=list)
+    #: Arc OC-6 — held by the platform: no warehouse row, every property set by a declared action.
+    platform: bool = False
 
     def to_dict(self) -> dict:
         return {"object_type": self.object_type, "type_id": self.type_id, "type_name": self.type_name,
                 "key": self.key, "pk": self.pk, "title": self.title, "display": dict(self.display),
                 "properties": list(self.properties), "links": list(self.links), "caveats": list(self.caveats),
-                "timeseries": list(self.timeseries)}
+                "timeseries": list(self.timeseries), **({"platform": True} if self.platform else {})}
 
 
 def _key_of(entity: OntologyEntity) -> str:

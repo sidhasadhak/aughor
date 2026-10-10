@@ -23,7 +23,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
-import { displayCellValue, formatCount, formatMetricValue, formatMoney, formatTableNumber, relTime } from "@/lib/format";
+import { countNoun, displayCellValue, formatCount, formatMetricValue, formatMoney, formatTableNumber, relTime } from "@/lib/format";
 import { currencyFromColumn, currencySymbol, effectiveCurrencySymbol, isMoneyColumn, orgSettingsSnapshot, setOrgSettingsCache, subscribeOrgSettings } from "@/lib/orgSettings";
 import { getOrgSettings } from "@/lib/api";
 import { declaredActionsHref, objectHref } from "@/lib/objectLinks";
@@ -275,7 +275,11 @@ function propertiesSummary(page: ObjectPage): string {
   const bound = page.properties.filter((p) => p.binding);
   const through = [...new Set(bound.map((p) => p.binding?.name ?? ""))];
   const read = page.properties.length - set - bound.length;
-  return `Read live through the ${page.type_name} backing — ${formatCount(read)} columns`
+  if (page.platform) {
+    // Arc OC-6 — no warehouse holds it: there is no backing to read, only what declared actions set
+    return `Held by the platform — ${countNoun(set, "property", "properties")} set by declared actions, each change kept.`;
+  }
+  return `Read live through the ${page.type_name} backing — ${countNoun(read, "column")}`
     + (bound.length ? `, ${formatCount(bound.length)} through the ${through.length === 1 ? "binding" : "bindings"} ${through.join(", ")}` : "")
     + (set ? `, and ${formatCount(set)} set by accepted actions.` : ".");
 }
