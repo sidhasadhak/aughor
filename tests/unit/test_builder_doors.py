@@ -196,7 +196,11 @@ def test_an_ossie_model_is_read_as_proposals_and_nothing_is_declared_until_a_per
     assert stray.status_code == 400 and "is not offered" in stray.json()["detail"]
 
 
-def test_accepting_declares_each_part_through_its_own_door_as_the_persons_with_the_model_as_provenance(doors, client):
+def test_accepting_declares_each_part_through_its_own_door_as_the_persons_with_the_model_as_provenance(
+        doors, client, tmp_path, monkeypatch):
+    from aughor.semantic import metrics as m                # this test WRITES a metric: a registry of its own
+    monkeypatch.setattr(m, "_DEFAULT_PATH", tmp_path / "metrics.json", raising=False)
+    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
     doors.entities["Customer"].description = ""
     r = client.post("/ontology/v1/import/ossie", params=PARAMS,
                     json={"model": MODEL, "accept": ["dataset:customers", "metric:order_value"]})
