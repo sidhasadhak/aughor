@@ -41,6 +41,7 @@ import {
   type ObjectMissing,
   type ObjectNote,
   type ObjectPage,
+  type ObjectReferrer,
   type ObjectRefusal,
   type ObjectTimeseries,
   withdrawEdit,
@@ -243,6 +244,7 @@ function ObjectBody({ page, scope, reload }: { page: ObjectPage; scope: Scope; r
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           <ActionsCard page={page} actions={related.actions} scope={scope} />
+          <HeldCard referrers={related.platform ?? []} scope={scope} />
           <MetricsCard page={page} metrics={related.metrics} />
           <NotesCard notes={related.notes} connectionId={page.connection_id} reload={reload} />
         </div>
@@ -740,6 +742,37 @@ function objectParamText(param: ObjectActionParam, page: ObjectPage): string {
   const text = String(param.value);
   const key = text.includes(":") ? text.slice(text.indexOf(":") + 1) : text;
   return key === page.pk && page.title ? page.title : text;
+}
+
+/** Arc OC-6 — the objects the platform holds that name this one (an order's cases), one card per type. Each was made
+ *  by a declared action and opens on its own page; nothing is shown when none names it. */
+function HeldCard({ referrers, scope }: { referrers: ObjectReferrer[]; scope: Scope }) {
+  const types = [...new Set(referrers.map((r) => r.type_id))];
+  return (
+    <>
+      {types.map((typeId) => {
+        const rows = referrers.filter((r) => r.type_id === typeId);
+        return (
+          <Section key={typeId} title={rows[0].type_name || typeId}
+            description={`Held by the platform — each made by a declared action that names this object in ${rows[0].via}, every change kept.`}>
+            {rows.map((r, i) => (
+              <div key={r.pk} data-testid="held-object"
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderTop: i ? ROW_RULE : undefined }}>
+                <Link href={objectHref(r.object_type, r.pk, scope.connectionId, scope.schemaName)} className="aug-fs-sm"
+                  style={{ ...MONO, color: "var(--blue3)" }} title={`Open ${r.type_name} ${r.pk}`}>
+                  {r.pk}
+                </Link>
+                <span className="aug-fs-xs" style={{ color: "var(--t3)", minWidth: 0, overflowWrap: "anywhere" }}>
+                  {Object.entries(r.summary).filter(([, v]) => v != null && v !== "")
+                    .map(([k, v]) => `${k.replace(/_/g, " ")} ${cellText(v)}`).join(" · ")}
+                </span>
+              </div>
+            ))}
+          </Section>
+        );
+      })}
+    </>
+  );
 }
 
 function NotesCard({ notes, connectionId, reload }: { notes: ObjectNote[]; connectionId: string; reload: () => void }) {

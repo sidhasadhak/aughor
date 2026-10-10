@@ -344,7 +344,7 @@ def purge_connections(connection_ids: list[str], org_id: Optional[str] = None) -
 def edit_history(connection_id: str, *, object_type: str = "", row_key: str = "", column: str = "",
                  org_id: Optional[str] = None, limit: int = 200) -> list[dict]:
     """Arc OC-6 — every version of the edits on a connection's objects, newest first: who set what, what it replaced,
-    who withdrew it — narrowed to one object type, one object, one property."""
+    who withdrew it — narrowed to one entity, one object, one property."""
     sql, args = "SELECT * FROM overlay_edit_history WHERE connection_id = ?", [connection_id]
     if org_id is not None:
         sql += " AND org_id = ?"

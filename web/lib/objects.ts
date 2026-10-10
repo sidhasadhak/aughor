@@ -129,6 +129,18 @@ export interface ObjectRelated {
   findings_unread?: number;
   notes: ObjectNote[];
   actions: ObjectAction[];
+  /** Arc OC-6 — the platform-owned objects that name this one (an order's cases), newest first. */
+  platform?: ObjectReferrer[];
+}
+
+/** Arc OC-6 — one platform-owned object naming this one in a property (`via`), with what else it holds. */
+export interface ObjectReferrer {
+  object_type: string;
+  type_id: string;
+  type_name: string;
+  pk: string;
+  via: string;
+  summary: Record<string, unknown>;
 }
 
 /** ON-3b — which property titles this object, and on what warrant: a person's declaration (`human`), a proposal
@@ -348,7 +360,7 @@ export async function getEditHistory(
 ): Promise<EditHistoryRow[]> {
   const q = new URLSearchParams({ connection_id: connectionId, object_type: objectType, row_key: rowKey });
   if (column) q.set("column", column);
-  const res = await fetch(`${getApiBase()}/kinetic-actions/edits/history?${q}`);
+  const res = await fetch(`${getApiBase()}/actions/edits/history?${q}`);
   if (!res.ok) throw new Error(await detailOf(res));
   return (await res.json()).history;
 }
@@ -500,14 +512,14 @@ export interface ActionSend {
 
 /** Arc OC-6 — the outbox of a connection's declared actions (empty and `enabled: false` while it is off). */
 export async function getSends(connectionId: string): Promise<{ enabled: boolean; sends: ActionSend[] }> {
-  const res = await fetch(`${getApiBase()}/kinetic-actions/outbox?connection_id=${encodeURIComponent(connectionId)}`);
+  const res = await fetch(`${getApiBase()}/actions/outbox?connection_id=${encodeURIComponent(connectionId)}`);
   if (!res.ok) throw new Error(await detailOf(res));
   return res.json();
 }
 
 /** Arc OC-6 — a person sends a call that waits for them again, now. */
 export async function retrySend(connectionId: string, sendId: string): Promise<ActionSend> {
-  const res = await fetch(`${getApiBase()}/kinetic-actions/outbox/${encodeURIComponent(sendId)}/retry?connection_id=${encodeURIComponent(connectionId)}`,
+  const res = await fetch(`${getApiBase()}/actions/outbox/${encodeURIComponent(sendId)}/retry?connection_id=${encodeURIComponent(connectionId)}`,
     { method: "POST" });
   if (!res.ok) throw new Error(await detailOf(res));
   return (await res.json()).send;
@@ -515,7 +527,7 @@ export async function retrySend(connectionId: string, sendId: string): Promise<A
 
 /** Arc OC-6 — a person leaves a call that waits for them undelivered, with why. */
 export async function dismissSend(connectionId: string, sendId: string, note: string): Promise<ActionSend> {
-  const res = await fetch(`${getApiBase()}/kinetic-actions/outbox/${encodeURIComponent(sendId)}/dismiss?connection_id=${encodeURIComponent(connectionId)}`,
+  const res = await fetch(`${getApiBase()}/actions/outbox/${encodeURIComponent(sendId)}/dismiss?connection_id=${encodeURIComponent(connectionId)}`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }) });
   if (!res.ok) throw new Error(await detailOf(res));
   return (await res.json()).send;

@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from aughor.ontology.models import OntologyGraph
-from evals.ablation_eval import _arms_after_frame_check, _summarize, framed_context
+from evals.ablation_eval import _arms_after_frame_check, _arms_after_impact_check, _summarize, framed_context
 
 REPO = Path(__file__).resolve().parents[2]
 OLIST = OntologyGraph.model_validate(json.loads((REPO / "evals" / "ablation_olist_business_ontology.json").read_text()))
@@ -79,3 +79,43 @@ def test_the_guarded_framed_arm_is_held_to_the_safety_guarding_already_keeps():
     assert s["falsifier"]["framed_guarded_keeps_guarded_safety"] is True
     worse = [_row("d1", "declared", "silent-wrong", "caught", "silent-wrong", framed_guarded="silent-wrong")]
     assert _summarize(worse, arms)["falsifier"]["framed_guarded_keeps_guarded_safety"] is False
+
+
+def _measured(graph: OntologyGraph) -> OntologyGraph:
+    """The Olist graph with its declared impact as the arm's measure pass leaves it — resolved and counted true."""
+    declared = graph.impacts["late_dispatch_late_delivery"]
+    impact = declared.model_copy(update={"lead": "Order", "path": "order_to_order_item", "to_many": True,
+                                         "verified": True, "objects": 96_470, "upstream_broke": 6_000,
+                                         "upstream_kept": 90_470, "rate_when_broke": 0.2, "rate_when_kept": 0.07})
+    return graph.model_copy(update={"impacts": {impact.id: impact}})
+
+
+def test_an_impact_reaches_only_the_promise_it_bears_on_and_only_once_measured_true():
+    """Arc OC-5 — the fixture DECLARES the impact; until the arm measures it on the warehouse, no frame reads it, so
+    the framed arm is the pre-OC-5 frame. Measured true, the delivery question gets the upstream reading and the
+    dispatch question — the upstream promise itself — gets exactly the framed arm's block."""
+    delivery = "What percentage of orders broke the delivery promise? Round to two decimals."
+    dispatch = "What percentage of order lines broke the dispatch promise? Round to two decimals."
+    assert OLIST.impacts["late_dispatch_late_delivery"].verified is None
+    plain, _f, _c = framed_context(delivery, OLIST)
+    assert "Upstream" not in plain
+    measured = _measured(OLIST)
+    block, frame, calls = framed_context(delivery, measured)
+    assert block != plain and calls == 0 and "Upstream, declared and measured — an association, never a cause" in block
+    assert [d["impact"] for d in frame["drivers"] if d.get("impact")] == ["late_dispatch_late_delivery"]
+    assert framed_context(dispatch, measured)[0] == framed_context(dispatch, OLIST)[0]
+
+
+def test_the_impact_arm_is_dropped_unless_an_impact_measured_true_and_is_scored_against_framed():
+    arms = ("raw", "framed", "framed_impact")
+    assert _arms_after_impact_check(arms, [{"id": "x", "verified": False}]) == (("raw", "framed"), ("framed_impact",))
+    assert _arms_after_impact_check(arms, [{"id": "x", "verified": True}]) == (arms, ())
+    assert _arms_after_impact_check(("raw", "framed"), []) == (("raw", "framed"), ())
+    rows = [_row("d1", "declared", "silent-wrong", "-", "silent-wrong"), _row("d2", "declared", "correct", "-", "correct"),
+            _row("d3", "declared", "correct", "-", "correct")]
+    rows[0]["framed_impact"] = {"class": "correct"}
+    rows[1]["framed_impact"] = {"class": "silent-wrong"}
+    rows[2]["framed_impact"] = {"class": "correct", "via": "framed (no measured impact reached the question)"}
+    s = _summarize(rows, arms)
+    assert (s["impact_reached"], s["impact_gains"], s["impact_losses"]) == (["d1", "d2"], ["d1"], ["d2"])
+    assert s["framed_impact_accuracy"] == round(2 / 3, 3) and s["by_definition"]["declared"]["framed_impact_correct"] == 2

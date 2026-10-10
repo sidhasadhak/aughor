@@ -90,6 +90,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/actions/edits/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Edit History
+         * @description Arc OC-6 — every version of the edits on this connection's objects, newest first: who set what, the value it
+         *     replaced, who withdrew it. Narrowed to one entity, one object (`row_key`) and one property.
+         */
+        get: operations["get_edit_history_actions_edits_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/actions/logs": {
         parameters: {
             query?: never;
@@ -101,6 +122,68 @@ export interface paths {
         get: operations["list_action_logs_actions_logs_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/actions/outbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Outbox
+         * @description Arc OC-6 — a declared action's calls in the outbox (`actions.outbox`), newest first: delivered, waiting to be
+         *     sent again and why, and those that wait for a person — `dead` (not deliverable by the worker) and `unknown`.
+         */
+        get: operations["list_outbox_actions_outbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/actions/outbox/{send_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Send
+         * @description Arc OC-6 — a person leaves a call that waits for them undelivered, with why; it is never sent.
+         */
+        post: operations["dismiss_send_actions_outbox__send_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/actions/outbox/{send_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Send
+         * @description Arc OC-6 — a person sends a call that waits for them again, now. One whose fate was unknown is sent without a
+         *     check: the person decided.
+         */
+        post: operations["retry_send_actions_outbox__send_id__retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11257,6 +11340,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/entities/{entity_id}/edit-states/{prop}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Declare Edit States
+         * @description Arc OC-6 — declare the moves a property the EDIT LAYER holds may make (a review flag: unset → flagged →
+         *     reviewed). From then on an action whose edit would make a move not declared is refused before it runs, with the
+         *     moves allowed from where the object stands. A source column is refused: its lifecycle is measured, not enforced.
+         */
+        put: operations["declare_edit_states_ontology_entities__entity_id__edit_states__prop__put"];
+        post?: never;
+        /**
+         * Withdraw Edit States
+         * @description Arc OC-6 — withdraw a property's declared moves; its edits are no longer checked against them.
+         */
+        delete: operations["withdraw_edit_states_ontology_entities__entity_id__edit_states__prop__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/entities/{entity_id}/expressions/{name}": {
         parameters: {
             query?: never;
@@ -11583,6 +11692,75 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/impacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Declare Ontology Impact
+         * @description Declare an impact (Arc OC-5): one promise's bearing on another, with its mechanism — an influence (an
+         *     association, measured), validated (an influence promoted on recorded evidence) or a formula (exact by definition,
+         *     not measured). Both promises are resolved and the path from the downstream promise's lead object to the upstream
+         *     one's is found; an influence is COUNTED through the object door before anything is written — 400 with the reason
+         *     when it cannot be. No model call.
+         */
+        post: operations["declare_ontology_impact_ontology_impacts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/impacts/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Declared Impact
+         * @description Count a draft impact exactly as declaring it would, and write NOTHING — how a person reads an influence before
+         *     stating it, and how one is read on a scope it is not declared on.
+         */
+        post: operations["preview_declared_impact_ontology_impacts_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/impacts/{impact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change Declared Impact
+         * @description Change a declared impact through the same law as declaring it; each change is a version of the element.
+         */
+        put: operations["change_declared_impact_ontology_impacts__impact_id__put"];
+        post?: never;
+        /**
+         * Delete Declared Impact
+         * @description Withdraw a declared impact (Arc OC-5).
+         */
+        delete: operations["delete_declared_impact_ontology_impacts__impact_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -17389,6 +17567,10 @@ export interface components {
              * @default
              */
             actor: string;
+            /** Expected */
+            expected?: {
+                [key: string]: number;
+            };
             /** Params */
             params?: {
                 [key: string]: unknown;
@@ -20913,13 +21095,23 @@ export interface components {
         };
         /**
          * _DeclaredBacking
-         * @description ON-7 — the source whose rows ARE a declared type's objects.
+         * @description ON-7 — the source whose rows ARE a declared type's objects. Arc OC-6 — or ``kind: platform`` with the
+         *     ``properties`` the platform holds for it: a type whose objects no warehouse holds (a case, a review).
          */
         _DeclaredBacking: {
             /** Connection Id */
             connection_id?: string | null;
-            /** Primary Key */
+            /** Kind */
+            kind?: ("table" | "query" | "platform") | null;
+            /**
+             * Primary Key
+             * @default
+             */
             primary_key: string;
+            /** Properties */
+            properties?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Schema Name */
             schema_name?: string | null;
             /** Sql */
@@ -20948,6 +21140,40 @@ export interface components {
             origin?: ("human" | "model") | null;
             /** Provenance */
             provenance?: string | null;
+        };
+        /**
+         * _DeclaredImpact
+         * @description Arc OC-5 — one promise's bearing on another (`<process id>.<promise>` each), with its mechanism.
+         */
+        _DeclaredImpact: {
+            /** Description */
+            description?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Downstream */
+            downstream: string;
+            /** Evidence */
+            evidence?: string | null;
+            /** Formula */
+            formula?: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Mechanism
+             * @default influence
+             * @enum {string}
+             */
+            mechanism: "influence" | "validated" | "formula";
+            /** Origin */
+            origin?: ("human" | "model" | "pack") | null;
+            /** Owner */
+            owner?: string | null;
+            /** Provenance */
+            provenance?: string | null;
+            /** Upstream */
+            upstream: string;
+            /** Window Days */
+            window_days?: number | null;
         };
         /**
          * _DeclaredLink
@@ -20995,6 +21221,10 @@ export interface components {
             provenance?: string | null;
             /** Stages */
             stages: components["schemas"]["_DeclaredStage"][];
+            /** Transitions */
+            transitions?: {
+                [key: string]: string;
+            }[] | null;
         };
         /**
          * _DeclaredPromise
@@ -21080,6 +21310,29 @@ export interface components {
             dialect: string;
             /** Sql */
             sql: string;
+        };
+        /** _Dismissal */
+        _Dismissal: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
+        /**
+         * _EditStates
+         * @description Arc OC-6 — the moves a property the edit layer holds may make.
+         */
+        _EditStates: {
+            /**
+             * Initial
+             * @default
+             */
+            initial: string;
+            /** Moves */
+            moves: string[][];
+            /** States */
+            states: string[];
         };
         /** _EntityOverride */
         _EntityOverride: {
@@ -22273,6 +22526,40 @@ export interface operations {
             };
         };
     };
+    get_edit_history_actions_edits_history_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                object_type?: string;
+                row_key?: string;
+                column?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_action_logs_actions_logs_get: {
         parameters: {
             query?: {
@@ -22281,6 +22568,109 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_outbox_actions_outbox_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                /** @description comma-separated: queued, sending, delivered, unknown, dead, dismissed */
+                status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_send_actions_outbox__send_id__dismiss_post: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path: {
+                send_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_Dismissal"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_send_actions_outbox__send_id__retry_post: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path: {
+                send_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -41165,6 +41555,80 @@ export interface operations {
             };
         };
     };
+    declare_edit_states_ontology_entities__entity_id__edit_states__prop__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                prop: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_EditStates"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_edit_states_ontology_entities__entity_id__edit_states__prop__delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                prop: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     declare_ontology_expression_ontology_entities__entity_id__expressions__name__put: {
         parameters: {
             query?: {
@@ -41712,6 +42176,150 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    declare_ontology_impact_ontology_impacts_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_DeclaredImpact"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_declared_impact_ontology_impacts_preview_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_DeclaredImpact"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_declared_impact_ontology_impacts__impact_id__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                impact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_DeclaredImpact"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_declared_impact_ontology_impacts__impact_id__delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                impact_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -42364,6 +42972,8 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                /** @description count a CHANGE to the declared process of this id (Arc OC-5) */
+                replace?: boolean;
             };
             header?: never;
             path?: never;

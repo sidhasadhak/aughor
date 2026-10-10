@@ -103,7 +103,7 @@ def test_moves_are_declared_on_an_edit_layer_property_only_and_the_history_reads
     assert served.entities["Order"].edit_states["review_status"].moves == [["", "flagged"], ["flagged", "reviewed"]]
     _declare(graph, "flag", FLAG)
     _run(graph, "flag")
-    history = client.get("/kinetic-actions/edits/history", params={"connection_id": CONN, "row_key": ORDER}).json()
+    history = client.get("/actions/edits/history", params={"connection_id": CONN, "row_key": ORDER}).json()
     assert [(h["event"], h["body"]) for h in history["history"]] == [("set", "flagged")]
     assert client.delete("/ontology/entities/Order/edit-states/review_status", params=params).status_code == 200
 

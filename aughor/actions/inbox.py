@@ -780,7 +780,7 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
     moved = changed_since((p.detail or {}).get("action_pin"), action_pin(action, p.connection_id, p.schema_name))
     if moved:
         _record_outcome(proposal_id, "failed", moved, {})
-        return KineticResult("action_changed", False, p.action_id, message=moved), ""
+        return _executor_result()("action_changed", False, p.action_id, message=moved), ""
     result = execute_kinetic_action(action, p.params, actor=actor, scope=p.connection_id,
                                     approved=True, schema_name=p.schema_name)
     _record_outcome(proposal_id, result.status if result.ok else result.status,

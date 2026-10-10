@@ -36,7 +36,7 @@ beforeEach(() => {
     const url = String(input);
     const method = init?.method ?? "GET";
     calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-    if (url.includes("/kinetic-actions/outbox")) {
+    if (url.includes("/actions/outbox")) {
       if (method === "POST") { sends = []; return jsonResponse({ send: {} }); }
       return jsonResponse({ enabled: outboxOn, sends });
     }
@@ -105,13 +105,13 @@ describe("DeclaredActionsPanel — the calls that wait for a person (Arc OC-6)",
     expect(rows[0].textContent).toContain("not delivered after 5 attempts");
     expect(screen.getAllByTestId("send-retry")).toHaveLength(1);                 // only the one that waits for a person
     await user.click(screen.getByTestId("send-retry"));
-    await waitFor(() => expect(calls.some(c => c.method === "POST" && c.url.includes("/kinetic-actions/outbox/s1/retry?connection_id=c1"))).toBe(true));
+    await waitFor(() => expect(calls.some(c => c.method === "POST" && c.url.includes("/actions/outbox/s1/retry?connection_id=c1"))).toBe(true));
   });
 
   it("says nothing while the outbox is off and holds no call", async () => {
     outboxOn = false;
     render(<DeclaredActionsPanel connectionId="c1" />);
-    await waitFor(() => expect(calls.some(c => c.url.includes("/kinetic-actions/outbox"))).toBe(true));
+    await waitFor(() => expect(calls.some(c => c.url.includes("/actions/outbox"))).toBe(true));
     expect(screen.queryByText("Sends")).toBeNull();
   });
 });

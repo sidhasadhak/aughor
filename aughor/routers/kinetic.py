@@ -349,64 +349,6 @@ def list_annotations(connection_id: str = BUILTIN_ID):
     return {"edits": [e.model_dump() for e in edits_for_connection(connection_id, current_org_id() or "")]}
 
 
-class _Dismissal(BaseModel):
-    note: str = ""
-
-
-def _send_view(s) -> dict:
-    effect = s.effect()
-    return {**s.model_dump(exclude={"action"}), "effect": {"kind": effect.get("kind"), "lane": effect.get("lane", "after"),
-                                                           "target": (effect.get("config") or {}).get("destination")
-                                                                     or (effect.get("config") or {}).get("url") or ""},
-            "action_name": (s.action or {}).get("display_name") or s.action_id}
-
-
-@router.get("/outbox")
-def list_outbox(connection_id: str = BUILTIN_ID, status: Optional[str] = Query(default=None,
-                description="comma-separated: queued, sending, delivered, unknown, dead, dismissed")):
-    """Arc OC-6 — a declared action's calls in the outbox (`actions.outbox`), newest first: delivered, waiting to be
-    sent again and why, and those that wait for a person — `dead` (not deliverable by the worker) and `unknown`."""
-    from aughor.actions import outbox
-    wanted = [x.strip() for x in (status or "").split(",") if x.strip()] or None
-    return {"enabled": outbox.enabled(),
-            "sends": [_send_view(s) for s in outbox.list_sends(connection_id, wanted)]}
-
-
-@router.post("/outbox/{send_id}/retry")
-def retry_send(send_id: str, connection_id: str = BUILTIN_ID):
-    """Arc OC-6 — a person sends a call that waits for them again, now. One whose fate was unknown is sent without a
-    check: the person decided."""
-    from aughor.actions import outbox
-    send = outbox.get(send_id)
-    if send is None or send.connection_id != connection_id:
-        raise HTTPException(status_code=404, detail=f"no call '{send_id}' in this connection's outbox")
-    if send.status not in ("dead", "unknown"):
-        raise HTTPException(status_code=409, detail=f"the call is {send.status} — only one that waits for a person is retried")
-    return {"send": _send_view(outbox.retry(send_id, by=caller()))}
-
-
-@router.post("/outbox/{send_id}/dismiss")
-def dismiss_send(send_id: str, body: _Dismissal, connection_id: str = BUILTIN_ID):
-    """Arc OC-6 — a person leaves a call that waits for them undelivered, with why; it is never sent."""
-    from aughor.actions import outbox
-    send = outbox.get(send_id)
-    if send is None or send.connection_id != connection_id:
-        raise HTTPException(status_code=404, detail=f"no call '{send_id}' in this connection's outbox")
-    if send.status not in ("dead", "unknown"):
-        raise HTTPException(status_code=409, detail=f"the call is {send.status} — only one that waits for a person is dismissed")
-    return {"send": _send_view(outbox.dismiss(send_id, by=caller(), note=body.note))}
-
-
-@router.get("/edits/history")
-def get_edit_history(connection_id: str = BUILTIN_ID, object_type: str = "", row_key: str = "", column: str = ""):
-    """Arc OC-6 — every version of the edits on this connection's objects, newest first: who set what, the value it
-    replaced, who withdrew it. Narrowed to one object type, one object (`row_key`) and one property."""
-    from aughor.actions.overlay import edit_history
-    from aughor.org.context import current_org_id
-    return {"history": edit_history(connection_id, object_type=object_type, row_key=row_key, column=column,
-                                    org_id=current_org_id() or None)}
-
-
 @router.delete("/annotations/{edit_id}")
 def withdraw_annotation(edit_id: str, connection_id: str = BUILTIN_ID):
     """ON-4 — withdraw ONE overlay edit: an annotation on a row, or a property an accepted action set on

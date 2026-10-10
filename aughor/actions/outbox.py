@@ -82,6 +82,11 @@ class Send(BaseModel):
     resolved_by: str = ""
     note: str = ""
 
+    def declared(self):
+        """The declared action this call was made by, as it was when it was pressed."""
+        from aughor.ontology.models import KineticAction
+        return KineticAction.model_validate(self.action)
+
     def effect(self) -> dict:
         effects = list((self.action or {}).get("side_effects") or [])
         return effects[self.effect_index] if 0 <= self.effect_index < len(effects) else {}
@@ -299,9 +304,8 @@ def _again(send: Send, cause: str, error: str, *, at_least: float = 0) -> Send:
 def _check(send: Send) -> str:
     """The action's own verification read, for a call whose fate is unknown: passed · failed · cannot_say."""
     from aughor.actions.authority import verify
-    from aughor.ontology.models import KineticAction
     try:
-        verdict = verify(KineticAction.model_validate(send.action), dict(send.params), send.connection_id)
+        verdict = verify(send.declared(), dict(send.params), send.connection_id)
     except Exception as exc:  # noqa: BLE001 — a check that cannot run cannot say
         logger.debug("outbox check failed for %s: %s", send.id, exc)
         return "cannot_say"
@@ -312,7 +316,7 @@ def _check(send: Send) -> str:
 def deliver(send: Send, was: str) -> Send:
     """Deliver one claimed call — first checking, when its fate was unknown, whether it already landed."""
     from aughor.actions.executor import KineticDispatchError, dispatch_effect
-    from aughor.ontology.models import KineticAction, SideEffect
+    from aughor.ontology.models import SideEffect
     if was == "unknown":
         found = _check(send)
         if found == "passed":
@@ -332,7 +336,7 @@ def deliver(send: Send, was: str) -> Send:
                 c.commit()
             finally:
                 c.close()
-    action = KineticAction.model_validate(send.action)
+    action = send.declared()
     try:
         result = dispatch_effect(SideEffect.model_validate(send.effect()), action, dict(send.params), send.connection_id)
     except KineticDispatchError as exc:
@@ -371,10 +375,9 @@ def _finish(send: Send) -> None:
         return
     try:
         from aughor.actions.authority import restate_verification, verify
-        from aughor.ontology.models import KineticAction
         delivered = list_sends(entry=send.entry)
         outcome = {"side_effects": [s.outcome for s in sorted(delivered, key=lambda s: s.effect_index)]}
-        verdict = verify(KineticAction.model_validate(send.action), dict(send.params), send.connection_id, outcome=outcome)
+        verdict = verify(send.declared(), dict(send.params), send.connection_id, outcome=outcome)
         restate_verification(send.entry, verdict, scope=send.connection_id)
     except Exception as exc:  # noqa: BLE001 — the calls landed; the booking is best-effort, and counted
         from aughor.kernel.errors import tolerate
