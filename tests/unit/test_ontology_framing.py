@@ -160,6 +160,20 @@ def test_a_promised_stage_asked_about_as_late_reads_as_its_promise_from_the_line
     assert run(db, frame.compiled["shipping_breach_rate"]["sql"]) == [(round(promise.breached / promise.reached, 4),)]
 
 
+def test_a_promise_kept_per_its_own_type_is_one_measure_an_analysis_takes_and_one_kept_through_a_link_is_not(db, declared):
+    """Arc OC-5 — the rate an analysis takes is the door's own: one measure over the table of the type the promise is
+    kept per, the door's alias dropped. A promise kept per the line, reached through a link, is not one measure over one
+    table — said, never guessed (theLook, 2026-10-10: the model put the delivery rate over `order_items`)."""
+    frame = frame_question("What is causing delivery delays?", declared)
+    reading = frame.compiled["delivery_breach_rate"]["reading"]
+    assert reading["table"] == "orders" and "t0." not in reading["formula"]
+    where = f" WHERE {' AND '.join(reading['filters'])}" if reading["filters"] else ""
+    assert run(db, f"SELECT {reading['formula']} FROM ecommerce.{reading['table']}{where}") == run(
+        db, frame.compiled["delivery_breach_rate"]["sql"])
+    shipping = frame_question("Which product categories are shipped late most often?", declared)
+    assert "read through a link" in shipping.compiled["shipping_breach_rate"]["reading"]["why_not"]
+
+
 @pytest.mark.parametrize("question, kind, name", [
     ("How long does shipping take?", "lag", "shipping_lag_days"),
     ("What is causing delivery delays?", "promise", "delivery_breach_rate"),

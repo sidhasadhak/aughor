@@ -1166,6 +1166,36 @@ def _keyed_reading(o: FrameOutcome, entry: dict, rules: list, dialect: str, metr
             **({"objects": entry["objects"]} if rules else {})}
 
 
+def _promise_reading(o: FrameOutcome, entry: dict, dialect: str) -> dict:
+    """Arc OC-5 — the promise the frame chose, in the shape an analysis computes a measure in, as a keyed metric is
+    (`_keyed_reading`): its breach rate as one measure over the table of the type it is kept per, and the rows the
+    question's rules keep. Measured live (theLook, 2026-10-10): *What is causing delivery delays?* framed to the delivery
+    promise kept per Order, compiled over `orders`, and the deep analysis re-parsed it — the model wrote the same rate
+    over `order_items`, whose item-level timestamps disagree with the order's, and the run called itself inconclusive.
+    ``{"why_not": …}`` when the rate is not one measure over one table: a promise kept per a type reached through a
+    link reads through a join, and an analysis that cuts it by groups and periods cannot take it."""
+    import sqlglot
+    from sqlglot import exp
+    from aughor.sql.metric_filter_guard import measure_of
+    if not entry.get("sql"):
+        return {"why_not": entry.get("refused") or "the object door could not compile it"}
+    try:
+        tree = sqlglot.parse_one(entry["sql"], read=dialect)
+    except Exception:  # noqa: BLE001 — a statement this cannot read is not taken, and says so
+        tree = None
+    if not isinstance(tree, exp.Select) or tree.args.get("joins"):
+        return {"why_not": f"its rate is read through a link, not over {o.entity}'s own table"}
+    for column in tree.find_all(exp.Column):           # the door's one alias, `t0.shipped_at`, read as `shipped_at`
+        column.set("table", None)
+    source = tree.args.get("from_") or tree.args.get("from")
+    if source is not None and isinstance(source.this, exp.Table):
+        source.this.set("alias", None)
+    measure = measure_of(tree.sql(dialect=dialect), dialect)
+    if measure is None or not measure["tables"]:
+        return {"why_not": f"its rate is not one measure over {o.entity}'s table"}
+    return {"formula": measure["formula"], "table": measure["tables"][0], "filters": measure["filters"]}
+
+
 def _definition_queries(o: FrameOutcome, filters: list[dict]) -> dict[str, dict]:
     if o.kind == "promise":
         return {o.segment: {"object_type": o.object_type, "segment": o.segment, "filters": filters,
@@ -1194,6 +1224,8 @@ def _frame_compiled(graph: OntologyGraph, frame: Frame, dialect: str, metrics: I
         reading = _keyed_reading(chosen, frame.compiled[chosen.metric], filters, dialect, metrics)
         if reading:
             frame.compiled[chosen.metric]["reading"] = reading
+    if chosen is not None and chosen.kind == "promise" and chosen.metric in frame.compiled:
+        frame.compiled[chosen.metric]["reading"] = _promise_reading(chosen, frame.compiled[chosen.metric], dialect)
     if chosen is not None and chosen.kind in ("promise", "lag"):
         measure = ({"name": chosen.metric, "metric": chosen.metric} if chosen.kind == "promise"
                    else {"name": f"avg_{chosen.lag}", "agg": "avg", "path": chosen.lag})
