@@ -15,11 +15,15 @@ plus what adopting it decided. Where it says MUST, a reviewer rejects the diff.
 > "density" artboard's compact setting is the Theme's scaling at 90%. The thesis, the trust
 > system, the states and the rules marked MUST that are not about a value still hold.
 
+> **Since 2026-10-10, what a screen SAYS and how it is LAID OUT is `CLARITY.md`** (the interface overhaul's law, from
+> the approved mockups in `design-mockups/`). This file keeps the tokens, components and states; where the two
+> disagree, CLARITY.md wins and the line here is marked.
+
 ## 0. The thesis
 
 Aughor's product is a claim about a number, and the interface's whole job is to make that
 claim checkable at a glance. Everything structural is monochrome on its skin's ground —
-navy in dark, a white grid on grey chrome in light; the ink and the encoding carry no brand. There is **one plane, not a stack of cards**:
+navy in dark, a white grid on grey chrome in light; the ink and the encoding carry no brand. There is **one plane, not a stack of cards** *(superseded 2026-10-10 by `CLARITY.md` §7: content sits in cards on the ground)*:
 hierarchy comes from hairlines and the honest weight of type. **Colour is a data type.**
 Density is a feature: a screen carries 3–5× what a consumer app carries and still feels
 calm. The answer to a crowded screen is better hierarchy at the same density, never more
@@ -45,7 +49,7 @@ glow and lift, and two component layers for one class is one too many.
 
 **Type.** Root 14px, the reading size; 13 is chrome. Seven steps and no others — `11 · 12 · 13 · 14 · 15 · 18 · 22` (`aug-fs-xs … aug-fs-display`);
 28px exists in exactly one place, an icon in an empty state (`aug-fs-glyph`, `.aug-empty-glyph`).
-11 is the floor. Inter for UI text; **JetBrains Mono for every figure, id, timestamp, metric,
+11 is the floor. Inter for UI text; *(stale: figures are tabular Inter, as §10 and `CLARITY.md` §4 say — mono for ids and code only)* **JetBrains Mono for every figure, id, timestamp, metric,
 table or column name, and code**, always tabular (`.aug-num`). Line heights 1.45 at 11/18,
 1.55 at 12, 1.7 at 13 (1.8 in prose, `.aug-text-prose`), 1.5 at 15, 1.0 at 22.
 `lint:tokens` fails an off-scale size and ratchets raw literals down.
