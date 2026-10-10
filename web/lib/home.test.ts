@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { Claim, Decision } from "@/lib/record";
 import {
-  SCHEDULED_HEADER, percentOf, pickLead, pickQuestion, pickWorthALook, standingQuestions, weekAhead,
+  ASKED, SCHEDULED_HEADER, byDay, dayWords, daysBehind, leadFigure, metricWords, percentOf, pickLead, pickQuestion,
+  pickWorthALook, rangeText, standingQuestions, weekAhead,
   type Analysis, type Finding,
 } from "@/lib/home";
 
@@ -93,5 +94,80 @@ describe("the week ahead", () => {
       [forecast("2026-10-12"), forecast("2026-10-10", "scored")], "2026-10-07");
     expect(due.map(d => d.on)).toEqual(["2026-10-09", "2026-10-12"]);
     expect(due[0].what).toContain("Move West orders to Houston");
+  });
+});
+
+
+// theLook's daily run of 2026-10-10 (analysis 4b90a7ec), its baseline phase as the record holds it, trimmed.
+const REPORT = {
+  spec: { metric_label: "Revenue" },
+  period_as_measured: { windows: [{ tool: "baseline", start: "2026-10-02", end: "2026-10-03" }] },
+  phases: [
+    { phase_id: "decomposition", findings: [{ key_numbers: [{ label: "Orders", value: "528", delta: "+308" }] }] },
+    { phase_id: "baseline", findings: [
+      { title: "13-Day Revenue Baseline", stat_note: "z = 1.15 — within normal range",
+        key_numbers: [{ label: "Historical Mean Revenue", value: "$16,728.25", delta: null }] },
+      { title: "Period-over-Period Revenue Change", stat_note: null,
+        key_numbers: [{ label: "Oct 2 Revenue", value: "$19,087.76", delta: "+$209.55" }],
+        columns: ["observation_date", "observation_revenue", "comparison_revenue", "absolute_change", "pct_change"],
+        rows: [["2026-10-02", "19087.760056495667", "18878.21005678177", "209.5499997138977", "0.011100098954488505"]] },
+    ] },
+  ],
+};
+
+describe("the lead's figure", () => {
+  it("is read from the baseline's own numbers: the metric, the day, the value and its change, and the verdict", () => {
+    expect(leadFigure(REPORT)).toEqual({ metric: "Revenue", day: "2026-10-02", value: "$19,087.76", change: "+$209.55",
+      pct: 0.011100098954488505, verdict: "within normal range", unusual: false });
+  });
+
+  it("is said unusual only when the baseline says so", () => {
+    const outside = structuredClone(REPORT) as { phases: { findings: Record<string, unknown>[] }[] };
+    outside.phases[1].findings[0].stat_note = "z = 3.40 — outside normal range";
+    expect(leadFigure(outside)?.unusual).toBe(true);
+  });
+
+  it("is none when the analysis holds no baseline value with a change — the headline is said instead", () => {
+    expect(leadFigure({ phases: [{ phase_id: "decomposition", findings: REPORT.phases[0].findings }] })).toBeNull();
+    expect(leadFigure(null)).toBeNull();
+  });
+
+  it("says how far behind today it is", () => {
+    expect(daysBehind("2026-10-02", "2026-10-10")).toBe(8);
+    expect(daysBehind("2026-10-12", "2026-10-10")).toBe(0);
+    expect(dayWords("2026-10-02")).toBe("Fri 2 Oct");
+    expect(dayWords("2026-09-07")).toBe("Mon 7 Sep");
+  });
+});
+
+describe("the question and the week, as Home draws them", () => {
+  it("keeps what a question is about apart from what is asked", () => {
+    const q = pickQuestion([ask("a1", "2026-10-06T10:00:00Z", "Why did returns rise?", "Returns rose 4%, driven by outerwear.")], "c1", new Set());
+    expect(q?.subject).toBe("Returns rose 4%, driven by outerwear");
+    expect(q?.text).toBe(`Returns rose 4%, driven by outerwear. ${ASKED}`);
+  });
+
+  it("groups what lands by day, a forecast with the range its record holds", () => {
+    const f = (on: string, metric: string, low: number, high: number, unit: string): Claim => ({
+      next_check: on, state: "open", superseded_by: "", extra: { low, high },
+      statement: { text: "", metric, unit, range_start: "2026-09-07", range_end: "2026-09-13" } } as unknown as Claim);
+    const due = weekAhead([], [f("2026-10-12", "revenue", 79400, 98000, "$"), f("2026-10-12", "return_rate", 9.2, 11.1, "%"),
+                               f("2026-10-15", "units_sold", 1595, 1924, "units")], "2026-10-10");
+    const days = byDay(due);
+    expect(days.map(d => [d.on, d.forecasts.length])).toEqual([["2026-10-12", 2], ["2026-10-15", 1]]);
+    // a day leads with money, then counts, then shares — whatever order the record holds them in
+    const order = byDay(weekAhead([], [f("2026-10-12", "return_rate", 0.09, 0.11, "ratio 0..1"),
+      f("2026-10-12", "units_sold", 1595, 1924, "count"), f("2026-10-12", "revenue", 79400, 98000, "$")], "2026-10-10"));
+    expect(order[0].forecasts.map(d => d.metric)).toEqual(["revenue", "units_sold", "return_rate"]);
+    expect(days[0].forecasts.map(d => `${metricWords(d.metric)} ${rangeText(d.low, d.high, d.unit)}`))
+      .toEqual(["Revenue $79.4K – $98.0K", "Return rate 9.2% – 11.1%"]);
+    // each as its unit says, in the words theLook's forecasts hold
+    expect(rangeText(1595.4, 1924.2, "count")).toBe("1,595 – 1,924");
+    expect(["average_order_value_aov", "daily_active_users_dau", "units_sold", "gross_margin_percentage"].map(metricWords))
+      .toEqual(["Average order value", "Daily active users", "Units sold", "Gross margin percentage"]);
+    expect(rangeText(76.3, 82.6, "USD")).toBe("$76 – $83");
+    expect(rangeText(0.092011, 0.111332, "ratio 0..1")).toBe("9.2% – 11.1%");
+    expect(rangeText(51.39, 52.29, "percent 0-100")).toBe("51.4% – 52.3%");
+    expect(rangeText(1.8586, 2.1383, "days, roughly 0-30")).toBe("1.9 – 2.1 days");
   });
 });

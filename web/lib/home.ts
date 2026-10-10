@@ -95,8 +95,14 @@ export const ANSWERS = ["A campaign", "A price change", "Nothing we did", "I don
 
 export interface PersonQuestion {
   about: Analysis;
+  /** The question as booked: the headline, then what the person is asked. */
   text: string;
+  /** What it is about — the analysis's own headline, said once. */
+  subject: string;
 }
+
+/** What the person is asked about a headline that credits a cause. */
+export const ASKED = "Did the team do anything that explains it?";
 
 /**
  * A question for you — decided default (ROADMAP §6 item 45 b, c): the newest analysis whose
@@ -109,7 +115,7 @@ export function pickQuestion(all: Analysis[], connectionId: string, answered: Re
     .sort((a, b) => (b.started_at > a.started_at ? 1 : -1))[0];
   if (!about) return null;
   const said = String(about.headline).trim().replace(/[.\s]+$/, "");
-  return { about, text: `${said}. Did the team do anything that explains it?` };
+  return { about, text: `${said}. ${ASKED}`, subject: said };
 }
 
 export interface Finding {
@@ -145,6 +151,15 @@ export function pickWorthALook(findings: Finding[], acted: ReadonlySet<string>, 
 export interface Due {
   on: string;
   what: string;
+  kind: "review" | "forecast";
+  /** A forecast's metric and the range it expects, as its record holds them. */
+  metric?: string;
+  low?: number | null;
+  high?: number | null;
+  unit?: string;
+  /** The period a forecast is for: its first and last day. */
+  from?: string;
+  to?: string;
 }
 
 const day = (iso: string) => String(iso || "").slice(0, 10);
@@ -162,16 +177,169 @@ export function weekAhead(decisions: Decision[], predictions: Claim[], today: st
   const out: Due[] = [];
   for (const d of decisions) {
     if (!d.superseded_by && ahead(day(d.review_on))) {
-      out.push({ on: day(d.review_on), what: `"${d.chosen || d.question}" is due for its review` });
+      out.push({ on: day(d.review_on), what: `"${d.chosen || d.question}" is due for its review`, kind: "review" });
     }
   }
   for (const p of predictions) {
     const on = day(p.next_check || p.statement.range_end);
     if (!p.superseded_by && p.state !== "scored" && ahead(on)) {
-      out.push({ on, what: `A forecast settles: ${p.statement.text}` });
+      const x = (p.extra ?? {}) as { low?: unknown; high?: unknown };
+      const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+      out.push({ on, what: `A forecast settles: ${p.statement.text}`, kind: "forecast", metric: p.statement.metric,
+                 low: num(x.low), high: num(x.high), unit: p.statement.unit, from: day(p.statement.range_start),
+                 to: day(p.statement.range_end) });
     }
   }
   return out.sort((a, b) => a.on.localeCompare(b.on));
+}
+
+export interface DueDay {
+  on: string;
+  reviews: Due[];
+  forecasts: Due[];
+}
+
+/** What a forecast's unit says it measures, read from the words its record holds ("USD", "ratio 0..1", "percent 0-100",
+ *  "count", "days, roughly 0-30"). */
+export type UnitKind = "money" | "count" | "ratio" | "percent" | "days" | "number";
+export function unitKind(unit: string | undefined): UnitKind {
+  const u = String(unit ?? "").trim().toLowerCase();
+  if (u === "$" || /^usd\b/.test(u)) return "money";
+  if (u === "%" || u.startsWith("percent")) return "percent";
+  if (u.startsWith("ratio") || u.startsWith("share") || u.startsWith("fraction")) return "ratio";
+  if (u.startsWith("count")) return "count";
+  if (u.startsWith("day")) return "days";
+  return "number";
+}
+
+const ORDER: Record<UnitKind, number> = { money: 0, count: 1, percent: 2, ratio: 2, days: 3, number: 4 };
+
+/** The week ahead, a day at a time: what is due for review and what settles — a day's forecasts money first, then
+ *  counts, then shares, each kind in the order it came. */
+export function byDay(due: Due[]): DueDay[] {
+  const days = new Map<string, DueDay>();
+  for (const d of due) {
+    const slot = days.get(d.on) ?? { on: d.on, reviews: [], forecasts: [] };
+    (d.kind === "review" ? slot.reviews : slot.forecasts).push(d);
+    days.set(d.on, slot);
+  }
+  for (const slot of days.values()) {
+    slot.forecasts = slot.forecasts.map((f, i) => [f, i] as const)
+      .sort((a, b) => ORDER[unitKind(a[0].unit)] - ORDER[unitKind(b[0].unit)] || a[1] - b[1]).map(([f]) => f);
+  }
+  return [...days.values()].sort((a, b) => a.on.localeCompare(b.on));
+}
+
+/** A metric's id in a reader's words: "net_merchandise_revenue" → "Net merchandise revenue". An id that ends in its
+ *  own initials says them once: "average_order_value_aov" → "Average order value". */
+export function metricWords(id: string | undefined): string {
+  const words = String(id ?? "").replace(/[_-]+/g, " ").trim().split(/\s+/).filter(Boolean);
+  const last = words[words.length - 1] ?? "";
+  if (words.length > 2 && last.length >= 2 && last.toLowerCase() === words.slice(0, -1).map(x => x[0]).join("").toLowerCase()) {
+    words.pop();
+  }
+  const w = words.join(" ");
+  return w ? w[0].toUpperCase() + w.slice(1) : "";
+}
+
+const short = (n: number, money: boolean): string => {
+  const a = Math.abs(n);
+  const body = a >= 1e6 ? `${(a / 1e6).toFixed(1)}M` : a >= 1e3 ? `${(a / 1e3).toFixed(1)}K` : a >= 10 ? a.toFixed(0) : a.toFixed(2);
+  return `${n < 0 ? "-" : ""}${money ? "$" : ""}${body}`;
+};
+
+/** A forecast's range as a reader reads it, by what its unit says: money short ("$79.4K – $98.0K", "$76 – $83"), a
+ *  ratio or a percent as a percent ("9.2% – 11.1%"), a count whole ("1,595 – 1,924"), days as days ("1.9 – 2.1 days"). */
+export function rangeText(low: number | null | undefined, high: number | null | undefined, unit: string | undefined): string {
+  if (low == null || high == null) return "";
+  const kind = unitKind(unit);
+  if (kind === "money") return `${short(low, true)} – ${short(high, true)}`;
+  if (kind === "ratio") return `${(low * 100).toFixed(1)}% – ${(high * 100).toFixed(1)}%`;
+  if (kind === "percent") return `${low.toFixed(1)}% – ${high.toFixed(1)}%`;
+  if (kind === "days") return `${low.toFixed(1)} – ${high.toFixed(1)} days`;
+  // a count is written whole, with separators; a small quantity to two decimals
+  const digits = kind === "count" || Math.max(Math.abs(low), Math.abs(high)) >= 10 ? 0 : 2;
+  const w = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: digits });
+  return `${w(low)} – ${w(high)}`;
+}
+
+const part = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString("en-US", { ...o, timeZone: "UTC" });
+
+/** A day and its month as Home writes them: "12 Oct", "2 Sep". */
+export function dayMonth(iso: string): string {
+  const d = new Date(`${day(iso)}T00:00:00Z`);
+  return isNaN(d.getTime()) ? iso : `${d.getUTCDate()} ${part(d, { month: "short" })}`;
+}
+
+/** A day as Home writes it: "Mon 12 Oct". */
+export function dayWords(iso: string): string {
+  const d = new Date(`${day(iso)}T00:00:00Z`);
+  return isNaN(d.getTime()) ? iso : `${part(d, { weekday: "short" })} ${dayMonth(iso)}`;
+}
+
+/** Whole days between a day and today (0 when it is today or later). */
+export function daysBehind(observed: string, today: string): number {
+  const a = Date.parse(`${day(observed)}T00:00:00Z`), b = Date.parse(`${day(today)}T00:00:00Z`);
+  return Number.isNaN(a) || Number.isNaN(b) ? 0 : Math.max(0, Math.round((b - a) / 86_400_000));
+}
+
+/** The lead's figure, read from its analysis's own baseline numbers — never from its sentences. */
+export interface LeadFigure {
+  metric: string;
+  /** The day the figure is for, ISO. */
+  day: string;
+  /** The value and its change, as the analysis wrote them ("$19,087.76", "+$209.55"). */
+  value: string;
+  change: string | null;
+  /** The change as a ratio (0.011 for +1.1%), when the analysis measured one. */
+  pct: number | null;
+  /** What the baseline said of it ("within normal range"), and whether that is unusual. */
+  verdict: string | null;
+  unusual: boolean;
+}
+
+type Row = Record<string, unknown>;
+const rows = (v: unknown): Row[] => (Array.isArray(v) ? v.filter((x): x is Row => !!x && typeof x === "object") : []);
+
+/** The figure a scheduled run reported, from the finding of its baseline phase that states a value and its change;
+ *  null when the analysis holds none (a report of another shape says its headline instead). */
+export function leadFigure(report: unknown): LeadFigure | null {
+  const rep = (report && typeof report === "object" ? report : {}) as Row;
+  const baseline = rows(rep.phases).find(p => p.phase_id === "baseline");
+  const findings = rows(baseline?.findings);
+  for (const f of findings) {
+    const kn = rows(f.key_numbers).find(k => k.delta != null && String(k.delta).trim() !== "");
+    if (!kn) continue;
+    const cols = Array.isArray(f.columns) ? (f.columns as unknown[]).map(String) : [];
+    const first = Array.isArray(f.rows) && Array.isArray((f.rows as unknown[])[0]) ? (f.rows as unknown[][])[0] : [];
+    const at = (name: string) => (cols.indexOf(name) >= 0 ? first[cols.indexOf(name)] : undefined);
+    const pct = Number(at("pct_change"));
+    const windows = rows((rep.period_as_measured as Row | undefined)?.windows);
+    const observed = String(at("observation_date") ?? windows[0]?.start ?? "").slice(0, 10);
+    const note = findings.map(x => String(x.stat_note ?? "")).find(n => /—/.test(n)) ?? "";
+    const verdict = note ? note.split("—").pop()!.trim() : null;
+    const metric = String((rep.spec as Row | undefined)?.metric_label ?? "").trim()
+      || String(kn.label ?? "").replace(/^[A-Z][a-z]{2} \d{1,2}\s+/, "").trim();
+    return { metric, day: observed, value: String(kn.value ?? ""), change: String(kn.delta), pct: Number.isFinite(pct) ? pct : null,
+             verdict, unusual: !!verdict && /outside|anomal|unusual|significant/i.test(verdict) && !/within/i.test(verdict) };
+  }
+  return null;
+}
+
+export interface LeadDetail {
+  summary: string;
+  figure: LeadFigure | null;
+  /** The analysis's confidence, and why it is not higher — said beside the figure when it is below HIGH. */
+  confidence: string;
+  why: string;
+}
+
+/** The lead's analysis, read once: its summary, its figure, its confidence. */
+export async function leadDetail(id: string): Promise<LeadDetail> {
+  const row = await json<{ report?: unknown }>(await fetch(`${getApiBase()}/investigations/${encodeURIComponent(id)}`));
+  const report = (typeof row.report === "string" ? JSON.parse(row.report || "{}") : (row.report ?? {})) as Row;
+  return { summary: String(report.executive_summary ?? ""), figure: leadFigure(report),
+           confidence: String(report.confidence ?? ""), why: String(report.confidence_justification ?? "") };
 }
 
 // ── doors ───────────────────────────────────────────────────────────────────────────────
