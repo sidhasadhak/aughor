@@ -29,8 +29,8 @@
  * The Briefing draws a person's cockpits with it (`BriefingCockpits`), behind `cockpit.composed`.
  */
 import {
-  Children, Component, createContext, useContext, useEffect, useMemo, useRef, useState,
-  type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject,
+  Children, Component, createContext, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState,
+  type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject,
 } from "react";
 import { evaluateVisibility, type Spec, type VisibilityCondition } from "@json-render/core";
 import {
@@ -39,7 +39,7 @@ import {
 } from "@json-render/react";
 
 import type { CardState } from "@/components/brief/PinnedCardBody";
-import { CellBoxContext, OFF_GRID, type CellBox } from "@/components/cockpit/cellBox";
+import { CanvasScale, CellBoxContext, OFF_GRID, type CellBox } from "@/components/cockpit/cellBox";
 import { CockpitTile, SaidTile, WIDE, WithheldTile, tileShape, type TileDoors } from "@/components/cockpit/CockpitTile";
 import {
   ActionButtonPiece, FilterBar, NotFiltered, ObjectChartPiece, ObjectDetailPiece, ObjectFigurePiece,
@@ -68,7 +68,18 @@ export interface CockpitDoors extends TileDoors, StaticDoors {
   onRegrid?: (key: string, box: Box, measured: Record<string, Box>) => void;
   /** Arc AP-1 — the filter column's width, in grades of 40 px. */
   onFilterWidth?: (grades: number) => void;
+  /** Arc AP-1 — the builder: a piece, the filter column or a section pointed at is the one chosen to set up. */
+  onSelect?: (key: string) => void;
 }
+
+/** What the builder may ask of a cockpit it draws (Arc AP-1): an element's room on its section's grid — measured from
+ *  the screen when the section is not on the grid yet — and one grade more or less of it, as Alt+arrows give. */
+export interface CockpitHandle {
+  room: (key: string) => Box | null;
+  step: (key: string, dw: number, dh: number) => void;
+}
+
+type Stepper = { room: () => Box | null; step: (dw: number, dh: number) => void };
 
 interface CockpitContextValue {
   elements: Spec["elements"];
@@ -81,6 +92,10 @@ interface CockpitContextValue {
   images: Record<string, ImageStamp>;
   range: BriefingRange | null;
   schema?: string;
+  /** The element chosen in the builder, outlined where it is drawn. */
+  selected: string | null;
+  /** Each drawn element's room and steps, by key, for the builder's − and + (`CockpitHandle`). */
+  steppers: Map<string, Stepper>;
 }
 
 const CockpitContext = createContext<CockpitContextValue | null>(null);
@@ -122,8 +137,9 @@ function CockpitRoot({ element, children }: ComponentRenderProps<{ title: string
   // The title names the cockpit for a screen reader and for the history. It is not drawn as a
   // header: the strip of cockpits above it already carries the name, and a panel does not
   // repeat its own title.
-  const { elements, doors } = useCockpit();
-  const first = elements[element.children?.[0] ?? ""];
+  const { elements, doors, selected } = useCockpit();
+  const firstKey = element.children?.[0] ?? "";
+  const first = elements[firstKey];
   const [preview, setPreview] = useState<number | null>(null);
   if (first?.type !== "ObjectFilters") {
     return <div role="region" aria-label={element.props.title} data-testid="cockpit">{children}</div>;
@@ -138,8 +154,10 @@ function CockpitRoot({ element, children }: ComponentRenderProps<{ title: string
   return (
     <div role="region" aria-label={element.props.title} data-testid="cockpit"
       style={{ display: "grid", gridTemplateColumns: `${width}px minmax(0, 1fr)`, gap: 14, alignItems: "start" }}>
-      <div className="group" data-testid="cockpit-filter-column" data-width={width}
-        style={{ position: "relative", alignSelf: "stretch", minWidth: 0 }}>
+      <div className="group" data-testid="cockpit-filter-column" data-width={width} data-selected={selected === firstKey || undefined}
+        onPointerDownCapture={doors.onSelect ? () => doors.onSelect?.(firstKey) : undefined}
+        style={{ position: "relative", alignSelf: "stretch", minWidth: 0, borderRadius: "var(--r3)",
+          outline: selected === firstKey ? "2px solid var(--accent)" : undefined, outlineOffset: 2 }}>
         {column}
         {doors.onFilterWidth && (
           <WidthHandle from={grades ?? Math.round(FILTER_COLUMN / GRADE)} onPreview={setPreview}
@@ -223,7 +241,7 @@ function useColumns(asked: number | null | undefined): [RefObject<HTMLDivElement
 }
 
 function CockpitSection({ element, children }: ComponentRenderProps<{ title: string; columns?: number | null; grid?: number | null }>) {
-  const { elements } = useCockpit();
+  const { elements, doors, selected } = useCockpit();
   // A section named as the cockpit is named says nothing new: its heading is not drawn (a cockpit started from an
   // object holds one such section).
   const named = Object.values(elements).find(el => el?.type === "Cockpit")?.props as { title?: string } | undefined;
@@ -240,7 +258,11 @@ function CockpitSection({ element, children }: ComponentRenderProps<{ title: str
     [elements, held]);
   const keys = useMemo(() => ({ key, columns, children: held, grid: gridded, stacked }), [key, columns, held, gridded, stacked]);
   return (
-    <section data-testid="cockpit-section" aria-label={element.props.title} style={{ marginTop: heading ? 20 : 0 }}>
+    // in the builder a click anywhere in a section chooses it — and a click on one of its pieces then chooses the piece
+    <section data-testid="cockpit-section" aria-label={element.props.title} data-selected={(key !== null && selected === key) || undefined}
+      onPointerDownCapture={doors.onSelect && key ? () => doors.onSelect?.(key) : undefined}
+      style={{ marginTop: heading ? 20 : 0, borderRadius: "var(--r3)",
+        outline: key !== null && selected === key ? "1px dashed var(--accent)" : undefined, outlineOffset: 6 }}>
       <div style={{ display: heading || waiting > 0 ? "flex" : "none", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
         <div className="aug-fs-h2" style={{ fontWeight: 600, color: "var(--t1)" }}>{heading ? element.props.title : ""}</div>
         {waiting > 0 && (
@@ -335,7 +357,8 @@ function measureSection(grid: HTMLElement): Record<string, Box> {
   if (colW <= 0) return out;
   for (const child of Array.from(grid.children) as HTMLElement[]) {
     const key = child.dataset.element;
-    const r = child.getBoundingClientRect();
+    // the layout's own px — the builder's canvas may draw the cockpit scaled, and the grid is laid out unscaled
+    const r = { width: child.offsetWidth, height: child.offsetHeight };
     if (!key || !r.width || !r.height) continue;
     out[key] = { w: Math.round((r.width + GRID.gap) / (colW + GRID.gap)), h: Math.round((r.height + GRID.gap) / GRADE) };
   }
@@ -361,6 +384,7 @@ function GridHandles({ cell, kind, from, gridded, onPreview, onDone }: {
   onDone: (b: Box, measured: Record<string, Box>) => void;
 }) {
   const [said, setSaid] = useState<Box | null>(null);
+  const scale = useContext(CanvasScale);
   const lim = LIMITS[kind];
   const down = (edge: Edge) => (ev: ReactPointerEvent<HTMLSpanElement>) => {
     const el = cell.current;
@@ -377,8 +401,8 @@ function GridHandles({ cell, kind, from, gridded, onPreview, onDone }: {
     let w = start.w, h = start.h;
     try { target.setPointerCapture(ev.pointerId); } catch { /* an engine without capture still sends the moves over the handle */ }
     const move = (mv: PointerEvent) => {
-      const nw = edge === "h" ? start.w : clamp(lim.w[0], lim.w[1], start.w + Math.round((mv.clientX - x0) / (colW + GRID.gap)));
-      const nh = edge === "w" ? start.h : clamp(lim.h[0], lim.h[1], start.h + Math.round((mv.clientY - y0) / GRADE));
+      const nw = edge === "h" ? start.w : clamp(lim.w[0], lim.w[1], start.w + Math.round((mv.clientX - x0) / scale / (colW + GRID.gap)));
+      const nh = edge === "w" ? start.h : clamp(lim.h[0], lim.h[1], start.h + Math.round((mv.clientY - y0) / scale / GRADE));
       if (nw !== w || nh !== h) { w = nw; h = nh; onPreview({ w, h }, colW); setSaid({ w, h }); }
     };
     const up = () => {
@@ -416,6 +440,7 @@ function GridHandles({ cell, kind, from, gridded, onPreview, onDone }: {
 /** The filter column's handle: its right edge, moved one grade of 40 px at a time, between 200 and 400 px (Arc AP-1). */
 function WidthHandle({ from, onPreview, onDone }: { from: number; onPreview: (g: number | null) => void; onDone: (g: number) => void }) {
   const [said, setSaid] = useState<number | null>(null);
+  const scale = useContext(CanvasScale);
   const down = (ev: ReactPointerEvent<HTMLSpanElement>) => {
     ev.preventDefault();
     ev.stopPropagation();
@@ -424,7 +449,7 @@ function WidthHandle({ from, onPreview, onDone }: { from: number; onPreview: (g:
     let g = from;
     try { target.setPointerCapture(ev.pointerId); } catch { /* the moves still come over the handle */ }
     const move = (mv: PointerEvent) => {
-      const ng = clamp(FILTER_WIDTH.least, FILTER_WIDTH.most, from + Math.round((mv.clientX - x0) / GRADE));
+      const ng = clamp(FILTER_WIDTH.least, FILTER_WIDTH.most, from + Math.round((mv.clientX - x0) / scale / GRADE));
       if (ng !== g) { g = ng; onPreview(g); setSaid(g); }
     };
     const up = () => {
@@ -471,7 +496,7 @@ function Cell({ type, props, size, testid, extra, children }: {
   extra?: { attrs?: Record<string, string | undefined>; style?: Record<string, unknown> };
   children: (key: string | null) => ReactNode;
 }) {
-  const { doors } = useCockpit();
+  const { doors, selected, steppers } = useCockpit();
   const { columns, grid: gridded, stacked } = useContext(SectionKeys);
   const key = useElementKey(type, props);
   const ref = useRef<HTMLDivElement>(null);
@@ -482,8 +507,9 @@ function Cell({ type, props, size, testid, extra, children }: {
   const kind = type in LIMITS ? (type as GridKind) : null;
   const own: Box | null = gridded ? { w: Number(props.w) || 1, h: Number(props.h) || 1 } : null;
   const regrid = !!doors.onRegrid && key !== null && kind !== null;
-  // the size picked by name stays only where the grid is not offered
-  const resizable = !regrid && !!doors.onResize && key !== null;
+  // the size picked by name stays only where the grid is not offered, and never on a section already on the grid
+  const resizable = !regrid && !gridded && !!doors.onResize && key !== null;
+  const chosen = key !== null && selected === key;
   const span = SPAN[size];
 
   const done = (b: Box, measured: Record<string, Box>) => { if (key) doors.onRegrid?.(key, b, measured); };
@@ -495,18 +521,33 @@ function Cell({ type, props, size, testid, extra, children }: {
     const next = clampBox(type, { w: from.w + dw, h: from.h + dh });
     if (next.w !== from.w || next.h !== from.h) done(next, measured);
   };
+  // the builder's − and + reach this element by its key (Arc AP-1) — registered as the layout is committed, before the
+  // builder reads the room again, so its readout is never a step behind
+  useLayoutEffect(() => {
+    if (!regrid || !key) return;
+    steppers.set(key, {
+      step,
+      room: () => {
+        const grid = ref.current?.parentElement;
+        return own ?? (grid ? measureSection(grid)[key] ?? null : null) ?? boxOf({ type, props, children: [] }, columns);
+      },
+    });
+    return () => { steppers.delete(key); };
+  });
 
   const box: CellBox = gridded ? { onGrid: true, w: (preview ?? own ?? { w: 1 }).w, h: (preview ?? own ?? { h: 1 }).h } : OFF_GRID;
   const style: Record<string, unknown> = gridded
-    ? { gridColumn: `span ${stacked ? 1 : Math.min(box.w, GRID.columns)}`, gridRow: `span ${box.h}`, minHeight: 0,
-        outline: preview ? "2px solid var(--blue3)" : undefined, outlineOffset: 2 }
+    ? { gridColumn: `span ${stacked ? 1 : Math.min(box.w, GRID.columns)}`, gridRow: `span ${box.h}`, minHeight: 0 }
     : { gridColumn: Math.min((corner ?? span).w, columns) > 1 ? `span ${Math.min((corner ?? span).w, columns)}` : undefined,
         gridRow: (corner ?? span).h > 1 ? `span ${(corner ?? span).h}` : undefined,
         minHeight: (corner ?? span).h > 1 ? TALL_MIN : undefined,
         boxShadow: corner ? "0 0 0 2px var(--blue3) inset" : undefined };
+  // a drag's landing in blue; the builder's chosen element in the accent
+  const ring = preview ? "2px solid var(--blue3)" : chosen ? "2px solid var(--accent)" : undefined;
   return (
     <div ref={ref} className="group" data-testid={testid} data-element={key ?? undefined} data-size={gridded ? undefined : size}
-      data-w={gridded ? box.w : undefined} data-h={gridded ? box.h : undefined} {...extra?.attrs}
+      data-w={gridded ? box.w : undefined} data-h={gridded ? box.h : undefined} data-selected={chosen || undefined} {...extra?.attrs}
+      onPointerDownCapture={doors.onSelect && key ? () => doors.onSelect?.(key) : undefined}
       tabIndex={regrid ? 0 : undefined}
       aria-label={regrid ? "Alt and the arrow keys resize this one grade at a time" : undefined}
       onKeyDown={regrid ? e => {
@@ -515,7 +556,7 @@ function Cell({ type, props, size, testid, extra, children }: {
         e.preventDefault();
         step(d[0], d[1]);
       } : undefined}
-      style={{ position: "relative", borderRadius: "var(--r3)", minWidth: 0, ...style, ...extra?.style }}>
+      style={{ position: "relative", borderRadius: "var(--r3)", minWidth: 0, outline: ring, outlineOffset: 2, ...style, ...extra?.style }}>
       <CellBoxContext.Provider value={box}>{children(key)}</CellBoxContext.Provider>
       {/* off the grid a drag draws where the element would land, until the section moves onto the grid on release */}
       {preview && !gridded && ghostColumn > 0 && (
@@ -657,13 +698,16 @@ function CockpitObjectFigure({ element }: ComponentRenderProps<{
 
 function CockpitObjectChart({ element }: ComponentRenderProps<{
   entity: string; label: string; time: string; days?: number | null; size?: Size | null;
+  agg?: string | null; path?: string | null; format?: string | null; split?: string | null; top?: number | null;
 }>) {
+  const { sym } = useCockpit();
   const filtering = useFiltering(element.props.entity);
+  const p = element.props;
   return (
-    <Cell type="ObjectChart" props={element.props as Record<string, unknown>} size={element.props.size ?? "full"} testid="cockpit-piece-cell">
+    <Cell type="ObjectChart" props={p as Record<string, unknown>} size={p.size ?? "full"} testid="cockpit-piece-cell">
       {() => <>{filtering.on && !filtering.narrows && <NotFiltered />}
-        <ObjectChartPiece entity={element.props.entity} label={element.props.label} time={element.props.time}
-          days={element.props.days ?? 30} /></>}
+        <ObjectChartPiece entity={p.entity} label={p.label} time={p.time} days={p.days ?? 30} agg={p.agg} path={p.path}
+          format={p.format} split={p.split} top={p.top} sym={sym} /></>}
     </Cell>
   );
 }
@@ -688,7 +732,8 @@ const REGISTRY = {
 
 const NO_IMAGES: Record<string, ImageStamp> = {};
 
-export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = NO_IMAGES, range = null, schema, connectionId, cockpitId }: {
+export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = NO_IMAGES, range = null, schema, connectionId, cockpitId,
+  selected = null, handle }: {
   spec: unknown;
   cards: CardState[];
   host: CockpitHostState;
@@ -704,6 +749,10 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
   connectionId?: string;
   /** The cockpit drawn: a reader's filters are remembered under it, in their browser. */
   cockpitId?: string;
+  /** Arc AP-1 — the element chosen in the builder, outlined where it is drawn. */
+  selected?: string | null;
+  /** Arc AP-1 — filled with what the builder may ask of the elements drawn. */
+  handle?: Ref<CockpitHandle>;
 }) {
   // A spec is known by what it says, not by which object says it: a caller that parses the
   // same JSON again on every render hands over a new object each time, and that must not
@@ -724,6 +773,11 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
   }, [store, host]);
 
   const rangeKey = JSON.stringify(range ?? null);
+  const steppers = useMemo(() => new Map<string, Stepper>(), []);
+  useImperativeHandle(handle, () => ({
+    room: key => steppers.get(key)?.room() ?? null,
+    step: (key, dw, dh) => steppers.get(key)?.step(dw, dh),
+  }), [steppers]);
   const context = useMemo<CockpitContextValue>(() => ({
     elements: check.valid ? (spec as Spec).elements : {},
     cards: new Map(cards.map(c => [c.card.id, c])),
@@ -734,8 +788,10 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
     images,
     range,
     schema,
+    selected,
+    steppers,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what the spec and the range say
-  }), [check.valid, written, cards, host, doors, sym, images, rangeKey, schema]);
+  }), [check.valid, written, cards, host, doors, sym, images, rangeKey, schema, selected, steppers]);
 
   if (!check.valid) {
     return (

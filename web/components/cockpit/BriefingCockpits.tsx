@@ -21,6 +21,11 @@
  *   - moves a cockpit that lived in a Data Canvas here: no model;
  *   - drafts a new cockpit for an area the person names: ONE short model run, said so on the
  *     button. The draft is shown as its outline, can be adjusted, and is kept or discarded.
+ *
+ * While `cockpit.builder` is on (Arc AP-1), a cockpit opens to be read — the strip, then one bar: its period, its
+ * history and Edit — and Edit opens the builder (`CockpitBuilder`): the cockpit between its layout and the setup of
+ * what is chosen, the rail folded to its icons until Done. Every change there is drawn at once and kept as one version
+ * a moment after a burst of them, with undo and redo. No model; a change asked in words is the one exception, as here.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -28,6 +33,7 @@ import { NewCardComposer } from "@/components/brief/NewCardComposer";
 import type { RangeChoice } from "@/components/brief/BriefRange";
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CockpitArrange, type CardLine } from "@/components/cockpit/CockpitArrange";
+import { CockpitBuilder, EditBar } from "@/components/cockpit/CockpitBuilder";
 import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/ComposedCockpit";
 import { FindingPicker } from "@/components/cockpit/FindingPicker";
 import { ObjectCockpitStarter } from "@/components/cockpit/ObjectCockpitStarter";
@@ -64,6 +70,7 @@ import {
 import { hostStateOf } from "@/lib/cockpit/hostStatus";
 import { emptyCockpitSpec, overdueSegmentOf, processCockpitHolds, processCockpitSpec, startCockpit } from "@/lib/cockpit/start";
 import { formatDateTime } from "@/lib/format";
+import { foldNavFor } from "@/lib/navCollapse";
 import { cachedObjectCatalog } from "@/lib/objects";
 import { getProcesses, type ProcessDetail } from "@/lib/objectTypes";
 
@@ -663,6 +670,9 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [piecesOn, setPiecesOn] = useState(false);
   // A cockpit started from an object (2026-10-10), while `ontology.object_cockpits` is on.
   const [objectsOn, setObjectsOn] = useState(false);
+  // Arc AP-1 — a cockpit built in place, while `cockpit.builder` is on: read first, and Edit opens the builder.
+  const [builderOn, setBuilderOn] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [shared, setShared] = useState<SharedCockpitListed[]>([]);
@@ -671,6 +681,16 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [reading, setReading] = useState(false);
   const known = useRef<Set<string>>(new Set());
   const adopt = useRef(false);
+  // Arc AP-1 — a change in the builder, or a resize, drawn at once (`draft`) and kept as one version per burst (`burst`)
+  const [draft, setDraft] = useState<CockpitSpec | null>(null);
+  // when this browser last saw a burst kept, and whether one is waiting or on its way — the builder's "saved" says them
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [pending, setPending] = useState(false);
+  // the builder's undo and redo: the specs before and after, in this sitting — each step back is kept as a version too
+  const NO_STEPS = { past: [] as CockpitSpec[], future: [] as CockpitSpec[] };
+  const [stacks, setStacks] = useState(NO_STEPS);
+  const burst = useRef<{ spec: CockpitSpec | null; cockpit: string; note: string; timer: ReturnType<typeof setTimeout> | null;
+    chain: Promise<void>; since: boolean }>({ spec: null, cockpit: "", note: "", timer: null, chain: Promise.resolve(), since: false });
 
   const rangeKey = JSON.stringify(range ?? null);
   const reload = useCallback(() => setTick(t => t + 1), []);
@@ -680,7 +700,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     getSystemFlags().then(f => {
       if (alive) {
         setRangesOn(!!f["briefing.ranges"]?.value); setPiecesOn(!!f["ontology.cockpit_pieces"]?.value);
-        setObjectsOn(!!f["ontology.object_cockpits"]?.value);
+        setObjectsOn(!!f["ontology.object_cockpits"]?.value); setBuilderOn(!!f["cockpit.builder"]?.value);
       }
     }).catch(() => { if (alive) { setRangesOn(false); setPiecesOn(false); } });
     return () => { alive = false; };
@@ -759,11 +779,13 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     } finally { setBusy(false); }
   }, [reload]);
 
-  const choose = (id: string) => {
+  /** Open another cockpit. From the builder's own picker it opens in the builder; anywhere else, to be read. */
+  const choose = (id: string, keepEditing = false) => {
     if (burst.current.timer) sendBurst();
     setDraft(null);
     setChosen(id); remember(connectionId, id); setArranging(null); setShowHistory(false); setRefusal(null); setProblem("");
     setPicking(false); setPublishing(false); setNoting(false); setImaging(false); setComposing(false);
+    setEditing(keepEditing); setStacks(NO_STEPS);
   };
 
   const refreshOne = useCallback(async (id: string) => {
@@ -784,18 +806,21 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
       () => "Taken off this cockpit. The card is kept.");
   }, [connectionId, data, write]);
 
-  // One edit of the spec by hand, kept as the next version: what every door on a tile comes to.
+  // One edit of the spec by hand, kept as the next version: what every door on a tile comes to. It is made on the newest
+  // spec — a burst still waiting is folded into it, not kept after it — and kept after any keep already on its way, so
+  // a resize landing late never takes back a note just placed (Arc AP-1).
   const edit = useCallback((change: (s: CockpitSpec) => CockpitSpec, note: string, said: string) => {
     if (!data?.cockpit.spec) return;
-    void write(() => keepCockpit(connectionId, data.cockpit_id, change(data.cockpit.spec as CockpitSpec), note), () => said);
+    const b = burst.current;
+    const base = (b.spec && b.cockpit === data.cockpit_id ? b.spec : data.cockpit.spec) as CockpitSpec;
+    if (b.timer) { clearTimeout(b.timer); b.timer = null; }
+    if (b.spec) { b.spec = null; setDraft(null); setPending(false); }
+    b.chain = b.chain.then(() => write(() => keepCockpit(connectionId, data.cockpit_id, change(base), note), () => said).then(() => undefined));
   }, [connectionId, data, write]);
 
   // Arc AP-1 — a resize is drawn at once and kept as ONE version per burst of steps, a moment after the last. The cards
   // are not read again: the room changed, and nothing measured did. Keeps go one after another, never two at once, and
   // a newer burst is never undone by an older one landing.
-  const [draft, setDraft] = useState<CockpitSpec | null>(null);
-  const burst = useRef<{ spec: CockpitSpec | null; cockpit: string; note: string; timer: ReturnType<typeof setTimeout> | null;
-    chain: Promise<void>; since: boolean }>({ spec: null, cockpit: "", note: "", timer: null, chain: Promise.resolve(), since: false });
   const sendBurst = useCallback(() => {
     const b = burst.current;
     if (b.timer) { clearTimeout(b.timer); b.timer = null; }
@@ -806,11 +831,14 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
         const k = await keepCockpit(connectionId, cockpit, sent, note);
         setData(d => (d && d.cockpit_id === cockpit ? { ...d, cockpit: { ...d.cockpit, spec: sent, version: k.version ?? d.cockpit.version } } : d));
         burst.current.since = true;
+        setSavedAt(Date.now());
+        // what a refused keep said is no longer so once a later one is kept
+        setRefusal(null);
       } catch (e) {
         if (e instanceof CockpitRefused) setRefusal(e.outcome);
         else toast.error("The new size was not kept", { description: (e as Error).message.slice(0, 160) });
       } finally {
-        if (burst.current.spec === sent) { burst.current.spec = null; setDraft(null); }
+        if (burst.current.spec === sent) { burst.current.spec = null; setDraft(null); setPending(false); }
       }
     });
   }, [connectionId]);
@@ -820,12 +848,39 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     const same = b.spec && b.cockpit === data.cockpit_id;
     const next = change((same ? b.spec : data.cockpit.spec) as CockpitSpec);
     b.spec = next; b.cockpit = data.cockpit_id; b.note = note;
-    setDraft(next);
+    setDraft(next); setPending(true);
     if (b.timer) clearTimeout(b.timer);
     b.timer = setTimeout(sendBurst, KEEP_AFTER_MS);
   }, [data, sendBurst]);
   // a burst still waiting is kept before the page leaves it
   useEffect(() => () => { if (burst.current.timer) sendBurst(); }, [sendBurst]);
+
+  // Arc AP-1 — in the builder every change goes through here: drawn at once, kept with the burst, and undoable.
+  const current = (draft ?? data?.cockpit.spec ?? null) as CockpitSpec | null;
+  const change = useCallback((next: CockpitSpec, note: string) => {
+    if (!current) return;
+    setStacks(st => ({ past: [...st.past.slice(-49), current], future: [] }));
+    keepSoon(() => next, note);
+  }, [current, keepSoon]);
+  const undo = () => {
+    const prev = stacks.past.at(-1);
+    if (!prev || !current) return;
+    setStacks({ past: stacks.past.slice(0, -1), future: [...stacks.future, current] });
+    keepSoon(() => prev, "undone by hand");
+  };
+  const redo = () => {
+    const next = stacks.future.at(-1);
+    if (!next || !current) return;
+    setStacks({ past: [...stacks.past, current], future: stacks.future.slice(0, -1) });
+    keepSoon(() => next, "redone by hand");
+  };
+  const done = () => {
+    if (burst.current.timer) sendBurst();
+    setEditing(false); setShowHistory(false); setRetiring(false); setPublishing(false);
+    setStacks(NO_STEPS);
+  };
+  // the rail folds to its icons while the builder is open, and comes back as the person keeps it
+  useEffect(() => (editing ? foldNavFor() : undefined), [editing]);
 
   const doors = useMemo<CockpitDoors>(() => ({
     onRemove: takeOffOne, onRefresh: refreshOne, onOpenSource, onEvidence,
@@ -836,9 +891,24 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     onRecaption: (key: string, caption: string) => edit(s => recaption(s, key, caption), "an image's caption changed by hand", "Kept."),
     onPlaceTable: piecesOn ? (entity: string, segment: string) => edit(s => placePiece(s, "ObjectTable", { entity, segment, size: "wide" }).spec,
       "an objects table placed from a process board", "Placed: the objects still waiting and already past the promise.") : undefined,
-    onRegrid: (key: string, box: Box, measured: Record<string, Box>) => keepSoon(s => regrid(s, key, box, measured), "resized by hand"),
-    onFilterWidth: (grades: number) => keepSoon(s => setFilterWidth(s, grades), "the filter column resized by hand"),
-  }), [takeOffOne, refreshOne, onOpenSource, onEvidence, edit, piecesOn, keepSoon]);
+  }), [takeOffOne, refreshOne, onOpenSource, onEvidence, edit, piecesOn]);
+  // Arc AP-1 — read first: a cockpit being read offers its reader's own doors only, and the builder all of them, each
+  // change kept through `change` so that it can be undone
+  const readDoors = useMemo<CockpitDoors>(() => ({ onRefresh: refreshOne, onOpenSource, onEvidence }), [refreshOne, onOpenSource, onEvidence]);
+  const editDoors = useMemo<CockpitDoors>(() => {
+    const on = (fn: (s: CockpitSpec) => CockpitSpec, note: string) => { if (current) change(fn(current), note); };
+    return {
+      onRefresh: refreshOne, onOpenSource, onEvidence,
+      onRemove: (id: string) => on(s => takeOffCard(s, id), "a card taken off"),
+      onTakeOff: (key: string) => on(s => takeOff(s, key), "taken off by hand"),
+      onEditNote: (key: string, text: string) => on(s => editNote(s, key, text), "a note's words changed by hand"),
+      onRecaption: (key: string, caption: string) => on(s => recaption(s, key, caption), "an image's caption changed by hand"),
+      onPlaceTable: piecesOn ? (entity: string, segment: string) => on(s => placePiece(s, "ObjectTable", { entity, segment, size: "wide" }).spec,
+        "an objects table placed from a process board") : undefined,
+      onRegrid: (key: string, box: Box, measured: Record<string, Box>) => on(s => regrid(s, key, box, measured), "resized by hand"),
+      onFilterWidth: (grades: number) => on(s => setFilterWidth(s, grades), "the filter column resized by hand"),
+    };
+  }, [current, change, refreshOne, onOpenSource, onEvidence, piecesOn]);
   const host = useMemo(() => hostStateOf(data?.range.status ?? "standing", cards), [data?.range.status, cards]);
   // Where each image's bytes are read from: the API, with this reader's own access.
   const images = useMemo<Record<string, ImageStamp>>(() => Object.fromEntries(
@@ -884,6 +954,175 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           nobody else sees it or changes it. Name an area and one is drafted for you to keep, or start from the cards already pinned here.
         </EmptyState>
   );
+
+  // a cockpit's versions, newest first, each one a person may go back to
+  const historyPanel = kept && data ? (
+    <div style={{ margin: "8px 0 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+        <span className="aug-fs-sm" data-testid="cockpit-version" style={{ color: "var(--t3)" }}>
+          Version {kept.version} · {kept.written_by_model ? "drafted, kept" : "kept"} by {person(kept.approved_by)} · {formatDateTime(kept.kept_at)}
+        </span>
+      </div>
+      <ol data-testid="cockpit-history" style={{ listStyle: "none", margin: 0, padding: 0, borderTop: "1px solid var(--b1)" }}>
+        {data.history.map(v => (
+          <li key={v.artifact_id} className="aug-fs-sm" style={{ display: "flex", alignItems: "baseline", gap: 12, padding: "7px 0", borderBottom: "1px solid var(--b1)", color: "var(--t2)", flexWrap: "wrap" }}>
+            <span style={{ color: "var(--t1)", fontWeight: 500, minWidth: 74 }}>Version {v.version}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              {v.retired ? "Retired" : changed(v.changes)} · {person(v.approved_by)} · {formatDateTime(v.kept_at)}
+              {v.source ? ` · ${v.source}` : ""}{v.note ? ` · ${v.note}` : ""}
+            </span>
+            {v.current ? <span style={{ color: "var(--t3)" }}>current</span> : v.retired ? null : (
+              <Button variant="ghost" size="xs" disabled={busy}
+                onClick={() => void write(() => restoreCockpit(connectionId, data.cockpit_id, v.version),
+                  k => (k.status === "unchanged" ? "That is the version you are on." : `Back to version ${v.version}, kept as version ${k.version}.`))}>
+                Go back to this
+              </Button>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  ) : null;
+
+  // what may be added by hand, each in its own composer — placed by `edit`, kept at once
+  const composers = kept && data ? (
+    <>
+      {composing && (
+        <div style={{ marginTop: 8 }}>
+          <NewCardComposer connectionId={connectionId} schema={schema} startOpen
+            onClose={() => setComposing(false)}
+            onCreated={() => { adopt.current = true; reload(); }} />
+        </div>
+      )}
+      {noting && (
+        <NoteComposer busy={busy} onClose={() => setNoting(false)}
+          onPlace={text => { edit(s => placeNote(s, text), "a note written by hand", "Placed. Its author and date are stamped as it is kept."); setNoting(false); }} />
+      )}
+      {imaging && (
+        <ImageComposer connectionId={connectionId} busy={busy} onClose={() => setImaging(false)}
+          onPlace={(objectId, caption) => { edit(s => placeImage(s, objectId, caption), "an image uploaded by hand", "Placed. The upload is stamped with your name and the date."); setImaging(false); }} />
+      )}
+      {placing && piecesOn && (
+        <OntologyPieceComposer connectionId={connectionId} schema={schema} spec={(current ?? kept.spec) as CockpitSpec} busy={busy}
+          onClose={() => setPlacing(false)}
+          onPlace={(change, note, said) => { edit(change, note, said); setPlacing(false); }} />
+      )}
+      {picking && (
+        <FindingPicker connectionId={connectionId} schema={schema} busy={busy}
+          placed={new Set(cards.map(c => findingOfCard(c.card)).filter(Boolean))}
+          onPlaced={() => { adopt.current = true; reload(); }} onClose={() => setPicking(false)} />
+      )}
+      {publishing && (
+        <PublishPanel connectionId={connectionId} cockpitId={data.cockpit_id} busy={busy}
+          publishedTo={(kept.published_to ?? []) as CockpitAudience[]}
+          onDone={write} onClose={() => setPublishing(false)} />
+      )}
+    </>
+  ) : null;
+
+  // Arc AP-1 — the builder: the cockpit between its layout and the setup of what is chosen, in place of the strip
+  if (builderOn && editing && drawn && data && current && chosen !== METRICS_COCKPIT && !chosen.startsWith("shared:")) {
+    const at = savedAt ?? (kept.kept_at ? Date.parse(kept.kept_at) : NaN);
+    const saved = pending ? "Saving…"
+      : `saved ${Number.isNaN(at) ? "" : new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} · version ${kept.version}`;
+    const shut = () => { setComposing(false); setNoting(false); setImaging(false); setPicking(false); setPlacing(false); };
+    return (
+      <div data-testid="briefing-cockpits" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <CockpitBuilder spec={current} onChange={change} cardTitle={id => lines.get(id)?.title} connectionId={connectionId} schema={schema}
+          bar={(
+            <EditBar saved={saved} canUndo={stacks.past.length > 0} canRedo={stacks.future.length > 0} onUndo={undo} onRedo={redo} onDone={done}
+              picker={(
+                <SelectField aria-label="The cockpit being edited" value={chosen} onChange={e => choose(e.target.value, true)} style={{ maxWidth: 240 }}>
+                  {live.map(c => <option key={c.cockpit_id} value={c.cockpit_id}>{c.title || c.cockpit_id}</option>)}
+                </SelectField>
+              )}
+              actions={(
+                <>
+                  <Button size="xs" variant="ghost" aria-expanded={showHistory} data-testid="builder-history" onClick={() => {
+                    if (!showHistory && burst.current.since) { burst.current.since = false; reload(); }
+                    setShowHistory(h => !h);
+                  }}><Icon name="history" /> History</Button>
+                  <Button size="xs" variant={kept.published_to?.length ? "secondary" : "ghost"} disabled={busy} data-testid="cockpit-publish-open"
+                    aria-expanded={publishing} title="Share this cockpit, as it stands, with a group you belong to or a role you hold."
+                    onClick={() => setPublishing(p => !p)}>
+                    <Icon name="send" /> {kept.published_to?.length ? `An App for ${kept.published_to.map(t => t.name).join(", ")}` : "Publish as an App"}
+                  </Button>
+                  <Button size="xs" variant="ghost" disabled={busy} data-testid="cockpit-retire-open" aria-expanded={retiring}
+                    title="Take this cockpit off your strip. Its history stays, and it can be brought back as it was."
+                    onClick={() => setRetiring(r => !r)}><Icon name="close" /> Retire</Button>
+                </>
+              )} />
+          )}
+          add={(
+            <>
+              <Button size="xs" variant="ghost" disabled={busy || composing} data-testid="cockpit-card-new" onClick={() => { shut(); setComposing(true); }}>
+                <Icon name="plus" /> Card
+              </Button>
+              <Button size="xs" variant="ghost" disabled={busy || noting} data-testid="cockpit-note-new"
+                title="Your own words on this cockpit. By hand only: a model never writes a note." onClick={() => { shut(); setNoting(true); }}>
+                <Icon name="plus" /> Note
+              </Button>
+              <Button size="xs" variant="ghost" disabled={busy || imaging} data-testid="cockpit-image-new"
+                title="An image of your own on this cockpit. By hand only: a model never chooses one." onClick={() => { shut(); setImaging(true); }}>
+                <Icon name="plus" /> Image
+              </Button>
+              <Button size="xs" variant="ghost" disabled={busy || picking} data-testid="cockpit-finding-new"
+                title="Any finding the explorer has recorded on this connection, as a card: its query re-run through the guards."
+                onClick={() => { shut(); setPicking(true); }}>
+                <Icon name="plus" /> Finding
+              </Button>
+              {piecesOn && (
+                <Button size="xs" variant="ghost" disabled={busy || placing} data-testid="cockpit-piece-new"
+                  title="A process board, an objects table, an object detail or an action button — each reads what the ontology declares, by id."
+                  onClick={() => { shut(); setPlacing(true); }}>
+                  <Icon name="plus" /> From the ontology
+                </Button>
+              )}
+            </>
+          )}
+          aside={showHistory ? (
+            <div data-testid="builder-history-panel" style={{ padding: "4px 14px" }}>
+              <div style={{ display: "flex", alignItems: "center", padding: "8px 0" }}>
+                <span className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>History</span>
+                <Button size="xs" variant="ghost" style={{ marginLeft: "auto" }} onClick={() => setShowHistory(false)}>Back to the setup</Button>
+              </div>
+              {historyPanel}
+            </div>
+          ) : undefined}
+          above={(
+            <>
+              {refusal && <Refused outcome={refusal} />}
+              {retiring && (
+                <Callout tone="amber" style={{ margin: "0 0 10px" }} data-testid="cockpit-retire-confirm">
+                  <span className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    Retire this cockpit? It leaves your strip; its history stays, and it can be brought back as it was.
+                    <Button size="xs" disabled={busy} onClick={() => {
+                      setRetiring(false); setEditing(false);
+                      void write(() => retireCockpit(connectionId, data.cockpit_id), () => "Cockpit retired. Its history stays.");
+                    }}>Retire it</Button>
+                    <Button size="xs" variant="ghost" onClick={() => setRetiring(false)}>Keep it</Button>
+                  </span>
+                </Callout>
+              )}
+              {composers}
+              <AskChange connectionId={connectionId} cockpitId={data.cockpit_id} schema={schema} held={lines}
+                onKept={() => { setPublishing(false); reload(); }} />
+              {data.ontology && (
+                <PinStrip pin={data.ontology} spec={current} busy={busy}
+                  onRepin={() => void write(() => keepCockpit(connectionId, data.cockpit_id, kept.spec, `re-pinned to ${data.ontology?.current}`, true),
+                    k => (k.status === "unchanged" ? "Already pinned there." : `Re-pinned, as version ${k.version}.`))} />
+              )}
+            </>
+          )}>
+          {({ selected, onSelect, handle }) => (
+            <ComposedCockpit spec={current} cards={cards} host={host} doors={{ ...editDoors, onSelect }} sym={data.currency_symbol || "$"}
+              images={images} range={range} schema={schema} connectionId={connectionId} cockpitId={`${connectionId}:${chosen}`}
+              selected={selected} handle={handle} />
+          )}
+        </CockpitBuilder>
+      </div>
+    );
+  }
 
   return (
     <div data-testid="briefing-cockpits" style={{ flex: 1, overflow: "auto", padding: "14px 32px 32px" }}>
@@ -966,48 +1205,48 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                 showing={data.range.status === "standing" || reading ? null : data.range} />
             )}
             <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-              {!arranging && (
+              {!arranging && !builderOn && (
                 <Button size="xs" variant="ghost" disabled={busy || composing} data-testid="cockpit-card-new"
                   onClick={() => { setComposing(true); setNoting(false); setImaging(false); }}>
                   <Icon name="plus" /> Card
                 </Button>
               )}
-              {!arranging && (
+              {!arranging && !builderOn && (
                 <Button size="xs" variant="ghost" disabled={busy || noting} data-testid="cockpit-note-new"
                   title="Your own words on this cockpit. By hand only: a model never writes a note."
                   onClick={() => { setNoting(true); setComposing(false); setImaging(false); }}>
                   <Icon name="plus" /> Note
                 </Button>
               )}
-              {!arranging && (
+              {!arranging && !builderOn && (
                 <Button size="xs" variant="ghost" disabled={busy || imaging} data-testid="cockpit-image-new"
                   title="An image of your own on this cockpit. By hand only: a model never chooses one."
                   onClick={() => { setImaging(true); setComposing(false); setNoting(false); setPicking(false); }}>
                   <Icon name="plus" /> Image
                 </Button>
               )}
-              {!arranging && (
+              {!arranging && !builderOn && (
                 <Button size="xs" variant="ghost" disabled={busy || picking} data-testid="cockpit-finding-new"
                   title="Any finding the explorer has recorded on this connection, as a card: its query re-run through the guards."
                   onClick={() => { setPicking(true); setComposing(false); setNoting(false); setImaging(false); }}>
                   <Icon name="plus" /> Finding
                 </Button>
               )}
-              {!arranging && piecesOn && (
+              {!arranging && piecesOn && !builderOn && (
                 <Button size="xs" variant="ghost" disabled={busy || placing} data-testid="cockpit-piece-new"
                   title="A process board, an objects table, an object detail or an action button — each reads what the ontology declares, by id."
                   onClick={() => { setPlacing(true); setComposing(false); setNoting(false); setImaging(false); setPicking(false); }}>
                   <Icon name="plus" /> From the ontology
                 </Button>
               )}
-              {!arranging && (
+              {!arranging && !builderOn && (
                 <Button size="xs" variant={kept.published_to?.length ? "secondary" : "ghost"} disabled={busy} data-testid="cockpit-publish-open"
                   aria-expanded={publishing} title="Share this cockpit, as it stands, with a group you belong to or a role you hold."
                   onClick={() => setPublishing(p => !p)}>
                   <Icon name="send" /> {kept.published_to?.length ? `An App for ${kept.published_to.map(t => t.name).join(", ")}` : "Publish as an App"}
                 </Button>
               )}
-              {!arranging && (
+              {!arranging && !builderOn && (
                 <Button size="xs" variant="ghost" disabled={busy} data-testid="cockpit-arrange-open"
                   onClick={() => setArranging(JSON.parse(JSON.stringify(kept.spec)) as CockpitSpec)}>
                   <Icon name="sliders" /> Arrange
@@ -1020,7 +1259,14 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               }}>
                 <Icon name="history" /> {showHistory ? "Hide history" : "History"}
               </Button>
-              {!arranging && (
+              {builderOn && (
+                <Button size="xs" variant="secondary" data-testid="cockpit-edit" disabled={busy || reading}
+                  title="Build this cockpit in place: its layout, each piece's setup, and sizes one grade at a time."
+                  onClick={() => { setShowHistory(false); setRefusal(null); setEditing(true); }}>
+                  <Icon name="edit" /> Edit
+                </Button>
+              )}
+              {!arranging && !builderOn && (
                 <Button size="xs" variant="ghost" disabled={busy} data-testid="cockpit-retire-open" aria-expanded={retiring}
                   title="Take this cockpit off your strip. Its history stays, and it can be brought back as it was."
                   onClick={() => setRetiring(r => !r)}>
@@ -1043,33 +1289,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
             </Callout>
           )}
 
-          {showHistory && (
-            <div style={{ margin: "8px 0 12px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-              <span className="aug-fs-sm" data-testid="cockpit-version" style={{ color: "var(--t3)" }}>
-                Version {kept.version} · {kept.written_by_model ? "drafted, kept" : "kept"} by {person(kept.approved_by)} · {formatDateTime(kept.kept_at)}
-              </span>
-            </div>
-            <ol data-testid="cockpit-history" style={{ listStyle: "none", margin: 0, padding: 0, borderTop: "1px solid var(--b1)" }}>
-              {data.history.map(v => (
-                <li key={v.artifact_id} className="aug-fs-sm" style={{ display: "flex", alignItems: "baseline", gap: 12, padding: "7px 0", borderBottom: "1px solid var(--b1)", color: "var(--t2)" }}>
-                  <span style={{ color: "var(--t1)", fontWeight: 500, minWidth: 74 }}>Version {v.version}</span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    {v.retired ? "Retired" : changed(v.changes)} · {person(v.approved_by)} · {formatDateTime(v.kept_at)}
-                    {v.source ? ` · ${v.source}` : ""}{v.note ? ` · ${v.note}` : ""}
-                  </span>
-                  {v.current ? <span style={{ color: "var(--t3)" }}>current</span> : v.retired ? null : (
-                    <Button variant="ghost" size="xs" disabled={busy}
-                      onClick={() => void write(() => restoreCockpit(connectionId, data.cockpit_id, v.version),
-                        k => (k.status === "unchanged" ? "That is the version you are on." : `Back to version ${v.version}, kept as version ${k.version}.`))}>
-                      Go back to this
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ol>
-            </div>
-          )}
+          {showHistory && historyPanel}
 
           {arranging ? (
             <div style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16 }}>
@@ -1103,38 +1323,11 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
             </div>
           ) : (
             <>
-              {composing && (
-                <div style={{ marginTop: 8 }}>
-                  <NewCardComposer connectionId={connectionId} schema={schema} startOpen
-                    onClose={() => setComposing(false)}
-                    onCreated={() => { adopt.current = true; reload(); }} />
-                </div>
+              {composers}
+              {!builderOn && (
+                <AskChange connectionId={connectionId} cockpitId={data.cockpit_id} schema={schema} held={lines}
+                  onKept={() => { setPublishing(false); reload(); }} />
               )}
-              {noting && (
-                <NoteComposer busy={busy} onClose={() => setNoting(false)}
-                  onPlace={text => { edit(s => placeNote(s, text), "a note written by hand", "Placed. Its author and date are stamped as it is kept."); setNoting(false); }} />
-              )}
-              {imaging && (
-                <ImageComposer connectionId={connectionId} busy={busy} onClose={() => setImaging(false)}
-                  onPlace={(objectId, caption) => { edit(s => placeImage(s, objectId, caption), "an image uploaded by hand", "Placed. The upload is stamped with your name and the date."); setImaging(false); }} />
-              )}
-              {placing && piecesOn && (
-                <OntologyPieceComposer connectionId={connectionId} schema={schema} spec={kept.spec as CockpitSpec} busy={busy}
-                  onClose={() => setPlacing(false)}
-                  onPlace={(change, note, said) => { edit(change, note, said); setPlacing(false); }} />
-              )}
-              {picking && (
-                <FindingPicker connectionId={connectionId} schema={schema} busy={busy}
-                  placed={new Set(cards.map(c => findingOfCard(c.card)).filter(Boolean))}
-                  onPlaced={() => { adopt.current = true; reload(); }} onClose={() => setPicking(false)} />
-              )}
-              {publishing && (
-                <PublishPanel connectionId={connectionId} cockpitId={data.cockpit_id} busy={busy}
-                  publishedTo={(kept.published_to ?? []) as CockpitAudience[]}
-                  onDone={write} onClose={() => setPublishing(false)} />
-              )}
-              <AskChange connectionId={connectionId} cockpitId={data.cockpit_id} schema={schema} held={lines}
-                onKept={() => { setPublishing(false); reload(); }} />
               {data.ontology && (
                 <PinStrip pin={data.ontology} spec={kept.spec} busy={busy}
                   onRepin={() => void write(() => keepCockpit(connectionId, data.cockpit_id, kept.spec,
@@ -1147,7 +1340,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               )}
               <div aria-busy={reading || undefined}
                 style={{ opacity: reading ? 0.45 : 1, transition: "opacity 120ms ease-out", pointerEvents: reading ? "none" : undefined }}>
-                <ComposedCockpit spec={draft ?? kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}
+                <ComposedCockpit spec={draft ?? kept.spec} cards={cards} host={host} doors={builderOn ? readDoors : doors} sym={data.currency_symbol || "$"}
                   images={images} range={range} schema={schema} connectionId={connectionId} cockpitId={`${connectionId}:${chosen}`} />
               </div>
             </>

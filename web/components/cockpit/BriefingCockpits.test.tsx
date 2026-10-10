@@ -27,6 +27,8 @@ const api = vi.hoisted(() => ({
 const drawn = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const ontology = vi.hoisted(() => ({ getProcesses: vi.fn() }));
 vi.mock("@/lib/objectTypes", async (original) => ({ ...(await original<typeof import("@/lib/objectTypes")>()), ...ontology }));
+// the builder names entities from the object catalog: never read from a live API in a test
+vi.mock("@/lib/objects", async (original) => ({ ...(await original<typeof import("@/lib/objects")>()), cachedObjectCatalog: vi.fn(async () => null) }));
 const composer = vi.hoisted(() => ({ onCreated: null as null | (() => void) }));
 
 vi.mock("@/lib/api", async (original) => ({ ...(await original<typeof import("@/lib/api")>()), ...api }));
@@ -78,6 +80,13 @@ const MEASURED = {
 } as unknown as BriefingRangeBlock;
 
 const show = () => render(<BriefingCockpits connectionId="thelook" schema="thelook" />);
+/** Arc AP-1 — building in place on, and the cockpit opened in the builder. */
+const openBuilder = async () => {
+  api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true } });
+  show();
+  fireEvent.click(await screen.findByTestId("cockpit-edit"));
+  await screen.findByTestId("cockpit-builder");
+};
 /** The strip's tabs by name — a Themes tab carries its label twice (one copy hidden), so read the visible one. */
 const stripTabs = () => screen.getAllByRole("tab").map(t => t.querySelector(".rt-TabsTriggerInner")?.textContent);
 
@@ -490,7 +499,7 @@ describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => 
   });
 
   it("sizes one grade at a time: each step is drawn at once, a burst is kept as ONE version, and nothing is read again (Arc AP-1)", async () => {
-    show();
+    await openBuilder();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
     const reads = api.getCockpit.mock.calls.length;
     const runs = api.runDashboardCard.mock.calls.length;
@@ -518,7 +527,7 @@ describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => 
   it("a newer burst is never undone by an older one landing after it", async () => {
     let land: (v: unknown) => void = () => {};
     api.keepCockpit.mockImplementationOnce(() => new Promise(r => { land = r; }));
-    show();
+    await openBuilder();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
     type Doors = { onRegrid: (k: string, b: { w: number; h: number }, m: object) => void };
     const step = (w: number) => act(() => { (drawn.props.at(-1)!.doors as Doors).onRegrid("card-net", { w, h: 5 }, {}); });
@@ -535,7 +544,7 @@ describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => 
   it("a burst the server refuses is drawn back as it was kept, and the refusal is said", async () => {
     api.keepCockpit.mockRejectedValue(new (await import("@/lib/api")).CockpitRefused(
       { status: "refused", kept: false, version: null, artifact_id: "", sentences: ["Refused for a reason."] }));
-    show();
+    await openBuilder();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
     act(() => { (drawn.props.at(-1)!.doors as { onRegrid: (k: string, b: { w: number; h: number }, m: object) => void }).onRegrid("card-net", { w: 6, h: 5 }, {}); });
     await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1), { timeout: 3000 });
@@ -625,5 +634,119 @@ describe("the canvas: a finding from the ledger, a change in words, publishing (
     expect(doors.onResize).toBeUndefined();
     fireEvent.click(within(sharedView).getByRole("button", { name: "Start my cockpit from this" }));
     await waitFor(() => expect(api.copySharedCockpit).toHaveBeenCalledWith("thelook", "priya@example.com", "sales-weekly-1"));
+  });
+});
+
+describe("building a cockpit in place (Arc AP-1)", () => {
+  type Doors = Record<string, unknown> & { onRegrid?: (k: string, b: { w: number; h: number }, m: object) => void };
+  const doors = () => drawn.props.at(-1)!.doors as Doors;
+  const shown = () => (drawn.props.at(-1)!.spec as { elements: Record<string, { props: Record<string, unknown> }> }).elements;
+
+  it("off, a cockpit is arranged as it always was: its bar of doors, Arrange, sizes by name, and no Edit", async () => {
+    show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    expect(screen.queryByTestId("cockpit-edit")).toBeNull();
+    for (const id of ["cockpit-card-new", "cockpit-note-new", "cockpit-arrange-open", "cockpit-publish-open", "cockpit-retire-open", "cockpit-ask"]) {
+      expect(screen.getByTestId(id)).toBeInTheDocument();
+    }
+    expect(doors().onResize).toBeTypeOf("function");
+    expect(doors().onTakeOff).toBeTypeOf("function");
+    expect(doors().onRegrid).toBeUndefined();
+    expect(doors().onFilterWidth).toBeUndefined();
+    expect(doors().onSelect).toBeUndefined();
+  });
+
+  it("on, a cockpit opens to be read: one bar — its history and Edit — and the reader's own doors only", async () => {
+    api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true } });
+    show();
+    expect(await screen.findByTestId("cockpit-edit")).toBeInTheDocument();
+    for (const id of ["cockpit-card-new", "cockpit-note-new", "cockpit-arrange-open", "cockpit-publish-open", "cockpit-retire-open", "cockpit-ask"]) {
+      expect(screen.queryByTestId(id)).toBeNull();
+    }
+    expect(screen.getByRole("button", { name: /History/ })).toBeInTheDocument();
+    await waitFor(() => expect(Object.entries(doors()).filter(([, v]) => v !== undefined).map(([k]) => k)).toEqual(["onRefresh"]));
+  });
+
+  it("Edit opens the builder: the strip folds into the name, the rail into its icons — never into the person's preference — and Done gives both back", async () => {
+    document.documentElement.removeAttribute("data-nav");
+    await openBuilder();
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    expect(screen.getByLabelText("The cockpit being edited")).toBeInTheDocument();
+    expect(document.documentElement.getAttribute("data-nav")).toBe("collapsed");
+    expect(localStorage.getItem("aughor_nav_collapsed")).toBeNull();
+    expect(screen.getByTestId("builder-saved")).toHaveTextContent("version 3");
+    for (const id of ["cockpit-card-new", "cockpit-note-new", "cockpit-publish-open", "cockpit-retire-open", "cockpit-ask"]) {
+      expect(screen.getByTestId(id)).toBeInTheDocument();
+    }
+    expect(doors().onSelect).toBeTypeOf("function");
+    fireEvent.click(screen.getByTestId("builder-done"));
+    await waitFor(() => expect(screen.queryByTestId("cockpit-builder")).toBeNull());
+    expect(document.documentElement.hasAttribute("data-nav")).toBe(false);
+    expect(localStorage.getItem("aughor_nav_collapsed")).toBeNull();
+    expect(stripTabs()).toContain("Returns");
+  });
+
+  it("undo keeps the version before as the next one, and redo the one after", async () => {
+    await openBuilder();
+    await waitFor(() => expect(doors().onRegrid).toBeTypeOf("function"));
+    act(() => { doors().onRegrid!("card-net", { w: 6, h: 5 }, {}); });
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(shown()["card-net"].props.w).toBeUndefined();                                       // drawn back at once
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    expect(api.keepCockpit.mock.calls[1][2]).toEqual(SPEC);
+    expect(api.keepCockpit.mock.calls[1][3]).toBe("undone by hand");
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(3), { timeout: 3000 });
+    expect((api.keepCockpit.mock.calls[2][2] as { elements: Record<string, { props: Record<string, unknown> }> }).elements["card-net"].props)
+      .toMatchObject({ w: 6, h: 5 });
+    expect(api.keepCockpit.mock.calls[2][3]).toBe("redone by hand");
+  });
+
+  it("a note placed while a resize waits to be kept is kept with it — the resize never lands after it and takes it back", async () => {
+    await openBuilder();
+    await waitFor(() => expect(doors().onRegrid).toBeTypeOf("function"));
+    act(() => { doors().onRegrid!("card-net", { w: 6, h: 5 }, {}); });
+    fireEvent.click(screen.getByTestId("cockpit-note-new"));
+    fireEvent.change(await screen.findByLabelText("The note's words"), { target: { value: "Watch returns in Q4" } });
+    fireEvent.click(screen.getByRole("button", { name: "Place the note" }));
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1));
+    const kept = api.keepCockpit.mock.calls[0][2] as { elements: Record<string, { type: string; props: Record<string, unknown> }> };
+    expect(kept.elements["card-net"].props).toMatchObject({ w: 6, h: 5 });
+    expect(Object.values(kept.elements).some(el => el.type === "Note" && el.props.text === "Watch returns in Q4")).toBe(true);
+    await new Promise(r => setTimeout(r, 1200));                                                // past the burst's moment
+    expect(api.keepCockpit).toHaveBeenCalledTimes(1);
+  });
+
+  it("a note placed while a keep is on its way is kept after it lands, never before it", async () => {
+    let land: (v: unknown) => void = () => {};
+    api.keepCockpit.mockImplementationOnce(() => new Promise(r => { land = r; }));
+    await openBuilder();
+    await waitFor(() => expect(doors().onRegrid).toBeTypeOf("function"));
+    act(() => { doors().onRegrid!("card-net", { w: 6, h: 5 }, {}); });
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1), { timeout: 3000 });   // the resize, on its way
+    fireEvent.click(screen.getByTestId("cockpit-note-new"));
+    fireEvent.change(await screen.findByLabelText("The note's words"), { target: { value: "After the resize" } });
+    fireEvent.click(screen.getByRole("button", { name: "Place the note" }));
+    await new Promise(r => setTimeout(r, 50));
+    expect(api.keepCockpit).toHaveBeenCalledTimes(1);                                          // it waits for the first
+    await act(async () => { land({ status: "kept", kept: true, version: 4, artifact_id: "a4", sentences: [] }); });
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(2));
+    const second = api.keepCockpit.mock.calls[1][2] as { elements: Record<string, { type: string; props: Record<string, unknown> }> };
+    expect(second.elements["card-net"].props).toMatchObject({ w: 6, h: 5 });
+    expect(Object.values(second.elements).some(el => el.type === "Note" && el.props.text === "After the resize")).toBe(true);
+  });
+
+  it("what a refused keep said is gone once a later change is kept", async () => {
+    api.keepCockpit.mockRejectedValueOnce(new (await import("@/lib/api")).CockpitRefused(
+      { status: "refused", kept: false, version: null, artifact_id: "", sentences: ["Refused for a reason."] }));
+    await openBuilder();
+    await waitFor(() => expect(doors().onRegrid).toBeTypeOf("function"));
+    act(() => { doors().onRegrid!("card-net", { w: 6, h: 5 }, {}); });
+    expect(await screen.findByText(/Refused for a reason/, {}, { timeout: 3000 })).toBeInTheDocument();
+    act(() => { doors().onRegrid!("card-net", { w: 7, h: 5 }, {}); });
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    await waitFor(() => expect(screen.queryByText(/Refused for a reason/)).toBeNull());
   });
 });

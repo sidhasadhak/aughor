@@ -14,7 +14,8 @@
  *   { "op": "patch", "spec": …,    → { ok, spec, issues: [{ index, message }] } — the edit
  *     "patches": [ … ] }              applied strictly, all or nothing (CT-5). The result is
  *                                     NOT checked here; the caller sends it back as a "check".
- *   { "op": "grammar" }            → { text } — what the writer of a cockpit is told (CT-5)
+ *   { "op": "grammar",             → { text } — what the writer of a cockpit is told (CT-5); the
+ *     "grid": bool }                   grid only while cockpits are built in place (Arc AP-1)
  *
  * It exits non-zero on anything it does not understand, and the server treats that as
  * "could not check", never as "accepted".
@@ -27,7 +28,7 @@ async function main(): Promise<void> {
   const chunks: Buffer[] = [];
   for await (const c of process.stdin) chunks.push(c as Buffer);
   const payload = JSON.parse(Buffer.concat(chunks).toString("utf8")) as
-    { op?: string; spec?: unknown; patches?: unknown };
+    { op?: string; spec?: unknown; patches?: unknown; grid?: boolean };
   if (payload.op === "vocabulary") {
     process.stdout.write(JSON.stringify(vocabulary()));
     return;
@@ -41,7 +42,7 @@ async function main(): Promise<void> {
     return;
   }
   if (payload.op === "grammar") {
-    process.stdout.write(JSON.stringify({ text: grammar() }));
+    process.stdout.write(JSON.stringify({ text: grammar({ grid: payload.grid === true }) }));
     return;
   }
   throw new Error(`unknown op ${JSON.stringify(payload.op)}`);

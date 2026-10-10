@@ -19,7 +19,7 @@ import { validateSpec, type Spec } from "@json-render/core";
 import type { z } from "zod";
 
 import {
-  COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, GRADE, GRID, LIMITS, MAY_BE_CONDITIONAL, MAY_HOLD, PLACED, READER_TEXT,
+  COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, GRADE, GRID, LIMITS, MAY_BE_CONDITIONAL, MAY_HOLD, PLACED, READER_TEXT, SPLIT_AGGS,
   SIZES, TONES, cockpitCatalog, type ComponentName, type GridKind,
 } from "@/lib/cockpit/catalog";
 import { CARD_STATUSES, RANGE_STATUSES, TAB_PATH, publishedPath } from "@/lib/cockpit/hostState";
@@ -145,11 +145,31 @@ function checkProps(key: string, type: ComponentName, props: Obj, out: CockpitIs
   if (out.some(i => i.elementKey === key && i.code === "expression_in_prop")) return;
   const declared = (cockpitCatalog.data.components[type].props as z.ZodObject).strict();
   const parsed = declared.safeParse(literal);
-  if (parsed.success) return;
+  if (parsed.success) {
+    if (type === "ObjectChart") checkChart(key, literal, out);
+    return;
+  }
   for (const issue of parsed.error.issues) {
     const where = issue.path.length ? q(issue.path.join(".")) : "its props";
     out.push({ code: "bad_prop", elementKey: key,
       message: `The ${type.toLowerCase()} ${q(key)} has a problem with ${where}: ${issue.message}.` });
+  }
+}
+
+/** Arc AP-1 — what a chart measures and what it splits by say one thing together: an aggregate names the property it
+ *  reads, a split stacks the bars — so what they measure must add up — and how many values it draws needs a split. */
+function checkChart(key: string, props: Obj, out: CockpitIssue[]): void {
+  const agg = typeof props.agg === "string" ? props.agg : "count";
+  const refuse = (message: string) => out.push({ code: "bad_prop", elementKey: key, message });
+  if (agg !== "count" && !props.path) {
+    refuse(`The chart ${q(key)} measures the ${agg} of nothing. Name the property it reads in "path".`);
+  }
+  if (props.split && !(SPLIT_AGGS as readonly string[]).includes(agg)) {
+    refuse(`The chart ${q(key)} is split by ${q(String(props.split))} and measures the ${agg}. A split stacks its bars, `
+      + "so a chart split by a property measures a count or a sum.");
+  }
+  if (props.top != null && !props.split) {
+    refuse(`The chart ${q(key)} says how many values to draw and splits by nothing. Name the property in "split".`);
   }
 }
 

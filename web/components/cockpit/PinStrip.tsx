@@ -13,11 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { CLASS_LOOK } from "@/components/ontology/ReleaseStrip";
 import type { CockpitPin } from "@/lib/api";
+import { kindWord } from "@/lib/cockpit/names";
 import { withUniqueKeys } from "@/lib/listKeys";
-
-const PIECE_WORDS: Record<string, string> = {
-  ProcessBoard: "process board", ObjectTable: "objects table", ObjectDetail: "object detail", ActionButton: "action button",
-};
 
 const numberOf = (id: string) => id.slice(id.lastIndexOf("@") + 1);
 
@@ -29,7 +26,8 @@ export function PinStrip({ pin, spec, busy, onRepin }: {
   onRepin?: () => void;
 }) {
   const elements = ((spec as { elements?: Record<string, { type?: string }> })?.elements) ?? {};
-  const pieceWords = (keys: string[]) => [...new Set(keys.map(k => PIECE_WORDS[elements[k]?.type ?? ""] ?? k))].join(", ");
+  // each piece by its kind's word, never its element key — the filter column, a figure and a chart included
+  const pieceWords = (keys: string[]) => [...new Set(keys.map(k => kindWord(elements[k]?.type) || "piece"))].join(", ");
   const now = pin.current ? `release ${numberOf(pin.current)}` : "no release";
   const repin = onRepin && pin.current && (
     <Button size="xs" variant={pin.changes.length ? "secondary" : "ghost"} disabled={busy} data-testid="cockpit-repin"

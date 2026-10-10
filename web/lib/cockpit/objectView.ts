@@ -78,6 +78,35 @@ export function onDays(days: string[], rows: unknown[][]): number[] {
   return days.map(d => by.get(d) ?? 0);
 }
 
+/** A split's value as a reader reads it: nothing is "None". */
+export const splitValue = (v: unknown): string =>
+  (v === null || v === undefined || v === "" || v === "NULL" ? "None" : String(v));
+
+/** The values a split draws, most first by what they hold over the whole window — `top` of them. Rows are
+ *  `(period, value, measure)`. Read from every object, never the reader's narrowed ones, so a value keeps its place and
+ *  its colour while a reader filters (Arc AP-1). */
+export function topValues(rows: unknown[][], top: number): string[] {
+  const total = new Map<string, number>();
+  for (const r of rows) {
+    const v = splitValue(r[1]);
+    total.set(v, (total.get(v) ?? 0) + (Number(r[2]) || 0));
+  }
+  return [...total.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, top).map(([v]) => v);
+}
+
+/** Rows of `(period, value, measure)` laid on the window's days: for each day, the measure of each of `values` in their
+ *  order and, last, everything else folded into Other. A day with no row holds nothing. */
+export function splitOnDays(days: string[], rows: unknown[][], values: string[]): number[][] {
+  const at = new Map(values.map((v, i) => [v, i]));
+  const grid = new Map(days.map(d => [d, new Array<number>(values.length + 1).fill(0)]));
+  for (const r of rows) {
+    const day = grid.get(String(r[0]).slice(0, 10));
+    if (!day) continue;
+    day[at.get(splitValue(r[1])) ?? values.length] += Number(r[2]) || 0;
+  }
+  return days.map(d => grid.get(d) ?? new Array<number>(values.length + 1).fill(0));
+}
+
 /** A round axis: 0 up to at least `max` in three or four steps of 1, 2, 2.5 or 5 × a power of ten. */
 export function ticks(max: number): number[] {
   if (!(max > 0)) return [0];

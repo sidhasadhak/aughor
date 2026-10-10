@@ -36,8 +36,9 @@ import { z } from "zod";
 
 /** Raised when a component or a prop is added, renamed or removed. 2: Note, Image and `size`. 3: the ontology's
  *  pieces — ProcessBoard, ObjectTable, ObjectDetail and ActionButton (Arc OC-4). 4: a cockpit started from an object —
- *  ObjectFilters, ObjectFigure and ObjectChart (2026-10-10). 5: sizes one grade at a time — a section's `grid`, each
- *  placed element's `w` and `h`, the filter column's `w` (Arc AP-1, 2026-10-10). */
+ *  ObjectFilters, ObjectFigure and ObjectChart (2026-10-10). 5: a cockpit built in place (Arc AP-1, 2026-10-10) — sizes
+ *  one grade at a time (a section's `grid`, each placed element's `w` and `h`, the filter column's `w`) and a chart's
+ *  measure and split (`agg`, `path`, `format`, `split`, `top`). */
 export const COCKPIT_VOCABULARY_VERSION = 5;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
@@ -114,6 +115,11 @@ export const FIGURE_AGGS = ["count", "count_distinct", "sum", "avg", "min", "max
 export const FIGURE_FORMATS = ["number", "money"] as const;
 /** The days a chart of objects per day may span (the `days` prop's literals, below). */
 export const CHART_DAYS = [7, 14, 30, 60, 90] as const;
+/** How many of a split's values a chart draws, most first; the rest are folded into Other (Arc AP-1). Six at most: a
+ *  chart has six series colours, and a seventh value is never a generated hue — it folds into Other. */
+export const CHART_TOPS = [3, 4, 5, 6] as const;
+/** The measures a chart may split: a split stacks its bars, so what they measure must add up. */
+export const SPLIT_AGGS = ["count", "sum"] as const;
 
 const size = z.enum(SIZES).nullable().optional();
 /** An element's room on a section's grid: columns across and rows down (Arc AP-1). */
@@ -230,9 +236,16 @@ export const cockpitCatalog = defineCatalog(schema, {
         label: z.string().min(1).max(MAX_LABEL),
         time: z.string().regex(PROPERTY_PATH),
         days: z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(60), z.literal(90)]).nullable().optional(),
+        /** What a bar measures (Arc AP-1): left out, how many objects; else an aggregate of a property, as a figure's. */
+        agg: z.enum(FIGURE_AGGS).nullable().optional(),
+        path: z.string().regex(PROPERTY_PATH).nullable().optional(),
+        format: z.enum(FIGURE_FORMATS).nullable().optional(),
+        /** A property each bar is split by: its `top` most common values, the rest folded into Other. */
+        split: z.string().regex(PROPERTY_PATH).nullable().optional(),
+        top: z.union([z.literal(3), z.literal(4), z.literal(5), z.literal(6)]).nullable().optional(),
         size, w, h,
       }),
-      description: "An entity's objects per day over its last days — the reader's filtered objects as bars, all of them as a line behind.",
+      description: "An entity's objects per day over its last days — the reader's filtered objects as bars, all of them as a line behind. A bar may measure a property's aggregate, and be split by a property's most common values.",
     },
   },
   actions: {},

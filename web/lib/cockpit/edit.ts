@@ -448,3 +448,64 @@ export function moveSectionToNewTab(spec: unknown, sectionKey: string, label: st
   s.elements[tab].children.push(sectionKey);
   return settle(s);
 }
+
+// ── Arc AP-1 — the builder (docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.4) ─────────────────────────────────────
+
+/** The builder's Setup: some of an element's props set, the rest kept. A prop set to null or undefined is taken off,
+ *  so choosing "none" leaves nothing behind. Its room — `size`, `w`, `h` — is the handles' and the steps' to change. */
+export function setProps(spec: unknown, key: string, patch: Record<string, unknown>): CockpitSpec {
+  const s = copy(spec);
+  const el = s.elements[key];
+  if (!el) return s;
+  const props = { ...el.props };
+  for (const [name, value] of Object.entries(patch)) {
+    if (value === undefined || value === null) delete props[name];
+    else props[name] = value;
+  }
+  el.props = props;
+  return s;
+}
+
+/** Whether `key` can move one place earlier or later among its parent's children. The filter column stays the
+ *  cockpit's first child, so nothing moves before it and it moves nowhere. */
+export function canMove(spec: unknown, key: string, delta: -1 | 1): boolean {
+  const s = spec as CockpitSpec;
+  const parent = parentOf(s, key);
+  if (!parent || s.elements[key]?.type === "ObjectFilters") return false;
+  const kids = s.elements[parent].children;
+  const j = kids.indexOf(key) + delta;
+  return j >= 0 && j < kids.length && s.elements[kids[j]]?.type !== "ObjectFilters";
+}
+
+/** Take an element off, and everything it holds: a section with its pieces, a tab with its sections. A section left
+ *  with nothing goes, as `takeOff` takes it, so the cockpit left is one the rules accept. */
+export function takeOffAll(spec: unknown, key: string): CockpitSpec {
+  const s = spec as CockpitSpec;
+  const el = s.elements[key];
+  if (!el || key === s.root) return copy(spec);
+  if (PLACED.includes(el.type as never) || el.type === "ObjectFilters" || el.type === "ActionButton") return takeOff(spec, key);
+  let out = copy(spec);
+  for (const child of [...el.children]) out = takeOffAll(out, child);
+  return key in out.elements ? takeOff(out, key) : out;
+}
+
+/** One line of a cockpit's outline: an element and how deep it sits under the root. The row of tabs is not a line —
+ *  its tabs are. */
+export interface OutlineLine { key: string; depth: number; type: string }
+
+/** The cockpit as a tree of lines, in the order it is drawn: the root, the filter column, each tab, each section, the
+ *  pieces each holds and the buttons a detail holds. */
+export function outline(spec: unknown): OutlineLine[] {
+  const s = spec as CockpitSpec;
+  const out: OutlineLine[] = [];
+  const walk = (key: string, depth: number, seen: Set<string>) => {
+    const el = s.elements[key];
+    if (!el || seen.has(key)) return;
+    seen.add(key);
+    if (el.type === "Tabs") { for (const c of el.children) walk(c, depth, seen); return; }
+    out.push({ key, depth, type: el.type });
+    for (const c of el.children) walk(c, depth + 1, seen);
+  };
+  walk(s.root, 0, new Set());
+  return out;
+}

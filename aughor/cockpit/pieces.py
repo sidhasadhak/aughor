@@ -116,7 +116,11 @@ def _from_object_probes(kind: str, props: dict) -> list[tuple[str, dict]]:
     if kind == "ObjectFigure":
         return [("it", {"object_type": entity, "measures": [{"name": "n", "agg": props.get("agg") or "count",
                                                               "path": props.get("path") or ""}]})]
-    return [("it", {"object_type": entity, "measures": [count], "time": props.get("time") or "", "grain": "day"})]
+    # a chart's bars: how many objects, or what its measure says (Arc AP-1), per day — split by a property when it says one
+    measure = {"name": "n", "agg": props.get("agg") or "count", "path": props.get("path") or ""}
+    split = {"by": [props["split"]]} if props.get("split") else {}
+    return [("it", {"object_type": entity, "measures": [measure], "time": props.get("time") or "", "grain": "day",
+                    **split})]
 
 
 def _from_object_read(key: str, kind: str, props: dict, graph: Any, connection_id: str) -> list[str]:
@@ -164,9 +168,13 @@ def pieces_written(before: Any, after: Any, *, new: bool) -> list[str]:
     return said
 
 
+#: A piece's room — by name, or in columns and rows on a section's grid (Arc AP-1). Changing it is arrangement.
+_ROOM = frozenset({"size", "w", "h"})
+
+
 def _named(props: dict) -> str:
-    """What a piece names — everything but its size, which is arrangement."""
-    return json.dumps({k: v for k, v in props.items() if k != "size"}, sort_keys=True, default=str)
+    """What a piece names — everything but its room, which is arrangement."""
+    return json.dumps({k: v for k, v in props.items() if k not in _ROOM}, sort_keys=True, default=str)
 
 
 # ── the release a cockpit was composed against (the study's §8.7: checked against the release it is pinned to) ──

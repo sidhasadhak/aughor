@@ -142,6 +142,11 @@ FLAG_ENV = {
     # reader's own filters; and a person may start a cockpit from an object, its pieces proposed from what the object
     # holds. OFF: the cockpit vocabulary refuses those three pieces and nothing is proposed.
     "ontology.object_cockpits": "AUGHOR_ONTOLOGY_OBJECT_COCKPITS",
+    # Arc AP-1 (ROADMAP §3.57, docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md). ON: a cockpit opens to be read, and Edit
+    # shows it between its layout and the setup of the piece chosen — sizes one grade at a time on a section's grid, and
+    # every piece set up there, never typed as a spec. OFF: a cockpit is arranged by its six sizes and Arrange, the
+    # server refuses a section on the grid, and the writer of a cockpit is told nothing about the grid.
+    "cockpit.builder": "AUGHOR_COCKPIT_BUILDER",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -502,6 +507,16 @@ FLAG_META = {
                        "want. Filters are each reader's own and never change the cockpit. Saved cards "
                        "beside them say they are not filtered. Off: these pieces cannot be added.",
     },
+    "cockpit.builder": {
+        "label": "Build cockpits in place",
+        "summary": "A cockpit opens to be read, and Edit shows it between its outline and the setup of what you "
+                   "pick. Every size moves one step at a time.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Changes only your own cockpits"}],
+        "description": "A table's columns and sort, a figure's calculation and a chart's measure and split are "
+                       "chosen in the setup, never typed. Each change is kept as a version you can go back to. "
+                       "Off: a cockpit is arranged by its six sizes and Arrange.",
+    },
     "ontology.keyed_metrics": {
         "label": "Compute approved metrics for any segment",
         "summary": "Link a metric to the entity it measures. Then its approved definition is used "
@@ -740,6 +755,10 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # Arc AP-1, 2026-10-10. It changes where a cockpit is changed, so it is watched before it graduates.
+    "cockpit.builder": "is the setup where people change a cockpit — of the cockpits started from an object, is one in "
+                       "five or more edited within two weeks of starting? Falsifier (§3.57): fewer than one in five, "
+                       "and the setup is not where people look",
     # The cockpit started from an object, 2026-10-10. It is a new way to read objects, so it is watched before it
     # graduates.
     "ontology.object_cockpits": "does a cockpit started from an object get read again — opened on three or more "

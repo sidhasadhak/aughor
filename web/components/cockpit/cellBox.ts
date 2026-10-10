@@ -23,6 +23,10 @@ export function useCellBox(): CellBox {
   return useContext(CellBoxContext);
 }
 
+/** How much the builder's canvas scales the cockpit it draws (Arc AP-1): 1 at 100%, less where it fits a narrower
+ *  screen. A pointer's pixels are the scaled ones, so a handle divides by it to count grades. */
+export const CanvasScale = createContext(1);
+
 /** The drawn size of an element, in px, followed as it changes. 0 × 0 until measured (and in a test's DOM). The ref
  *  is a callback: a piece that draws "Reading…" first and its chart after hands it two elements, and the second is
  *  the one followed. */

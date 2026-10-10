@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Size } from "@/lib/cockpit/catalog";
+import { lineOf } from "@/lib/cockpit/names";
 import {
   moveCardTo, moveCardToNewSection, moveSectionTo, moveSectionToNewTab, moveWithin, rename, resize,
   sectionsOf, tabsOf, takeOff, type CockpitSpec,
@@ -83,14 +84,12 @@ export function CockpitArrange({ spec, lines, onChange, disabled }: {
   const tabs = tabsOf(spec);
   const root = spec.elements[spec.root];
 
-  /** What a line says of what it places: a card by its title, a note by its first words, an image by its caption. */
-  const named = (key: string): { title: string; kind: "card" | "note" | "image"; id: string } => {
+  /** What a line says of what it places: a card by its title, a note by its first words, an image by its caption, a
+   *  piece bound to the ontology by what it reads (`lib/cockpit/names.ts` — pieces once drew here as blank lines). */
+  const named = (key: string): { title: string; kind: "card" | "note" | "image" | "piece"; id: string } => {
     const el = spec.elements[key];
-    if (el.type === "Note") {
-      const words = String(el.props.text ?? "").replace(/\s+/g, " ").trim();
-      return { kind: "note", id: "", title: `Note · ${words.length > 60 ? `${words.slice(0, 60)}…` : words}` };
-    }
-    if (el.type === "Image") return { kind: "image", id: "", title: `Image · ${String(el.props.caption ?? "")}` };
+    if (el.type === "Note" || el.type === "Image") return { kind: el.type === "Note" ? "note" : "image", id: "", title: lineOf(spec.elements, key) };
+    if (el.type !== "Card") return { kind: "piece", id: "", title: lineOf(spec.elements, key) };
     const id = String(el.props.card ?? "");
     return { kind: "card", id, title: lines.get(id)?.title || id };
   };
@@ -111,7 +110,7 @@ export function CockpitArrange({ spec, lines, onChange, disabled }: {
           {what.title}
           {line?.isNew && <Badge variant="outline" style={{ marginLeft: 8 }}>new</Badge>}
           {line?.shows && <span className="aug-fs-sm" style={{ color: "var(--t3)", marginLeft: 8 }}>{line.shows}</span>}
-          {what.kind !== "card" && <span className="aug-fs-sm" style={{ color: "var(--t3)", marginLeft: 8 }}>· yours, not measured</span>}
+          {(what.kind === "note" || what.kind === "image") && <span className="aug-fs-sm" style={{ color: "var(--t3)", marginLeft: 8 }}>· yours, not measured</span>}
           {el.visible !== undefined && <span className="aug-fs-sm" style={{ color: "var(--t3)", marginLeft: 8 }}>· shown on a condition</span>}
         </span>
         {asking?.kind === "section" && asking.key === key ? (

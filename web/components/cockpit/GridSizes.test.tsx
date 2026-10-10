@@ -13,7 +13,8 @@ import { fireEvent, render, screen, within } from "@/lib/testing";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { CardState } from "@/components/brief/PinnedCardBody";
-import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/ComposedCockpit";
+import { CanvasScale } from "@/components/cockpit/cellBox";
+import { ComposedCockpit, type CockpitDoors, type CockpitHandle } from "@/components/cockpit/ComposedCockpit";
 import type { DashboardCard } from "@/lib/api";
 import { toGrid, type CockpitSpec } from "@/lib/cockpit/edit";
 import type { CockpitHostState } from "@/lib/cockpit/hostState";
@@ -192,5 +193,56 @@ describe("the filter column's width", () => {
     expect(screen.getByTestId("filter-width-said")).toHaveTextContent("400 px");
     fireEvent.pointerUp(handle, {});
     expect(onFilterWidth).toHaveBeenCalledWith(10);
+  });
+});
+
+describe("in the builder (Arc AP-1)", () => {
+  it("a piece pointed at is the one chosen, and a click in a section's gap chooses the section", () => {
+    const onSelect = vi.fn();
+    render(<ComposedCockpit spec={gridded()} cards={CARDS} host={HOST} doors={{ ...owner(), onSelect }} />);
+    fireEvent.pointerDown(cellOf("card-net"));
+    expect(onSelect).toHaveBeenLastCalledWith("card-net");
+    fireEvent.pointerDown(document.querySelector('[data-testid="cockpit-section"]') as HTMLElement);
+    expect(onSelect).toHaveBeenLastCalledWith("sec-headline");
+  });
+
+  it("outlines the element chosen, and no other", () => {
+    render(<ComposedCockpit spec={gridded()} cards={CARDS} host={HOST} doors={owner()} selected="card-net" />);
+    expect(cellOf("card-net").dataset.selected).toBe("true");
+    expect(cellOf("card-net").style.outline).toContain("var(--accent)");
+    expect(cellOf("card-rate").dataset.selected).toBeUndefined();
+  });
+
+  it("hands the builder each element's room and its steps — one grade, within its kind's limits", () => {
+    const doors = owner();
+    const handle: { current: CockpitHandle | null } = { current: null };
+    render(<ComposedCockpit spec={gridded()} cards={CARDS} host={HOST} doors={doors} handle={handle} />);
+    expect(handle.current?.room("card-net")).toEqual({ w: 8, h: 6 });
+    handle.current?.step("card-net", 0, 1);
+    expect(doors.onRegrid).toHaveBeenLastCalledWith("card-net", { w: 8, h: 7 }, {});
+    expect(handle.current?.room("nothing")).toBeNull();
+  });
+
+  it("counts a drag's grades at the cockpit's own size where the canvas draws it scaled", () => {
+    const doors = owner();
+    render(
+      <CanvasScale.Provider value={0.5}>
+        <ComposedCockpit spec={gridded()} cards={CARDS} host={HOST} doors={doors} />
+      </CanvasScale.Provider>,
+    );
+    const grid = document.querySelector('[data-grid="12"]') as HTMLElement;
+    Object.defineProperty(grid, "clientWidth", { value: 1200, configurable: true });
+    const handle = within(cellOf("card-net")).getByTestId("grid-handle-w");
+    // 101 px on screen at half size is 202 px of the cockpit's own: two columns, not one
+    fireEvent.pointerDown(handle, { clientX: 500, clientY: 0, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 601, clientY: 0 });
+    fireEvent.pointerUp(handle, {});
+    expect(doors.onRegrid).toHaveBeenLastCalledWith("card-net", { w: 10, h: 6 }, {});
+  });
+
+  it("a section already on the grid offers no size by name beside it, even where the grid is not offered", () => {
+    const doors = { onRefresh: vi.fn(), onResize: vi.fn() };
+    render(<ComposedCockpit spec={gridded()} cards={CARDS} host={HOST} doors={doors} />);
+    expect(screen.queryAllByTestId("resize-corner")).toEqual([]);
   });
 });

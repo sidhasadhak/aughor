@@ -63,30 +63,36 @@ const PROPS: Record<WrittenName, string> = {
   Tabs: `value, always {"$bindState": "${TAB_PATH}"}`,
   Tab: `name (an identifier: lower-case letters, digits, "-" and "_", beginning with a letter), `
     + `label (text, up to ${MAX_LABEL} characters)`,
-  Section: `title (text, up to ${MAX_TITLE} characters), columns (1 to ${MAX_COLUMNS}, optional), grid (optional: ${GRID.columns})`,
+  Section: `title (text, up to ${MAX_TITLE} characters), columns (1 to ${MAX_COLUMNS}, optional)`,
   Card: `card (a card id), tone (optional, one of: ${TONES.join(", ")}), ${SIZE}`,
   Note: `text (the person's words, up to ${MAX_NOTE} characters), ${SIZE}; author and written_at are the server's`,
   Image: `object (an uploaded object's id), caption (text, up to ${MAX_CAPTION} characters), ${SIZE}`,
 };
 
-function component(name: WrittenName): string {
+/** A section's props told while cockpits are built in place (Arc AP-1): the grid besides the columns. */
+const GRID_SECTION = `, grid (optional: ${GRID.columns})`;
+
+function component(name: WrittenName, grid: boolean): string {
   // The ontology's pieces are placed by a person and never taught here (Arc OC-4), so what a component may hold is
   // told as far as the writer may write it.
   const may = MAY_HOLD[name].filter(c => (WRITTEN as readonly string[]).includes(c));
   const holds = name === "Cockpit"
     ? "Holds ONE Tabs, or one or more Section, never both."
     : may.length ? `Holds ${may.join(", ")}, at least one.` : "Holds nothing.";
-  return `- ${name}: ${HOLDS[name]}. props: ${PROPS[name]}. ${holds}`;
+  const props = name === "Section" && grid ? PROPS[name] + GRID_SECTION : PROPS[name];
+  return `- ${name}: ${HOLDS[name]}. props: ${props}. ${holds}`;
 }
 
-export function grammar(): string {
+/** The grammar. `grid` tells the writer of a cockpit about a section's grid, only while cockpits are built in place
+ *  (`cockpit.builder`); without it the text is as it was before Arc AP. */
+export function grammar({ grid = false }: { grid?: boolean } = {}): string {
   return [
     "A cockpit is one JSON object: {\"root\": <element key>, \"state\": {\"tab\": <tab name>}, \"elements\": {<key>: <element>}}.",
     "An element is {\"type\", \"props\", \"children\"} and, where allowed, \"visible\". \"children\" is a list of element keys, "
       + "and [] when the element holds none. An element carries nothing else, and a prop is written, never computed.",
     "",
     "The components:",
-    ...WRITTEN.map(component),
+    ...WRITTEN.map(name => component(name, grid)),
     "",
     "Every element but the root is held by exactly one other. \"state\" may seed \"tab\" with the name of the tab to open on, "
       + "and nothing else; it is left out when the cockpit has no tabs.",
@@ -104,8 +110,8 @@ export function grammar(): string {
       + "A figure appears inside a card, where it is measured.",
     "",
     `Sizes. Every Card, Note and Image in a section has a size: ${SIZES.map(s => `${s} (${SPAN[s].w}×${SPAN[s].h})`).join(", ")} — `
-      + "columns across by rows down. A bigger size gives the same thing more room; it measures nothing new. "
-      + `In a section with "grid": ${GRID.columns}, each element says w (1 to ${GRID.columns} columns) and h (rows) instead, and keeps them when moved.`,
+      + "columns across by rows down. A bigger size gives the same thing more room; it measures nothing new."
+      + (grid ? ` In a section with "grid": ${GRID.columns}, each element says w (1 to ${GRID.columns} columns) and h (rows) instead, and keeps them when moved.` : ""),
     "",
     `A ${STATIC.join(" and an ")} are the person's own. You may move one, resize it or take it off, because that is arrangement. `
       + "You may not add one, change a note's text or choose an image: an edit that does is refused. A new cockpit holds none.",

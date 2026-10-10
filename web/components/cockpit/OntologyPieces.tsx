@@ -33,8 +33,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import {
-  anyFilter, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, entityKey, figureText, onDays, plural, ticks,
-  toggled, windowEnd, type Filters,
+  anyFilter, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, entityKey, figureText, onDays, plural, splitOnDays,
+  ticks, toggled, topValues, windowEnd, type Filters,
 } from "@/lib/cockpit/objectView";
 import { rowsTall } from "@/lib/cockpit/catalog";
 import { formatCount, formatDateTime, isNumericType, pct } from "@/lib/format";
@@ -786,10 +786,21 @@ export function ObjectFigurePiece({ entity, label, agg, path, format, sym }: {
 // the chart's frame in px, drawn at the size its card gives it (Arc AP-1): off the grid at the mockup's shape, 640 × 210
 // scaled to the card's width; on the grid at the box's own width and height — its text always at its own size
 const W = 640, H = 210, LEFT = 40, TOP = 26, PAD_RIGHT = 8, PAD_BOTTOM = 26;
+/** A split's colours in the order its values are drawn — the six series, then Other in the fold's grey (Arc AP-1). */
+const SERIES = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--chart-6)"];
+const OTHER = "var(--chart-deemph)";
+/** The values a split draws when its chart says none. */
+export const SPLIT_TOP = 5;
+const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
 /** An entity's objects per day over its last whole days: the reader's filtered objects as bars, all of them as a
- *  line behind — or, with no filter on, all of them as bars. Each bar says its day and its count when pointed at. */
-export function ObjectChartPiece({ entity, label, time, days }: { entity: string; label: string; time: string; days: number }) {
+ *  line behind — or, with no filter on, all of them as bars. A bar may measure an aggregate of a property instead of a
+ *  count, and be split by a property: its most common values stacked in fixed colours, the rest as Other (Arc AP-1).
+ *  Each bar says its day and what it holds when pointed at. */
+export function ObjectChartPiece({ entity, label, time, days, agg, path, format, split, top, sym = "$" }: {
+  entity: string; label: string; time: string; days: number;
+  agg?: string | null; path?: string | null; format?: string | null; split?: string | null; top?: number | null; sym?: string;
+}) {
   const { filters } = usePieces();
   const box = useCellBox();
   const [plot, room] = useMeasured<HTMLDivElement>();
@@ -798,54 +809,77 @@ export function ObjectChartPiece({ entity, label, time, days }: { entity: string
   const RIGHT = width - PAD_RIGHT, BASE = height - PAD_BOTTOM;
   const noun = useNoun(entity);
   const narrowed = conditionsFor(filters, entity);
+  const how = agg || "count";
+  const by = split ? [split] : [];
   const last = useObjectQuery({ object_type: entity, measures: [{ name: "t", agg: "max", path: time }] });
   const end = last && "rows" in last ? windowEnd(String(last.rows[0]?.[0] ?? "")) : "";
   const window = end ? daysBefore(end, days) : [];
   const per = (f: Record<string, unknown>[]): ObjectQueryRequest | null => end ? {
-    object_type: entity, measures: [COUNT], time, grain: "day", start: window[0], end, filters: f } : null;
+    object_type: entity, measures: [{ name: "n", agg: how, path: path ?? "" }], time, grain: "day", start: window[0], end,
+    filters: f, ...(by.length ? { by } : {}) } : null;
   const every = useObjectQuery(per([]));
   const some = useObjectQuery(narrowed.length ? per(narrowed) : null);
   const [hover, setHover] = useState<number | null>(null);
   const failed = [last, every, some].find(r => r && "refused" in r) as { refused: string } | undefined;
   if (failed) return <Unread what={`${label} cannot be read`}>{failed.refused}</Unread>;
-  const all = every && "rows" in every ? onDays(window, every.rows) : null;
-  const bars = narrowed.length ? (some && "rows" in some ? onDays(window, some.rows) : null) : all;
+  const everyRows = every && "rows" in every ? every.rows : null;
+  const someRows = narrowed.length ? (some && "rows" in some ? some.rows : null) : everyRows;
+  // the values a split draws come from every object, so each keeps its colour while the reader narrows
+  const values = split && everyRows ? topValues(everyRows, top ?? SPLIT_TOP) : [];
+  const stacksOf = (rows: unknown[][]) => (split ? splitOnDays(window, rows, values) : onDays(window, rows).map(v => [v]));
+  const allStacks = everyRows ? stacksOf(everyRows) : null;
+  const stacks = someRows ? stacksOf(someRows) : null;
+  const text = (v: number) => (how === "count" ? `${formatCount(v)} ${noun}` : figureText(v, how, format, sym));
+  const tick = (v: number) => (how === "count" || how === "count_distinct" ? formatCount(v) : figureText(v, how, format, sym));
+  const others = !!stacks && stacks.some(st => (st[values.length] ?? 0) > 0) && !!split;
+  const swatch = (color: string) => <i style={{ width: 10, height: 10, borderRadius: 2, background: color, display: "inline-block" }} />;
   const head = (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 500 }} className="aug-fs-chrome">
+    <div style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 500, flexWrap: "wrap" }} className="aug-fs-chrome">
       <span style={{ color: "var(--t1)" }}>{label} · last {days} days</span>
-      {narrowed.length > 0 && (
-        <span className="aug-fs-xs" data-testid="object-chart-legend" style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, color: "var(--t2)", fontWeight: 400 }}>
-          <i style={{ width: 10, height: 10, borderRadius: 2, background: "var(--chart-1)", display: "inline-block" }} />{chosenWords(filters, entity)}
-          <i style={{ width: 14, height: 2, background: "var(--chart-deemph)", display: "inline-block", marginLeft: 8 }} />All {noun}
+      {(narrowed.length > 0 || values.length > 0) && (
+        <span className="aug-fs-xs" data-testid="object-chart-legend" style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, color: "var(--t2)", fontWeight: 400, flexWrap: "wrap" }}>
+          {split
+            ? <>{values.map((v, j) => <span key={v} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>{swatch(SERIES[j])}{v}</span>)}
+              {others && <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>{swatch(OTHER)}Other</span>}</>
+            : <>{swatch("var(--chart-1)")}{chosenWords(filters, entity)}</>}
+          {narrowed.length > 0 && <><i style={{ width: 14, height: 2, background: "var(--chart-deemph)", display: "inline-block", marginLeft: 8 }} />All {noun}</>}
         </span>
       )}
     </div>
   );
-  if (!bars || !all) {
+  if (!stacks || !allStacks) {
     return (
       <Frame testid="object-chart">{head}
         <div ref={plot} className="aug-fs-sm" style={{ color: "var(--t3)", ...(box.onGrid ? { flex: 1, minHeight: 0 } : {}) }}>Reading…</div>
       </Frame>
     );
   }
+  const all = allStacks.map(sum);
+  const bars = stacks.map(sum);
   const axis = ticks(Math.max(1, ...all, ...bars));
-  const top = axis[axis.length - 1] || 1;
-  const y = (v: number) => BASE - (v / top) * (BASE - TOP);
+  const topOfAxis = axis[axis.length - 1] || 1;
+  const y = (v: number) => BASE - (v / topOfAxis) * (BASE - TOP);
   const slot = (RIGHT - LEFT) / window.length;
   const bw = Math.max(2, slot - 2);
   const x = (i: number) => LEFT + i * slot + 1;
   const mid = (i: number) => x(i) + bw / 2;
   const r = Math.min(2.5, bw / 2);
-  const bar = (i: number, v: number) => {
-    const t = y(v), b = BASE, l = x(i), w = bw;
-    if (b - t < r) return `M${l},${b} V${t} H${l + w} V${b} Z`;
+  // one segment of a bar, from `from` up to `to`: the top of a bar is rounded, a segment under another leaves a 1 px gap
+  const segment = (i: number, from: number, to: number, topmost: boolean) => {
+    const t = y(to), b = y(from) - (from > 0 ? 1 : 0), l = x(i), w = bw;
+    if (b - t < 1) return "";
+    if (!topmost || b - t < r) return `M${l},${b} V${t} H${l + w} V${b} Z`;
     return `M${l},${b} V${t + r} Q${l},${t} ${l + r},${t} H${l + w - r} Q${l + w},${t} ${l + w},${t + r} V${b} Z`;
   };
+  const colours = split ? [...SERIES.slice(0, values.length), OTHER] : ["var(--chart-1)"];
   const lastI = window.length - 1;
   const lineEnd = narrowed.length ? all[lastI] : bars[lastI];
-  const said = (i: number) => narrowed.length
-    ? `${dayLabel(window[i])}: ${formatCount(bars[i])} ${chosenWords(filters, entity)} of ${formatCount(all[i])} ${noun}`
-    : `${dayLabel(window[i])}: ${formatCount(all[i])} ${noun}`;
+  const said = (i: number) => {
+    const day = dayLabel(window[i]);
+    const parts = split ? stacks[i].map((v, j) => (v > 0 ? `${j < values.length ? values[j] : "Other"} ${tick(v)}` : "")).filter(Boolean) : [];
+    const what = narrowed.length ? `${text(bars[i])} ${chosenWords(filters, entity)} of ${text(all[i])}` : text(bars[i]);
+    return `${day}: ${what}${parts.length ? ` — ${parts.join(" · ")}` : ""}`;
+  };
   return (
     <Frame testid="object-chart">
       {head}
@@ -853,28 +887,39 @@ export function ObjectChartPiece({ entity, label, time, days }: { entity: string
         onMouseLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" data-testid="object-chart-svg"
           style={box.onGrid ? { position: "absolute", left: 0, top: 0 } : { display: "block" }}
-          aria-label={`${label}, last ${days} days${narrowed.length ? `: ${chosenWords(filters, entity)} as bars, all ${noun} as a line` : ""}`}>
+          aria-label={`${label}, last ${days} days${split ? `, split by its ${values.length} most common values` : ""}${narrowed.length ? `: ${chosenWords(filters, entity)} as bars, all ${noun} as a line` : ""}`}>
           {axis.map(t => (
             <g key={t}>
               <line x1={LEFT} x2={RIGHT} y1={y(t)} y2={y(t)} stroke="var(--chart-grid)" />
-              <text x={LEFT - 6} y={y(t) + 3} textAnchor="end" fill="var(--chart-tick)" style={{ font: "10px Inter, system-ui, sans-serif" }}>{formatCount(t)}</text>
+              <text x={LEFT - 6} y={y(t) + 3} textAnchor="end" fill="var(--chart-tick)" style={{ font: "10px Inter, system-ui, sans-serif" }}>{tick(t)}</text>
             </g>
           ))}
-          {bars.map((v, i) => (
-            <g key={window[i]}>
-              <path d={bar(i, v)} fill="var(--chart-1)" opacity={hover === null || hover === i ? 1 : 0.55} />
-              {i % 7 === 0 && <text x={mid(i)} y={height - 8} textAnchor="middle" fill="var(--chart-tick)" style={{ font: "10px Inter, system-ui, sans-serif" }}>{dayLabel(window[i])}</text>}
-              <rect data-testid="object-chart-hit" x={LEFT + i * slot} y={TOP - 10} width={slot} height={BASE - TOP + 10} fill="transparent"
-                onMouseEnter={() => setHover(i)}><title>{said(i)}</title></rect>
-            </g>
-          ))}
+          {stacks.map((st, i) => {
+            const topJ = st.reduce((k, v, j) => (v > 0 ? j : k), -1);
+            let at = 0;
+            return (
+              <g key={window[i]} data-testid="object-chart-bar">
+                <g opacity={hover === null || hover === i ? 1 : 0.55}>
+                  {st.map((v, j) => {
+                    const from = at;
+                    at += v;
+                    const d = v > 0 ? segment(i, from, at, j === topJ) : "";
+                    return d ? <path key={j} d={d} fill={colours[j]} data-testid="object-chart-segment" /> : null;
+                  })}
+                </g>
+                {i % 7 === 0 && <text x={mid(i)} y={height - 8} textAnchor="middle" fill="var(--chart-tick)" style={{ font: "10px Inter, system-ui, sans-serif" }}>{dayLabel(window[i])}</text>}
+                <rect data-testid="object-chart-hit" x={LEFT + i * slot} y={TOP - 10} width={slot} height={BASE - TOP + 10} fill="transparent"
+                  onMouseEnter={() => setHover(i)}><title>{said(i)}</title></rect>
+              </g>
+            );
+          })}
           {narrowed.length > 0 && (
             <polyline points={all.map((v, i) => `${mid(i)},${y(v)}`).join(" ")} fill="none" stroke="var(--chart-deemph)"
               strokeWidth={2} strokeLinejoin="round" pointerEvents="none" />
           )}
-          <circle cx={mid(lastI)} cy={y(lineEnd)} r={4} fill={narrowed.length ? "var(--chart-deemph)" : "var(--chart-1)"} stroke="var(--bg-2)" strokeWidth={2} pointerEvents="none" />
+          <circle cx={mid(lastI)} cy={y(lineEnd)} r={4} fill={narrowed.length || split ? "var(--chart-deemph)" : "var(--chart-1)"} stroke="var(--bg-2)" strokeWidth={2} pointerEvents="none" />
           <text x={mid(lastI) - 6} y={y(lineEnd) - 8} textAnchor="end" fill="var(--t2)" style={{ font: "10.5px Inter, system-ui, sans-serif" }}>
-            {formatCount(lineEnd)} {noun}
+            {text(lineEnd)}
           </text>
         </svg>
         {hover !== null && (
