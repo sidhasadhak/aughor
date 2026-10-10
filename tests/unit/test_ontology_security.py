@@ -111,6 +111,21 @@ def test_an_agent_acting_for_a_person_reads_only_what_both_may(secured, db, monk
         reset_acting_agent(token)
 
 
+def test_the_acting_agent_header_narrows_a_listing_over_http(secured, client, monkeypatch):  # noqa: F811
+    """The header reaches the door through its router dependency — the same read as above, over the wire."""
+    from aughor.rbac.groups import add_member
+    add_member("default", "fulfilment", "agent:bot")
+    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
+    _as(monkeypatch, "ben")
+    body = {"entity": "Order", "columns": ["status"], "limit": 200}
+    params = {"connection_id": CONN, "schema_name": "ecommerce"}
+    alone = client.post("/objects/list", params=params, json=body)
+    assert alone.status_code == 200 and alone.json()["total"] > 0, alone.text
+    acting = client.post("/objects/list", params=params, json=body, headers={"X-Aughor-Acting-Agent": "agent:bot"})
+    assert acting.status_code == 200 and acting.json()["total"] == 0, acting.text
+    assert any("agent:bot" in c for c in acting.json()["caveats"])
+
+
 def test_the_declare_doors_take_own_properties_and_never_mask_the_key(graph, client, monkeypatch):  # noqa: F811
     monkeypatch.setattr("aughor.routers.ontology._get_ontology_graph", lambda conn, schema=None: graph)
     params = {"connection_id": CONN, "schema_name": "ecommerce"}

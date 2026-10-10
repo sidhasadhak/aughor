@@ -89,7 +89,11 @@ def post_objects_v1_list(listing: ObjectListing, connection_id: str = BUILTIN_ID
     from aughor.routers.objects import post_object_listing
     _graph, release = _scope(connection_id, schema_name)
     page = post_object_listing(listing, connection_id=connection_id, schema_name=schema_name, execute=True)
-    return {**page, "release": release} if isinstance(page, dict) else page
+    if not isinstance(page, dict):
+        return page
+    # each object as a proposal names it — `<type>:<key>`, the key being a row's first value
+    named = [f"{page.get('object_type')}:{r[0]}" for r in page.get("rows") or [] if page.get("object_type") and r]
+    return {**page, "objects": named, "release": release}
 
 
 class ProposalBody(BaseModel):

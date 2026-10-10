@@ -24,6 +24,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterator, Optional
 
+from starlette.requests import Request
+
 from aughor.ontology.models import OntologyEntity
 
 FLAG = "ontology.security"
@@ -60,7 +62,7 @@ def reset_acting_agent(token: "contextvars.Token[str]") -> None:
     _acting_agent.reset(token)
 
 
-async def acting_agent_from_request(request) -> None:
+async def acting_agent_from_request(request: Request) -> None:
     """A router dependency: the agent a request says acts for its person. It only ever NARROWS what is read."""
     value = (request.headers.get(AGENT_HEADER) or "").strip()
     if value:

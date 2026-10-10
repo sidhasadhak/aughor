@@ -22,12 +22,9 @@ from aughor.ontology.models import OntologyGraph
 
 #: The draft this reads. A model of another 0.2 draft is read too and says which; another major or minor is refused.
 VERSION = "0.2.0.dev0"
-#: Which of a metric's dialects this engine speaks, in order — Ossie's own first, then the engine's, then ANSI.
-_DIALECTS = {"bigquery": ("OSSIE_SQL_2026", "BIGQUERY", "ANSI_SQL"),
-             "duckdb": ("OSSIE_SQL_2026", "ANSI_SQL"),
-             "postgres": ("OSSIE_SQL_2026", "ANSI_SQL"),
-             "snowflake": ("OSSIE_SQL_2026", "SNOWFLAKE", "ANSI_SQL"),
-             "databricks": ("OSSIE_SQL_2026", "DATABRICKS", "ANSI_SQL")}
+#: The dialects every engine reads — Ossie's own first, ANSI last; the engine's own name (Ossie spells a warehouse's
+#: dialect as its name in capitals) sits between them.
+_SHARED = ("OSSIE_SQL_2026", "ANSI_SQL")
 
 
 class OssieRefused(ValueError):
@@ -89,7 +86,7 @@ def _expression(item: dict, dialect: str) -> tuple[str, str]:
     """``(expression, dialect)`` — the one this engine reads, or ``("", "")``."""
     spoken = {str(d.get("dialect") or "").upper(): str(d.get("expression") or "").strip()
               for d in ((item.get("expression") or {}).get("dialects") or []) if isinstance(d, dict)}
-    for name in _DIALECTS.get((dialect or "duckdb").lower(), ("OSSIE_SQL_2026", "ANSI_SQL")):
+    for name in (_SHARED[0], (dialect or "duckdb").upper(), _SHARED[1]):
         if spoken.get(name):
             return spoken[name], name
     return "", ""

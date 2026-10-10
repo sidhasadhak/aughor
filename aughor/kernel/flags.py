@@ -723,14 +723,14 @@ GRADUATION_QUEUE: dict = {
                       "sends left `unknown` after reconciliation; any that a person cannot resolve from the screen "
                       "and the flag goes back",
     # Arc OC-8 (ROADMAP §3.56), queued 2026-10-10. No model call.
-    "ontology.builder_doors": "receipt: a script outside the platform reads theLook's contract, lists the late orders "
-                              "and proposes Flag for review through the MCP server; the proposal waits in the Actions "
+    "ontology.builder_doors": "receipt: a script outside the platform reads a connection's contract, lists the objects "
+                              "of a segment and proposes a declared action through the MCP server; the proposal waits in the Actions "
                               "inbox for a person and nothing runs. Falsifier: a contract a program cannot act on "
                               "without reading the platform's own code is not a contract — the script uses only the "
                               "generated schema and the MCP tools",
     # Arc OC-7 (ROADMAP §3.56), queued 2026-10-10. No model call.
     "ontology.security": "receipt: on a scratch install, two people open the same cockpit and see different rows and a "
-                         "masked property, each told why, and an agent acting for one reads no more than she does. "
+                         "masked property, each told why, and an agent acting for one reads no more than that person does. "
                          "Falsifier: a policy test that passes with enforcement off is testing nothing — the suite "
                          "turns it off and every policy assertion must fail. Live needs sign-in (the organisation "
                          "install); until then it stays off there",

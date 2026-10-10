@@ -68,6 +68,9 @@ def test_a_program_lists_objects_and_proposes_an_action_a_person_then_decides(do
     assert ts.status_code == 200 and "export interface Order {" in ts.text
     page = client.post("/objects/v1/list", params=PARAMS, json={"entity": "Order", "columns": ["status"], "limit": 3})
     assert page.status_code == 200 and page.json()["path"] == "listed" and len(page.json()["rows"]) == 3
+    named = page.json()["objects"]                                            # as a proposal names them
+    assert named == [f"order:{r[0]}" for r in page.json()["rows"]]
+    assert validate_params(action_schema(_action(doors), ""), {"order": named[0], "reason": "x"}) is None
     proposed = client.post("/objects/v1/actions/flag_order_for_review/propose", params=PARAMS,
                            json={"params": {"order": f"order:{ORDER}", "reason": "late and unshipped"},
                                  "reasoning": "a script found it overdue"})

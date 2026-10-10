@@ -10409,6 +10409,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/objects/v1/actions/{action_id}/propose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose Declared Action
+         * @description Propose a declared action: checked against its schema and its own criteria, then staged in the Actions inbox
+         *     for a person, with the action's version pinned (Arc OC-6). Never runs here — `status` is `awaiting_approval`.
+         */
+        post: operations["propose_declared_action_objects_v1_actions__action_id__propose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/objects/v1/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Objects V1 List
+         * @description One page of objects — the cockpit's listing door, with the release it was read under. An entity, or a segment
+         *     of it (late, overdue, a rule's objects), the columns asked for, at most 200 a page.
+         */
+        post: operations["post_objects_v1_list_objects_v1_list_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/objects/{object_type}/{pk}": {
         parameters: {
             query?: never;
@@ -11532,6 +11574,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/entities/{entity_id}/row-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Declare Row Policies
+         * @description Arc OC-7 — which objects of an entity each group sees: each policy names a group and the conditions on the
+         *     entity's own properties its objects meet. Once any is declared, a reader sees only the objects a policy of one of
+         *     their groups admits — none, and told which groups would, when they are in none. An empty list withdraws them all.
+         *     Enforced at the object doors while `ontology.security` is on.
+         */
+        put: operations["declare_row_policies_ontology_entities__entity_id__row_policies_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/entities/{entity_id}/segments": {
         parameters: {
             query?: never;
@@ -11594,6 +11659,32 @@ export interface paths {
          * @description PENDING item 27 — withdraw a semiadditive declaration. 404 when the type declares none for that property.
          */
         delete: operations["withdraw_semiadditive_ontology_entities__entity_id__semiadditive__prop__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/entities/{entity_id}/sensitive/{prop}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Declare Sensitive Property
+         * @description Arc OC-7 — a property only some groups read (`visible_to`; * — everyone): masked for everyone else on every
+         *     object door — empty, with why — and refused anywhere it would shape an answer. The key cannot be masked: it is
+         *     how an object is named.
+         */
+        put: operations["declare_sensitive_property_ontology_entities__entity_id__sensitive__prop__put"];
+        post?: never;
+        /**
+         * Withdraw Sensitive Property
+         * @description Arc OC-7 — unmask a property: every reader reads it again.
+         */
+        delete: operations["withdraw_sensitive_property_ontology_entities__entity_id__sensitive__prop__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -12541,6 +12632,111 @@ export interface paths {
          * @description Increment a learned skill's usage_count (feeds per-skill autonomy).
          */
         post: operations["use_learned_skill_ontology_skills__action_id__use_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/v1/actions/{action_id}/schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Action Schema
+         * @description One declared action's proposal schema.
+         */
+        get: operations["get_action_schema_ontology_v1_actions__action_id__schema_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/v1/contract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ontology Contract
+         * @description The published ontology as a contract: a JSON Schema per entity (its properties, key and the segments a listing
+         *     may name) and per declared action (what a proposal carries), stamped with the release they came from.
+         */
+        get: operations["get_ontology_contract_ontology_v1_contract_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/v1/import/ossie": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Ossie Import
+         * @description Declare the parts of an Ossie model a person accepted — each through its ordinary door, as that person's
+         *     declaration with the model as its provenance, into the draft release (nothing is served until it is published).
+         *     Each part says what became of it; one refused part refuses no other.
+         */
+        post: operations["accept_ossie_import_ontology_v1_import_ossie_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/v1/import/ossie/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Ossie Import
+         * @description What an Ossie model would become on this scope, part by part — a new entity over a table no entity reads, a
+         *     description for an entity with none, a link, a draft metric — and what it cannot, with why. Nothing is written.
+         */
+        post: operations["preview_ossie_import_ontology_v1_import_ossie_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/v1/types.d.ts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ontology Typescript
+         * @description The same contract as TypeScript declarations — an interface per entity, a union of its segments, a params
+         *     interface per declared action and the release. Declarations only: nothing in them runs.
+         */
+        get: operations["get_ontology_typescript_ontology_v1_types_d_ts_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -19222,6 +19418,23 @@ export interface components {
              */
             target: string;
         };
+        /** ProposalBody */
+        ProposalBody: {
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Reasoning
+             * @default
+             */
+            reasoning: string;
+            /**
+             * Release
+             * @default
+             */
+            release: string;
+        };
         /**
          * ProposalsRequest
          * @description What the metric editor sends to be offered what the platform proposes for a definition:
@@ -21527,6 +21740,13 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** _OssieImport */
+        _OssieImport: {
+            /** Accept */
+            accept?: string[];
+            /** Model */
+            model: unknown;
+        };
         /** _PostprocRequest */
         _PostprocRequest: {
             /**
@@ -21774,6 +21994,16 @@ export interface components {
             scope: string;
             /** Table */
             table: string;
+        };
+        /**
+         * _RowPolicies
+         * @description The whole set of an entity's row policies — replaced together, so what a reader sees is read in one place.
+         */
+        _RowPolicies: {
+            /** Policies */
+            policies?: {
+                [key: string]: unknown;
+            }[];
         };
         /** _SaveQueryRequest */
         _SaveQueryRequest: {
@@ -39725,6 +39955,7 @@ export interface operations {
                 schema_name?: string | null;
                 max_hops?: number;
                 domain?: string | null;
+                request: unknown;
             };
             header?: never;
             path?: never;
@@ -39754,10 +39985,11 @@ export interface operations {
     };
     get_object_type_map_object_types_get: {
         parameters: {
-            query?: {
+            query: {
                 connection_id?: string;
                 schema_name?: string | null;
                 domain?: string | null;
+                request: unknown;
             };
             header?: never;
             path?: never;
@@ -39787,10 +40019,11 @@ export interface operations {
     };
     get_object_type_object_types__object_type__get: {
         parameters: {
-            query?: {
+            query: {
                 connection_id?: string;
                 schema_name?: string | null;
                 domain?: string | null;
+                request: unknown;
             };
             header?: never;
             path: {
@@ -39822,10 +40055,11 @@ export interface operations {
     };
     get_object_catalog_objects_catalog_get: {
         parameters: {
-            query?: {
+            query: {
                 connection_id?: string;
                 schema_name?: string | null;
                 domain?: string | null;
+                request: unknown;
             };
             header?: never;
             path?: never;
@@ -39855,11 +40089,12 @@ export interface operations {
     };
     post_object_listing_objects_list_post: {
         parameters: {
-            query?: {
+            query: {
                 connection_id?: string;
                 schema_name?: string | null;
                 /** @description False returns the compiled SQL and plan without running it */
                 execute?: boolean;
+                request: unknown;
             };
             header?: never;
             path?: never;
@@ -39893,13 +40128,14 @@ export interface operations {
     };
     post_object_query_objects_query_post: {
         parameters: {
-            query?: {
+            query: {
                 connection_id?: string;
                 schema_name?: string | null;
                 /** @description False returns the compiled SQL and plan without running it */
                 execute?: boolean;
                 /** @description ON-8 — query an organisation's ontology, whose types may live on several connections */
                 domain?: string | null;
+                request: unknown;
             };
             header?: never;
             path?: never;
@@ -39933,10 +40169,11 @@ export interface operations {
     };
     post_object_titles_objects_titles_post: {
         parameters: {
-            query?: {
+            query: {
                 connection_id?: string;
                 schema_name?: string | null;
                 domain?: string | null;
+                request: unknown;
             };
             header?: never;
             path?: never;
@@ -39968,12 +40205,89 @@ export interface operations {
             };
         };
     };
+    propose_declared_action_objects_v1_actions__action_id__propose_post: {
+        parameters: {
+            query: {
+                connection_id?: string;
+                schema_name?: string | null;
+                request: unknown;
+            };
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_objects_v1_list_objects_v1_list_post: {
+        parameters: {
+            query: {
+                connection_id?: string;
+                schema_name?: string | null;
+                request: unknown;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObjectListing"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_object_page_objects__object_type___pk__get: {
         parameters: {
-            query?: {
+            query: {
                 connection_id?: string;
                 schema_name?: string | null;
                 domain?: string | null;
+                request: unknown;
             };
             header?: never;
             path: {
@@ -40006,12 +40320,13 @@ export interface operations {
     };
     get_object_links_page_objects__object_type___pk__links__link__get: {
         parameters: {
-            query?: {
+            query: {
                 connection_id?: string;
                 schema_name?: string | null;
                 limit?: number;
                 offset?: number;
                 domain?: string | null;
+                request: unknown;
             };
             header?: never;
             path: {
@@ -41918,6 +42233,44 @@ export interface operations {
             };
         };
     };
+    declare_row_policies_ontology_entities__entity_id__row_policies_put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_RowPolicies"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_entity_segments_ontology_entities__entity_id__segments_get: {
         parameters: {
             query?: {
@@ -42031,6 +42384,82 @@ export interface operations {
         };
     };
     withdraw_semiadditive_ontology_entities__entity_id__semiadditive__prop__delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                prop: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    declare_sensitive_property_ontology_entities__entity_id__sensitive__prop__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                prop: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_sensitive_property_ontology_entities__entity_id__sensitive__prop__delete: {
         parameters: {
             query?: {
                 connection_id?: string | null;
@@ -43635,6 +44064,179 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_action_schema_ontology_v1_actions__action_id__schema_get: {
+        parameters: {
+            query: {
+                connection_id?: string;
+                schema_name?: string | null;
+                request: unknown;
+            };
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ontology_contract_ontology_v1_contract_get: {
+        parameters: {
+            query: {
+                connection_id?: string;
+                schema_name?: string | null;
+                request: unknown;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_ossie_import_ontology_v1_import_ossie_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_OssieImport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_ossie_import_ontology_v1_import_ossie_preview_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_OssieImport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ontology_typescript_ontology_v1_types_d_ts_get: {
+        parameters: {
+            query: {
+                connection_id?: string;
+                schema_name?: string | null;
+                request: unknown;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
                 };
             };
             /** @description Validation Error */
