@@ -90,6 +90,27 @@ def test_a_401_status_is_a_bad_key_even_without_the_words():
     assert P.classify_provider_error(exc) == "bad_key"
 
 
+def test_a_request_the_provider_refused_as_written_is_said_with_its_own_words_never_as_an_empty_reply():
+    """2026-10-11: an Anthropic key was accepted, every request refused with 400, and the health check said "the model
+    returned no content". A 400 is the provider refusing the request as written — its own message says what."""
+    from aughor.llm import reliability as R
+
+    class BadRequest(Exception):
+        status_code = 400
+        body = {"type": "error", "error": {"type": "invalid_request_error", "message": "temperature: may not be set with top_p"}}
+
+    class Wrapped(Exception):
+        pass
+    wrapped = Wrapped("structured output failed after 2 attempts")
+    wrapped.__cause__ = BadRequest("Error code: 400")
+    assert P.classify_provider_error(wrapped) == "bad_request"
+    assert P.provider_words(wrapped) == "temperature: may not be set with top_p"
+    d = R.classify(wrapped, text="")
+    assert d.failure == R.UNAVAILABLE and "Provider said: temperature: may not be set with top_p" in d.detail
+    assert P.classify_provider_error(Exception("Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error'}}")) == "bad_request"
+    assert P.provider_words(Exception("no status here")) == ""
+
+
 def test_every_class_carries_an_action():
     """A health check exists to tell an operator what to DO. A class with no hint is a
     red cross with a paragraph, which is the state this replaced."""

@@ -1450,7 +1450,7 @@ _WRONG_ENDPOINT_MSGS = (
 #: the operator must DO, which is the only thing a health check is for.
 PROVIDER_ERROR_CLASSES = (
     "bad_key", "model_not_found", "quota_exhausted", "rate_limited",
-    "wrong_endpoint", "unreachable", "timeout", "tools_unsupported", "config", "unknown",
+    "wrong_endpoint", "unreachable", "timeout", "tools_unsupported", "config", "bad_request", "unknown",
 )
 
 _ERROR_HINTS = {
@@ -1463,6 +1463,7 @@ _ERROR_HINTS = {
     "timeout": "The endpoint accepted the request but did not answer in time.",
     "tools_unsupported": "This model advertises tool calling but does not do it — pick a model that honours it.",
     "config": "The client could not be built — usually a missing key or an unknown backend.",
+    "bad_request": "The provider refused the request as written (400) — its own words say what it would not take.",
     "unknown": "Unrecognised failure — the provider's own message is in `error`.",
 }
 
@@ -1509,6 +1510,10 @@ def classify_provider_error(exc: BaseException, *, _depth: int = 0) -> str:
         return "model_not_found"
     if isinstance(exc, (ValueError, RuntimeError)) and "api key" in msg:
         return "config"
+    # A request the provider read and refused as written (HTTP 400): the key and the model are fine, the request is
+    # not — said as such, never as "the model returned no content" (an Anthropic key, 2026-10-11)
+    if getattr(exc, "status_code", None) == 400 or "invalid_request_error" in msg:
+        return "bad_request"
     # A WRAPPER'S PROSE IS NOT THE EVIDENCE. `StructuredOutputError` (and any other
     # re-raise) replaces the provider's own words with a summary: "structured output
     # unavailable: the request never reached the model (wrong endpoint) — The base URL
@@ -1521,6 +1526,22 @@ def classify_provider_error(exc: BaseException, *, _depth: int = 0) -> str:
     if cause is not None and cause is not exc and _depth < _CAUSE_DEPTH_CAP:
         return classify_provider_error(cause, _depth=_depth + 1)
     return "unknown"
+
+
+def provider_words(exc: BaseException, *, limit: int = 300) -> str:
+    """The provider's own message behind ``exc`` — the innermost error that carries an HTTP status, its wrappers
+    followed — or "" when none does. What a refusal said, kept for the operator."""
+    at: Optional[BaseException] = exc
+    for _ in range(_CAUSE_DEPTH_CAP + 1):
+        if at is None:
+            break
+        if getattr(at, "status_code", None) is not None:
+            body = getattr(at, "body", None)
+            err = body.get("error") if isinstance(body, dict) else None
+            said = err.get("message") if isinstance(err, dict) else None
+            return str(said or getattr(at, "message", "") or at)[:limit]
+        at = getattr(at, "__cause__", None) or getattr(at, "__context__", None)
+    return ""
 
 
 class BindingConfigError(RuntimeError):
