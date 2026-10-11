@@ -431,6 +431,14 @@ def _seed_leftovers(root, conn: str) -> None:
         (root / rel).write_text("{}")
     (root / "connection_settings.json").write_text(json.dumps({conn: {"briefings_enabled": False}, "other": {"x": 1}}))
     (root / "notes.json").write_text(json.dumps({"mentions": [conn]}))
+    # keyed by a key it scopes (the briefing cache's `conn:schema`); records naming it in a connection field, grouped
+    # under another key (causal proposals by investigation) or as a list (cards) — beside another connection's
+    (root / "briefing_cache.json").write_text(json.dumps({f"{conn}:lux": {"n": 1}, "other:lux": {"n": 2},
+                                                          f"{conn}99:lux": {"n": 3}}))
+    (root / "causal_proposals.json").write_text(json.dumps({
+        "inv1": [{"conn_id": conn, "edge": "a"}], "inv2": [{"conn_id": conn, "edge": "b"}, {"conn_id": "other"}],
+        "inv3": [{"conn_id": "other", "edge": "c"}]}))
+    (root / "cards.json").write_text(json.dumps([{"connection_id": conn, "id": 1}, {"connection_id": "other", "id": 2}]))
     audit = sqlite3.connect(root / "audit.db")
     audit.execute("CREATE TABLE audit_log (connection_id TEXT, sql TEXT)")
     audit.execute("CREATE TABLE internal_counts (connection_id TEXT, n INTEGER)")
@@ -463,13 +471,19 @@ def test_a_removed_connection_is_swept_from_every_store_keeping_only_the_audit_a
     before = purge.residue_of(conn, tmp_path)
     assert before == {f"context_graph/default/{conn}": 1, f"ontology_recommendations/{conn}": 1,
                       f"ontology_drafts/{conn}": 1, "connection_settings.json": 1, "notes.json": 1,
+                      "briefing_cache.json": 1, "causal_proposals.json": 1, "cards.json": 1,
                       "audit.db:internal_counts.connection_id": 1, "system.db:kv.key": 3}
 
     swept = purge.sweep_residue(conn, tmp_path)
 
-    assert swept == {"swept_paths": 3, "swept_rows": 4, "swept_json_keys": 1}
+    assert swept == {"swept_paths": 3, "swept_rows": 4, "swept_json_keys": 5}
     assert purge.residue_of(conn, tmp_path) == {"notes.json": 1}          # a mention it cannot safely edit, said
     assert json.loads((tmp_path / "connection_settings.json").read_text()) == {"other": {"x": 1}}
+    assert json.loads((tmp_path / "briefing_cache.json").read_text()) == {"other:lux": {"n": 2},
+                                                                          f"{conn}99:lux": {"n": 3}}
+    assert json.loads((tmp_path / "causal_proposals.json").read_text()) == {
+        "inv2": [{"conn_id": "other"}], "inv3": [{"conn_id": "other", "edge": "c"}]}
+    assert json.loads((tmp_path / "cards.json").read_text()) == [{"connection_id": "other", "id": 2}]
     assert (tmp_path / f"context_graph/default/{conn}99/keep.json").exists()
     audit = sqlite3.connect(tmp_path / "audit.db")
     assert audit.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0] == 1           # kept: the SQL audit log
@@ -486,7 +500,7 @@ def test_a_delete_ends_by_sweeping_what_its_stores_left(tmp_path, monkeypatch):
     _seed_leftovers(tmp_path, conn)
     monkeypatch.setattr(purge, "_DATA_DIR", tmp_path)
     counts = purge.purge_connection_artifacts(conn)
-    assert counts["swept_paths"] == 3 and counts["swept_rows"] == 4 and counts["swept_json_keys"] == 1
+    assert counts["swept_paths"] == 3 and counts["swept_rows"] == 4 and counts["swept_json_keys"] == 5
     assert counts["residue"] == 1                                                       # notes.json, said
 
 

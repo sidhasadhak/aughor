@@ -288,6 +288,41 @@ def _glob_escape(s: str) -> str:
     return re.sub(r"([*?\[])", r"[\1]", s)
 
 
+def _owned_key(key: str, ids: set) -> bool:
+    """A JSON entry keyed by the connection, or by a key it scopes (``914df862:luxexperience``) — the key-value rule."""
+    return any(key == i or (key.startswith(i) and not key[len(i)].isalnum()) for i in ids)
+
+
+def _owned_record(item, ids: set) -> bool:
+    """A record whose connection field names the connection — the JSON form of a row's connection column."""
+    return isinstance(item, dict) and any(str(item.get(c) or "") in ids for c in _CONNECTION_COLUMNS)
+
+
+def _without(data, ids: set):
+    """``data`` without what the connection owns in it, and how many entries went: a top-level entry keyed by it, a
+    record naming it in its connection field (at the top level, or in a top-level entry's list), and an entry its
+    records alone made up. Anything else — a mention in free text — stays, for the census to say."""
+    gone = 0
+    if isinstance(data, list):
+        kept = [x for x in data if not _owned_record(x, ids)]
+        return kept, len(data) - len(kept)
+    if not isinstance(data, dict):
+        return data, 0
+    kept: dict = {}
+    for key, value in data.items():
+        if _owned_key(str(key), ids) or _owned_record(value, ids):
+            gone += 1
+            continue
+        if isinstance(value, list) and any(_owned_record(x, ids) for x in value):
+            rest = [x for x in value if not _owned_record(x, ids)]
+            gone += len(value) - len(rest)
+            if not rest:
+                continue
+            value = rest
+        kept[key] = value
+    return kept, gone
+
+
 def residue_of(conn_id: str, root: Path | None = None) -> dict[str, int]:
     """Where ``conn_id`` still appears under the data directory — ``{place: count}``.
 
@@ -308,8 +343,8 @@ def sweep_residue(conn_id: str, root: Path | None = None) -> dict[str, int]:
     """Remove what a removed connection still left on disk after its stores' own purges — the platform's default:
     a connection removed takes everything it learned, keeping only ``KEPT_ON_DELETE`` (the SQL audit log and the
     model-call log). A path named after it goes; rows holding it in a connection column, or keyed by it in a
-    key-value table, go; its top-level entry in a JSON store goes. A JSON or YAML store that mentions it any other
-    way is left, and the census that follows says so. Returns ``{"swept_paths", "swept_rows", "swept_json_keys"}``."""
+    key-value table, go; in a JSON store, the entries keyed by it and the records naming it in a connection field go
+    (``_without``). A JSON or YAML store that mentions it any other way is left, and the census that follows says so. Returns ``{"swept_paths", "swept_rows", "swept_json_keys"}``."""
     import json
     import sqlite3
 
@@ -340,14 +375,12 @@ def sweep_residue(conn_id: str, root: Path | None = None) -> dict[str, int]:
                     con.close()
             elif kind == "json" and detail.suffix == ".json":
                 data = json.loads(detail.read_text(encoding="utf-8"))
-                gone = [k for k in ids if isinstance(data, dict) and k in data]
+                kept, gone = _without(data, ids)
                 if gone:
-                    for k in gone:
-                        data.pop(k)
                     tmp = detail.with_name(detail.name + ".sweep")
-                    tmp.write_text(json.dumps(data, indent=2))
+                    tmp.write_text(json.dumps(kept, indent=2))
                     tmp.replace(detail)
-                    out["swept_json_keys"] += len(gone)
+                    out["swept_json_keys"] += gone
         except Exception as e:  # noqa: BLE001 — one place unswept never stops the rest; the census says it
             tolerate(e, f"purge: could not sweep {place}", counter="conn.purge.sweep")
     return out
