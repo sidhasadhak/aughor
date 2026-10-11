@@ -188,6 +188,11 @@ def _register_purge_hooks() -> None:
     # install: its column-config and doc trees, its indexed schema documents, its watermarks.
     ph.register_purge_hook("ontology_files", _ontology_files_conn)
     ph.register_purge_hook("explore_watermark", _watermark_conn)
+    # 2026-10-11, the user: "Removing a connection means also removing its ontology, its metrics and related
+    # documents.. make that default" — every ontology tree from its own root (the people's accepted overrides
+    # live in the checkout, where no sweep of the state directory reaches), and every metric it owns.
+    ph.register_purge_hook("ontology_trees", _ontology_trees_conn)
+    ph.register_purge_hook("metrics", _metrics_conn)
 
     # schema-keyed
     ph.register_schema_purge_hook("explorer_files", _exploration_schema)
@@ -199,6 +204,9 @@ def _register_purge_hooks() -> None:
     ph.register_schema_purge_hook("packs", _packs_schema)
     ph.register_schema_purge_hook("profile_cache", _profile_cache_schema)
     ph.register_schema_purge_hook("monitors", _monitors_schema)
+    # …and a removed dataset takes its own: its ontology trees, its indexed documentation, its metrics.
+    ph.register_schema_purge_hook("ontology_trees", _ontology_trees_schema)
+    ph.register_schema_purge_hook("metrics", _metrics_schema)
 
     # investigation-keyed
     ph.register_investigations_purge_hook("evidence", _evidence_inv)
@@ -234,6 +242,26 @@ def _ontology_files_conn(conn_id, org_id):
     return {"column_config": column_config.purge_connection(conn_id),
             "doc_tree": doctree.purge_connection(conn_id),
             "schema_documents": indexer.purge_connection_doctrees(conn_id)}
+
+
+def _ontology_trees_conn(conn_id, org_id):
+    from aughor.ontology.removal import purge
+    return purge(conn_id)
+
+
+def _metrics_conn(conn_id, org_id):
+    from aughor.semantic.metrics import purge_scope
+    return {"metrics": purge_scope(conn_id)}
+
+
+def _ontology_trees_schema(conn_id, schema):
+    from aughor.ontology.removal import purge
+    return purge(conn_id, schema)
+
+
+def _metrics_schema(conn_id, schema):
+    from aughor.semantic.metrics import purge_scope
+    return {"metrics": purge_scope(conn_id, schema)}
 
 
 def _watermark_conn(conn_id, org_id):

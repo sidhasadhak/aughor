@@ -4124,6 +4124,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/connections/{conn_id}/schemas/{schema}/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Purge Removed Schema
+         * @description Clear what a REMOVED dataset of a connection left — its ontology trees, indexed documentation, metrics,
+         *     profile, exploration and the canvases and investigations it implies — as a schema delete now does by default
+         *     (2026-10-11), for a dataset removed before it did. Behind the same approval as a schema delete, by the same
+         *     scope. Refused while the dataset is still listed, and when the connection's datasets cannot be read just now
+         *     (it cannot be told removed).
+         */
+        post: operations["purge_removed_schema_connections__conn_id__schemas__schema__purge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/connections/{conn_id}/settings": {
         parameters: {
             query?: never;
@@ -30029,6 +30053,38 @@ export interface operations {
         };
     };
     delete_connection_schema_connections__conn_id__schemas__schema__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conn_id: string;
+                schema: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purge_removed_schema_connections__conn_id__schemas__schema__purge_post: {
         parameters: {
             query?: never;
             header?: never;

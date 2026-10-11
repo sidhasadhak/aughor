@@ -195,6 +195,10 @@ KEPT_ON_DELETE = {
     "audit_log": "the SQL audit log — every statement run against the warehouse, and by whom",
     "session_events": "the session log — every model call and what it cost",
 }
+#: Purge labels whose hook INVALIDATES a store without counting what it held — each says 1 whether or not anything was
+#: there (measured 2026-10-11: a second purge of an empty connection "removed" four things). A door reports them as
+#: invalidated, never as removed.
+INVALIDATED_NOT_COUNTED = frozenset({"matcache", "ontology", "profile", "profile_cache"})
 #: Columns that hold a connection id in some store or other (`catalog_id` is the metastore's).
 _CONNECTION_COLUMNS = ("conn_id", "connection_id", "catalog_id")
 #: A person's backup folder is not a store; the vector store is binary and has its own hook.
