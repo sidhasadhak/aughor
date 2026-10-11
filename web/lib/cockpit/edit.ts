@@ -35,7 +35,11 @@ export interface CockpitSpec {
   values?: Record<string, CockpitValueDef>;
 }
 
-export interface SectionRef { key: string; title: string; tabKey: string | null; tabLabel: string | null }
+export interface SectionRef {
+  key: string; title: string; tabKey: string | null; tabLabel: string | null;
+  /** Arc AP-4 — a drawer, which holds pieces as a section does and opens beside the page on a choice. */
+  drawer?: boolean;
+}
 export interface TabRef { key: string; name: string; label: string }
 
 function copy(spec: unknown): CockpitSpec {
@@ -63,11 +67,12 @@ const AUTO_COLUMNS = 4;
 const DEFAULT_SIZE: Record<GridKind, Size> = {
   Card: "small", Note: "small", Image: "small", ProcessBoard: "full", ObjectTable: "wide", ObjectDetail: "small",
   ObjectFigure: "small", ObjectChart: "full", ActionButtons: "small",
+  ObjectList: "wide", ObjectMap: "wide", ObjectTimeline: "full", ChooseOne: "small", ObjectSearch: "small",
 };
 /** The rows a kind takes on the grid when nothing measured it: about the room one row of its size gave it. */
 const ROWS: Record<GridKind, number> = {
   Card: 4, Note: 3, Image: 5, ProcessBoard: 7, ObjectTable: 8, ObjectDetail: 7, ObjectFigure: 3, ObjectChart: 6,
-  ActionButtons: 2,
+  ActionButtons: 2, ObjectList: 8, ObjectMap: 9, ObjectTimeline: 7, ChooseOne: 7, ObjectSearch: 3,
 };
 
 const clamp = (lo: number, hi: number, v: number) => Math.max(lo, Math.min(hi, v));
@@ -115,6 +120,12 @@ function fitTo(s: CockpitSpec, sectionKey: string, key: string): void {
   }
 }
 
+/** Whether pieces may be placed in `key`: a section not laid out in sections, or a drawer (Arc AP-4). */
+function holdsPieces(s: CockpitSpec, key: string): boolean {
+  const el = s.elements[key];
+  return !!el && ((el.type === "Section" && !el.props.layout) || el.type === "Drawer");
+}
+
 /** A key no element has, made from `base`. */
 function freshKey(s: CockpitSpec, base: string): string {
   const stem = base.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "el";
@@ -132,6 +143,10 @@ export function sectionsOf(spec: unknown): SectionRef[] {
     if (!el) return;
     if (el.type === "Section" && !el.props.layout) {
       out.push({ key, title: String(el.props.title ?? ""), tabKey: tab?.key ?? null, tabLabel: tab?.label ?? null });
+      return;
+    }
+    if (el.type === "Drawer") {
+      out.push({ key, title: String(el.props.title ?? ""), tabKey: null, tabLabel: null, drawer: true });
       return;
     }
     for (const child of el.children ?? []) {
@@ -184,8 +199,9 @@ function detach(s: CockpitSpec, key: string, andDelete: boolean): void {
     if (PLACED.includes(s.elements[key]?.type as never)) for (const child of s.elements[key].children) delete s.elements[child];
     delete s.elements[key];
   }
+  // a drawer left with nothing stays, for a person to place a piece in or take off
   if (parent && parent !== s.root && !PLACED.includes(s.elements[parent].type as never) && s.elements[parent].children.length === 0
-    && !inLayout(s, parent)) {
+    && !inLayout(s, parent) && s.elements[parent].type !== "Drawer") {
     detach(s, parent, true);
   }
 }
@@ -233,7 +249,7 @@ export function moveWithin(spec: unknown, key: string, delta: -1 | 1): CockpitSp
 /** Move a card to the end of another section. */
 export function moveCardTo(spec: unknown, key: string, sectionKey: string): CockpitSpec {
   const s = copy(spec);
-  if (!(key in s.elements) || s.elements[sectionKey]?.type !== "Section" || parentOf(s, key) === sectionKey) return s;
+  if (!(key in s.elements) || !holdsPieces(s, sectionKey) || parentOf(s, key) === sectionKey) return s;
   detach(s, key, false);
   if (!(sectionKey in s.elements)) return copy(spec);         // the section went with the card: nothing moved
   s.elements[sectionKey].children.push(key);
@@ -302,16 +318,18 @@ export function placeImage(spec: unknown, objectId: string, caption: string, sec
  *  the new element's key — a detail names the table it follows by that key. An action button goes in a detail
  *  (`addAction`), never in a section. */
 export function placePiece(
-  spec: unknown, type: "ProcessBoard" | "ObjectTable" | "ObjectDetail" | "ActionButtons" | "ObjectFigure" | "ObjectChart",
+  spec: unknown, type: "ProcessBoard" | "ObjectTable" | "ObjectDetail" | "ActionButtons" | "ObjectFigure" | "ObjectChart"
+    | "ObjectList" | "ObjectMap" | "ObjectTimeline" | "ChooseOne" | "ObjectSearch",
   props: Record<string, unknown>, sectionKey?: string,
 ): { spec: CockpitSpec; key: string | null } {
   const s = copy(spec);
   const target = sectionKey ?? sectionsOf(s)[0]?.key;
-  if (!target || s.elements[target]?.type !== "Section" || s.elements[target].props.layout) return { spec: s, key: null };
+  if (!target || !holdsPieces(s, target)) return { spec: s, key: null };
   const base = type === "ProcessBoard" ? `board-${props.process}` : type === "ObjectTable"
     ? `table-${props.segment || props.entity || props.set}` : type === "ActionButtons" ? "buttons"
       : type === "ObjectFigure" ? `figure-${props.set || props.entity}` : type === "ObjectChart" ? `chart-${props.set || props.entity}`
-        : `detail-${props.follows}`;
+        : type === "ObjectDetail" ? `detail-${props.follows}`
+          : `${type.replace(/^Object/, "").replace(/^ChooseOne$/, "choose").toLowerCase()}-${props.set || props.entity}`;
   const key = freshKey(s, String(base));
   const kept = Object.fromEntries(Object.entries(props).filter(([, v]) => v !== undefined && v !== null && v !== ""
     && !(Array.isArray(v) && !v.length)));
@@ -322,6 +340,21 @@ export function placePiece(
   // Arc AP-4 — the first piece in a section fills it, as a piece fills the box a person made for it
   const lim = LIMITS[type as GridKind];
   if (empty && lim && onGrid(s, target)) s.elements[key].props.w = Math.min(lim.w[1], GRID.columns);
+  return { spec: s, key };
+}
+
+/** Arc AP-4 — a drawer that opens beside the page when `opensOn` is chosen, holding a detail of the chosen object: the
+ *  cockpit's own, after its sections. */
+export function addDrawer(spec: unknown, title: string, opensOn: string): { spec: CockpitSpec; key: string | null } {
+  const s = copy(spec);
+  const name = title.trim().slice(0, MAX_TITLE);
+  if (!name || !opensOn || !s.elements[s.root]) return { spec: s, key: null };
+  const key = freshKey(s, `drawer-${opensOn}`);
+  s.elements[key] = { type: "Drawer", props: { title: name, opens_on: opensOn }, children: [] };
+  const detail = freshKey(s, `detail-${opensOn}`);
+  s.elements[detail] = { type: "ObjectDetail", props: { follows: opensOn }, children: [] };
+  s.elements[key].children.push(detail);
+  s.elements[s.root].children.push(key);
   return { spec: s, key };
 }
 

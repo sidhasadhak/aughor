@@ -98,6 +98,11 @@ export const LIMITS = {
   ObjectFigure: { w: [2, 6], h: [2, 4] },
   ObjectChart: { w: [3, 12], h: [4, 14] },
   ActionButtons: { w: [2, 12], h: [2, 6] },
+  ObjectList: { w: [3, 12], h: [4, 20] },
+  ObjectMap: { w: [3, 12], h: [5, 20] },
+  ObjectTimeline: { w: [4, 12], h: [4, 20] },
+  ChooseOne: { w: [2, 12], h: [4, 14] },
+  ObjectSearch: { w: [2, 12], h: [3, 4] },
 } as const satisfies Record<string, { w: readonly [number, number]; h: readonly [number, number] }>;
 export type GridKind = keyof typeof LIMITS;
 
@@ -210,6 +215,10 @@ const size = z.enum(SIZES).nullable().optional();
 /** An element's room on a section's grid: columns across and rows down (Arc AP-1). */
 const w = z.number().int().min(1).max(GRID.columns).nullable().optional();
 const h = z.number().int().min(1).max(MAX_ROWS).nullable().optional();
+// Arc AP-4 — what the pieces the picker adds name: an entity or a set, a choice, a property
+const entityRef = z.string().regex(ONTOLOGY_ID).nullable().optional();
+const wireRef = z.string().regex(WIRE_NAME).nullable().optional();
+const pathRef = z.string().regex(PROPERTY_PATH);
 
 export const cockpitCatalog = defineCatalog(schema, {
   components: {
@@ -355,6 +364,64 @@ export const cockpitCatalog = defineCatalog(schema, {
       props: z.object({ buttons: z.array(actionButton).min(1).max(MAX_BUTTONS), size, w, h }),
       description: "A row of buttons, each a declared action run on what a reader chose or ticked, on a set, or with what they fill in — the declaration's own criteria, risk and approval holding every run.",
     },
+    // ── Arc AP-4 — the pieces the picker adds (the study's §4.4): each reads an entity or a set, as a table does ──
+    ObjectList: {
+      props: z.object({
+        entity: entityRef, set: wireRef, set_from: wireRef, chooses: wireRef, ticks: wireRef,
+        /** What each card is called by, big — its key when it names none; a number beside it; a mark — a category, as a
+         *  chip — under it. */
+        title: pathRef.nullable().optional(), figure: pathRef.nullable().optional(), mark: pathRef.nullable().optional(),
+        sort: pathRef.nullable().optional(), descending: z.boolean().nullable().optional(),
+        size, w, h,
+      }),
+      description: "A queue of objects as cards: each called by a property, with a number and a mark beside it. A click chooses, a tick collects.",
+    },
+    ObjectMap: {
+      props: z.object({
+        entity: entityRef, set: wireRef, set_from: wireRef, chooses: wireRef,
+        /** Where each object is: its latitude and longitude — its own, or one link away. */
+        lat: pathRef, lng: pathRef, label: pathRef.nullable().optional(),
+        size, w, h,
+      }),
+      description: "A set placed by its coordinates. A click on a place chooses it.",
+    },
+    ObjectTimeline: {
+      props: z.object({
+        entity: entityRef, set: wireRef, set_from: wireRef, chooses: wireRef,
+        /** Each object a bar from one moment to the next — placed to shipped — called by a property, or its key. */
+        start: pathRef, end: pathRef, label: pathRef.nullable().optional(),
+        size, w, h,
+      }),
+      description: "Objects between two moments, each a bar on one line of days. A click chooses.",
+    },
+    ChooseOne: {
+      props: z.object({
+        entity: entityRef, set: wireRef,
+        /** The choice it makes — what the pieces that follow it read — and what each object is called in the list. */
+        chooses: z.string().regex(WIRE_NAME), label: pathRef,
+        size, w, h,
+      }),
+      description: "One object picked from a set by its name: the object the pieces that follow the choice read.",
+    },
+    ObjectSearch: {
+      props: z.object({
+        entity: z.string().regex(ONTOLOGY_ID),
+        /** The property a reader's words are looked for in, and what the box is called. */
+        path: pathRef, label: z.string().min(1).max(MAX_LABEL),
+        size, w, h,
+      }),
+      description: "Words a reader types, narrowing every set of an entity to the objects whose property holds them — for that reader only.",
+    },
+    // Arc AP-4 — what opens beside the page (the study's §4.2: "a drawer beside it, a form in front of it")
+    Drawer: {
+      props: z.object({
+        title: z.string().min(1).max(MAX_TITLE),
+        /** The choice it opens on: a click that chooses opens it beside the page; closing it lets go of the choice. */
+        opens_on: z.string().regex(WIRE_NAME),
+      }),
+      slots: ["default"],
+      description: "Pieces opened beside the page when a reader chooses an object, and closed by letting go of it. The cockpit's own.",
+    },
   },
   actions: {},
 });
@@ -362,10 +429,21 @@ export const cockpitCatalog = defineCatalog(schema, {
 /** Arc OC-4 — the pieces bound to the ontology. A person places them by hand; a model may arrange one and is never
  *  told how to write one (`grammar.ts` teaches `WRITTEN`). */
 export type PieceName = "ProcessBoard" | "ObjectTable" | "ObjectDetail" | "ActionButton" | "ObjectFilters" | "ObjectFigure"
-  | "ObjectChart" | "ActionButtons";
+  | "ObjectChart" | "ActionButtons" | "ObjectList" | "ObjectMap" | "ObjectTimeline" | "ChooseOne" | "ObjectSearch" | "Drawer";
 export const PIECE_NAMES: readonly PieceName[] = [
   "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure", "ObjectChart", "ActionButtons",
+  "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Drawer",
 ];
+/** Arc AP-4 — what the picker adds — its pieces and the drawer — each placed by hand and held to the structure's flag on
+ *  the server. */
+export const AP4_PIECES: readonly PieceName[] = ["ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Drawer"];
+/** The pieces that read an entity or a named set (Arc AP-2, AP-4). */
+export const SET_READERS: readonly PieceName[] = ["ObjectTable", "ObjectFigure", "ObjectChart", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne"];
+/** The pieces a reader's click chooses an object in, and the ones whose ticks collect objects. */
+export const CHOOSERS: readonly PieceName[] = ["ObjectTable", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne"];
+export const TICKERS: readonly PieceName[] = ["ObjectTable", "ObjectList"];
+/** The pieces a figure's click may switch to the set it shows. */
+export const SWITCHED: readonly PieceName[] = ["ObjectTable", "ObjectList", "ObjectMap", "ObjectTimeline"];
 
 export type WrittenName = "Cockpit" | "Tabs" | "Tab" | "Section" | "Card" | "Note" | "Image";
 /** The components a writer of a cockpit is told about — every one but the ontology's pieces. */
@@ -377,13 +455,14 @@ export const COMPONENT_NAMES: readonly ComponentName[] = [...WRITTEN, ...PIECE_N
 /** The components a section holds — each sized, each in its place. */
 export const PLACED: readonly ComponentName[] = [
   "Card", "Note", "Image", "ProcessBoard", "ObjectTable", "ObjectDetail", "ObjectFigure", "ObjectChart", "ActionButtons",
+  "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch",
 ];
 /** The two that are a person's own: a model arranges them and never makes one. */
 export const STATIC: readonly ComponentName[] = ["Note", "Image"];
 
 /** What each component may hold. A cockpit's shape is fixed so that a reader can predict it. */
 export const MAY_HOLD: Record<ComponentName, readonly ComponentName[]> = {
-  Cockpit: ["Tabs", "Section", "ObjectFilters"],
+  Cockpit: ["Tabs", "Section", "ObjectFilters", "Drawer"],
   Tabs: ["Tab"],
   Tab: ["Section"],
   // Arc AP-4 — or sections of its own, when it is laid out (the rules hold a section to one or the other)
@@ -399,6 +478,13 @@ export const MAY_HOLD: Record<ComponentName, readonly ComponentName[]> = {
   ObjectFigure: [],
   ObjectChart: [],
   ActionButtons: [],
+  ObjectList: [],
+  ObjectMap: [],
+  ObjectTimeline: [],
+  ChooseOne: [],
+  ObjectSearch: [],
+  // the pieces a section holds, stacked one under another beside the page
+  Drawer: PLACED,
 };
 
 /** The components a condition may show or hide. A tab is never conditional. */

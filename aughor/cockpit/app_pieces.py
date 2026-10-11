@@ -7,12 +7,18 @@ hold the structure's shape from the catalog the browser draws with (`web/lib/coc
 What they cannot know is whether the structure is on here, so the server refuses a spec that says any of it while
 `cockpit.app_pieces` is off — an install that has not turned it on keeps the cockpit it had, and its writer is told
 nothing about it (`validate.grammar`).
+
+The same flag holds what the builder's picker adds (the study's §4.4): a list of objects as cards, a map, a timeline, a
+choose-one, a search, and a drawer that opens beside the page on a chosen object. What each piece reads is checked as a
+table's is (`pieces.not_resolved`).
 """
 from __future__ import annotations
 
 from typing import Any
 
 FLAG = "cockpit.app_pieces"
+#: What the builder's picker adds — placed by a person, as every piece bound to the ontology is.
+PIECES = ("ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Drawer")
 
 
 def on() -> bool:
@@ -36,11 +42,29 @@ def structured(spec: Any) -> list[str]:
     return out
 
 
+def added(spec: Any) -> list[str]:
+    """The element keys of what the picker adds, each once, in the spec's order."""
+    elements = spec.get("elements") if isinstance(spec, dict) else None
+    return [str(key) for key, el in (elements if isinstance(elements, dict) else {}).items()
+            if isinstance(el, dict) and el.get("type") in PIECES]
+
+
+def _keys(keys: list[str]) -> str:
+    return f"{', '.join(keys[:6])}{'…' if len(keys) > 6 else ''}"
+
+
 def refused_off(spec: Any) -> list[str]:
-    """A sentence when ``spec`` is built from a structure of pieces and that is off here — what a keep is refused with.
-    Empty when it says none of it, whatever the flag says, so a cockpit whose sections hold pieces keeps as it did."""
-    said = structured(spec)
-    if not said or on():
+    """A sentence for each of the structure and the picker's pieces that ``spec`` says while they are off here — what a
+    keep is refused with. Empty when it says neither, whatever the flag says, so a cockpit whose sections hold the
+    pieces before them keeps as it did."""
+    split, new = structured(spec), added(spec)
+    if not (split or new) or on():
         return []
-    return [f"The cockpit is split into sections, or holds a section with nothing in it yet — {', '.join(said[:6])}"
-            f"{'…' if len(said) > 6 else ''} — and splitting a cockpit into sections is off on this install."]
+    said = []
+    if split:
+        said.append(f"The cockpit is split into sections, or holds a section with nothing in it yet — {_keys(split)} — "
+                    "and splitting a cockpit into sections is off on this install.")
+    if new:
+        said.append(f"The cockpit holds a list, a map, a timeline, a choose-one, a search or a drawer — {_keys(new)} — "
+                    "and adding those is off on this install.")
+    return said

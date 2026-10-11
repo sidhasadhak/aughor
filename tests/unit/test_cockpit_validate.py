@@ -179,10 +179,15 @@ def test_a_spec_that_is_not_json_is_refused_before_anything_runs(premise):
 @needs_rules
 def test_the_server_reads_the_vocabulary_the_web_declares():
     vocab = V.vocabulary()
-    assert vocab["version"] == 7                 # 3: the ontology's pieces (Arc OC-4); 4: a cockpit from an object; 5: sizes one grade at a time (Arc AP-1); 6: the wiring (AP-2, AP-3); 7: the structure (AP-4)
+    assert vocab["version"] == 7                 # 3: the ontology's pieces (Arc OC-4); 4: a cockpit from an object; 5: sizes one grade at a time (Arc AP-1); 6: the wiring (AP-2, AP-3); 7: the structure and the picker's pieces (AP-4)
     assert vocab["components"] == ["Cockpit", "Tabs", "Tab", "Section", "Card", "Note", "Image",
                                    "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton",
-                                   "ObjectFilters", "ObjectFigure", "ObjectChart", "ActionButtons"]
+                                   "ObjectFilters", "ObjectFigure", "ObjectChart", "ActionButtons",
+                                   "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Drawer"]
+    # the server's own lists of pieces are the web's, read from it — a piece the web adds is checked here or refused
+    from aughor.cockpit import app_pieces, pieces
+    assert list(pieces.PIECES) == vocab["components"][7:]
+    assert list(app_pieces.PIECES) == vocab["components"][-6:]
     assert vocab["sizes"] == ["small", "wide", "tall", "large", "full", "hero"]
     assert vocab["range_statuses"] == ["standing", "final", "provisional", "to_date"]
     assert vocab["card_statuses"] == ["within", "over", "unmeasured", "withheld"]

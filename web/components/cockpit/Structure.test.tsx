@@ -7,7 +7,7 @@
  * a reader; the builder's split, copy and width, one twelfth at a time; and the piece picker, which places every piece
  * by hand with a first setup the rules accept — or says why it cannot. Every read is mocked.
  */
-import { act, choose, fireEvent, render, screen, waitFor, within } from "@/lib/testing";
+import { act, choose, fireEvent, optionsOf, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CockpitBuilder } from "@/components/cockpit/CockpitBuilder";
@@ -196,7 +196,7 @@ describe("the piece picker", () => {
     const { onPlace, entry } = pick(filtered);
     expect(entry("ObjectFilters")).toBeDisabled();
     expect(entry("ObjectFilters")).toHaveTextContent("The cockpit has its filter column. It holds one.");
-    expect(entry("ObjectDetail")).toHaveTextContent("A detail follows an objects table. Place one first.");
+    expect(entry("ObjectDetail")).toHaveTextContent("A detail follows a table, a list, a map or a timeline. Place one first.");
     fireEvent.click(entry("ObjectDetail"));
     expect(onPlace).not.toHaveBeenCalled();
   });
@@ -210,6 +210,174 @@ describe("the piece picker", () => {
     const first = next.elements.cockpit.children[0];
     expect(next.elements[first]).toMatchObject({ type: "ObjectFilters", props: { entity: "order", set: "late", properties: [{ path: "status", label: "Status" }, { path: "num_of_item", label: "Num of item" }] } });
     expect(checkCockpitSpec(next).issues).toEqual([]);
+  });
+
+  // Arc AP-4 — the pieces the picker adds, each with a first setup read from what the entity holds
+  const CENTRE = { id: "DistributionCenter", object_type: "distribution_center", segments: [], links: [],
+    properties: [prop("id", "key", "INT64"), prop("name", "dimension"), prop("latitude", "key", "FLOAT64"), prop("longitude", "flag", "FLOAT64")] };
+  const ITEM = { id: "OrderItem", object_type: "order_item", segments: [], links: [],
+    properties: [prop("id", "key", "INT64"), prop("order_id", "key", "INT64"), prop("created_at", "timestamp", "TIMESTAMP"),
+      prop("shipped_at", "timestamp", "TIMESTAMP"), prop("sale_price", "measure", "FLOAT64")] };
+  const byName = () => {
+    objects.cachedObjectCatalog.mockResolvedValue({ object_types: [
+      { object_type: "order", id: "Order", display_name: "Customer Order" },
+      { object_type: "distribution_center", id: "DistributionCenter", display_name: "Distribution center" },
+      { object_type: "order_item", id: "OrderItem", display_name: "Order item" }] });
+    types.getObjectType.mockImplementation(async (name: string) => ({ distribution_center: CENTRE, order_item: ITEM }[name] ?? ORDER));
+  };
+  /** Reads the entity named, once the catalog offers it. */
+  const reads = async (entity: string) => {
+    const select = screen.getByLabelText("What it reads");
+    await waitFor(() => expect(optionsOf(select).map(o => o.value)).toContain(entity));
+    await choose(select, entity);
+  };
+  const placed = (onPlace: ReturnType<typeof vi.fn>, at = 0) => {
+    const next = onPlace.mock.calls[at][0] as CockpitSpec;
+    return { next, el: next.elements[next.elements.right.children[0]] };
+  };
+
+  it("places a map of what holds a latitude and a longitude — whatever role the ontology gives them — named by its name", async () => {
+    byName();
+    const { onPlace, entry } = pick(desk());
+    await reads("distribution_center");
+    await waitFor(() => expect(entry("ObjectMap")).not.toBeDisabled());
+    fireEvent.click(entry("ObjectMap"));
+    const { next, el } = placed(onPlace);
+    expect(el).toMatchObject({ type: "ObjectMap", props: { entity: "distribution_center", lat: "latitude", lng: "longitude", label: "name" } });
+    expect(next.elements.right.props.title).toBe("Distribution centers");
+    expect(checkCockpitSpec(next).issues).toEqual([]);
+  });
+
+  it("says why an order has no map, no timeline and no choose-one, and places its list and its search called by what it holds", async () => {
+    byName();
+    const { onPlace, entry } = pick(desk());
+    await waitFor(() => expect(entry("ObjectList")).not.toBeDisabled());
+    expect(entry("ObjectMap")).toHaveTextContent("Customer Order holds no latitude and longitude to place it by.");
+    expect(entry("ObjectTimeline")).toHaveTextContent("Customer Order holds fewer than two moments to draw a bar between.");
+    expect(entry("ChooseOne")).toHaveTextContent("Customer Order holds no name to find one by.");
+    fireEvent.click(entry("ObjectList"));
+    const list = placed(onPlace);
+    // no name: its cards are called by their key; the newest first
+    expect(list.el.props).toEqual({ entity: "order", figure: "num_of_item", mark: "status", sort: "created_at", descending: true, w: 12, h: 8 });
+    expect(checkCockpitSpec(list.next).issues).toEqual([]);
+    fireEvent.click(entry("ObjectSearch"));
+    const search = placed(onPlace, 1);
+    expect(search.el.props).toMatchObject({ entity: "order", path: "status", label: "Find customer orders" });
+    expect(search.next.elements.right.props.title).toBe("Search");
+    expect(checkCockpitSpec(search.next).issues).toEqual([]);
+  });
+
+  it("places a timeline between an object's own two moments, and a choose-one that names its choice", async () => {
+    byName();
+    const first = pick(desk());
+    await reads("order_item");
+    await waitFor(() => expect(first.entry("ObjectTimeline")).not.toBeDisabled());
+    fireEvent.click(first.entry("ObjectTimeline"));
+    expect(placed(first.onPlace).el.props).toMatchObject({ entity: "order_item", start: "created_at", end: "shipped_at" });
+    expect(checkCockpitSpec(placed(first.onPlace).next).issues).toEqual([]);
+    await reads("distribution_center");
+    await waitFor(() => expect(first.entry("ChooseOne")).not.toBeDisabled());
+    fireEvent.click(first.entry("ChooseOne"));
+    const chooser = placed(first.onPlace, 1);
+    expect(chooser.el.props).toMatchObject({ entity: "distribution_center", chooses: "chosen-distribution-center", label: "name" });
+    expect(chooser.next.elements.right.props.title).toBe("Choose a distribution center");
+    expect(checkCockpitSpec(chooser.next).issues).toEqual([]);
+  });
+
+  it("places what a chosen object links to: a set of an order's lines and a table of it", async () => {
+    byName();
+    const chosen = desk();
+    chosen.elements.left.children.push("orders");
+    chosen.elements.orders = { type: "ObjectTable", props: { entity: "order", chooses: "chosen-order", w: 6, h: 8 }, children: [] };
+    const { onPlace, entry } = pick(chosen);
+    expect(entry("Linked")).toBeDisabled();
+    await reads("order_item");
+    await waitFor(() => expect(entry("Linked")).not.toBeDisabled());
+    fireEvent.click(entry("Linked"));
+    const { next, el } = placed(onPlace);
+    expect(next.sets!["order-items-of-the-chosen-order"]).toEqual({ label: "Order items of the chosen order", entity: "order_item",
+      linked_to: { choice: "chosen-order", path: "order_id" } });
+    expect(el).toMatchObject({ type: "ObjectTable", props: { set: "order-items-of-the-chosen-order" } });
+    expect(next.elements.right.props.title).toBe("Order items of the chosen order");
+    expect(checkCockpitSpec(next).issues).toEqual([]);
+  });
+
+  it("names a linked set between words — the chosen giving way before a word is cut", async () => {
+    byName();
+    const PRODUCT = { id: "Product", object_type: "product", segments: [], links: [],
+      properties: [prop("id", "key", "INT64"), prop("name", "text"), prop("distribution_center_id", "key", "INT64")] };
+    objects.cachedObjectCatalog.mockResolvedValue({ object_types: [
+      { object_type: "distribution_center", id: "DistributionCenter", display_name: "Distribution center" },
+      { object_type: "product", id: "Product", display_name: "Product" }] });
+    types.getObjectType.mockImplementation(async (name: string) => ({ distribution_center: CENTRE, product: PRODUCT }[name] ?? ORDER));
+    const s = desk();
+    s.elements.left.children.push("centres");
+    s.elements.centres = { type: "ObjectTable", props: { entity: "distribution_center", chooses: "chosen-distribution-center", w: 6, h: 8 }, children: [] };
+    const { onPlace, entry } = pick(s);
+    await reads("product");
+    await waitFor(() => expect(entry("Linked")).not.toBeDisabled());
+    fireEvent.click(entry("Linked"));
+    const next = onPlace.mock.calls[0][0] as CockpitSpec;
+    expect(Object.values(next.sets!).map(x => x.label)).toContain("Products of the distribution center");
+    expect(checkCockpitSpec(next).issues).toEqual([]);
+  });
+
+  it("offers neither a choose-one nor linked objects while the cockpit cannot be wired, and says so", async () => {
+    byName();
+    render(<PiecePicker spec={desk()} section="right" connectionId="thelook" wiringOn={false} onPlace={vi.fn()} onHandOff={vi.fn()} onClose={vi.fn()} />);
+    const entry = (kind: string) => screen.getAllByTestId("piece-picker-entry").find(e => e.dataset.kind === kind)!;
+    await waitFor(() => expect(entry("ObjectList")).not.toBeDisabled());
+    expect(entry("ChooseOne")).toHaveTextContent("Choosing one for the pieces that follow it needs wiring, which is off here.");
+    expect(entry("Linked")).toHaveTextContent("Linking to a chosen object needs wiring, which is off here.");
+  });
+
+  it("places a detail following a list by its key when the cockpit holds no table", async () => {
+    byName();
+    const listed = desk();
+    listed.elements.left.children.push("queue");
+    listed.elements.queue = { type: "ObjectList", props: { entity: "order", w: 6, h: 8 }, children: [] };
+    const { onPlace, entry } = pick(listed);
+    fireEvent.click(entry("ObjectDetail"));
+    const { next, el } = placed(onPlace);
+    expect(el).toMatchObject({ type: "ObjectDetail", props: { follows: "queue" } });
+    expect(checkCockpitSpec(next).issues).toEqual([]);
+  });
+
+  const ordersChosen = () => {
+    const s = desk();
+    s.elements.left.children.push("orders");
+    s.elements.orders = { type: "ObjectTable", props: { entity: "order", chooses: "chosen-order", w: 6, h: 8 }, children: [] };
+    return s;
+  };
+
+  it("opens the chosen one in a drawer beside the page, holding its detail", async () => {
+    byName();
+    const { onPlace, entry } = pick(ordersChosen());
+    fireEvent.click(entry("Drawer"));
+    const next = onPlace.mock.calls[0][0] as CockpitSpec;
+    const key = next.elements.cockpit.children.at(-1)!;
+    expect(next.elements[key]).toMatchObject({ type: "Drawer", props: { title: "The order", opens_on: "chosen-order" } });
+    expect(next.elements[next.elements[key].children[0]]).toMatchObject({ type: "ObjectDetail", props: { follows: "chosen-order" } });
+    expect(checkCockpitSpec(next).issues).toEqual([]);
+  });
+
+  it("offers no second drawer for a choice that opens one, and none inside a drawer", async () => {
+    byName();
+    const s = ordersChosen();
+    s.elements.cockpit.children.push("drawer");
+    s.elements.drawer = { type: "Drawer", props: { title: "The order", opens_on: "chosen-order" }, children: [] };
+    const { entry } = pick(s, "drawer");
+    expect(entry("Drawer")).toHaveTextContent("A drawer opens beside the page. It holds pieces, not a drawer.");
+    expect(entry("ObjectTable")).not.toHaveTextContent("There is no section");
+  });
+
+  it("offers no second drawer on a choice that opens one already", async () => {
+    byName();
+    const s = ordersChosen();
+    s.elements.cockpit.children.push("drawer");
+    s.elements.drawer = { type: "Drawer", props: { title: "The order", opens_on: "chosen-order" }, children: [] };
+    const { entry } = pick(s);
+    expect(entry("Drawer")).toHaveTextContent("Each chosen object opens its drawer already.");
   });
 
   it("hands a note, a card, an image or a finding to the page's own composer, for the same section", async () => {

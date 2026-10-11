@@ -21,8 +21,8 @@ import { Segmented } from "@/components/ui/segmented";
 import { SelectField } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  CHART_DAYS, CHART_TOPS, FIGURE_AGGS, MAX_CAPTION, MAX_FILTERS, MAX_LABEL, MAX_NOTE, MAX_TABLE_COLUMNS, MAX_TICKED_RUNS,
-  MAX_TITLE, SPLIT_AGGS, TONES,
+  CHART_DAYS, CHART_TOPS, CHOOSERS, FIGURE_AGGS, MAX_CAPTION, MAX_FILTERS, MAX_LABEL, MAX_NOTE, MAX_TABLE_COLUMNS, MAX_TICKED_RUNS,
+  MAX_TITLE, SET_READERS, SPLIT_AGGS, TICKERS, TONES, type PieceName,
 } from "@/lib/cockpit/catalog";
 import {
   editNote, freshWireName, moveCardTo, moveCardToNewSection, moveSectionTo, recaption, rename, sectionsOf, setProps, tabsOf,
@@ -55,10 +55,42 @@ export const isTime = (f: EntityField) => ["timestamp", "date", "time"].includes
 export const isCategory = (f: EntityField) =>
   !isTime(f) && (["dimension", "flag", "ordinal"].includes(f.role) || /BOOL/i.test(f.type));
 export const isNumber = (f: EntityField) => !isTime(f) && f.role !== "key" && (f.role === "measure" || NUMBER.test(f.type));
+/** Words a reader may look for, or an object be called by — text, never a key, a moment or a number (Arc AP-4). */
+export const isText = (f: EntityField) => !isTime(f) && f.role !== "key" && /CHAR|STRING|TEXT/i.test(f.type);
+const lastOf = (f: EntityField) => f.path.slice(f.path.lastIndexOf(".") + 1).toLowerCase();
+const linkOf = (f: EntityField) => f.path.slice(0, f.path.lastIndexOf(".") + 1);
+
+/** What an object is called by: its own name, a title, an email — none when it has no such property (an order). */
+export function nameField(ef: EntityFields): EntityField | undefined {
+  const own = ef.fields.filter(f => !f.via && isText(f));
+  return own.find(f => lastOf(f) === "name") ?? own.find(f => /(^|_)(name|title)$/.test(lastOf(f))) ?? own.find(f => /(^|_)email$/.test(lastOf(f)));
+}
+
+/** Where an object is: a latitude and a longitude of the same object — its own first, else one it links to. A
+ *  coordinate is a number whatever its role says (theLook's call a distribution centre's latitude a key). */
+export function placesOf(ef: EntityFields): { lat: EntityField; lng: EntityField } | null {
+  const degrees = (f: EntityField) => !isTime(f) && NUMBER.test(f.type);
+  const lats = ef.fields.filter(f => degrees(f) && /^(lat|latitude)$/.test(lastOf(f)));
+  for (const lat of [...lats.filter(f => !f.via), ...lats.filter(f => f.via)]) {
+    const lng = ef.fields.find(f => degrees(f) && linkOf(f) === linkOf(lat) && /^(lng|lon|long|longitude)$/.test(lastOf(f)));
+    if (lng) return { lat, lng };
+  }
+  return null;
+}
+
+/** The two moments a timeline draws between, of the object's own: the one it starts at — placed, created — and the
+ *  one it ends at — shipped, closed — else its first two. */
+export function timesOf(ef: EntityFields): { start: EntityField; end: EntityField } | null {
+  const times = ef.fields.filter(f => !f.via && isTime(f));
+  const start = times.find(f => /created|placed|start|open|begin/.test(lastOf(f))) ?? times[0];
+  const rest = times.filter(f => f !== start);
+  const end = rest.find(f => /shipped|delivered|closed|end|resolved|done|finish/.test(lastOf(f))) ?? rest[0];
+  return start && end ? { start, end } : null;
+}
 const isMoney = (f?: EntityField) => !!f && /^(USD|EUR|GBP|JPY|INR|CNY|CHF|AUD|CAD|SEK|NOK|DKK)$/i.test(f.unit);
 /** Numbers in the order a measure is offered them: money first, then what the ontology calls a measure, then any
  *  other number — so "The sum of" starts at revenue, not at the first count a table happens to hold. */
-const ranked = (fs: EntityField[]) => fs.map((f, i) => ({ f, i }))
+export const ranked = (fs: EntityField[]) => fs.map((f, i) => ({ f, i }))
   .sort((a, b) => (isMoney(a.f) ? 0 : a.f.role === "measure" ? 1 : 2) - (isMoney(b.f) ? 0 : b.f.role === "measure" ? 1 : 2) || a.i - b.i)
   .map(x => x.f);
 
@@ -221,7 +253,8 @@ function SectionPick({ spec, k, onChange }: { spec: CockpitSpec; k: string; onCh
   return (
     <Row label="In the section">
       <Pick label="In the section" value={here} onPick={v => (v === "__new__" ? setNaming(true) : onChange(moveCardTo(spec, k, v), "moved by hand"))}
-        options={[...sections.map(s => ({ value: s.key, label: s.tabLabel ? `${s.tabLabel} · ${s.title}` : s.title })), { value: "__new__", label: "A new section…" }]} />
+        options={[...sections.map(s => ({ value: s.key, label: s.drawer ? `Drawer · ${s.title}` : s.tabLabel ? `${s.tabLabel} · ${s.title}` : s.title })),
+          { value: "__new__", label: "A new section…" }]} />
     </Row>
   );
 }
@@ -431,6 +464,102 @@ function ActionSetup({ spec, k, p, connectionId, schema, set }: {
   );
 }
 
+// ── Arc AP-4 — the pieces the picker adds ───────────────────────────────────────────────────────────────────────────
+
+/** How a list, a map or a timeline calls each object: by a property, or by its key — "Order 63981". */
+function CalledByRow({ p, prop, fields, set, note }: { p: Props; prop: string; fields: EntityField[]; set: (patch: Props, note: string) => void; note: string }) {
+  const named = fields.filter(f => !isTime(f) && !isNumber(f) && f.role !== "key");
+  return (
+    <Row label="Each is called by" hint={p[prop] ? undefined : "Its key, beside what it is — “Order 63981” — until a property is chosen."}>
+      <Pick label="Called by" value={String(p[prop] ?? "")} none="Its key" options={keeping(asOptions(named), p[prop] as string)}
+        onPick={v => set({ [prop]: v || null }, note)} />
+    </Row>
+  );
+}
+
+function ListSetup({ p, ef, set }: { p: Props; ef: EntityFields; set: (patch: Props, note: string) => void }) {
+  const fields = fieldsFor(ef, [p.title, p.figure, p.mark, p.sort] as string[]);
+  const note = "an object list set up by hand";
+  return (
+    <>
+      <CalledByRow p={p} prop="title" fields={fields} set={set} note={note} />
+      <Row label="Beside it" hint="A number, written as the ontology declares it — money as money.">
+        <Pick label="Beside it" value={String(p.figure ?? "")} none="Nothing" options={keeping(asOptions(ranked(fields.filter(isNumber))), p.figure as string)}
+          onPick={v => set({ figure: v || null }, note)} />
+      </Row>
+      <Row label="Marked by" hint="A category, as a chip under its name.">
+        <Pick label="Marked by" value={String(p.mark ?? "")} none="Nothing" options={keeping(asOptions(fields.filter(isCategory)), p.mark as string)}
+          onPick={v => set({ mark: v || null }, note)} />
+      </Row>
+      <Row label="Sorted by">
+        <Pick label="Sorted by" value={String(p.sort ?? "")} none="The key" options={keeping(asOptions(fields), p.sort as string)}
+          onPick={v => set({ sort: v || null, descending: v ? (p.descending ?? false) : null }, note)} />
+        {!!p.sort && (
+          <Segmented label="Order" value={p.descending ? "desc" : "asc"}
+            options={[{ value: "asc", label: "Ascending" }, { value: "desc", label: "Descending" }]}
+            onChange={v => set({ descending: v === "desc" }, note)} />
+        )}
+      </Row>
+    </>
+  );
+}
+
+function MapSetup({ p, ef, set }: { p: Props; ef: EntityFields; set: (patch: Props, note: string) => void }) {
+  const fields = fieldsFor(ef, [p.lat, p.lng, p.label] as string[]);
+  const degrees = asOptions(fields.filter(f => !isTime(f) && NUMBER.test(f.type)));
+  const note = "a map set up by hand";
+  return (
+    <>
+      <Row label="Placed at" hint="A latitude and a longitude in degrees — its own, or those of an object it links to.">
+        <Pick label="Latitude" value={String(p.lat ?? "")} options={keeping(degrees, p.lat as string)} onPick={v => v && set({ lat: v }, note)} />
+        <Pick label="Longitude" value={String(p.lng ?? "")} options={keeping(degrees, p.lng as string)} onPick={v => v && set({ lng: v }, note)} />
+      </Row>
+      <CalledByRow p={p} prop="label" fields={fields} set={set} note={note} />
+    </>
+  );
+}
+
+function TimelineSetup({ p, ef, set }: { p: Props; ef: EntityFields; set: (patch: Props, note: string) => void }) {
+  const fields = fieldsFor(ef, [p.start, p.end, p.label] as string[]);
+  const times = asOptions(fields.filter(isTime));
+  const note = "a timeline set up by hand";
+  return (
+    <>
+      <Row label="From" hint="Each a bar from one moment to the other, the latest first; one with no end yet runs to today.">
+        <Pick label="From" value={String(p.start ?? "")} options={keeping(times, p.start as string)} onPick={v => v && set({ start: v }, note)} />
+      </Row>
+      <Row label="To">
+        <Pick label="To" value={String(p.end ?? "")} options={keeping(times, p.end as string)} onPick={v => v && set({ end: v }, note)} />
+      </Row>
+      <CalledByRow p={p} prop="label" fields={fields} set={set} note={note} />
+    </>
+  );
+}
+
+function ChooseOneSetup({ p, ef, set }: { p: Props; ef: EntityFields; set: (patch: Props, note: string) => void }) {
+  const texts = asOptions(fieldsFor(ef, [p.label as string]).filter(isText));
+  return (
+    <Row label="Found by" testid="setup-found-by"
+      hint={`The words a reader types look for it here. It chooses “${wireWords(String(p.chooses ?? ""))}”: a detail, a set or a button reads it.`}>
+      <Pick label="Found by" value={String(p.label ?? "")} options={keeping(texts, p.label as string)}
+        onPick={v => v && set({ label: v }, "what a choose-one finds by chosen by hand")} />
+    </Row>
+  );
+}
+
+function SearchSetup({ p, ef, set }: { p: Props; ef: EntityFields; set: (patch: Props, note: string) => void }) {
+  const texts = asOptions(fieldsFor(ef, [p.path as string]).filter(isText));
+  return (
+    <>
+      <Row label="Label"><Words label="Label" value={String(p.label ?? "")} max={MAX_LABEL} onSave={v => set({ label: v }, "a search's label written by hand")} /></Row>
+      <Row label="Looks in" testid="setup-looks-in" hint="Every piece over these objects narrows to the ones whose property holds the words — for each reader alone.">
+        <Pick label="Looks in" value={String(p.path ?? "")} options={keeping(texts, p.path as string)}
+          onPick={v => v && set({ path: v }, "what a search looks in chosen by hand")} />
+      </Row>
+    </>
+  );
+}
+
 // ── Arc AP-2 — what a piece reads, and what it chooses ───────────────────────────────────────────────────────────────
 
 /** Which set a table, a figure or a chart reads: every object of its entity, or a set the cockpit names. */
@@ -462,27 +591,30 @@ function CountsWithinRow({ spec, k, p, onChange }: { spec: CockpitSpec; k: strin
   );
 }
 
-/** What a click in a table chooses and what its ticks collect — each a choice other pieces read — and whether figures
- *  switch the set it lists. */
+/** What a click in a table, a list, a map or a timeline chooses, and what a table's or a list's ticks collect — each a
+ *  choice other pieces read — and whether figures switch the set it lists. */
 function ChoicesRows({ spec, k, p, noun, set }: { spec: CockpitSpec; k: string; p: Props; noun: string; set: (patch: Props, note: string) => void }) {
   const shown = [...choicesOf(spec).values()].filter(c => c.kind === "shown");
-  void k;
+  const type = spec.elements[k]?.type as PieceName;
+  const thing = type === "ObjectList" ? "card" : type === "ObjectMap" ? "place" : type === "ObjectTimeline" ? "bar" : "row";
   return (
     <>
-      <Row label="A click" testid="setup-chooses" hint={p.chooses ? `Chooses “${wireWords(String(p.chooses))}”: a detail, a set or a button reads it.` : "Chooses a row for this table alone."}>
+      <Row label="A click" testid="setup-chooses" hint={p.chooses ? `Chooses “${wireWords(String(p.chooses))}”: a detail, a set or a button reads it.` : `Chooses a ${thing} for a detail that follows this piece.`}>
         <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t2)" }}>
           <Tick checked={!!p.chooses} aria-label="A click chooses for the cockpit"
             onChange={e => set({ chooses: e.target.checked ? freshWireName(spec, `chosen ${noun}`) : null }, "what a click chooses named by hand")} />
           Names the {noun.toLowerCase()} it chooses, for other pieces
         </label>
       </Row>
-      <Row label="Ticks" testid="setup-ticks" hint={p.ticks ? `Collects “${wireWords(String(p.ticks))}” — a button runs once for each, at most ${MAX_TICKED_RUNS}.` : undefined}>
-        <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t2)" }}>
-          <Tick checked={!!p.ticks} aria-label="Ticks collect rows"
-            onChange={e => set({ ticks: e.target.checked ? freshWireName(spec, `ticked ${noun}`) : null }, "what ticks collect named by hand")} />
-          A tick beside each row
-        </label>
-      </Row>
+      {TICKERS.includes(type) && (
+        <Row label="Ticks" testid="setup-ticks" hint={p.ticks ? `Collects “${wireWords(String(p.ticks))}” — a button runs once for each, at most ${MAX_TICKED_RUNS}.` : undefined}>
+          <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t2)" }}>
+            <Tick checked={!!p.ticks} aria-label={`Ticks collect ${thing}s`}
+              onChange={e => set({ ticks: e.target.checked ? freshWireName(spec, `ticked ${noun}`) : null }, "what ticks collect named by hand")} />
+            A tick beside each {thing}
+          </label>
+        </Row>
+      )}
       {!!p.set && shown.length > 0 && (
         <Row label="Figures switch it" hint="A figure clicked shows its set here; the set above stands until one is.">
           <Pick label="Figures switch it" value={String(p.set_from ?? "")} none="No" options={shown.map(c => ({ value: c.name, label: `Yes — the figures that show in “${wireWords(c.name)}”` }))}
@@ -532,8 +664,9 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
   const el = selected ? spec.elements[selected] : undefined;
   // the entity a piece reads: its set's (Arc AP-2), or the one it names
   const read = el ? pieceSet(spec, el.props) : null;
-  const entity = el && ["ObjectTable", "ObjectFigure", "ObjectChart", "ObjectFilters"].includes(el.type)
-    ? (el.type !== "ObjectFilters" && read && !isRefused(read) ? read.entity : String(el.props.entity ?? "")) : undefined;
+  const own = el?.type === "ObjectFilters" || el?.type === "ObjectSearch";
+  const entity = el && (own || SET_READERS.includes(el.type as PieceName))
+    ? (!own && read && !isRefused(read) ? read.entity : String(el.props.entity ?? "")) : undefined;
   const ef = useEntityFields(entity, connectionId, schema);
   if (!selected || !el) {
     return (
@@ -556,7 +689,7 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
       : "problem" in ef ? <div className="aug-fs-sm" style={{ padding: "10px 14px", color: "var(--t2)" }}>What {noun} holds could not be read: {ef.problem}</div>
         : body(ef)
   );
-  const placed = !["Cockpit", "Tabs", "Tab", "Section", "ObjectFilters", "ActionButton"].includes(el.type);
+  const placed = !["Cockpit", "Tabs", "Tab", "Section", "ObjectFilters", "ActionButton", "Drawer"].includes(el.type);
   return (
     <div data-testid="piece-setup" data-kind={el.type}>
       <div style={{ padding: "12px 14px 8px", borderBottom: "1px solid var(--b1)" }}>
@@ -600,17 +733,27 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
       {el.type === "Image" && (
         <Row label="Caption"><Words label="Caption" value={String(p.caption ?? "")} max={MAX_CAPTION} onSave={v => onChange(recaption(spec, k, v), "an image's caption changed by hand")} /></Row>
       )}
+      {el.type === "Drawer" && (
+        <>
+          <Row label="Title"><Words label="Title" value={String(p.title ?? "")} max={MAX_TITLE} onSave={v => set({ title: v }, "a drawer renamed by hand")} /></Row>
+          <Row label="Opens on" testid="setup-opens-on" hint="A click that chooses one opens the drawer beside the page; closing it lets go of the choice.">
+            <Pick label="Opens on" value={String(p.opens_on ?? "")} onPick={v => v && set({ opens_on: v }, "what opens a drawer chosen by hand")}
+              options={keeping([...choicesOf(spec).values()].filter(c => c.kind === "chosen").map(c => ({ value: c.name, label: `The ${wireWords(c.name)}` })), p.opens_on as string)} />
+          </Row>
+        </>
+      )}
       {el.type === "ProcessBoard" && <ProcessSetup p={p} connectionId={connectionId} schema={schema} set={set} />}
       {el.type === "ObjectDetail" && (
         <Row label="Shows the object chosen in">
           <Pick label="Follows" value={String(p.follows ?? "")} onPick={v => v && set({ follows: v }, "a detail's table chosen by hand")}
-            options={[...Object.keys(spec.elements).filter(x => spec.elements[x].type === "ObjectTable").map(x => ({ value: x, label: lineOf(spec.elements, x, undefined, undefined, setTitles(spec)) })),
+            options={[...Object.keys(spec.elements).filter(x => CHOOSERS.includes(spec.elements[x].type as PieceName) && spec.elements[x].type !== "ChooseOne")
+              .map(x => ({ value: x, label: lineOf(spec.elements, x, undefined, undefined, setTitles(spec)) })),
               ...[...choicesOf(spec).values()].filter(c => c.kind === "chosen").map(c => ({ value: c.name, label: `The ${wireWords(c.name)}` }))]} />
         </Row>
       )}
       {el.type === "ActionButton" && <ActionSetup spec={spec} k={k} p={p} connectionId={connectionId} schema={schema} set={set} />}
-      {wiringOn && ["ObjectTable", "ObjectFigure", "ObjectChart"].includes(el.type) && <ReadsRow spec={spec} k={k} p={p} entity={entity ?? ""} onChange={onChange} />}
-      {wiringOn && el.type === "ObjectTable" && <ChoicesRows spec={spec} k={k} p={p} noun={noun} set={set} />}
+      {wiringOn && SET_READERS.includes(el.type as PieceName) && <ReadsRow spec={spec} k={k} p={p} entity={entity ?? ""} onChange={onChange} />}
+      {wiringOn && CHOOSERS.includes(el.type as PieceName) && el.type !== "ChooseOne" && <ChoicesRows spec={spec} k={k} p={p} noun={noun} set={set} />}
       {wiringOn && el.type === "ObjectFigure" && <FigureWiring spec={spec} p={p} set={set} />}
       {wiringOn && el.type === "ObjectFilters" && <CountsWithinRow spec={spec} k={k} p={p} onChange={onChange} />}
       {el.type === "ActionButtons" && <ButtonsSetup spec={spec} k={k} onChange={onChange} connectionId={connectionId} schema={schema} />}
@@ -618,6 +761,11 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
       {needsFields && el.type === "ObjectFigure" && fieldsBody(f => <FigureSetup p={p} ef={f} set={set} />)}
       {needsFields && el.type === "ObjectChart" && fieldsBody(f => <ChartSetup p={p} ef={f} set={set} />)}
       {needsFields && el.type === "ObjectFilters" && fieldsBody(f => <FiltersSetup p={p} ef={f} set={set} />)}
+      {needsFields && el.type === "ObjectList" && fieldsBody(f => <ListSetup p={p} ef={f} set={set} />)}
+      {needsFields && el.type === "ObjectMap" && fieldsBody(f => <MapSetup p={p} ef={f} set={set} />)}
+      {needsFields && el.type === "ObjectTimeline" && fieldsBody(f => <TimelineSetup p={p} ef={f} set={set} />)}
+      {needsFields && el.type === "ChooseOne" && fieldsBody(f => <ChooseOneSetup p={p} ef={f} set={set} />)}
+      {needsFields && el.type === "ObjectSearch" && fieldsBody(f => <SearchSetup p={p} ef={f} set={set} />)}
       {placed && <SectionPick spec={spec} k={k} onChange={onChange} />}
     </div>
   );

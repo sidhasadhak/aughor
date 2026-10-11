@@ -69,8 +69,8 @@ describe("a section on the grid, by the rules", () => {
     s.elements.table.props.h = 3;                             // a table at least 4 rows
     const said = issues(s);
     expect(said).toHaveLength(2);
-    expect(said[0]).toMatch(/"figure-0" takes 7 × 3\. A ObjectFigure takes 2 to 6 columns and 2 to 4 rows/);
-    expect(said[1]).toMatch(/"table" takes 6 × 3\. A ObjectTable takes 4 to 12 columns and 4 to 20 rows/);
+    expect(said[0]).toMatch(/"figure-0" takes 7 × 3\. A figure takes 2 to 6 columns and 2 to 4 rows/);
+    expect(said[1]).toMatch(/"table" takes 6 × 3\. An objects table takes 4 to 12 columns and 4 to 20 rows/);
   });
 
   it("refuses columns and rows in a section that sizes by name, where nothing would read them", () => {

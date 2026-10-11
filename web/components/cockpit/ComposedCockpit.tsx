@@ -29,7 +29,7 @@
  * The Briefing draws a person's cockpits with it (`BriefingCockpits`), behind `cockpit.composed`.
  */
 import {
-  Children, Component, createContext, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState,
+  Children, Component, createContext, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState,
   type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, type RefObject,
 } from "react";
 import { evaluateVisibility, type Spec, type VisibilityCondition } from "@json-render/core";
@@ -42,9 +42,10 @@ import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CanvasScale, CellBoxContext, OFF_GRID, useMeasured, type CellBox } from "@/components/cockpit/cellBox";
 import { CockpitTile, SaidTile, WIDE, WithheldTile, tileShape, type TileDoors } from "@/components/cockpit/CockpitTile";
 import { ActionButtonsPiece } from "@/components/cockpit/ActionButtonsPiece";
+import { ChooseOnePiece, ObjectListPiece, ObjectMapPiece, ObjectSearchPiece, ObjectTimelinePiece } from "@/components/cockpit/AppPieces";
 import {
   ActionButtonPiece, FilterBar, NotFiltered, ObjectChartPiece, ObjectDetailPiece, ObjectFigurePiece,
-  ObjectFiltersPiece, ObjectTablePiece, PiecesProvider, ProcessBoardPiece, useFiltering, usePieceFiltering, type FilterProperty,
+  ObjectFiltersPiece, ObjectTablePiece, PiecesProvider, ProcessBoardPiece, useFiltering, usePieceFiltering, usePieces, type FilterProperty,
 } from "@/components/cockpit/OntologyPieces";
 import { ImageTile, NoteTile, type ImageStamp, type StaticDoors } from "@/components/cockpit/StaticTile";
 import { Button } from "@/components/ui/button";
@@ -839,6 +840,129 @@ function CockpitActionButtons({ element }: ComponentRenderProps<{ buttons: Actio
   );
 }
 
+// ── Arc AP-4 — the pieces the picker adds: each reads an entity or a set as a table does, narrowed by the filters ──────
+
+type SetProps = { entity?: string | null; set?: string | null; set_from?: string | null; chooses?: string | null; size?: Size | null };
+
+function CockpitObjectList({ element }: ComponentRenderProps<SetProps & {
+  ticks?: string | null; title: string; figure?: string | null; mark?: string | null; sort?: string | null; descending?: boolean | null;
+}>) {
+  const p = element.props;
+  const filtering = usePieceFiltering(p as Record<string, unknown>);
+  return (
+    <Cell type="ObjectList" props={p as Record<string, unknown>} size={p.size ?? "tall"} testid="cockpit-piece-cell">
+      {key => <>{filtering.on && !filtering.narrows && <NotFiltered />}
+        <ObjectListPiece elementKey={key} entity={p.entity} set={p.set} setFrom={p.set_from} chooses={p.chooses} ticks={p.ticks}
+          title={p.title} figure={p.figure} mark={p.mark} sort={p.sort} descending={p.descending} /></>}
+    </Cell>
+  );
+}
+
+function CockpitObjectMap({ element }: ComponentRenderProps<SetProps & { lat: string; lng: string; label?: string | null }>) {
+  const p = element.props;
+  const filtering = usePieceFiltering(p as Record<string, unknown>);
+  return (
+    <Cell type="ObjectMap" props={p as Record<string, unknown>} size={p.size ?? "large"} testid="cockpit-piece-cell">
+      {key => <>{filtering.on && !filtering.narrows && <NotFiltered />}
+        <ObjectMapPiece elementKey={key} entity={p.entity} set={p.set} setFrom={p.set_from} chooses={p.chooses} lat={p.lat} lng={p.lng} label={p.label} /></>}
+    </Cell>
+  );
+}
+
+function CockpitObjectTimeline({ element }: ComponentRenderProps<SetProps & { start: string; end: string; label: string }>) {
+  const p = element.props;
+  const filtering = usePieceFiltering(p as Record<string, unknown>);
+  return (
+    <Cell type="ObjectTimeline" props={p as Record<string, unknown>} size={p.size ?? "full"} testid="cockpit-piece-cell">
+      {key => <>{filtering.on && !filtering.narrows && <NotFiltered />}
+        <ObjectTimelinePiece elementKey={key} entity={p.entity} set={p.set} setFrom={p.set_from} chooses={p.chooses}
+          start={p.start} end={p.end} label={p.label} /></>}
+    </Cell>
+  );
+}
+
+function CockpitChooseOne({ element }: ComponentRenderProps<{ entity?: string | null; set?: string | null; chooses: string; label: string; size?: Size | null }>) {
+  const p = element.props;
+  return (
+    <Cell type="ChooseOne" props={p as Record<string, unknown>} size={p.size ?? "small"} testid="cockpit-piece-cell">
+      {() => <ChooseOnePiece entity={p.entity} set={p.set} chooses={p.chooses} label={p.label} />}
+    </Cell>
+  );
+}
+
+function CockpitObjectSearch({ element }: ComponentRenderProps<{ entity: string; path: string; label: string; size?: Size | null }>) {
+  const p = element.props;
+  return (
+    <Cell type="ObjectSearch" props={p as Record<string, unknown>} size={p.size ?? "small"} testid="cockpit-piece-cell">
+      {() => <ObjectSearchPiece entity={p.entity} path={p.path} label={p.label} />}
+    </Cell>
+  );
+}
+
+// ── Arc AP-4 — a drawer: pieces opened beside the page when a reader chooses an object ───────────────────────────────
+
+function CockpitDrawer({ element, children }: ComponentRenderProps<{ title: string; opens_on: string }>) {
+  const ctx = useCockpit();
+  const { doors, elements } = ctx;
+  const { picked, pick, followable } = usePieces();
+  const key = useMemo(() => Object.keys(elements).find(k => elements[k]?.type === "Drawer" && elements[k]?.children === element.children)
+    ?? Object.keys(elements).find(k => elements[k]?.type === "Drawer" && sameList(elements[k]?.children, element.children ?? [])
+      && elements[k]?.props?.opens_on === element.props.opens_on) ?? null, [elements, element.children, element.props.opens_on]);
+  const outlined = useChosenOutline(key);
+  const lands = followable.get(element.props.opens_on) ?? element.props.opens_on;
+  const close = useCallback(() => pick(lands, null), [pick, lands]);
+  const editing = !!doors.onSelect;
+  const held = useMemo(() => element.children ?? [], [element.children]);
+  const open = !editing && !!picked[lands] && held.length > 0;
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, close]);
+  // what a drawer holds stacks one piece under another: it is resized on no grid and by no name
+  const inner = useMemo<CockpitContextValue>(() => ({ ...ctx, doors: { ...ctx.doors, onRegrid: undefined, onResize: undefined },
+    tileDoors: { ...ctx.tileDoors, onResize: undefined } }), [ctx]);
+  const keys = useMemo(() => ({ key, columns: 1, children: held, grid: false, stacked: true }), [key, held]);
+  const body = (
+    <CockpitContext.Provider value={inner}>
+      <SectionKeys.Provider value={keys}>{children}</SectionKeys.Provider>
+    </CockpitContext.Provider>
+  );
+  if (editing) {
+    // in the builder a drawer is drawn open, after the page, so a person sees and places what it holds
+    return (
+      <section data-testid="cockpit-drawer" data-key={key ?? undefined} data-editing="true" aria-label={element.props.title} {...outlined}
+        style={{ ...outlined.style, display: "flex", flexDirection: "column", gap: 10, padding: 12, border: "1.5px dashed var(--b2)" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 600 }}>{element.props.title}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>A drawer — opens beside the page when “{element.props.opens_on.replace(/-/g, " ")}” is chosen</span>
+        </div>
+        {held.length > 0 && body}
+        {doors.onAddPiece && key && (
+          <Button size="sm" variant="outline" data-testid="drawer-add" onClick={() => doors.onAddPiece?.(key)} style={{ alignSelf: "flex-start" }}>
+            <Icon name="plus" size={13} /> Add a piece
+          </Button>
+        )}
+      </section>
+    );
+  }
+  if (!open) return null;
+  return (
+    <aside role="dialog" aria-label={element.props.title} data-testid="cockpit-drawer" data-key={key ?? undefined}
+      style={{ position: "fixed", top: "var(--topbar)", right: 0, bottom: 0, width: "min(460px, 100vw)", zIndex: 40, display: "flex", flexDirection: "column",
+        background: "var(--bg-1)", borderLeft: "1px solid var(--b1)", boxShadow: "var(--shadow-lg)" }}>
+      <header style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: "1px solid var(--b1)" }}>
+        <span className="aug-fs-ui" style={{ flex: 1, minWidth: 0, color: "var(--t1)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {element.props.title}
+        </span>
+        <Button size="icon-xs" variant="ghost" aria-label="Close the drawer" data-testid="cockpit-drawer-close" onClick={close}><Icon name="close" /></Button>
+      </header>
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>{body}</div>
+    </aside>
+  );
+}
+
 /** One renderer per catalog component — a missing or an extra name is a type error. */
 const REGISTRY = {
   Cockpit: CockpitRoot,
@@ -856,6 +980,12 @@ const REGISTRY = {
   ObjectFigure: CockpitObjectFigure,
   ObjectChart: CockpitObjectChart,
   ActionButtons: CockpitActionButtons,
+  ObjectList: CockpitObjectList,
+  ObjectMap: CockpitObjectMap,
+  ObjectTimeline: CockpitObjectTimeline,
+  ChooseOne: CockpitChooseOne,
+  ObjectSearch: CockpitObjectSearch,
+  Drawer: CockpitDrawer,
 } satisfies Record<ComponentName, unknown>;
 
 const NO_IMAGES: Record<string, ImageStamp> = {};

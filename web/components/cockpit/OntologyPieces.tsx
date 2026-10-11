@@ -34,10 +34,10 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import {
   anyFilter, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, entityKey, figureText, onDays, plural, propertyLabel,
-  splitOnDays, typeWord, inLastWindow,
+  splitOnDays, typeWord, inLastWindow, withWords, WORDS,
   ticks, toggled, topValues, windowEnd, type Filters,
 } from "@/lib/cockpit/objectView";
-import { MAX_TICKED_RUNS, rowsTall } from "@/lib/cockpit/catalog";
+import { CHOOSERS, MAX_TICKED_RUNS, SWITCHED, rowsTall, type PieceName } from "@/lib/cockpit/catalog";
 import { choicesOf, doorConditions, isRefused, pieceSet, readSet, type DoorCondition, type WireSpec } from "@/lib/cockpit/sets";
 import { formatCount, formatDateTime, isNumericType, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
@@ -66,8 +66,9 @@ interface PiecesValue {
   show: (choice: string, set: string | null) => void;
   /** Arc AP-2 — the cockpit's sets and values, and its elements, which the pieces read by name. */
   wire: WireSpec;
-  /** The names a detail may follow: each table's element key, and each object a table's click chooses. */
-  followable: Set<string>;
+  /** The names a detail may follow — each choosing piece's element key, and each object a click chooses — with the name
+   *  its picks land under: a piece that names its choice picks under that name, whichever of the two a detail follows. */
+  followable: Map<string, string>;
   /** Raised after an action runs, so every piece reads again. */
   tick: number;
   bump: () => void;
@@ -82,6 +83,8 @@ interface PiecesValue {
   filters: Filters;
   toggle: (entity: string, path: string, value: string) => void;
   clear: (entity?: string) => void;
+  /** Arc AP-4 — words a reader typed in a search box, narrowing every set of an entity; none lets the search go. */
+  search: (entity: string, path: string, words: string) => void;
 }
 
 const PiecesContext = createContext<PiecesValue | null>(null);
@@ -131,6 +134,8 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
   }, [cockpitId]);
   const toggle = useCallback((entity: string, path: string, value: string) => keep(toggled(filters, entity, path, value)),
     [filters, keep]);
+  const search = useCallback((entity: string, path: string, words: string) => keep(withWords(filters, entity, path, words)),
+    [filters, keep]);
   const clear = useCallback((entity?: string) => {
     if (!entity) { keep({}); return; }
     const next = { ...filters };
@@ -154,7 +159,7 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
   const shownNow = useRef(shown);
   useEffect(() => { shownNow.current = shown; }, [shown]);
   const show = useCallback((choice: string, set: string | null) => {
-    const switched = Object.entries(elements).filter(([, el]) => el?.type === "ObjectTable" && el.props?.set_from === choice);
+    const switched = Object.entries(elements).filter(([, el]) => SWITCHED.includes(el?.type as PieceName) && el?.props?.set_from === choice);
     // what the list shows now: the set a figure showed in it, else the table's own
     const before = shownNow.current[choice] ?? (switched.length ? String(switched[0][1]?.props?.set ?? "") : null);
     if (before === set) return;
@@ -169,8 +174,11 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
     });
   }, [elements]);
   const wire = useMemo<WireSpec>(() => ({ sets: sets ?? {}, values: values ?? {}, elements }), [sets, values, elements]);
-  const followable = useMemo(() => new Set(Object.entries(elements).flatMap(([key, el]) => (el?.type === "ObjectTable"
-    ? [key, ...(typeof el.props?.chooses === "string" ? [el.props.chooses] : [])] : []))), [elements]);
+  const followable = useMemo(() => new Map(Object.entries(elements).flatMap(([key, el]): [string, string][] => {
+    if (!CHOOSERS.includes(el?.type as PieceName)) return [];
+    const named = typeof el?.props?.chooses === "string" && el.props.chooses ? el.props.chooses : "";
+    return named ? [[key, named], [named, named]] : [[key, key]];
+  })), [elements]);
   const bump = useCallback(() => setTick(t => t + 1), []);
   const tables = useMemo(() => Object.entries(elements)
     .filter(([, el]) => el?.type === "ObjectTable")
@@ -194,9 +202,9 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
     : Promise.reject(new Error("This cockpit names no connection."))), [connectionId, schema, once]);
   const value = useMemo<PiecesValue>(() => ({
     connectionId, schema, picked, pick, ticked, tickOne, tickNone, shown, show, wire, followable, tick, bump, tables, onPlaceTable,
-    processes, actions, filters, toggle, clear,
+    processes, actions, filters, toggle, clear, search,
   }), [connectionId, schema, picked, pick, ticked, tickOne, tickNone, shown, show, wire, followable, tick, bump, tables, onPlaceTable,
-    processes, actions, filters, toggle, clear]);
+    processes, actions, filters, toggle, clear, search]);
   return <PiecesContext.Provider value={value}>{children}</PiecesContext.Provider>;
 }
 
@@ -225,10 +233,18 @@ export function useSetQuery(props: Record<string, unknown>, { reader: withReader
  *  lines here." — the choice's entity in words, never its name. */
 export function WaitingWords({ choice, what }: { choice: string; what: string }) {
   const { wire } = usePieces();
-  const entity = words(choicesOf(wire).get(choice)?.entity || "one").toLowerCase();
+  const made = choicesOf(wire).get(choice);
+  const entity = words(made?.entity || "one").toLowerCase();
   const an = /^[aeiou]/.test(entity) ? "an" : "a";
-  return <>Choose {an} {entity} in its table to see {what ? `its ${what.replace(/^its\s+/i, "").toLowerCase()}` : "what it links to"} here.</>;
+  // where the reader chooses it (Arc AP-4): a table, a list, a map, a timeline — or by its name, in a choose-one
+  const where = WHERE[String(wire.elements[made?.madeBy[0] ?? ""]?.type ?? "ObjectTable")] ?? "";
+  // "Products of the chosen distribution center" is the centre's products: what the set holds, said once
+  const held = what.replace(/^its\s+/i, "").replace(/\s+of the\s.*$/i, "").toLowerCase();
+  return <>Choose {an} {entity}{where} to see {held ? `its ${held}` : "what it links to"} here.</>;
 }
+const WHERE: Record<string, string> = {
+  ObjectTable: " in its table", ObjectList: " in its list", ObjectMap: " on its map", ObjectTimeline: " on its timeline", ChooseOne: "",
+};
 
 /** Whether a reader's filter is on anywhere in the cockpit — and so whether `entity`'s pieces are narrowed by one.
  *  Outside a cockpit's pieces (a strip of cards with none), nothing is filtered. */
@@ -260,7 +276,7 @@ export function NotFiltered() {
 }
 
 /** A piece that cannot be read says so, in its place. */
-function Unread({ what, children }: { what: string; children: ReactNode }) {
+export function Unread({ what, children }: { what: string; children: ReactNode }) {
   return (
     <Frame testid="ontology-piece-unread" dashed>
       <div className="aug-fs-ui" style={{ color: "var(--t1)", fontWeight: 500 }}>{what}</div>
@@ -271,7 +287,7 @@ function Unread({ what, children }: { what: string; children: ReactNode }) {
 
 /** What a piece holds between its title and its foot. On a section's grid it fills the box and scrolls when it holds
  *  more; off the grid it is as tall as what it holds, as before (Arc AP-1). */
-function Body({ children, gap = 6, testid }: { children: ReactNode; gap?: number; testid?: string }) {
+export function Body({ children, gap = 6, testid }: { children: ReactNode; gap?: number; testid?: string }) {
   const box = useCellBox();
   return (
     <div data-testid={testid} style={{ display: "flex", flexDirection: "column", gap, minHeight: 0, ...(box.onGrid ? { flex: 1, overflow: "auto" } : {}) }}>
@@ -280,7 +296,7 @@ function Body({ children, gap = 6, testid }: { children: ReactNode; gap?: number
   );
 }
 
-function Reading({ what }: { what: string }) {
+export function Reading({ what }: { what: string }) {
   return (
     <Frame testid="ontology-piece-reading">
       <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Reading {what}…</div>
@@ -544,7 +560,7 @@ const DetailObject = createContext<{ page: ObjectPage | null; table: string }>({
 
 export function ObjectDetailPiece({ follows, children }: { follows: string; children?: ReactNode }) {
   const { connectionId, schema, picked, tick, followable } = usePieces();
-  const chosen = picked[follows];
+  const chosen = picked[followable.get(follows) ?? follows];
   const [page, setPage] = useState<ObjectPage | null>(null);
   const [problem, setProblem] = useState("");
   useEffect(() => {
@@ -561,18 +577,18 @@ export function ObjectDetailPiece({ follows, children }: { follows: string; chil
   }, [chosen?.objectType, chosen?.pk, connectionId, schema, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!followable.has(follows)) {
-    return <Unread what="Follows no table">This detail follows “{follows}”, which is not a table on this cockpit, nor an object one chooses.</Unread>;
+    return <Unread what="Follows nothing here">This detail follows “{follows}”, which no piece on this cockpit chooses in.</Unread>;
   }
   if (!chosen) {
     return (
       <Frame testid="object-detail">
         <Title title="Object detail" />
-        <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Choose a row in the table to see it here.</div>
+        <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Choose one to see it here.</div>
       </Frame>
     );
   }
   if (problem) return <Unread what="This object could not be read">{problem}</Unread>;
-  if (!page || page.pk !== chosen.pk) return <Reading what={`${words(chosen.typeId)} ${chosen.pk}`} />;
+  if (!page || page.pk !== chosen.pk) return <Reading what={`${typeWord(chosen.typeId).toLowerCase()} ${chosen.pk}`} />;
   const key = page.key.toLowerCase();
   const props = [...page.properties.filter(p => p.name.toLowerCase() === key),
     ...page.properties.filter(p => p.name.toLowerCase() !== key && !p.overlay).slice(0, 7),
@@ -610,7 +626,7 @@ export function ObjectDetailPiece({ follows, children }: { follows: string; chil
         </DetailObject.Provider>
       )}
       </Body>
-      <Foot icon="eye">Follows the table · read live</Foot>
+      <Foot icon="eye">Follows the choice · read live</Foot>
     </Frame>
   );
 }
@@ -712,7 +728,7 @@ const num = (v: unknown): number | null => {
 };
 
 /** What its objects are called, lower case and plural ("orders"): the entity's name in the object catalog. */
-function useNoun(entity: string): string {
+export function useNoun(entity: string): string {
   const { connectionId } = usePieces();
   const [name, setName] = useState("");
   useEffect(() => {
@@ -755,7 +771,7 @@ function useObjectQuery(body: ObjectQueryRequest | null): Read {
 const COUNT = { name: "n", agg: "count" };
 
 /** The small uppercase label a column or a card is headed by. */
-function Label({ children, right }: { children: ReactNode; right?: ReactNode }) {
+export function Label({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
     <div className="aug-fs-xs" style={{ display: "flex", alignItems: "baseline", gap: 6, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>
       {children}{right}
@@ -890,13 +906,15 @@ export function FilterBar({ entity, properties, set }: { entity: string; propert
   const total = every && "rows" in every ? num(every.rows[0]?.[0]) : null;
   const left = some && "rows" in some ? num(some.rows[0]?.[0]) : null;
   const chosen = Object.entries(filters[entityKey(entity)] ?? {}).filter(([, v]) => v.length);
-  const label = (path: string) => properties.find(p => p.path === path)?.label ?? words(path);
+  // a search box's words are held under the property marked (Arc AP-4): named by the property, said in quotes
+  const label = (path: string) => { const bare = path.startsWith(WORDS) ? path.slice(WORDS.length) : path;
+    return properties.find(p => p.path === bare)?.label ?? words(bare); };
   return (
     <div data-testid="object-filter-bar" className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", minHeight: 26 }}>
       {chosen.map(([path, values]) => (
         <span key={path} data-testid="object-filter-chip" style={{ display: "inline-flex", alignItems: "center", gap: 4,
           background: "var(--bg-sel)", color: "var(--accent-text)", padding: "2px 4px 2px 9px", borderRadius: "var(--r-pill)" }}>
-          {label(path)}: {values.join(", ")}
+          {label(path)}: {path.startsWith(WORDS) ? `“${values[0]}”` : values.join(", ")}
           <Button size="icon-xs" variant="ghost" aria-label={`Clear ${label(path)}`}
             onClick={() => values.forEach(v => toggle(entity, path, v))}><Icon name="close" size={11} /></Button>
         </span>

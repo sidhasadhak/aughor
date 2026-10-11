@@ -411,6 +411,19 @@ def post_object_query(
     from aughor.sql.executor import execute_guarded
 
     graph = _served_graph(connection_id, schema_name)
+    from aughor.ontology.platform_objects import is_platform
+    from aughor.ontology.platform_objects import query as platform_query
+    from aughor.semantic.object_query import find_object_type
+    try:
+        counted = find_object_type(graph, query.object_type)
+    except ObjectQueryRefused:
+        counted = None
+    if is_platform(counted):
+        # Arc AP-4 — a platform-owned type is counted from the edit layer that holds its objects: a case queue's figures
+        out = platform_query(counted, _accepted_edits(connection_id), measures=[m.model_dump() for m in query.measures],
+                             by=list(query.by), filters=[f.model_dump() for f in query.filters], segment=query.segment,
+                             time=query.time, grain=query.grain)
+        return {"connection_id": connection_id, "schema_name": graph.schema_name, **out}
     db = open_connection_for_with_schema(connection_id,
                                          graph.schema_name or resolve_effective_schema(connection_id, schema_name))
     try:

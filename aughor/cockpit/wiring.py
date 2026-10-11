@@ -23,7 +23,7 @@ from typing import Any, Optional
 
 FLAG = "cockpit.wiring"
 #: The props that wire a piece to a set or a choice.
-WIRED_PROPS = ("set", "set_from", "chooses", "ticks", "shows", "of")
+WIRED_PROPS = ("set", "set_from", "chooses", "ticks", "shows", "of", "opens_on")
 
 
 def on() -> bool:
@@ -78,13 +78,12 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
     wiring = wiring if wiring is not None else read(spec)
     if wiring is None:
         return ["The cockpit's wiring could not be read, so it was not checked; it is not kept unchecked."]
-    from aughor.cockpit.pieces import accepted_edits, served_graph
+    from aughor.cockpit.pieces import check_query, served_graph
     graph = graph if graph is not None else served_graph(connection_id)
     if graph is None:
         return ["The cockpit reads sets, and no ontology is built for this connection."]
-    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query, find_object_type
+    from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
     said: list[str] = []
-    overlay = accepted_edits(connection_id)
     for name, s in (wiring.get("sets") or {}).items():
         if "refused" in s:
             said.append(str(s["refused"]))
@@ -92,7 +91,7 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
         body = {"object_type": s.get("entity"), "segment": s.get("segment") or "", "filters": s.get("filters") or [],
                 "measures": [{"name": "n", "agg": "count"}]}
         try:
-            compile_object_query(body, graph, overlay=overlay)
+            check_query(body, graph, connection_id)
         except ObjectQueryRefused as exc:
             said.append(f'The set "{name}" cannot be read: {exc.reason}.')
 

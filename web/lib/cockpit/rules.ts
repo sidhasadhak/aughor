@@ -19,9 +19,9 @@ import { validateSpec, type Spec } from "@json-render/core";
 import type { z } from "zod";
 
 import {
-  COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, GRADE, GRID, LIMITS, MAX_DEPTH, MAX_SETS, MAX_VALUES, MAY_BE_CONDITIONAL, MAY_HOLD,
-  PLACED, READER_TEXT, SPLIT_AGGS, SIZES, TONES, cockpitCatalog, cockpitSet, cockpitValue, type ActionButtonDef, type ComponentName,
-  type GridKind, type Layout,
+  CHOOSERS, COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, GRADE, GRID, LIMITS, MAX_DEPTH, MAX_SETS, MAX_VALUES, MAY_BE_CONDITIONAL, MAY_HOLD,
+  PLACED, READER_TEXT, SET_READERS, SPLIT_AGGS, SIZES, SWITCHED, TONES, cockpitCatalog, cockpitSet, cockpitValue, type ActionButtonDef,
+  type ComponentName, type GridKind, type Layout, type PieceName,
 } from "@/lib/cockpit/catalog";
 import { choicesOf, isRefused, readSet, type WireSpec } from "@/lib/cockpit/sets";
 import { CARD_STATUSES, RANGE_STATUSES, TAB_PATH, publishedPath } from "@/lib/cockpit/hostState";
@@ -227,7 +227,7 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
       }
     }
     if (set.linked_to && choices.get(set.linked_to.choice)?.kind !== "chosen") {
-      issues.push({ code: "bad_prop", message: `The set ${q(name)} reads what ${q(set.linked_to.choice)} links to, and no table's click chooses ${q(set.linked_to.choice)}.` });
+      issues.push({ code: "bad_prop", message: `The set ${q(name)} reads what ${q(set.linked_to.choice)} links to, and no click chooses ${q(set.linked_to.choice)}.` });
     }
   }
   for (const name of sound_) {
@@ -240,7 +240,7 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
       issues.push({ code: "bad_prop", elementKey: c.madeBy[0], message: `${q(name)} names a set or a value and a choice. One name is one thing.` });
     }
     if (c.kind !== "shown" && c.madeBy.length > 1) {
-      issues.push({ code: "bad_prop", elementKey: c.madeBy[1], message: `${q(name)} is made by ${c.madeBy.map(q).join(" and ")}. An object is chosen or ticked in one table.` });
+      issues.push({ code: "bad_prop", elementKey: c.madeBy[1], message: `${q(name)} is made by ${c.madeBy.map(q).join(" and ")}. An object is chosen or ticked in one piece.` });
     }
   }
   for (const name of setNames) {
@@ -261,8 +261,8 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
   for (const [key, el] of sound) {
     if (!clean.has(key)) continue;
     const p = el.props;
-    const what = `The ${el.type === "ObjectTable" ? "objects table" : el.type === "ObjectFigure" ? "figure" : el.type === "ObjectChart" ? "chart" : el.type.toLowerCase()} ${q(key)}`;
-    if (el.type === "ObjectTable" || el.type === "ObjectFigure" || el.type === "ObjectChart") {
+    const what = `The ${KIND[el.type] ?? el.type.toLowerCase()} ${q(key)}`;
+    if (SET_READERS.includes(el.type as PieceName)) {
       const named = [p.entity ? "an entity" : "", p.set ? "a set" : ""].filter(Boolean);
       if (named.length !== 1) {
         issues.push({ code: "bad_prop", elementKey: key, message: `${what} names ${named.length ? named.join(" and ") : "neither an entity nor a set"}. It reads one: an entity, or a set.` });
@@ -287,7 +287,7 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
     if (el.type === "ObjectFigure" && p.shows != null && !p.set) {
       issues.push({ code: "bad_prop", elementKey: key, message: `${what} shows its set in a table and reads no set. A figure that switches a list reads a set.` });
     }
-    if (el.type === "ObjectTable" && p.set_from != null) {
+    if (SWITCHED.includes(el.type as PieceName) && p.set_from != null) {
       if (choices.get(String(p.set_from))?.kind !== "shown") {
         issues.push({ code: "bad_prop", elementKey: key, message: `${what} lists the set a figure shows in ${q(String(p.set_from))}, and no figure shows a set there.` });
       } else if (!p.set) {
@@ -301,7 +301,7 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
           if ("from" in src) {
             const c = choices.get(src.from);
             if (!c || c.kind === "shown") {
-              issues.push({ code: "bad_prop", elementKey: key, message: `${which} takes ${q(param)} from ${q(src.from)}, which is not an object a table's click chooses or its ticks collect.` });
+              issues.push({ code: "bad_prop", elementKey: key, message: `${which} takes ${q(param)} from ${q(src.from)}, which is not an object a click chooses or ticks collect.` });
             }
           } else if ("set" in src && !isSet(src.set)) {
             issues.push({ code: "bad_prop", elementKey: key, message: `${which} takes ${q(param)} from the set ${q(src.set)}, which this cockpit does not hold.` });
@@ -372,6 +372,14 @@ function checkStructure(sound: Map<string, { type: ComponentName; props: Obj; ch
     }
   }
 }
+
+/** A piece as a sentence names it. */
+/** "A figure", "An objects table" — a kind's word with its article, capitalised. */
+const an = (word: string) => `${/^[aeiou]/i.test(word) ? "An" : "A"} ${word}`;
+const KIND: Partial<Record<string, string>> = {
+  ObjectTable: "objects table", ObjectFigure: "figure", ObjectChart: "chart", ObjectList: "object list", ObjectMap: "map",
+  ObjectTimeline: "timeline", ChooseOne: "choose-one", ObjectSearch: "search", Drawer: "drawer",
+};
 
 function checkCondition(key: string, cond: unknown, out: CockpitIssue[], stateCards: Set<string>): void {
   const refuse = (message: string) => out.push({ code: "bad_condition", elementKey: key, message });
@@ -533,7 +541,7 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The ${el.type.toLowerCase()} ${q(key)} holds ${list(stray.map(q))}. `
           + (may.length ? `A ${el.type} holds: ${list(may)}.` : `A ${el.type} holds nothing.`) });
-    } else if (el.type === "Cockpit" && new Set(kinds.filter(k => k !== "ObjectFilters")).size > 1) {
+    } else if (el.type === "Cockpit" && new Set(kinds.filter(k => k !== "ObjectFilters" && k !== "Drawer")).size > 1) {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The cockpit ${q(key)} holds tabs and sections side by side. It holds one Tabs, or sections, not both.` });
     } else if (el.type === "Cockpit" && kinds.filter(k => k === "Tabs").length > 1) {
@@ -545,10 +553,12 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
     } else if (el.type === "Cockpit" && kinds.includes("ObjectFilters") && kinds[0] !== "ObjectFilters") {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The cockpit ${q(key)} holds its filter column after its tabs or sections. A filter column is the cockpit's first child, drawn beside the rest.` });
-    } else if (el.type === "Cockpit" && kinds.length > 0 && kinds.every(k => k === "ObjectFilters")) {
+    } else if (el.type === "Cockpit" && kinds.length > 0 && kinds.every(k => k === "ObjectFilters" || k === "Drawer")) {
       issues.push({ code: "bad_child", elementKey: key,
-        message: `The cockpit ${q(key)} holds a filter column and nothing it narrows. It holds one Tabs, or sections, beside it.` });
-    } else if (MAY_HOLD[el.type].length && !PLACED.includes(el.type) && el.type !== "Section" && !el.children.length) {
+        message: kinds.includes("ObjectFilters")
+          ? `The cockpit ${q(key)} holds a filter column and nothing it narrows. It holds one Tabs, or sections, beside it.`
+          : `The cockpit ${q(key)} holds only drawers. It holds one Tabs, or sections, for a drawer to open beside.` });
+    } else if (MAY_HOLD[el.type].length && !PLACED.includes(el.type) && el.type !== "Section" && el.type !== "Drawer" && !el.children.length) {
       // Arc AP-4 — a section may hold nothing yet: the builder offers it a piece, and a reader is drawn none
       issues.push({ code: "bad_child", elementKey: key,
         message: `The ${el.type.toLowerCase()} ${q(key)} holds nothing. An empty ${el.type} is refused.` });
@@ -593,15 +603,25 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
   }
 
   // Arc OC-4 — an object detail follows an objects table in the same cockpit, by its key — or, since Arc AP-2, the
-  // object a table's click chooses, by the choice's name.
+  // object a click chooses, by the choice's name: in a table, or since Arc AP-4 a list, a map, a timeline or a choose-one.
   const wire = spec as unknown as WireSpec;
   const choices = choicesOf(wire);
   for (const [key, el] of sound) {
     if (el.type !== "ObjectDetail" || !clean.has(key)) continue;
     const follows = el.props.follows as string;
-    if (sound.get(follows)?.type !== "ObjectTable" && choices.get(follows)?.kind !== "chosen") {
+    if (!CHOOSERS.includes(sound.get(follows)?.type as PieceName) && choices.get(follows)?.kind !== "chosen") {
       issues.push({ code: "bad_prop", elementKey: key,
-        message: `The object detail ${q(key)} follows ${q(follows)}, which is neither an objects table in this cockpit nor an object a table's click chooses.` });
+        message: `The object detail ${q(key)} follows ${q(follows)}, which is neither a piece a click chooses in nor an object a click chooses.` });
+    }
+  }
+
+  // Arc AP-4 — a drawer opens on an object a click chooses, by the choice's name
+  for (const [key, el] of sound) {
+    if (el.type !== "Drawer" || !clean.has(key)) continue;
+    const on = String(el.props.opens_on);
+    if (choices.get(on)?.kind !== "chosen") {
+      issues.push({ code: "bad_prop", elementKey: key,
+        message: `The drawer ${q(key)} opens on ${q(on)}, and no click chooses ${q(on)}. A drawer opens on an object a table, a list, a map, a timeline or a choose-one names.` });
     }
   }
 
@@ -627,7 +647,7 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
       if (!gridded) {
         if (said) {
           issues.push({ code: "bad_prop", elementKey: child,
-            message: `The ${c.type.toLowerCase()} ${q(child)} says ${said}, and its section ${q(key)} is not on the grid. `
+            message: `The ${KIND[c.type] ?? c.type.toLowerCase()} ${q(child)} says ${said}, and its section ${q(key)} is not on the grid. `
               + `Columns and rows are said only in a section with "grid": ${GRID.columns}; elsewhere a size is said by name.` });
         }
         continue;
@@ -636,14 +656,14 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
       if (!lim) continue;
       if (typeof w !== "number" || typeof h !== "number") {
         issues.push({ code: "bad_prop", elementKey: child,
-          message: `The ${c.type.toLowerCase()} ${q(child)} is on the grid of section ${q(key)} and does not say its `
+          message: `The ${KIND[c.type] ?? c.type.toLowerCase()} ${q(child)} is on the grid of section ${q(key)} and does not say its `
             + `${typeof w !== "number" && typeof h !== "number" ? "w and h" : typeof w !== "number" ? "w" : "h"}. `
             + "On the grid each element says how many columns (w) and rows (h) it takes." });
         continue;
       }
       if (w < lim.w[0] || w > lim.w[1] || h < lim.h[0] || h > lim.h[1]) {
         issues.push({ code: "bad_prop", elementKey: child,
-          message: `The ${c.type.toLowerCase()} ${q(child)} takes ${w} × ${h}. A ${c.type} takes ${lim.w[0]} to ${lim.w[1]} `
+          message: `The ${KIND[c.type] ?? c.type.toLowerCase()} ${q(child)} takes ${w} × ${h}. ${an(KIND[c.type] ?? c.type)} takes ${lim.w[0]} to ${lim.w[1]} `
             + `columns and ${lim.h[0]} to ${lim.h[1]} rows, so it is never too small to read or too large for what it holds.` });
       }
     }

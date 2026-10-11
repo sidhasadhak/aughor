@@ -12,7 +12,9 @@
  */
 import { useEffect, useMemo, useState } from "react";
 
-import { entityFields, isCategory, isTime, type EntityFields } from "@/components/cockpit/PieceSetup";
+import {
+  entityFields, isCategory, isNumber, isText, isTime, nameField, placesOf, ranked, timesOf, type EntityFields,
+} from "@/components/cockpit/PieceSetup";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
@@ -20,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select";
 import { CHART_DAYS, MAX_FILTERS, MAX_LABEL, MAX_TABLE_COLUMNS } from "@/lib/cockpit/catalog";
 import {
-  nameByPiece, placeFilterColumn, placePiece, sectionsOf, type CockpitSpec,
+  addDrawer, freshWireName, nameByPiece, placeFilterColumn, placePiece, putSet, sectionsOf, type CockpitSpec,
 } from "@/lib/cockpit/edit";
 import { choicesOf, isRefused, readSet } from "@/lib/cockpit/sets";
 import { withUniqueKeys } from "@/lib/listKeys";
@@ -31,12 +33,21 @@ import { getProcesses } from "@/lib/objectTypes";
  *  upload, a recorded finding — in the section the picker was opened for. */
 export type HandOff = "card" | "note" | "image" | "finding";
 
-type Kind = "ObjectTable" | "ObjectDetail" | "ObjectFigure" | "ObjectChart" | "ProcessBoard" | "ObjectFilters" | "ActionButtons" | HandOff;
+type Placed = "ObjectTable" | "ObjectDetail" | "ObjectFigure" | "ObjectChart" | "ProcessBoard" | "ActionButtons"
+  | "ObjectList" | "ObjectMap" | "ObjectTimeline" | "ChooseOne" | "ObjectSearch";
+/** "Linked" places two things: a set of what the chosen object links to, and a table of it; a drawer is the cockpit's own,
+ *  holding a detail of the object it opens on. */
+type Kind = Placed | "ObjectFilters" | "Linked" | "Drawer" | HandOff;
 interface Entry { kind: Kind; label: string; says: string }
 const GROUPS: { group: string; pieces: Entry[] }[] = [
   { group: "Show objects", pieces: [
     { kind: "ObjectTable", label: "Objects table", says: "Rows of a set; a click chooses, a tick collects." },
+    { kind: "ObjectList", label: "Object list", says: "A queue as cards: a name, a number, a mark." },
+    { kind: "ObjectMap", label: "Map", says: "Each placed by its coordinates; a click chooses one." },
+    { kind: "ObjectTimeline", label: "Timeline", says: "Each a bar from one moment to the next." },
     { kind: "ObjectDetail", label: "Object detail", says: "The chosen object's properties and its actions." },
+    { kind: "Linked", label: "Linked objects", says: "What the chosen one links to — an order's lines." },
+    { kind: "Drawer", label: "Drawer", says: "The chosen one, opened beside the page." },
   ] },
   { group: "Measure", pieces: [
     { kind: "ObjectFigure", label: "Figure", says: "One number of a set, beside the whole." },
@@ -47,6 +58,8 @@ const GROUPS: { group: string; pieces: Entry[] }[] = [
   ] },
   { group: "Filter", pieces: [
     { kind: "ObjectFilters", label: "Filter column", says: "Values with how many hold each; a reader ticks." },
+    { kind: "ObjectSearch", label: "Search", says: "Words that narrow every piece over the same objects." },
+    { kind: "ChooseOne", label: "Choose one", says: "One object found by name, for the pieces that follow it." },
   ] },
   { group: "Act", pieces: [
     { kind: "ActionButtons", label: "Action buttons", says: "Declared actions, run on what is chosen or ticked." },
@@ -59,6 +72,14 @@ const GROUPS: { group: string; pieces: Entry[] }[] = [
 
 const words = (id: string) => id.replace(/[_-]+/g, " ");
 const plural = (w: string) => (/s$/i.test(w) ? w : `${w}s`);
+/** Words kept to `max` characters, cut between words — "Products of the chosen distribution center" never ends "…cent";
+ *  past the limit "the chosen" gives way first, it being what every linked set is of. */
+function upTo(text: string, max: number): string {
+  const t = text.length > max ? text.replace(" of the chosen ", " of the ") : text;
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max + 1);
+  return cut.slice(0, Math.max(cut.lastIndexOf(" "), 1)).trim();
+}
 
 /** The entity a cockpit already reads first — its filter column's, a piece's, a set's — for the picker to start on. */
 function firstEntity(spec: CockpitSpec): string {
@@ -113,14 +134,15 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, onP
   const ef = fields && fields.entity === of ? fields.f : null;
   const noun = entities.find(e => e.value === of)?.label ?? words(of);
   const sets = wiringOn ? Object.keys(spec.sets ?? {}).map(n => ({ n, r: readSet(spec, n) })).filter(x => !isRefused(x.r)) : [];
-  const tables = Object.entries(spec.elements).filter(([, el]) => el.type === "ObjectTable");
+  // the pieces a click chooses in, by their keys — a choose-one always names its choice, so it is followed by that
+  const tables = Object.entries(spec.elements).filter(([, el]) => ["ObjectTable", "ObjectList", "ObjectMap", "ObjectTimeline"].includes(el.type));
   const chosen = [...choicesOf(spec).values()].filter(c => c.kind === "chosen");
   const hasFilters = Object.values(spec.elements).some(el => el.type === "ObjectFilters");
   const label = (reads ? spec.sets?.[reads]?.label : undefined) ?? plural(noun);
 
   /** Why a piece cannot be placed here, or "" — and the props it is placed with when it can. */
   const plan = (kind: Kind): { why: string; props?: Record<string, unknown> } => {
-    if (!target && kind !== "ObjectFilters") return { why: "There is no section to place it in. Add a section first." };
+    if (!target && kind !== "ObjectFilters" && kind !== "Drawer") return { why: "There is no section to place it in. Add a section first." };
     const scope = reads ? { set: reads } : { entity: of };
     switch (kind) {
       case "ObjectTable": {
@@ -131,17 +153,78 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, onP
         return { why: "", props: { ...scope, ...(columns.length ? { columns } : {}) } };
       }
       case "ObjectDetail":
-        if (!tables.length && !chosen.length) return { why: "A detail follows an objects table. Place one first." };
+        if (!tables.length && !chosen.length) return { why: "A detail follows a table, a list, a map or a timeline. Place one first." };
         return { why: "", props: { follows: chosen[0]?.name ?? tables[0][0] } };
+      case "ObjectList": {
+        if (!of) return { why: "Choose what it lists above." };
+        if (!ef) return { why: "Reading what the ontology offers…" };
+        const own = ef.fields.filter(f => !f.via);
+        const title = nameField(ef);
+        const figure = ranked(own.filter(isNumber))[0];
+        const mark = own.find(f => isCategory(f) && f.path !== title?.path);
+        const time = own.find(isTime);
+        // the newest first; a queue read oldest first is one choice away in its setup
+        return { why: "", props: { ...scope, title: title?.path, figure: figure?.path, mark: mark?.path, sort: time?.path, descending: time ? true : undefined } };
+      }
+      case "ObjectMap": {
+        if (!of) return { why: "Choose what it places above." };
+        if (!ef) return { why: "Reading what the ontology offers…" };
+        const at = placesOf(ef);
+        if (!at) return { why: `${noun} holds no latitude and longitude to place it by.` };
+        return { why: "", props: { ...scope, lat: at.lat.path, lng: at.lng.path, label: nameField(ef)?.path } };
+      }
+      case "ObjectTimeline": {
+        if (!of) return { why: "Choose what it draws above." };
+        if (!ef) return { why: "Reading what the ontology offers…" };
+        const t = timesOf(ef);
+        if (!t) return { why: `${noun} holds fewer than two moments to draw a bar between.` };
+        return { why: "", props: { ...scope, start: t.start.path, end: t.end.path, label: nameField(ef)?.path } };
+      }
+      case "ChooseOne": {
+        if (!wiringOn) return { why: "Choosing one for the pieces that follow it needs wiring, which is off here." };
+        if (!of) return { why: "Choose what it chooses from above." };
+        if (!ef) return { why: "Reading what the ontology offers…" };
+        const name = nameField(ef);
+        if (!name) return { why: `${noun} holds no name to find one by. A click in a table or a list chooses one.` };
+        return { why: "", props: { ...scope, chooses: freshWireName(spec, `chosen ${noun}`), label: name.path } };
+      }
+      case "ObjectSearch": {
+        if (!of) return { why: "Choose what it searches above." };
+        if (!ef) return { why: "Reading what the ontology offers…" };
+        const text = nameField(ef) ?? ef.fields.find(f => !f.via && isText(f));
+        if (!text) return { why: `${noun} holds no words to look for.` };
+        return { why: "", props: { entity: of, path: text.path, label: upTo(`Find ${plural(noun).toLowerCase()}`, MAX_LABEL) } };
+      }
+      case "Drawer": {
+        if (!wiringOn) return { why: "A drawer opens on a chosen object, which needs wiring — off here." };
+        if (target && spec.elements[target]?.type === "Drawer") return { why: "A drawer opens beside the page. It holds pieces, not a drawer." };
+        if (!chosen.length) return { why: "Nothing names the object a click chooses yet. Name it in a table's or a list's setup." };
+        const free = chosen.find(c => !Object.values(spec.elements).some(el => el.type === "Drawer" && el.props.opens_on === c.name));
+        if (!free) return { why: "Each chosen object opens its drawer already." };
+        return { why: "", props: { opens_on: free.name } };
+      }
+      case "Linked": {
+        if (!wiringOn) return { why: "Linking to a chosen object needs wiring, which is off here." };
+        if (!chosen.length) return { why: "Nothing names the object a click chooses yet. Name it in a table's or a list's setup." };
+        if (!of) return { why: "Choose what it lists above — an order's lines, say." };
+        if (!ef) return { why: "Reading what the ontology offers…" };
+        // what names the chosen object's key: an order line's `order_id` names its order
+        for (const c of chosen) {
+          const one = words(c.entity).toLowerCase().replace(/s$/, "").replace(/ /g, "_");
+          const path = ef.fields.find(f => !f.via && f.path.toLowerCase() === `${one}_id`)?.path;
+          if (path && c.entity.toLowerCase() !== of.toLowerCase()) return { why: "", props: { choice: c.name, path, entity: of } };
+        }
+        return { why: `${noun} names none of the objects a click chooses here.` };
+      }
       case "ObjectFigure":
         if (!of) return { why: "Choose what it counts above." };
-        return { why: "", props: { ...scope, label: label.slice(0, MAX_LABEL), agg: "count" } };
+        return { why: "", props: { ...scope, label: upTo(label, MAX_LABEL), agg: "count" } };
       case "ObjectChart": {
         if (!of) return { why: "Choose what it draws above." };
         if (!ef) return { why: "Reading what the ontology offers…" };
         const time = ef.fields.find(f => !f.via && isTime(f));
         if (!time) return { why: `${noun} holds no date to draw across.` };
-        return { why: "", props: { ...scope, label: `${label}, by ${time.label.toLowerCase()}`.slice(0, MAX_LABEL), time: time.path, days: CHART_DAYS[1] ?? 14 } };
+        return { why: "", props: { ...scope, label: upTo(`${label}, by ${time.label.toLowerCase()}`, MAX_LABEL), time: time.path, days: CHART_DAYS[1] ?? 14 } };
       }
       case "ProcessBoard": {
         if (processes === null) return { why: "Reading the declared processes…" };
@@ -154,7 +237,7 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, onP
         if (!entity) return { why: "Choose what it filters above." };
         if (!ef || fields?.entity !== entity) return { why: "Reading what the ontology offers…" };
         const props = ef.fields.filter(isCategory).slice(0, Math.min(3, MAX_FILTERS))
-          .map(f => ({ path: f.path, label: f.label.slice(0, MAX_LABEL), ...(f.via ? { via: f.via.slice(0, MAX_LABEL) } : {}) }));
+          .map(f => ({ path: f.path, label: upTo(f.label, MAX_LABEL), ...(f.via ? { via: upTo(f.via, MAX_LABEL) } : {}) }));
         if (!props.length) return { why: `${noun} has no property to filter by.` };
         return { why: "", props: { entity, properties: props, ...(reads ? { set: reads } : {}) } };
       }
@@ -175,13 +258,26 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, onP
     if (p.why || !p.props) return;
     let next: CockpitSpec | null = null;
     if (e.kind === "ObjectFilters") next = placeFilterColumn(spec, p.props).spec;
-    else {
-      const placed = placePiece(spec, e.kind, p.props, target ?? undefined);
+    else if (e.kind === "Drawer") {
+      const on = String(p.props.opens_on);
+      next = addDrawer(spec, upTo(`The ${words(on).replace(/^chosen /, "")}`, MAX_LABEL), on).spec;
+    } else if (e.kind === "Linked") {
+      // a set of what the chosen object links to, named for it, and a table of the set — "Order items of the chosen order"
+      const choice = String(p.props.choice);
+      const said = upTo(`${plural(noun)} of the ${words(choice)}`, MAX_LABEL);
+      const name = freshWireName(spec, said);
+      const withSet = putSet(spec, name, { label: said, entity: String(p.props.entity), linked_to: { choice, path: String(p.props.path) } });
+      const placed = placePiece(withSet, "ObjectTable", { set: name }, target ?? undefined);
+      if (!placed.key) return;
+      next = target ? nameByPiece(placed.spec, target, said) : placed.spec;
+    } else {
+      const placed = placePiece(spec, e.kind as Placed, p.props, target ?? undefined);
       if (!placed.key) return;
       // a new section is called by what its first piece reads — "Shipped late", never a chart's whole label — a detail by
       // what it shows ("The chosen order"), a row of buttons by what they do
       const name = e.kind === "ObjectDetail" ? (chosen.length ? `The ${words(String(p.props.follows))}` : "The chosen one")
-        : e.kind === "ActionButtons" ? "Actions" : e.kind === "ProcessBoard" ? words(String(p.props.process)).replace(/^./, c => c.toUpperCase()) : label;
+        : e.kind === "ActionButtons" ? "Actions" : e.kind === "ProcessBoard" ? words(String(p.props.process)).replace(/^./, c => c.toUpperCase())
+          : e.kind === "ObjectSearch" ? "Search" : e.kind === "ChooseOne" ? `Choose ${/^[aeiou]/i.test(noun) ? "an" : "a"} ${noun.toLowerCase()}` : label;
       next = target ? nameByPiece(placed.spec, target, name) : placed.spec;
     }
     onPlace(next, `${e.label.toLowerCase()} placed by hand`);

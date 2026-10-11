@@ -104,7 +104,7 @@ describe("a wired cockpit", () => {
     await waitFor(() => expect(listed().at(-1)).toMatchObject({ entity: "order", segment: "late_dispatch" }));
     expect(screen.getAllByTestId("object-figure-shows")[1]).toHaveAttribute("aria-pressed", "true");
     expect(screen.getAllByTestId("object-figure-shows")[0]).toHaveAttribute("aria-pressed", "false");
-    await waitFor(() => expect(screen.getByText("Choose a row in the table to see it here.")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Choose one to see it here.")).toBeInTheDocument());
     expect(screen.queryByTestId("object-table-ticked")).toBeNull();
   });
 

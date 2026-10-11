@@ -39,7 +39,23 @@ export function toggled(filters: Filters, entity: string, path: string, value: s
 export function conditionsFor(filters: Filters, entity: string, except?: string): Record<string, unknown>[] {
   return Object.entries(filters[entityKey(entity)] ?? {})
     .filter(([path, values]) => path !== except && values.length > 0)
-    .map(([path, values]) => ({ path, op: "in", values }));
+    // Arc AP-4 — words a reader typed in a search box, held under the property marked, look for what holds them
+    .map(([path, values]) => (path.startsWith(WORDS) ? { path: path.slice(WORDS.length), op: "contains", value: values[0] }
+      : { path, op: "in", values }));
+}
+
+/** Arc AP-4 — the mark a search box's words are held under, beside the values a filter column ticks: `~<path>`. */
+export const WORDS = "~";
+
+/** Words a reader typed to look for in a property of an entity's objects — or none, and the search is let go of. */
+export function withWords(filters: Filters, entity: string, path: string, words: string): Filters {
+  const e = entityKey(entity);
+  const said = words.trim().replace(/\s+/g, " ").slice(0, 120);
+  const props = { ...(filters[e] ?? {}) };
+  if (said) props[WORDS + path] = [said]; else delete props[WORDS + path];
+  const next = { ...filters, [e]: props };
+  if (!Object.keys(props).length) delete next[e];
+  return next;
 }
 
 /** Whether any filter is on, anywhere in the cockpit. */
@@ -48,7 +64,8 @@ export const anyFilter = (filters: Filters): boolean =>
 
 /** What a filtered series is called in a legend: the values chosen, "Shipped" or "Shipped, Complete". */
 export function chosenWords(filters: Filters, entity: string): string {
-  return Object.values(filters[entityKey(entity)] ?? {}).flat().join(", ");
+  return Object.entries(filters[entityKey(entity)] ?? {})
+    .map(([path, values]) => (path.startsWith(WORDS) ? `“${values[0]}”` : values.join(", "))).join(", ");
 }
 
 const iso = (d: Date): string => d.toISOString().slice(0, 10);

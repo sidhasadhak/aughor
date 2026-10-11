@@ -6,7 +6,7 @@
  * here from a stand-in shaped as theLook's Order is served, its roles and its two links to the customer — and hands back
  * the next spec with the version's note. Nothing is typed as a spec.
  */
-import { choose, fireEvent, render, screen, waitFor, within } from "@/lib/testing";
+import { choose, fireEvent, optionsOf, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fieldsFor, PieceSetup, type EntityFields } from "@/components/cockpit/PieceSetup";
@@ -176,5 +176,99 @@ describe("what a piece is offered of a linked object", () => {
     expect(fieldsFor(ef, ["order_to_user.country"]).map(f => f.path)).toEqual(["status", "order_to_user.country"]);
     expect(fieldsFor(ef, ["status"])).toBe(ef.fields);
     expect(fieldsFor(ef, [null, undefined, "nonsense.x"])).toBe(ef.fields);
+  });
+});
+
+describe("the pieces the picker adds (Arc AP-4)", () => {
+  const CENTRE = { id: "distribution_center", segments: [], links: [],
+    properties: [prop("id", "key", "INT64", "", true), prop("name", "dimension"), prop("latitude", "key", "FLOAT64"), prop("longitude", "flag", "FLOAT64")] };
+  function app(): CockpitSpec {
+    return {
+      root: "cockpit",
+      elements: {
+        cockpit: { type: "Cockpit", props: { title: "Desk" }, children: ["sec"] },
+        sec: { type: "Section", props: { title: "Desk" }, children: ["list", "map", "line", "pick", "find"] },
+        list: { type: "ObjectList", props: { entity: "order" }, children: [] },
+        map: { type: "ObjectMap", props: { entity: "distribution_center", lat: "latitude", lng: "longitude" }, children: [] },
+        line: { type: "ObjectTimeline", props: { entity: "order", start: "created_at", end: "shipped_at" }, children: [] },
+        pick: { type: "ChooseOne", props: { entity: "distribution_center", chooses: "chosen-centre", label: "name" }, children: [] },
+        find: { type: "ObjectSearch", props: { entity: "order", path: "status", label: "Find orders" }, children: [] },
+      },
+    };
+  }
+  const offered = (label: string) => optionsOf(screen.getByLabelText(label)).map(o => o.value);
+  beforeEach(() => {
+    types.getObjectType.mockImplementation(async (t: string) => (t === "order" ? ORDER : t === "distribution_center" ? CENTRE : USER));
+  });
+
+  it("calls a list's cards by its key until a name is chosen, and offers money first beside them and categories under", async () => {
+    const onChange = setUp(app(), "list");
+    await waitFor(() => expect(screen.getByLabelText("Called by")).toBeInTheDocument());
+    expect(screen.getByText(/Its key, beside what it is — “Order 63981”/)).toBeInTheDocument();
+    expect(offered("Called by")).not.toContain("revenue");                        // a number is said beside, never as a name
+    expect(offered("Called by")).not.toContain("created_at");
+    expect(offered("Beside it")[1]).toBe("revenue");                              // after "Nothing": money first
+    expect(offered("Marked by")).toEqual(["", "status", "gender", "num_of_item", "placed_by.country"]);   // the customer's too
+    await choose(screen.getByLabelText("Called by"), "status");
+    expect(onChange.mock.calls[0]).toEqual([expect.objectContaining({}), "an object list set up by hand"]);
+    expect(onChange.mock.calls[0][0].elements.list.props.title).toBe("status");
+    await choose(screen.getByLabelText("Sorted by"), "created_at");
+    expect(onChange.mock.calls[1][0].elements.list.props).toMatchObject({ sort: "created_at", descending: false });
+  });
+
+  it("places a map by numbers only — a latitude the ontology calls a key among them — and a timeline between moments only", async () => {
+    setUp(app(), "map");
+    await waitFor(() => expect(screen.getByLabelText("Latitude")).toBeInTheDocument());
+    expect(offered("Latitude")).toEqual(["latitude", "longitude"]);
+    expect(offered("Called by")).toEqual(["", "name"]);
+  });
+
+  it("draws a timeline between the moments its objects hold, and nothing else", async () => {
+    const onChange = setUp(app(), "line");
+    await waitFor(() => expect(screen.getByLabelText("From")).toBeInTheDocument());
+    expect(offered("From")).toEqual(["created_at", "shipped_at"]);
+    await choose(screen.getByLabelText("To"), "created_at");
+    expect(onChange.mock.calls[0][0].elements.line.props.end).toBe("created_at");
+  });
+
+  it("finds a choose-one's object by its words, names the choice it makes, and searches only what holds words", async () => {
+    setUp(app(), "pick");
+    await screen.findByTestId("setup-found-by");
+    expect(offered("Found by")).toEqual(["name"]);
+    expect(screen.getByTestId("setup-found-by")).toHaveTextContent("It chooses “chosen centre”");
+  });
+
+  it("looks for a search's words in a property that holds text — never a number, a moment or a key", async () => {
+    const onChange = setUp(app(), "find");
+    await screen.findByTestId("setup-looks-in");
+    expect(offered("Looks in")).toEqual(["status", "gender", "placed_by.country"]);
+    await choose(screen.getByLabelText("Looks in"), "gender");
+    expect(onChange.mock.calls[0]).toEqual([expect.objectContaining({}), "what a search looks in chosen by hand"]);
+    expect(onChange.mock.calls[0][0].elements.find.props.path).toBe("gender");
+  });
+
+  it("names a drawer, and opens it on an object a click chooses — never moved into a section", async () => {
+    const spec = app();
+    spec.elements.list.props.chooses = "chosen-order";
+    spec.elements.cockpit.children.push("drawer");
+    spec.elements.drawer = { type: "Drawer", props: { title: "The order", opens_on: "chosen-order" }, children: [] };
+    const onChange = setUp(spec, "drawer");
+    await screen.findByTestId("setup-opens-on");
+    expect(offered("Opens on")).toEqual(["chosen-order", "chosen-centre"]);
+    expect(screen.queryByLabelText("In the section")).toBeNull();
+    await choose(screen.getByLabelText("Opens on"), "chosen-centre");
+    expect(onChange.mock.calls[0]).toEqual([expect.objectContaining({}), "what opens a drawer chosen by hand"]);
+    expect(onChange.mock.calls[0][0].elements.drawer.props.opens_on).toBe("chosen-centre");
+  });
+
+  it("wires a list's click and ticks, and a map's click only — a map holds no ticks", async () => {
+    render(<PieceSetup spec={app()} selected="list" onChange={vi.fn()} connectionId={`conn-${++conn}`} wiringOn />);
+    await screen.findByTestId("setup-chooses");
+    expect(screen.getByTestId("setup-ticks")).toHaveTextContent("A tick beside each card");
+    expect(screen.getByTestId("setup-reads")).toBeInTheDocument();
+    render(<PieceSetup spec={app()} selected="map" onChange={vi.fn()} connectionId={`conn-${++conn}`} wiringOn />);
+    await waitFor(() => expect(screen.getAllByTestId("setup-chooses")).toHaveLength(2));
+    expect(screen.getAllByTestId("setup-ticks")).toHaveLength(1);
+    expect(screen.getAllByTestId("setup-chooses")[1]).toHaveTextContent("Chooses a place for a detail that follows this piece.");
   });
 });

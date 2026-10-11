@@ -224,10 +224,10 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
     onChange(done.spec, `split ${side} by hand`);
     setSelected(done.key);
   };
-  // the section a piece goes in: the one chosen, or the one a chosen piece sits in
-  const target = selected && el?.type === "Section" && !el.props.layout ? selected
-    : selected ? Object.keys(spec.elements).find(k => spec.elements[k]?.type === "Section" && !spec.elements[k].props.layout
-      && spec.elements[k].children.includes(selected)) ?? null : null;
+  // the section a piece goes in — or a drawer (Arc AP-4): the one chosen, or the one a chosen piece sits in
+  const holds = (k: string) => (spec.elements[k]?.type === "Section" && !spec.elements[k].props.layout) || spec.elements[k]?.type === "Drawer";
+  const target = selected && holds(selected) ? selected
+    : selected ? Object.keys(spec.elements).find(k => holds(k) && spec.elements[k].children.includes(selected)) ?? null : null;
 
   return (
     <div data-testid="cockpit-builder" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -310,7 +310,7 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
                         <Rule />
                       </>
                     )}
-                    {structureOn && el?.type !== "ObjectFilters" && (
+                    {structureOn && el?.type !== "ObjectFilters" && el?.type !== "Drawer" && (
                       <Button size="xs" variant="ghost" data-testid="builder-duplicate"
                         onClick={() => { const d = duplicate(spec, selected!); if (d.key) { apply(d.spec, "duplicated by hand"); setSelected(d.key); } }}>
                         <Icon name="copy" size={13} /> Duplicate

@@ -44,6 +44,7 @@ const DRAWINGS = {
   "components/ontology/EntityTypeMap.tsx": "the entity-type map's link lines and arrowheads, computed per layout",
   "components/cockpit/OntologyPieces.tsx": "a cockpit's chart of objects per day — bars, the line behind them, its axis",
   "components/cockpit/ObjectCockpitStarter.tsx": "the starter's preview of objects per day, drawn small from measured counts",
+  "components/cockpit/AppPieces.tsx": "a timeline's bars between two moments, one lane per object, computed per page",
   "components/ERDiagram.tsx":       "relationship edges between table cards",
   "components/ProcessMapper.tsx":   "the process map itself — nodes, edges, hit areas",
   "components/brief/Sparkline.tsx": "the sparkline path, area fill and end dot",

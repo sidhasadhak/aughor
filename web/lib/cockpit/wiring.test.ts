@@ -130,7 +130,7 @@ describe("the rules a wired cockpit is held to", () => {
     expect(broken(s => { s.elements["fig-late"].props.of = "nowhere"; })).toMatch(/said beside the set "nowhere"/);
     expect(broken(s => { s.sets!.placed.where![0].value_from = "nowhere"; })).toMatch(/reads the value "nowhere"/);
     expect(broken(s => { s.elements.detail.props.follows = "nowhere"; })).toMatch(/follows "nowhere", which is neither/);
-    expect(broken(s => { s.sets!.lines.linked_to!.choice = "ticked-orders"; })).toMatch(/no table's click chooses "ticked-orders"/);
+    expect(broken(s => { s.sets!.lines.linked_to!.choice = "ticked-orders"; })).toMatch(/no click chooses "ticked-orders"/);
   });
 
   it("refuse a condition that does not say what its operator needs", () => {
@@ -142,7 +142,7 @@ describe("the rules a wired cockpit is held to", () => {
 
   it("hold one name to one thing, and an object to the one table that chooses it", () => {
     expect(broken(s => { s.elements.table.props.chooses = "waiting"; })).toMatch(/names a set or a value and a choice/);
-    expect(broken(s => { s.elements.lines.props.chooses = "chosen-order"; })).toMatch(/An object is chosen or ticked in one table/);
+    expect(broken(s => { s.elements.lines.props.chooses = "chosen-order"; })).toMatch(/An object is chosen or ticked in one piece/);
     expect(broken(s => { s.elements.table.props.ticks = "chosen-order"; })).toMatch(/A choice is one kind of thing/);
     expect(broken(s => { s.values!.waiting = { label: "Waiting", kind: "days", value: 3 }; })).toMatch(/"waiting" names a set and a value. One name is one thing/);
   });
@@ -169,7 +169,7 @@ describe("the rules a wired cockpit is held to", () => {
 
   it("refuse a button whose source is not a chosen or ticked object, or a set that is not there", () => {
     const buttons = (s: CockpitSpec) => (s.elements.buttons.props.buttons as { params: Record<string, unknown>; after?: { read: string[] } }[]);
-    expect(broken(s => { buttons(s)[0].params.order = { from: "shown" }; })).toMatch(/not an object a table's click chooses or its ticks collect/);
+    expect(broken(s => { buttons(s)[0].params.order = { from: "shown" }; })).toMatch(/not an object a click chooses or ticks collect/);
     expect(broken(s => { buttons(s)[0].params.order = { set: "nowhere" }; })).toMatch(/from the set "nowhere"/);
     expect(broken(s => { buttons(s)[0].after = { read: ["nowhere"] }; })).toMatch(/reads the set "nowhere" again/);
   });

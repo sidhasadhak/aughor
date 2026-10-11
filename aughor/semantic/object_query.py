@@ -77,10 +77,13 @@ from aughor.semantic.cross_source import KeyedRead
 
 AggName = Literal["count", "count_distinct", "sum", "avg", "min", "max"]
 FilterOp = Literal["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "between",
-                   "is_null", "not_null", "exists", "not_exists", "in_last"]
+                   "is_null", "not_null", "exists", "not_exists", "in_last", "contains"]
 #: Arc AP-2 — `in_last` keeps the objects whose date or time falls in the last N days, today (UTC) included: resolved
 #: to a date where the query is compiled, so "placed in the last 14 days" reads the same fortnight whoever asks today.
 MAX_IN_LAST_DAYS = 3660
+#: Arc AP-4 — `contains` keeps the objects whose text holds a reader's words, case aside: a search box's condition. The
+#: words carry no pattern of their own (`%`, `_` and `\\` are read as spaces), so they mean the same in every dialect.
+MAX_CONTAINS_CHARS = 120
 Grain = Literal["", "hour", "day", "week", "month", "quarter", "year"]
 
 _MAX_LIMIT = 10_000
@@ -98,6 +101,8 @@ _NUMBER = re.compile(r"^-?\d+(\.\d+)?([eE][-+]?\d+)?$")
 #: is a count and whose AVG is a share).
 _SUMMABLE = frozenset({"measure", "ordinal", "flag"})
 _NUMERIC_TYPES = ("INT", "DECIMAL", "NUMERIC", "DOUBLE", "FLOAT", "REAL", "NUMBER")
+#: Public: what a listed column's type is read against where a piece needs numbers — a map's places (Arc AP-4).
+NUMERIC_TYPES = _NUMERIC_TYPES
 
 
 # ── the IR ──────────────────────────────────────────────────────────────────────────────
@@ -474,8 +479,24 @@ def _in_last_start(f: ObjectFilter) -> str:
     return (_today_utc() - timedelta(days=days - 1)).isoformat()
 
 
+def _contains_words(f: ObjectFilter) -> str:
+    """The words a `contains` looks for, lower-cased, with nothing in them a LIKE would read as a pattern."""
+    if not isinstance(f.value, str) or not f.value.strip():
+        raise ObjectQueryRefused(f"filter '{f.path} contains' needs the words to look for")
+    if len(f.value) > MAX_CONTAINS_CHARS:
+        raise ObjectQueryRefused(f"filter '{f.path} contains' looks for at most {MAX_CONTAINS_CHARS} characters")
+    return " ".join(re.sub(r"[%_\\]", " ", f.value.lower()).split())
+
+
 def _predicate(col: str, p: EntityProperty, f: ObjectFilter) -> str:
     op = f.op
+    if op == "contains":
+        if _is_temporal(p) or _is_numeric(p):
+            raise ObjectQueryRefused(f"filter '{f.path} contains' looks for words, and '{f.path}' holds no text")
+        words = _contains_words(f)
+        if not words:
+            raise ObjectQueryRefused(f"filter '{f.path} contains' needs the words to look for")
+        return f"LOWER(CAST({col} AS VARCHAR)) LIKE {_literal('%' + words + '%', f.path)}"
     if op == "in_last":
         if not _is_temporal(p):
             raise ObjectQueryRefused(f"filter '{f.path} in_last' reads a date or a time, and '{f.path}' is neither")

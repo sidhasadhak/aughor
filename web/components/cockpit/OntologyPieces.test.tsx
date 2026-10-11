@@ -107,7 +107,7 @@ describe("a late dispatch cockpit (Arc OC-4)", () => {
     });
     draw();
     const detail = () => screen.getByTestId("object-detail");
-    expect(within(await screen.findByTestId("object-detail")).getByText("Choose a row in the table to see it here.")).toBeTruthy();
+    expect(within(await screen.findByTestId("object-detail")).getByText("Choose one to see it here.")).toBeTruthy();
     fireEvent.click((await screen.findAllByTestId("object-table-row"))[1]);
     await waitFor(() => expect(within(detail()).getByText("48377")).toBeTruthy());
     const button = await within(detail()).findByRole("button", { name: /Flag for review/ });

@@ -11,7 +11,7 @@
  * the validator bundle and compiles each set before a cockpit is kept (`aughor/cockpit/pieces.py`), so the two cannot
  * come to read a set differently.
  */
-import type { ActionButtonDef, CockpitSetDef, CockpitValueDef, SetOp } from "@/lib/cockpit/catalog";
+import { CHOOSERS, TICKERS, type ActionButtonDef, type CockpitSetDef, type CockpitValueDef, type PieceName, type SetOp } from "@/lib/cockpit/catalog";
 
 type El = { type?: string; props?: Record<string, unknown>; children?: string[] };
 export interface WireSpec {
@@ -127,11 +127,12 @@ export function choicesOf(spec: WireSpec): Map<string, Choice> {
   };
   for (const [key, el] of Object.entries(spec.elements)) {
     const p = el?.props ?? {};
-    if (el?.type === "ObjectTable") {
+    // a click in a table, a list, a map, a timeline or a choose-one chooses (Arc AP-4); ticks collect in a table or a list
+    if (CHOOSERS.includes(el?.type as PieceName)) {
       const r = pieceSet(spec, { ...p, set_from: undefined });
       const entity = isRefused(r) ? "" : r.entity;
       add(p.chooses, "chosen", key, entity);
-      add(p.ticks, "ticked", key, entity);
+      if (TICKERS.includes(el?.type as PieceName)) add(p.ticks, "ticked", key, entity);
     } else if (el?.type === "ObjectFigure") {
       add(p.shows, "shown", key, "");
     }

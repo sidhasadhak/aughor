@@ -9,8 +9,8 @@ import { describe, expect, it } from "vitest";
 
 import { GRID, MAX_DEPTH } from "@/lib/cockpit/catalog";
 import {
-  NEW_SECTION, addSectionInside, duplicate, inColumns, layOut, nameByPiece, placeNote, sectionsOf, setSectionWidth,
-  splitSection, takeOff, type CockpitSpec,
+  NEW_SECTION, addDrawer, addSectionInside, duplicate, inColumns, layOut, nameByPiece, placeNote, placePiece, sectionsOf,
+  setSectionWidth, splitSection, takeOff, takeOffAll, type CockpitSpec,
 } from "@/lib/cockpit/edit";
 import { grammar } from "@/lib/cockpit/grammar";
 import { checkCockpitSpec } from "@/lib/cockpit/rules";
@@ -190,5 +190,53 @@ describe("the writer of a cockpit", () => {
     expect(on).toMatch(/or, laid out, Section — at most 3 deep\. It may hold nothing yet\./);
     expect(on.replace(/, layout \(optional[^)]*\), w \(1 to 12[^)]*\)/, "").replace(/Holds Card, Note, Image; or, laid out, Section — at most 3 deep\. It may hold nothing yet\./, "Holds Card, Note, Image, at least one."))
       .toBe(grammar());
+  });
+});
+
+describe("a drawer (Arc AP-4: what opens beside the page)", () => {
+  function chosen(): CockpitSpec {
+    const s = desk();
+    s.elements.today.children.push("orders");
+    s.elements.orders = { type: "ObjectList", props: { entity: "order", chooses: "chosen-order", w: 6, h: 8 }, children: [] };
+    return s;
+  }
+
+  it("is added after the page, opening on a choice and holding the chosen one's detail — and the rules accept it", () => {
+    const { spec, key } = addDrawer(chosen(), "The order", "chosen-order");
+    ok(spec);
+    expect(spec.elements.cockpit.children).toEqual(["today", key]);
+    expect(spec.elements[key!]).toMatchObject({ type: "Drawer", props: { title: "The order", opens_on: "chosen-order" } });
+    const [detail] = spec.elements[key!].children;
+    expect(spec.elements[detail]).toEqual({ type: "ObjectDetail", props: { follows: "chosen-order" }, children: [] });
+    expect(sectionsOf(spec).map(x => [x.key, !!x.drawer])).toEqual([["today", false], [key, true]]);
+  });
+
+  it("opens only on an object a click chooses, and is no cockpit's only child", () => {
+    const { spec, key } = addDrawer(chosen(), "The order", "chosen-order");
+    const stray = structuredClone(spec);
+    stray.elements[key!].props.opens_on = "ticked-orders";
+    expect(issues(stray).join(" ")).toMatch(/The drawer "drawer-chosen-order" opens on "ticked-orders", and no click chooses "ticked-orders"/);
+    const alone = structuredClone(spec);
+    alone.elements.cockpit.children = [key!];
+    expect(issues(alone).join(" ")).toMatch(/holds only drawers\. It holds one Tabs, or sections, for a drawer to open beside/);
+  });
+
+  it("holds the pieces placed in it, stays when its last piece goes, and goes with its pieces when taken off", () => {
+    const { spec, key } = addDrawer(chosen(), "The order", "chosen-order");
+    const placed = placePiece(spec, "ObjectTable", { entity: "order_item" }, key!);
+    expect(placed.spec.elements[key!].children).toHaveLength(2);
+    expect(placed.spec.elements[placed.key!].props.w).toBeUndefined();            // a drawer stacks; it is no grid
+    ok(placed.spec);
+    const [detail] = spec.elements[key!].children;
+    const emptied = takeOff(spec, detail);
+    expect(emptied.elements[key!]?.children).toEqual([]);
+    ok(emptied);                                                                     // an empty drawer waits for a piece
+    const gone = takeOffAll(placed.spec, key!);
+    expect(Object.keys(gone.elements).filter(k => !(k in chosen().elements))).toEqual([]);
+    ok(gone);
+  });
+
+  it("is never told to the writer of a cockpit", () => {
+    expect(grammar({ grid: true, structure: true })).not.toMatch(/Drawer|drawer/);
   });
 });

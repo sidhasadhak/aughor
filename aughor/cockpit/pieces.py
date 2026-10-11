@@ -12,6 +12,11 @@ and never adds one or changes what it names, the canvas's law for a note and an 
 Since 2026-10-10 three more read an entity's objects for a cockpit started from an object
 (`aughor/cockpit/from_object.py`): a filter column over its categories, a figure and a chart of objects per day. They
 are checked the same way, and need their own flag beside this one.
+
+Arc AP-4 adds the pieces the builder's picker offers — a list of objects as cards, a map, a timeline, a choose-one and a
+search. Each is checked as a table is, through the object door's listing over the served ontology; a map's places must
+be numbers and a timeline's moments moments. They need the structure's flag beside this one (`app_pieces`). So does a
+drawer, which holds pieces beside the page and opens on a chosen object: a person places it, as they place a piece.
 """
 from __future__ import annotations
 
@@ -19,13 +24,23 @@ import json
 from typing import Any, Optional
 
 PIECES = ("ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure",
-          "ObjectChart", "ActionButtons")
+          "ObjectChart", "ActionButtons", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch",
+          "Drawer")
 FLAG = "ontology.cockpit_pieces"
 #: The pieces of a cockpit started from an object — refused unless its flag is on too.
 FROM_OBJECT = ("ObjectFilters", "ObjectFigure", "ObjectChart")
 _WORDS = {"ProcessBoard": "process board", "ObjectTable": "objects table", "ObjectDetail": "object detail",
           "ActionButton": "action button", "ObjectFilters": "filter column", "ObjectFigure": "figure",
-          "ObjectChart": "chart", "ActionButtons": "action buttons"}
+          "ObjectChart": "chart", "ActionButtons": "action buttons", "ObjectList": "object list", "ObjectMap": "map",
+          "ObjectTimeline": "timeline", "ChooseOne": "choose-one", "ObjectSearch": "search", "Drawer": "drawer"}
+#: Arc AP-4 — the pieces that list a set's objects as a table does: the props naming the properties each lists — a list's
+#: sort among them, since the object door sorts by a listed property only — and the prop it is ordered by.
+LISTED = {"ObjectList": (("title", "figure", "mark", "sort"), "sort"), "ObjectMap": (("lat", "lng", "label"), ""),
+          "ObjectTimeline": (("label", "start", "end"), "start"), "ChooseOne": (("label",), "label")}
+#: The properties a map places by and a timeline draws between, and what each must hold.
+_HOLDS = {"ObjectMap": {"lat": "number", "lng": "number"}, "ObjectTimeline": {"start": "moment", "end": "moment"}}
+#: The pieces that read an entity and a segment — their own, or a named set's.
+SEGMENTED = ("ObjectTable", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne")
 
 
 def title_of(kind: str, props: dict) -> str:
@@ -33,7 +48,8 @@ def title_of(kind: str, props: dict) -> str:
     named = {"ProcessBoard": props.get("process"), "ActionButton": props.get("action"),
              "ObjectTable": ", ".join(str(v) for v in (props.get("entity") or props.get("set"), props.get("segment")) if v),
              "ObjectFilters": props.get("entity"), "ObjectFigure": props.get("label"),
-             "ObjectChart": props.get("label"),
+             "ObjectChart": props.get("label"), "ObjectSearch": props.get("label"), "Drawer": props.get("title"),
+             **{k: props.get("entity") or props.get("set") for k in LISTED},
              "ActionButtons": ", ".join(str(b.get("label") or b.get("action")) for b in props.get("buttons") or []
                                         if isinstance(b, dict))}.get(kind)
     words = _WORDS.get(kind, kind).capitalize()
@@ -81,7 +97,7 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
     graph = graph if graph is not None else served_graph(connection_id)
     if graph is None:
         return ["The cockpit holds pieces bound to the ontology, and no ontology is built for this connection."]
-    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_listing, find_object_type
+    from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
     said: list[str] = []
     tables: dict[str, str] = {}
     sets = (wiring or {}).get("sets") or {}
@@ -99,10 +115,21 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
                     "columns": list(props.get("columns") or []), "order_by": props.get("sort") or "",
                     "descending": bool(props.get("descending")), "limit": 1}
             try:
-                compiled = compile_object_listing(body, graph, overlay=accepted_edits(connection_id))
-                tables[key] = compiled.type_id
+                tables[key], _ = check_listing(body, graph, connection_id)
             except ObjectQueryRefused as exc:
                 said.append(f'The objects table "{key}" cannot be read: {exc.reason}.')
+        elif kind in LISTED:
+            refused, listed = _listed_read(key, kind, props, graph, connection_id, sets)
+            said += refused
+            if listed:
+                tables[key] = listed
+        elif kind == "ObjectSearch":
+            body = {"entity": str(props.get("entity") or ""), "limit": 1,
+                    "filters": [{"path": str(props.get("path") or ""), "op": "contains", "value": "a"}]}
+            try:
+                check_listing(body, graph, connection_id)
+            except ObjectQueryRefused as exc:
+                said.append(f'The search "{key}" cannot be read: {exc.reason}.')
     for key, (kind, props) in pieces.items():
         if kind != "ActionButton":
             continue
@@ -147,18 +174,104 @@ def _from_object_read(key: str, kind: str, props: dict, graph: Any, connection_i
                       sets: Optional[dict] = None) -> list[str]:
     """A sentence for each query a filter column, a figure or a chart would make that the compiler refuses — compiled
     over the served ontology, never run."""
-    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+    from aughor.semantic.object_query import ObjectQueryRefused
     said = []
     for what, body in _from_object_probes(kind, props, sets):
         try:
-            compile_object_query(body, graph, overlay=accepted_edits(connection_id))
+            check_query(body, graph, connection_id)
         except ObjectQueryRefused as exc:
             said.append(f'The {_WORDS[kind]} "{key}" cannot be read — {what}: {exc.reason}.')
     return said
 
 
+def _platform(graph: Any, name: str):
+    """The platform-owned type ``name`` names — a case, held in the edit layer (Arc OC-6) — or None."""
+    from aughor.ontology.platform_objects import is_platform
+    from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
+    try:
+        entity = find_object_type(graph, name)
+    except ObjectQueryRefused:
+        return None
+    return entity if is_platform(entity) else None
+
+
+def check_listing(body: dict, graph: Any, connection_id: str) -> tuple[str, list[dict]]:
+    """The type a listing reads and the columns it lists — compiled over the served ontology, never run — or
+    `ObjectQueryRefused` with why. A platform-owned type is checked as its own listing reads it, from the edit layer,
+    with no object read (Arc AP-4: a case queue is kept like any cockpit)."""
+    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_listing
+    entity = _platform(graph, str(body.get("entity") or ""))
+    if entity is not None:
+        from aughor.ontology.platform_objects import listing
+        page = listing(entity, [], columns=list(body.get("columns") or []), filters=list(body.get("filters") or []),
+                       order_by=str(body.get("order_by") or ""), segment=str(body.get("segment") or ""), limit=1)
+        if page["path"] == "refused":
+            raise ObjectQueryRefused(page["refused"], page.get("available"))
+        return entity.id, page["columns"]
+    compiled = compile_object_listing(body, graph, overlay=accepted_edits(connection_id))
+    return compiled.type_id, compiled.columns
+
+
+def check_query(body: dict, graph: Any, connection_id: str) -> None:
+    """An object query compiled over the served ontology, never run — `ObjectQueryRefused` with why. A platform-owned
+    type is checked as the query door counts it, from the edit layer (Arc AP-4)."""
+    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+    entity = _platform(graph, str(body.get("object_type") or ""))
+    if entity is not None:
+        from aughor.ontology.platform_objects import query
+        out = query(entity, [], measures=list(body.get("measures") or []), by=list(body.get("by") or []),
+                    filters=list(body.get("filters") or []), segment=str(body.get("segment") or ""),
+                    time=str(body.get("time") or ""), grain=str(body.get("grain") or ""))
+        if out["path"] == "refused":
+            raise ObjectQueryRefused(out["refused"], out.get("available"))
+        return
+    compile_object_query(body, graph, overlay=accepted_edits(connection_id))
+
+
+def listed_columns(kind: str, props: dict) -> list[str]:
+    """The properties a list, a map, a timeline or a choose-one asks the object door for, each once, in its order."""
+    out: list[str] = []
+    for name in LISTED[kind][0]:
+        path = str(props.get(name) or "")
+        if path and path not in out:
+            out.append(path)
+    return out
+
+
+def _holds(column: dict, what: str) -> bool:
+    """Whether a listed column holds numbers, or moments — read as the compiler reads a property's kind."""
+    from aughor.semantic.object_query import NUMERIC_TYPES
+    kind = str(column.get("type") or "").upper()
+    if what == "number":
+        return any(t in kind for t in NUMERIC_TYPES)
+    return column.get("role") == "timestamp" or "DATE" in kind or "TIME" in kind
+
+
+def _listed_read(key: str, kind: str, props: dict, graph: Any, connection_id: str, sets: dict) -> tuple[list[str], str]:
+    """A sentence when the object door refuses what a list, a map, a timeline or a choose-one lists — compiled over the
+    served ontology, never run — or when a map places by a property that holds no number, or a timeline draws between
+    ones that hold no moment; and the type it lists, which a detail following it shows. A property of no known type is
+    not refused: the piece says what it could not draw."""
+    from aughor.semantic.object_query import ObjectQueryRefused
+    entity, segment, conditions = _scope(props, sets)
+    by = LISTED[kind][1]
+    body = {"entity": entity, "segment": segment, "filters": conditions, "columns": listed_columns(kind, props),
+            "order_by": str(props.get(by) or "") if by else "", "descending": bool(props.get("descending")), "limit": 1}
+    try:
+        type_id, columns = check_listing(body, graph, connection_id)
+    except ObjectQueryRefused as exc:
+        return [f'The {_WORDS[kind]} "{key}" cannot be read: {exc.reason}.'], ""
+    typed = {c.get("path"): c for c in columns}
+    said = []
+    for name, what in _HOLDS.get(kind, {}).items():
+        column = typed.get(str(props.get(name) or ""))
+        if column and column.get("type") and not _holds(column, what):
+            said.append(f'The {_WORDS[kind]} "{key}" reads its {name} from "{props.get(name)}", which holds no {what}.')
+    return said, type_id
+
+
 def _table_of(spec: dict, button: str, pieces: dict[str, tuple[str, dict]]) -> str:
-    """The objects table the detail holding ``button`` follows, or ""."""
+    """The piece the detail holding ``button`` follows — a table, or since Arc AP-4 a list, a map or a timeline — or ""."""
     for key, (kind, props) in pieces.items():
         if kind == "ObjectDetail" and button in ((spec.get("elements") or {}).get(key) or {}).get("children", []):
             return str(props.get("follows") or "")
@@ -242,12 +355,14 @@ def depends(spec: Any, graph: Any) -> dict[tuple[str, str], list[str]]:
             add("action", str(props.get("action") or ""), key)
         elif kind in FROM_OBJECT:
             add("entity", _entity_id(graph, str(props.get("entity") or "")), key)
-        elif kind == "ObjectTable":
+        elif kind in SEGMENTED:
             entity = _entity_id(graph, str(props.get("entity") or ""))
             add("entity", entity, key)
             segment = str(props.get("segment") or "")
             if segment:
                 add(*_segment_source(graph, entity, segment), key)
+        elif kind == "ObjectSearch":
+            add("entity", _entity_id(graph, str(props.get("entity") or "")), key)
     return out
 
 
@@ -342,7 +457,7 @@ def cockpits_reading(connection_id: str, names: set[str], *, graph: Optional[Any
         reads = depends(spec, graph)
         hit = sorted({key for (_, t), keys in reads.items() if t in names for key in keys}
                      | {key for key, (k, p) in pieces_of(spec).items()
-                        if k == "ObjectTable" and _effective(spec, p).get("segment") in names})
+                        if k in SEGMENTED and _effective(spec, p).get("segment") in names})
         if hit:
             key = str(row.get("natural_key") or "")
             out.append({"cockpit": key.rsplit(":", 1)[-1], "title": title_of(spec), "pieces": hit})
