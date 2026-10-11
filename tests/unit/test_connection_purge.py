@@ -505,8 +505,10 @@ def test_a_removed_connection_can_be_read_and_cleared_through_its_doors_and_a_he
     guarded = []
     monkeypatch.setattr(registry, "is_registered", lambda c: c in held)
     monkeypatch.setattr(govern, "guard", lambda action, scope="", **k: guarded.append((action, scope)))
-    monkeypatch.setattr(purge, "residue_of", lambda c, root=None: {} if guarded else {"connection_settings.json": 1})
-    monkeypatch.setattr(purge, "purge_connection_artifacts", lambda c: {"swept_paths": 2, "kernel_jobs": 0, "residue": 0})
+    purged = []
+    monkeypatch.setattr(purge, "residue_of",
+                        lambda c, root=None: {} if purged else {"connection_settings.json": 1})
+    monkeypatch.setattr(purge, "purge_connection_artifacts", lambda c: purged.append(c) or {"matcache": 1})
 
     assert client.get("/connections/gone5678/residue").json()["residue"] == {"connection_settings.json": 1}
     assert client.get("/connections/live1234/residue").status_code == 409
@@ -514,4 +516,4 @@ def test_a_removed_connection_can_be_read_and_cleared_through_its_doors_and_a_he
     assert guarded == []                                                   # refused before the gate
     got = client.post("/connections/gone5678/purge").json()
     assert guarded == [("connection.delete", "gone5678")]                  # the same approval as a delete
-    assert got == {"connection_id": "gone5678", "removed": {"swept_paths": 2}, "residue": {}}
+    assert got == {"connection_id": "gone5678", "cleared": {"connection_settings.json": 1}, "residue": {}}

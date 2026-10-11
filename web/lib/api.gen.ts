@@ -3912,7 +3912,9 @@ export interface paths {
          * @description Clear what a REMOVED connection left behind — the platform's default on delete, for a connection removed
          *     before it was (2026-10-11): everything it learned goes, keeping only the SQL audit log and the model-call log.
          *     Behind the same approval as a delete, by the same scope; refused for a connection that exists (delete it, and
-         *     this follows). Returns what was removed and what, if anything, still remains.
+         *     this follows). Returns what the census found before (``cleared``) and what, if anything, it finds after
+         *     (``residue``) — read from the disk, not from the stores' own counters, several of which say 1 whether or not
+         *     anything was there.
          */
         post: operations["purge_removed_connection_connections__conn_id__purge_post"];
         delete?: never;
