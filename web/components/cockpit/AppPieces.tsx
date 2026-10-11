@@ -45,10 +45,13 @@ function useObjectsWord(entity: string | null | undefined, typeId: string | null
   return said.charAt(0).toUpperCase() + said.slice(1);
 }
 
-/** What an object is called: by the property named, or "Order 63981" when it names none. */
+/** What an object is called: by the property named, or "Order 63981" when it names none — and a key that says its type
+ *  already ("case-7530088c") as it is, never "Case case-7530088c". */
 const calledBy = (page: ObjectListingPage, row: unknown[], i: number) => {
   const v = i > 0 ? row[i] : null;
-  return v != null && String(v) !== "" ? String(v) : `${typeWord(page.type_id)} ${String(row[0])}`;
+  if (v != null && String(v) !== "") return String(v);
+  const word = typeWord(page.type_id), key = String(row[0]);
+  return key.toLowerCase().startsWith(word.toLowerCase()) ? key : `${word} ${key}`;
 };
 
 /** One page of a piece's set: the objects, refused or failed said, read again when what it asks changes or an action
@@ -328,9 +331,16 @@ export function ChooseOnePiece({ entity, set, chooses, label }: { entity?: strin
   const named = !chosen ? null : kept?.pk === chosen.pk ? kept.name : filtered.find(o => o.pk === chosen.pk)?.name ?? null;
   return (
     <Frame testid="choose-one">
-      <Title title={`Choose ${/^[aeiou]/i.test(noun) ? "an" : "a"} ${noun.toLowerCase().replace(/s$/, "")}`} right={chosen && (
-        <Button size="xs" variant="ghost" data-testid="choose-one-clear" onClick={() => pick(chooses, null)}>Let go</Button>)} />
-      {chosen && <div className="aug-fs-sm" data-testid="choose-one-chosen" style={{ color: "var(--t1)", fontWeight: 500 }}>{named ?? `${typeWord(chosen.typeId)} ${chosen.pk}`}</div>}
+      <Title title={`Choose ${/^[aeiou]/i.test(noun) ? "an" : "a"} ${noun.toLowerCase().replace(/s$/, "")}`} />
+      {/* the one chosen, and the door to let it go, on a line of their own: a narrow piece keeps its title */}
+      {chosen && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          <span className="aug-fs-sm" data-testid="choose-one-chosen" style={{ flex: 1, minWidth: 0, color: "var(--t1)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {named ?? `${typeWord(chosen.typeId)} ${chosen.pk}`}
+          </span>
+          <Button size="xs" variant="ghost" data-testid="choose-one-clear" onClick={() => pick(chooses, null)}>Let go</Button>
+        </div>
+      )}
       <Input aria-label={`Find ${noun.toLowerCase()} by ${words(label)}`} placeholder={`Find by ${words(label)}`} value={text} onChange={e => setText(e.target.value)} />
       {refused && !page ? <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>{refused}</div> : !page ? <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Reading…</div> : (
         <Body testid="choose-one-options" gap={2}>

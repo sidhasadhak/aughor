@@ -198,14 +198,14 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, onP
       case "Drawer": {
         if (!wiringOn) return { why: "A drawer opens on a chosen object, which needs wiring — off here." };
         if (target && spec.elements[target]?.type === "Drawer") return { why: "A drawer opens beside the page. It holds pieces, not a drawer." };
-        if (!chosen.length) return { why: "Nothing names the object a click chooses yet. Name it in a table's or a list's setup." };
+        if (!chosen.length) return { why: "Nothing names the object a click chooses yet. Name it in the setup of a table, a list, a map or a timeline." };
         const free = chosen.find(c => !Object.values(spec.elements).some(el => el.type === "Drawer" && el.props.opens_on === c.name));
         if (!free) return { why: "Each chosen object opens its drawer already." };
         return { why: "", props: { opens_on: free.name } };
       }
       case "Linked": {
         if (!wiringOn) return { why: "Linking to a chosen object needs wiring, which is off here." };
-        if (!chosen.length) return { why: "Nothing names the object a click chooses yet. Name it in a table's or a list's setup." };
+        if (!chosen.length) return { why: "Nothing names the object a click chooses yet. Name it in the setup of a table, a list, a map or a timeline." };
         if (!of) return { why: "Choose what it lists above — an order's lines, say." };
         if (!ef) return { why: "Reading what the ontology offers…" };
         // what names the chosen object's key: an order line's `order_id` names its order

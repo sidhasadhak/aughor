@@ -138,6 +138,16 @@ describe("a map", () => {
   });
 });
 
+describe("what an object is called", () => {
+  it("is its key as it is when the key says its type already — a case, never \"Case case-…\"", async () => {
+    DATA.case = { "case-7530088c": { status: "resolved" } };
+    draw(desk({ queue: { type: "ObjectList", props: { entity: "case", mark: "status" } } }));
+    await waitFor(() => expect(screen.getAllByTestId("object-list-card")).toHaveLength(1));
+    expect(screen.getByTestId("object-list-card")).toHaveTextContent(/^case-7530088c/);
+    delete DATA.case;
+  });
+});
+
 describe("a timeline", () => {
   it("draws each object from one moment to the next, the latest first, an open one to today, and says so", async () => {
     draw(desk({ line: { type: "ObjectTimeline", props: { entity: "order", start: "created_at", end: "shipped_at" } } }));
@@ -167,6 +177,7 @@ describe("choose one", () => {
     fireEvent.change(screen.getByRole("textbox", { name: /Find/ }), { target: { value: "mem" } });
     await waitFor(() => expect(screen.getAllByTestId("choose-one-option").map(b => b.textContent)).toEqual(["Memphis TN"]));
     expect(screen.getByTestId("choose-one-chosen")).toHaveTextContent("Chicago IL");
+    expect(screen.getByTestId("choose-one")).toHaveTextContent(/^Choose a distribution center/);   // the title stays while one is chosen
   });
 });
 

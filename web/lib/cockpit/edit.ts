@@ -67,7 +67,7 @@ const AUTO_COLUMNS = 4;
 const DEFAULT_SIZE: Record<GridKind, Size> = {
   Card: "small", Note: "small", Image: "small", ProcessBoard: "full", ObjectTable: "wide", ObjectDetail: "small",
   ObjectFigure: "small", ObjectChart: "full", ActionButtons: "small",
-  ObjectList: "wide", ObjectMap: "wide", ObjectTimeline: "full", ChooseOne: "small", ObjectSearch: "small",
+  ObjectList: "wide", ObjectMap: "wide", ObjectTimeline: "full", ChooseOne: "wide", ObjectSearch: "wide",
 };
 /** The rows a kind takes on the grid when nothing measured it: about the room one row of its size gave it. */
 const ROWS: Record<GridKind, number> = {

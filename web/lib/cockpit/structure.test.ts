@@ -236,6 +236,14 @@ describe("a drawer (Arc AP-4: what opens beside the page)", () => {
     ok(gone);
   });
 
+  it("places a choose-one and a search half a section wide beside what is there — never too narrow to read their title", () => {
+    for (const type of ["ChooseOne", "ObjectSearch"] as const) {
+      const placed = placePiece(desk(), type, type === "ChooseOne"
+        ? { entity: "distribution_center", chooses: "chosen-centre", label: "name" } : { entity: "order", path: "status", label: "Find orders" }, "today");
+      expect(placed.spec.elements[placed.key!].props.w).toBe(6);
+    }
+  });
+
   it("is never told to the writer of a cockpit", () => {
     expect(grammar({ grid: true, structure: true })).not.toMatch(/Drawer|drawer/);
   });
