@@ -128,6 +128,21 @@ def test_the_ping_result_carries_reason_and_hint(monkeypatch):
     assert "Incorrect API key" in out["error"]      # the provider's own words survive
 
 
+
+def test_the_ping_says_a_refusal_in_the_providers_words_whole(monkeypatch):
+    """Wrapped, the provider's words came after ~240 characters of our own and were cut: "…are not suppo"."""
+    long_words = 'tool_choice: type "tool" and "any" are not supported for this model; use "auto" or "none". ' * 2
+
+    class BadRequest(Exception):
+        status_code = 400
+        body = {"type": "error", "error": {"type": "invalid_request_error", "message": long_words}}
+
+    wrapped = Exception("structured output unavailable: " + "x" * 300)
+    wrapped.__cause__ = BadRequest("Error code: 400")
+    monkeypatch.setattr(P, "LLMProvider", lambda *a, **k: (_ for _ in ()).throw(wrapped))
+    out = P._ping("anthropic", "claude-x")
+    assert out["reason"] == "bad_request" and out["error"] == long_words[:300]
+
 # ── the failover contract ─────────────────────────────────────────────────────
 
 class _Endpoint:
