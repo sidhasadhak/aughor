@@ -111,7 +111,7 @@ def test_an_accepted_edit_is_listed_like_a_column_and_says_so(db, graph):
     first, second = (r[0] for r in run(db, "SELECT order_id FROM ecommerce.orders ORDER BY order_id LIMIT 2"))
     page = listing(graph, [_edit(second)], columns=["status", "flagged_for_review"], limit=2)
     assert page.columns[-1] == {"name": "flagged_for_review", "path": "flagged_for_review",
-                                "label": "flagged_for_review", "type": "BOOLEAN", "edited": True}
+                                "label": "flagged_for_review", "type": "BOOLEAN", "unit": "", "role": "flag", "edited": True}
     got = {r[0]: r[2] for r in run(db, page.sql)}
     assert got[first] is None and got[second].lower() == "true"
     assert page.overlay and page.overlay[0]["pk"] == second
@@ -132,7 +132,7 @@ def test_a_property_a_declared_action_writes_is_listed_empty_before_any_edit_set
     _flag_action(graph)
     page = listing(graph, columns=["status", "flagged_for_review"], limit=3)
     assert page.columns[-1] == {"name": "flagged_for_review", "path": "flagged_for_review",
-                                "label": "flagged_for_review", "type": "BOOLEAN", "edited": True}
+                                "label": "flagged_for_review", "type": "BOOLEAN", "unit": "", "role": "", "edited": True}
     assert [r[2] for r in run(db, page.sql)] == [None, None, None]
     assert "column flagged_for_review: set by the declared action flag_for_review — no Order carries it yet" in page.plan
     second = run(db, "SELECT order_id FROM ecommerce.orders ORDER BY order_id LIMIT 2")[1][0]

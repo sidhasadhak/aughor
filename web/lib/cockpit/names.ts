@@ -72,11 +72,13 @@ export function nameOf(elements: Record<string, El | undefined>, key: string,
         return [entity(p.entity), p.segment ? words(p.segment) : ""].filter(Boolean).join(", ");
       case "ObjectDetail": {
         const table = elements[String(p.follows ?? "")];
-        if (table?.type === "ObjectTable") return `of ${nameOf(elements, String(p.follows), cardTitle, entityTitle, setTitle).title}`;
-        // a detail following an object a click chooses is called by it: "of the chosen order"
-        return p.follows ? `of the ${words(p.follows).replace(/^chosen\s+/, "chosen ")}` : "";
+        // a title that stands on its own line, in the layout as in a refusal: "Chosen in Waiting"
+        if (table?.type === "ObjectTable") return `Chosen in ${nameOf(elements, String(p.follows), cardTitle, entityTitle, setTitle).title}`;
+        // a detail following an object a click chooses is called by it: "The chosen order"
+        return p.follows ? `The ${words(p.follows)}` : "";
       }
-      case "ObjectFilters": return entity(p.entity);
+      // a filter column counting within a set says so: "Customer Order · within Waiting"
+      case "ObjectFilters": return p.set ? `${entity(p.entity)} · within ${setTitle(String(p.set)) ?? words(p.set)}` : entity(p.entity);
       case "ObjectFigure": case "ObjectChart": return String(p.label ?? "");
       case "ActionButtons": return (Array.isArray(p.buttons) ? p.buttons as { action?: unknown; label?: unknown }[] : [])
         .map(b => String(b.label ?? "") || words(b.action)).filter(Boolean).join(" · ");

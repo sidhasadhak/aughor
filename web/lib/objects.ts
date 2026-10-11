@@ -420,6 +420,10 @@ export interface ObjectListingPage {
   title: string;
   /** One per listed column after the key. `edited` — an accepted edit sets it (or a declared action will). */
   columns: { name: string; path: string; label: string; type: string; edited: boolean;
+             /** The property's unit as the ontology declares it ("USD", "days"); money is written as money. */
+             unit?: string;
+             /** The property's role in the ontology ("key", "measure"…); a key is written as it is. */
+             role?: string;
              /** Arc OC-7 — masked for this reader: listed empty, and the caveats say why. */
              masked?: boolean }[];
   /** The result's own column names, the key first, in the order of each row's cells. */

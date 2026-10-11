@@ -56,7 +56,7 @@ export function ActionButtonsPiece({ buttons }: { buttons: ActionButtonDef[] }) 
   );
 }
 
-type Outcome = { status: "ran" } | { status: "proposed" } | { status: "refused"; message: string };
+type Outcome = { status: "ran" } | { status: "proposed" } | { status: "refused"; message: string } | { status: "failed"; message: string };
 
 function OneButton({ def, declared }: { def: ActionButtonDef; declared: DeclaredAction | null }) {
   const { connectionId, schema, wire, picked, ticked, filters, bump } = usePieces();
@@ -117,12 +117,13 @@ function OneButton({ def, declared }: { def: ActionButtonDef; declared: Declared
         try {
           const out = await runOrPropose(declared.id, params, connectionId, schema, `from a cockpit's button: ${label}`);
           // a server that failed is said as one, never as a refusal the action made
-          outcomes.push(out.status === "refused"
-            ? { status: "refused", message: /^HTTP 5\d\d$/.test(out.message) ? `the server failed while running it (${out.message}) — Actions shows what landed` : out.message }
-            : { status: out.status });
+          outcomes.push(out.status !== "refused" ? { status: out.status }
+            : /^HTTP 5\d\d$/.test(out.message) ? { status: "failed", message: `the server failed while running it (${out.message}) — Actions shows what landed` }
+              : { status: "refused", message: out.message });
           if (outcomes.length === 1 && out.status === "ran") setSaid(ranSaid(out.verification));
         } catch (e) {
-          outcomes.push({ status: "refused", message: (e as Error).message });
+          // nothing came back to say what the action decided: a failure, never a refusal it made
+          outcomes.push({ status: "failed", message: (e as Error).message });
         }
       }
     } finally {

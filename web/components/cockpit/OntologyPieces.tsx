@@ -33,11 +33,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import {
-  anyFilter, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, entityKey, figureText, onDays, plural, splitOnDays,
+  anyFilter, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, entityKey, figureText, onDays, plural, propertyLabel,
+  splitOnDays, typeWord, inLastWindow,
   ticks, toggled, topValues, windowEnd, type Filters,
 } from "@/lib/cockpit/objectView";
 import { MAX_TICKED_RUNS, rowsTall } from "@/lib/cockpit/catalog";
-import { choicesOf, doorConditions, isRefused, pieceSet, type DoorCondition, type WireSpec } from "@/lib/cockpit/sets";
+import { choicesOf, doorConditions, isRefused, pieceSet, readSet, type DoorCondition, type WireSpec } from "@/lib/cockpit/sets";
 import { formatCount, formatDateTime, isNumericType, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { objectHref } from "@/lib/objectLinks";
@@ -385,13 +386,6 @@ export function ProcessBoardPiece({ process }: { process: string }) {
 const TABLE_ROW_PX = 29;
 const TABLE_CHROME_PX = 110;
 
-function cell(v: unknown): string {
-  if (v === null || v === undefined || v === "" || v === "NULL") return "—";
-  if (v === true || v === "true" || v === "True") return "yes";
-  if (v === false || v === "false" || v === "False") return "no";
-  return String(v);
-}
-
 export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, chooses, ticks, columns, sort, descending, tall }: {
   elementKey: string | null;
   entity?: string | null;
@@ -468,11 +462,12 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
           <thead>
             <tr>
               {ticks && <th aria-label="Ticked" style={{ width: 22, borderBottom: "1px solid var(--b1)" }} />}
-              {withUniqueKeys([{ name: page.key, label: page.key, edited: false }, ...page.columns], c => c.name).map(([k, c]) => (
+              {/* the key column headed by what each row is — "Order" — and the rest by their properties' names */}
+              {withUniqueKeys([{ name: page.key, label: typeWord(page.type_id) || page.key, edited: false }, ...page.columns], c => c.name).map(([k, c]) => (
                 <th key={k} style={{ textAlign: "type" in c && isNumericType(c.type) ? "right" : "left", fontWeight: 500, color: "var(--t3)", padding: "4px 8px 6px 0", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap" }}>
                   {c.edited && <Icon name="edit" size={11} label="Set by a declared action" />}
                   {"masked" in c && c.masked && <Icon name="lock" size={11} label="Masked for you — the note under the table says why" />}
-                  {" "}{words(c.label)}
+                  {" "}{propertyLabel(c.label)}
                 </th>
               ))}
             </tr>
@@ -497,7 +492,8 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
                   {row.map((v, i) => {
                     // the key in mono; every other cell written as its column's type reads (a moment, a number)
                     const type = i > 0 ? page.columns[i - 1]?.type : "";
-                    const text = cellText(v, type);
+                    const col = i > 0 ? page.columns[i - 1] : undefined;
+                    const text = cellText(v, type, undefined, col?.unit ?? "", col?.role ?? "");
                     const num = i > 0 && isNumericType(type);
                     return (
                       <td key={page.names[i] ?? i} className={i === 0 ? "aug-mono" : undefined} style={{
@@ -593,11 +589,12 @@ export function ObjectDetailPiece({ follows, children }: { follows: string; chil
         {withUniqueKeys(props, x => x.name).map(([k, p]) => (
           <div key={k} style={{ display: "contents" }}>
             <dt className="aug-fs-xs" style={{ color: "var(--t3)", display: "flex", alignItems: "center", gap: 4 }}>
-              {p.overlay && <Icon name="edit" size={11} label="Set by an accepted action" />}{p.display_name}
+              {p.overlay && <Icon name="edit" size={11} label="Set by an accepted action" />}{propertyLabel(p.display_name, p.name)}
             </dt>
             <dd className="aug-fs-sm" data-testid={p.overlay ? "object-detail-edit" : undefined}
               style={{ margin: 0, overflowWrap: "anywhere", color: p.value == null ? "var(--t3)" : "var(--t1)" }}>
-              {p.withheld ? <Masked why={p.withheld} /> : cell(p.value)}
+              {/* a value written as the table writes it: a moment as "Sep 28, 00:24", money as $25.00 */}
+              {p.withheld ? <Masked why={p.withheld} /> : cellText(p.value, p.data_type || p.semantic_type, undefined, p.unit ?? "", p.semantic_type)}
               {p.overlay && (
                 <span className="aug-fs-xs" style={{ display: "block", color: "var(--t3)" }}>
                   {p.overlay.provenance}{p.overlay.note ? ` — ${p.overlay.note}` : ""}
@@ -774,26 +771,54 @@ export interface FilterProperty { path: string; label: string; via?: string | nu
 
 /** The filter column: each property's values, how many objects hold each, and a bar for it. A reader's click narrows
  *  every piece over the entity; each list is counted under the OTHER filters, never its own. */
-export function ObjectFiltersPiece({ entity, properties }: { entity: string; properties: FilterProperty[] }) {
+export function ObjectFiltersPiece({ entity, properties, set }: { entity: string; properties: FilterProperty[]; set?: string | null }) {
   return (
     <aside data-testid="object-filters" aria-label="Filters" style={{
       background: "var(--bg-2)", border: "1px solid var(--card-edge)", borderRadius: "var(--r3)", padding: "10px 12px",
       display: "flex", flexDirection: "column", gap: 14, alignSelf: "start", position: "sticky", top: 12,
     }}>
-      {withUniqueKeys(properties, p => p.path).map(([k, p]) => <Facet key={k} entity={entity} prop={p} />)}
+      {withUniqueKeys(properties, p => p.path).map(([k, p]) => <Facet key={k} entity={entity} prop={p} set={set} />)}
     </aside>
   );
+}
+
+/** What a filter column counts within (Arc AP-2): the set it names, read as every piece reads one — or none, and it
+ *  counts every object of its entity as it did before sets. */
+function useCountsWithin(set: string | null | undefined): { entity: string; segment: string; conditions: DoorCondition[]; label: string }
+  | { refused: string } | null {
+  const { wire, picked } = usePieces();
+  if (!set) return null;
+  const r = readSet(wire, set);
+  if (isRefused(r)) return r;
+  const read = doorConditions(r, c => picked[c]?.pk ?? null);
+  if ("waiting" in read) return { refused: `Its counts wait on the ${words(read.waiting)}.` };
+  return { entity: r.entity, segment: r.segment, conditions: read.filters, label: r.label };
 }
 
 /** The values a list shows before "Show all", and the most it reads. */
 const SHOWN = 6;
 const MOST = 50;
 
-function Facet({ entity, prop }: { entity: string; prop: FilterProperty }) {
+function Facet({ entity, prop, set }: { entity: string; prop: FilterProperty; set?: string | null }) {
   const { filters, toggle } = usePieces();
   const [all, setAll] = useState(false);
-  const read = useObjectQuery({ object_type: entity, measures: [COUNT], by: [prop.path],
-    filters: conditionsFor(filters, entity, prop.path), order_by: "n", descending: true, limit: MOST + 1 });
+  // within a set, its counts are of the set's objects ("China 480" of the waiting orders); else of every object — the
+  // body asked before sets, key for key
+  const within = useCountsWithin(set);
+  const scoped = within && "entity" in within ? within : null;
+  const read = useObjectQuery(within && "refused" in within ? null : scoped
+    ? { object_type: scoped.entity, ...(scoped.segment ? { segment: scoped.segment } : {}), measures: [COUNT], by: [prop.path],
+        filters: [...scoped.conditions, ...conditionsFor(filters, entity, prop.path)], order_by: "n", descending: true, limit: MOST + 1 }
+    : { object_type: entity, measures: [COUNT], by: [prop.path],
+        filters: conditionsFor(filters, entity, prop.path), order_by: "n", descending: true, limit: MOST + 1 });
+  if (within && "refused" in within) {
+    return (
+      <div data-testid="object-facet">
+        <Label right={prop.via ? <Via what={prop.via} /> : null}>{prop.label}</Label>
+        <div className="aug-fs-sm" style={{ color: "var(--t3)", marginTop: 5 }}>{within.refused}</div>
+      </div>
+    );
+  }
   const chosen = filters[entityKey(entity)]?.[prop.path] ?? [];
   const head = <Label right={prop.via ? <Via what={prop.via} /> : null}>{prop.label}</Label>;
   if (!read || "refused" in read) {
@@ -849,12 +874,19 @@ function Facet({ entity, prop }: { entity: string; prop: FilterProperty }) {
 }
 
 /** Above the pieces a filter column narrows: what is chosen, a way out, and how many objects that leaves. */
-export function FilterBar({ entity, properties }: { entity: string; properties: FilterProperty[] }) {
+export function FilterBar({ entity, properties, set }: { entity: string; properties: FilterProperty[]; set?: string | null }) {
   const { filters, toggle, clear } = usePieces();
   const noun = useNoun(entity);
   const narrowed = conditionsFor(filters, entity);
-  const some = useObjectQuery(narrowed.length ? { object_type: entity, measures: [COUNT], filters: narrowed } : null);
-  const every = useObjectQuery({ object_type: entity, measures: [COUNT] });
+  // within a set (Arc AP-2), how many of the set's objects the reader's filters leave — never every object ever
+  const within = useCountsWithin(set);
+  const scoped = within && "entity" in within ? within : null;
+  const base = scoped ? { object_type: scoped.entity, ...(scoped.segment ? { segment: scoped.segment } : {}) } : { object_type: entity };
+  const setConditions = scoped ? scoped.conditions : [];
+  const some = useObjectQuery(narrowed.length && !(within && "refused" in within)
+    ? { ...base, measures: [COUNT], filters: [...setConditions, ...narrowed] } : null);
+  const every = useObjectQuery(within && "refused" in within ? null
+    : scoped ? { ...base, measures: [COUNT], ...(setConditions.length ? { filters: setConditions } : {}) } : { object_type: entity, measures: [COUNT] });
   const total = every && "rows" in every ? num(every.rows[0]?.[0]) : null;
   const left = some && "rows" in some ? num(some.rows[0]?.[0]) : null;
   const chosen = Object.entries(filters[entityKey(entity)] ?? {}).filter(([, v]) => v.length);
@@ -871,9 +903,13 @@ export function FilterBar({ entity, properties }: { entity: string; properties: 
       ))}
       {chosen.length > 0 && <Button size="xs" variant="ghost" onClick={() => clear(entity)}>Clear</Button>}
       <span data-testid="object-filter-count" style={{ marginLeft: "auto", color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>
-        {narrowed.length
-          ? `${left == null ? "…" : formatCount(left)} of ${total == null ? "…" : formatCount(total)} ${noun}`
-          : `${total == null ? "…" : formatCount(total)} ${noun}`}
+        {within && "refused" in within ? within.refused
+          : scoped ? (narrowed.length
+            ? `${left == null ? "…" : formatCount(left)} of ${total == null ? "…" : formatCount(total)} in “${scoped.label}”`
+            : `${total == null ? "…" : formatCount(total)} in “${scoped.label}”`)
+          : narrowed.length
+            ? `${left == null ? "…" : formatCount(left)} of ${total == null ? "…" : formatCount(total)} ${noun}`
+            : `${total == null ? "…" : formatCount(total)} ${noun}`}
       </span>
     </div>
   );
@@ -968,10 +1004,14 @@ export function ObjectChartPiece({ entity, set, label, time, days, agg, path, fo
   const how = agg || "count";
   const by = split ? [split] : [];
   const scope = (q: { entity: string; segment: string }) => ({ object_type: q.entity, ...(q.segment ? { segment: q.segment } : {}) });
-  const last = useObjectQuery(base ? { ...scope(base), measures: [{ name: "t", agg: "max", path: time }],
+  // a set that counts its own last days on the chart's date is drawn over exactly those days, today included; else the
+  // window ends where the objects stop (Arc AP-2)
+  const fixed = base ? inLastWindow(base.conditions, time) : null;
+  const last = useObjectQuery(base && !fixed ? { ...scope(base), measures: [{ name: "t", agg: "max", path: time }],
     ...(base.conditions.length ? { filters: base.conditions } : {}) } : null);
-  const end = last && "rows" in last ? windowEnd(String(last.rows[0]?.[0] ?? "")) : "";
-  const window = end ? daysBefore(end, days) : [];
+  const end = fixed ? fixed.end : last && "rows" in last ? windowEnd(String(last.rows[0]?.[0] ?? "")) : "";
+  const span = fixed?.days ?? days;
+  const window = end ? daysBefore(end, span) : [];
   const per = (q: { entity: string; segment: string; conditions: DoorCondition[] }): ObjectQueryRequest | null => end ? {
     ...scope(q), measures: [{ name: "n", agg: how, path: path ?? "" }], time, grain: "day", start: window[0], end,
     filters: q.conditions, ...(by.length ? { by } : {}) } : null;
@@ -1003,7 +1043,7 @@ export function ObjectChartPiece({ entity, set, label, time, days, agg, path, fo
   const swatch = (color: string) => <i style={{ width: 10, height: 10, borderRadius: 2, background: color, display: "inline-block" }} />;
   const head = (
     <div style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 500, flexWrap: "wrap" }} className="aug-fs-chrome">
-      <span style={{ color: "var(--t1)" }}>{label} · last {days} days</span>
+      <span style={{ color: "var(--t1)" }}>{label} · last {span} days</span>
       {(narrowed.length > 0 || values.length > 0) && (
         <span className="aug-fs-xs" data-testid="object-chart-legend" style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, color: "var(--t2)", fontWeight: 400, flexWrap: "wrap" }}>
           {split
@@ -1041,7 +1081,13 @@ export function ObjectChartPiece({ entity, set, label, time, days, agg, path, fo
   };
   const colours = split ? [...SERIES.slice(0, values.length), OTHER] : ["var(--chart-1)"];
   const lastI = window.length - 1;
-  const lineEnd = narrowed.length ? all[lastI] : bars[lastI];
+  // the label marks the latest day that holds any — a set of what waits past a 2-day promise holds none from the last
+  // two days, and "0" at the end would say nothing (scenario on theLook, 2026-10-11) — and says its day when not the last
+  const series = narrowed.length ? all : bars;
+  let endI = lastI;
+  while (endI > 0 && !series[endI]) endI--;
+  const lineEnd = series[endI] ?? 0;
+  const endSaid = endI === lastI ? text(lineEnd) : `${text(lineEnd)} on ${dayLabel(window[endI])}`;
   const said = (i: number) => {
     const day = dayLabel(window[i]);
     const parts = split ? stacks[i].map((v, j) => (v > 0 ? `${j < values.length ? values[j] : "Other"} ${tick(v)}` : "")).filter(Boolean) : [];
@@ -1055,7 +1101,7 @@ export function ObjectChartPiece({ entity, set, label, time, days, agg, path, fo
         onMouseLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" data-testid="object-chart-svg"
           style={box.onGrid ? { position: "absolute", left: 0, top: 0 } : { display: "block" }}
-          aria-label={`${label}, last ${days} days${split ? `, split by its ${values.length} most common values` : ""}${narrowed.length ? `: ${chosenWords(filters, ent)} as bars, all ${noun} as a line` : ""}`}>
+          aria-label={`${label}, last ${span} days${split ? `, split by its ${values.length} most common values` : ""}${narrowed.length ? `: ${chosenWords(filters, ent)} as bars, all ${noun} as a line` : ""}`}>
           {axis.map(t => (
             <g key={t}>
               <line x1={LEFT} x2={RIGHT} y1={y(t)} y2={y(t)} stroke="var(--chart-grid)" />
@@ -1085,9 +1131,9 @@ export function ObjectChartPiece({ entity, set, label, time, days, agg, path, fo
             <polyline points={all.map((v, i) => `${mid(i)},${y(v)}`).join(" ")} fill="none" stroke="var(--chart-deemph)"
               strokeWidth={2} strokeLinejoin="round" pointerEvents="none" />
           )}
-          <circle cx={mid(lastI)} cy={y(lineEnd)} r={4} fill={narrowed.length || split ? "var(--chart-deemph)" : "var(--chart-1)"} stroke="var(--bg-2)" strokeWidth={2} pointerEvents="none" />
-          <text x={mid(lastI) - 6} y={y(lineEnd) - 8} textAnchor="end" fill="var(--t2)" style={{ font: "10.5px Inter, system-ui, sans-serif" }}>
-            {text(lineEnd)}
+          <circle cx={mid(endI)} cy={y(lineEnd)} r={4} fill={narrowed.length || split ? "var(--chart-deemph)" : "var(--chart-1)"} stroke="var(--bg-2)" strokeWidth={2} pointerEvents="none" />
+          <text x={mid(endI) - 6} y={y(lineEnd) - 8} textAnchor="end" fill="var(--t2)" data-testid="object-chart-end" style={{ font: "10.5px Inter, system-ui, sans-serif" }}>
+            {endSaid}
           </text>
         </svg>
         {hover !== null && (

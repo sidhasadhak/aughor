@@ -12,6 +12,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ComposedCockpit } from "@/components/cockpit/ComposedCockpit";
 import type { CockpitHostState } from "@/lib/cockpit/hostState";
+import { dayLabel } from "@/lib/cockpit/objectView";
 import type { ObjectQueryRequest } from "@/lib/objects";
 
 const objects = vi.hoisted(() => ({
@@ -155,6 +156,36 @@ describe("a wired cockpit", () => {
     expect(screen.getByRole("checkbox", { name: "Tick 50" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Tick 51" })).toBeDisabled();               // the 51st may not be ticked
     expect(screen.getByRole("checkbox", { name: "Tick 50" })).not.toBeDisabled();           // a ticked one may be let go
+  });
+
+  it("draws a chart over its set's own last days, today included — not where the waiting orders happen to stop", async () => {
+    const day = (n: number) => { const t = new Date(); return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate() + n)).toISOString().slice(0, 10); };
+    // the waiting orders stop three days ago — none placed since can be past a 2-day promise yet
+    objects.queryObjects.mockImplementation(async (b: ObjectQueryRequest) => (b.grain === "day"
+      ? { path: "compiled", columns: [], rows: [[`${day(-4)} 00:00:00`, "120"], [`${day(-3)} 00:00:00`, "308"]], caveats: [], error: null } : answer(b)));
+    draw({ root: "cockpit", values: DESK.values, sets: { placed: DESK.sets.placed, waiting: DESK.sets.waiting }, elements: {
+      cockpit: { type: "Cockpit", props: { title: "Desk" }, children: ["today"] },
+      today: { type: "Section", props: { title: "Desk" }, children: ["chart"] },
+      chart: { type: "ObjectChart", props: { set: "waiting", label: "Waiting, by the day placed", time: "created_at", days: 30 }, children: [] } } });
+    await waitFor(() => expect(asked().some(b => b.grain === "day")).toBe(true));
+    const bars = asked().find(b => b.grain === "day")!;
+    expect([bars.start, bars.end]).toEqual([day(-13), day(1)]);                            // the set's 14 days, not the chart's 30
+    expect(asked().some(b => b.measures[0].agg === "max")).toBe(false);                   // no reading of where the objects stop
+    expect(screen.getByTestId("object-chart")).toHaveTextContent("last 14 days");
+    // labelled at its latest day that holds any, and that day said — never "0" at the end
+    await waitFor(() => expect(screen.getByTestId("object-chart-end")).toHaveTextContent(`308 orders on ${dayLabel(day(-3))}`));
+  });
+
+  it("counts its filter column within the set it names, and says how many of the set the reader's filters leave", async () => {
+    const desk = { ...DESK, elements: { ...DESK.elements, filters: { ...DESK.elements.filters, props: { ...DESK.elements.filters.props, set: "placed" } } } };
+    draw(desk);
+    await waitFor(() => expect(asked()).toContainEqual({ object_type: "order", measures: [{ name: "n", agg: "count" }], by: ["status"],
+      filters: [IN_14], order_by: "n", descending: true, limit: 51 }));
+    await waitFor(() => expect(screen.getByTestId("object-filter-count")).toHaveTextContent("6,619 in “Placed”"));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Status: Processing" }));
+    const status = { path: "status", op: "in", values: ["Processing"] };
+    await waitFor(() => expect(asked()).toContainEqual({ object_type: "order", measures: [{ name: "n", agg: "count" }], filters: [IN_14, status] }));
+    expect(screen.getByTestId("object-filter-count")).toHaveTextContent("of 6,619 in “Placed”");
   });
 
   it("collects ticks in a table that names them, and clears them", async () => {

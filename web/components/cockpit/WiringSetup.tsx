@@ -11,7 +11,7 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 
-import { entityFields, isTime, type EntityField, type EntityFields } from "@/components/cockpit/PieceSetup";
+import { entityFields, isNumber, isTime, type EntityField, type EntityFields } from "@/components/cockpit/PieceSetup";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -271,7 +271,8 @@ export function SetSetup({ spec, name, onChange, onGone, connectionId, schema }:
           }} />
       </Row>
       <Row label="Keeps only" hint="A segment the ontology derives — overdue on dispatch, returned — or every object.">
-        <Pick label="Segment" value={set.segment ?? ""} none="Every object" options={(fields?.segments ?? []).map(s => ({ value: s, label: words(s) }))}
+        <Pick label="Segment" value={set.segment ?? ""} none="Every object"
+          options={[...new Set([...(fields?.segments ?? []), ...(set.segment ? [set.segment] : [])])].map(s => ({ value: s, label: words(s) }))}
           onPick={v => put({ ...set, segment: v || null }, "a set's segment chosen by hand")} />
       </Row>
       <Row label="And where" testid="set-where" hint={where.length >= MAX_WHERE ? `At most ${MAX_WHERE} conditions of its own.` : "A property, and what it must be. A number of days counts back from today."}>
@@ -309,29 +310,63 @@ function Condition({ spec, c, fields, onChange, onDrop }: {
 }) {
   const f = fields.find(x => x.path === c.path);
   const time = !!f && isTime(f);
+  const number = !!f && isNumber(f);
   const ops = SET_OPS.filter(o => (o === "in_last" ? time : true));
   const days = Object.entries(spec.values ?? {}).filter(([, v]) => v.kind === "days");
+  // an operator chosen that needs something to compare with waits here until it is given one: a comparison with nothing
+  // is refused by the rules, so changing "is not empty" to "is over" kept nothing (scenario on theLook, 2026-10-11)
+  const [draft, setDraft] = useState<SetOp | null>(null);
+  const op = draft ?? c.op;
   const [text, setText] = useState(String(c.value ?? (c.values ?? []).join(", ")));
+  // a number typed for a numeric property is kept as a number: "1" compared with a count is a word, not a count
+  const typed = (x: string): string | number => (number && x.trim() !== "" && !Number.isNaN(Number(x)) ? Number(x) : x.trim());
+  const keep = (next: NonNullable<CockpitSetDef["where"]>[number]) => { setDraft(null); onChange(next); };
   const commit = () => {
-    if (c.op === "in" || c.op === "not_in") onChange({ ...c, values: text.split(",").map(x => x.trim()).filter(Boolean), value: null });
-    else if (c.op === "in_last") { const n = Number(text); if (Number.isInteger(n) && n >= 1) onChange({ ...c, value: n, value_from: null }); }
-    else onChange({ ...c, value: text, value_from: null });
+    if (op === "in" || op === "not_in") {
+      const values = text.split(",").map(x => x.trim()).filter(Boolean).map(typed);
+      if (values.length) keep({ path: c.path, op, values });
+    } else if (op === "in_last") {
+      const n = Number(text);
+      if (Number.isInteger(n) && n >= 1) keep({ path: c.path, op, value: n });
+    } else if (text.trim() !== "") {
+      keep({ path: c.path, op, value: typed(text) });
+    }
+  };
+  const pickOp = (v: string) => {
+    const next = v as SetOp;
+    if (next === "is_null" || next === "not_null") { keep({ path: c.path, op: next }); return; }
+    if (next === "in_last") { setText("14"); keep({ path: c.path, op: next, value: 14 }); return; }
+    // a comparison keeps the value it had, when it had one that is not a number of days; else it waits for one
+    const had = c.op !== "in_last" && c.value != null && c.value !== "" ? c.value : null;
+    if (next === "in" || next === "not_in") {
+      const list = c.values?.length ? c.values : had != null && typeof had !== "boolean" ? [had] : [];
+      if (list.length) keep({ path: c.path, op: next, values: list }); else { setDraft(next); setText(""); }
+    } else if (had != null) {
+      keep({ path: c.path, op: next, value: had });
+    } else {
+      setDraft(next); setText("");
+    }
   };
   return (
     <div data-testid="set-condition" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 4, padding: "4px 0", borderBottom: "1px solid var(--b1)" }}>
       <span className="aug-fs-sm" style={{ color: "var(--t1)", alignSelf: "center" }}>{f ? (f.via ? `${f.label} via ${f.via}` : f.label) : words(c.path)}</span>
       <Button size="xs" variant="ghost" aria-label={`Take the condition on ${words(c.path)} off`} onClick={onDrop}><Icon name="close" size={12} /></Button>
-      <Pick label="Is" value={c.op} options={ops.map(o => ({ value: o, label: OP_WORDS[o] }))}
-        onPick={v => onChange({ path: c.path, op: v as SetOp, ...(v === "in_last" ? { value: 14 } : {}) })} />
+      <Pick label="Is" value={op} options={ops.map(o => ({ value: o, label: OP_WORDS[o] }))} onPick={pickOp} />
       <span />
-      {c.op === "in_last" && days.length > 0 && (
+      {op === "in_last" && days.length > 0 && (
         <Pick label="Days from" value={c.value_from ?? ""} none="A number of days" options={days.map(([n, v]) => ({ value: n, label: `${v.label} · ${String(v.value)} days` }))}
-          onPick={v => onChange({ ...c, value_from: v || null, value: v ? null : 14 })} />
+          onPick={v => keep({ ...c, value_from: v || null, value: v ? null : 14 })} />
       )}
-      {!["is_null", "not_null"].includes(c.op) && !c.value_from && (
-        <Input aria-label={`What ${words(c.path)} ${OP_WORDS[c.op]}`} value={text} onChange={e => setText(e.target.value)} onBlur={commit}
-          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-          placeholder={c.op === "in_last" ? "days" : c.op === "in" || c.op === "not_in" ? "values, comma between" : "value"} />
+      {!["is_null", "not_null"].includes(op) && !(op === c.op && c.value_from) && (
+        <Input aria-label={`What ${words(c.path)} ${OP_WORDS[op]}`} value={text} onChange={e => setText(e.target.value)} onBlur={commit}
+          autoFocus={draft !== null} inputMode={number || op === "in_last" ? "decimal" : undefined}
+          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setDraft(null); setText(String(c.value ?? (c.values ?? []).join(", "))); } }}
+          placeholder={op === "in_last" ? "days" : op === "in" || op === "not_in" ? "values, comma between" : "value"} />
+      )}
+      {draft !== null && (
+        <span className="aug-fs-xs" data-testid="set-condition-waits" style={{ gridColumn: "1 / -1", color: "var(--t3)" }}>
+          Give it what it {OP_WORDS[draft]} to keep it — Escape leaves it as it was.
+        </span>
       )}
     </div>
   );

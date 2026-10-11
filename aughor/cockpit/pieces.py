@@ -130,8 +130,9 @@ def _from_object_probes(kind: str, props: dict, sets: Optional[dict] = None) -> 
     scope = {"segment": segment, "filters": conditions} if (segment or conditions) else {}
     count = {"name": "n", "agg": "count"}
     if kind == "ObjectFilters":
+        # counted within its set when it names one (Arc AP-2), else over every object of its entity, as before sets
         paths = [p.get("path") if isinstance(p, dict) else p for p in props.get("properties") or []]
-        return [(f'its filter on "{p}"', {"object_type": entity, "measures": [count], "by": [p]}) for p in paths]
+        return [(f'its filter on "{p}"', {"object_type": entity, **scope, "measures": [count], "by": [p]}) for p in paths]
     if kind == "ObjectFigure":
         return [("it", {"object_type": entity, **scope, "measures": [{"name": "n", "agg": props.get("agg") or "count",
                                                                        "path": props.get("path") or ""}]})]

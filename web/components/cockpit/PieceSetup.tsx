@@ -21,15 +21,16 @@ import { Segmented } from "@/components/ui/segmented";
 import { SelectField } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  CHART_DAYS, CHART_TOPS, FIGURE_AGGS, MAX_CAPTION, MAX_FILTERS, MAX_LABEL, MAX_NOTE, MAX_TABLE_COLUMNS, MAX_TITLE,
-  SPLIT_AGGS, TONES,
+  CHART_DAYS, CHART_TOPS, FIGURE_AGGS, MAX_CAPTION, MAX_FILTERS, MAX_LABEL, MAX_NOTE, MAX_TABLE_COLUMNS, MAX_TICKED_RUNS,
+  MAX_TITLE, SPLIT_AGGS, TONES,
 } from "@/lib/cockpit/catalog";
 import {
   editNote, freshWireName, moveCardTo, moveCardToNewSection, moveSectionTo, recaption, rename, sectionsOf, setProps, tabsOf,
   type CockpitSpec,
 } from "@/lib/cockpit/edit";
-import { lineOf, nameOf, setTitles } from "@/lib/cockpit/names";
-import { choicesOf, isRefused, pieceSet } from "@/lib/cockpit/sets";
+import { lineOf, nameOf, setTitles, wireWords } from "@/lib/cockpit/names";
+import { propertyLabel } from "@/lib/cockpit/objectView";
+import { choicesOf, isRefused, pieceSet, readSet } from "@/lib/cockpit/sets";
 import { ButtonsSetup } from "@/components/cockpit/ButtonsSetup";
 import { Checkbox as Tick } from "@/components/ui/checkbox";
 import { withUniqueKeys } from "@/lib/listKeys";
@@ -73,10 +74,12 @@ export function entityFields(entity: string, connectionId: string, schema?: stri
   let p = read.get(id);
   if (!p) {
     p = (async () => {
+      // the processes are read beside the type: a promise's overdue segment is one a set or a table may keep
+      const processes = (async () => { try { return await getProcesses(connectionId, schema); } catch { return null; } })();
       const t = await getObjectType(entity, connectionId, schema);
       if (!("properties" in t)) throw new Error("This entity is not one the ontology serves here.");
       const own = (props: TypeProperty[], prefix = "", via?: string): EntityField[] => props.filter(x => !x.is_key).map(x => ({
-        path: `${prefix}${x.name}`, label: x.display_name || words(x.name), via, role: x.role, type: x.data_type, unit: x.unit }));
+        path: `${prefix}${x.name}`, label: propertyLabel(x.display_name, x.name), via, role: x.role, type: x.data_type, unit: x.unit }));
       const type = t as ObjectTypeDetail;
       const seen = new Set<string>();
       const toOne = [...type.links].filter(l => l.kind === "to-one" && l.traversable).sort((a, b) => a.name.length - b.name.length);
@@ -88,7 +91,13 @@ export function entityFields(entity: string, connectionId: string, schema?: stri
           return "properties" in lt ? own((lt as ObjectTypeDetail).properties, `${l.name}.`, l.to_name || words(l.to)) : [];
         } catch { return []; }
       }));
-      return { fields: [...own(type.properties), ...linked.flat()], segments: type.segments ?? [],
+      // every segment the object door reads on it: its own, the ones a process or a rule derives, and each promise's
+      // overdue ones — "overdue on dispatch" was kept by a set and offered nowhere (scenario on theLook, 2026-10-11)
+      const sameType = (name: string) => [entity, type.object_type, type.id].some(x => (x ?? "").toLowerCase() === name.toLowerCase());
+      const derived = (type.derived?.segments ?? []).filter(d => d.usable).map(d => d.name);
+      const overdue = ((await processes)?.processes ?? []).flatMap(pr => pr.stages ?? [])
+        .map(st => st.promise).filter(pm => !!pm?.overdue_segment && sameType(pm.grain)).map(pm => pm!.overdue_segment!);
+      return { fields: [...own(type.properties), ...linked.flat()], segments: [...new Set([...(type.segments ?? []), ...derived, ...overdue])],
         links: toOne.map(l => ({ name: l.name, to: l.to })), offeredFor: Object.fromEntries(links.map(l => [l.to, l.name])) };
     })();
     read.set(id, p);
@@ -438,6 +447,21 @@ function ReadsRow({ spec, k, p, entity, onChange }: { spec: CockpitSpec; k: stri
   );
 }
 
+/** What a filter column counts within (Arc AP-2): every object of its entity, or a set of it — so its counts say how
+ *  the waiting orders split, not every order ever. */
+function CountsWithinRow({ spec, k, p, onChange }: { spec: CockpitSpec; k: string; p: Props; onChange: Change }) {
+  const entity = String(p.entity ?? "");
+  const sets = Object.keys(spec.sets ?? {}).map(n => ({ n, r: readSet(spec, n) }))
+    .filter(({ r }) => !isRefused(r) && r.entity.toLowerCase() === entity.toLowerCase() && !r.linkedTo);
+  return (
+    <Row label="Counts within" testid="setup-counts-within" hint="A reader's ticks narrow every set of the same objects, whatever it counts within.">
+      <Pick label="Counts within" value={p.set ? String(p.set) : ""}
+        options={[{ value: "", label: `Every ${words(entity).toLowerCase()}` }, ...sets.map(({ n }) => ({ value: n, label: spec.sets?.[n]?.label ?? n }))]}
+        onPick={v => onChange(setProps(spec, k, { set: v || null }), "what a filter column counts within chosen by hand")} />
+    </Row>
+  );
+}
+
 /** What a click in a table chooses and what its ticks collect — each a choice other pieces read — and whether figures
  *  switch the set it lists. */
 function ChoicesRows({ spec, k, p, noun, set }: { spec: CockpitSpec; k: string; p: Props; noun: string; set: (patch: Props, note: string) => void }) {
@@ -445,14 +469,14 @@ function ChoicesRows({ spec, k, p, noun, set }: { spec: CockpitSpec; k: string; 
   void k;
   return (
     <>
-      <Row label="A click" testid="setup-chooses" hint={p.chooses ? `Chooses the ${words(String(p.chooses))}: a detail, a set or a button reads it.` : "Chooses a row for this table alone."}>
+      <Row label="A click" testid="setup-chooses" hint={p.chooses ? `Chooses “${wireWords(String(p.chooses))}”: a detail, a set or a button reads it.` : "Chooses a row for this table alone."}>
         <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t2)" }}>
           <Tick checked={!!p.chooses} aria-label="A click chooses for the cockpit"
             onChange={e => set({ chooses: e.target.checked ? freshWireName(spec, `chosen ${noun}`) : null }, "what a click chooses named by hand")} />
           Names the {noun.toLowerCase()} it chooses, for other pieces
         </label>
       </Row>
-      <Row label="Ticks" testid="setup-ticks" hint={p.ticks ? `Collects the ${words(String(p.ticks))} — a button runs once for each, at most 50.` : undefined}>
+      <Row label="Ticks" testid="setup-ticks" hint={p.ticks ? `Collects “${wireWords(String(p.ticks))}” — a button runs once for each, at most ${MAX_TICKED_RUNS}.` : undefined}>
         <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t2)" }}>
           <Tick checked={!!p.ticks} aria-label="Ticks collect rows"
             onChange={e => set({ ticks: e.target.checked ? freshWireName(spec, `ticked ${noun}`) : null }, "what ticks collect named by hand")} />
@@ -461,7 +485,7 @@ function ChoicesRows({ spec, k, p, noun, set }: { spec: CockpitSpec; k: string; 
       </Row>
       {!!p.set && shown.length > 0 && (
         <Row label="Figures switch it" hint="A figure clicked shows its set here; the set above stands until one is.">
-          <Pick label="Figures switch it" value={String(p.set_from ?? "")} none="No" options={shown.map(c => ({ value: c.name, label: `Yes — ${words(c.name)}` }))}
+          <Pick label="Figures switch it" value={String(p.set_from ?? "")} none="No" options={shown.map(c => ({ value: c.name, label: `Yes — the figures that show in “${wireWords(c.name)}”` }))}
             onPick={v => set({ set_from: v || null }, "what switches a table chosen by hand")} />
         </Row>
       )}
@@ -475,14 +499,14 @@ function FigureWiring({ spec, p, set }: { spec: CockpitSpec; p: Props; set: (pat
   const shown = [...choicesOf(spec).values()].filter(c => c.kind === "shown");
   return (
     <>
-      <Row label="Said beside" hint="The same measure over another set — 1,375 of 6,788 placed.">
+      <Row label="Said beside" hint="The same measure over another set, said under the figure: “of … placed”.">
         <Pick label="Said beside" value={String(p.of ?? "")} none="Nothing, or the whole while filtered" options={sets.map(([n, d]) => ({ value: n, label: `of ${d.label}` }))}
           onPick={v => set({ of: v || null }, "what a figure is said beside chosen by hand")} />
       </Row>
       {!!p.set && (
         <Row label="A click" testid="setup-shows" hint="Shows this figure's set in a table that figures switch.">
           <Pick label="A click shows it" value={String(p.shows ?? "")} none="Does nothing"
-            options={[...shown.map(c => ({ value: c.name, label: `Shows it in ${words(c.name)}` })),
+            options={[...shown.map(c => ({ value: c.name, label: `Switches the list in “${wireWords(c.name)}”` })),
               ...(shown.length ? [] : [{ value: freshWireName(spec, "shown"), label: "Shows it in a list (new)" }])]}
             onPick={v => set({ shows: v || null }, "what a figure's click shows chosen by hand")} />
         </Row>
@@ -581,13 +605,14 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
         <Row label="Shows the object chosen in">
           <Pick label="Follows" value={String(p.follows ?? "")} onPick={v => v && set({ follows: v }, "a detail's table chosen by hand")}
             options={[...Object.keys(spec.elements).filter(x => spec.elements[x].type === "ObjectTable").map(x => ({ value: x, label: lineOf(spec.elements, x, undefined, undefined, setTitles(spec)) })),
-              ...[...choicesOf(spec).values()].filter(c => c.kind === "chosen").map(c => ({ value: c.name, label: `The chosen ${words(c.name)}` }))]} />
+              ...[...choicesOf(spec).values()].filter(c => c.kind === "chosen").map(c => ({ value: c.name, label: `The ${wireWords(c.name)}` }))]} />
         </Row>
       )}
       {el.type === "ActionButton" && <ActionSetup spec={spec} k={k} p={p} connectionId={connectionId} schema={schema} set={set} />}
       {wiringOn && ["ObjectTable", "ObjectFigure", "ObjectChart"].includes(el.type) && <ReadsRow spec={spec} k={k} p={p} entity={entity ?? ""} onChange={onChange} />}
       {wiringOn && el.type === "ObjectTable" && <ChoicesRows spec={spec} k={k} p={p} noun={noun} set={set} />}
       {wiringOn && el.type === "ObjectFigure" && <FigureWiring spec={spec} p={p} set={set} />}
+      {wiringOn && el.type === "ObjectFilters" && <CountsWithinRow spec={spec} k={k} p={p} onChange={onChange} />}
       {el.type === "ActionButtons" && <ButtonsSetup spec={spec} k={k} onChange={onChange} connectionId={connectionId} schema={schema} />}
       {needsFields && el.type === "ObjectTable" && fieldsBody(f => <TableSetup p={p} ef={f} set={set} noun={noun} />)}
       {needsFields && el.type === "ObjectFigure" && fieldsBody(f => <FigureSetup p={p} ef={f} set={set} />)}

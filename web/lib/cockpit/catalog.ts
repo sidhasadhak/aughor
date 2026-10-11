@@ -297,6 +297,9 @@ export const cockpitCatalog = defineCatalog(schema, {
         }).strict()).min(1).max(MAX_FILTERS),
         /** Its width in grades of 40 px (Arc AP-1); left out, 272 px. */
         w: z.number().int().min(FILTER_WIDTH.least).max(FILTER_WIDTH.most).nullable().optional(),
+        /** Arc AP-2 — the named set its counts are taken within ("China 480" of the orders waiting, not of every order
+         *  ever); left out, every object of its entity. A reader's ticks still narrow every set of its entity. */
+        set: z.string().regex(WIRE_NAME).nullable().optional(),
       }),
       description: "The cockpit's filter column: each property's values with how many objects hold each. A reader's click narrows every piece over the same entity, for that reader only. The cockpit's first child, at most one.",
     },

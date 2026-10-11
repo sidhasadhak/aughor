@@ -6,6 +6,7 @@
  * A reader's filters are their own (the user, 2026-10-10): held per cockpit in their browser, never in the spec.
  */
 import { columnTypeKind, compactNumber, formatCount, formatMetricValue, formatMoney } from "@/lib/format";
+import { currencySymbol } from "@/lib/orgSettings";
 
 /** A reader's filters: entity → property path → the values chosen. */
 export type Filters = Record<string, Record<string, string[]>>;
@@ -63,6 +64,17 @@ export function windowEnd(last: string | null | undefined, today: Date = new Dat
   const t = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const l = last ? utcDay(String(last)) : null;
   return iso(l && addDays(l, 1) < t ? addDays(l, 1) : t);
+}
+
+/** The window a set's own "in the last N days" on `path` gives a chart drawn across `path` (Arc AP-2): exactly those N
+ *  days, today (UTC) included, as the object door counts them — `{ end }` exclusive, the day after today. Null when the
+ *  set counts no last days on that property, and the chart finds its window from the objects it holds. */
+export function inLastWindow(conditions: readonly { path: string; op: string; value?: unknown }[], path: string,
+  today: Date = new Date()): { end: string; days: number } | null {
+  const c = conditions.find(x => x.path === path && x.op === "in_last" && Number.isInteger(x.value) && Number(x.value) >= 1);
+  if (!c) return null;
+  const t = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  return { end: iso(addDays(t, 1)), days: Number(c.value) };
 }
 
 /** The days of a window, oldest first, as ISO days: `days` of them, ending the day before `end`. */
@@ -134,14 +146,18 @@ export function figureText(value: number | null | undefined, agg: string, format
 /** A table cell as a reader reads it, by its column's SQL type: a moment as "Oct 10, 00:32" (with its year when it is
  *  not this year's — "May 16, 2024"), a number with separators and at most two decimals, a flag as yes or no, nothing
  *  as "—". Moments are read and written in UTC, as the warehouse holds them. */
-export function cellText(v: unknown, type: string | null | undefined, now: Date = new Date()): string {
+export function cellText(v: unknown, type: string | null | undefined, now: Date = new Date(), unit = "", role = ""): string {
   if (v === null || v === undefined || v === "" || v === "NULL") return "—";
   if (v === true || v === "true" || v === "True") return "yes";
   if (v === false || v === "false" || v === "False") return "no";
+  // a key names an object: written as it is, never as a quantity (63981, not 63,981)
+  if (role === "key") return String(v);
   const kind = columnTypeKind(type);
   if (kind === "num") {
     const n = Number(v);
     if (Number.isNaN(n)) return String(v);
+    // a currency the ontology declares (ISO 4217): $25.00, never 25
+    if (/^[A-Z]{3}$/.test(unit)) return formatMoney(n, currencySymbol(unit));
     return n.toLocaleString("en-US", { maximumFractionDigits: Number.isInteger(n) ? 0 : 2 });
   }
   if (kind === "date" || kind === "time") {
@@ -154,4 +170,29 @@ export function cellText(v: unknown, type: string | null | undefined, now: Date 
     return thisYear && timed ? `${day}, ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" })}` : day;
   }
   return String(v);
+}
+
+/** A property as a reader reads its name: the ontology's display name, or a raw one spelled out — "Flagged for review",
+ *  never "flagged_for_review". A display name the ontology gives is kept as it is. */
+export function propertyLabel(display: string | null | undefined, name = ""): string {
+  const raw = (display || name || "").trim();
+  if (!/^[a-z0-9_]+$/.test(raw)) return raw;
+  const spaced = raw.replace(/_+/g, " ").trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/** An entity's id as one noun: "Order", "Order item" — what a list's key column is headed by. */
+export function typeWord(typeId: string | null | undefined): string {
+  const spaced = (typeId ?? "").replace(/[_-]+/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").trim().toLowerCase();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/** A column's type as a person reads it: text, a number, a date, a moment, yes or no — never VARCHAR. */
+export function dataTypeWord(type: string | null | undefined): string {
+  const kind = columnTypeKind(type);
+  if (kind === "bool") return "yes or no";
+  if (kind === "num") return "number";
+  if (kind === "date") return "date";
+  if (kind === "time") return "date and time";
+  return "text";
 }

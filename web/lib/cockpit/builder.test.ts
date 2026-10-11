@@ -42,7 +42,7 @@ describe("what each element is called (the study's defects 1 and 5)", () => {
   it("names a piece by what it reads, never by its key or a blank", () => {
     const els = objectCockpit().elements;
     expect(lineOf(els, "table")).toBe("Objects table · order, overdue dispatch");
-    expect(lineOf(els, "detail")).toBe("Object detail · of order, overdue dispatch");
+    expect(lineOf(els, "detail")).toBe("Object detail · Chosen in order, overdue dispatch");
     expect(lineOf(els, "flag")).toBe("Action button · flag for review");
     expect(lineOf(els, "filters")).toBe("Filter column · order");
     expect(lineOf(els, "figure-0")).toBe("Figure · Orders");

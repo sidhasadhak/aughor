@@ -103,16 +103,24 @@ export function runsOf(plan: Exclude<RunPlan, { blocked: string }>, asked: Recor
   return per ? per.pks.map(pk => ({ ...base, [per.param]: pk })) : [base];
 }
 
-/** What a press did, in a sentence: how many ran, how many wait for approval, how many were refused and why. */
-export function pressSaid(outcomes: ({ status: "ran" } | { status: "proposed" } | { status: "refused"; message: string })[], thing: string): string {
+export type PressOutcome = { status: "ran" } | { status: "proposed" } | { status: "refused"; message: string }
+  | { status: "failed"; message: string };
+
+/** What a press did, in a sentence: how many ran, how many wait for approval, how many the action refused and why — and
+ *  how many failed, said as failures: a server that broke is never a refusal the action made. */
+export function pressSaid(outcomes: PressOutcome[], thing: string): string {
   const ran = outcomes.filter(o => o.status === "ran").length;
   const proposed = outcomes.filter(o => o.status === "proposed").length;
   const refused = outcomes.filter((o): o is { status: "refused"; message: string } => o.status === "refused");
+  const failed = outcomes.filter((o): o is { status: "failed"; message: string } => o.status === "failed");
   const n = (k: number) => (k === 1 ? `1 ${thing}` : `${k} ${thing}s`);
+  const one = outcomes.length === 1;
   const parts = [
-    ran ? (outcomes.length === 1 ? "Done." : `Ran on ${n(ran)}.`) : "",
-    proposed ? (outcomes.length === 1 ? "It needs approval — proposed in Actions." : `${proposed} wait for approval in Actions.`) : "",
-    refused.length ? (outcomes.length === 1 ? refused[0].message : `${refused.length} refused: ${refused[0].message}`) : "",
+    ran ? (one ? "Done." : `Ran on ${n(ran)}.`) : "",
+    proposed ? (one ? "It needs approval — proposed in Actions." : `${proposed} wait for approval in Actions.`) : "",
+    refused.length ? (one ? refused[0].message : `${refused.length} refused: ${refused[0].message}`) : "",
+    failed.length ? (one ? `It did not run: ${failed[0].message}` : `${failed.length} did not run: ${failed[0].message}`) : "",
   ];
-  return parts.filter(Boolean).join(" ");
+  // each part its own sentence, so two read as two: "1 refused: … closed. 1 did not run: …"
+  return parts.filter(Boolean).map(x => (/[.!?]$/.test(x) ? x : `${x}.`)).join(" ");
 }

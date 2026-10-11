@@ -151,7 +151,7 @@ function CockpitRoot({ element, children }: ComponentRenderProps<{ title: string
   // A cockpit started from an object: its filter column at the left, the pieces it narrows beside it, and above them
   // what is chosen and how many objects that leaves (the rules hold the column to the root's first child, once).
   const [column, ...rest] = Children.toArray(children);
-  const props = first.props as { entity: string; properties: FilterProperty[]; w?: number | null };
+  const props = first.props as { entity: string; properties: FilterProperty[]; w?: number | null; set?: string | null };
   // Arc AP-1 — its width in grades of 40 px, when a person set one; else as it was drawn before
   const grades = preview ?? props.w ?? null;
   const width = grades ? grades * GRADE : FILTER_COLUMN;
@@ -169,7 +169,7 @@ function CockpitRoot({ element, children }: ComponentRenderProps<{ title: string
         )}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-        <FilterBar entity={props.entity} properties={props.properties} />
+        <FilterBar entity={props.entity} properties={props.properties} set={props.set} />
         {rest}
       </div>
     </div>
@@ -683,8 +683,8 @@ function CockpitActionButton({ element }: ComponentRenderProps<{ action: string 
 // ── a cockpit started from an object (2026-10-10) ─────────────────────────────────────────────────
 // The filter column is drawn by the root, beside the rest; a figure and a chart are drawn in cells like any piece.
 
-function CockpitObjectFilters({ element }: ComponentRenderProps<{ entity: string; properties: FilterProperty[] }>) {
-  return <ObjectFiltersPiece entity={element.props.entity} properties={element.props.properties} />;
+function CockpitObjectFilters({ element }: ComponentRenderProps<{ entity: string; properties: FilterProperty[]; set?: string | null }>) {
+  return <ObjectFiltersPiece entity={element.props.entity} properties={element.props.properties} set={element.props.set} />;
 }
 
 function CockpitObjectFigure({ element }: ComponentRenderProps<{

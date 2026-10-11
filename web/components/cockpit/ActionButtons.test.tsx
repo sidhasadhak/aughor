@@ -118,7 +118,7 @@ describe("a button on a cockpit", () => {
     // the reason may be left, but the form still asks it first: an optional question is still a question
     const form = await screen.findByTestId("action-buttons-form");
     await act(async () => { fireEvent.click(within(form).getByTestId("action-buttons-run")); });
-    await waitFor(() => expect(said()).toEqual(["Ran on 1 order. 1 refused: its criteria did not hold: the order is closed"]));
+    await waitFor(() => expect(said()).toEqual(["Ran on 1 order. 1 refused: its criteria did not hold: the order is closed."]));
   });
 
   it("runs on a set's objects read at the press, saying how many — and refuses more than fifty", async () => {
@@ -148,6 +148,7 @@ describe("a button on a cockpit", () => {
     const form = await screen.findByTestId("action-buttons-form");
     fireEvent.change(within(form).getByLabelText("Who has it"), { target: { value: "Dispatch team" } });
     await act(async () => { fireEvent.click(within(form).getByTestId("action-buttons-run")); });
-    await waitFor(() => expect(said().join(" ")).toMatch(/the server failed while running it \(HTTP 500\)/));
+    await waitFor(() => expect(said().join(" ")).toMatch(/^It did not run: the server failed while running it \(HTTP 500\)/));
+    expect(said().join(" ")).not.toMatch(/refused/);                                       // a failure, never a refusal
   });
 });

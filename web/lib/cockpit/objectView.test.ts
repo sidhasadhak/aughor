@@ -6,8 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CockpitFromObject } from "@/lib/api";
 import {
-  anyFilter, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, figureText, onDays, plural, ticks, toggled,
-  windowEnd, type Filters,
+  anyFilter, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, figureText, onDays, plural, ticks, toggled, windowEnd, type Filters, inLastWindow, propertyLabel, typeWord, dataTypeWord,
 } from "@/lib/cockpit/objectView";
 import { checkCockpitSpec } from "@/lib/cockpit/rules";
 import { everything, holdsAPiece, objectCockpitSpec } from "@/lib/cockpit/start";
@@ -135,5 +134,46 @@ describe("the cockpit a person's ticks make", () => {
     const nothing = { ...all, figures: [], chart: false, table: false };
     expect(holdsAPiece(nothing, PROPOSAL)).toBe(false);
     expect(checkCockpitSpec(objectCockpitSpec(PROPOSAL, nothing)).valid).toBe(false);
+  });
+});
+
+describe("a chart over a set that counts its own last days (Arc AP-2)", () => {
+  const today = new Date(Date.UTC(2026, 9, 11, 0, 50));                 // 00:50 UTC on 11 October
+  it("draws exactly those days, today included — never where the objects happen to stop", () => {
+    expect(inLastWindow([{ path: "created_at", op: "in_last", value: 14 }], "created_at", today)).toEqual({ end: "2026-10-12", days: 14 });
+    expect(daysBefore("2026-10-12", 14)[0]).toBe("2026-09-28");          // the door's first day: today less 13
+  });
+  it("is none when the set counts no last days on the chart's own date", () => {
+    expect(inLastWindow([{ path: "shipped_at", op: "in_last", value: 14 }], "created_at", today)).toBeNull();
+    expect(inLastWindow([{ path: "created_at", op: ">=", value: "2026-09-28" }], "created_at", today)).toBeNull();
+    expect(inLastWindow([{ path: "created_at", op: "in_last", value: 2.5 }], "created_at", today)).toBeNull();
+    expect(inLastWindow([], "created_at", today)).toBeNull();
+  });
+});
+
+describe("what a reader reads in a cell or a heading (Arc AP-2, scenarios on theLook)", () => {
+  it("writes money the ontology declares as money, and every other number as it was", () => {
+    expect(cellText(25, "FLOAT64", undefined, "USD")).toBe("$25.00");
+    expect(cellText("35.17", "FLOAT64", undefined, "USD")).toBe("$35.17");
+    expect(cellText(35.17, "FLOAT64", undefined, "days")).toBe("35.17");
+    expect(cellText(2, "INT64")).toBe("2");
+    expect(cellText(63981, "INT64", undefined, "", "key")).toBe("63981");                 // a key, never a quantity
+    expect(cellText(63981, "INT64")).toBe("63,981");
+  });
+  it("spells out a raw property name and keeps one the ontology gives", () => {
+    expect(propertyLabel("flagged_for_review")).toBe("Flagged for review");
+    expect(propertyLabel("", "order_id")).toBe("Order id");
+    expect(propertyLabel("Created At", "created_at")).toBe("Created At");
+  });
+  it("heads a list's key column by what each row is", () => {
+    expect(typeWord("Order")).toBe("Order");
+    expect(typeWord("OrderItem")).toBe("Order item");
+    expect(typeWord("distribution_center")).toBe("Distribution center");
+  });
+  it("says a column's type in words, never VARCHAR", () => {
+    expect(dataTypeWord("VARCHAR")).toBe("text");
+    expect(dataTypeWord("INT64")).toBe("number");
+    expect(dataTypeWord("TIMESTAMP")).toBe("date and time");
+    expect(dataTypeWord("BOOLEAN")).toBe("yes or no");
   });
 });

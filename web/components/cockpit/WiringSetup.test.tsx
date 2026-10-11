@@ -6,7 +6,7 @@
  * ontology offers and taken away only when nothing reads it; a piece's setup says what it reads and what it chooses; a
  * button's parameter is offered only sources that hold its entity. Every read is mocked — no test reaches an API.
  */
-import { choose, fireEvent, render, screen, waitFor, within } from "@/lib/testing";
+import { choose, fireEvent, optionsOf, render, screen, valueOf, waitFor, within } from "@/lib/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ButtonsSetup } from "@/components/cockpit/ButtonsSetup";
@@ -21,8 +21,12 @@ vi.mock("@/lib/objectTypes", async (original) => ({ ...(await original<typeof im
 
 const prop = (name: string, role: string, data_type = "STRING") =>
   ({ name, display_name: name.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase()), role, data_type, unit: "", is_key: name === "id", null_rate: 0, description: "", source: {} });
-const ORDER = { id: "order", segments: ["overdue_dispatch", "returned_orders"], links: [],
-  properties: [prop("id", "key", "INT64"), prop("status", "dimension"), prop("created_at", "timestamp", "TIMESTAMP"), prop("shipped_at", "timestamp", "TIMESTAMP")] };
+// as theLook's ontology serves Order: its own segments, the ones a promise derives beside them, and no overdue one —
+// that is the process's to say (a fixture listing "overdue_dispatch" among the segments hid the scenario's bug)
+const ORDER = { id: "order", object_type: "order", segments: ["active_orders", "returned_orders"], links: [],
+  derived: { segments: [{ name: "late_dispatch", kind: "segment", source: "the dispatch promise of process order_fulfilment", description: "", usable: true }], properties: [], metrics: [] },
+  properties: [prop("id", "key", "INT64"), prop("status", "dimension"), prop("created_at", "timestamp", "TIMESTAMP"), prop("shipped_at", "timestamp", "TIMESTAMP"),
+    prop("num_of_item", "measure", "INT64")] };
 
 function desk(): CockpitSpec {
   return {
@@ -54,6 +58,9 @@ beforeEach(() => {
         { name: "assignee", display_name: "Who has it", data_type: "VARCHAR", required: true, default_value: null, kind: "value", object_type: "", description: "" }] },
   });
   types.getObjectType.mockImplementation(async () => ORDER);
+  types.getProcesses.mockResolvedValue({ processes: [{ id: "order_fulfilment", stages: [
+    { name: "placed", promise: null },
+    { name: "shipped", promise: { name: "dispatch", grain: "order", overdue_segment: "overdue_dispatch" } }] }], rules: [] });
 });
 
 describe("the Data tab", () => {
@@ -98,6 +105,10 @@ describe("a set's setup", () => {
     fireEvent.blur(name);
     expect(onChange.mock.calls[0][0].sets.waiting.label).toBe("Waiting past the promise");
     await waitFor(() => expect(screen.getByLabelText("Segment")).toBeInTheDocument());
+    // every segment the object door reads on an order: its own, a promise's late one, and the process's overdue one
+    await waitFor(() => expect(optionsOf(screen.getByLabelText("Segment")).map(o => o.value))
+      .toEqual(["", "active_orders", "returned_orders", "late_dispatch", "overdue_dispatch"]));
+    expect(valueOf(screen.getByLabelText("Segment"))).toBe("overdue_dispatch");             // the one it keeps, shown
     await choose(screen.getByLabelText("Segment"), "returned_orders");
     expect(onChange.mock.calls[1][0].sets.waiting.segment).toBe("returned_orders");
     await waitFor(() => expect(screen.getByLabelText("Add a condition")).toBeInTheDocument());
@@ -105,6 +116,31 @@ describe("a set's setup", () => {
     expect(onChange.mock.calls[2][0].sets.waiting.where).toEqual([{ path: "shipped_at", op: "in_last", value: 14 }]);
     await choose(screen.getByLabelText("Starts from"), "entity:order");
     expect(onChange.mock.calls[3][0].sets.waiting).toEqual({ label: "Waiting", entity: "order", segment: "overdue_dispatch" });
+  });
+
+  it("holds an operator that needs something to compare with until it is given one — a number kept as a number", async () => {
+    const onChange = vi.fn();
+    const spec = desk();
+    spec.sets!.items = { label: "Big orders", entity: "order", where: [{ path: "num_of_item", op: "not_null" }] };
+    render(<SetSetup spec={spec} name="items" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} />);
+    await waitFor(() => expect(screen.getByLabelText("Is")).toBeInTheDocument());
+    await choose(screen.getByLabelText("Is"), ">");
+    expect(onChange).not.toHaveBeenCalled();                                                // nothing to compare with yet
+    expect(screen.getByTestId("set-condition-waits")).toHaveTextContent("Give it what it is over to keep it");
+    const value = screen.getByLabelText("What num of item is over");
+    fireEvent.change(value, { target: { value: "1" } });
+    fireEvent.blur(value);
+    expect(onChange.mock.calls[0][0].sets.items.where).toEqual([{ path: "num_of_item", op: ">", value: 1 }]);
+  });
+
+  it("carries a comparison's value to another comparison", async () => {
+    const onChange = vi.fn();
+    const spec = desk();
+    spec.sets!.items = { label: "Big orders", entity: "order", where: [{ path: "num_of_item", op: ">", value: 2 }] };
+    render(<SetSetup spec={spec} name="items" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} />);
+    await waitFor(() => expect(screen.getByLabelText("Is")).toBeInTheDocument());
+    await choose(screen.getByLabelText("Is"), ">=");
+    expect(onChange.mock.calls[0][0].sets.items.where).toEqual([{ path: "num_of_item", op: ">=", value: 2 }]);
   });
 
   it("is taken away once nothing reads it", () => {
@@ -148,6 +184,19 @@ describe("a piece's wiring", () => {
     expect(onChange.mock.calls[1][0].elements.table.props.ticks).toBe("ticked-order");
     fireEvent.click(within(screen.getByTestId("setup-chooses")).getByRole("checkbox"));
     expect(onChange.mock.calls[2][0].elements.table.props.chooses).toBeUndefined();
+  });
+
+  it("counts a filter column within a set of what it filters — never a set of another entity, or one waiting on a choice", async () => {
+    const onChange = vi.fn();
+    const spec = desk();
+    spec.elements.cockpit.children = ["filters", "sec"];
+    spec.elements.filters = { type: "ObjectFilters", props: { entity: "order", properties: [{ path: "status", label: "Status" }] }, children: [] };
+    spec.sets!.lines = { label: "Its lines", entity: "order_item", linked_to: { choice: "chosen-order", path: "order_id" } };
+    render(<PieceSetup spec={spec} selected="filters" onChange={onChange} connectionId={`c${++conn}`} wiringOn />);
+    const within_ = await screen.findByLabelText("Counts within");
+    expect(optionsOf(within_).map(o => o.value)).toEqual(["", "placed", "waiting"]);         // not items, not lines
+    await choose(within_, "waiting");
+    expect(onChange.mock.calls[0][0].elements.filters.props.set).toBe("waiting");
   });
 
   it("is not offered while the install does not wire cockpits", () => {

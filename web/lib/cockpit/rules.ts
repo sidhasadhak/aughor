@@ -272,6 +272,15 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
         issues.push({ code: "bad_prop", elementKey: key, message: `${what} reads a set and also names a segment. A set keeps its own segment.` });
       }
     }
+    // Arc AP-2 — a filter column counting within a set: one the cockpit holds, of the entity it filters
+    if (el.type === "ObjectFilters" && p.set != null) {
+      const within = isSet(p.set) ? readSet(spec, String(p.set)) : null;
+      if (!within) {
+        issues.push({ code: "bad_prop", elementKey: key, message: `The filter column ${q(key)} counts within the set ${q(String(p.set))}, which this cockpit does not hold.` });
+      } else if (!isRefused(within) && within.entity.toLowerCase() !== String(p.entity ?? "").toLowerCase()) {
+        issues.push({ code: "bad_prop", elementKey: key, message: `The filter column ${q(key)} filters ${String(p.entity)} and counts within ${q(String(p.set))}, a set of ${within.entity}. It counts within a set of what it filters.` });
+      }
+    }
     if (el.type === "ObjectFigure" && p.of != null && !isSet(p.of)) {
       issues.push({ code: "bad_prop", elementKey: key, message: `${what} is said beside the set ${q(String(p.of))}, which this cockpit does not hold.` });
     }

@@ -2188,7 +2188,7 @@ class _Compiler:
                 select.append(f"CAST(NULL AS {'BOOLEAN' if boolean else 'VARCHAR'}) AS {quote_ident(name)}")
                 names.append(name)
                 columns.append({"name": name, "path": prop, "label": prop,
-                                "type": "BOOLEAN" if boolean else "VARCHAR", "edited": True})
+                                "type": "BOOLEAN" if boolean else "VARCHAR", "unit": "", "role": "", "edited": True})
                 self.plan.append(f"column {prop}: set by the declared action {action_id} — no {anchor.id} carries "
                                  "it yet")
                 continue
@@ -2199,8 +2199,8 @@ class _Compiler:
                 name = _output_name(names, path.rsplit(".", 1)[-1], path.replace(".", "_"))
                 select.append(f"CAST(NULL AS VARCHAR) AS {quote_ident(name)}")
                 names.append(name)
-                columns.append({"name": name, "path": path, "label": path, "type": "VARCHAR", "edited": False,
-                                "masked": True})
+                columns.append({"name": name, "path": path, "label": path, "type": "VARCHAR", "unit": "", "role": "",
+                                "edited": False, "masked": True})
                 self.caveats.append(exc.reason.split(" — '")[0])
                 continue
             end = hops[-1].target if hops else anchor
@@ -2209,8 +2209,11 @@ class _Compiler:
             name = _output_name(names, path.rsplit(".", 1)[-1], path.replace(".", "_"))
             select.append(f"{col} AS {quote_ident(name)}")
             names.append(name)
+            # the property's unit and role ride with its column: $25.00 where the ontology declares USD, and a key
+            # written as it is — 63981, never 63,981
             columns.append({"name": name, "path": path, "label": p.display_name or p.name,
-                            "type": p.data_type or p.semantic_type or "", "edited": edited})
+                            "type": p.data_type or p.semantic_type or "", "unit": getattr(p, "unit", "") or "",
+                            "role": getattr(p, "semantic_type", "") or "", "edited": edited})
             self.plan.append(f"column {path}" + (" (set by accepted edits)" if edited else ""))
         want = (listing.order_by or key).strip().lower()
         order = next((c["name"] for c in columns if want in (c["path"].lower(), c["name"].lower())),

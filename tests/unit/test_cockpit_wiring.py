@@ -373,3 +373,13 @@ def test_a_models_draft_arranges_a_wired_cockpit_and_never_wires_one(volumes, mo
         {"op": "replace", "path": "/sets/placed/label", "value": "Placed lately"}])
     assert not rewired.staged
     assert any("changes the cockpit's sets or values" in r for r in rewired.refusals), rewired.refusals
+
+
+def test_a_filter_column_counting_within_a_set_is_probed_over_it_and_one_that_does_not_as_before():
+    sets = {"placed": {"entity": "order", "segment": "", "filters": [{"path": "order_date", "op": "in_last", "value": 14}]}}
+    props = {"entity": "order", "properties": [{"path": "status", "label": "Status"}]}
+    [(_, within)] = pieces._from_object_probes("ObjectFilters", {**props, "set": "placed"}, sets)
+    assert within == {"object_type": "order", "filters": [{"path": "order_date", "op": "in_last", "value": 14}], "segment": "",
+                      "measures": [{"name": "n", "agg": "count"}], "by": ["status"]}
+    [(_, every)] = pieces._from_object_probes("ObjectFilters", props, sets)
+    assert every == {"object_type": "order", "measures": [{"name": "n", "agg": "count"}], "by": ["status"]}

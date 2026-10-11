@@ -147,6 +147,12 @@ describe("the rules a wired cockpit is held to", () => {
     expect(broken(s => { s.values!.waiting = { label: "Waiting", kind: "days", value: 3 }; })).toMatch(/"waiting" names a set and a value. One name is one thing/);
   });
 
+  it("hold a filter column's counts to a set the cockpit holds, of what it filters", () => {
+    expect(broken(s => { s.elements.filters.props.set = "waiting"; })).toBe("");
+    expect(broken(s => { s.elements.filters.props.set = "nowhere"; })).toMatch(/counts within the set "nowhere", which this cockpit does not hold/);
+    expect(broken(s => { s.elements.filters.props.set = "lines"; })).toMatch(/filters order and counts within "lines", a set of order_item/);
+  });
+
   it("refuse days that are not a whole number, one or more", () => {
     expect(broken(s => { s.values!.window.value = 2.5; })).toMatch(/counts 2.5 days. Days are a whole number, one or more/);
     expect(broken(s => { s.values!.window.value = 0; })).toMatch(/counts 0 days/);
@@ -238,7 +244,15 @@ describe("what a press runs", () => {
     expect(pressSaid([{ status: "ran" }, { status: "ran" }], "order")).toBe("Ran on 2 orders.");
     expect(pressSaid([{ status: "proposed" }, { status: "proposed" }], "order")).toBe("2 wait for approval in Actions.");
     expect(pressSaid([{ status: "ran" }, { status: "refused", message: "the order is closed" }], "order"))
-      .toBe("Ran on 1 order. 1 refused: the order is closed");
+      .toBe("Ran on 1 order. 1 refused: the order is closed.");
+  });
+
+  it("says a server that failed as a failure, beside what ran — never as a refusal the action made", () => {
+    const failed = { status: "failed" as const, message: "the server failed while running it (HTTP 500)" };
+    expect(pressSaid([failed], "order")).toBe("It did not run: the server failed while running it (HTTP 500).");
+    expect(pressSaid([{ status: "ran" }, failed, failed], "order")).toBe("Ran on 1 order. 2 did not run: the server failed while running it (HTTP 500).");
+    expect(pressSaid([{ status: "refused", message: "its criteria did not hold" }, failed], "order"))
+      .toBe("1 refused: its criteria did not hold. 1 did not run: the server failed while running it (HTTP 500).");
   });
 });
 

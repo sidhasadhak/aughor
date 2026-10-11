@@ -20,6 +20,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { SelectField } from "@/components/ui/select";
 import { MAX_BUTTONS, MAX_LABEL, type ActionButtonDef, type ParamSource } from "@/lib/cockpit/catalog";
 import { setProps, type CockpitSpec } from "@/lib/cockpit/edit";
+import { dataTypeWord } from "@/lib/cockpit/objectView";
 import { choicesOf, isRefused, readSet } from "@/lib/cockpit/sets";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { getDeclaredActions, type DeclaredAction } from "@/lib/objects";
@@ -128,7 +129,7 @@ export function ButtonsSetup({ spec, k, onChange, connectionId, schema }: {
                     <span className="aug-fs-sm" style={{ color: "var(--t1)" }}>
                       {p.display_name || words(p.name)}
                       <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: 6 }}>
-                        {p.kind === "object" ? `${an(words(p.object_type).toLowerCase())}` : words(p.data_type || "value").toLowerCase()}{p.required ? " · needed" : ""}
+                        {p.kind === "object" ? `${an(words(p.object_type).toLowerCase())}` : dataTypeWord(p.data_type)}{p.required ? " · needed" : ""}
                       </span>
                     </span>
                     <SelectField aria-label={`Where ${p.display_name || words(p.name)} comes from`} value={encode(src)}
