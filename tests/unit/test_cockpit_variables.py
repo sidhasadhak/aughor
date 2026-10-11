@@ -229,8 +229,13 @@ def test_only_what_variables_say_is_refused_off_and_a_desk_of_the_author_s_days_
     _flags(monkeypatch, set())
     assert variables.refused_off(_desk()) == []
     said = variables.refused_off(reader)
-    assert said == ["The cockpit reads variables — the value 'window' come from the reader, a count or a chosen object, or "
-                    "compare a value in a set — and variables are off on this install."]
+    assert said == ["The cockpit reads variables — the value 'window' come from the reader, a count or a chosen object, "
+                    "compare a value in a set, or read a set's linked objects or another set whole — and variables are "
+                    "off on this install."]
+    # Arc AP-8b — a set's linked objects, and a set combined with another, are variables' too
+    traversed = _desk(**{"sets.theirs": {"label": "Their customers", "from": "active", "traverse": {"link": "customer", "entity": "customer"}}})
+    combined = _desk(**{"sets.lone": {"label": "Lone", "from": "placed", "combine": {"op": "but_not", "set": "active"}}})
+    assert variables.uses(traversed) == ["the set 'theirs'"] and variables.uses(combined) == ["the set 'lone'"]
     _flags(monkeypatch, {variables.FLAG})
     assert variables.refused_off(reader) == []
 
@@ -304,3 +309,36 @@ def test_the_keep_door_refuses_variables_while_off_a_property_the_entity_lacks_a
     placed["values"]["country"] = {"label": "Country", "kind": "text", "value": "China", "from": {"by": "reader"}}
     assert keep(placed).kept
 
+
+
+# ── Arc AP-8b — a set read whole ──────────────────────────────────────────────────────────────────────────────────
+
+@needs_rules
+def test_a_set_s_linked_objects_and_a_combined_set_are_read_as_the_web_reads_them_and_compiled_before_a_keep(
+        volumes, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(pieces, "accepted_edits", lambda conn: [])
+    graph = _graph()
+    monkeypatch.setattr(pieces, "served_graph", lambda conn: graph)
+    spec = _desk(**{"sets.theirs": {"label": "Their customers", "from": "active", "traverse": {"link": "customer", "entity": "customer"}},
+                    "sets.lone": {"label": "Placed, not active", "from": "placed", "combine": {"op": "but_not", "set": "active"}}})
+    read = wiring.read(spec)
+    window = {"path": "order_date", "op": "in_last", "value": 14}
+    assert read["sets"]["theirs"] == {"entity": "customer", "segment": "", "filters": [
+        {"path": "", "op": "in_set", "sets": [{"entity": "order", "segment": "active_orders", "filters": [window], "via": "customer"}]}]}
+    assert read["sets"]["lone"] == {"entity": "order", "segment": "", "filters": [
+        window, {"path": "", "op": "not_in_set", "sets": [{"entity": "order", "segment": "active_orders", "filters": [window]}]}]}
+    assert wiring.not_resolved("c", spec, graph=graph, wiring=read) == []
+    # a link that reaches other objects than the set says it holds is refused by the door, in its words
+    wrong = _desk(**{"sets.theirs": {"label": "Their lines", "from": "active", "traverse": {"link": "customer", "entity": "order_item"}}})
+    said = " ".join(wiring.not_resolved("c", wrong, graph=graph))
+    assert "reaches Customer" in said and "not OrderItem" in said, said
+    tag = uuid.uuid4().hex[:6]
+    home = Home(f"whole{tag}", ME, f"desk-{tag}")
+
+    def keep(s):
+        return versions.keep(home, s, approved_by="user:amit", source="a person's own hand", written_by_model=False)
+    _flags(monkeypatch, ALL)
+    off = keep(spec)
+    assert not off.kept and "read a set's linked objects or another set whole" in " ".join(off.sentences)
+    _flags(monkeypatch, ALL | {variables.FLAG})
+    assert keep(spec).kept

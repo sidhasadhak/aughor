@@ -45,6 +45,8 @@ export interface EntityFields {
   /** Every to-one link, and the one whose object's properties are offered for each object linked to. */
   links: { name: string; to: string }[];
   offeredFor: Record<string, string>;
+  /** Arc AP-8b — every link the object door may cross, either way and of either kind: what a set's objects reach. */
+  reaches?: { name: string; to: string; toName: string; kind: "to-one" | "to-many" }[];
 }
 
 const words = (id: string) => id.replace(/_/g, " ");
@@ -130,7 +132,8 @@ export function entityFields(entity: string, connectionId: string, schema?: stri
       const overdue = ((await processes)?.processes ?? []).flatMap(pr => pr.stages ?? [])
         .map(st => st.promise).filter(pm => !!pm?.overdue_segment && sameType(pm.grain)).map(pm => pm!.overdue_segment!);
       return { fields: [...own(type.properties), ...linked.flat()], segments: [...new Set([...(type.segments ?? []), ...derived, ...overdue])],
-        links: toOne.map(l => ({ name: l.name, to: l.to })), offeredFor: Object.fromEntries(links.map(l => [l.to, l.name])) };
+        links: toOne.map(l => ({ name: l.name, to: l.to })), offeredFor: Object.fromEntries(links.map(l => [l.to, l.name])),
+        reaches: type.links.filter(l => l.traversable).map(l => ({ name: l.name, to: l.to, toName: l.to_name || words(l.to), kind: l.kind })) };
     })();
     read.set(id, p);
     p.catch(() => read.delete(id));

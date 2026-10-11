@@ -167,6 +167,18 @@ describe("the piece picker", () => {
     return { onPlace, onHandOff, onClose, entry };
   }
 
+  it("offers under each entity only its own sets — the customers a set of orders reaches are offered under Customer (Arc AP-8b)", async () => {
+    objects.cachedObjectCatalog.mockResolvedValue({ object_types: [{ object_type: "order", id: "Order", display_name: "Customer Order" },
+      { object_type: "user", id: "User", display_name: "Customer" }] });
+    const spec = desk();
+    spec.sets!.theirs = { label: "Their customers", from: "late", traverse: { link: "placed_by", entity: "user" } };
+    pick(spec);
+    await waitFor(() => expect(optionsOf(screen.getByLabelText("What it reads")).map(o => o.value)).toEqual(["order", "user"]));
+    expect(optionsOf(screen.getByLabelText("Which of them")).map(o => o.text)).toEqual(["Every one", "Shipped late"]);
+    await choose(screen.getByLabelText("What it reads"), "user");
+    await waitFor(() => expect(optionsOf(screen.getByLabelText("Which of them")).map(o => o.text)).toEqual(["Every one", "Their customers"]));
+  });
+
   it("places a figure of the set chosen in the section, filling it, and names the section by it", async () => {
     const { onPlace, entry } = pick(desk());
     await choose(screen.getByLabelText("Which of them"), "late");

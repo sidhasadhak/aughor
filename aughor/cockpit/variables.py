@@ -30,7 +30,8 @@ def _named(spec: Any, key: str) -> dict:
 
 def uses(spec: Any) -> list[str]:
     """What in ``spec`` only a cockpit with variables says: a value of a day, a value that comes from anyone but its author,
-    and a set that compares a value other than by counting the last days — each once."""
+    a set that compares a value other than by counting the last days, and (Arc AP-8b) a set that reaches its objects'
+    linked objects or is combined with another — each once."""
     out: list[str] = []
     for name, v in _named(spec, "values").items():
         if not isinstance(v, dict):
@@ -40,7 +41,8 @@ def uses(spec: Any) -> list[str]:
             out.append(f"the value {name!r}")
     for name, s in _named(spec, "sets").items():
         where = s.get("where") if isinstance(s, dict) else None
-        if any(isinstance(c, dict) and c.get("value_from") and c.get("op") != "in_last" for c in (where or [])):
+        if any(isinstance(c, dict) and c.get("value_from") and c.get("op") != "in_last" for c in (where or [])) \
+                or (isinstance(s, dict) and (s.get("traverse") or s.get("combine"))):
             out.append(f"the set {name!r}")
     return out
 
@@ -52,7 +54,8 @@ def refused_off(spec: Any) -> list[str]:
     if not said or on():
         return []
     return [f"The cockpit reads variables — {', '.join(said[:4])}{'…' if len(said) > 4 else ''} come from the reader, a count "
-            "or a chosen object, or compare a value in a set — and variables are off on this install."]
+            "or a chosen object, compare a value in a set, or read a set's linked objects or another set whole — and "
+            "variables are off on this install."]
 
 
 def refused_query(sql: str) -> str:

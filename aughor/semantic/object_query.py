@@ -77,7 +77,11 @@ from aughor.semantic.cross_source import KeyedRead
 
 AggName = Literal["count", "count_distinct", "sum", "avg", "min", "max"]
 FilterOp = Literal["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "between",
-                   "is_null", "not_null", "exists", "not_exists", "in_last", "contains"]
+                   "is_null", "not_null", "exists", "not_exists", "in_last", "contains", "in_set", "not_in_set"]
+#: Arc AP-8b — the most sets one condition names, and how deep sets may read sets: a cockpit's sets read each other a
+#: few levels down, never without end.
+MAX_SETS_PER_CONDITION = 4
+MAX_SET_DEPTH = 4
 #: Arc AP-2 — `in_last` keeps the objects whose date or time falls in the last N days, today (UTC) included: resolved
 #: to a date where the query is compiled, so "placed in the last 14 days" reads the same fortnight whoever asks today.
 MAX_IN_LAST_DAYS = 3660
@@ -121,6 +125,23 @@ class ObjectFilter(BaseModel):
     #: a path read through to-one links only, of a comparable type. "Handed to the carrier after the line's shipping
     #: limit" is `order_item_to_order.order_delivered_carrier_date > shipping_limit_date`.
     value_path: str = ""
+    #: Arc AP-8b — for `in_set` / `not_in_set` (with an empty `path`): the sets the object is in — any of them — or in
+    #: none of them. A set of another entity is reached through its `via` link: the customers of the waiting orders.
+    sets: list["ObjectSetRef"] = Field(default_factory=list)
+
+
+class ObjectSetRef(BaseModel):
+    """Arc AP-8b — a set of objects a condition reads: an entity, kept to a segment and its own conditions — which may
+    name sets in turn. With `via`, the set's objects reach the condition's own objects through that link of theirs:
+    `{"entity": "order", "segment": "overdue_dispatch", "via": "placed_by"}` read by a user is "a user who placed an order
+    waiting past its promise". Without it, the set is of the condition's own entity and the object is one of them."""
+    entity: str
+    segment: str = ""
+    filters: list[ObjectFilter] = Field(default_factory=list)
+    via: str = ""
+
+
+ObjectFilter.model_rebuild()
 
 
 class MeasureTerm(BaseModel):
@@ -812,6 +833,8 @@ class _Compiler:
         self._period_specs: list[tuple[str, str, str, str]] = []
         #: Arc OC-4 — the segment the query read, in words (`CompiledObjectListing.segment_said`).
         self.segment_said = ""
+        #: Arc AP-8b — how many sets deep the condition being compiled is.
+        self._set_depth = 0
 
     def _alias(self, prefix: str) -> str:
         self._n += 1
@@ -1552,6 +1575,10 @@ class _Compiler:
 
     # ── conditions ──
     def condition(self, scope: _Scope, f: ObjectFilter) -> str:
+        if f.op in ("in_set", "not_in_set"):
+            return self.in_sets(scope, f)
+        if f.sets:
+            raise ObjectQueryRefused(f"filter '{f.path} {f.op}' names sets — sets are read by in_set and not_in_set")
         segs = _split(f.path, "filter")
         entity, alias = scope.entity, scope.alias
         if f.value_path and f.op not in _COMPARE:
@@ -1590,6 +1617,69 @@ class _Compiler:
                     f"the query on {h.target.id} and reach {h.source.id} through its link")
             return self.exists(scope, alias, h, ".".join(segs[i + 1:]), f)
         raise ObjectQueryRefused(f"filter path '{f.path}' did not resolve")
+
+    def in_sets(self, scope: _Scope, f: ObjectFilter) -> str:
+        """Arc AP-8b — the object is in any of `f.sets` (`in_set`), or in none of them (`not_in_set`). Each set is one
+        EXISTS over its own entity, holding its segment and every one of its conditions on the same object — so "an order
+        overdue on dispatch and placed this fortnight" is one order, never two. A set of the condition's own entity is
+        tied to the object by its key; one of another entity by its `via` link, which must reach the condition's entity.
+        Every read goes through the backing, so each reader's row policies hold inside a set as they do outside one."""
+        if f.path:
+            raise ObjectQueryRefused(f"filter '{f.path} {f.op}' — a set is read of the object itself (an empty path); a "
+                                     "set of another entity is reached through its own `via` link")
+        if not f.sets:
+            raise ObjectQueryRefused(f"filter '{f.op}' names no set")
+        if len(f.sets) > MAX_SETS_PER_CONDITION:
+            raise ObjectQueryRefused(f"filter '{f.op}' names {len(f.sets)} sets — at most {MAX_SETS_PER_CONDITION}")
+        if self._set_depth >= MAX_SET_DEPTH:
+            raise ObjectQueryRefused(f"sets read sets more than {MAX_SET_DEPTH} levels down")
+        if scope.source:
+            raise ObjectQueryRefused("a set is read on the query's own connection, never from inside a read by key")
+        self._set_depth += 1
+        try:
+            reads = [self.one_set(scope, ref) for ref in f.sets]
+        finally:
+            self._set_depth -= 1
+        either = reads[0] if len(reads) == 1 else "(" + " OR ".join(reads) + ")"
+        return f"NOT {either}" if f.op == "not_in_set" else either
+
+    def one_set(self, scope: _Scope, ref: ObjectSetRef) -> str:
+        target = self.entity(ref.entity)
+        if entity_source(self.g, target) != self.at(scope):
+            raise ObjectQueryRefused(f"the set of {target.id} lives on another connection — a set is read beside the "
+                                     f"{scope.entity.id} objects on theirs")
+        inner = _Scope(entity=target, alias=self._alias("s"))
+        if ref.via:
+            h = self.need_hop(target, ref.via, ref.via)
+            if h.target.id != scope.entity.id:
+                raise ObjectQueryRefused(f"the set of {target.id} reaches {h.target.id} through {h.describe()}, not "
+                                         f"{scope.entity.id} — a set read through a link reaches the condition's own "
+                                         "objects")
+            tie = f"{inner.alias}.{quote_ident(h.local_col)} = {scope.alias}.{quote_ident(h.remote_col)}"
+            self.note_link(h, "semi-join over a set", f"link {h.describe()}: the {scope.entity.id} objects the set's "
+                                                      f"{target.id} objects reach — each kept once, never multiplied")
+        else:
+            if target.id != scope.entity.id:
+                raise ObjectQueryRefused(f"a set of {target.id} is read by a {scope.entity.id} only through a link "
+                                         f"(`via`) — or name a set of {scope.entity.id}")
+            key = self.object_key(target)
+            if not key:
+                raise ObjectQueryRefused(f"{target.id} declares no key, so an object of it is not found in a set")
+            tie = f"{inner.alias}.{quote_ident(key)} = {scope.alias}.{quote_ident(key)}"
+        conds = [tie]
+        if ref.segment:
+            said = self.segment_said          # the anchor's own segment is what a listing says, never a set's
+            frag = self.segment(inner, ref.segment)
+            self.segment_said = said
+            if frag:
+                conds.append(frag)
+        conds += [f"({self.condition(inner, c)})" for c in ref.filters]
+        self.say_rows(target)
+        self.plan.append(f"set of {target.id}" + (f" ({ref.segment})" if ref.segment else "")
+                         + (f", {len(ref.filters)} condition{'s' if len(ref.filters) != 1 else ''}" if ref.filters else "")
+                         + (f", reached through {ref.via}" if ref.via else ""))
+        joins = "".join(f" {j}" for j in inner.joins)
+        return f"EXISTS (SELECT 1 FROM {backing_from(target, inner.alias)}{joins} WHERE {' AND '.join(conds)})"
 
     def exists(self, scope: _Scope, outer_alias: str, h: ObjectLink, rest: str, f: ObjectFilter,
                value_rest: str = "") -> str:
@@ -2167,6 +2257,8 @@ class _Compiler:
                 where.append(frag)
         for f in q.filters:
             where.append(self.condition(scope, f))
+            if f.op in ("in_set", "not_in_set"):          # Arc AP-8b — each set says itself, as it is read
+                continue
             self.plan.append(f"filter {f.path} {f.op}" + ("" if f.value is None else f" {f.value!r}")
                              + (f" {f.value_path} (another property of the same object)" if f.value_path else ""))
         return where

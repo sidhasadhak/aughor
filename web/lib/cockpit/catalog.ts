@@ -44,8 +44,9 @@ import { z } from "zod";
  *  pieces (Arc AP-4, 2026-10-11) — a section laid out in columns, rows or tabs of sections of its own (`layout`, a child's
  *  `w` in twelfths), a section that holds nothing yet, and one that goes untitled. 8: variables (Arc AP-8, 2026-10-11) — a
  *  value of a day, a value that comes from the reader, a set's count or the object a reader chose (`from`), and a set's
- *  condition comparing any value as its kind allows. */
-export const COCKPIT_VOCABULARY_VERSION = 8;
+ *  condition comparing any value as its kind allows. 9: a set's linked objects (`traverse`) and a set combined with
+ *  another — either, both, but not (`combine`; Arc AP-8b, 2026-10-11). */
+export const COCKPIT_VOCABULARY_VERSION = 9;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
 export const TONES = ["good", "warn", "bad", "info", "neutral"] as const;
@@ -135,6 +136,11 @@ export const MAX_WHERE = 6;
 export const MAX_BUTTONS = 6;
 /** The most ticked objects one press runs an action on — each run its own, through the executor (the user's call 5). */
 export const MAX_TICKED_RUNS = 50;
+/** Arc AP-8b — how a set is combined with another: in either, in both, or in this one but not that. */
+export const SET_COMBINES = ["either", "both", "but_not"] as const;
+export type SetCombine = (typeof SET_COMBINES)[number];
+/** Arc AP-8b — how many sets deep a set may read sets — the object door's own bound (`MAX_SET_DEPTH`). */
+export const MAX_SET_DEPTH = 4;
 /** What a set's condition may say: the object door's own operators, and `in_last` — the last N days, today included. */
 export const SET_OPS = ["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "is_null", "not_null", "in_last"] as const;
 export type SetOp = (typeof SET_OPS)[number];
@@ -173,6 +179,11 @@ export const cockpitSet = z.object({
   segment: z.string().regex(ONTOLOGY_ID).nullable().optional(),
   where: z.array(setCondition).max(MAX_WHERE).nullable().optional(),
   linked_to: z.object({ choice: z.string().regex(WIRE_NAME), path: z.string().regex(PROPERTY_PATH) }).strict().nullable().optional(),
+  /** Arc AP-8b — after its own start, segment and conditions: the objects of `entity` its objects reach through `link`
+   *  — the customers of the waiting orders. The set is then a set of that entity. */
+  traverse: z.object({ link: z.string().regex(ONTOLOGY_ID), entity: z.string().regex(ONTOLOGY_ID) }).strict().nullable().optional(),
+  /** Arc AP-8b — last: combined with another set of the same entity — in either, in both, or in this one but not that. */
+  combine: z.object({ op: z.enum(SET_COMBINES), set: z.string().regex(WIRE_NAME) }).strict().nullable().optional(),
 }).strict();
 export type CockpitSetDef = z.infer<typeof cockpitSet>;
 
