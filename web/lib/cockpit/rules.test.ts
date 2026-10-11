@@ -46,7 +46,7 @@ describe("the catalog", () => {
       card_statuses: ["within", "over", "unmeasured", "withheld"],
       limits: { elements: MAX_ELEMENTS, tabs: MAX_TABS, cards: MAX_CARDS },
     });
-    expect(COCKPIT_VOCABULARY_VERSION).toBe(6);         // 5: sizes one grade at a time (Arc AP-1); 6: the wiring (AP-2, AP-3)
+    expect(COCKPIT_VOCABULARY_VERSION).toBe(7);         // 5: sizes one grade at a time (Arc AP-1); 6: the wiring (AP-2, AP-3); 7: the structure (AP-4)
   });
 });
 
@@ -234,9 +234,13 @@ describe("the shape of a cockpit", () => {
       .toMatch(/holds tabs and sections side by side/);
   });
 
-  it("an empty section is refused", () => {
-    const said = refused(s => { s.elements["sec-limits"].children = []; delete s.elements["watch-rate"]; });
-    expect(said).toMatch(/section "sec-limits" holds nothing\. An empty Section is refused/);
+  it("an empty section is held, for a builder to offer it a piece — an empty tab is not (Arc AP-4)", () => {
+    const empty = premise();
+    empty.elements["sec-limits"].children = [];
+    delete empty.elements["watch-rate"];
+    expect(checkCockpitSpec(empty).issues).toEqual([]);
+    expect(refused(s => { s.elements["tab-watches"].children = []; delete s.elements["sec-limits"]; delete s.elements["watch-rate"]; }))
+      .toMatch(/tab "tab-watches" holds nothing\. An empty Tab is refused/);
   });
 
   it("two tabs may not share a name", () => {
@@ -445,7 +449,7 @@ describe("the ontology's pieces (Arc OC-4)", () => {
       s.elements.d1.children = [];
       const section = Object.keys(s.elements).find(k => s.elements[k].type === "Section") as string;
       (s.elements[section].children as string[]).push("a1");
-    })).toContain('holds "a1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart, ActionButtons.');
+    })).toContain('holds "a1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart, ActionButtons, Section.');
   });
 
   it("refuses an expression where an id belongs, as for every prop", () => {
@@ -505,7 +509,7 @@ describe("a cockpit started from an object (2026-10-10)", () => {
 
   it("refuses a filter column inside a section", () => {
     expect(refused(s => placed(s, "f1", structuredClone(FILTERS))))
-      .toContain('holds "f1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart, ActionButtons.');
+      .toContain('holds "f1". A Section holds: Card, Note, Image, ProcessBoard, ObjectTable, ObjectDetail, ObjectFigure, ObjectChart, ActionButtons, Section.');
   });
 
   it("refuses a filter whose entry says more than its path, label and object", () => {

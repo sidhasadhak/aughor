@@ -152,6 +152,7 @@ FLAG_ENV = {
     # reader chose or ticked, on a set, or with what they fill in. OFF: the server refuses a spec that says any of it,
     # and the builder offers none of it.
     "cockpit.wiring": "AUGHOR_COCKPIT_WIRING",
+    "cockpit.app_pieces": "AUGHOR_COCKPIT_APP_PIECES",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -522,6 +523,16 @@ FLAG_META = {
                        "declared action, with its own checks and approvals, once per chosen or ticked row. Off: a "
                        "cockpit's pieces read only their own entity.",
     },
+    "cockpit.app_pieces": {
+        "label": "Split cockpits into sections and add more pieces",
+        "summary": "A section splits into columns, rows or tabs, and an empty one offers a piece. The picker "
+                   "places every piece by hand.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Changes only your own cockpits"}],
+        "description": "A section holds pieces on its twelve columns, or is split into sections of its own. Sections "
+                       "side by side take widths one column at a time. An empty section offers a piece or a split, and a "
+                       "reader is drawn nothing there. Off: a cockpit's sections hold pieces only.",
+    },
     "cockpit.builder": {
         "label": "Build cockpits in place",
         "summary": "A cockpit opens to be read, and Edit shows it between its outline and the setup of what you "
@@ -776,6 +787,9 @@ EXPERIMENT: dict = {
     "cockpit.wiring": "does a wired cockpit become a place work is done — of the wired cockpits, is an action run from "
                       "one at least weekly? Falsifiers (§3.57): a cockpit drawn before the wiring renders differently "
                       "with it on, or a run reaches the executor without its declared criteria — either stops it",
+    "cockpit.app_pieces": "does a cockpit built from sections stay read — of the cockpits split into sections, is each "
+                          "read as often as one that is not? Falsifiers (§3.57): a cockpit drawn before sections renders "
+                          "differently with it on, or one split into sections is read less often in two weeks",
     "cockpit.builder": "is the setup where people change a cockpit — of the cockpits started from an object, is one in "
                        "five or more edited within two weeks of starting? Falsifier (§3.57): fewer than one in five, "
                        "and the setup is not where people look",

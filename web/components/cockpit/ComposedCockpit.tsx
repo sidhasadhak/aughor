@@ -39,7 +39,7 @@ import {
 } from "@json-render/react";
 
 import type { CardState } from "@/components/brief/PinnedCardBody";
-import { CanvasScale, CellBoxContext, OFF_GRID, type CellBox } from "@/components/cockpit/cellBox";
+import { CanvasScale, CellBoxContext, OFF_GRID, useMeasured, type CellBox } from "@/components/cockpit/cellBox";
 import { CockpitTile, SaidTile, WIDE, WithheldTile, tileShape, type TileDoors } from "@/components/cockpit/CockpitTile";
 import { ActionButtonsPiece } from "@/components/cockpit/ActionButtonsPiece";
 import {
@@ -47,13 +47,14 @@ import {
   ObjectFiltersPiece, ObjectTablePiece, PiecesProvider, ProcessBoardPiece, useFiltering, usePieceFiltering, type FilterProperty,
 } from "@/components/cockpit/OntologyPieces";
 import { ImageTile, NoteTile, type ImageStamp, type StaticDoors } from "@/components/cockpit/StaticTile";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Refusal } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { BriefingRange, CockpitCard } from "@/lib/api";
 import {
   FILTER_DEFAULT_PX, FILTER_WIDTH, GRADE, GRID, LIMITS, SPAN, rowsTall, sizeOf, type ActionButtonDef, type ComponentName,
-  type GridKind, type Size, type Tone,
+  type GridKind, type Layout, type Size, type Tone,
 } from "@/lib/cockpit/catalog";
 import { boxOf, clampBox, type Box } from "@/lib/cockpit/edit";
 import { stateModel, type CockpitHostState } from "@/lib/cockpit/hostState";
@@ -72,6 +73,9 @@ export interface CockpitDoors extends TileDoors, StaticDoors {
   onFilterWidth?: (grades: number) => void;
   /** Arc AP-1 — the builder: a piece, the filter column or a section pointed at is the one chosen to set up. */
   onSelect?: (key: string) => void;
+  /** Arc AP-4 — an empty section's offer: a piece placed in it, or sections of its own laid out in it. */
+  onAddPiece?: (sectionKey: string) => void;
+  onLayOut?: (sectionKey: string, layout: Layout) => void;
 }
 
 /** What the builder may ask of a cockpit it draws (Arc AP-1): an element's room on its section's grid — measured from
@@ -244,7 +248,116 @@ function useColumns(asked: number | null | undefined): [RefObject<HTMLDivElement
   return [ref, Math.min(asked ?? MAX_AUTO_COLUMNS, fit), width];
 }
 
-function CockpitSection({ element, children }: ComponentRenderProps<{ title: string; columns?: number | null; grid?: number | null }>) {
+type SectionProps = { title?: string | null; columns?: number | null; grid?: number | null; layout?: Layout | null; w?: number | null };
+
+/** A section's own key. Each element's children list is its own object in the spec the renderer draws, so an empty
+ *  section is told from another empty one by it (Arc AP-4); a list equal by its keys is the fallback, as before. */
+function useSectionKey(element: { children?: string[] }): string | null {
+  const { elements } = useCockpit();
+  return useMemo(() => Object.keys(elements).find(k => elements[k]?.type === "Section" && elements[k]?.children === element.children)
+    ?? Object.keys(elements).find(k => elements[k]?.type === "Section" && sameList(elements[k]?.children, element.children ?? [])) ?? null,
+  [elements, element.children]);
+}
+
+/** A section: one laid out in sections of its own, one that holds nothing yet, or one that holds pieces (Arc AP-4). */
+function CockpitSection(props: ComponentRenderProps<SectionProps>) {
+  if (props.element.props.layout) return <LaidOutSection {...props} />;
+  if (!(props.element.children ?? []).length) return <EmptySection {...props} />;
+  return <PiecesSection {...props} />;
+}
+
+/** The outline a section wears in the builder while it is the one chosen. */
+function useChosenOutline(key: string | null) {
+  const { doors, selected } = useCockpit();
+  return {
+    "data-selected": (key !== null && selected === key) || undefined,
+    onPointerDownCapture: doors.onSelect && key ? () => doors.onSelect?.(key) : undefined,
+    style: { borderRadius: "var(--r3)", outline: key !== null && selected === key ? "1px dashed var(--accent)" : undefined, outlineOffset: 6 },
+  };
+}
+
+/** Arc AP-4 — a section split into sections of its own: side by side by their widths in twelfths (stacked when the
+ *  page is too narrow), one under another, or one at a time as tabs — each tab called by its section's title. */
+function LaidOutSection({ element, children }: ComponentRenderProps<SectionProps>) {
+  const { elements } = useCockpit();
+  const key = useSectionKey(element);
+  const chosen = useChosenOutline(key);
+  const [box, room] = useMeasured<HTMLDivElement>();
+  const kids = Children.toArray(children);
+  const held = element.children ?? [];
+  const [tab, setTab] = useState(0);
+  const layout = element.props.layout as Layout;
+  const narrow = room.width > 0 && room.width < NARROW_GRID;
+  return (
+    <section data-testid="cockpit-layout" data-layout={layout} data-key={key ?? undefined} aria-label={element.props.title ?? "Sections"}
+      {...chosen} style={{ ...chosen.style, marginTop: element.props.title ? 20 : 0 }}>
+      {element.props.title && <div className="aug-fs-h2" style={{ fontWeight: 600, color: "var(--t1)", marginBottom: 10 }}>{element.props.title}</div>}
+      {layout === "tabs" ? (
+        <>
+          <div role="tablist" aria-label={element.props.title ?? "Sections"} style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--b1)", marginBottom: 12 }}>
+            {held.map((k, i) => (
+              <Button key={k} size="sm" variant="ghost" role="tab" aria-selected={i === tab} data-testid="cockpit-layout-tab" onClick={() => setTab(i)}
+                style={{ borderRadius: 0, color: i === tab ? "var(--t1)" : "var(--t3)", borderBottom: i === tab ? "2px solid var(--accent)" : "2px solid transparent" }}>
+                {String(elements[k]?.props?.title ?? `Tab ${i + 1}`)}
+              </Button>
+            ))}
+          </div>
+          {/* every tab stays drawn, the ones not shown hidden — a reader's choices in one survive a look at another */}
+          {kids.map((node, i) => <div key={held[i] ?? i} role="tabpanel" hidden={i !== tab}>{node}</div>)}
+        </>
+      ) : (
+        <div ref={box} style={layout === "columns" ? {
+          display: "grid", gap: GRID.gap * 1.5, alignItems: "start", gridTemplateColumns: `repeat(${narrow ? 1 : GRID.columns}, minmax(0, 1fr))`,
+        } : { display: "flex", flexDirection: "column", gap: 4 }}>
+          {kids.map((node, i) => {
+            const w = Number(elements[held[i]]?.props?.w ?? GRID.columns);
+            return <div key={held[i] ?? i} data-testid="cockpit-layout-cell" data-w={layout === "columns" ? w : undefined}
+              style={layout === "columns" ? { gridColumn: `span ${narrow ? 1 : Math.min(GRID.columns, Math.max(1, w))}`, minWidth: 0 } : { minWidth: 0 }}>{node}</div>;
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Arc AP-4 — a section that holds nothing yet. In the builder it says what it may hold — a piece, or sections of its
+ *  own — as Workshop's blank app does (the user, 2026-10-11); a reader is drawn nothing there. */
+function EmptySection({ element }: ComponentRenderProps<SectionProps>) {
+  const { doors } = useCockpit();
+  const key = useSectionKey(element);
+  const chosen = useChosenOutline(key);
+  const [splitting, setSplitting] = useState(false);
+  if (!doors.onSelect) return null;
+  return (
+    <section data-testid="cockpit-empty-section" data-key={key ?? undefined} aria-label={element.props.title ?? "Section"} {...chosen}
+      style={{ ...chosen.style, minHeight: 160, display: "flex", flexDirection: "column", border: "1.5px dashed var(--b2)",
+        borderColor: key !== null && chosen["data-selected"] ? "var(--accent)" : "var(--b2)" }}>
+      <div className="aug-fs-sm" style={{ padding: "8px 12px", color: "var(--t2)", borderBottom: "1px dashed var(--b1)" }}>{element.props.title ?? "Section"}</div>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 16 }}>
+        {doors.onAddPiece && key && (
+          <Button size="sm" variant="outline" data-testid="empty-section-add" onClick={() => doors.onAddPiece?.(key)} style={{ minWidth: 180 }}>
+            <Icon name="plus" size={13} /> Add a piece
+          </Button>
+        )}
+        {doors.onLayOut && key && (splitting ? (
+          <span style={{ display: "inline-flex", gap: 4 }} role="group" aria-label="Split it into">
+            {(["columns", "rows", "tabs"] as const).map(l => (
+              <Button key={l} size="xs" variant="ghost" data-testid={`empty-section-${l}`} onClick={() => { setSplitting(false); doors.onLayOut?.(key, l); }}>
+                {l === "columns" ? "Columns" : l === "rows" ? "Rows" : "Tabs"}
+              </Button>
+            ))}
+          </span>
+        ) : (
+          <Button size="sm" variant="ghost" data-testid="empty-section-split" onClick={() => setSplitting(true)} style={{ minWidth: 180 }}>
+            <Icon name="column" size={13} /> Split into…
+          </Button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PiecesSection({ element, children }: ComponentRenderProps<SectionProps>) {
   const { elements, doors, selected } = useCockpit();
   // A section named as the cockpit is named says nothing new: its heading is not drawn (a cockpit started from an
   // object holds one such section).
@@ -256,14 +369,11 @@ function CockpitSection({ element, children }: ComponentRenderProps<{ title: str
   const gridded = element.props.grid === GRID.columns;
   const stacked = gridded && width > 0 && width < NARROW_GRID;
   const held = element.children ?? [];
-  // A section's children are its own — each element is held by exactly one — so the list names it.
-  const key = useMemo(
-    () => Object.keys(elements).find(k => elements[k]?.type === "Section" && sameList(elements[k]?.children, held)) ?? null,
-    [elements, held]);
+  const key = useSectionKey(element);
   const keys = useMemo(() => ({ key, columns, children: held, grid: gridded, stacked }), [key, columns, held, gridded, stacked]);
   return (
     // in the builder a click anywhere in a section chooses it — and a click on one of its pieces then chooses the piece
-    <section data-testid="cockpit-section" aria-label={element.props.title} data-selected={(key !== null && selected === key) || undefined}
+    <section data-testid="cockpit-section" aria-label={element.props.title ?? "Section"} data-key={key ?? undefined} data-selected={(key !== null && selected === key) || undefined}
       onPointerDownCapture={doors.onSelect && key ? () => doors.onSelect?.(key) : undefined}
       style={{ marginTop: heading ? 20 : 0, borderRadius: "var(--r3)",
         outline: key !== null && selected === key ? "1px dashed var(--accent)" : undefined, outlineOffset: 6 }}>

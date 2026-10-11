@@ -38,6 +38,7 @@ import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/Compose
 import { FindingPicker } from "@/components/cockpit/FindingPicker";
 import { ObjectCockpitStarter } from "@/components/cockpit/ObjectCockpitStarter";
 import { OntologyPieceComposer } from "@/components/cockpit/OntologyPieceComposer";
+import { PiecePicker } from "@/components/cockpit/PiecePicker";
 import { PinStrip } from "@/components/cockpit/PinStrip";
 import { METRICS_COCKPIT, MetricsCockpit } from "@/components/cockpit/MetricsCockpit";
 import { PeriodPicker, choiceName } from "@/components/cockpit/PeriodPicker";
@@ -62,9 +63,9 @@ import {
   type BriefingRange, type CockpitAudience, type CockpitDrafted, type CockpitKept, type CockpitList, type CockpitVersion,
   type PersonCockpit, type SharedCockpit, type SharedCockpitListed, type StagedProposal,
 } from "@/lib/api";
-import { MAX_CAPTION, MAX_NOTE, type Size } from "@/lib/cockpit/catalog";
+import { MAX_CAPTION, MAX_NOTE, type Layout, type Size } from "@/lib/cockpit/catalog";
 import {
-  cardsPlaced, editNote, placeCard, placeImage, placeNote, placePiece, recaption, regrid, resize, sectionsOf, setFilterWidth, takeOff, takeOffCard,
+  cardsPlaced, editNote, layOut, placeCard, placeImage, placeNote, placePiece, recaption, regrid, resize, sectionsOf, setFilterWidth, takeOff, takeOffCard,
   type CockpitSpec,
   type Box,
 } from "@/lib/cockpit/edit";
@@ -675,6 +676,12 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [builderOn, setBuilderOn] = useState(false);
   // Arc AP-2 and AP-3 — sets, choices and action buttons, while `cockpit.wiring` is on
   const [wiringOn, setWiringOn] = useState(false);
+  // Arc AP-4 — a structure of pieces and the piece picker, while `cockpit.app_pieces` is on
+  const [structureOn, setStructureOn] = useState(false);
+  // the picker open, for a section (none: the first that holds pieces); and where a card, a note, an image or a finding
+  // handed off from it lands
+  const [adding, setAdding] = useState<{ section: string | null } | null>(null);
+  const target = useRef<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -704,7 +711,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
       if (alive) {
         setRangesOn(!!f["briefing.ranges"]?.value); setPiecesOn(!!f["ontology.cockpit_pieces"]?.value);
         setObjectsOn(!!f["ontology.object_cockpits"]?.value); setBuilderOn(!!f["cockpit.builder"]?.value);
-        setWiringOn(!!f["cockpit.wiring"]?.value);
+        setWiringOn(!!f["cockpit.wiring"]?.value); setStructureOn(!!f["cockpit.app_pieces"]?.value);
       }
     }).catch(() => { if (alive) { setRangesOn(false); setPiecesOn(false); } });
     return () => { alive = false; };
@@ -752,7 +759,8 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           const fresh = read.cards.filter(c => !known.current.has(c.id) && !placed.has(c.id));
           if (fresh.length) {
             let spec = read.cockpit.spec as CockpitSpec;
-            for (const c of fresh) spec = placeCard(spec, c.id);
+            for (const c of fresh) spec = placeCard(spec, c.id, target.current ?? undefined);
+            target.current = null;
             try { await keepCockpit(connectionId, chosen, spec, "a card pinned from the Briefing"); reload(); return; }
             catch (e) { if (e instanceof CockpitRefused) setRefusal(e.outcome); }
           }
@@ -911,8 +919,13 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
         "an objects table placed from a process board") : undefined,
       onRegrid: (key: string, box: Box, measured: Record<string, Box>) => on(s => regrid(s, key, box, measured), "resized by hand"),
       onFilterWidth: (grades: number) => on(s => setFilterWidth(s, grades), "the filter column resized by hand"),
+      // Arc AP-4 — an empty section's offer: the piece picker for it, or sections of its own
+      ...(structureOn ? {
+        onAddPiece: (section: string) => setAdding({ section }),
+        onLayOut: (section: string, layout: Layout) => on(s => layOut(s, section, layout), `laid out in ${layout} by hand`),
+      } : {}),
     };
-  }, [current, change, refreshOne, onOpenSource, onEvidence, piecesOn]);
+  }, [current, change, refreshOne, onOpenSource, onEvidence, piecesOn, structureOn]);
   const host = useMemo(() => hostStateOf(data?.range.status ?? "standing", cards), [data?.range.status, cards]);
   // Where each image's bytes are read from: the API, with this reader's own access.
   const images = useMemo<Record<string, ImageStamp>>(() => Object.fromEntries(
@@ -1000,11 +1013,13 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
       )}
       {noting && (
         <NoteComposer busy={busy} onClose={() => setNoting(false)}
-          onPlace={text => { edit(s => placeNote(s, text), "a note written by hand", "Placed. Its author and date are stamped as it is kept."); setNoting(false); }} />
+          onPlace={text => { const at = target.current ?? undefined; target.current = null;
+            edit(s => placeNote(s, text, at), "a note written by hand", "Placed. Its author and date are stamped as it is kept."); setNoting(false); }} />
       )}
       {imaging && (
         <ImageComposer connectionId={connectionId} busy={busy} onClose={() => setImaging(false)}
-          onPlace={(objectId, caption) => { edit(s => placeImage(s, objectId, caption), "an image uploaded by hand", "Placed. The upload is stamped with your name and the date."); setImaging(false); }} />
+          onPlace={(objectId, caption) => { const at = target.current ?? undefined; target.current = null;
+            edit(s => placeImage(s, objectId, caption, at), "an image uploaded by hand", "Placed. The upload is stamped with your name and the date."); setImaging(false); }} />
       )}
       {placing && piecesOn && (
         <OntologyPieceComposer connectionId={connectionId} schema={schema} spec={(current ?? kept.spec) as CockpitSpec} busy={busy}
@@ -1033,7 +1048,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     return (
       <div data-testid="briefing-cockpits" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <CockpitBuilder spec={current} onChange={change} cardTitle={id => lines.get(id)?.title} connectionId={connectionId} schema={schema}
-          wiringOn={wiringOn}
+          wiringOn={wiringOn} structureOn={structureOn} onAddPiece={structureOn ? section => setAdding({ section }) : undefined}
           bar={(
             <EditBar saved={saved} canUndo={stacks.past.length > 0} canRedo={stacks.future.length > 0} onUndo={undo} onRedo={redo} onDone={done}
               picker={(
@@ -1127,6 +1142,15 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                 </Callout>
               )}
               {composers}
+              {adding && structureOn && (
+                <PiecePicker spec={current} section={adding.section} connectionId={connectionId} schema={schema} wiringOn={wiringOn}
+                  onPlace={change} onClose={() => setAdding(null)}
+                  onHandOff={(kind, section) => {
+                    setAdding(null); shut(); target.current = section;
+                    if (kind === "card") setComposing(true); else if (kind === "note") setNoting(true);
+                    else if (kind === "image") setImaging(true); else setPicking(true);
+                  }} />
+              )}
               <AskChange connectionId={connectionId} cockpitId={data.cockpit_id} schema={schema} held={lines}
                 onKept={() => { setPublishing(false); reload(); }} />
               {data.ontology && (

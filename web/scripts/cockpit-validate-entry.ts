@@ -31,7 +31,7 @@ async function main(): Promise<void> {
   const chunks: Buffer[] = [];
   for await (const c of process.stdin) chunks.push(c as Buffer);
   const payload = JSON.parse(Buffer.concat(chunks).toString("utf8")) as
-    { op?: string; spec?: unknown; patches?: unknown; grid?: boolean };
+    { op?: string; spec?: unknown; patches?: unknown; grid?: boolean; structure?: boolean };
   if (payload.op === "vocabulary") {
     process.stdout.write(JSON.stringify(vocabulary()));
     return;
@@ -49,7 +49,7 @@ async function main(): Promise<void> {
     return;
   }
   if (payload.op === "grammar") {
-    process.stdout.write(JSON.stringify({ text: grammar({ grid: payload.grid === true }) }));
+    process.stdout.write(JSON.stringify({ text: grammar({ grid: payload.grid === true, structure: payload.structure === true }) }));
     return;
   }
   throw new Error(`unknown op ${JSON.stringify(payload.op)}`);

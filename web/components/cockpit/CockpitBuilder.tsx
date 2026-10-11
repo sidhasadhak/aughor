@@ -30,7 +30,8 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { toast } from "@/components/ui/toast";
 import { FILTER_DEFAULT_PX, FILTER_WIDTH, GRADE, LIMITS, type GridKind } from "@/lib/cockpit/catalog";
 import {
-  canMove, moveWithin, outline, setFilterWidth, takeOffAll, type Box, type CockpitSpec,
+  addSectionInside, canMove, duplicate, inColumns, moveWithin, outline, setFilterWidth, setSectionWidth, splitSection, takeOffAll,
+  type Box, type CockpitSpec, type Side,
 } from "@/lib/cockpit/edit";
 import { nameOf, setTitles } from "@/lib/cockpit/names";
 import { readersOf } from "@/lib/cockpit/sets";
@@ -123,7 +124,8 @@ function Steps({ label, value, least, most, onStep }: { label: string; value: nu
 
 const Rule = () => <span aria-hidden="true" style={{ width: 1, height: 16, background: "var(--b2)", margin: "0 6px" }} />;
 
-export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, aside, above, connectionId, schema, wiringOn = false, children }: {
+export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, aside, above, connectionId, schema, wiringOn = false,
+  structureOn = false, onAddPiece, children }: {
   spec: CockpitSpec;
   /** Every change, as the next spec and the version's note. */
   onChange: (next: CockpitSpec, note: string) => void;
@@ -142,6 +144,10 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
   schema?: string;
   /** Arc AP-2 — whether this install wires cockpits: the Data tab, and what pieces read, then. */
   wiringOn?: boolean;
+  /** Arc AP-4 — whether a cockpit may be split into sections: a section's split, its sections inside, a copy, a width. */
+  structureOn?: boolean;
+  /** Arc AP-4 — open the piece picker for a section: the one chosen, the one a chosen piece sits in, or none. */
+  onAddPiece?: (section: string | null) => void;
   /** The cockpit, drawn with the element chosen, the door that chooses one, the handle the steps use, and — while a
    *  set, a value or a choice is chosen — the pieces that read it. */
   children: (p: { selected: string | null; onSelect: (key: string) => void; handle: { current: CockpitHandle | null }; reads: string[] }) => ReactNode;
@@ -205,6 +211,23 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
   const step = (dw: number, dh: number) => {
     if (selected && kind) handle.current?.step(selected, dw, dh);
   };
+  // Arc AP-4 — a section chosen: where it may be split, what it holds, its width among columns
+  const section = structureOn && el?.type === "Section" ? selected : null;
+  const laidOut = !!section && !!el?.props.layout;
+  const sectionW = section && inColumns(spec, section) ? Number(el?.props.w) || null : null;
+  const split = (side: Side) => {
+    if (!section) return;
+    const done = splitSection(spec, section, side);
+    if (!done.key) return;
+    const check = checkCockpitSpec(done.spec);
+    if (!check.valid) { toast.error("That change is not made", { description: check.issues[0]?.message.slice(0, 200) }); return; }
+    onChange(done.spec, `split ${side} by hand`);
+    setSelected(done.key);
+  };
+  // the section a piece goes in: the one chosen, or the one a chosen piece sits in
+  const target = selected && el?.type === "Section" && !el.props.layout ? selected
+    : selected ? Object.keys(spec.elements).find(k => spec.elements[k]?.type === "Section" && !spec.elements[k].props.layout
+      && spec.elements[k].children.includes(selected)) ?? null : null;
 
   return (
     <div data-testid="cockpit-builder" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -226,10 +249,18 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
               <LayoutTree spec={spec} selected={selected} onSelect={choose} cardTitle={cardTitle} entityTitle={entityTitle} />
             </>
           )}
-          {add && (
+          {(add || onAddPiece) && (
             <>
               <PaneLabel>Add</PaneLabel>
-              <div data-testid="builder-add" style={{ display: "flex", flexWrap: "wrap", gap: 2, padding: "0 8px 8px" }}>{add}</div>
+              <div data-testid="builder-add" style={{ display: "flex", flexWrap: "wrap", gap: 2, padding: "0 8px 8px" }}>
+                {onAddPiece && (
+                  <Button size="xs" variant="secondary" data-testid="builder-add-piece" title="Every piece, by what it is for — placed in the section chosen."
+                    onClick={() => onAddPiece(target)}>
+                    <Icon name="plus" /> Add a piece
+                  </Button>
+                )}
+                {add}
+              </div>
             </>
           )}
           <div style={{ flex: 1 }} />
@@ -261,8 +292,40 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
                     <Button size="xs" variant="ghost" aria-label="Move later" disabled={!canMove(spec, selected!, 1)}
                       onClick={() => apply(moveWithin(spec, selected!, 1), "moved by hand")}><Icon name="chevd" size={13} /></Button>
                     <Rule />
+                    {section && (
+                      <>
+                        <span className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em", margin: "0 4px" }}>Split</span>
+                        {(["above", "below", "left", "right"] as const).map(side => (
+                          <Button key={side} size="xs" variant="ghost" aria-label={`Split it: a new section ${side === "left" || side === "right" ? `to the ${side}` : side}`}
+                            data-testid={`builder-split-${side}`} onClick={() => split(side)}>
+                            <Icon name={side === "above" ? "chevu" : side === "below" ? "chevd" : side === "left" ? "chevl" : "chevr"} size={13} />
+                          </Button>
+                        ))}
+                        {laidOut && (
+                          <Button size="xs" variant="ghost" data-testid="builder-add-section"
+                            onClick={() => { const d = addSectionInside(spec, section); if (d.key) { apply(d.spec, "a section added inside by hand"); setSelected(d.key); } }}>
+                            <Icon name="plus" size={13} /> Section inside
+                          </Button>
+                        )}
+                        <Rule />
+                      </>
+                    )}
+                    {structureOn && el?.type !== "ObjectFilters" && (
+                      <Button size="xs" variant="ghost" data-testid="builder-duplicate"
+                        onClick={() => { const d = duplicate(spec, selected!); if (d.key) { apply(d.spec, "duplicated by hand"); setSelected(d.key); } }}>
+                        <Icon name="copy" size={13} /> Duplicate
+                      </Button>
+                    )}
                     <Button size="xs" variant="ghost" data-testid="builder-take-off"
                       onClick={() => apply(takeOffAll(spec, selected!), "taken off by hand")}><Icon name="trash" size={13} /> Take off</Button>
+                  </>
+                )}
+                {sectionW !== null && (
+                  <>
+                    <Rule />
+                    <Steps label="Width" value={sectionW} least={1} most={12}
+                      onStep={d => apply(setSectionWidth(spec, section!, sectionW + d), "a section's width stepped by hand")} />
+                    <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: 4 }}>of 12</span>
                   </>
                 )}
                 {kind && (

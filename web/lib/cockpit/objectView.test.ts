@@ -131,9 +131,9 @@ describe("the cockpit a person's ticks make", () => {
       expect(holdsAPiece(c, PROPOSAL)).toBe(true);
       expect(checkCockpitSpec(objectCockpitSpec(PROPOSAL, c)).issues).toEqual([]);
     }
+    // nothing to narrow: the starter makes no cockpit of it (an empty section is a builder's, since Arc AP-4, not a start)
     const nothing = { ...all, figures: [], chart: false, table: false };
     expect(holdsAPiece(nothing, PROPOSAL)).toBe(false);
-    expect(checkCockpitSpec(objectCockpitSpec(PROPOSAL, nothing)).valid).toBe(false);
   });
 });
 

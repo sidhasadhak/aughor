@@ -40,8 +40,10 @@ import { z } from "zod";
  *  one grade at a time (a section's `grid`, each placed element's `w` and `h`, the filter column's `w`) and a chart's
  *  measure and split (`agg`, `path`, `format`, `split`, `top`). 6: a cockpit wired as an App (Arc AP-2, AP-3, 2026-10-11) —
  *  named `sets` and `values` the pieces read, the objects a reader chooses and ticks named and read by others
- *  (`chooses`, `ticks`, `shows`, `set_from`, `of`), and ActionButtons whose parameters come from them. */
-export const COCKPIT_VOCABULARY_VERSION = 6;
+ *  (`chooses`, `ticks`, `shows`, `set_from`, `of`), and ActionButtons whose parameters come from them. 7: a structure of
+ *  pieces (Arc AP-4, 2026-10-11) — a section laid out in columns, rows or tabs of sections of its own (`layout`, a child's
+ *  `w` in twelfths), a section that holds nothing yet, and one that goes untitled. */
+export const COCKPIT_VOCABULARY_VERSION = 7;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
 export const TONES = ["good", "warn", "bad", "info", "neutral"] as const;
@@ -71,6 +73,13 @@ export function sizeOf(w: number, h: number): Size | null {
 /** The grid a resized section is laid on (Arc AP-1): twelve columns, and rows whose GRADE — a row and the gap under
  *  it — is 40 px, so one step of height is always 40 px and one step of width one column. */
 export const GRID = { columns: 12, row: 28, gap: 12 } as const;
+
+/** Arc AP-4 — how a section splits into sections of its own: side by side (each taking a width in twelfths), one under
+ *  another, or one at a time as tabs. A section that holds pieces says none. */
+export const LAYOUTS = ["columns", "rows", "tabs"] as const;
+export type Layout = (typeof LAYOUTS)[number];
+/** How deep sections sit inside sections — past three, a reader loses the page's shape. */
+export const MAX_DEPTH = 3;
 export const GRADE = GRID.row + GRID.gap;
 /** How tall `h` rows are drawn: the rows and the gaps between them. */
 export const rowsTall = (h: number): number => h * GRID.row + Math.max(0, h - 1) * GRID.gap;
@@ -224,10 +233,15 @@ export const cockpitCatalog = defineCatalog(schema, {
     },
     Section: {
       props: z.object({
-        title: z.string().min(1).max(MAX_TITLE),
+        /** Said above what it holds. Arc AP-4: a section split into sections may go untitled; the rules hold the rest. */
+        title: z.string().min(1).max(MAX_TITLE).nullable().optional(),
         columns: z.number().int().min(1).max(MAX_COLUMNS).nullable().optional(),
         /** On the grid: twelve columns and rows of one grade, each element placed by `w` and `h`. */
         grid: z.literal(GRID.columns).nullable().optional(),
+        /** Arc AP-4 — split into sections of its own: in columns, in rows, or as tabs. */
+        layout: z.enum(LAYOUTS).nullable().optional(),
+        /** Arc AP-4 — its width in a section laid out in columns, in twelfths of that section. */
+        w: z.number().int().min(1).max(GRID.columns).nullable().optional(),
       }),
       slots: ["default"],
       description: "A titled group of cards, notes and images. May be shown by a condition. On the grid (grid: 12), each element it holds says its w and h.",
@@ -372,7 +386,8 @@ export const MAY_HOLD: Record<ComponentName, readonly ComponentName[]> = {
   Cockpit: ["Tabs", "Section", "ObjectFilters"],
   Tabs: ["Tab"],
   Tab: ["Section"],
-  Section: PLACED,
+  // Arc AP-4 — or sections of its own, when it is laid out (the rules hold a section to one or the other)
+  Section: [...PLACED, "Section"],
   Card: [],
   Note: [],
   Image: [],

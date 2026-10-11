@@ -117,9 +117,10 @@ def wiring(spec: Any) -> Optional[dict]:
 def grammar() -> Optional[str]:
     """What the writer of a cockpit is told, as the web writes it from its own catalog — or
     None when the rules cannot run. The server keeps no copy (CT-5). The grid is told of only
-    while building cockpits in place is on (Arc AP-1); off, the text is as it was before it."""
-    from aughor.cockpit import builder
-    out, _why = _run({"op": "grammar", "grid": builder.on()})
+    while building cockpits in place is on (Arc AP-1), and sections split into sections only while that is on (Arc AP-4);
+    off, the text is as it was before them."""
+    from aughor.cockpit import app_pieces, builder
+    out, _why = _run({"op": "grammar", "grid": builder.on(), "structure": app_pieces.on()})
     text = (out or {}).get("text")
     return text if isinstance(text, str) and text else None
 

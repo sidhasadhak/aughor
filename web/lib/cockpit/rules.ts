@@ -19,9 +19,9 @@ import { validateSpec, type Spec } from "@json-render/core";
 import type { z } from "zod";
 
 import {
-  COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, GRADE, GRID, LIMITS, MAX_SETS, MAX_VALUES, MAY_BE_CONDITIONAL, MAY_HOLD, PLACED,
-  READER_TEXT, SPLIT_AGGS, SIZES, TONES, cockpitCatalog, cockpitSet, cockpitValue, type ActionButtonDef, type ComponentName,
-  type GridKind,
+  COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, GRADE, GRID, LIMITS, MAX_DEPTH, MAX_SETS, MAX_VALUES, MAY_BE_CONDITIONAL, MAY_HOLD,
+  PLACED, READER_TEXT, SPLIT_AGGS, SIZES, TONES, cockpitCatalog, cockpitSet, cockpitValue, type ActionButtonDef, type ComponentName,
+  type GridKind, type Layout,
 } from "@/lib/cockpit/catalog";
 import { choicesOf, isRefused, readSet, type WireSpec } from "@/lib/cockpit/sets";
 import { CARD_STATUSES, RANGE_STATUSES, TAB_PATH, publishedPath } from "@/lib/cockpit/hostState";
@@ -315,6 +315,64 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
   }
 }
 
+/** Arc AP-4 — a structure of pieces: a section holds pieces on its own, or is laid out in columns, rows or tabs of
+ *  sections of its own — never both; a section side by side says its width; a tab is called by its section's title;
+ *  only a section split into sections goes untitled; and sections sit at most `MAX_DEPTH` deep. */
+function checkStructure(sound: Map<string, { type: ComponentName; props: Obj; children: string[] }>, clean: Set<string>,
+  issues: CockpitIssue[]): void {
+  const parentOf = new Map<string, string>();
+  for (const [key, el] of sound) for (const c of el.children) parentOf.set(c, key);
+  const depth = (key: string): number => {
+    let n = 0;
+    for (let at = parentOf.get(key), guard = 0; at && guard < 50; at = parentOf.get(at), guard++) if (sound.get(at)?.type === "Section") n++;
+    return n;
+  };
+  for (const [key, el] of sound) {
+    if (el.type !== "Section" || !clean.has(key)) continue;
+    const p = el.props;
+    const layout = p.layout as Layout | null | undefined;
+    const kids = el.children.filter(c => sound.has(c));
+    const sections = kids.filter(c => sound.get(c)!.type === "Section");
+    const pieces = kids.filter(c => sound.get(c)!.type !== "Section");
+    const what = `The section ${q(key)}`;
+    if (layout) {
+      if (p.grid != null || p.columns != null) {
+        issues.push({ code: "bad_prop", elementKey: key, message: `${what} is laid out in ${layout} and also says ${p.grid != null ? "a grid" : "columns of its own"}. A section split into sections says neither: each section it holds places its own pieces.` });
+      }
+      if (!kids.length) {
+        issues.push({ code: "bad_child", elementKey: key, message: `${what} is laid out in ${layout} and holds nothing. Split it into sections, or take its layout off.` });
+      } else if (pieces.length) {
+        issues.push({ code: "bad_child", elementKey: key, message: `${what} is laid out in ${layout} and holds ${list(pieces.map(q))}. A section split into sections holds sections only.` });
+      }
+      for (const c of sections) {
+        const child = sound.get(c)!;
+        if (layout === "columns" && typeof child.props.w !== "number") {
+          issues.push({ code: "bad_prop", elementKey: c, message: `The section ${q(c)} sits in columns in ${q(key)} and says no width. Each section side by side says its width, 1 to ${GRID.columns} columns.` });
+        }
+        if (layout === "tabs" && !child.props.title) {
+          issues.push({ code: "bad_prop", elementKey: c, message: `The section ${q(c)} is a tab of ${q(key)} and has no title. A tab is called by its section's title.` });
+        }
+      }
+    } else {
+      if (sections.length) {
+        issues.push({ code: "bad_child", elementKey: key, message: `${what} holds ${list(sections.map(q))} and is not laid out. A section holds pieces, or is laid out in columns, rows or tabs of sections.` });
+      }
+      if (!p.title) {
+        issues.push({ code: "bad_prop", elementKey: key, message: `${what} has no title. A section that holds pieces says what it holds; only one split into sections goes without.` });
+      }
+    }
+    const parent = parentOf.get(key);
+    const inColumns = !!parent && sound.get(parent)?.type === "Section" && sound.get(parent)!.props.layout === "columns";
+    if (p.w != null && !inColumns) {
+      issues.push({ code: "bad_prop", elementKey: key, message: `${what} says a width of ${String(p.w)} columns and does not sit in columns. Only a section side by side with others says its width.` });
+    }
+    const d = depth(key);
+    if (d >= MAX_DEPTH) {
+      issues.push({ code: "too_large", elementKey: key, message: `${what} sits ${d + 1} sections deep. Sections sit at most ${MAX_DEPTH} deep, so a reader keeps the page's shape.` });
+    }
+  }
+}
+
 function checkCondition(key: string, cond: unknown, out: CockpitIssue[], stateCards: Set<string>): void {
   const refuse = (message: string) => out.push({ code: "bad_condition", elementKey: key, message });
   if (Array.isArray(cond)) {
@@ -490,7 +548,8 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
     } else if (el.type === "Cockpit" && kinds.length > 0 && kinds.every(k => k === "ObjectFilters")) {
       issues.push({ code: "bad_child", elementKey: key,
         message: `The cockpit ${q(key)} holds a filter column and nothing it narrows. It holds one Tabs, or sections, beside it.` });
-    } else if (MAY_HOLD[el.type].length && !PLACED.includes(el.type) && !el.children.length) {
+    } else if (MAY_HOLD[el.type].length && !PLACED.includes(el.type) && el.type !== "Section" && !el.children.length) {
+      // Arc AP-4 — a section may hold nothing yet: the builder offers it a piece, and a reader is drawn none
       issues.push({ code: "bad_child", elementKey: key,
         message: `The ${el.type.toLowerCase()} ${q(key)} holds nothing. An empty ${el.type} is refused.` });
     }
@@ -547,11 +606,13 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
   }
 
   checkWiring(wire, sound, clean, choices, issues);
+  checkStructure(sound, clean, issues);
 
   // Arc AP-1 — a section on the grid places each element by w columns and h rows, within what its kind may take; a
   // section that is not says sizes by name, and a w or an h there would be read by nothing.
   for (const [key, el] of sound) {
-    if (el.type !== "Section" || !clean.has(key)) continue;
+    // a section split into sections places none of its own: its sections' widths are the structure's rules' to judge
+    if (el.type !== "Section" || !clean.has(key) || el.props.layout != null) continue;
     const gridded = el.props.grid === GRID.columns;
     if (gridded && el.props.columns != null) {
       issues.push({ code: "bad_prop", elementKey: key,

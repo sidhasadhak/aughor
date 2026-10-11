@@ -59,7 +59,9 @@ export function nameOf(elements: Record<string, El | undefined>, key: string,
   const entity = (id: unknown): string => entityTitle(String(id ?? "")) || words(id);
   const title = ((): string => {
     switch (type) {
-      case "Cockpit": case "Section": return String(p.title ?? "");
+      case "Cockpit": return String(p.title ?? "");
+      // Arc AP-4 — an untitled section laid out in sections is called by its layout: "In columns", "In rows", "As tabs"
+      case "Section": return String(p.title ?? (p.layout === "columns" ? "In columns" : p.layout === "rows" ? "In rows" : p.layout === "tabs" ? "As tabs" : ""));
       case "Tab": return String(p.label ?? "");
       case "Card": return cardTitle(String(p.card ?? "")) || String(p.card ?? "");
       case "Note": return cut(String(p.text ?? "").replace(/\s+/g, " ").trim(), 60);

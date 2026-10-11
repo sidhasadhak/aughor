@@ -15,7 +15,7 @@
  */
 import {
   FILTER_WIDTH, GRID, LIMITS, MAX_CAPTION, MAX_LABEL, MAX_NOTE, MAX_TITLE, PLACED, SPAN, type CockpitSetDef, type CockpitValueDef,
-  type GridKind, type Size,
+  type GridKind, type Layout, type Size,
 } from "@/lib/cockpit/catalog";
 import { choicesOf, readersOf } from "@/lib/cockpit/sets";
 
@@ -130,7 +130,7 @@ export function sectionsOf(spec: unknown): SectionRef[] {
   const walk = (key: string, tab: TabRef | null) => {
     const el = s.elements[key];
     if (!el) return;
-    if (el.type === "Section") {
+    if (el.type === "Section" && !el.props.layout) {
       out.push({ key, title: String(el.props.title ?? ""), tabKey: tab?.key ?? null, tabLabel: tab?.label ?? null });
       return;
     }
@@ -184,9 +184,17 @@ function detach(s: CockpitSpec, key: string, andDelete: boolean): void {
     if (PLACED.includes(s.elements[key]?.type as never)) for (const child of s.elements[key].children) delete s.elements[child];
     delete s.elements[key];
   }
-  if (parent && parent !== s.root && !PLACED.includes(s.elements[parent].type as never) && s.elements[parent].children.length === 0) {
+  if (parent && parent !== s.root && !PLACED.includes(s.elements[parent].type as never) && s.elements[parent].children.length === 0
+    && !inLayout(s, parent)) {
     detach(s, parent, true);
   }
+}
+
+/** Arc AP-4 — whether a section sits in one laid out in sections: there, a section left with nothing stays, an empty box
+ *  its layout keeps; a section of the cockpit's own goes when it is emptied, as it always did. */
+function inLayout(s: CockpitSpec, key: string): boolean {
+  const parent = parentOf(s, key);
+  return s.elements[key]?.type === "Section" && !!parent && s.elements[parent]?.type === "Section" && !!s.elements[parent].props.layout;
 }
 
 /** Take an element — a card, a section — off the cockpit. A table goes with every detail that follows it. */
@@ -294,19 +302,26 @@ export function placeImage(spec: unknown, objectId: string, caption: string, sec
  *  the new element's key — a detail names the table it follows by that key. An action button goes in a detail
  *  (`addAction`), never in a section. */
 export function placePiece(
-  spec: unknown, type: "ProcessBoard" | "ObjectTable" | "ObjectDetail" | "ActionButtons", props: Record<string, unknown>, sectionKey?: string,
+  spec: unknown, type: "ProcessBoard" | "ObjectTable" | "ObjectDetail" | "ActionButtons" | "ObjectFigure" | "ObjectChart",
+  props: Record<string, unknown>, sectionKey?: string,
 ): { spec: CockpitSpec; key: string | null } {
   const s = copy(spec);
   const target = sectionKey ?? sectionsOf(s)[0]?.key;
-  if (!target || s.elements[target]?.type !== "Section") return { spec: s, key: null };
+  if (!target || s.elements[target]?.type !== "Section" || s.elements[target].props.layout) return { spec: s, key: null };
   const base = type === "ProcessBoard" ? `board-${props.process}` : type === "ObjectTable"
-    ? `table-${props.segment || props.entity || props.set}` : type === "ActionButtons" ? "buttons" : `detail-${props.follows}`;
+    ? `table-${props.segment || props.entity || props.set}` : type === "ActionButtons" ? "buttons"
+      : type === "ObjectFigure" ? `figure-${props.set || props.entity}` : type === "ObjectChart" ? `chart-${props.set || props.entity}`
+        : `detail-${props.follows}`;
   const key = freshKey(s, String(base));
   const kept = Object.fromEntries(Object.entries(props).filter(([, v]) => v !== undefined && v !== null && v !== ""
     && !(Array.isArray(v) && !v.length)));
   s.elements[key] = { type, props: kept, children: [] };
+  const empty = s.elements[target].children.length === 0;
   s.elements[target].children.push(key);
   fitTo(s, target, key);
+  // Arc AP-4 — the first piece in a section fills it, as a piece fills the box a person made for it
+  const lim = LIMITS[type as GridKind];
+  if (empty && lim && onGrid(s, target)) s.elements[key].props.w = Math.min(lim.w[1], GRID.columns);
   return { spec: s, key };
 }
 
@@ -556,4 +571,132 @@ export function dropWire(spec: unknown, name: string): CockpitSpec {
     }
   }
   return s;
+}
+
+// ── Arc AP-4 — a structure of pieces ────────────────────────────────────────────────────────────────────────────────
+
+/** What a new, empty section is called until a person names it — or until its first piece names it (`nameByPiece`). */
+export const NEW_SECTION = "New section";
+export type Side = "above" | "below" | "left" | "right";
+
+function emptySection(s: CockpitSpec, title = NEW_SECTION): string {
+  const key = freshKey(s, "section");
+  s.elements[key] = { type: "Section", props: { title, grid: GRID.columns }, children: [] };
+  return key;
+}
+
+/** Split a section with a new, empty one on a side of it — the user's ask of 2026-10-11, on Workshop's blank app. In a
+ *  layout running the same way, the new section joins it beside or under this one (side by side, the two share its
+ *  width); otherwise a section laid out that way takes this one's place and holds the two. Returns the new section. */
+export function splitSection(spec: unknown, key: string, side: Side): { spec: CockpitSpec; key: string | null } {
+  const s = copy(spec);
+  const el = s.elements[key];
+  if (el?.type !== "Section") return { spec: s, key: null };
+  const way: Layout = side === "left" || side === "right" ? "columns" : "rows";
+  const first = side === "left" || side === "above";
+  const parent = parentOf(s, key);
+  const fresh = emptySection(s);
+  const p = parent ? s.elements[parent] : null;
+  if (p?.type === "Section" && p.props.layout === way) {
+    const at = p.children.indexOf(key);
+    p.children.splice(first ? at : at + 1, 0, fresh);
+    if (way === "columns") {
+      const w = typeof el.props.w === "number" ? el.props.w : GRID.columns;
+      const half = Math.max(1, Math.floor(w / 2));
+      el.props.w = Math.max(1, w - half);
+      s.elements[fresh].props.w = half;
+    }
+    return { spec: s, key: fresh };
+  }
+  const wrap = freshKey(s, `${key}-${way}`);
+  const props: Record<string, unknown> = { layout: way };
+  // the place this section held — its width among columns, a condition it is shown by — is the wrapper's now
+  if (el.props.w != null) { props.w = el.props.w; delete el.props.w; }
+  s.elements[wrap] = { type: "Section", props, children: first ? [fresh, key] : [key, fresh],
+    ...(el.visible !== undefined ? { visible: el.visible } : {}) };
+  if (el.visible !== undefined) delete el.visible;
+  if (way === "columns") { el.props.w = GRID.columns / 2; s.elements[fresh].props.w = GRID.columns / 2; }
+  if (parent) s.elements[parent].children = s.elements[parent].children.map(k => (k === key ? wrap : k));
+  return { spec: s, key: fresh };
+}
+
+/** Split an empty section into sections of its own: two side by side, two one under the other, or two tabs. */
+export function layOut(spec: unknown, key: string, layout: Layout): CockpitSpec {
+  const s = copy(spec);
+  const el = s.elements[key];
+  if (el?.type !== "Section" || el.children.length || el.props.layout) return s;
+  const titles = layout === "tabs" ? ["First tab", "Second tab"] : [NEW_SECTION, NEW_SECTION];
+  const kids = titles.map(t => emptySection(s, t));
+  if (layout === "columns") for (const k of kids) s.elements[k].props.w = GRID.columns / 2;
+  const { grid: _g, columns: _c, ...rest } = el.props;
+  void _g; void _c;
+  el.props = { ...rest, layout };
+  el.children = kids;
+  return s;
+}
+
+/** One more section inside a section laid out in sections — side by side, a third of the width. */
+export function addSectionInside(spec: unknown, key: string): { spec: CockpitSpec; key: string | null } {
+  const s = copy(spec);
+  const el = s.elements[key];
+  if (el?.type !== "Section" || !el.props.layout) return { spec: s, key: null };
+  const fresh = emptySection(s, el.props.layout === "tabs" ? "New tab" : NEW_SECTION);
+  if (el.props.layout === "columns") s.elements[fresh].props.w = GRID.columns / 3;
+  el.children.push(fresh);
+  return { spec: s, key: fresh };
+}
+
+/** A section's width among columns, one twelfth at a time, between one column and all twelve. */
+export function setSectionWidth(spec: unknown, key: string, w: number): CockpitSpec {
+  const s = copy(spec);
+  const el = s.elements[key];
+  if (el?.type === "Section" && typeof el.props.w === "number") el.props.w = Math.min(GRID.columns, Math.max(1, Math.round(w)));
+  return s;
+}
+
+/** Whether a section sits among columns, and so says its width. */
+export function inColumns(spec: unknown, key: string): boolean {
+  const s = spec as CockpitSpec;
+  const parent = parentOf(s, key);
+  return s.elements[key]?.type === "Section" && !!parent && s.elements[parent]?.props.layout === "columns";
+}
+
+/** A copy of an element and all it holds, beside it, under keys of its own. A choice is made by one element: a copy
+ *  names none (what it chooses, ticks or shows), and a person names its own. */
+export function duplicate(spec: unknown, key: string): { spec: CockpitSpec; key: string | null } {
+  const s = copy(spec);
+  const parent = parentOf(s, key);
+  if (!parent || key === s.root || !s.elements[key] || s.elements[key].type === "ObjectFilters") return { spec: s, key: null };
+  const clone = (k: string): string => {
+    const el = s.elements[k];
+    const fresh = freshKey(s, k);
+    const { chooses: _c, ticks: _t, shows: _s, ...props } = el.props;
+    void _c; void _t; void _s;
+    s.elements[fresh] = { ...JSON.parse(JSON.stringify(el)), props: JSON.parse(JSON.stringify(props)), children: [] };
+    s.elements[fresh].children = el.children.map(clone);
+    return fresh;
+  };
+  const made = clone(key);
+  const at = s.elements[parent].children.indexOf(key);
+  s.elements[parent].children.splice(at + 1, 0, made);
+  return { spec: s, key: made };
+}
+
+/** A section still called what a new one is called takes the name of the first piece placed in it. */
+export function nameByPiece(spec: unknown, sectionKey: string, name: string): CockpitSpec {
+  const s = copy(spec);
+  const el = s.elements[sectionKey];
+  if (el?.type === "Section" && el.props.title === NEW_SECTION && name.trim()) el.props.title = name.trim().slice(0, MAX_TITLE);
+  return s;
+}
+
+/** Arc AP-4 — the cockpit's filter column, placed by hand: its first child, beside what it narrows. A cockpit holds one. */
+export function placeFilterColumn(spec: unknown, props: Record<string, unknown>): { spec: CockpitSpec; key: string | null } {
+  const s = copy(spec);
+  const root = s.elements[s.root];
+  if (!root || root.children.some(k => s.elements[k]?.type === "ObjectFilters")) return { spec: s, key: null };
+  const key = freshKey(s, "filters");
+  s.elements[key] = { type: "ObjectFilters", props, children: [] };
+  root.children.unshift(key);
+  return { spec: s, key };
 }
