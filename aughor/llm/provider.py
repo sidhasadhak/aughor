@@ -278,6 +278,51 @@ def _retry_at_low_reasoning(exc: Exception, kwargs: dict, call) -> Optional[tupl
         return None
 
 
+def _answer_shape(exc: BaseException) -> str:
+    """What a failed structured call's response held, in a few words: its stop reason, its blocks, its first words.
+    The failure a person reads says WHY no object came back; this says what came back instead."""
+    msg = next((m for e in (exc, getattr(exc, "__cause__", None)) if e is not None
+                for m in (getattr(e, "last_completion", None) or getattr(e, "raw_response", None),) if m), None)
+    blocks = getattr(msg, "content", None)
+    if not isinstance(blocks, list):
+        return "no response kept"
+    kinds = ",".join(str(getattr(b, "type", "?")) for b in blocks) or "no blocks"
+    first = next((str(getattr(b, "text", "")) for b in blocks if getattr(b, "text", None)), "")
+    return f"stop {getattr(msg, 'stop_reason', '?')}; blocks {kinds}" + (f"; began {first[:120]!r}" if first else "")
+
+
+def _anthropic_as_text(client):
+    """The Claude client's ``messages`` endpoint asking for the JSON as text (instructor's ``ANTHROPIC_JSON``), or
+    None when the instructor wrapper exposes no raw client."""
+    raw = getattr(client, "client", None)
+    return instructor.from_anthropic(raw, mode=instructor.Mode.ANTHROPIC_JSON).messages if raw is not None else None
+
+
+def _anthropic_json_reask(exc: BaseException, client, kwargs: dict, base_url: str) -> Optional[tuple]:
+    """One more request to the same Claude model, asked for the JSON as text (instructor's ``ANTHROPIC_JSON``), before
+    the fallback chain answers from another provider.
+
+    Under ``tool_choice: auto`` (the current Claude models refuse a forced one) the model may answer in prose, call
+    no tool, or return nothing: measured 2026-10-11, 3 of 160 calls on ``claude-sonnet-5-5`` fell back to OpenRouter
+    — two "did not match the schema", one "returned no content" — and none was repaired. Asking for the JSON as text
+    takes the tool choice out of it. Same request count as the failover, and the answer stays on the operator's
+    model. Never for a truncation (the same ceiling), a refusal, or a request that never ran."""
+    from aughor.llm.reliability import EMPTY, SCHEMA_MISMATCH, UNKNOWN, UNPARSEABLE, StructuredOutputError
+    if not isinstance(exc, StructuredOutputError) or exc.diagnosis.failure not in (
+            EMPTY, UNPARSEABLE, SCHEMA_MISMATCH, UNKNOWN):
+        return None
+    as_text = _anthropic_as_text(client)
+    if as_text is None:
+        return None
+    logger.warning("llm: anthropic gave no usable answer (%s; %s); asking once more for the JSON as text",
+                   exc.diagnosis.failure, _answer_shape(exc))
+    try:
+        return _run_resilient(lambda: as_text.create_with_completion(**kwargs), base_url, max_retries=0)
+    except Exception as second:            # noqa: BLE001 — the caller raises the FIRST error
+        logger.warning("llm: asked again for JSON text, anthropic failed too (%s)", str(second)[:120])
+        return None
+
+
 def _fallback_model() -> str:
     """The Anthropic model the fallback chain uses: ``AUGHOR_FALLBACK_MODEL``, else "".
 
@@ -2043,6 +2088,7 @@ def _recover_structured(exc: BaseException, response_model, *, endpoint, kwargs:
     from aughor.stats import bump
     sys_p, usr_p = reliability.repair_prompt(diagnosis, response_model)
     bump("llm.repair.calls")
+    stats["repair_tried"] = True
     _t0 = time.monotonic()
     try:
         cwc = getattr(endpoint, "create_with_completion", None)
@@ -2553,7 +2599,9 @@ class LLMProvider:
             # StructuredOutputError otherwise so `complete()` can decline a failover
             # that provably cannot help.
             recovered = _recover_structured(
-                exc, response_model, endpoint=endpoint, kwargs=kwargs,
+                # Claude's one repair asks for the JSON as text: the tool mode is what answered in prose.
+                exc, response_model, endpoint=(backend == "anthropic" and _anthropic_as_text(client)) or endpoint,
+                kwargs=kwargs,
                 base_url=base_url, backend=backend, model=model, role=role,
                 fallback=fallback, stats=_stats)
             if recovered is not None:
@@ -2577,6 +2625,9 @@ class LLMProvider:
                 # dial that exists and try once more. Returns None when there is no dial,
                 # and then the original diagnosis stands unchanged.
                 again = _retry_at_low_reasoning(typed, kwargs, _call)
+                if again is None and backend == "anthropic" and not _stats.get("repair_tried"):
+                    again = _anthropic_json_reask(typed, client, kwargs, base_url)
+                    _stats["reasked_as_json"] = again is not None
                 if again is None:
                     raise typed
                 out, raw = again
@@ -2594,6 +2645,8 @@ class LLMProvider:
                          extra={
                              **({"salvaged": True, "repairs": _stats.get("repairs", [])}
                                 if _stats.get("salvaged") else {}),
+                             # answered only when asked again for the JSON as text (`_anthropic_json_reask`)
+                             **({"reasked_as_json": True} if _stats.get("reasked_as_json") else {}),
                              **({"cached_tokens": _cached}
                                 if (_cached := _extract_cached_tokens(raw)) is not None else {}),
                          } or None)
