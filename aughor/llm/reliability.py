@@ -554,16 +554,19 @@ def _provider_failure(exc: BaseException) -> str:
     return "" if verdict == "unknown" else verdict
 
 
-def _unavailable_detail(verdict: str) -> str:
-    """A one-line ``detail`` for :data:`UNAVAILABLE` that names the fault AND the remedy."""
+def _unavailable_detail(verdict: str, exc: Optional[BaseException] = None) -> str:
+    """A one-line ``detail`` for :data:`UNAVAILABLE` that names the fault AND the remedy — and, for a request the
+    provider refused as written, the provider's own words."""
     try:
-        from aughor.llm.provider import error_hint
+        from aughor.llm.provider import error_hint, provider_words
 
         hint = error_hint(verdict)
+        said = provider_words(exc) if exc is not None and verdict == "bad_request" else ""
     except Exception:                                     # pragma: no cover - defensive
-        hint = ""
+        hint, said = "", ""
     label = verdict.replace("_", " ")
-    return f"the request never reached the model ({label})" + (f" — {hint}" if hint else "")
+    return (f"the request never reached the model ({label})" + (f" — {hint}" if hint else "")
+            + (f" Provider said: {said}" if said else ""))
 
 
 def _looks_like_refusal(text: str) -> bool:
@@ -594,7 +597,7 @@ def classify(exc: BaseException, *, completion: Any = None, text: str = "") -> D
         # in the warehouse connector instead of the provider binding.
         verdict = _provider_failure(exc)
         if verdict:
-            return Diagnosis(UNAVAILABLE, _unavailable_detail(verdict), "")
+            return Diagnosis(UNAVAILABLE, _unavailable_detail(verdict, exc), "")
         return Diagnosis(EMPTY, "the model returned no content", "")
     if _looks_like_refusal(raw):
         return Diagnosis(REFUSAL, "the model declined to answer", raw)

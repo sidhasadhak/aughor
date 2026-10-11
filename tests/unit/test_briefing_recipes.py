@@ -178,3 +178,41 @@ def test_a_move_on_a_thin_comparison_is_too_few_to_call(con, revenue):
     assert [c["group"] for c in got["thin"]][:1] == ["north"]
     assert "north" not in [c["group"] for c in got["moves"]]
     assert got["thin"][0]["n"] == 5
+
+
+class CitesEverything:
+    """Cites every numbered finding it is given, so the test sees what a range offers to be cited."""
+
+    def complete(self, *, system, user, response_model, temperature=0.1):
+        import re
+
+        from aughor.knowledge.briefing import BriefingCitation
+        refs = re.findall(r"^\[(\d+)\]", user, flags=re.M)
+        return BriefingNarrative(narrative=" ".join(f"Claim [{r}]." for r in refs), headline_theme="t",
+                                 citations=[BriefingCitation(ref=r, insight_id=r, domain="d", finding="f") for r in refs])
+
+
+def test_a_range_cites_its_segment_moves_and_standing_findings_by_the_query_that_shows_them(con, revenue, monkeypatch,
+                                                                                           tmp_path):
+    """2026-10-11: a range's segment moves and the standing findings linked to them were offered to the narrator with
+    no query — so a sentence citing one opened onto nothing."""
+    monkeypatch.setattr(prov, "get_provider", lambda role=None: CitesEverything())
+    from aughor.util.json_store import KeyedJsonStore
+    store = KeyedJsonStore(tmp_path / "briefing_cache.json")
+    monkeypatch.setattr(briefing_mod, "_store", lambda: store)
+
+    @contextlib.contextmanager
+    def runner():
+        yield _run(con), "duckdb"
+
+    standing = {"id": "f-north", "finding": "The North region carries the highest basket.",
+                "sql": "SELECT region, AVG(amount) FROM orders GROUP BY region", "confidence": 0.7, "novelty": 2}
+    # a custom range — its recipe reads what moved, and why — across the week north doubled
+    spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
+    brief = ranges.build_range_briefing("c1", spec, scope_key="c1", domain_data={"Sales": [standing]}, profile=None,
+                                        runner=runner)
+    cited = {c["domain"]: c for c in brief["citations"]}
+    assert "What moved" in cited and "What we know" in cited
+    assert "region" in cited["What moved"]["sql"].lower()                    # the breakdown that measured the move
+    assert cited["What we know"]["sql"] == standing["sql"]
+    assert all(c["sql"].strip() for c in brief["citations"])

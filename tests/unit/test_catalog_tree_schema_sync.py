@@ -192,3 +192,45 @@ def test_a_project_that_cannot_be_listed_or_read_is_could_not_look_never_nothing
     assert catalog_router.quick_schemas("bq", "bigquery") is None
     monkeypatch.setattr(catalog_router, "open_connection_for", lambda cid: _Project([]))
     assert catalog_router.quick_schemas("bq", "bigquery") == []              # a project with no dataset holds nothing
+
+
+class _Warehouse:
+    """A database of several schemas: answers the Catalog's listing and the Explorer's own."""
+
+    def __init__(self, dialect, tables):
+        self.dialect, self._tables = dialect, tables
+
+    def execute(self, _tag, sql, internal=False):
+        class R:
+            error = None
+            rows = ([(s,) for s in sorted({s for s, _ in self._tables})] if "DISTINCT table_schema" in sql
+                    else [("lux",)] if "current_database" in sql
+                    else [(s, t, "7") for s, t in self._tables])
+        return R()
+
+    def close(self):
+        pass
+
+
+_LUX = [("gold_finance", "fact_financial_metric"), ("gold_governance", "etl_loads"), ("luxexperience", "orders")]
+
+
+def test_a_postgres_connection_lists_every_schema_the_explorer_explores_its_own_schema_being_only_its_default(monkeypatch):
+    """2026-10-11: a Postgres connection set to `luxexperience` explored gold_finance and gold_governance too, while the
+    Catalog listed only luxexperience — two schemas explored that no one could see or turn off, and the one listed was
+    keyed as the connection's only schema while its run was filed under its own name."""
+    from aughor.routers import _shared
+
+    db = _Warehouse("postgres", _LUX)
+    monkeypatch.setattr(catalog_router, "get_meta", lambda cid: {"schema_name": "luxexperience"})
+    monkeypatch.setattr(catalog_router, "open_connection_for", lambda cid: db)
+    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+    listed = [s["name"] for s in catalog_router.quick_schemas("pg", "postgres")]
+    assert listed == ["gold_finance", "gold_governance", "luxexperience"]
+    assert listed == _shared.schemas_of_connection("pg")                      # what is explored is listed
+
+
+def test_a_duckdb_connection_set_to_one_schema_still_lists_only_that_schema(monkeypatch):
+    monkeypatch.setattr(catalog_router, "get_meta", lambda cid: {"schema_name": "luxexperience"})
+    monkeypatch.setattr(catalog_router, "open_connection_for", lambda cid: _Warehouse("duckdb", _LUX))
+    assert [s["name"] for s in catalog_router.quick_schemas("d", "duckdb")] == ["luxexperience"]

@@ -149,7 +149,7 @@ def test_briefing_stamps_scope_key_on_the_generated_brief(monkeypatch):
     monkeypatch.setattr(ex, "_load_state", lambda c, s: {})
     monkeypatch.setattr(ex, "_load_business_profile", lambda c, s: None)
     monkeypatch.setattr(ex, "_connection_col_types", lambda c: {})
-    monkeypatch.setattr(ex, "_metric_moves_provider", lambda c, p: None)
+    monkeypatch.setattr(ex, "_metric_moves_provider", lambda c, p, s=None: None)
     monkeypatch.setattr("aughor.knowledge.patterns.get_patterns", lambda *a, **k: [])
     monkeypatch.setattr(
         "aughor.knowledge.briefing.get_briefing",

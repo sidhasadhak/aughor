@@ -322,6 +322,61 @@ def remove_connection(conn_id: str):
         purge_connection_artifacts(conn_id)
 
 
+@router.get("/connections/{conn_id}/residue")
+def removed_connection_residue(conn_id: str):
+    """What a REMOVED connection still left on disk — ``{place: count}``, read by the same census a delete ends with.
+    Empty once it is gone. Refused for a connection that exists: it is not residue while it is held."""
+    from aughor.db.purge import residue_of
+    from aughor.db.registry import is_registered
+    if is_registered(conn_id):
+        raise HTTPException(status_code=409, detail="the connection exists — nothing it holds is residue")
+    return {"connection_id": conn_id, "residue": residue_of(conn_id)}
+
+
+@router.post("/connections/{conn_id}/purge")
+def purge_removed_connection(conn_id: str):
+    """Clear what a REMOVED connection left behind — the platform's default on delete, for a connection removed
+    before it was (2026-10-11): everything it learned goes, keeping only the SQL audit log and the model-call log.
+    Behind the same approval as a delete, by the same scope; refused for a connection that exists (delete it, and
+    this follows). Returns what the census found before (``cleared``) and what, if anything, it finds after
+    (``residue``) — read from the disk, not from the stores' own counters, several of which say 1 whether or not
+    anything was there."""
+    from aughor import govern
+    from aughor.db.purge import purge_connection_artifacts, residue_of
+    from aughor.db.registry import is_registered
+    if is_registered(conn_id):
+        raise HTTPException(status_code=409, detail="the connection exists — delete it, and its purge follows")
+    govern.guard("connection.delete", conn_id)
+    before = residue_of(conn_id)
+    purge_connection_artifacts(conn_id)
+    return {"connection_id": conn_id, "cleared": before, "residue": residue_of(conn_id)}
+
+
+@router.post("/connections/{conn_id}/schemas/{schema}/purge")
+def purge_removed_schema(conn_id: str, schema: str):
+    """Clear what a REMOVED dataset of a connection left — its ontology trees, indexed documentation, metrics,
+    profile, exploration and the canvases and investigations it implies — as a schema delete now does by default
+    (2026-10-11), for a dataset removed before it did. Behind the same approval as a schema delete, by the same
+    scope. Refused while the dataset is still listed, and when the connection's datasets cannot be read just now
+    (it cannot be told removed)."""
+    from aughor import govern
+    from aughor.db.purge import INVALIDATED_NOT_COUNTED, purge_schema_artifacts
+    from aughor.db.registry import get_conn_type, is_registered
+    from aughor.routers.catalog import quick_schemas
+    if not is_registered(conn_id):
+        raise HTTPException(status_code=404, detail="no such connection — a removed connection is purged whole")
+    listed = quick_schemas(conn_id, get_conn_type(conn_id))
+    if listed is None:
+        raise HTTPException(status_code=503, detail="the connection's datasets could not be read just now")
+    if any(str(s.get("name")) == schema for s in listed):
+        raise HTTPException(status_code=409, detail="the dataset exists — remove it, and its purge follows")
+    govern.guard("connection.schema.delete", f"{conn_id}:{schema}")
+    counts = purge_schema_artifacts(conn_id, schema)
+    return {"connection_id": conn_id, "schema": schema,
+            "removed": {k: v for k, v in counts.items() if v and k not in INVALIDATED_NOT_COUNTED},
+            "invalidated": sorted(k for k in counts if k in INVALIDATED_NOT_COUNTED)}
+
+
 # ── Schema ────────────────────────────────────────────────────────────────────
 
 @router.get("/connections/{conn_id}/schema")

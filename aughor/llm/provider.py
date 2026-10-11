@@ -1013,7 +1013,10 @@ def _build_anthropic_client(api_key: str) -> instructor.Instructor:
         raise RuntimeError("missing Anthropic API key — set it in Settings → Inference")
     import anthropic
     raw = anthropic.Anthropic(api_key=api_key, max_retries=_SDK_RETRIES)
-    return instructor.from_anthropic(raw)
+    # Tools with `tool_choice: auto`, never instructor's default forced choice: the current Claude models refuse
+    # `tool_choice` "tool" and "any" with a 400 (seen 2026-10-11 on claude-sonnet-5-5), so every structured call on
+    # this backend failed before reaching the model. The schema still rides as the one tool offered.
+    return instructor.from_anthropic(raw, mode=instructor.Mode.ANTHROPIC_REASONING_TOOLS)
 
 
 class ToolCall(BaseModel):
@@ -1450,7 +1453,7 @@ _WRONG_ENDPOINT_MSGS = (
 #: the operator must DO, which is the only thing a health check is for.
 PROVIDER_ERROR_CLASSES = (
     "bad_key", "model_not_found", "quota_exhausted", "rate_limited",
-    "wrong_endpoint", "unreachable", "timeout", "tools_unsupported", "config", "unknown",
+    "wrong_endpoint", "unreachable", "timeout", "tools_unsupported", "config", "bad_request", "unknown",
 )
 
 _ERROR_HINTS = {
@@ -1463,6 +1466,7 @@ _ERROR_HINTS = {
     "timeout": "The endpoint accepted the request but did not answer in time.",
     "tools_unsupported": "This model advertises tool calling but does not do it — pick a model that honours it.",
     "config": "The client could not be built — usually a missing key or an unknown backend.",
+    "bad_request": "The provider refused the request as written (400) — its own words say what it would not take.",
     "unknown": "Unrecognised failure — the provider's own message is in `error`.",
 }
 
@@ -1509,6 +1513,10 @@ def classify_provider_error(exc: BaseException, *, _depth: int = 0) -> str:
         return "model_not_found"
     if isinstance(exc, (ValueError, RuntimeError)) and "api key" in msg:
         return "config"
+    # A request the provider read and refused as written (HTTP 400): the key and the model are fine, the request is
+    # not — said as such, never as "the model returned no content" (an Anthropic key, 2026-10-11)
+    if getattr(exc, "status_code", None) == 400 or "invalid_request_error" in msg:
+        return "bad_request"
     # A WRAPPER'S PROSE IS NOT THE EVIDENCE. `StructuredOutputError` (and any other
     # re-raise) replaces the provider's own words with a summary: "structured output
     # unavailable: the request never reached the model (wrong endpoint) — The base URL
@@ -1521,6 +1529,22 @@ def classify_provider_error(exc: BaseException, *, _depth: int = 0) -> str:
     if cause is not None and cause is not exc and _depth < _CAUSE_DEPTH_CAP:
         return classify_provider_error(cause, _depth=_depth + 1)
     return "unknown"
+
+
+def provider_words(exc: BaseException, *, limit: int = 300) -> str:
+    """The provider's own message behind ``exc`` — the innermost error that carries an HTTP status, its wrappers
+    followed — or "" when none does. What a refusal said, kept for the operator."""
+    at: Optional[BaseException] = exc
+    for _ in range(_CAUSE_DEPTH_CAP + 1):
+        if at is None:
+            break
+        if getattr(at, "status_code", None) is not None:
+            body = getattr(at, "body", None)
+            err = body.get("error") if isinstance(body, dict) else None
+            said = err.get("message") if isinstance(err, dict) else None
+            return str(said or getattr(at, "message", "") or at)[:limit]
+        at = getattr(at, "__cause__", None) or getattr(at, "__context__", None)
+    return ""
 
 
 class BindingConfigError(RuntimeError):
@@ -1760,6 +1784,19 @@ def _usage_or_none(raw) -> tuple[Optional[int], Optional[int]]:
     if getattr(raw, "usage", None) is None:
         return None, None
     return _extract_usage(raw)
+
+
+def _streamed_field(buf: str, field: str, jiter_mod) -> Any:
+    """``field`` of the JSON object a stream has written so far, or None while there is none to read: any preamble or
+    fence before the first ``{`` is skipped, and an object still being written is read partially."""
+    start = buf.find("{")
+    if start < 0:
+        return None   # still in a preamble/fence
+    try:
+        obj = jiter_mod.from_json(buf[start:].encode(), partial_mode="trailing-strings")
+    except Exception:
+        return None   # incomplete escape mid-chunk etc. — the next chunk heals it
+    return obj.get(field) if isinstance(obj, dict) else None
 
 
 def _json_shape(node: dict, defs: dict, _seen: tuple = ()) -> str:
@@ -2586,13 +2623,15 @@ class LLMProvider:
         pinned_temp = current_run_temperature()
         temperature = _effective_temperature(temperature, backend)
         if backend == "anthropic":
-            # instructor's anthropic wrapper streams tool-mode JSON reliably.
-            create_partial = getattr(client.messages, "create_partial", None)
-            if create_partial is None:
-                raise RuntimeError("anthropic client has no create_partial — partial streaming unavailable")
-            kwargs = dict(model=model, max_tokens=_max_output_tokens(role, model), system=system,
+            # Streamed as TEXT and parsed as it grows, like the OpenAI-compatible family below. instructor's partial
+            # stream reads JSON only from a forced tool call, and the current Claude models refuse a forced
+            # `tool_choice` (400) — so the forced mode cannot stream and the reasoning mode yields nothing to parse.
+            import json as _json
+            import jiter as _jiter
+            raw_client = getattr(client, "client", None) or client
+            kwargs = dict(model=model, max_tokens=_max_output_tokens(role, model), stream=True,
+                          system=system + LLMProvider._json_stream_instruction(response_model),
                           messages=[{"role": "user", "content": user}],
-                          response_model=response_model,
                           # Sent only under a run-scoped pin — see _complete_on.
                           **({"temperature": temperature} if pinned_temp is not None else {}))
 
@@ -2600,24 +2639,38 @@ class LLMProvider:
                 # Drain the WHOLE stream inside the resilient closure: the per-endpoint
                 # semaphore is released the moment do() returns, so the slot must be
                 # held for the stream's entire life.
-                last, seen = None, ""
-                for partial in create_partial(**kwargs):
-                    last = partial
-                    text = getattr(partial, text_field, None)
-                    if isinstance(text, str) and len(text) > len(seen):
-                        seen = text
-                        try:
-                            on_text(text)   # full text so far — replace semantics
-                        except Exception:
-                            logger.debug("llm: on_text callback failed; delta dropped", exc_info=True)
-                if last is None:
-                    raise RuntimeError("partial stream yielded no objects")
-                return last, getattr(last, "_raw_response", None)
+                buf, seen, pt, ct = "", "", None, None
+                for event in raw_client.messages.create(**kwargs):
+                    kind = getattr(event, "type", "")
+                    if kind == "message_start":
+                        u = getattr(getattr(event, "message", None), "usage", None)
+                        pt = getattr(u, "input_tokens", None)
+                    elif kind == "message_delta":
+                        ct = getattr(getattr(event, "usage", None), "output_tokens", None)
+                    elif kind == "content_block_delta":
+                        piece = getattr(event.delta, "text", None)
+                        if not piece:
+                            continue
+                        buf += piece
+                        text = _streamed_field(buf, text_field, _jiter)
+                        if isinstance(text, str) and len(text) > len(seen):
+                            seen = text
+                            try:
+                                on_text(text)   # full text so far — replace semantics
+                            except Exception:
+                                logger.debug("llm: on_text callback failed; delta dropped", exc_info=True)
+                start, end = buf.find("{"), buf.rfind("}")
+                if start < 0 or end <= start:
+                    raise RuntimeError("stream produced no JSON object")
+                from types import SimpleNamespace
+                usage = (SimpleNamespace(input_tokens=pt or 0, output_tokens=ct or 0)
+                         if pt is not None or ct is not None else None)
+                return _json.loads(buf[start:end + 1]), SimpleNamespace(usage=usage)
 
             _t0 = time.monotonic()
             _stats: dict = {}
             try:
-                last, raw_usage_src = _run_resilient(_do, base_url, stats=_stats)
+                final_dict, raw_usage_src = _run_resilient(_do, base_url, stats=_stats)
             except Exception as exc:
                 _record_llm_call(backend=backend, model=model, role=role,
                                  prompt_tokens=None, completion_tokens=None,
@@ -2634,11 +2687,10 @@ class LLMProvider:
             _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
                              completion_tokens=_ct, ms=_ms,
                              retries=_stats.get("retries", 0), temperature=temperature,
-                             streamed=True, system=system, user=user, output=last)
+                             streamed=True, system=system, user=user, output=final_dict)
             metering.check_budget()
-            # Partial[...] objects skipped required-field validation mid-stream —
-            # re-validate the terminal one; a failure heals via the complete() fallback.
-            return response_model.model_validate(last.model_dump())
+            # Terminal validation is the contract; a mismatch heals via the complete() fallback.
+            return response_model.model_validate(final_dict)
 
         # OpenAI-compatible family (ollama/lmstudio/groq/together): stream RAW and
         # parse the growing buffer ourselves. instructor's partial parser chokes the
@@ -2701,14 +2753,7 @@ class LLMProvider:
                 if not piece:
                     continue
                 buf += piece
-                start = buf.find("{")
-                if start < 0:
-                    continue   # still in a preamble/fence
-                try:
-                    obj = _jiter.from_json(buf[start:].encode(), partial_mode="trailing-strings")
-                except Exception:
-                    continue   # incomplete escape mid-chunk etc. — next chunk heals it
-                text = obj.get(text_field) if isinstance(obj, dict) else None
+                text = _streamed_field(buf, text_field, _jiter)
                 if isinstance(text, str) and len(text) > len(seen):
                     seen = text
                     try:
@@ -3149,7 +3194,9 @@ def _ping(backend: str, model: str, role: Role = "coder") -> dict:
         # is the action; `error` keeps the provider's own words, which are still the
         # authority when the classifier says "unknown".
         reason = classify_provider_error(e)
-        return {"model": model, "ok": False, "error": str(e)[:240],
+        # A refusal as written is said in the provider's words alone: wrapped, they fell past the cut.
+        said = provider_words(e) if reason == "bad_request" else ""
+        return {"model": model, "ok": False, "error": said or str(e)[:240],
                 "reason": reason, "hint": error_hint(reason),
                 "ms": round((time.monotonic() - t0) * 1000, 1)}
 

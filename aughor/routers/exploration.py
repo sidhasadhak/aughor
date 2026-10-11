@@ -688,12 +688,15 @@ def _promise_chains_provider(conn_id: str):
     return _provider
 
 
-def _metric_moves_provider(conn_id: str, profile):
+def _metric_moves_provider(conn_id: str, profile, schema: str | None = None):
     """A zero-arg callable that runs each north-star metric's chart_sql and returns the
     material time-trend MOVES as synthetic findings (the biggest KPI swings — margin
     47→34, AOV, repeat-rate — that no explorer finding carries). Returns None when there
     is no profile to draw metrics from. The callable opens ONE connection, is matcache-
-    first, and fails open per metric — and get_briefing only invokes it on a cache miss."""
+    first, and fails open per metric — and get_briefing only invokes it on a cache miss.
+
+    A move compares whole periods settled by today less the connection's learned lag, and each is
+    recorded with its dossier (``explorer.dossier.record_measured``) under an id scoped to ``schema``."""
     if profile is None:
         return None
     metrics = getattr(profile, "north_star_metrics", None) or []
@@ -730,7 +733,13 @@ def _metric_moves_provider(conn_id: str, profile):
                         from aughor.kernel.errors import tolerate
                         tolerate(_e, "metric-move: matcache put", counter="brief.metric_move.cache_put_failed")
                 return res.columns, res.rows, err
-            return compute_metric_moves(metrics, run_sql, currency)
+            from datetime import datetime, timedelta, timezone
+            now = datetime.now(timezone.utc)
+            moves = compute_metric_moves(metrics, run_sql, currency, scope=schema or "",
+                                         settled_through=now.date() - timedelta(days=_settled_lag(conn_id)),
+                                         measured_at=now.isoformat())
+            _record_moves(conn_id, schema, moves)
+            return moves
         finally:
             try:
                 db.close()
@@ -739,6 +748,35 @@ def _metric_moves_provider(conn_id: str, profile):
                 tolerate(_e, "metric-move: best-effort connection close", counter="brief.metric_move.close_failed")
 
     return _provider
+
+
+def _settled_lag(conn_id: str) -> int:
+    """Days a period takes to settle on this connection — the learned lag (``settling``), 0 when none is learned yet."""
+    try:
+        from aughor.settling.store import learned_lag_days
+        return int(learned_lag_days(conn_id) or 0)
+    except Exception as _e:  # noqa: BLE001 — an unread lag leaves only the still-open period out
+        from aughor.kernel.errors import tolerate
+        tolerate(_e, "metric-move: the learned lag could not be read", counter="brief.metric_move.lag")
+        return 0
+
+
+def _record_moves(conn_id: str, schema: str | None, moves: list) -> None:
+    """Each move's dossier is recorded beside the explorer's findings and taken off the candidate, which stays lean.
+    Best-effort per move: a brief never fails for want of provenance."""
+    state = None
+    for mv in moves:
+        dossier = mv.pop("dossier", None)
+        if not dossier:
+            continue
+        try:
+            if state is None:
+                state = _load_state(conn_id, schema)
+            from aughor.explorer.dossier import record_measured
+            record_measured(conn_id, mv, dossier, state=state)
+        except Exception as _e:  # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(_e, "metric-move: its dossier could not be recorded", counter="brief.metric_move.dossier")
 
 
 def _refuse_unless_period_allowed(period: str) -> None:
@@ -1043,7 +1081,7 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
         scope_key=scope_key,
         macro_context=macro,
         profile=profile,
-        metric_moves=_metric_moves_provider(conn_id, profile),
+        metric_moves=_metric_moves_provider(conn_id, profile, schema),
         promise_chains=_promise_chains_provider(conn_id),
         workspace_id=workspace_id,
         col_types=_connection_col_types(conn_id),
@@ -1092,7 +1130,7 @@ def generate_canvas_briefing(canvas_id: str, refresh: bool = False, workspace_id
         scope_key=f"canvas:{canvas_id}",
         macro_context=macro,
         profile=profile,
-        metric_moves=_metric_moves_provider(conn_id, profile),
+        metric_moves=_metric_moves_provider(conn_id, profile, getattr(canvas, "schema_name", None)),
         promise_chains=_promise_chains_provider(conn_id),
         workspace_id=workspace_id,
         col_types=_connection_col_types(conn_id),

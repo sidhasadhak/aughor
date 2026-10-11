@@ -166,6 +166,13 @@ def purge_connection_artifacts(conn_id: str, org_id: str | None = None) -> dict[
     except Exception as e:
         tolerate(e, "purge: kernel ledger", counter="conn.purge.kernel")
 
+    # ── The default (2026-10-11, the user: "when a connection is removed its underlying details are gone except
+    # the SQL audit log and logs of model cost and calls"): whatever the stores' own purges left, the disk is swept.
+    try:
+        counts.update(sweep_residue(conn_id))
+    except Exception as e:
+        tolerate(e, "purge: residue sweep", counter="conn.purge.sweep")
+
     removed = {k: v for k, v in counts.items() if v}
     if removed:
         logger.info("Purged artifacts for deleted connection %s: %s", conn_id, removed)
@@ -188,6 +195,10 @@ KEPT_ON_DELETE = {
     "audit_log": "the SQL audit log — every statement run against the warehouse, and by whom",
     "session_events": "the session log — every model call and what it cost",
 }
+#: Purge labels whose hook INVALIDATES a store without counting what it held — each says 1 whether or not anything was
+#: there (measured 2026-10-11: a second purge of an empty connection "removed" four things). A door reports them as
+#: invalidated, never as removed.
+INVALIDATED_NOT_COUNTED = frozenset({"matcache", "ontology", "profile", "profile_cache"})
 #: Columns that hold a connection id in some store or other (`catalog_id` is the metastore's).
 _CONNECTION_COLUMNS = ("conn_id", "connection_id", "catalog_id")
 #: A person's backup folder is not a store; the vector store is binary and has its own hook.
@@ -196,22 +207,27 @@ _NOT_A_STORE = re.compile(r"backup|^qdrant$", re.IGNORECASE)
 _TEXT_SCAN_MAX_BYTES = 20_000_000
 
 
-def residue_of(conn_id: str, root: Path | None = None) -> dict[str, int]:
-    """Where ``conn_id`` still appears under the data directory — ``{place: count}``.
-
-    The population is the DISK, never a list kept here: every SQLite file's every table with
-    a connection column (rows equal to the id), every path named after it, and every JSON or
-    YAML store mentioning it as a whole token. ``KEPT_ON_DELETE`` tables are not residue. An
-    id shorter than six characters is matched in tables only — as a token it would match
-    words in unrelated files."""
-    import sqlite3
-
-    base = Path(root) if root is not None else _DATA_DIR
-    found: dict[str, int] = {}
-    if not conn_id or not base.exists():
-        return found
+def _id_matchers(conn_id: str):
     ids = {conn_id, _safe(conn_id)}
     token = re.compile("|".join(rf"(?<![A-Za-z0-9]){re.escape(i)}(?![A-Za-z0-9])" for i in ids))
+    return ids, token
+
+
+def _walk(conn_id: str, base: Path):
+    """Every place ``conn_id`` still lives under ``base`` — the census's population, and the sweep's. Yields
+    ``(kind, place, detail)``:
+
+    * ``("path", rel, path)`` — a file or folder named after it (a folder counts once);
+    * ``("rows", "<rel>:<table>.<col>", (db, table, col, n))`` — rows whose connection column holds it;
+    * ``("kv", "<rel>:<table>.key", (db, table, n))`` — key-value rows keyed by it, or by a key it scopes
+      (``e5b0c74c__luxexperience``, ``e5b0c74c:luxexperience#…``): a JSON store keeps its entries here;
+    * ``("json", rel, path)`` — a JSON/YAML store mentioning it as a whole token.
+
+    ``KEPT_ON_DELETE`` tables are never yielded. An id shorter than six characters is matched in tables only — as a
+    token it would match words in unrelated files."""
+    import sqlite3
+
+    ids, token = _id_matchers(conn_id)
     named: list[Path] = []                      # a folder named after it counts once
     for path in sorted(base.rglob("*")):
         rel = path.relative_to(base)
@@ -221,7 +237,7 @@ def residue_of(conn_id: str, root: Path | None = None) -> dict[str, int]:
             continue
         if len(conn_id) >= 6 and token.search(path.name):
             named.append(rel)
-            found[str(rel)] = 1
+            yield "path", str(rel), path
             continue
         if not path.is_file():
             continue
@@ -239,7 +255,12 @@ def residue_of(conn_id: str, root: Path | None = None) -> dict[str, int]:
                             n = con.execute(f'SELECT COUNT(*) FROM "{table}" WHERE "{col}" IN '
                                             f'({",".join("?" * len(ids))})', list(ids)).fetchone()[0]
                             if n:
-                                found[f"{rel}:{table}.{col}"] = n
+                                yield "rows", f"{rel}:{table}.{col}", (path, table, col, n)
+                        if {"store", "key"} <= cols:
+                            where, args = _kv_where(ids)
+                            n = con.execute(f'SELECT COUNT(*) FROM "{table}" WHERE {where}', args).fetchone()[0]
+                            if n:
+                                yield "kv", f"{rel}:{table}.key", (path, table, n)
                 finally:
                     con.close()
             except sqlite3.Error as e:
@@ -248,10 +269,121 @@ def residue_of(conn_id: str, root: Path | None = None) -> dict[str, int]:
               and path.stat().st_size <= _TEXT_SCAN_MAX_BYTES):
             try:
                 if token.search(path.read_text(encoding="utf-8", errors="replace")):
-                    found[str(rel)] = found.get(str(rel), 0) + 1
+                    yield "json", str(rel), path
             except OSError as e:
                 tolerate(e, f"residue: could not read {rel}", counter="conn.purge.residue_read")
+
+
+def _kv_where(ids: set) -> tuple[str, list]:
+    """Key-value rows keyed by the id itself, or by a key it scopes — the id followed by a non-alphanumeric
+    separator (``e5b0c74c__lux``, ``e5b0c74c:lux#day``), never a longer id that merely starts with it."""
+    parts, args = [], []
+    for i in sorted(ids):
+        parts.append('("key" = ? OR "key" GLOB ?)')
+        args += [i, _glob_escape(i) + "[^A-Za-z0-9]*"]
+    return " OR ".join(parts), args
+
+
+def _glob_escape(s: str) -> str:
+    return re.sub(r"([*?\[])", r"[\1]", s)
+
+
+def _owned_key(key: str, ids: set) -> bool:
+    """A JSON entry keyed by the connection, or by a key it scopes (``914df862:luxexperience``) — the key-value rule."""
+    return any(key == i or (key.startswith(i) and not key[len(i)].isalnum()) for i in ids)
+
+
+def _owned_record(item, ids: set) -> bool:
+    """A record whose connection field names the connection — the JSON form of a row's connection column."""
+    return isinstance(item, dict) and any(str(item.get(c) or "") in ids for c in _CONNECTION_COLUMNS)
+
+
+def _without(data, ids: set):
+    """``data`` without what the connection owns in it, and how many entries went: a top-level entry keyed by it, a
+    record naming it in its connection field (at the top level, or in a top-level entry's list), and an entry its
+    records alone made up. Anything else — a mention in free text — stays, for the census to say."""
+    gone = 0
+    if isinstance(data, list):
+        kept = [x for x in data if not _owned_record(x, ids)]
+        return kept, len(data) - len(kept)
+    if not isinstance(data, dict):
+        return data, 0
+    kept: dict = {}
+    for key, value in data.items():
+        if _owned_key(str(key), ids) or _owned_record(value, ids):
+            gone += 1
+            continue
+        if isinstance(value, list) and any(_owned_record(x, ids) for x in value):
+            rest = [x for x in value if not _owned_record(x, ids)]
+            gone += len(value) - len(rest)
+            if not rest:
+                continue
+            value = rest
+        kept[key] = value
+    return kept, gone
+
+
+def residue_of(conn_id: str, root: Path | None = None) -> dict[str, int]:
+    """Where ``conn_id`` still appears under the data directory — ``{place: count}``.
+
+    The population is the DISK, never a list kept here (``_walk``): every SQLite file's every table with a
+    connection column, every key-value table's rows keyed by it, every path named after it, and every JSON or YAML
+    store mentioning it as a whole token. ``KEPT_ON_DELETE`` tables are not residue."""
+    base = Path(root) if root is not None else _DATA_DIR
+    found: dict[str, int] = {}
+    if not conn_id or not base.exists():
+        return found
+    for kind, place, detail in _walk(conn_id, base):
+        n = detail[-1] if kind in ("rows", "kv") else 1
+        found[place] = found.get(place, 0) + n
     return found
+
+
+def sweep_residue(conn_id: str, root: Path | None = None) -> dict[str, int]:
+    """Remove what a removed connection still left on disk after its stores' own purges — the platform's default:
+    a connection removed takes everything it learned, keeping only ``KEPT_ON_DELETE`` (the SQL audit log and the
+    model-call log). A path named after it goes; rows holding it in a connection column, or keyed by it in a
+    key-value table, go; in a JSON store, the entries keyed by it and the records naming it in a connection field go
+    (``_without``). A JSON or YAML store that mentions it any other way is left, and the census that follows says so. Returns ``{"swept_paths", "swept_rows", "swept_json_keys"}``."""
+    import json
+    import sqlite3
+
+    base = Path(root) if root is not None else _DATA_DIR
+    out = {"swept_paths": 0, "swept_rows": 0, "swept_json_keys": 0}
+    if not conn_id or not base.exists():
+        return out
+    ids, _ = _id_matchers(conn_id)
+    for kind, place, detail in list(_walk(conn_id, base)):
+        try:
+            if kind == "path":
+                if detail.is_dir():
+                    shutil.rmtree(detail)
+                else:
+                    detail.unlink()
+                out["swept_paths"] += 1
+            elif kind in ("rows", "kv"):
+                db, table = detail[0], detail[1]
+                if kind == "rows":
+                    where, args = f'"{detail[2]}" IN ({",".join("?" * len(ids))})', list(ids)
+                else:
+                    where, args = _kv_where(ids)
+                con = sqlite3.connect(str(db), timeout=5)
+                try:
+                    with con:
+                        out["swept_rows"] += con.execute(f'DELETE FROM "{table}" WHERE {where}', args).rowcount
+                finally:
+                    con.close()
+            elif kind == "json" and detail.suffix == ".json":
+                data = json.loads(detail.read_text(encoding="utf-8"))
+                kept, gone = _without(data, ids)
+                if gone:
+                    tmp = detail.with_name(detail.name + ".sweep")
+                    tmp.write_text(json.dumps(kept, indent=2))
+                    tmp.replace(detail)
+                    out["swept_json_keys"] += gone
+        except Exception as e:  # noqa: BLE001 — one place unswept never stops the rest; the census says it
+            tolerate(e, f"purge: could not sweep {place}", counter="conn.purge.sweep")
+    return out
 
 
 #: Kernel artifacts a canvas delete KEEPS: the receipts of runs FILED under it. A chat

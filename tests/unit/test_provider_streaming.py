@@ -208,32 +208,81 @@ def test_invalid_terminal_json_falls_back_to_complete(monkeypatch):
     assert out is sentinel
 
 
-# ── Anthropic branch (instructor create_partial — exercised via _stream_on) ────
+# ── Anthropic branch (raw `messages` stream, parsed as it grows — exercised via _stream_on) ────
 
-def test_anthropic_branch_uses_create_partial(monkeypatch):
+def _anthropic_events(pieces, *, input_tokens=40, output_tokens=12):
+    yield SimpleNamespace(type="message_start", message=SimpleNamespace(usage=SimpleNamespace(input_tokens=input_tokens)))
+    yield SimpleNamespace(type="content_block_start", index=0)
+    for p in pieces:
+        yield SimpleNamespace(type="content_block_delta", delta=SimpleNamespace(type="text_delta", text=p))
+    yield SimpleNamespace(type="message_delta", usage=SimpleNamespace(output_tokens=output_tokens))
+    yield SimpleNamespace(type="message_stop")
+
+
+def _anthropic_client(pieces, calls):
+    def _create(**kwargs):
+        calls.append(kwargs)
+        return _anthropic_events(pieces)
+    raw = SimpleNamespace(messages=SimpleNamespace(create=_create))
+    return SimpleNamespace(client=raw, messages=SimpleNamespace())     # the instructor wrapper's shape
+
+
+def test_anthropic_branch_streams_text_and_parses_it_as_it_grows(monkeypatch):
+    """The current Claude models refuse a forced `tool_choice` (400), and instructor's partial stream reads JSON only
+    from a forced tool call — so this branch streams text and parses it as it grows, a fence before it and all."""
     # `max_tokens` below asserts the BUILT-IN default, which `AUGHOR_MAX_OUTPUT_TOKENS`
     # overrides at call time. A developer who raises it in their own .env — as the
     # briefing work required (8192, because a ~25-finding synthesis truncates at 4096) —
     # would otherwise see this fail locally and pass in CI, where no .env exists.
     monkeypatch.setenv("AUGHOR_MAX_OUTPUT_TOKENS", "4096")   # pin: the default is model-sized (A1)
-
-    class _Partial(_Out):
-        pass
-
-    partials = [_Partial(narrative="a"), _Partial(narrative="ab", questions=["q"])]
+    import aughor.kernel.metering as metering
+    recorded: dict = {}
+    monkeypatch.setattr(metering, "record_llm", lambda pt, ct, ms: recorded.setdefault("call", (pt, ct)))
     calls: list[dict] = []
-
-    def _create_partial(**kwargs):
-        calls.append(kwargs)
-        yield from partials
-
-    fake_anthro = SimpleNamespace(messages=SimpleNamespace(create_partial=_create_partial))
+    client = _anthropic_client(['```json\n{"narr', 'ative": "a', 'b", "questions": ["q"]}', '\n```'], calls)
     seen: list[str] = []
-    out = LLMProvider._stream_on(fake_anthro, "anthropic", "claude-x", "s", "u",
+    out = LLMProvider._stream_on(client, "anthropic", "claude-x", "s", "u",
                                  _Out, 0.2, "narrative", seen.append)
     assert seen == ["a", "ab"]
-    assert type(out) is _Out and out.narrative == "ab"
-    assert calls and calls[0]["model"] == "claude-x" and calls[0]["max_tokens"] == 4096
+    assert type(out) is _Out and out.narrative == "ab" and out.questions == ["q"]
+    sent = calls[0]
+    assert sent["model"] == "claude-x" and sent["max_tokens"] == 4096 and sent["stream"] is True
+    assert "tools" not in sent and "tool_choice" not in sent                    # nothing a model may refuse
+    assert sent["system"].startswith("s") and "Return ONLY a JSON object" in sent["system"]
+    assert recorded["call"] == (40, 12)                                         # real usage, from the stream
+
+
+def test_anthropic_stream_without_a_json_object_says_so():
+    client = _anthropic_client(["I cannot help with that."], [])
+    with pytest.raises(RuntimeError, match="no JSON object"):
+        LLMProvider._stream_on(client, "anthropic", "m", "s", "u", _Out, 0.1, "narrative", lambda t: None)
+
+
+def test_the_anthropic_client_offers_its_schema_as_a_tool_without_forcing_it(monkeypatch):
+    """Instructor's default for Anthropic forces the tool (`tool_choice: tool`), which claude-sonnet-5-5 refuses as
+    written — every structured call on the backend failed before reaching the model. The built client offers the
+    schema as its one tool, chosen `auto`, and still reads the answer from it."""
+    import anthropic
+    from anthropic.types import Message
+
+    sent: dict = {}
+
+    def _create(_self, **kwargs):
+        sent.update(kwargs)
+        return Message.model_validate({
+            "id": "msg_1", "type": "message", "role": "assistant", "model": "claude-x",
+            "stop_reason": "tool_use", "stop_sequence": None,
+            "usage": {"input_tokens": 3, "output_tokens": 4},
+            "content": [{"type": "tool_use", "id": "t1", "name": "_Out",
+                         "input": {"narrative": "hi", "questions": []}}]})
+
+    monkeypatch.setattr(anthropic.resources.messages.Messages, "create", _create)
+    client = P._build_anthropic_client("sk-test-not-a-key")
+    out = client.messages.create(model="claude-x", max_tokens=64, system="s",
+                                 messages=[{"role": "user", "content": "u"}], response_model=_Out)
+    assert sent["tool_choice"] == {"type": "auto"}
+    assert [t["name"] for t in sent["tools"]] == ["_Out"]
+    assert out.narrative == "hi"
 
 
 # ── Metering ───────────────────────────────────────────────────────────────────
@@ -349,16 +398,11 @@ def test_anthropic_streaming_honours_the_output_cap_override(monkeypatch):
     """AUGHOR_MAX_OUTPUT_TOKENS is documented as *the* knob on the runaway, but both
     Anthropic branches hardcoded 4096, so it never reached them."""
     monkeypatch.setenv("AUGHOR_MAX_OUTPUT_TOKENS", "1024")
-    seen: dict = {}
-
-    def _create_partial(**kw):
-        seen.update(kw)
-        return iter([_Out(narrative="hi", questions=[])])
-
-    client = SimpleNamespace(messages=SimpleNamespace(create_partial=_create_partial))
+    calls: list[dict] = []
+    client = _anthropic_client(['{"narrative": "hi", "questions": []}'], calls)
     LLMProvider._stream_on(client, "anthropic", "m", "s", "u", _Out, 0.1,
                            "narrative", lambda t: None)
-    assert seen["max_tokens"] == 1024
+    assert calls[0]["max_tokens"] == 1024
 
 
 def test_streamed_calls_record_their_role(monkeypatch):

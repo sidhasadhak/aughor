@@ -691,6 +691,26 @@ def definition_at(name: str, connection_id: str, schema_name: Optional[str] = No
     return None
 
 
+def purge_scope(connection_id: str, schema_name: Optional[str] = None) -> int:
+    """Remove every definition a REMOVED connection owns — or, with ``schema_name``, the definitions of that one
+    dataset (``home_schema``: the dataset a definition names, else the one its SQL reads). A definition promoted to
+    every dataset of the connection (``"*"``) goes with the connection, not with one dataset; another connection's,
+    the organisation's and the install's global definitions are never touched. A shipped row is hidden, as
+    ``delete_metric`` hides one. Returns how many definitions were removed. (2026-10-11, the user: removing a
+    connection removes its metrics — measured that day, a removed dataset's four definitions and a removed
+    connection's draft were still listed.)"""
+    if not connection_id or is_org_scope(connection_id) or connection_id == GLOBAL_CONNECTION:
+        return 0
+    gone = 0
+    for m in _load_raw(None):
+        # `delete_metric` keeps the dataset rule (`_same_definition`): named with a dataset, it removes only that
+        # dataset's definition — never one promoted to every dataset, never another dataset's.
+        if _conn_of(m) == connection_id and delete_metric(str(m.get("name") or ""), sql=m.get("sql") or "",
+                                                          connection_id=connection_id, schema_name=schema_name):
+            gone += 1
+    return gone
+
+
 def _same_definition(m: dict, name: str, connection_id: str, schema_name: Optional[str]) -> bool:
     if m.get("name") != name or _conn_of(m) != connection_id:
         return False

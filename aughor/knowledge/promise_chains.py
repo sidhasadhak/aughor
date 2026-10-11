@@ -7,6 +7,8 @@ the outcome a person wrote at close, and the stamped rate now. Shaped exactly li
 explorer finding so it flows through triage and into the narrative citable, under its
 own "Promises" domain. On a frozen dataset before and after are honestly equal; the
 sentence then says the rate is unchanged, because it is.
+
+It carries no query, so the synthesis holds it back (2026-10-11: a brief cites only what a query shows).
 """
 from __future__ import annotations
 
@@ -74,6 +76,8 @@ def promise_chain_findings(conn_id: str) -> list[dict]:
             "domain": "Promises",
             "angle": "Outcome",
             "finding": " ".join(parts),
+            # None: its figures are stamped, not queried — so the synthesis holds it back (a brief cites only what a
+            # query shows, `knowledge/briefing.py`) until it carries the query that measures the promise.
             "sql": "",
             # Recorded facts (filed refs, a person's close, stamped rates) — high trust.
             "confidence": 0.9,

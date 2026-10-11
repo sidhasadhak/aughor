@@ -186,8 +186,11 @@ def quick_schemas(conn_id: str, conn_type: str) -> list[dict] | None:
                 ORDER BY t.table_schema, t.table_name
                 """,
              internal=True).rows
-        # If schema_name is configured for this connection, filter to that schema only.
-        if schema_filter and rows:
+        # If schema_name is configured for this connection, filter to that schema only — except on Postgres, where it
+        # is the connection's DEFAULT schema (its search_path), not its scope: the Explorer explores every schema the
+        # connection reads (`schemas_of_connection`), so each is listed here too. A schema explored but never listed
+        # could be neither seen nor turned off (2026-10-11: gold_finance and gold_governance, explored and unseen).
+        if schema_filter and rows and getattr(db, "dialect", "") != "postgres":
             rows = [r for r in rows if r[0] == schema_filter]
         db.close()
     except Exception as exc:

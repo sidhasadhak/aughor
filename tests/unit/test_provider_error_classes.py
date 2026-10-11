@@ -90,6 +90,27 @@ def test_a_401_status_is_a_bad_key_even_without_the_words():
     assert P.classify_provider_error(exc) == "bad_key"
 
 
+def test_a_request_the_provider_refused_as_written_is_said_with_its_own_words_never_as_an_empty_reply():
+    """2026-10-11: an Anthropic key was accepted, every request refused with 400, and the health check said "the model
+    returned no content". A 400 is the provider refusing the request as written — its own message says what."""
+    from aughor.llm import reliability as R
+
+    class BadRequest(Exception):
+        status_code = 400
+        body = {"type": "error", "error": {"type": "invalid_request_error", "message": "temperature: may not be set with top_p"}}
+
+    class Wrapped(Exception):
+        pass
+    wrapped = Wrapped("structured output failed after 2 attempts")
+    wrapped.__cause__ = BadRequest("Error code: 400")
+    assert P.classify_provider_error(wrapped) == "bad_request"
+    assert P.provider_words(wrapped) == "temperature: may not be set with top_p"
+    d = R.classify(wrapped, text="")
+    assert d.failure == R.UNAVAILABLE and "Provider said: temperature: may not be set with top_p" in d.detail
+    assert P.classify_provider_error(Exception("Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error'}}")) == "bad_request"
+    assert P.provider_words(Exception("no status here")) == ""
+
+
 def test_every_class_carries_an_action():
     """A health check exists to tell an operator what to DO. A class with no hint is a
     red cross with a paragraph, which is the state this replaced."""
@@ -106,6 +127,21 @@ def test_the_ping_result_carries_reason_and_hint(monkeypatch):
     assert out["reason"] == "bad_key" and out["hint"]
     assert "Incorrect API key" in out["error"]      # the provider's own words survive
 
+
+
+def test_the_ping_says_a_refusal_in_the_providers_words_whole(monkeypatch):
+    """Wrapped, the provider's words came after ~240 characters of our own and were cut: "…are not suppo"."""
+    long_words = 'tool_choice: type "tool" and "any" are not supported for this model; use "auto" or "none". ' * 2
+
+    class BadRequest(Exception):
+        status_code = 400
+        body = {"type": "error", "error": {"type": "invalid_request_error", "message": long_words}}
+
+    wrapped = Exception("structured output unavailable: " + "x" * 300)
+    wrapped.__cause__ = BadRequest("Error code: 400")
+    monkeypatch.setattr(P, "LLMProvider", lambda *a, **k: (_ for _ in ()).throw(wrapped))
+    out = P._ping("anthropic", "claude-x")
+    assert out["reason"] == "bad_request" and out["error"] == long_words[:300]
 
 # ── the failover contract ─────────────────────────────────────────────────────
 
