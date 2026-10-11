@@ -143,3 +143,52 @@ def test_the_tree_reads_its_catalogs_side_by_side_in_their_order(monkeypatch):
     assert rec.calls == [(i, [f"{i}_schema"]) for i in ids]
     assert took < 1.0, f"{took:.2f}s for four 0.4 s catalogs — read one after another"   # 1.6 s one at a time
     assert len(threads) == 4
+
+
+# ── a project-wide BigQuery connection names no dataset ───────────────────────────────────────────────────────────
+
+class _Project:
+    """A BigQuery connection over a whole project: its datasets listed, each one's `__TABLES__` read."""
+    dialect = "bigquery"
+    _dataset = ""
+
+    def __init__(self, datasets, unreadable=(), listable=True):
+        self._datasets, self._unreadable, self._listable = datasets, set(unreadable), listable
+        self.asked: list[str] = []
+
+    def datasets(self, limit=50):
+        if not self._listable:
+            raise RuntimeError("403 bigquery.datasets.list denied")
+        return list(self._datasets)
+
+    def execute(self, _tag, sql, internal=False):
+        ds = sql.split("`")[1].split(".")[0]
+        self.asked.append(ds)
+
+        class R:
+            error = "Not found: dataset" if ds in self._unreadable else None
+            rows = [] if ds in self._unreadable else [(ds, f"{ds}_t{i}", str(10 * i)) for i in (1, 2)]
+        return R()
+
+    def close(self):
+        pass
+
+
+def test_a_project_wide_bigquery_connection_lists_every_dataset_s_tables_and_skips_one_it_cannot_read(monkeypatch):
+    monkeypatch.setattr(catalog_router, "get_meta", lambda cid: {})
+    db = _Project(["sales", "ops", "gone"], unreadable=["gone"])
+    monkeypatch.setattr(catalog_router, "open_connection_for", lambda cid: db)
+    got = catalog_router.quick_schemas("bq", "bigquery")
+    assert [(s["name"], [t["name"] for t in s["tables"]]) for s in got] == [
+        ("sales", ["sales_t1", "sales_t2"]), ("ops", ["ops_t1", "ops_t2"])]
+    assert db.asked == ["sales", "ops", "gone"]
+
+
+def test_a_project_that_cannot_be_listed_or_read_is_could_not_look_never_nothing_there(monkeypatch):
+    monkeypatch.setattr(catalog_router, "get_meta", lambda cid: {})
+    monkeypatch.setattr(catalog_router, "open_connection_for", lambda cid: _Project(["a"], listable=False))
+    assert catalog_router.quick_schemas("bq", "bigquery") is None
+    monkeypatch.setattr(catalog_router, "open_connection_for", lambda cid: _Project(["a", "b"], unreadable=["a", "b"]))
+    assert catalog_router.quick_schemas("bq", "bigquery") is None
+    monkeypatch.setattr(catalog_router, "open_connection_for", lambda cid: _Project([]))
+    assert catalog_router.quick_schemas("bq", "bigquery") == []              # a project with no dataset holds nothing

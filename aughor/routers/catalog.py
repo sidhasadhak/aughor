@@ -144,15 +144,30 @@ def quick_schemas(conn_id: str, conn_type: str) -> list[dict] | None:
             # there — every BigQuery catalog rendered empty. __TABLES__ is a
             # single free metadata scan and carries a real row count.
             dataset = schema_filter or getattr(db, "_dataset", "")
-            if not dataset:
-                # A project-wide connection names no dataset to look in. That is
-                # "could not look", not "nothing there" — never the deleting [].
+            # A project-wide connection names no dataset: its datasets are listed and each one's tables read, one
+            # dataset at a time (`__TABLES__` is dataset-scoped, and two datasets may sit in different regions). A
+            # project that cannot be listed is "could not look", never "nothing there" — never the deleting [].
+            from aughor.kernel.errors import tolerate
+            try:
+                datasets = [dataset] if dataset else db.datasets()
+            except Exception as exc:
+                tolerate(exc, "catalog: a BigQuery project's datasets could not be listed", counter="catalog.bq_datasets")
                 db.close()
                 return None
-            rows = db.execute(
-                "__catalog__",
-                f"SELECT dataset_id, table_id, row_count FROM `{dataset}.__TABLES__` ORDER BY table_id",
-             internal=True).rows
+            rows = []
+            read_any = not datasets
+            for ds in datasets:
+                got = db.execute(
+                    "__catalog__",
+                    f"SELECT dataset_id, table_id, row_count FROM `{ds}.__TABLES__` ORDER BY table_id",
+                 internal=True)
+                if got.error and not dataset:
+                    continue                    # one dataset unread leaves the others listed
+                read_any = True
+                rows += got.rows
+            if not read_any:
+                db.close()
+                return None
         else:
             rows = db.execute(
                 "__catalog__",

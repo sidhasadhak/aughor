@@ -359,6 +359,11 @@ class BigQueryConnection(Connector):
             lines.append(f"# Schema introspection failed: {e}")
         return "\n".join(lines)
 
+    def datasets(self, limit: int = 50) -> list[str]:
+        """The datasets of the project, by id, at most ``limit`` — what a project-wide connection's catalog lists, one
+        dataset at a time. Raises when the project cannot be listed: that is "could not look", never "nothing there"."""
+        return [d.dataset_id for d in self._client.list_datasets(self._project, max_results=limit)]
+
     def test(self) -> tuple[bool, str]:
         try:
             list(self._client.list_datasets(self._project, max_results=1))
