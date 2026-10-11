@@ -3898,6 +3898,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/connections/{conn_id}/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Purge Removed Connection
+         * @description Clear what a REMOVED connection left behind — the platform's default on delete, for a connection removed
+         *     before it was (2026-10-11): everything it learned goes, keeping only the SQL audit log and the model-call log.
+         *     Behind the same approval as a delete, by the same scope; refused for a connection that exists (delete it, and
+         *     this follows). Returns what was removed and what, if anything, still remains.
+         */
+        post: operations["purge_removed_connection_connections__conn_id__purge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/connections/{conn_id}/related-joins": {
         parameters: {
             query?: never;
@@ -3912,6 +3935,27 @@ export interface paths {
          *     join map. `openable` says whether the rows may be opened through it. `ontology` says whether one is built.
          */
         get: operations["related_joins_route_connections__conn_id__related_joins_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connections/{conn_id}/residue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Removed Connection Residue
+         * @description What a REMOVED connection still left on disk — ``{place: count}``, read by the same census a delete ends with.
+         *     Empty once it is gone. Refused for a connection that exists: it is not residue while it is held.
+         */
+        get: operations["removed_connection_residue_connections__conn_id__residue_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -29629,6 +29673,37 @@ export interface operations {
             };
         };
     };
+    purge_removed_connection_connections__conn_id__purge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     related_joins_route_connections__conn_id__related_joins_get: {
         parameters: {
             query: {
@@ -29636,6 +29711,37 @@ export interface operations {
                 column: string;
                 schema?: string | null;
             };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    removed_connection_residue_connections__conn_id__residue_get: {
+        parameters: {
+            query?: never;
             header?: never;
             path: {
                 conn_id: string;

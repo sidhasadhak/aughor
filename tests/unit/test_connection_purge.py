@@ -417,3 +417,101 @@ def test_a_deleted_canvas_takes_its_cards_and_cockpit_history_and_keeps_its_file
     assert ledger.artifact_by_id(kept) is not None                     # the filed run's receipt
     assert ledger.job_get(f"job-{canvas}") is None
     assert (counts["cards"], counts["kernel_artifacts"], counts["kernel_jobs"]) == (2, 2, 1)
+
+
+def _seed_leftovers(root, conn: str) -> None:
+    """What a removed Postgres connection left on the live install (2026-10-11), each in its own shape — beside a
+    longer id that merely starts with this one, and another connection's entries, which must survive."""
+    import json
+    import sqlite3
+
+    for rel in (f"context_graph/default/{conn}/luxexperience.json", f"ontology_recommendations/{conn}/lux/t.yaml",
+                f"ontology_drafts/{conn}/lux.yaml", f"context_graph/default/{conn}99/keep.json"):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text("{}")
+    (root / "connection_settings.json").write_text(json.dumps({conn: {"briefings_enabled": False}, "other": {"x": 1}}))
+    (root / "notes.json").write_text(json.dumps({"mentions": [conn]}))
+    audit = sqlite3.connect(root / "audit.db")
+    audit.execute("CREATE TABLE audit_log (connection_id TEXT, sql TEXT)")
+    audit.execute("CREATE TABLE internal_counts (connection_id TEXT, n INTEGER)")
+    audit.executemany("INSERT INTO internal_counts VALUES (?, ?)", [(conn, 1), ("other", 2)])
+    audit.execute("INSERT INTO audit_log VALUES (?, 'SELECT 1')", (conn,))
+    audit.commit()
+    audit.close()
+    system = sqlite3.connect(root / "system.db")
+    system.execute("CREATE TABLE kv (store TEXT, key TEXT, value TEXT, seq INTEGER, updated_at TEXT)")
+    system.execute("CREATE TABLE session_events (conn_id TEXT, cost REAL)")
+    system.executemany("INSERT INTO kv VALUES (?, ?, '{}', 1, '')", [
+        ("briefing", f"{conn}:lux#day"), ("explore", f"{conn}__lux"), ("explore", conn),
+        ("explore", f"{conn}99__lux"), ("explore", f"other:{conn}")])
+    system.execute("INSERT INTO session_events VALUES (?, 0.4)", (conn,))
+    system.commit()
+    system.close()
+
+
+def test_a_removed_connection_is_swept_from_every_store_keeping_only_the_audit_and_model_call_logs(tmp_path):
+    """The user, 2026-10-11: "when a connection is removed its underlying details are gone except the SQL audit log
+    and logs of model cost and calls … let this be default". A delete of the Postgres connection left its settings
+    entry, its context graph, the schemas it turned off, a counter row — and key-value rows the census could not see."""
+    import json
+    import sqlite3
+
+    from aughor.db import purge
+
+    conn = "e5b0c74c"
+    _seed_leftovers(tmp_path, conn)
+    before = purge.residue_of(conn, tmp_path)
+    assert before == {f"context_graph/default/{conn}": 1, f"ontology_recommendations/{conn}": 1,
+                      f"ontology_drafts/{conn}": 1, "connection_settings.json": 1, "notes.json": 1,
+                      "audit.db:internal_counts.connection_id": 1, "system.db:kv.key": 3}
+
+    swept = purge.sweep_residue(conn, tmp_path)
+
+    assert swept == {"swept_paths": 3, "swept_rows": 4, "swept_json_keys": 1}
+    assert purge.residue_of(conn, tmp_path) == {"notes.json": 1}          # a mention it cannot safely edit, said
+    assert json.loads((tmp_path / "connection_settings.json").read_text()) == {"other": {"x": 1}}
+    assert (tmp_path / f"context_graph/default/{conn}99/keep.json").exists()
+    audit = sqlite3.connect(tmp_path / "audit.db")
+    assert audit.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0] == 1           # kept: the SQL audit log
+    assert audit.execute("SELECT connection_id FROM internal_counts").fetchall() == [("other",)]
+    system = sqlite3.connect(tmp_path / "system.db")
+    assert system.execute("SELECT COUNT(*) FROM session_events").fetchone()[0] == 1     # kept: model calls + cost
+    assert sorted(k for (k,) in system.execute("SELECT key FROM kv")) == [f"{conn}99__lux", f"other:{conn}"]
+
+
+def test_a_delete_ends_by_sweeping_what_its_stores_left(tmp_path, monkeypatch):
+    from aughor.db import purge
+
+    conn = "e5b0c74c"
+    _seed_leftovers(tmp_path, conn)
+    monkeypatch.setattr(purge, "_DATA_DIR", tmp_path)
+    counts = purge.purge_connection_artifacts(conn)
+    assert counts["swept_paths"] == 3 and counts["swept_rows"] == 4 and counts["swept_json_keys"] == 1
+    assert counts["residue"] == 1                                                       # notes.json, said
+
+
+def test_a_removed_connection_can_be_read_and_cleared_through_its_doors_and_a_held_one_cannot(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from aughor import govern
+    from aughor.db import purge, registry
+    from aughor.routers import connections as R
+
+    app = FastAPI()
+    app.include_router(R.router)
+    client = TestClient(app)
+    held = {"live1234"}
+    guarded = []
+    monkeypatch.setattr(registry, "is_registered", lambda c: c in held)
+    monkeypatch.setattr(govern, "guard", lambda action, scope="", **k: guarded.append((action, scope)))
+    monkeypatch.setattr(purge, "residue_of", lambda c, root=None: {} if guarded else {"connection_settings.json": 1})
+    monkeypatch.setattr(purge, "purge_connection_artifacts", lambda c: {"swept_paths": 2, "kernel_jobs": 0, "residue": 0})
+
+    assert client.get("/connections/gone5678/residue").json()["residue"] == {"connection_settings.json": 1}
+    assert client.get("/connections/live1234/residue").status_code == 409
+    assert client.post("/connections/live1234/purge").status_code == 409
+    assert guarded == []                                                   # refused before the gate
+    got = client.post("/connections/gone5678/purge").json()
+    assert guarded == [("connection.delete", "gone5678")]                  # the same approval as a delete
+    assert got == {"connection_id": "gone5678", "removed": {"swept_paths": 2}, "residue": {}}

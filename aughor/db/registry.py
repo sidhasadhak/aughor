@@ -133,6 +133,15 @@ def _hidden_builtins() -> set:
     return set(_load_settings().get("hidden_builtins", []))
 
 
+def is_registered(conn_id: str) -> bool:
+    """Whether ``conn_id`` names a connection this install holds — a builtin, or a saved one in any org. A removed
+    connection is not; what it left behind is ``purge.residue_of``'s to say."""
+    if conn_id in _BUILTIN_IDS:
+        return True
+    with _db() as conn:
+        return conn.execute("SELECT 1 FROM connections WHERE id = ?", [conn_id]).fetchone() is not None
+
+
 def list_connections(org_id: str | None = None) -> list[dict]:
     """Return all saved connections (DSN redacted).
 
