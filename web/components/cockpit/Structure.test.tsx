@@ -7,7 +7,7 @@
  * a reader; the builder's split, copy and width, one twelfth at a time; and the piece picker, which places every piece
  * by hand with a first setup the rules accept — or says why it cannot. Every read is mocked.
  */
-import { act, choose, fireEvent, optionsOf, render, screen, waitFor, within } from "@/lib/testing";
+import { act, choose, cleanup, fireEvent, optionsOf, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CockpitBuilder } from "@/components/cockpit/CockpitBuilder";
@@ -378,6 +378,21 @@ describe("the piece picker", () => {
     s.elements.drawer = { type: "Drawer", props: { title: "The order", opens_on: "chosen-order" }, children: [] };
     const { entry } = pick(s);
     expect(entry("Drawer")).toHaveTextContent("Each chosen object opens its drawer already.");
+  });
+
+  it("offers a query of your own only where queries are on, and hands it to the page for the same section (Arc AP-7)", async () => {
+    const { onHandOff, entry } = pick(desk());
+    expect(screen.getAllByTestId("piece-picker-entry").some(e => e.dataset.kind === "query")).toBe(false);
+    cleanup();
+    const handed = vi.fn();
+    render(<PiecePicker spec={desk()} section="right" connectionId="thelook" wiringOn queriesOn onPlace={vi.fn()} onHandOff={handed} onClose={vi.fn()} />);
+    const query = screen.getAllByTestId("piece-picker-entry").find(e => e.dataset.kind === "query")!;
+    expect(query).toHaveTextContent("Your own query");
+    fireEvent.click(query);
+    expect(handed).toHaveBeenCalledWith("query", "right");
+    expect(onHandOff).not.toHaveBeenCalled();
+    void entry;
+    await act(async () => {});
   });
 
   it("hands a note, a card, an image or a finding to the page's own composer, for the same section", async () => {

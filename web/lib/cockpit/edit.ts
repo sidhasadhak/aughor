@@ -287,6 +287,16 @@ export function placeCard(spec: unknown, cardId: string, sectionKey?: string): C
   return s;
 }
 
+/** Arc AP-7 — a changed card in place of the one it replaces, wherever the cockpit places it: a change to a query of the
+ *  person's own is a new card, and the one before stays in the store for the versions that read it. */
+export function swapCard(spec: unknown, from: string, to: string): CockpitSpec {
+  const s = copy(spec);
+  for (const el of Object.values(s.elements)) {
+    if (el.type === "Card" && el.props?.card === from) el.props = { ...el.props, card: to };
+  }
+  return s;
+}
+
 /** Place a note — the person's own words — in a section; the first, when none is named. The
  *  author and the date are the server's to stamp when it is kept. An empty note is no note. */
 export function placeNote(spec: unknown, text: string, sectionKey?: string): CockpitSpec {

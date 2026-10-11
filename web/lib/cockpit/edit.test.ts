@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   addAction, cardsPlaced, moveCardTo, moveCardToNewSection, moveSectionTo, moveSectionToNewTab, moveWithin,
-  placeCard, placePiece, rename, sectionsOf, tabsOf, takeOff, takeOffCard, type CockpitSpec,
+  placeCard, placePiece, rename, sectionsOf, swapCard, tabsOf, takeOff, takeOffCard, type CockpitSpec,
 } from "@/lib/cockpit/edit";
 import { checkCockpitSpec } from "@/lib/cockpit/rules";
 
@@ -107,6 +107,16 @@ describe("each edit", () => {
     const twice = accepted(placeCard(s, "c0ffee01", "sec-headline"));
     expect(children(twice, "sec-headline")).toContain("card-c0ffee01-2");  // a key is an element's own
     expect(children(placeCard(premise(), "c0ffee01"), "sec-headline")).toContain("card-c0ffee01");  // the first section
+  });
+
+  it("swaps a changed card in wherever the cockpit places the one it replaces, and touches nothing else (Arc AP-7)", () => {
+    const placed = placeCard(placeCard(premise(), "q1", "sec-limits"), "q1", "sec-headline");
+    const s = accepted(swapCard(placed, "q1", "q2"));
+    const cards = Object.values(s.elements).filter(e => e.type === "Card").map(e => e.props.card);
+    expect(cards.filter(c => c === "q2")).toHaveLength(2);
+    expect(cards).not.toContain("q1");
+    expect(cards.filter(c => c !== "q2")).toEqual(Object.values(premise().elements).filter(e => e.type === "Card").map(e => e.props.card));
+    expect(placed.elements["card-q1"].props.card).toBe("q1");                    // the spec handed in is not changed
   });
 
   it("renames the cockpit, a section and a tab, and an empty name changes nothing", () => {

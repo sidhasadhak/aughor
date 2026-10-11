@@ -27,9 +27,9 @@ def _elements(spec: Any) -> dict:
     return els if isinstance(els, dict) else {}
 
 
-def what(el: Any, sets: Optional[dict] = None) -> str:
+def what(el: Any, sets: Optional[dict] = None, titles: Optional[dict] = None) -> str:
     """An element as a person reads it: "the section Waiting", "a note", "the map · distribution center" — a piece
-    reading a set by the set's label, never its name in the spec."""
+    reading a set by the set's label, never its name in the spec, and a card by its title (``titles``, by card id)."""
     if not isinstance(el, dict):
         return "an element"
     kind, props = str(el.get("type") or ""), el.get("props") if isinstance(el.get("props"), dict) else {}
@@ -48,7 +48,8 @@ def what(el: Any, sets: Optional[dict] = None) -> str:
     if kind == "Tab":
         return f"the tab {props.get('label') or props.get('name') or ''}".strip()
     if kind == "Card":
-        return f"the card {str(props.get('card') or '').replace('_', ' ')}".strip()
+        card = str(props.get("card") or "")
+        return f"the card {(titles or {}).get(card) or card.replace('_', ' ')}".strip()
     if kind == "Note":
         return "a note"
     if kind == "Image":
@@ -68,21 +69,21 @@ def _parent(els: dict, key: str) -> tuple[str, int]:
     return "", -1
 
 
-def _changed(b: dict, a: dict, sets: Optional[dict] = None) -> Optional[str]:
+def _changed(b: dict, a: dict, sets: Optional[dict] = None, titles: Optional[dict] = None) -> Optional[str]:
     """How one element that stayed where it was changed — resized, renamed, set up anew or rearranged — or None when
     nothing a reader sees did."""
     bp = b.get("props") if isinstance(b.get("props"), dict) else {}
     ap = a.get("props") if isinstance(a.get("props"), dict) else {}
     differ = {k for k in set(bp) | set(ap) if bp.get(k) != ap.get(k)}
     if differ and differ <= _ROOM:
-        return f"Resized {what(a, sets)}"
+        return f"Resized {what(a, sets, titles)}"
     if differ and differ <= _NAMES.get(str(a.get("type") or ""), set()):
-        return f"Renamed {what(b, sets)} to {next(str(ap[k]) for k in sorted(differ) if ap.get(k))}" \
-            if any(ap.get(k) for k in differ) else f"Took the name off {what(b, sets)}"
+        return f"Renamed {what(b, sets, titles)} to {next(str(ap[k]) for k in sorted(differ) if ap.get(k))}" \
+            if any(ap.get(k) for k in differ) else f"Took the name off {what(b, sets, titles)}"
     if differ:
-        return f"Changed what {what(a, sets)} shows" if a.get("type") != "Cockpit" else "Renamed the cockpit"
+        return f"Changed what {what(a, sets, titles)} shows" if a.get("type") != "Cockpit" else "Renamed the cockpit"
     if b.get("children") != a.get("children"):
-        return f"Rearranged {what(a, sets)}"
+        return f"Rearranged {what(a, sets, titles)}"
     return None
 
 
@@ -101,9 +102,10 @@ def _wiring(before: Any, after: Any, kind: str, noun: str) -> list[str]:
     return out
 
 
-def said(before: Any, after: Any) -> list[str]:
+def said(before: Any, after: Any, titles: Optional[dict] = None) -> list[str]:
     """What ``after`` changed of ``before``, a line a change, the largest first: what was added, taken off, moved or
-    set up, then what was resized, then the sets and values. At most `MAX_LINES`, the rest counted — "and 3 more"."""
+    set up, then what was resized, then the sets and values. At most `MAX_LINES`, the rest counted — "and 3 more".
+    ``titles`` names the cards the two specs place, by card id."""
     bels, aels = _elements(before), _elements(after)
     if not bels and aels:
         return ["Started the cockpit"]
@@ -112,19 +114,19 @@ def said(before: Any, after: Any) -> list[str]:
     lines: list[str] = []
     # a piece added with what it holds is one change, not one per button inside it
     added = [k for k in aels if k not in bels and _parent(aels, k)[0] in bels]
-    lines += [f"Added {what(aels[k], asets)}" for k in added]
+    lines += [f"Added {what(aels[k], asets, titles)}" for k in added]
     removed = [k for k in bels if k not in aels and _parent(bels, k)[0] in aels]
-    lines += [f"Took off {what(bels[k], bsets)}" for k in removed]
+    lines += [f"Took off {what(bels[k], bsets, titles)}" for k in removed]
     # a move is read from where an element sits, whatever it says of itself — a note moved is the same note
     both = [k for k in aels if k in bels and isinstance(aels[k], dict) and isinstance(bels[k], dict)]
     moved = [k for k in both if _parent(aels, k)[0] and _parent(aels, k)[0] != _parent(bels, k)[0]]
-    lines += [f"Moved {what(aels[k], asets)} to {what(aels.get(_parent(aels, k)[0]))}" for k in moved]
+    lines += [f"Moved {what(aels[k], asets, titles)} to {what(aels.get(_parent(aels, k)[0]))}" for k in moved]
     structural = bool(added or removed or moved)
     resized: list[str] = []
     for k in both:
         if k in moved or aels[k] == bels[k]:
             continue
-        line = _changed(bels[k], aels[k], asets)
+        line = _changed(bels[k], aels[k], asets, titles)
         if line and line.startswith("Resized"):
             resized.append(line)
         elif line and not (line.startswith("Rearranged") and structural):

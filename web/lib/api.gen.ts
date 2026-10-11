@@ -3173,6 +3173,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cockpits/queries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep Query
+         * @description Arc AP-7 — keep a person's own query as a card of theirs, as it is to be shown. The query is run first and the
+         *     setup checked against what it returns; a refusal says why and keeps nothing. A change to a card of theirs is a new
+         *     card, and the one it replaces is superseded, never deleted — so a cockpit's earlier versions still read their own.
+         */
+        post: operations["keep_query_cockpits_queries_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/queries/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Query
+         * @description Arc AP-7 — run a person's own query as the builder would keep it, and say what it returns and how it would be
+         *     shown — or what stops it. Nothing is kept. It runs through the connection's own door, read-only, stopped after the
+         *     connection's time limit. Registered before ``/cockpits/{cockpit_id}``.
+         */
+        post: operations["preview_query_cockpits_queries_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cockpits/shapes": {
         parameters: {
             query?: never;
@@ -19589,6 +19633,31 @@ export interface components {
             }[];
         };
         /**
+         * QueryRequest
+         * @description Arc AP-7 — a person's own query, how it is shown, and — when it changes a card of theirs — the card it replaces.
+         */
+        QueryRequest: {
+            /**
+             * Replaces
+             * @default
+             */
+            replaces: string;
+            /**
+             * Shown
+             * @default {}
+             */
+            shown: {
+                [key: string]: unknown;
+            };
+            /** Sql */
+            sql: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+        };
+        /**
          * QueryTemplate
          * @description A reusable, governed SQL template over one entity — read-only, never a write.
          *
@@ -28185,6 +28254,80 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    keep_query_cockpits_queries_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_query_cockpits_queries_preview_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueryRequest"];
             };
         };
         responses: {

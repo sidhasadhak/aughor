@@ -82,3 +82,15 @@ def test_a_piece_reading_a_set_is_said_by_the_sets_label():
     after["elements"]["today"]["children"].append("lines")
     after["elements"]["lines"] = {"type": "ObjectTable", "props": {"set": "its-lines"}, "children": []}
     assert changelog.said(before, after) == ["Added the objects table · Its lines", "Named the set Its lines"]
+
+
+def test_a_card_is_said_by_its_title_and_a_changed_query_card_by_what_it_shows():
+    before = _desk()
+    before["elements"]["today"]["children"].append("c")
+    before["elements"]["c"] = {"type": "Card", "props": {"card": "k1"}, "children": []}
+    after = copy.deepcopy(before)
+    after["elements"]["c"]["props"]["card"] = "k2"
+    titles = {"k1": "Sales by month", "k2": "Sales by month"}
+    assert changelog.said(_desk(), before, titles) == ["Added the card Sales by month"]
+    assert changelog.said(before, after, titles) == ["Changed what the card Sales by month shows"]
+    assert changelog.said(_desk(), before) == ["Added the card k1"]               # a server with no title says the id

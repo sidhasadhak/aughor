@@ -154,6 +154,10 @@ FLAG_ENV = {
     "cockpit.wiring": "AUGHOR_COCKPIT_WIRING",
     "cockpit.app_pieces": "AUGHOR_COCKPIT_APP_PIECES",
     "cockpit.shapes": "AUGHOR_COCKPIT_SHAPES",
+    # Arc AP-7 (ROADMAP §3.57). ON: a card on a cockpit may read a person's own SQL — one table, several, another schema —
+    # shown as a table, a figure or a chart set up as they choose, each run stopped after the connection's time limit.
+    # OFF: the builder offers no query of your own, the doors answer 404, and every card runs as it always did.
+    "cockpit.queries": "AUGHOR_COCKPIT_QUERIES",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -545,6 +549,16 @@ FLAG_META = {
                        "of objects linking to it. One to three are offered, the best first, each with a sentence of why "
                        "from the data. Off: every object starts one way.",
     },
+    "cockpit.queries": {
+        "label": "Your own query on a cockpit",
+        "summary": "Write SQL over one table, several or another schema. Show it as a table, a figure or a chart "
+                   "set up as you choose.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Changes only your own cockpits"}],
+        "description": "Choose what runs along the bottom and in what buckets, what is summed, and what splits it — "
+                       "stacked, side by side or as shares. Your query runs read-only and stops after the connection's "
+                       "time limit. Off: a card is drawn by the shape of its result.",
+    },
     "cockpit.builder": {
         "label": "Build cockpits in place",
         "summary": "A cockpit opens to be read, and Edit shows it between its outline and the setup of what you "
@@ -805,6 +819,9 @@ EXPERIMENT: dict = {
     "cockpit.shapes": "does a cockpit started from a shape get read again — of the cockpits started from an object, is "
                       "each shape's opened on three or more days in its first two weeks more often than one started "
                       "before shapes? Falsifier (§3.57, AP-5): a shape's cockpits are read no more often than today's",
+    "cockpit.queries": "do people show their own queries — of the cards made on cockpits in two weeks, is one in five or "
+                       "more a query of their own? Falsifier (§3.57, AP-7): fewer than one in five, and the setup is not "
+                       "what they needed",
     "cockpit.builder": "is the setup where people change a cockpit — of the cockpits started from an object, is one in "
                        "five or more edited within two weeks of starting? Falsifier (§3.57): fewer than one in five, "
                        "and the setup is not where people look",

@@ -24,6 +24,7 @@ const api = vi.hoisted(() => ({
   rejectProposal: vi.fn(), moveCanvasCockpit: vi.fn(), restoreCockpit: vi.fn(), retireCockpit: vi.fn(),
   getSystemFlags: vi.fn(), measureRange: vi.fn(), readExpectedNext: vi.fn(), getDeclaredActions: vi.fn(),
   getSuggestedShapes: vi.fn(), getCockpitFromObject: vi.fn(), getGroups: vi.fn(),
+  keepCockpitQuery: vi.fn(), previewCockpitQuery: vi.fn(), getCatalogTree: vi.fn(),
 }));
 const drawn = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const ontology = vi.hoisted(() => ({ getProcesses: vi.fn() }));
@@ -904,5 +905,72 @@ describe("the checks chip, as the cockpit's cells say what they read (Arc AP-6)"
     await waitFor(() => expect(screen.getByTestId("builder-checks")).toHaveTextContent("1 read cleanly · 1 to fix"));
     act(() => { doors().onReadState!("card-net", null); });
     await waitFor(() => expect(screen.getByTestId("builder-checks")).toHaveTextContent(/^1 read cleanly$/));
+  });
+});
+
+describe("your own query on the cockpit (Arc AP-7)", () => {
+  const QUERIES = { "cockpit.builder": { value: true }, "cockpit.app_pieces": { value: true }, "cockpit.queries": { value: true } };
+  const SHOWN = { as: "bar", summed: true, x: "day", bucket: "day", series: [{ column: "sales", agg: "sum" }], split: "", top: 5,
+    segments: "stacked", running: false, labels: false, columns: [], sort: "", descending: true, label: "" };
+  const queryCard = (id: string) => ({ ...card(id, "Sales by day"), sql: "SELECT day, sales FROM thelook.orders",
+    render: { shown: SHOWN, columns: [{ name: "day", type: "DATE" }, { name: "sales", type: "DOUBLE" }] } });
+  beforeEach(() => {
+    // the piece picker reads the declared actions and the processes when it opens
+    api.getDeclaredActions.mockResolvedValue({});
+    ontology.getProcesses.mockResolvedValue({ processes: [] });
+  });
+
+  it("writes a new one for the section the picker was opened for, and places the kept card there", async () => {
+    api.getSystemFlags.mockResolvedValue(QUERIES);
+    api.keepCockpitQuery.mockResolvedValue({ card: queryCard("qnew"), preview: { connection_id: "thelook", refused: [] } });
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-edit"));
+    await screen.findByTestId("cockpit-builder");
+    fireEvent.click(await screen.findByTestId("builder-add-piece"));
+    const entry = (await screen.findAllByTestId("piece-picker-entry")).find(e => e.dataset.kind === "query")!;
+    fireEvent.click(entry);
+    const setup = await screen.findByTestId("query-setup");
+    fireEvent.change(within(setup).getByLabelText("SQL"), { target: { value: "SELECT day, sales FROM thelook.orders" } });
+    api.getCockpit.mockResolvedValue({ ...READ, cards: [...READ.cards, queryCard("qnew")] });
+    fireEvent.click(within(setup).getByTestId("query-keep"));
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalled());
+    const [, , spec, note] = api.keepCockpit.mock.calls.at(-1)!;
+    expect(note).toBe("a query of your own placed by hand");                    // never "a card pinned from the Briefing"
+    const placed = Object.entries((spec as { elements: Record<string, { type: string; props: { card?: string } }> }).elements)
+      .filter(([, el]) => el.type === "Card" && el.props.card === "qnew");
+    expect(placed).toHaveLength(1);
+    expect(screen.queryByTestId("query-setup")).toBeNull();
+  });
+
+  it("sets up a card of the person's own query where it is chosen, and keeps a change by swapping the new card in", async () => {
+    api.getSystemFlags.mockResolvedValue(QUERIES);
+    api.getCockpit.mockResolvedValue({ ...READ, cards: [READ.cards[0], queryCard("c91b2002"), READ.cards[2]] });
+    api.keepCockpitQuery.mockResolvedValue({ card: queryCard("q2"), preview: { connection_id: "thelook", refused: [] } });
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-edit"));
+    await screen.findByTestId("cockpit-builder");
+    fireEvent.click((await screen.findAllByTestId("builder-line")).find(l => l.dataset.key === "card-net")!);
+    const setup = await screen.findByTestId("query-setup");
+    fireEvent.click(within(setup).getByRole("radio", { name: /Line/ }));
+    fireEvent.click(within(setup).getByTestId("query-keep"));
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalled(), { timeout: 3000 });
+    const [, , spec, note] = api.keepCockpit.mock.calls.at(-1)!;
+    expect(note).toBe("a query of your own changed by hand");
+    const els = (spec as { elements: Record<string, { props: { card?: string } }> }).elements;
+    expect(els["card-net"].props.card).toBe("q2");
+    expect(api.keepCockpitQuery).toHaveBeenCalledWith("thelook", expect.objectContaining({ replaces: "c91b2002" }));
+  });
+
+  it("offers no query of your own, and sets up a card as before, while queries are off", async () => {
+    api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true }, "cockpit.app_pieces": { value: true } });
+    api.getCockpit.mockResolvedValue({ ...READ, cards: [READ.cards[0], queryCard("c91b2002"), READ.cards[2]] });
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-edit"));
+    await screen.findByTestId("cockpit-builder");
+    fireEvent.click((await screen.findAllByTestId("builder-line")).find(l => l.dataset.key === "card-net")!);
+    await screen.findByLabelText("Edge");
+    expect(screen.queryByTestId("query-setup")).toBeNull();
+    fireEvent.click(screen.getByTestId("builder-add-piece"));
+    expect((await screen.findAllByTestId("piece-picker-entry")).some(e => e.dataset.kind === "query")).toBe(false);
   });
 });

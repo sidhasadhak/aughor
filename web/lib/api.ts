@@ -2545,6 +2545,86 @@ export interface CardRunResult {
    *  phrase. `equal_age` is false until the range is final — part of any difference is then
    *  age, not a move. `value` null says why; it is never read as zero. */
   previous?: CardRunPrevious | null;
+  /** Arc AP-7 — a card of a person's own query, as it is shown: its figure, its table or its chart's points. */
+  shown?: QueryShaped | null;
+  duration_ms?: number;
+}
+
+// ── Arc AP-7 — your own query on the cockpit (flag `cockpit.queries`) ───────────────────────────────────────────────
+
+export type QueryShownAs = "table" | "figure" | "bar" | "line" | "area" | "scatter";
+export type QueryAgg = "count" | "count_distinct" | "sum" | "avg" | "min" | "max";
+export type QueryBucket = "" | "day" | "week" | "month" | "quarter" | "year";
+export type QuerySegments = "stacked" | "side_by_side" | "shares";
+
+/** How a card of a person's own query is shown (`aughor/cockpit/queries.py` `Shown`). */
+export interface QueryShown {
+  as: QueryShownAs;
+  /** True: the platform sums the query's rows; false: it is drawn as the query returns it. */
+  summed: boolean;
+  x: string;
+  bucket: QueryBucket;
+  series: { column: string; agg: QueryAgg }[];
+  split: string;
+  top: number;
+  segments: QuerySegments;
+  running: boolean;
+  labels: boolean;
+  columns: string[];
+  sort: string;
+  descending: boolean;
+  label: string;
+}
+
+export interface QueryChartPoint { x: string | number | null; s: string; v: number | null }
+
+/** A run of a query card, shaped as it is shown — what was left out said in `said`. */
+export type QueryShaped =
+  | { as: "figure"; value: number | null; label: string; said: string[] }
+  | { as: "table"; columns: TypedColumn[]; rows: (string | number | boolean | null)[][]; more: boolean; said: string[] }
+  | { as: "bar" | "line" | "area" | "scatter"; x: { name: string; kind: "number" | "date" | "time" | "text"; bucket: QueryBucket };
+      series: string[]; points: QueryChartPoint[]; other: boolean; said: string[] };
+
+/** A query run as the builder would keep it: its typed columns and first rows, the card as shown — or what stops it. */
+export interface QueryPreview {
+  connection_id: string;
+  refused: string[];
+  columns?: TypedColumn[];
+  rows?: (string | number | boolean | null)[][];
+  more?: boolean;
+  duration_ms?: number;
+  caveats?: string[];
+  tables?: string[];
+  setup?: QueryShown;
+  shown?: QueryShaped;
+}
+
+export interface QueryAsked { sql: string; shown: Partial<QueryShown>; title?: string; replaces?: string }
+
+/** A query that could not be kept: each reason, as the server says it. */
+export class QueryRefused extends Error {
+  constructor(public reasons: string[]) { super(reasons.join(" ")); }
+}
+
+export async function previewCockpitQuery(connectionId: string, asked: QueryAsked): Promise<QueryPreview> {
+  const res = await fetch(`${getApiBase()}/cockpits/queries/preview?connection_id=${encodeURIComponent(connectionId)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(asked),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The query could not be run"));
+  return res.json();
+}
+
+export async function keepCockpitQuery(connectionId: string, asked: QueryAsked): Promise<{ card: CockpitCard; preview: QueryPreview }> {
+  const res = await fetch(`${getApiBase()}/cockpits/queries?connection_id=${encodeURIComponent(connectionId)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(asked),
+  });
+  if (res.status === 422) {
+    const body = await res.json().catch(() => ({}));
+    const refused = (body as { detail?: { refused?: string[] } }).detail?.refused;
+    throw new QueryRefused(refused?.length ? refused : [fastApiError(body, "The query could not be kept")]);
+  }
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The query could not be kept"));
+  return res.json();
 }
 
 export interface CardRunPrevious {

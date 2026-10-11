@@ -39,6 +39,7 @@ import { FindingPicker } from "@/components/cockpit/FindingPicker";
 import { ObjectCockpitStarter } from "@/components/cockpit/ObjectCockpitStarter";
 import { OntologyPieceComposer } from "@/components/cockpit/OntologyPieceComposer";
 import { PiecePicker } from "@/components/cockpit/PiecePicker";
+import { QuerySetup } from "@/components/cockpit/QuerySetup";
 import { PinStrip } from "@/components/cockpit/PinStrip";
 import { METRICS_COCKPIT, MetricsCockpit } from "@/components/cockpit/MetricsCockpit";
 import { PeriodPicker, choiceName } from "@/components/cockpit/PeriodPicker";
@@ -65,7 +66,7 @@ import {
 } from "@/lib/api";
 import { MAX_CAPTION, MAX_NOTE, type Layout, type Size } from "@/lib/cockpit/catalog";
 import {
-  cardsPlaced, editNote, layOut, placeCard, placeImage, placeNote, placePiece, recaption, regrid, resize, sectionsOf, setFilterWidth, takeOff, takeOffCard,
+  cardsPlaced, editNote, layOut, placeCard, placeImage, placeNote, placePiece, recaption, regrid, resize, sectionsOf, setFilterWidth, swapCard, takeOff, takeOffCard,
   type CockpitSpec,
   type Box,
 } from "@/lib/cockpit/edit";
@@ -732,6 +733,9 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [structureOn, setStructureOn] = useState(false);
   // Arc AP-6 — whether row policies and masks hold here (`ontology.security`): off, a previewed group reads all the person reads
   const [limitsOn, setLimitsOn] = useState(false);
+  // Arc AP-7 — a query of the person's own, while `cockpit.queries` is on; a new one is written for a section
+  const [queriesOn, setQueriesOn] = useState(false);
+  const [writing, setWriting] = useState<{ section: string | null } | null>(null);
   // the picker open, for a section (none: the first that holds pieces); and where a card, a note, an image or a finding
   // handed off from it lands
   const [adding, setAdding] = useState<{ section: string | null } | null>(null);
@@ -751,6 +755,8 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [reading, setReading] = useState(false);
   const known = useRef<Set<string>>(new Set());
   const adopt = useRef(false);
+  // what the version that places the adopted card says it did — a pinned card, or a query of the person's own (Arc AP-7)
+  const adoptNote = useRef("");
   // Arc AP-1 — a change in the builder, or a resize, drawn at once (`draft`) and kept as one version per burst (`burst`)
   const [draft, setDraft] = useState<CockpitSpec | null>(null);
   // when this browser last saw a burst kept, and whether one is waiting or on its way — the builder's "saved" says them
@@ -772,7 +778,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
         setRangesOn(!!f["briefing.ranges"]?.value); setPiecesOn(!!f["ontology.cockpit_pieces"]?.value);
         setObjectsOn(!!f["ontology.object_cockpits"]?.value); setBuilderOn(!!f["cockpit.builder"]?.value);
         setWiringOn(!!f["cockpit.wiring"]?.value); setStructureOn(!!f["cockpit.app_pieces"]?.value);
-        setLimitsOn(!!f["ontology.security"]?.value);
+        setLimitsOn(!!f["ontology.security"]?.value); setQueriesOn(!!f["cockpit.queries"]?.value);
       }
     }).catch(() => { if (alive) { setRangesOn(false); setPiecesOn(false); } });
     return () => { alive = false; };
@@ -822,7 +828,9 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
             let spec = read.cockpit.spec as CockpitSpec;
             for (const c of fresh) spec = placeCard(spec, c.id, target.current ?? undefined);
             target.current = null;
-            try { await keepCockpit(connectionId, chosen, spec, "a card pinned from the Briefing"); reload(); return; }
+            const note = adoptNote.current || "a card pinned from the Briefing";
+            adoptNote.current = "";
+            try { await keepCockpit(connectionId, chosen, spec, note); reload(); return; }
             catch (e) { if (e instanceof CockpitRefused) setRefusal(e.outcome); }
           }
         }
@@ -1190,6 +1198,16 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               )}
             </>
           )}
+          cardSetup={queriesOn ? (cardId => {
+            // Arc AP-7 — a card of the person's own query is set up here: its SQL, how it is shown, and Keep
+            const held = data.cards.find(c => c.id === cardId);
+            if (!held || !held.own || !(held.render as { shown?: unknown })?.shown) return null;
+            return (
+              <QuerySetup key={held.id} connectionId={connectionId} card={held}
+                onKept={(kept, replaced) => replaced
+                  && edit(s => swapCard(s, replaced, kept.id), "a query of your own changed by hand", `Kept the change to “${kept.title}”.`)} />
+            );
+          }) : undefined}
           aside={showHistory ? (
             <div data-testid="builder-history-panel" style={{ padding: "4px 14px" }}>
               <div style={{ display: "flex", alignItems: "center", padding: "8px 0" }}>
@@ -1198,6 +1216,12 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               </div>
               {historyPanel}
             </div>
+          ) : writing && queriesOn ? (
+            <QuerySetup connectionId={connectionId} onClose={() => setWriting(null)}
+              onKept={() => {
+                target.current = writing.section; adopt.current = true; adoptNote.current = "a query of your own placed by hand";
+                setWriting(null); reload();
+              }} />
           ) : undefined}
           above={(
             <>
@@ -1236,9 +1260,10 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               {composers}
               {adding && structureOn && (
                 <PiecePicker spec={current} section={adding.section} connectionId={connectionId} schema={schema} wiringOn={wiringOn}
-                  onPlace={change} onClose={() => setAdding(null)}
+                  queriesOn={queriesOn} onPlace={change} onClose={() => setAdding(null)}
                   onHandOff={(kind, section) => {
                     setAdding(null); shut(); target.current = section;
+                    if (kind === "query") { setShowHistory(false); setWriting({ section }); return; }
                     if (kind === "card") setComposing(true); else if (kind === "note") setNoting(true);
                     else if (kind === "image") setImaging(true); else setPicking(true);
                   }} />

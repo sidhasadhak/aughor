@@ -37,11 +37,14 @@ import { useCellBox, useMeasured } from "@/components/cockpit/cellBox";
 import { SizePick } from "@/components/cockpit/SizePick";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
-import { readMetricTrend, type BriefingRange, type CardRunPrevious, type CockpitCard, type StatedRange } from "@/lib/api";
+import { readMetricTrend, type BriefingRange, type CardRunPrevious, type CockpitCard, type QueryShaped, type QueryShown, type StatedRange } from "@/lib/api";
+import { readVegaTokens } from "@/components/charts/vega/config";
+import { queryChartSpec } from "@/lib/cockpit/queryChart";
+import { cellText } from "@/lib/cockpit/objectView";
 import { SPAN, type Size } from "@/lib/cockpit/catalog";
 import { cardValue } from "@/lib/cockpit/hostStatus";
 import type { CardStatus } from "@/lib/cockpit/hostState";
-import { fmtDate, formatMetricValue } from "@/lib/format";
+import { fmtDate, formatMetricValue, formatSeconds } from "@/lib/format";
 
 export type TileShape = "figure" | "trend" | "rows";
 
@@ -49,6 +52,9 @@ export type TileShape = "figure" | "trend" | "rows";
 export function tileShape(cs: CardState): TileShape {
   const { run, failed } = cs;
   if (failed || !run || run.error) return "figure";
+  // Arc AP-7 — a card of a person's own query is drawn as they set it up, never by its result's shape
+  const shown = (run as { shown?: QueryShaped | null }).shown;
+  if (shown) return shown.as === "figure" ? "figure" : "rows";
   if (seriesTrend(run.columns, run.rows)) return "trend";
   // One cell is one figure, even an empty one: a total over a period with no rows is NULL, and
   // that is "no figure for the period", never a one-cell table reading "NULL".
@@ -437,11 +443,82 @@ export function CockpitTile({ cs, status, sym, doors, place = STANDING }: {
   /** The element this tile draws and its size; left out, the tile stands alone at the small size. */
   place?: TilePlace;
 }) {
+  // Arc AP-7 — a card of a person's own query, run while queries are on (the run then says how it is shown)
+  if (cs.run && "shown" in cs.run && (cs.card.render as { shown?: unknown })?.shown) {
+    return <QueryTile cs={cs} doors={doors} place={place} />;
+  }
   const shape = tileShape(cs);
   const trend = shape === "trend" && cs.run ? seriesTrend(cs.run.columns, cs.run.rows) : null;
   if (trend) return <TrendTile cs={cs} trend={trend} status={status} sym={sym} doors={doors} place={place} />;
   if (shape === "rows") return <RowsTile cs={cs} doors={doors} place={place} />;
   return <FigureTile cs={cs} status={status} sym={sym} doors={doors} place={place} />;
+}
+
+/** Arc AP-7 — a card of a person's own query, as they set it up: its figure, its table or its chart, and what the run
+ *  left out said beneath it. A query that cannot be read says why, in its place. */
+function QueryTile({ cs, doors, place }: { cs: CardState & { card: CockpitCard }; doors: TileDoors; place: TilePlace }) {
+  const { card, run } = cs;
+  const shaped = run?.shown ?? null;
+  const setup = (card.render as { shown?: QueryShown }).shown;
+  const [room, height] = useChartHeight(SPAN[place.size].h === 2 ? 400 : 200);
+  const spec = useMemo(() => {
+    if (!shaped || !setup || shaped.as === "figure" || shaped.as === "table") return null;
+    const t = readVegaTokens();
+    return queryChartSpec(shaped, setup, { palette: t.palette, other: t.deemph });
+  }, [shaped, setup]);
+  const foot = (
+    <Foot icon="sql">
+      Your query{run?.duration_ms != null ? ` · ${formatSeconds(run.duration_ms)}` : ""}
+      {run?.scoped && !run.scoped.standing ? `, for ${run.scoped.covers}` : ""} · read straight from the tables
+    </Foot>
+  );
+  if (!shaped) return <QueryUnread title={card.title} why={run?.error || "It returned nothing this card can read."} doors={<Doors card={card} doors={doors} place={place} />} />;
+  const said = shaped.said.length > 0 && (
+    <div className="aug-fs-xs" data-testid="query-tile-said" style={{ color: "var(--t3)" }}>{shaped.said.join(" ")}</div>
+  );
+  return (
+    <Frame testid="cockpit-tile" shape={shaped.as === "figure" ? "figure" : "rows"} doors={<Doors card={card} doors={doors} place={place} />}>
+      <Title title={card.title} />
+      {shaped.as === "figure" ? (
+        <div data-testid="query-tile-figure" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span className="aug-fs-h1" style={{ fontWeight: 600, color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>{formatMetricValue(shaped.value)}</span>
+          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{shaped.label}</span>
+        </div>
+      ) : shaped.as === "table" ? (
+        <div ref={room} data-testid="query-tile-table" style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+          <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums" }}>
+            <thead><tr>{shaped.columns.map((c, j) => (
+              <th key={`${c.name}-${j}`} style={{ textAlign: /INT|DOUBLE|FLOAT|DECIMAL|NUMERIC|REAL/i.test(c.type) ? "right" : "left", color: "var(--t3)", fontWeight: 500, padding: "4px 6px", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap" }}>{c.name}</th>
+            ))}</tr></thead>
+            <tbody>{shaped.rows.map((r, i) => (
+              <tr key={i}>{r.map((v, j) => (
+                <td key={j} style={{ padding: "4px 6px", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap", textAlign: /INT|DOUBLE|FLOAT|DECIMAL|NUMERIC|REAL/i.test(shaped.columns[j]?.type ?? "") ? "right" : "left" }}>
+                  {cellText(v, shaped.columns[j]?.type)}
+                </td>
+              ))}</tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ) : (
+        <div ref={room} data-testid="query-tile-chart" style={{ flex: 1, minHeight: 0 }}>
+          {spec && <VegaChart spec={spec} tier={2} height={height} />}
+        </div>
+      )}
+      {said}
+      {foot}
+    </Frame>
+  );
+}
+
+/** A query card that cannot be read, in its place — said, and marked for the builder's checks. */
+function QueryUnread({ title, why, doors }: { title: string; why: string; doors: ReactNode }) {
+  useMarkRead("refused", `${title}: ${why}`);
+  return (
+    <Frame testid="cockpit-tile" dashed doors={doors}>
+      <Title title={title} />
+      <div className="aug-fs-sm" data-testid="query-tile-unread" style={{ color: "var(--t2)" }}>This query cannot be read: {why}</div>
+    </Frame>
+  );
 }
 
 /** A card the reader may not see, in its place: said, never an empty box. */

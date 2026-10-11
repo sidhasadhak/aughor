@@ -649,7 +649,7 @@ function FigureWiring({ spec, p, set }: { spec: CockpitSpec; p: Props; set: (pat
 
 // ── the panel ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export function PieceSetup({ spec, selected, onChange, connectionId, schema, cardTitle, entityTitle, wiringOn = false }: {
+export function PieceSetup({ spec, selected, onChange, connectionId, schema, cardTitle, entityTitle, wiringOn = false, cardSetup }: {
   spec: CockpitSpec;
   selected: string | null;
   onChange: Change;
@@ -660,6 +660,8 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
   entityTitle?: (id: string) => string | undefined;
   /** Arc AP-2 — whether this install wires cockpits: what a piece reads and what it chooses are set up here then. */
   wiringOn?: boolean;
+  /** Arc AP-7 — the setup of a card the page knows more of (a card of a person's own query), by its id. */
+  cardSetup?: (cardId: string) => ReactNode | null;
 }) {
   const el = selected ? spec.elements[selected] : undefined;
   // the entity a piece reads: its set's (Arc AP-2), or the one it names
@@ -723,6 +725,7 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
             <Pick label="Edge" value={String(p.tone ?? "")} none="None" options={TONES.map(t => ({ value: t, label: TONE_WORDS[t] }))}
               onPick={v => set({ tone: v || null }, "a card's edge chosen by hand")} />
           </Row>
+          {cardSetup?.(String(p.card ?? ""))}
         </>
       )}
       {el.type === "Note" && (

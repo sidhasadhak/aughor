@@ -373,7 +373,6 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
     age, and `previous` says so."""
     from aughor.db.connection import open_connection_for
     from aughor.sql.executor import execute_guarded
-    from aughor.util.time import now_iso
 
     card = get_card(card_id)
     if not card:
@@ -415,6 +414,16 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         else:
             sql, cut_on = cut, (table, col, dialect)
             scoped = {"covers": covers, "standing": False, "why": "", "grain": f"{table}.{col}"}
+    shown, unread = _shown_of(card)
+    if shown is not None or unread:
+        # Arc AP-7 — a card of a person's own query, shown as they asked
+        try:
+            return _run_shown(db, card, shown, unread, sql, scoped)
+        finally:
+            try:
+                db.close()
+            except Exception as exc:
+                tolerate(exc, "dashboard: connection close failed after a query card run", counter="dashboard.db_close")
     previous = None
     try:
         result = execute_guarded(db, sql, query_id=f"card:{card_id}", schema=None)
@@ -432,17 +441,7 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
     # demo warehouse, 8.42M where the range held 2.78M. `value` is what a reader is shown.
     value = _scalar(result)
     # A range's figure is the range's; the tracked value and its history stay the standing card's.
-    scalar = None if (scoped is not None and not scoped["standing"]) else value
-    if scalar is not None:
-        hist = list(card.refresh.history or [])
-        if not hist or hist[-1] != scalar:      # dedupe consecutive equals → a meaningful step series
-            hist = (hist + [scalar])[-24:]        # bounded to the last 24 observations
-        card = upsert_card(card.model_copy(update={"refresh": card.refresh.model_copy(update={
-            "prev_value": card.refresh.last_value,
-            "last_value": scalar,
-            "last_run": now_iso(),
-            "history": hist,
-        })}))
+    card = _recorded(card, None if (scoped is not None and not scoped["standing"]) else value)
     return {
         "columns": result.columns or [],
         "rows": (result.rows or [])[:200],       # raw values so the client can detect a time series
@@ -454,6 +453,74 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         "scoped": scoped,
         **({"previous": previous} if compare else {}),
     }
+
+
+def _recorded(card, scalar):
+    """The card with ``scalar`` kept as its latest value — the one before rolled into ``prev_value``, the history
+    bounded — or the card as it was when there is no standing value to keep."""
+    from aughor.util.time import now_iso
+    if scalar is None:
+        return card
+    hist = list(card.refresh.history or [])
+    if not hist or hist[-1] != scalar:      # dedupe consecutive equals → a meaningful step series
+        hist = (hist + [scalar])[-24:]        # bounded to the last 24 observations
+    return upsert_card(card.model_copy(update={"refresh": card.refresh.model_copy(update={
+        "prev_value": card.refresh.last_value,
+        "last_value": scalar,
+        "last_run": now_iso(),
+        "history": hist,
+    })}))
+
+
+def _shown_of(card):
+    """Arc AP-7 — how a card of a person's own query is shown, while queries are on: ``(shown, "")``; ``(None, why)``
+    when what it says cannot be read; ``(None, "")`` for every other card, which runs as it always did."""
+    from aughor.cockpit import queries
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled(queries.FLAG):
+        return None, ""
+    try:
+        return queries.shown_of(card.render), ""
+    except queries.Refused as e:
+        return None, str(e)
+
+
+def _run_shown(db, card, shown, unread: str, sql: str, scoped) -> dict:
+    """Arc AP-7 — run a query card as it is shown: refused while a row policy narrows a table it reads (it reads the
+    table straight), summed around the person's statement, stopped after the connection's time limit."""
+    from aughor.cockpit import pieces, queries
+
+    def said(why: str) -> dict:
+        return {"columns": [], "rows": [], "row_count": 0, "caveats": [], "error": why, "value": None,
+                "refresh": card.refresh.model_dump(), "scoped": scoped, "shown": None}
+    if unread:
+        return said(unread)
+    try:
+        graph = pieces.served_graph(card.connection_id)
+    except Exception:
+        graph = None
+    why = queries.policy_refusal(graph, queries.tables_of(card.sql, queries.dialect_of(db)))
+    if why:
+        return said(why)
+    seconds = queries.time_limit(card.connection_id)
+    columns = card.render.get("columns") if isinstance(card.render, dict) else None
+    if not isinstance(columns, list) or not columns:
+        probe = queries.probe(db, sql, seconds=seconds)
+        if probe["error"]:
+            return said(probe["error"])
+        columns = probe["columns"]
+    shown = queries.normalized(shown, columns)
+    problems = queries.check(shown, columns)
+    if problems:
+        return said(" ".join(problems))
+    ran = queries.run(db, sql, shown, columns, seconds=seconds)
+    if ran["error"]:
+        return said(ran["error"])
+    value = ran["shown"].get("value") if ran["shown"]["as"] == "figure" else None
+    card = _recorded(card, value if (scoped is None or scoped["standing"]) else None)
+    return {"columns": [c.get("name") for c in ran["columns"]], "rows": ran["rows"][:200], "row_count": len(ran["rows"]),
+            "caveats": ran["caveats"], "error": None, "value": value, "refresh": card.refresh.model_dump(),
+            "scoped": scoped, "shown": ran["shown"], "duration_ms": ran["duration_ms"]}
 
 
 def _governed_metric_of(card):

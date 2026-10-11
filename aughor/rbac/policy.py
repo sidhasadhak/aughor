@@ -169,6 +169,9 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("POST", "/query/auto-federated-answer"): P.ANALYSIS_RUN,
     ("POST", "/query/validate"): P.ANALYSIS_RUN,
     ("POST", "/query/capability-answer"): P.ANALYSIS_RUN,
+    # Arc AP-7 — a person's own query on a cockpit runs their SQL against the warehouse, by the SQL editor's own rule.
+    ("POST", "/cockpits/queries"): P.ANALYSIS_RUN,
+    ("POST", "/cockpits/queries/preview"): P.ANALYSIS_RUN,
 
     # ── Resource delete / export (more specific than the write floor) ──
     ("DELETE", "/investigations"): P.RESOURCE_DELETE,

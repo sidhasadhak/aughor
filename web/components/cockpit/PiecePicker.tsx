@@ -31,7 +31,8 @@ import { getProcesses } from "@/lib/objectTypes";
 
 /** A piece the page places with its own composer — a card from the store, a note in the person's words, an image they
  *  upload, a recorded finding — in the section the picker was opened for. */
-export type HandOff = "card" | "note" | "image" | "finding";
+export type HandOff = "card" | "note" | "image" | "finding" | "query";
+const HANDED: readonly string[] = ["card", "note", "image", "finding", "query"];
 
 type Placed = "ObjectTable" | "ObjectDetail" | "ObjectFigure" | "ObjectChart" | "ProcessBoard" | "ActionButtons"
   | "ObjectList" | "ObjectMap" | "ObjectTimeline" | "ChooseOne" | "ObjectSearch";
@@ -54,6 +55,7 @@ const GROUPS: { group: string; pieces: Entry[] }[] = [
     { kind: "ObjectChart", label: "Chart", says: "Bars across the days, split by a property if you like." },
     { kind: "ProcessBoard", label: "Process board", says: "A process's stages, its promises and what is overdue." },
     { kind: "card", label: "Card", says: "A measured card from the card store." },
+    { kind: "query", label: "Your own query", says: "SQL over any table, shown as a table, a figure or a chart." },
     { kind: "finding", label: "Finding", says: "A recorded finding, with its evidence." },
   ] },
   { group: "Filter", pieces: [
@@ -88,7 +90,7 @@ function firstEntity(spec: CockpitSpec): string {
   return "";
 }
 
-export function PiecePicker({ spec, section, connectionId, schema, wiringOn, onPlace, onHandOff, onClose }: {
+export function PiecePicker({ spec, section, connectionId, schema, wiringOn, queriesOn = false, onPlace, onHandOff, onClose }: {
   spec: CockpitSpec;
   /** The section a piece goes in; the first that holds pieces when none is named. */
   section: string | null;
@@ -96,6 +98,8 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, onP
   schema?: string;
   /** Whether a piece may read one of the cockpit's sets (Arc AP-2). */
   wiringOn: boolean;
+  /** Arc AP-7 — whether a person may write a query of their own here. */
+  queriesOn?: boolean;
   onPlace: (next: CockpitSpec, note: string) => void;
   onHandOff: (kind: HandOff, section: string | null) => void;
   onClose: () => void;
@@ -253,7 +257,7 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, onP
   };
 
   const place = (e: Entry) => {
-    if (e.kind === "card" || e.kind === "note" || e.kind === "image" || e.kind === "finding") { onHandOff(e.kind, target); return; }
+    if (HANDED.includes(e.kind)) { onHandOff(e.kind as HandOff, target); return; }
     const p = plan(e.kind);
     if (p.why || !p.props) return;
     let next: CockpitSpec | null = null;
@@ -286,8 +290,9 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, onP
 
   const shown = useMemo(() => {
     const q = find.trim().toLowerCase();
-    return GROUPS.map(g => ({ ...g, pieces: g.pieces.filter(p => !q || `${p.label} ${p.says}`.toLowerCase().includes(q)) })).filter(g => g.pieces.length);
-  }, [find]);
+    return GROUPS.map(g => ({ ...g, pieces: g.pieces.filter(p => (queriesOn || p.kind !== "query")
+      && (!q || `${p.label} ${p.says}`.toLowerCase().includes(q))) })).filter(g => g.pieces.length);
+  }, [find, queriesOn]);
 
   return (
     <Dialog open onOpenChange={o => { if (!o) onClose(); }}>
@@ -316,7 +321,7 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, onP
               <div className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em", margin: "2px 0 4px" }}>{g.group}</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                 {withUniqueKeys(g.pieces, e => e.kind).map(([ek, e]) => {
-                  const p = e.kind === "card" || e.kind === "note" || e.kind === "image" || e.kind === "finding" ? { why: target ? "" : "There is no section to place it in." } : plan(e.kind);
+                  const p = HANDED.includes(e.kind) ? { why: target ? "" : "There is no section to place it in." } : plan(e.kind as Placed | "ObjectFilters" | "Linked" | "Drawer");
                   return (
                     <Button key={ek} variant="outline" data-testid="piece-picker-entry" data-kind={e.kind} disabled={!!p.why}
                       title={p.why || e.says} onClick={() => place(e)}

@@ -126,7 +126,7 @@ function Steps({ label, value, least, most, onStep }: { label: string; value: nu
 const Rule = () => <span aria-hidden="true" style={{ width: 1, height: 16, background: "var(--b2)", margin: "0 6px" }} />;
 
 export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, aside, above, connectionId, schema, wiringOn = false,
-  structureOn = false, onAddPiece, checks, children }: {
+  structureOn = false, onAddPiece, checks, cardSetup, children }: {
   spec: CockpitSpec;
   /** Every change, as the next spec and the version's note. */
   onChange: (next: CockpitSpec, note: string) => void;
@@ -151,6 +151,8 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
   onAddPiece?: (section: string | null) => void;
   /** Arc AP-6 — what each element drawn read, by key: the checks chip counts them and lists the ones to fix. */
   checks?: Record<string, ReadState>;
+  /** Arc AP-7 — the setup of a card the page knows more of (a card of a person's own query), by its id; null for none. */
+  cardSetup?: (cardId: string) => ReactNode | null;
   /** The cockpit, drawn with the element chosen, the door that chooses one, the handle the steps use, and — while a
    *  set, a value or a choice is chosen — the pieces that read it. */
   children: (p: { selected: string | null; onSelect: (key: string) => void; handle: { current: CockpitHandle | null }; reads: string[] }) => ReactNode;
@@ -377,7 +379,7 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
             : wireKind === "value" ? <ValueSetup spec={spec} name={wireName} onChange={apply} onGone={() => setWire(null)} />
               : wireKind === "choice" ? <ChoiceSetup spec={spec} name={wireName} />
                 : <PieceSetup spec={spec} selected={selected} onChange={apply} connectionId={connectionId} schema={schema} cardTitle={cardTitle}
-                  entityTitle={entityTitle} wiringOn={wiringOn} />)}
+                  entityTitle={entityTitle} wiringOn={wiringOn} cardSetup={cardSetup} />)}
         </aside>
       </div>
     </div>
