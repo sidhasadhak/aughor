@@ -18911,7 +18911,7 @@ export interface components {
              * @default =
              * @enum {string}
              */
-            op: "=" | "!=" | ">" | ">=" | "<" | "<=" | "in" | "not_in" | "between" | "is_null" | "not_null" | "exists" | "not_exists";
+            op: "=" | "!=" | ">" | ">=" | "<" | "<=" | "in" | "not_in" | "between" | "is_null" | "not_null" | "exists" | "not_exists" | "in_last";
             /** Path */
             path: string;
             /** Value */

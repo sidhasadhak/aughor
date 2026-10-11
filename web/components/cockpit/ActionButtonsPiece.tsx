@@ -20,10 +20,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
-import type { ActionButtonDef } from "@/lib/cockpit/catalog";
+import { MAX_TICKED_RUNS, type ActionButtonDef } from "@/lib/cockpit/catalog";
 import { planRuns, pressSaid, runsOf, type ParamDecl } from "@/lib/cockpit/runs";
 import { choicesOf, doorConditions, isRefused, readSet } from "@/lib/cockpit/sets";
 import { conditionsFor } from "@/lib/cockpit/objectView";
+import { withUniqueKeys } from "@/lib/listKeys";
 import { formatCount } from "@/lib/format";
 import { listObjects, runOrPropose, type DeclaredAction } from "@/lib/objects";
 
@@ -88,7 +89,7 @@ function OneButton({ def, declared }: { def: ActionButtonDef; declared: Declared
     const read = doorConditions(r, c => picked[c]?.pk ?? null);
     if ("waiting" in read) { setSaid(`Choose one in ${words(read.waiting)} first.`); return null; }
     const out = await listObjects({ entity: r.entity, segment: r.segment, columns: [], order_by: "", descending: false, offset: 0,
-      limit: 50, filters: [...read.filters, ...(conditionsFor(filters, r.entity) as typeof read.filters)] }, connectionId, schema);
+      limit: MAX_TICKED_RUNS, filters: [...read.filters, ...(conditionsFor(filters, r.entity) as typeof read.filters)] }, connectionId, schema);
     if (out.path === "refused") { setSaid(out.refused); return null; }
     return { keys: out.rows.map(row => String(row[0])), total: out.total };
   };
@@ -100,6 +101,8 @@ function OneButton({ def, declared }: { def: ActionButtonDef; declared: Declared
       const got = await readSetKeys(plan.set.set);
       if (!got) return;
       setSetKeys(got);
+      // more than one press runs on: said on the row, and nothing opens — never a form whose Run does nothing
+      if (got.total != null && got.total > MAX_TICKED_RUNS) return;
     }
     if (formFirst) { setOpen(true); return; }
     await run();
@@ -107,7 +110,6 @@ function OneButton({ def, declared }: { def: ActionButtonDef; declared: Declared
 
   const run = async (keys = setKeys?.keys ?? []) => {
     if ("blocked" in plan || !connectionId) return;
-    if (plan.set && setKeys && setKeys.total != null && setKeys.total > 50) return;
     setBusy(true);
     const outcomes: Outcome[] = [];
     try {
@@ -133,8 +135,8 @@ function OneButton({ def, declared }: { def: ActionButtonDef; declared: Declared
     if (outcomes.some(o => o.status === "ran")) bump();
   };
 
-  const blockedWhy = "blocked" in plan ? plan.blocked : plan.set && setKeys?.total != null && setKeys.total > 50
-    ? `${words(plan.set.set)} holds ${formatCount(setKeys.total)}; a press runs on at most 50 — tick the ones to run on.` : "";
+  const blockedWhy = "blocked" in plan ? plan.blocked : plan.set && setKeys?.total != null && setKeys.total > MAX_TICKED_RUNS
+    ? `${words(plan.set.set)} holds ${formatCount(setKeys.total)}; a press runs on at most ${MAX_TICKED_RUNS} — tick the ones to run on.` : "";
   const runs = "blocked" in plan ? 0 : plan.each ? plan.each.pks.length : plan.set ? setKeys?.keys.length ?? 0 : 1;
   return (
     <span data-testid="action-buttons-row" style={{ display: "inline-flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
@@ -154,16 +156,16 @@ function OneButton({ def, declared }: { def: ActionButtonDef; declared: Declared
               <DialogTitle>{label}</DialogTitle>
               <DialogDescription>{declared.description || `On ${runs === 1 ? `one ${thing}` : `${formatCount(runs)} ${thing}s`}.`}</DialogDescription>
             </DialogHeader>
-            {plan.said.map(({ param, words: w }) => (
-              <div key={param.name} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {withUniqueKeys(plan.said, s => s.param.name).map(([key, { param, words: w }]) => (
+              <div key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <span className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>{param.display_name || words(param.name)}</span>
                 <span className="aug-fs-sm" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--t1)" }}>
                   <Icon name="lock" size={12} />{w}{plan.set && param.name === plan.set.param && setKeys ? ` · ${formatCount(setKeys.keys.length)} now` : ""}
                 </span>
               </div>
             ))}
-            {plan.asks.map(p => (
-              <label key={p.name} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {withUniqueKeys(plan.asks, p => p.name).map(([key, p]) => (
+              <label key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <span className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>
                   {p.display_name || words(p.name)}{p.required && p.default_value == null ? "" : " · if you like"}
                 </span>

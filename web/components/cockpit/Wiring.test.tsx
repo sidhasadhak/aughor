@@ -117,6 +117,46 @@ describe("a wired cockpit", () => {
     await waitFor(() => expect(screen.getByTestId("object-detail")).toHaveTextContent("Order 38330"));
   });
 
+  it("never shows the lines of the order chosen before while the next one's are read", async () => {
+    draw();
+    await waitFor(() => expect(within(tables()[0]).getAllByTestId("object-table-row")).toHaveLength(2));
+    fireEvent.click(within(tables()[0]).getAllByTestId("object-table-row")[0]);
+    await waitFor(() => expect(screen.getByText("68304")).toBeInTheDocument());             // 38330's line
+    fireEvent.click(screen.getAllByTestId("object-figure-shows")[1]);                        // the list switched: let go
+    await waitFor(() => expect(screen.getByTestId("object-table-waiting")).toBeInTheDocument());
+    // the next order's lines are on their way, and stay on their way
+    objects.listObjects.mockImplementation(async (b: { entity: string; segment?: string; filters?: unknown[] }) =>
+      (b.entity === "order_item" ? new Promise(() => {}) : listing(b)));
+    await waitFor(() => expect(within(tables()[0]).getAllByTestId("object-table-row")).toHaveLength(1));
+    fireEvent.click(within(tables()[0]).getAllByTestId("object-table-row")[0]);               // order 900
+    await waitFor(() => expect(listed()).toContainEqual(expect.objectContaining({ entity: "order_item", filters: [{ path: "order_id", op: "=", value: "900" }] })));
+    expect(screen.queryByText("68304")).toBeNull();
+  });
+
+  it("ticks at most the fifty one press runs on, across its pages", async () => {
+    const pageOf = (b: { entity: string; offset?: number; limit?: number }) => {
+      const from = b.offset ?? 0;
+      const ids = Array.from({ length: Math.min(b.limit ?? 6, 60 - from) }, (_, i) => String(from + i + 1));
+      return { ...listing(b), rows: ids.map(id => [id, "Processing"]), total: 60, offset: from };
+    };
+    objects.listObjects.mockImplementation(async (b: { entity: string; offset?: number; limit?: number }) => pageOf(b));
+    draw({ root: "cockpit", values: DESK.values, sets: { placed: DESK.sets.placed, waiting: DESK.sets.waiting }, elements: {
+      cockpit: { type: "Cockpit", props: { title: "Desk" }, children: ["today"] },
+      today: { type: "Section", props: { title: "Desk" }, children: ["table"] },
+      table: { type: "ObjectTable", props: { set: "waiting", ticks: "ticked-orders", columns: ["status"] }, children: [] } } });
+    for (let page = 0; page < 9; page++) {
+      const first = String(page * 6 + 1);
+      await waitFor(() => expect(screen.getByRole("checkbox", { name: `Tick ${first}` })).toBeInTheDocument());
+      const boxes = screen.getAllByRole("checkbox", { name: /^Tick / });
+      for (const box of page < 8 ? boxes : boxes.slice(0, 2)) fireEvent.click(box);
+      if (page < 8) fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    }
+    expect(screen.getByTestId("object-table-ticked")).toHaveTextContent("50 ticked (the most one press runs on)");
+    expect(screen.getByRole("checkbox", { name: "Tick 50" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Tick 51" })).toBeDisabled();               // the 51st may not be ticked
+    expect(screen.getByRole("checkbox", { name: "Tick 50" })).not.toBeDisabled();           // a ticked one may be let go
+  });
+
   it("collects ticks in a table that names them, and clears them", async () => {
     draw();
     await waitFor(() => expect(screen.getAllByRole("checkbox", { name: /^Tick / })).toHaveLength(2));

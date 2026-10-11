@@ -129,9 +129,13 @@ describe("a button on a cockpit", () => {
     expect(form).toHaveTextContent("every order in waiting · 2 now");
     await act(async () => { fireEvent.click(within(form).getByTestId("action-buttons-run")); });
     expect(objects.runOrPropose.mock.calls.map(c => c[1])).toEqual([{ reason: "past the promise", order: "38330" }, { reason: "past the promise", order: "79251" }]);
+    await waitFor(() => expect(screen.queryByTestId("action-buttons-form")).toBeNull());
     objects.listObjects.mockImplementation(async () => listing(1327));
     fireEvent.click(screen.getByRole("button", { name: "Flag for review" }));
     await waitFor(() => expect(said().join(" ")).toMatch(/waiting holds 1,327; a press runs on at most 50/));
+    // and nothing opens: never a form whose Run would run on the first fifty of 1,327, or do nothing
+    expect(screen.queryByTestId("action-buttons-form")).toBeNull();
+    expect(objects.runOrPropose).toHaveBeenCalledTimes(2);
   });
 
   it("says an action that is not declared here, and a server that failed — never as a refusal the action made", async () => {

@@ -22,6 +22,8 @@ vi.mock("@/components/ui/toast", async (original) => ({ ...(await original<typeo
 vi.mock("@/lib/objects", async (original) => ({
   ...(await original<typeof import("@/lib/objects")>()),
   cachedObjectCatalog: vi.fn(async () => ({ object_types: [{ object_type: "order", id: "Order", display_name: "Customer Order" }] })),
+  // what a set holds now, in the Data tab (Arc AP-2): one count, never the live door
+  queryObjects: vi.fn(async (b: { segment?: string }) => ({ path: "compiled", rows: [[b.segment ? "1327" : "6619"]], caveats: [], error: null })),
 }));
 // the setup reads the ontology for a piece over an entity; these tests choose pieces that read none, or wait for none
 vi.mock("@/lib/objectTypes", async (original) => ({
@@ -245,3 +247,54 @@ describe("with the cockpit itself drawn", () => {
   });
 });
 
+
+describe("the Data tab (Arc AP-2)", () => {
+  const wired = (): CockpitSpec => ({
+    root: "cockpit",
+    sets: {
+      placed: { label: "Placed", entity: "order" },
+      waiting: { label: "Waiting", from: "placed", segment: "overdue_dispatch" },
+    },
+    elements: {
+      cockpit: { type: "Cockpit", props: { title: "Desk" }, children: ["sec"] },
+      sec: { type: "Section", props: { title: "Desk" }, children: ["fig", "table", "note"] },
+      fig: { type: "ObjectFigure", props: { set: "waiting", of: "placed", label: "Waiting", agg: "count" }, children: [] },
+      table: { type: "ObjectTable", props: { set: "waiting", chooses: "chosen-order" }, children: [] },
+      note: { type: "Note", props: { text: "The oldest first" }, children: [] },
+    },
+  });
+  /** The builder with wiring on or off, recording what the cockpit is told is dashed. */
+  function wire(spec: CockpitSpec, wiringOn: boolean) {
+    const reads: string[][] = [];
+    render(
+      <CockpitBuilder spec={spec} onChange={vi.fn()} connectionId="thelook" schema="thelook" bar={null} wiringOn={wiringOn}>
+        {({ reads: r }) => { reads.push(r); return <div data-testid="cockpit-stub" />; }}
+      </CockpitBuilder>,
+    );
+    return reads;
+  }
+
+  it("is offered only where cockpits are wired; off, the left pane is the layout and nothing else", () => {
+    wire(wired(), false);
+    expect(screen.queryByRole("radio", { name: "Data" })).toBeNull();
+    expect(screen.getByTestId("builder-layout")).toBeInTheDocument();
+  });
+
+  it("lists the sets; choosing one opens its setup and dashes the pieces that read it — and the layout lets it go", async () => {
+    const reads = wire(wired(), true);
+    fireEvent.click(screen.getByRole("radio", { name: "Data" }));
+    expect(screen.queryByTestId("builder-layout")).toBeNull();
+    const sets = within(screen.getByTestId("builder-data")).getAllByTestId("data-set");
+    expect(sets.map(s => s.dataset.name)).toEqual(["placed", "waiting"]);
+    fireEvent.click(sets[1]);
+    expect(screen.getByTestId("set-setup")).toHaveAttribute("data-name", "waiting");
+    expect(within(screen.getByTestId("builder-setup")).getByTestId("set-setup")).toBeInTheDocument();
+    expect(reads.at(-1)).toEqual(["fig", "table"]);                      // the figure and the list read it; the note does not
+    expect(screen.getByTestId("builder-selection")).toHaveTextContent("the 2 pieces that read it are dashed");
+    await waitFor(() => expect(sets[1]).toHaveTextContent("1,327"));     // what it holds now, read once
+    fireEvent.click(screen.getByRole("radio", { name: "Layout" }));
+    expect(reads.at(-1)).toEqual([]);
+    expect(screen.getByTestId("builder-layout")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-empty")).toBeInTheDocument();
+  });
+});

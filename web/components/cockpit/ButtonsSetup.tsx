@@ -114,7 +114,7 @@ export function ButtonsSetup({ spec, k, onChange, connectionId, schema }: {
           </Row>
           {action && action.params.length > 0 && (
             <Row label="Its parameters" testid="setup-params" hint="Only what holds the parameter's entity is offered.">
-              {action.params.map(p => {
+              {withUniqueKeys(action.params, p => p.name).map(([key, p]) => {
                 const src = b.params?.[p.name];
                 const fixed = src && "value" in src ? String(src.value) : "";
                 const options: { value: string; label: string }[] = p.kind === "object" ? [
@@ -124,7 +124,7 @@ export function ButtonsSetup({ spec, k, onChange, connectionId, schema }: {
                     value: `set:${s.name}`, label: `Every one in ${s.label} — asks first` })),
                 ] : [{ value: "ask", label: "Asked in the form" }, { value: "value", label: "The same every time" }];
                 return (
-                  <div key={p.name} data-testid="setup-param" style={{ display: "flex", flexDirection: "column", gap: 4, padding: "4px 0" }}>
+                  <div key={key} data-testid="setup-param" style={{ display: "flex", flexDirection: "column", gap: 4, padding: "4px 0" }}>
                     <span className="aug-fs-sm" style={{ color: "var(--t1)" }}>
                       {p.display_name || words(p.name)}
                       <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: 6 }}>
@@ -146,7 +146,7 @@ export function ButtonsSetup({ spec, k, onChange, connectionId, schema }: {
                         onBlur={e => setButton({ params: { ...(b.params ?? {}), [p.name]: { value: e.target.value } } }, "a button's fixed value written by hand")} />
                     )}
                     {p.kind === "object" && !options.length && (
-                      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>Nothing here holds {words(p.object_type).toLowerCase()} objects yet: a table's click can choose one.</span>
+                      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>Nothing here holds {words(p.object_type).toLowerCase()} objects yet: a table&rsquo;s click can choose one.</span>
                     )}
                   </div>
                 );
@@ -163,8 +163,8 @@ export function ButtonsSetup({ spec, k, onChange, connectionId, schema }: {
           </Row>
           {sets.length > 0 && (
             <Row label="After it runs" hint="Every piece is read again; the sets ticked here are named as what it changes.">
-              {sets.map(s => (
-                <label key={s.name} className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t2)" }}>
+              {withUniqueKeys(sets, s => s.name).map(([key, s]) => (
+                <label key={key} className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t2)" }}>
                   <Checkbox checked={(b.after?.read ?? []).includes(s.name)} aria-label={`Read ${s.label} again`}
                     onChange={e => {
                       const read = new Set(b.after?.read ?? []);

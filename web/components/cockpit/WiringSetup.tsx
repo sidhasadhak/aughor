@@ -139,8 +139,8 @@ export function DataPane({ spec, selected, onSelect, onChange, connectionId, sch
         <Button size="xs" variant="ghost" data-testid="data-new-set" disabled={!firstEntity} onClick={newSet}><Icon name="plus" /> New set</Button>
       )}
       <Label>Chosen by the reader</Label>
-      {choices.map(c => (
-        <Button key={c.name} variant="ghost" data-testid="data-choice" aria-pressed={selected === `choice:${c.name}`} onClick={() => onSelect(`choice:${c.name}`)}
+      {withUniqueKeys(choices, c => c.name).map(([key, c]) => (
+        <Button key={key} variant="ghost" data-testid="data-choice" aria-pressed={selected === `choice:${c.name}`} onClick={() => onSelect(`choice:${c.name}`)}
           className="aug-fs-sm" style={{ ...ROW, background: selected === `choice:${c.name}` ? "var(--accent-a3, var(--bg-3))" : "transparent" }}>
           <span aria-hidden="true" style={{ color: "var(--vio4)" }}>◆</span>
           <span style={{ minWidth: 0 }}>
@@ -152,7 +152,7 @@ export function DataPane({ spec, selected, onSelect, onChange, connectionId, sch
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>read by {readersOf(spec, c.name).elements.length + readersOf(spec, c.name).sets.length}</span>
         </Button>
       ))}
-      {!choices.length && <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "0 10px 6px" }}>None: a table's setup names what a click chooses.</div>}
+      {!choices.length && <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "0 10px 6px" }}>None: a table&rsquo;s setup names what a click chooses.</div>}
       <Label right={`${values.length} of ${MAX_VALUES}`}>Values</Label>
       {values.map(n => {
         const v = spec.values?.[n];

@@ -78,13 +78,13 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
     wiring = wiring if wiring is not None else read(spec)
     if wiring is None:
         return ["The cockpit's wiring could not be read, so it was not checked; it is not kept unchecked."]
-    from aughor.cockpit.pieces import _accepted_edits, _graph
-    graph = graph if graph is not None else _graph(connection_id)
+    from aughor.cockpit.pieces import accepted_edits, served_graph
+    graph = graph if graph is not None else served_graph(connection_id)
     if graph is None:
         return ["The cockpit reads sets, and no ontology is built for this connection."]
     from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query, find_object_type
     said: list[str] = []
-    overlay = _accepted_edits(connection_id)
+    overlay = accepted_edits(connection_id)
     for name, s in (wiring.get("sets") or {}).items():
         if "refused" in s:
             said.append(str(s["refused"]))

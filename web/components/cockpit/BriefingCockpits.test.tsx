@@ -22,13 +22,15 @@ const api = vi.hoisted(() => ({
   listSharedCockpits: vi.fn(), getSharedCockpit: vi.fn(), copySharedCockpit: vi.fn(), cockpitAudiences: vi.fn(),
   publishCockpit: vi.fn(), unpublishCockpit: vi.fn(), askCockpit: vi.fn(), listFindingsByDomain: vi.fn(), pinFinding: vi.fn(),
   rejectProposal: vi.fn(), moveCanvasCockpit: vi.fn(), restoreCockpit: vi.fn(), retireCockpit: vi.fn(),
-  getSystemFlags: vi.fn(), measureRange: vi.fn(), readExpectedNext: vi.fn(),
+  getSystemFlags: vi.fn(), measureRange: vi.fn(), readExpectedNext: vi.fn(), getDeclaredActions: vi.fn(),
 }));
 const drawn = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const ontology = vi.hoisted(() => ({ getProcesses: vi.fn() }));
 vi.mock("@/lib/objectTypes", async (original) => ({ ...(await original<typeof import("@/lib/objectTypes")>()), ...ontology }));
 // the builder names entities from the object catalog: never read from a live API in a test
 vi.mock("@/lib/objects", async (original) => ({ ...(await original<typeof import("@/lib/objects")>()), cachedObjectCatalog: vi.fn(async () => null) }));
+const toasts = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
+vi.mock("@/components/ui/toast", async (original) => ({ ...(await original<typeof import("@/components/ui/toast")>()), toast: toasts }));
 const composer = vi.hoisted(() => ({ onCreated: null as null | (() => void) }));
 
 vi.mock("@/lib/api", async (original) => ({ ...(await original<typeof import("@/lib/api")>()), ...api }));
@@ -92,6 +94,7 @@ const stripTabs = () => screen.getAllByRole("tab").map(t => t.querySelector(".rt
 
 beforeEach(() => {
   for (const f of Object.values(api)) f.mockReset();
+  toasts.error.mockReset();
   drawn.props.length = 0;
   composer.onCreated = null;
   try { localStorage.clear(); } catch { /* jsdom */ }
@@ -748,5 +751,44 @@ describe("building a cockpit in place (Arc AP-1)", () => {
     act(() => { doors().onRegrid!("card-net", { w: 7, h: 5 }, {}); });
     await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(2), { timeout: 3000 });
     await waitFor(() => expect(screen.queryByText(/Refused for a reason/)).toBeNull());
+  });
+});
+
+describe("action buttons, placed by hand (Arc AP-3)", () => {
+  const OPEN_CASE = { id: "open_case", display_name: "Open a case", description: "", entity: "order", object_type: "order", kind: "annotate",
+    risk: "low", edits: [], params: [] };
+  const builderWith = async (flags: Record<string, { value: boolean }>) => {
+    api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true }, ...flags });
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-edit"));
+    await screen.findByTestId("cockpit-builder");
+  };
+
+  it("are offered only where cockpits are wired", async () => {
+    await builderWith({});
+    expect(screen.getByTestId("cockpit-note-new")).toBeInTheDocument();
+    expect(screen.queryByTestId("cockpit-buttons-new")).toBeNull();
+  });
+
+  it("are placed with the first action declared here, and kept as a version said in words", async () => {
+    api.getDeclaredActions.mockResolvedValue({ open_case: OPEN_CASE, flag_for_review: { ...OPEN_CASE, id: "flag_for_review" } });
+    await builderWith({ "cockpit.wiring": { value: true } });
+    fireEvent.click(await screen.findByTestId("cockpit-buttons-new"));
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1));
+    const kept = api.keepCockpit.mock.calls[0][2] as { elements: Record<string, { type: string; props: Record<string, unknown> }> };
+    const placed = Object.values(kept.elements).filter(el => el.type === "ActionButtons");
+    expect(placed).toHaveLength(1);
+    expect(placed[0].props.buttons).toEqual([{ action: "open_case" }]);
+    expect(api.keepCockpit.mock.calls[0][3]).toBe("action buttons placed by hand");
+  });
+
+  it("say that no action is declared, and place nothing", async () => {
+    api.getDeclaredActions.mockResolvedValue({});
+    await builderWith({ "cockpit.wiring": { value: true } });
+    fireEvent.click(await screen.findByTestId("cockpit-buttons-new"));
+    await waitFor(() => expect(toasts.error).toHaveBeenCalledWith("No action is declared here", expect.objectContaining({
+      description: expect.stringContaining("Ontology ▸ Actions") })));
+    await new Promise(r => setTimeout(r, 50));
+    expect(api.keepCockpit).not.toHaveBeenCalled();
   });
 });

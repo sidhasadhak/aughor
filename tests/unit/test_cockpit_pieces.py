@@ -62,7 +62,7 @@ def _with_pieces(spec: dict, *, process="order_fulfilment", entity="order", colu
 
 @pytest.fixture
 def no_edits(monkeypatch):
-    monkeypatch.setattr(pieces, "_accepted_edits", lambda conn: [])
+    monkeypatch.setattr(pieces, "accepted_edits", lambda conn: [])
 
 
 # ── what only the platform knows ─────────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ def test_the_keep_door_refuses_what_does_not_resolve_and_keeps_what_does(volumes
         cards.place(home, DashboardCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
     spec = json.loads(FIXTURE.read_text().replace("c7f3a001", rate).replace("c91b2002", net))
     graph = _graph()
-    monkeypatch.setattr(pieces, "_graph", lambda conn: graph)
+    monkeypatch.setattr(pieces, "served_graph", lambda conn: graph)
     _flag(monkeypatch, True)
 
     def keep(s):
@@ -156,7 +156,7 @@ def test_an_edit_to_a_cockpit_holding_pieces_is_staged_and_names_each_piece_it_m
         cards.place(home, DashboardCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
     spec = _with_pieces(json.loads(FIXTURE.read_text().replace("c7f3a001", rate).replace("c91b2002", net)))
     graph = _graph()
-    monkeypatch.setattr(pieces, "_graph", lambda conn: graph)
+    monkeypatch.setattr(pieces, "served_graph", lambda conn: graph)
     _flag(monkeypatch, True)
     assert versions.keep(home, spec, approved_by="user:amit", source="a person's own hand", written_by_model=False).kept
     at = spec["elements"]["sec-headline"]["children"].index("board")
@@ -273,7 +273,7 @@ def test_a_version_holding_pieces_is_pinned_resizing_keeps_the_pin_and_repointin
         cards.place(home, DashboardCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
     plain = json.loads(FIXTURE.read_text().replace("c7f3a001", rate).replace("c91b2002", net))
     graph = _graph()
-    monkeypatch.setattr(pieces, "_graph", lambda conn: graph)
+    monkeypatch.setattr(pieces, "served_graph", lambda conn: graph)
     _both_on(monkeypatch)
 
     def keep(s, **kw):

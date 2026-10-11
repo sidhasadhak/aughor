@@ -68,6 +68,13 @@ describe("what a set reads", () => {
     const word = desk();
     word.values!.window = { label: "Window", kind: "text", value: "fortnight" };
     expect((readSet(word, "placed") as { refused: string }).refused).toMatch(/not a number of days/);
+    // one thing a set starts from, and one object it follows, however it is written
+    const both = desk();
+    both.sets!.placed = { label: "Placed", entity: "order", from: "shipped" };
+    expect((readSet(both, "placed") as { refused: string }).refused).toMatch(/names an entity and a set it starts from/);
+    const twice = desk();
+    twice.sets!.mine = { label: "Mine", from: "lines", linked_to: { choice: "chosen-order", path: "order_id" } };
+    expect((readSet(twice, "mine") as { refused: string }).refused).toMatch(/linked to two chosen objects/);
   });
 
   it("waits on the chosen object it links to, and reads its key once one is chosen", () => {
@@ -137,6 +144,13 @@ describe("the rules a wired cockpit is held to", () => {
     expect(broken(s => { s.elements.table.props.chooses = "waiting"; })).toMatch(/names a set or a value and a choice/);
     expect(broken(s => { s.elements.lines.props.chooses = "chosen-order"; })).toMatch(/An object is chosen or ticked in one table/);
     expect(broken(s => { s.elements.table.props.ticks = "chosen-order"; })).toMatch(/A choice is one kind of thing/);
+    expect(broken(s => { s.values!.waiting = { label: "Waiting", kind: "days", value: 3 }; })).toMatch(/"waiting" names a set and a value. One name is one thing/);
+  });
+
+  it("refuse days that are not a whole number, one or more", () => {
+    expect(broken(s => { s.values!.window.value = 2.5; })).toMatch(/counts 2.5 days. Days are a whole number, one or more/);
+    expect(broken(s => { s.values!.window.value = 0; })).toMatch(/counts 0 days/);
+    expect(broken(s => { s.values!.window.value = 30; })).toBe("");
   });
 
   it("hold a piece to one thing it reads", () => {
@@ -210,6 +224,8 @@ describe("what a press runs", () => {
     expect(planRuns({ action: "x", params: { order: { from: "shown" } } }, [ORDER], ctx("1"))).toMatchObject({ blocked: expect.stringMatching(/which no table chooses or ticks/) });
     const two = { action: "x", params: { order: { from: "ticked-orders" }, other: { set: "waiting" } } };
     expect(planRuns(two, [ORDER, { ...ORDER, name: "other" }], ctx(null, ["1"]))).toEqual({ blocked: "Two parameters run once per object; one may." });
+    const setFirst = { action: "x", params: { order: { set: "waiting" }, other: { from: "ticked-orders" } } };
+    expect(planRuns(setFirst, [ORDER, { ...ORDER, name: "other" }], ctx(null, ["1"]))).toEqual({ blocked: "Two parameters run once per object; one may." });
   });
 
   it("asks what is needed before what may be left", () => {

@@ -47,7 +47,7 @@ def pieces_of(spec: Any) -> dict[str, tuple[str, dict]]:
             if isinstance(el, dict) and el.get("type") in PIECES and isinstance(el.get("props"), dict)}
 
 
-def _graph(connection_id: str):
+def served_graph(connection_id: str):
     from aughor.routers.ontology import served_ontology_graph
     return served_ontology_graph(connection_id, None)
 
@@ -78,7 +78,7 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
     if late and not flag_enabled(FROM_OBJECT_FLAG):
         return [f"The cockpit holds {len(late)} filter column, figure or chart piece(s), and starting a cockpit from "
                 "an object is off on this install."]
-    graph = graph if graph is not None else _graph(connection_id)
+    graph = graph if graph is not None else served_graph(connection_id)
     if graph is None:
         return ["The cockpit holds pieces bound to the ontology, and no ontology is built for this connection."]
     from aughor.semantic.object_query import ObjectQueryRefused, compile_object_listing, find_object_type
@@ -99,7 +99,7 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
                     "columns": list(props.get("columns") or []), "order_by": props.get("sort") or "",
                     "descending": bool(props.get("descending")), "limit": 1}
             try:
-                compiled = compile_object_listing(body, graph, overlay=_accepted_edits(connection_id))
+                compiled = compile_object_listing(body, graph, overlay=accepted_edits(connection_id))
                 tables[key] = compiled.type_id
             except ObjectQueryRefused as exc:
                 said.append(f'The objects table "{key}" cannot be read: {exc.reason}.')
@@ -150,7 +150,7 @@ def _from_object_read(key: str, kind: str, props: dict, graph: Any, connection_i
     said = []
     for what, body in _from_object_probes(kind, props, sets):
         try:
-            compile_object_query(body, graph, overlay=_accepted_edits(connection_id))
+            compile_object_query(body, graph, overlay=accepted_edits(connection_id))
         except ObjectQueryRefused as exc:
             said.append(f'The {_WORDS[kind]} "{key}" cannot be read — {what}: {exc.reason}.')
     return said
@@ -164,7 +164,7 @@ def _table_of(spec: dict, button: str, pieces: dict[str, tuple[str, dict]]) -> s
     return ""
 
 
-def _accepted_edits(connection_id: str) -> list:
+def accepted_edits(connection_id: str) -> list:
     from aughor.actions.overlay import accepted_object_edits
     return accepted_object_edits(connection_id)
 
@@ -304,7 +304,7 @@ def since(connection_id: str, spec: Any, pinned: str, *, graph: Optional[Any] = 
         return None
     schema = release.connection_scope(connection_id)
     rows = release.releases(connection_id, schema)
-    graph = graph if graph is not None else _graph(connection_id)
+    graph = graph if graph is not None else served_graph(connection_id)
     reads = depends(spec, graph)
     after = _number(pinned)
     out = []
@@ -331,7 +331,7 @@ def cockpits_reading(connection_id: str, names: set[str], *, graph: Optional[Any
     in the ontology's draft touches, beside its claims, cards and automations (Arc OC-2's release strip)."""
     from aughor.cockpit.versions import KIND, title_of
     from aughor.kernel.ledger import Ledger
-    graph = graph if graph is not None else _graph(connection_id)
+    graph = graph if graph is not None else served_graph(connection_id)
     out = []
     for row in Ledger.default().artifacts_of_kind(KIND, conn_id=connection_id, limit=1000):
         payload = row.get("payload") or {}

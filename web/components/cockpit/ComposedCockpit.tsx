@@ -794,6 +794,8 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
   }, [store, host]);
 
   const rangeKey = JSON.stringify(range ?? null);
+  // the pieces a set chosen in the builder's Data tab is read by (Arc AP-2), as one key: a new array each render is not news
+  const readsKey = reads.join("\n");
   const steppers = useMemo(() => new Map<string, Stepper>(), []);
   useImperativeHandle(handle, () => ({
     room: key => steppers.get(key)?.room() ?? null,
@@ -811,9 +813,9 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
     schema,
     selected,
     steppers,
-    reads: new Set(reads),
+    reads: new Set(readsKey ? readsKey.split("\n") : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what the spec and the range say
-  }), [check.valid, written, cards, host, doors, sym, images, rangeKey, schema, selected, steppers, reads.join("|")]);
+  }), [check.valid, written, cards, host, doors, sym, images, rangeKey, schema, selected, steppers, readsKey]);
 
   if (!check.valid) {
     return (

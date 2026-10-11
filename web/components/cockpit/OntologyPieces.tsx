@@ -419,8 +419,10 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
   const limit = useSettled(fits ?? (tall ? 12 : 6), 350);
   const asked = JSON.stringify([target?.entity, target?.segment, columns, sort, descending, target?.conditions]);
   useEffect(() => { setOffset(0); }, [asked]);
+  // a list that waits on a choice, or cannot be read, holds nothing: what it listed before is let go of at once
+  if (!target && page) setPage(null);
   useEffect(() => {
-    if (!target) { setPage(null); return; }
+    if (!target) return;
     let alive = true;
     listObjects({ entity: target.entity, segment: target.segment, columns: columns ?? [], order_by: sort ?? "",
                   descending: !!descending, offset, limit, filters: target.conditions }, connectionId, schema)

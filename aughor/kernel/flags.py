@@ -518,7 +518,7 @@ FLAG_META = {
                    "the chosen or ticked rows.",
         "facts": [{"kind": "free", "text": "No model calls"},
                   {"kind": "warehouse", "text": "Queries your warehouse"}],
-        "description": "A set is a named group of objects, such as orders waiting past their promise. A button runs a "
+        "description": "A set is a named group of objects, such as the ones waiting past a promise. A button runs a "
                        "declared action, with its own checks and approvals, once per chosen or ticked row. Off: a "
                        "cockpit's pieces read only their own entity.",
     },

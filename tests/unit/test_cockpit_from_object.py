@@ -256,7 +256,7 @@ CHART = {"type": "ObjectChart", "props": {"entity": "order", "label": "Orders pe
 
 @pytest.fixture
 def no_edits(monkeypatch):
-    monkeypatch.setattr(pieces, "_accepted_edits", lambda conn: [])
+    monkeypatch.setattr(pieces, "accepted_edits", lambda conn: [])
 
 
 def test_the_three_pieces_are_refused_while_their_flag_is_off(monkeypatch, no_edits):

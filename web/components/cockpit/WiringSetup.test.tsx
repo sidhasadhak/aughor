@@ -175,6 +175,22 @@ describe("a button's setup", () => {
     expect(onChange.mock.calls[1][0].elements.buttons.props.buttons[0].params).toEqual({ assignee: { ask: true } });
   });
 
+  it("never offers what a button runs on from objects of another entity, or from a figure's switch", async () => {
+    const s = desk();
+    s.elements.sec.children.push("items-table");
+    s.elements["items-table"] = { type: "ObjectTable", props: { set: "items", ticks: "ticked-items" }, children: [] };
+    s.elements.fig.props.shows = "shown";
+    render(<ButtonsSetup spec={s} k="buttons" onChange={vi.fn()} connectionId={`c${++conn}`} />);
+    await waitFor(() => expect(screen.getAllByTestId("setup-param")).toHaveLength(2));
+    const order = screen.getByLabelText("Where Order comes from");
+    fireEvent.keyDown(order, { key: "ArrowDown" });
+    const offered = screen.getAllByRole("option").map(o => o.getAttribute("data-value"));
+    fireEvent.keyDown(order, { key: "Escape" });
+    expect(offered).toContain("from:chosen-order");
+    expect(offered).not.toContain("from:ticked-items");          // order lines, not orders
+    expect(offered).not.toContain("from:shown");                 // a figure's switch holds a set, not an object
+  });
+
   it("asks first or runs, is disabled or hidden, and names the sets read again after it runs", async () => {
     const onChange = vi.fn();
     render(<ButtonsSetup spec={desk()} k="buttons" onChange={onChange} connectionId={`c${++conn}`} />);
