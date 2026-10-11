@@ -42,3 +42,10 @@ nothing. Geometry stays a browser question — verify it by driving the browser.
 `rm -rf .next/dev/types && npx tsc --noEmit`, then `lint:vars`, `lint:tokens`,
 `lint:format`, `lint:elements`, `lint:icons`, `lint:palette`. Bare `npm run lint` is not
 one of them.
+
+# Redesigning a screen
+
+Read `aughor-v2/CLARITY.md` first (what a screen says, the order it says it in, and the do/don't tables), then
+`aughor-v2/INSTRUMENT.md` for tokens and components. Mock the screen up in the style of `../design-mockups/*.html`
+on live data and get the user's reaction before building it.
+

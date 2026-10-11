@@ -344,9 +344,15 @@ class Answerer:
     backend: str
     model: str
     fallback: bool = False
+    #: 2026-10-10 — `pack` when no model answered: an industry pack's structure, read deterministically against the
+    #: graph (`aughor/packs/drafter.py`); `model` names the pack's id and `version` its version.
+    source: str = "model"
+    version: str = ""
 
     @property
     def provenance(self) -> str:
+        if self.source == "pack":
+            return f"pack:{self.model or 'unknown'}@{self.version or '0'}"
         return f"model:{self.model or 'unknown'}@{EXPLORER_VERSION}"
 
 

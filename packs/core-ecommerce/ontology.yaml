@@ -1,20 +1,69 @@
-# The core the business extends (ROADMAP §3.15 ON-0a). Every entry is a CLAIM the builder
-# measures against the warehouse; nothing here is rendered into a prompt. Ten to twenty
-# objects, not a reference model. A child pack (`extends: [core-ecommerce]`) replaces an
-# entry by name; the company's own pack overrides and rejects the same way.
+# How an e-commerce business is usually shaped (ROADMAP §3.15 ON-0a), written as PATTERNS, never as objects to make.
+# Guided by the industry overview (Customer → places → Order → contains → SKU → fulfilled by → Shipment; "Ship an
+# order") and its e-commerce relationship chains (catalogue, inventory, commerce, payments, fulfilment, returns).
+#
+# Nothing here creates an object. The builder makes one type per table; this map is read against what it made
+# (`aughor/packs/drafter.py`, `POST /ontology/explore/pack`):
+#   * an object the data has no table for is never proposed and never mentioned — a business whose head office is its
+#     warehouse has no warehouse table, and an object for it would describe someone else's process;
+#   * `parts` — where the data holds an object and the rows the industry reads as part of it (an order's lines), the
+#     part's table is proposed under the object;
+#   * a link's `verb` (read from→to) and `reverse_verb` (to→from) name a link the builder found, in the direction it
+#     found it; a link on a named `via` key is proposed where both tables hold it and the builder found no join;
+#   * a process's stages are resolved to moments on the object; its promises' terms are the business's to set;
+#   * `actions` are offered on objects the data holds, inert until a person declares one in the action designer.
+# Every proposal is measured before it lands and PROPOSED until a person confirms it. Every entry is also a CLAIM
+# measured against the warehouse (`ontology_map.apply_core_claims`). Ten to twenty objects, not a reference model. A
+# child pack (`extends: [core-ecommerce]`) replaces an entry by name; the company's own pack overrides the same way.
 objects:
   - name: Customer
     roles: [party]
-    aliases: [customers, customer, users, clients, accounts, buyers]
+    aliases: [customers, customer, users, clients, accounts, buyers, shoppers]
   - name: Order
     roles: [transaction]
-    aliases: [orders, sales_orders, purchases]
+    aliases: [orders, sales_orders, sales_order, purchases]
+    parts: [OrderItem]
+    description: an order is read with its lines — the products, quantities and prices on it
   - name: OrderItem
     roles: [event]
-    aliases: [order_items, order_lines, line_items, order_line, orderline, items_sold]
+    aliases: [order_items, order_lines, line_items, order_line, orderline, items_sold, sales_order_lines]
   - name: Product
     roles: [catalog]
-    aliases: [products, product, skus, catalog, articles]
+    aliases: [products, product, catalog, articles]
+  - name: SKU
+    roles: [catalog]
+    aliases: [skus, sku, product_skus, item_skus, stock_keeping_units]
+    description: one sellable variant of a product
+  - name: Category
+    roles: [catalog]
+    aliases: [categories, category, product_categories]
+  - name: Brand
+    roles: [catalog]
+    aliases: [brands, brand, labels, designers, manufacturers]
+  - name: Supplier
+    roles: [party]
+    aliases: [suppliers, supplier, vendors, vendor]
+  - name: Seller
+    roles: [party]
+    aliases: [sellers, seller, merchants, marketplace_sellers]
+  - name: Warehouse
+    roles: [location]
+    aliases: [warehouses, warehouse, distribution_centers, distribution_centres, distribution_center,
+              fulfilment_centers, fulfillment_centers, fulfilment_centres, depots]
+  - name: InventoryLot
+    roles: [stock]
+    aliases: [inventory_items, inventory_item, inventory_lots, inventory_lot, inventory_units, stock_items, stock_units]
+    description: stock of a product held at a warehouse — a lot, or one unit where the warehouse tracks units
+  - name: Cart
+    roles: [event]
+    aliases: [carts, cart, shopping_carts, baskets, basket]
+    parts: [CartItem]
+  - name: CartItem
+    roles: [event]
+    aliases: [cart_items, cart_lines, basket_items, basket_lines]
+  - name: Promotion
+    roles: [catalog]
+    aliases: [promotions, promotion, promos, coupons, vouchers, discount_codes]
   - name: Payment
     roles: [transaction]
     aliases: [payments, payment, order_payments, transactions]
@@ -23,33 +72,45 @@ objects:
     aliases: [shipments, shipment, deliveries, fulfillments, fulfilments]
   - name: Return
     roles: [event]
-    aliases: [returns, return, order_returns, refunds]
+    aliases: [returns, return, order_returns, return_requests]
+  - name: Refund
+    roles: [transaction]
+    aliases: [refunds, refund, order_refunds]
   - name: Review
     roles: [event]
-    aliases: [reviews, review, order_reviews, ratings]
-  - name: Category
-    roles: [catalog]
-    aliases: [categories, category, product_categories]
-  - name: Seller
-    roles: [party]
-    aliases: [sellers, seller, suppliers, supplier, vendors, merchants]
-  - name: Warehouse
-    roles: [location]
-    aliases: [warehouses, warehouse, fulfilment_centers, fulfillment_centers]
+    aliases: [reviews, review, order_reviews, product_reviews, ratings]
 
-# from:to — many from-rows per to-row is N:1. `via` is the key both sides are expected to
-# carry; a built join on a different key is a different link, reported as such.
+# from:to — many from-rows per to-row is N:1. `via` is the key both sides are usually expected to carry; a built join
+# on a different key is a different link, reported as such — but a found link between the pair is still named.
 links:
-  - {from_object: OrderItem, to_object: Order,    cardinality: "N:1", via: order_id,      description: many lines per order}
-  - {from_object: Order,     to_object: Customer, cardinality: "N:1", via: customer_id,   description: many orders per customer}
-  - {from_object: OrderItem, to_object: Product,  cardinality: "N:1", via: product_id}
-  - {from_object: Payment,   to_object: Order,    cardinality: "N:1", via: order_id,      to_side_optional: true, description: one or more payments per order; none before capture}
-  - {from_object: Shipment,  to_object: Order,    cardinality: "N:1", via: order_id,      to_side_optional: true, description: an order may have no shipment (cancelled, digital)}
-  - {from_object: Return,    to_object: Order,    cardinality: "N:1", via: order_id,      to_side_optional: true}
-  - {from_object: Return,    to_object: OrderItem, cardinality: "N:1", via: order_item_id, to_side_optional: true}
-  - {from_object: Review,    to_object: Order,    cardinality: "N:1", via: order_id,      to_side_optional: true}
-  - {from_object: Product,   to_object: Category, cardinality: "N:1", via: category_id}
-  - {from_object: OrderItem, to_object: Seller,   cardinality: "N:1", via: seller_id}
+  - {from_object: OrderItem, to_object: Order,    cardinality: "N:1", via: order_id,    verb: belongs to,   reverse_verb: contains,      description: many lines per order}
+  - {from_object: Order,     to_object: Customer, cardinality: "N:1", via: customer_id, verb: placed by,    reverse_verb: places,        description: many orders per customer}
+  - {from_object: OrderItem, to_object: Product,  cardinality: "N:1", via: product_id,  verb: references,   reverse_verb: appears on}
+  - {from_object: OrderItem, to_object: SKU,      cardinality: "N:1", via: sku_id,      verb: references,   reverse_verb: appears on}
+  - {from_object: OrderItem, to_object: InventoryLot, cardinality: "N:1", via: inventory_item_id, to_side_optional: true, verb: fulfilled from, reverse_verb: fulfils, description: the stock a line was shipped from}
+  - {from_object: OrderItem, to_object: Seller,   cardinality: "N:1", via: seller_id,   verb: sold by,      reverse_verb: sells}
+  - {from_object: OrderItem, to_object: Promotion, cardinality: "N:1", via: promotion_id, to_side_optional: true, verb: discounted by, reverse_verb: applied to}
+  - {from_object: SKU,       to_object: Product,  cardinality: "N:1", via: product_id,  verb: variant of,   reverse_verb: has}
+  - {from_object: SKU,       to_object: Supplier, cardinality: "N:1", via: supplier_id, verb: supplied by,  reverse_verb: supplies}
+  - {from_object: Product,   to_object: Brand,    cardinality: "N:1", via: brand_id,    verb: owned by,     reverse_verb: owns}
+  - {from_object: Product,   to_object: Category, cardinality: "N:1", via: category_id, verb: belongs to,   reverse_verb: contains}
+  - {from_object: Product,   to_object: Warehouse, cardinality: "N:1", via: warehouse_id, verb: stocked at, reverse_verb: stocks}
+  - {from_object: InventoryLot, to_object: Product,   cardinality: "N:1", via: product_id,   verb: belongs to, reverse_verb: has stock in}
+  - {from_object: InventoryLot, to_object: SKU,       cardinality: "N:1", via: sku_id,       verb: belongs to, reverse_verb: has stock in}
+  - {from_object: InventoryLot, to_object: Warehouse, cardinality: "N:1", via: warehouse_id, verb: stored at,  reverse_verb: holds}
+  - {from_object: Cart,      to_object: Customer, cardinality: "N:1", via: customer_id, to_side_optional: true, verb: started by, reverse_verb: starts, description: a visitor's cart has no customer until they sign in}
+  - {from_object: CartItem,  to_object: Cart,     cardinality: "N:1", via: cart_id,     verb: belongs to,   reverse_verb: contains}
+  - {from_object: CartItem,  to_object: SKU,      cardinality: "N:1", via: sku_id,      verb: references,   reverse_verb: appears in}
+  - {from_object: Payment,   to_object: Order,    cardinality: "N:1", via: order_id,    to_side_optional: true, verb: pays for, reverse_verb: paid by, description: "one or more payments per order; none before capture"}
+  - {from_object: Shipment,  to_object: Order,    cardinality: "N:1", via: order_id,    to_side_optional: true, verb: fulfils,  reverse_verb: fulfilled by, description: "an order may have no shipment (cancelled, digital)"}
+  - {from_object: Shipment,  to_object: Warehouse, cardinality: "N:1", via: warehouse_id, verb: ships from, reverse_verb: ships}
+  - {from_object: Return,    to_object: Order,    cardinality: "N:1", via: order_id,    to_side_optional: true, verb: returns from, reverse_verb: returned in}
+  - {from_object: Return,    to_object: OrderItem, cardinality: "N:1", via: order_item_id, to_side_optional: true, verb: returns, reverse_verb: returned in}
+  - {from_object: Refund,    to_object: Return,   cardinality: "N:1", via: return_id,   verb: settles,      reverse_verb: settled by}
+  - {from_object: Refund,    to_object: Payment,  cardinality: "N:1", via: payment_id,  verb: refunds,      reverse_verb: refunded by}
+  - {from_object: Review,    to_object: Order,    cardinality: "N:1", via: order_id,    to_side_optional: true, verb: reviews, reverse_verb: reviewed in}
+  - {from_object: Review,    to_object: Product,  cardinality: "N:1", via: product_id,  verb: evaluates,    reverse_verb: reviewed in}
+  - {from_object: Review,    to_object: Customer, cardinality: "N:1", via: customer_id, verb: written by,   reverse_verb: writes}
 
 # Terminal states are EXPECTATIONS: the data can refute one (rows left it) and confirm one
 # the builder also found; it cannot prove finality. `end_state_names` are the words that
@@ -79,9 +140,45 @@ lifecycles:
     terminal_states: [refunded, rejected]
     end_state_names: [refunded, rejected, reject, closed]
 
+# The stages an order usually moves through, each found by the column-name fragments its moment is usually spelled
+# with, tried in order. A child pack with the same name replaces it (fashion adds approval and its promises). Promises'
+# TERMS stay empty: only the business knows whether it dispatches within two days or five.
+processes:
+  - name: order_to_delivery
+    object: Order
+    description: an order, from purchase to the customer's door
+    stages:
+      - {name: placed,    timestamp_hints: [placed, purchase, order_date, ordered, created]}
+      - {name: shipped,   timestamp_hints: [shipped, dispatch, carrier, ship_date]}
+      - {name: delivered, timestamp_hints: [delivered, delivery_date]}
+
 # Fields the core KNOWS have business-specific spellings — and leaves empty. 'DE' and
 # 'Deutschland' are Germany; a market like 'DACH' is not. Only the business fills these.
 aliases:
   - {field: country,  values: {}}
   - {field: currency, values: {}}
   - {field: status,   values: {}}
+
+# What the business usually does to these objects. Offered only on objects the data holds; inert until a person
+# declares one in the action designer, with the effect it has and who may run it.
+actions:
+  - {object: Order,        name: Ship an order,           risk: medium, description: hand an order's goods to a carrier}
+  - {object: Order,        name: Cancel an order,         risk: medium, description: stop an order before it ships}
+  - {object: Order,        name: Split an order,          risk: medium, description: ship an order's lines in more than one shipment}
+  - {object: Order,        name: Flag an order for review, risk: low,   description: mark an order for an operations review}
+  - {object: Customer,     name: Request data deletion,   risk: high,   description: remove a customer's personal data on their request}
+  - {object: Customer,     name: Withdraw marketing consent, risk: medium, description: stop marketing to a customer}
+  - {object: Product,      name: Discontinue a product,   risk: medium, description: stop selling a product}
+  - {object: Product,      name: Change a product's category, risk: low, description: move a product to another category}
+  - {object: SKU,          name: Set a reorder point,     risk: low,    description: the stock level at which a SKU is replenished}
+  - {object: InventoryLot, name: Quarantine stock,        risk: medium, description: hold stock back from sale pending a check}
+  - {object: InventoryLot, name: Transfer stock,          risk: medium, description: move stock to another warehouse}
+  - {object: Payment,      name: Capture a payment,       risk: high,   description: take an authorised payment}
+  - {object: Payment,      name: Void an authorisation,   risk: high,   description: release an authorised payment that will not be taken}
+  - {object: Shipment,     name: Investigate a delay,     risk: low,    description: open a case on a late shipment}
+  - {object: Shipment,     name: Confirm delivery,        risk: medium, description: record that the customer received it}
+  - {object: Return,       name: Approve a return,        risk: medium, description: accept a return request}
+  - {object: Return,       name: Reject a return,         risk: medium, description: refuse a return request with the reason}
+  - {object: Refund,       name: Approve a refund,        risk: high,   description: send money back to the customer}
+  - {object: Review,       name: Moderate a review,       risk: low,    description: publish or remove a customer review}
+  - {object: Promotion,    name: Deactivate a promotion,  risk: medium, description: stop a promotion from applying}

@@ -41,8 +41,9 @@ def test_extends_folds_the_parent_in_and_the_child_adds_without_replacing():
     core = resolve_ontology("core-ecommerce")
     fashion = resolve_ontology("fashion-ecommerce")
     assert {o.name for o in core.objects} < {o.name for o in fashion.objects}
-    assert {o.name for o in fashion.objects} - {o.name for o in core.objects} == {"Brand", "Season", "Collection", "Variant"}
-    assert len(fashion.links) == len(core.links) + 4
+    # Brand and Product → Brand moved into the core on 2026-10-10; fashion adds the rest
+    assert {o.name for o in fashion.objects} - {o.name for o in core.objects} == {"Season", "Collection", "Variant"}
+    assert len(fashion.links) == len(core.links) + 3
     assert [lc.object for lc in fashion.lifecycles] == [lc.object for lc in core.lifecycles]
     assert resolve_ontology("no-such-pack") is None
 
@@ -151,7 +152,10 @@ def test_the_fashion_pack_expects_order_to_delivery_with_its_promises_left_to_th
     promises = [s.promise for s in process.stages if s.promise is not None]
     assert [p.name for p in promises] == ["dispatch", "delivery"] and all(p.within_days is None for p in promises)
     assert [r.name for r in fashion.rules] == ["dach"] and fashion.rules[0].values == []
-    assert resolve_ontology("core-ecommerce").processes == []
+    # the core's own order_to_delivery (placed → shipped → delivered, no promises) is the one fashion replaces by name
+    [core_process] = resolve_ontology("core-ecommerce").processes
+    assert core_process.name == "order_to_delivery" and [s.name for s in core_process.stages] == ["placed", "shipped", "delivered"]
+    assert all(s.promise is None for s in core_process.stages)
 
 
 def test_process_and_rule_claims_match_moments_by_name_and_leave_the_terms_to_the_business():

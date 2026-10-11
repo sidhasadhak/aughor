@@ -296,9 +296,10 @@ function objectPath(objectType: string, pk: string): string {
 }
 
 export async function getObjectPage(
-  objectType: string, pk: string, connectionId?: string, schemaName?: string,
+  objectType: string, pk: string, connectionId?: string, schemaName?: string, asGroup?: string,
 ): Promise<ObjectPage | ObjectRefusal | ObjectMissing | ObjectWithheld> {
-  const res = await fetch(`${objectPath(objectType, pk)}${scope(connectionId, schemaName)}`);
+  // Arc AP-6 — previewing a cockpit as a group: read as the person and a member of it, only ever less
+  const res = await fetch(`${objectPath(objectType, pk)}${scope(connectionId, schemaName, asGroup ? { as_group: asGroup } : {})}`);
   if (res.status === 404) return { path: "missing", detail: await detailOf(res) };
   if (res.status === 403) return { path: "withheld", detail: await detailOf(res) };
   if (!res.ok) throw new Error(await detailOf(res));
@@ -420,6 +421,10 @@ export interface ObjectListingPage {
   title: string;
   /** One per listed column after the key. `edited` — an accepted edit sets it (or a declared action will). */
   columns: { name: string; path: string; label: string; type: string; edited: boolean;
+             /** The property's unit as the ontology declares it ("USD", "days"); money is written as money. */
+             unit?: string;
+             /** The property's role in the ontology ("key", "measure"…); a key is written as it is. */
+             role?: string;
              /** Arc OC-7 — masked for this reader: listed empty, and the caveats say why. */
              masked?: boolean }[];
   /** The result's own column names, the key first, in the order of each row's cells. */
@@ -450,9 +455,41 @@ export interface ObjectListingRequest {
 }
 
 export async function listObjects(
-  body: ObjectListingRequest, connectionId?: string, schemaName?: string,
+  body: ObjectListingRequest, connectionId?: string, schemaName?: string, asGroup?: string,
 ): Promise<ObjectListingPage | ObjectRefusal> {
-  const res = await fetch(`${getApiBase()}/objects/list${scope(connectionId, schemaName)}`, {
+  const res = await fetch(`${getApiBase()}/objects/list${scope(connectionId, schemaName, asGroup ? { as_group: asGroup } : {})}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** An object query in the door's shape (`ObjectQuery` in `aughor/semantic/object_query.py`). */
+export interface ObjectQueryRequest {
+  object_type: string;
+  /** A segment of the entity — a rule's, a process's, a verified one (Arc AP-2: a set keeps one). */
+  segment?: string;
+  filters?: Record<string, unknown>[];
+  measures: { name: string; agg: string; path?: string }[];
+  by?: string[];
+  time?: string;
+  grain?: "" | "day" | "week" | "month";
+  start?: string;
+  end?: string;
+  order_by?: string;
+  descending?: boolean;
+  limit?: number;
+}
+
+/** What `POST /objects/query` answers: the rows, or a refusal with why. */
+export type ObjectQueryResult =
+  | { path: "compiled"; columns: string[]; rows: unknown[][]; caveats: string[]; error: string | null }
+  | ObjectRefusal;
+
+export async function queryObjects(
+  body: ObjectQueryRequest, connectionId?: string, schemaName?: string, asGroup?: string,
+): Promise<ObjectQueryResult> {
+  const res = await fetch(`${getApiBase()}/objects/query${scope(connectionId, schemaName, asGroup ? { as_group: asGroup } : {})}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await detailOf(res));

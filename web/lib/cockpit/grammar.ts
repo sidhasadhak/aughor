@@ -13,6 +13,7 @@
  * The server reads it through the validator bundle; it keeps no copy.
  */
 import {
+  GRID, LAYOUTS, MAX_DEPTH,
   MAX_CAPTION, MAX_COLUMNS, MAX_LABEL, MAX_NOTE, MAX_TITLE, MAY_BE_CONDITIONAL, MAY_HOLD, SIZES, SPAN,
   STATIC, TONES, WRITTEN, type WrittenName,
 } from "@/lib/cockpit/catalog";
@@ -68,24 +69,36 @@ const PROPS: Record<WrittenName, string> = {
   Image: `object (an uploaded object's id), caption (text, up to ${MAX_CAPTION} characters), ${SIZE}`,
 };
 
-function component(name: WrittenName): string {
+/** A section's props told while cockpits are built in place (Arc AP-1): the grid besides the columns. */
+const GRID_SECTION = `, grid (optional: ${GRID.columns})`;
+/** A section's props told while a cockpit may be split into sections (Arc AP-4). */
+const LAYOUT_SECTION = `, layout (optional, one of: ${LAYOUTS.join(", ")} — the section then holds sections, and may go untitled), `
+  + `w (1 to ${GRID.columns}, said by a section that sits in one laid out in columns)`;
+
+function component(name: WrittenName, grid: boolean, structure: boolean): string {
   // The ontology's pieces are placed by a person and never taught here (Arc OC-4), so what a component may hold is
-  // told as far as the writer may write it.
-  const may = MAY_HOLD[name].filter(c => (WRITTEN as readonly string[]).includes(c));
+  // told as far as the writer may write it — a section holding sections only while the structure is told (Arc AP-4).
+  const may = MAY_HOLD[name].filter(c => (WRITTEN as readonly string[]).includes(c) && (structure || !(name === "Section" && c === "Section")));
   const holds = name === "Cockpit"
     ? "Holds ONE Tabs, or one or more Section, never both."
-    : may.length ? `Holds ${may.join(", ")}, at least one.` : "Holds nothing.";
-  return `- ${name}: ${HOLDS[name]}. props: ${PROPS[name]}. ${holds}`;
+    : name === "Section" && structure
+      ? `Holds ${may.filter(c => c !== "Section").join(", ")}; or, laid out, Section — at most ${MAX_DEPTH} deep. It may hold nothing yet.`
+      : may.length ? `Holds ${may.join(", ")}, at least one.` : "Holds nothing.";
+  const props = name === "Section" ? PROPS[name] + (grid ? GRID_SECTION : "") + (structure ? LAYOUT_SECTION : "") : PROPS[name];
+  return `- ${name}: ${HOLDS[name]}. props: ${props}. ${holds}`;
 }
 
-export function grammar(): string {
+/** The grammar. `grid` tells the writer of a cockpit about a section's grid, only while cockpits are built in place
+ *  (`cockpit.builder`), and `structure` about sections split into sections, only while that is on (`cockpit.app_pieces`);
+ *  without them the text is as it was before Arc AP. */
+export function grammar({ grid = false, structure = false }: { grid?: boolean; structure?: boolean } = {}): string {
   return [
     "A cockpit is one JSON object: {\"root\": <element key>, \"state\": {\"tab\": <tab name>}, \"elements\": {<key>: <element>}}.",
     "An element is {\"type\", \"props\", \"children\"} and, where allowed, \"visible\". \"children\" is a list of element keys, "
       + "and [] when the element holds none. An element carries nothing else, and a prop is written, never computed.",
     "",
     "The components:",
-    ...WRITTEN.map(component),
+    ...WRITTEN.map(name => component(name, grid, structure)),
     "",
     "Every element but the root is held by exactly one other. \"state\" may seed \"tab\" with the name of the tab to open on, "
       + "and nothing else; it is left out when the cockpit has no tabs.",
@@ -103,7 +116,8 @@ export function grammar(): string {
       + "A figure appears inside a card, where it is measured.",
     "",
     `Sizes. Every Card, Note and Image in a section has a size: ${SIZES.map(s => `${s} (${SPAN[s].w}×${SPAN[s].h})`).join(", ")} — `
-      + "columns across by rows down. A bigger size gives the same thing more room; it measures nothing new.",
+      + "columns across by rows down. A bigger size gives the same thing more room; it measures nothing new."
+      + (grid ? ` In a section with "grid": ${GRID.columns}, each element says w (1 to ${GRID.columns} columns) and h (rows) instead, and keeps them when moved.` : ""),
     "",
     `A ${STATIC.join(" and an ")} are the person's own. You may move one, resize it or take it off, because that is arrangement. `
       + "You may not add one, change a note's text or choose an image: an edit that does is refused. A new cockpit holds none.",

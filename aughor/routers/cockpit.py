@@ -56,6 +56,17 @@ class MoveRequest(BaseModel):
     canvas_id: str
 
 
+class QueryRequest(BaseModel):
+    """Arc AP-7 — a person's own query, how it is shown, and — when it changes a card of theirs — the card it replaces."""
+    sql: str
+    shown: dict[str, Any] = {}
+    title: str = ""
+    replaces: str = ""
+    #: Arc AP-8 — the cockpit's values the query reads as ``{{name}}``, as the page holds them now: name →
+    #: ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement.
+    values: dict[str, dict[str, Any]] = {}
+
+
 class AskRequest(BaseModel):
     words: str
     schema_name: Optional[str] = None
@@ -221,6 +232,164 @@ def copy_shared_cockpit(request: Request, owner: str, cockpit_id: str, connectio
     except sharing.Refused as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     return _answer(out["kept"], cockpit_id=out["cockpit_id"], title=out["title"])
+
+
+@router.get("/cockpits/from-object")
+def propose_from_object(entity: str, connection_id: str, schema_name: Optional[str] = None) -> dict:
+    """What a cockpit started from ``entity`` is offered (2026-10-10): its categories as filters, its numbers as
+    figures, a chart of its objects per day, a table of them and the actions declared on them — each measured through
+    the object door, with a preview. Nothing is kept and no model is asked; the person ticks what they want and keeps
+    it as any new cockpit is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path."""
+    _on()
+    from aughor.cockpit import from_object, pieces
+    from aughor.kernel.flags import flag_enabled
+    from aughor.routers.ontology import served_ontology_graph
+    from aughor.semantic.object_query import ObjectQueryRefused
+    if not (flag_enabled(pieces.FLAG) and flag_enabled(from_object.FLAG)):
+        raise HTTPException(status_code=404, detail="Starting a cockpit from an object is off on this install.")
+    graph = served_ontology_graph(connection_id, schema_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="No ontology is built for this connection yet.")
+    try:
+        with from_object.reader(connection_id, schema_name, graph) as run:
+            proposal = from_object.propose(graph, entity, run)
+    except ObjectQueryRefused as exc:
+        raise HTTPException(status_code=422, detail={"refused": exc.reason, "available": exc.available})
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=f"The warehouse did not answer: {exc}")
+    return {"connection_id": connection_id, "schema_name": graph.schema_name, **proposal}
+
+
+@router.get("/cockpits/shapes")
+def suggested_shapes(connection_id: str, schema_name: Optional[str] = None) -> dict:
+    """Arc AP-5 — what each object suggests a cockpit be: the shape that fits it best, with a short line of why, read
+    from the served ontology alone — no warehouse read, no model. Registered before ``/cockpits/{cockpit_id}``."""
+    _on()
+    from aughor.cockpit import app_pieces, from_object, pieces, shapes, wiring
+    from aughor.kernel.flags import flag_enabled
+    from aughor.routers.ontology import served_ontology_graph
+    if not (flag_enabled(pieces.FLAG) and flag_enabled(from_object.FLAG) and shapes.on()):
+        raise HTTPException(status_code=404, detail="Starting a cockpit from a shape is off on this install.")
+    graph = served_ontology_graph(connection_id, schema_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="No ontology is built for this connection yet.")
+    out = []
+    for entity in graph.entities.values():
+        sig = shapes.signals(graph, entity, wiring=wiring.on(), pieces=app_pieces.on())
+        best = shapes.offered(sig)[0]
+        out.append({"entity": entity.api_name, "type_id": entity.id, "name": sig["name"], **best})
+    return {"connection_id": connection_id, "schema_name": graph.schema_name, "objects": out}
+
+
+def _queries_on() -> None:
+    from aughor.cockpit import queries
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled(queries.FLAG):
+        raise HTTPException(status_code=404, detail="A query of your own on a cockpit is off on this install.")
+
+
+def _read_query(connection_id: str, req: QueryRequest) -> dict:
+    """Arc AP-7 — a person's query read as a card would show it: its typed columns and first rows, how long it took, and
+    the card as shown — or each thing that stops it, as sentences. Nothing is kept here."""
+    from aughor.cockpit import pieces, queries
+    from aughor.db.connection import open_connection_for
+    sql = (req.sql or "").strip()
+    if not sql:
+        return {"refused": ["Write a query first."]}
+    try:
+        shown = queries.Shown.model_validate(req.shown or {"as": "table"})
+    except Exception as e:
+        return {"refused": [f"How the card is shown cannot be read: {e}"]}
+    # Arc AP-8 — the cockpit's values it reads, bound: refused while variables are off, or when one holds nothing
+    run_sql, params = sql, None
+    if queries.params_of(sql):
+        from aughor.cockpit import variables
+        if not variables.on():
+            return {"refused": [variables.refused_query(sql)]}
+        try:
+            run_sql, params = queries.bind(sql, req.values)
+        except queries.Refused as e:
+            return {"refused": [str(e)]}
+    try:
+        db = open_connection_for(connection_id)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
+    try:
+        tables = queries.tables_of(sql, queries.dialect_of(db))
+        try:
+            graph = pieces.served_graph(connection_id)
+        except Exception:
+            graph = None
+        refusal = queries.policy_refusal(graph, tables)
+        if refusal:
+            return {"refused": [refusal], "tables": tables}
+        seconds = queries.time_limit(connection_id)
+        probe = queries.probe(db, run_sql, seconds=seconds, params=params)
+        if probe["error"]:
+            return {"refused": [probe["error"]], "tables": tables}
+        columns = probe["columns"]
+        shown = queries.normalized(shown, columns)
+        problems = queries.check(shown, columns)
+        out = {"columns": columns, "rows": probe["rows"][:queries.PREVIEW_ROWS],
+               "more": probe["truncated"] or len(probe["rows"]) > queries.PREVIEW_ROWS,
+               "duration_ms": probe["duration_ms"], "caveats": probe["caveats"], "tables": tables, "setup": shown.said(),
+               "reads": queries.params_of(sql)}
+        if problems:
+            return {**out, "refused": problems}
+        ran = queries.run(db, run_sql, shown, columns, seconds=seconds, params=params)
+        if ran["error"]:
+            return {**out, "refused": [ran["error"]]}
+        return {**out, "refused": [], "shown": ran["shown"]}
+    finally:
+        try:
+            db.close()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "cockpit query: connection close failed after a preview", counter="cockpit.query_close")
+
+
+@router.post("/cockpits/queries/preview")
+def preview_query(connection_id: str, req: QueryRequest) -> dict:
+    """Arc AP-7 — run a person's own query as the builder would keep it, and say what it returns and how it would be
+    shown — or what stops it. Nothing is kept. It runs through the connection's own door, read-only, stopped after the
+    connection's time limit. Registered before ``/cockpits/{cockpit_id}``."""
+    _on()
+    _queries_on()
+    return {"connection_id": connection_id, **_read_query(connection_id, req)}
+
+
+@router.post("/cockpits/queries", status_code=201)
+def keep_query(request: Request, connection_id: str, req: QueryRequest) -> dict:
+    """Arc AP-7 — keep a person's own query as a card of theirs, as it is to be shown. The query is run first and the
+    setup checked against what it returns; a refusal says why and keeps nothing. A change to a card of theirs is a new
+    card, and the one it replaces is superseded, never deleted — so a cockpit's earlier versions still read their own."""
+    _on()
+    _queries_on()
+    from aughor.cockpit import cards
+    from aughor.cockpit.home import FIRST, Home, person_of
+    from aughor.dashboard import doors
+    from aughor.dashboard.models import DashboardCard
+    from aughor.dashboard.store import get_card, upsert_card
+    home = Home(connection_id, person_of(request), FIRST)
+    old = None
+    if req.replaces:
+        old = get_card(req.replaces)
+        if old is None or (old.scope, old.scope_ref) != (cards.OWN, home.owner) or old.connection_id != connection_id:
+            raise HTTPException(status_code=422, detail={"refused": ["Only a card of your own on this connection is changed here."]})
+    read = _read_query(connection_id, req)
+    if read.get("refused"):
+        raise HTTPException(status_code=422, detail={"refused": read["refused"]})
+    setup = read["setup"]
+    card = DashboardCard(connection_id=connection_id, source="authored", kind="kpi" if setup["as"] == "figure" else "chart",
+                         title=doors.clip_title(req.title or "", old.title if old else "Your own query"),
+                         sql=req.sql.strip(), render={"shown": setup, "columns": read["columns"]})
+    try:
+        saved = cards.place(home, card)
+    except cards.Refused as e:
+        raise HTTPException(status_code=422, detail={"refused": [str(e)]})
+    if old is not None:
+        upsert_card(old.model_copy(update={"provenance": old.provenance.model_copy(update={"superseded_by": saved.id})}))
+    return {"card": _as_read(saved, connection_id), "preview": read}
 
 
 @router.get("/cockpits/{cockpit_id}")

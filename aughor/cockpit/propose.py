@@ -685,7 +685,10 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
     if final is not None:
         refusals.extend(statics_written(live["spec"] if live else None, final, mode))
         from aughor.cockpit.pieces import pieces_written
+        from aughor.cockpit.wiring import wiring_written
         refusals.extend(pieces_written(live["spec"] if live else None, final, new=mode == MODE_NEW))
+        # Arc AP-2 — a model arranges a wired cockpit and never wires one: its sets and values are a person's
+        refusals.extend(wiring_written(live["spec"] if live else None, final, new=mode == MODE_NEW))
         # A card that was refused is still a name the spec places. It is counted as known
         # here, or the rules would call it a card the cockpit may not place — a second
         # sentence for a fault already told in its own.

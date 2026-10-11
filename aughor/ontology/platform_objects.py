@@ -10,6 +10,9 @@ property it set — so a case's whole history reads back, its status moves only 
 The object door compiles SQL against a warehouse, so it refuses a platform-owned type and says why; the object page,
 the listing and the cockpit's pieces read one through here. An object of another type a case names in a property
 (`about: "order:6"`) is linked both ways: the case's page opens the order, the order's page lists its cases.
+
+Arc AP-4 — and counted here: how many objects, or how many different values of a property, in all or by one property —
+what a cockpit's figure and its filter column ask of a case queue (`query`). Anything more is refused and says so.
 """
 from __future__ import annotations
 
@@ -107,9 +110,17 @@ def instance(graph: OntologyGraph, entity: OntologyEntity, pk: str, overlay: Opt
                                    "value": title if title is not None else str(pk)})
 
 
+#: The conditions read on a platform-owned type — a reader's search words among them (Arc AP-4).
+OPS = ("=", "!=", "in", "not_in", "is_null", "not_null", "contains")
+#: What a platform-owned type is counted by: how many, and how many different.
+COUNTS = ("count", "count_distinct")
+
+
 def _matches(value: Any, f: dict) -> bool:
     op, want = str(f.get("op") or "="), f.get("value")
     have = "" if value is None else str(value)
+    if op == "contains":
+        return str(want or "").strip().lower() in have.lower()
     if op == "=":
         return have == str(want)
     if op == "!=":
@@ -122,27 +133,50 @@ def _matches(value: Any, f: dict) -> bool:
         return value is None
     if op == "not_null":
         return value is not None
-    raise ValueError(f"a {op!r} condition is not read on a platform-owned type — =, !=, in, not_in, is_null, not_null are")
+    raise ValueError(f"a {op!r} condition is not read on a platform-owned type — {', '.join(OPS)} are")
+
+
+def _refusal(entity: OntologyEntity, *, paths: list[str], filters: list[dict], segment: str = "") -> Optional[dict]:
+    """Why a read of a platform-owned type cannot be made as asked — a segment, a property it does not declare, a
+    condition it does not read — or None. Said before any object is read, so a check with none held refuses alike."""
+    if segment:
+        return {"path": "refused", "refused": f"{entity.id} is {NOTE}; a segment is read on a warehouse type"}
+    unknown = [c for c in paths if c and c not in entity.properties]
+    if unknown:
+        return {"path": "refused", "refused": f"{entity.id} has no property {unknown[0]!r}",
+                "available": sorted(entity.properties)}
+    op = next((str(f.get("op") or "=") for f in filters if str(f.get("op") or "=") not in OPS), None)
+    if op is not None:
+        return {"path": "refused", "refused": f"a {op!r} condition is not read on a platform-owned type — "
+                                              f"{', '.join(OPS)} are"}
+    return None
+
+
+def _values(entity: OntologyEntity, overlay: Optional[list], filters: list[dict]) -> list[tuple[str, dict[str, Any]]]:
+    """Each object's key and the values its properties hold now, kept to those the conditions admit."""
+    out = []
+    for pk, edits in objects_of(entity, overlay).items():
+        values = {n: (_value(e) if (e := edits.get(n)) is not None else None) for n in entity.properties if n != KEY}
+        values[KEY] = pk
+        if all(_matches(values.get(f.get("path")), f) for f in filters):
+            out.append((pk, values))
+    return out
 
 
 def listing(entity: OntologyEntity, overlay: Optional[list], *, columns: list[str], filters: list[dict],
             order_by: str = "", descending: bool = False, offset: int = 0, limit: int = 50, segment: str = "") -> dict:
     """A page of a platform-owned type's objects, in the listing door's shape — or ``{"path": "refused", ...}``."""
-    if segment:
-        return {"path": "refused", "refused": f"{entity.id} is {NOTE}; a segment is read on a warehouse type"}
     names = [c for c in (columns or [n for n in entity.properties if n != KEY][:4]) if c != KEY]
-    unknown = [c for c in names + [f.get("path", "") for f in filters] if c and c not in entity.properties]
-    if unknown:
-        return {"path": "refused", "refused": f"{entity.id} has no property {unknown[0]!r}",
-                "available": sorted(entity.properties)}
-    rows = []
-    for pk, edits in objects_of(entity, overlay).items():
-        values = {n: (_value(e) if (e := edits.get(n)) is not None else None) for n in entity.properties if n != KEY}
-        try:
-            if all(_matches(values.get(f.get("path")), f) for f in filters):
-                rows.append([pk, *(values.get(n) for n in names)])
-        except ValueError as exc:
-            return {"path": "refused", "refused": str(exc)}
+    refused = _refusal(entity, paths=names + [f.get("path", "") for f in filters], filters=filters, segment=segment)
+    if refused:
+        return refused
+    if order_by and order_by not in [KEY, *names]:
+        # the object door's own law: a page is sorted by a listed column, or by the key
+        return {"path": "refused", "refused": f"order_by {order_by!r} is not a listed column", "available": [KEY, *names]}
+    try:
+        rows = [[pk, *(values.get(n) for n in names)] for pk, values in _values(entity, overlay, filters)]
+    except ValueError as exc:
+        return {"path": "refused", "refused": str(exc)}
     sort_at = ([KEY, *names].index(order_by) if order_by in [KEY, *names] else 0)
     rows.sort(key=lambda r: ("" if r[sort_at] is None else str(r[sort_at]), str(r[0])), reverse=descending)
     return {"path": "listed", "object_type": entity.api_name, "type_id": entity.id, "key": KEY, "title": "",
@@ -151,6 +185,50 @@ def listing(entity: OntologyEntity, overlay: Optional[list], *, columns: list[st
             "names": [KEY, *names], "rows": rows[offset:offset + limit], "total": len(rows), "offset": offset,
             "limit": limit, "segment_said": "", "plan": [f"list({entity.id}) from the edit layer — {NOTE}"],
             "caveats": [], "error": None, "sql": "", "count_sql": "", "dialect": "", "links": [], "overlay": []}
+
+
+def query(entity: OntologyEntity, overlay: Optional[list], *, measures: list[dict], by: Optional[list[str]] = None,
+          filters: Optional[list[dict]] = None, segment: str = "", time: str = "", grain: str = "") -> dict:
+    """Arc AP-4 — a platform-owned type's objects counted, in the object door's shape: how many, or how many different
+    values of a property, in all or by one property, kept to the conditions given — a case queue's open cases, and how
+    many each assignee has. Read from the edit layer, never compiled into SQL; over days, a sum or a second grouping is
+    refused, and says so."""
+    by, filters = list(by or []), list(filters or [])
+    paths = [*by, *(str(m.get("path") or "") for m in measures), *(str(f.get("path") or "") for f in filters)]
+    refused = _refusal(entity, paths=paths, filters=filters, segment=segment)
+    if refused:
+        return refused
+    if time or grain:
+        return {"path": "refused", "refused": f"{entity.id} is {NOTE}; it is counted, never drawn over days"}
+    if len(by) > 1:
+        return {"path": "refused", "refused": f"{entity.id} is {NOTE}; it is counted by one property at most"}
+    agg = next((str(m.get("agg") or "count") for m in measures if str(m.get("agg") or "count") not in COUNTS), None)
+    if agg is not None:
+        return {"path": "refused", "refused": f"a {agg} is not read on a platform-owned type — how many, and how many "
+                                              "different, are"}
+    if any(str(m.get("agg")) == "count_distinct" and not m.get("path") for m in measures):
+        return {"path": "refused", "refused": "how many different names the property it counts"}
+    names = [str(m.get("name") or f"m{i}") for i, m in enumerate(measures)]
+    try:
+        objects = [values for _, values in _values(entity, overlay, filters)]
+    except ValueError as exc:
+        return {"path": "refused", "refused": str(exc)}
+
+    def measured(group: list[dict]) -> list[int]:
+        return [len(group) if str(m.get("agg") or "count") == "count"
+                else len({str(v.get(m["path"])) for v in group if v.get(m["path"]) is not None}) for m in measures]
+    if by:
+        groups: dict[Any, list[dict]] = {}
+        for v in objects:
+            groups.setdefault(v.get(by[0]), []).append(v)
+        rows = [[value, *measured(group)] for value, group in groups.items()]
+        rows.sort(key=lambda r: (-r[1], "" if r[0] is None else str(r[0])))
+    else:
+        rows = [measured(objects)]
+    return {"path": "compiled", "sql": "", "dialect": "", "object_type": entity.api_name, "columns": [*by, *names],
+            "dimensions": by, "measures": names, "plan": [f"count({entity.id}) from the edit layer — {NOTE}"],
+            "links": [], "caveats": [], "overlay": [], "bindings": [], "rows": rows, "row_count": len(rows),
+            "truncated": False, "error": None, "guard_receipts": []}
 
 
 def referring(graph: OntologyGraph, overlay: Optional[list], entity: OntologyEntity, pk: str) -> list[dict]:

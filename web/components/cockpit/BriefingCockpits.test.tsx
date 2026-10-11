@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { choose, fireEvent, render, screen, waitFor, within } from "@/lib/testing";
+import { act, choose, fireEvent, optionsOf, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BriefingCockpits } from "@/components/cockpit/BriefingCockpits";
@@ -22,11 +22,17 @@ const api = vi.hoisted(() => ({
   listSharedCockpits: vi.fn(), getSharedCockpit: vi.fn(), copySharedCockpit: vi.fn(), cockpitAudiences: vi.fn(),
   publishCockpit: vi.fn(), unpublishCockpit: vi.fn(), askCockpit: vi.fn(), listFindingsByDomain: vi.fn(), pinFinding: vi.fn(),
   rejectProposal: vi.fn(), moveCanvasCockpit: vi.fn(), restoreCockpit: vi.fn(), retireCockpit: vi.fn(),
-  getSystemFlags: vi.fn(), measureRange: vi.fn(), readExpectedNext: vi.fn(),
+  getSystemFlags: vi.fn(), measureRange: vi.fn(), readExpectedNext: vi.fn(), getDeclaredActions: vi.fn(),
+  getSuggestedShapes: vi.fn(), getCockpitFromObject: vi.fn(), getGroups: vi.fn(),
+  keepCockpitQuery: vi.fn(), previewCockpitQuery: vi.fn(), getCatalogTree: vi.fn(),
 }));
 const drawn = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const ontology = vi.hoisted(() => ({ getProcesses: vi.fn() }));
 vi.mock("@/lib/objectTypes", async (original) => ({ ...(await original<typeof import("@/lib/objectTypes")>()), ...ontology }));
+// the builder names entities from the object catalog: never read from a live API in a test
+vi.mock("@/lib/objects", async (original) => ({ ...(await original<typeof import("@/lib/objects")>()), cachedObjectCatalog: vi.fn(async () => null) }));
+const toasts = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
+vi.mock("@/components/ui/toast", async (original) => ({ ...(await original<typeof import("@/components/ui/toast")>()), toast: toasts }));
 const composer = vi.hoisted(() => ({ onCreated: null as null | (() => void) }));
 
 vi.mock("@/lib/api", async (original) => ({ ...(await original<typeof import("@/lib/api")>()), ...api }));
@@ -78,11 +84,19 @@ const MEASURED = {
 } as unknown as BriefingRangeBlock;
 
 const show = () => render(<BriefingCockpits connectionId="thelook" schema="thelook" />);
+/** Arc AP-1 — building in place on, and the cockpit opened in the builder. */
+const openBuilder = async () => {
+  api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true } });
+  show();
+  fireEvent.click(await screen.findByTestId("cockpit-edit"));
+  await screen.findByTestId("cockpit-builder");
+};
 /** The strip's tabs by name — a Themes tab carries its label twice (one copy hidden), so read the visible one. */
 const stripTabs = () => screen.getAllByRole("tab").map(t => t.querySelector(".rt-TabsTriggerInner")?.textContent);
 
 beforeEach(() => {
   for (const f of Object.values(api)) f.mockReset();
+  toasts.error.mockReset();
   drawn.props.length = 0;
   composer.onCreated = null;
   try { localStorage.clear(); } catch { /* jsdom */ }
@@ -91,6 +105,7 @@ beforeEach(() => {
   localStorage.setItem("aughor:cockpit:thelook", "returns-1");
   // Ranges off unless a test turns them on: the cockpit then reads as written.
   api.getSystemFlags.mockResolvedValue({});
+  api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [] });
   api.listCockpits.mockResolvedValue(LIST);
   api.listSharedCockpits.mockResolvedValue([]);
   api.getCockpit.mockResolvedValue(READ);
@@ -199,15 +214,15 @@ describe("a retired cockpit", () => {
     expect(screen.queryByRole("button", { name: "Retire this cockpit" })).toBeNull();
   });
 
-  it("leaves the strip, is said to be retired, and is brought back as it was before", async () => {
+  it("leaves the strip for good: nothing offers to bring a retired cockpit back (the user, 2026-10-11 — once it's gone it's gone)", async () => {
     api.listCockpits.mockResolvedValue({ ...LIST, cockpits: [LIST.cockpits[0], { ...LIST.cockpits[1], retired: true, version: 4, title: "Pricing" }] });
-    api.restoreCockpit.mockResolvedValue({ status: "kept", kept: true, version: 5, artifact_id: "a5", sentences: [] });
     show();
-    const retired = await screen.findByTestId("cockpit-retired");
-    expect(stripTabs()).toEqual(["Metrics", "Returns"]);
-    expect(retired).toHaveTextContent("Retired:Pricing");
-    fireEvent.click(within(retired).getByRole("button", { name: "Bring back" }));
-    await waitFor(() => expect(api.restoreCockpit).toHaveBeenCalledWith("thelook", "pricing-1", 3));
+    await waitFor(() => expect(stripTabs()).toEqual(["Metrics", "Returns"]));
+    expect(screen.queryByText(/Retired:|Pricing/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Bring back/ })).toBeNull();
+    fireEvent.click(screen.getByTestId("cockpit-retire-open"));
+    expect(screen.getByTestId("cockpit-retire-confirm")).toHaveTextContent("It leaves your strip for good and cannot be brought back");
+    expect(api.restoreCockpit).not.toHaveBeenCalled();
   });
 });
 
@@ -488,6 +503,60 @@ describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => 
     // The images the read answered with reach the drawing with where to read each from.
     expect(drawn.props.at(-1)!.images).toEqual({});
   });
+
+  it("sizes one grade at a time: each step is drawn at once, a burst is kept as ONE version, and nothing is read again (Arc AP-1)", async () => {
+    await openBuilder();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    const reads = api.getCockpit.mock.calls.length;
+    const runs = api.runDashboardCard.mock.calls.length;
+    type Doors = { onRegrid: (k: string, b: { w: number; h: number }, m: Record<string, { w: number; h: number }>) => void };
+    const step = (w: number, h: number) => act(() => { (drawn.props.at(-1)!.doors as Doors).onRegrid("card-net", { w, h }, {}); });
+    step(4, 4);
+    step(5, 4);
+    step(6, 5);
+    // drawn at once, on the grid, before anything is kept
+    const shown = drawn.props.at(-1)!.spec as { elements: Record<string, { props: Record<string, unknown> }> };
+    expect(shown.elements["card-net"].props).toMatchObject({ w: 6, h: 5 });
+    expect(shown.elements["sec-headline"].props.grid).toBe(12);
+    expect(api.keepCockpit).not.toHaveBeenCalled();
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    const kept = api.keepCockpit.mock.calls[0][2] as { elements: Record<string, { props: Record<string, unknown> }> };
+    expect(kept.elements["card-net"].props).toMatchObject({ w: 6, h: 5 });
+    expect(api.keepCockpit.mock.calls[0][3]).toBe("resized by hand");
+    // the room changed and nothing measured did: the cockpit is not read again, nor any card run again
+    await new Promise(r => setTimeout(r, 50));
+    expect(api.getCockpit.mock.calls.length).toBe(reads);
+    expect(api.runDashboardCard.mock.calls.length).toBe(runs);
+    expect((drawn.props.at(-1)!.spec as typeof kept).elements["card-net"].props).toMatchObject({ w: 6, h: 5 });
+  });
+
+  it("a newer burst is never undone by an older one landing after it", async () => {
+    let land: (v: unknown) => void = () => {};
+    api.keepCockpit.mockImplementationOnce(() => new Promise(r => { land = r; }));
+    await openBuilder();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    type Doors = { onRegrid: (k: string, b: { w: number; h: number }, m: object) => void };
+    const step = (w: number) => act(() => { (drawn.props.at(-1)!.doors as Doors).onRegrid("card-net", { w, h: 5 }, {}); });
+    step(6);
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1), { timeout: 3000 });   // the first is on its way
+    step(9);                                                                                   // a second burst begins
+    await act(async () => { land({ status: "kept", kept: true, version: 4, artifact_id: "a4", sentences: [] }); });
+    const shown = () => (drawn.props.at(-1)!.spec as { elements: Record<string, { props: Record<string, unknown> }> }).elements["card-net"].props;
+    expect(shown()).toMatchObject({ w: 9 });                                                   // still the newer size
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    expect((api.keepCockpit.mock.calls[1][2] as { elements: Record<string, { props: Record<string, unknown> }> }).elements["card-net"].props).toMatchObject({ w: 9 });
+  });
+
+  it("a burst the server refuses is drawn back as it was kept, and the refusal is said", async () => {
+    api.keepCockpit.mockRejectedValue(new (await import("@/lib/api")).CockpitRefused(
+      { status: "refused", kept: false, version: null, artifact_id: "", sentences: ["Refused for a reason."] }));
+    await openBuilder();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    act(() => { (drawn.props.at(-1)!.doors as { onRegrid: (k: string, b: { w: number; h: number }, m: object) => void }).onRegrid("card-net", { w: 6, h: 5 }, {}); });
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    await waitFor(() => expect(drawn.props.at(-1)!.spec).toEqual(SPEC));
+    expect(await screen.findByText(/Refused for a reason/)).toBeInTheDocument();
+  });
 });
 
 describe("the canvas: a finding from the ledger, a change in words, publishing (2026-10-08)", () => {
@@ -571,5 +640,363 @@ describe("the canvas: a finding from the ledger, a change in words, publishing (
     expect(doors.onResize).toBeUndefined();
     fireEvent.click(within(sharedView).getByRole("button", { name: "Start my cockpit from this" }));
     await waitFor(() => expect(api.copySharedCockpit).toHaveBeenCalledWith("thelook", "priya@example.com", "sales-weekly-1"));
+  });
+});
+
+describe("building a cockpit in place (Arc AP-1)", () => {
+  type Doors = Record<string, unknown> & { onRegrid?: (k: string, b: { w: number; h: number }, m: object) => void };
+  const doors = () => drawn.props.at(-1)!.doors as Doors;
+  const shown = () => (drawn.props.at(-1)!.spec as { elements: Record<string, { props: Record<string, unknown> }> }).elements;
+
+  it("off, a cockpit is arranged as it always was: its bar of doors, Arrange, sizes by name, and no Edit", async () => {
+    show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    expect(screen.queryByTestId("cockpit-edit")).toBeNull();
+    for (const id of ["cockpit-card-new", "cockpit-note-new", "cockpit-arrange-open", "cockpit-publish-open", "cockpit-retire-open", "cockpit-ask"]) {
+      expect(screen.getByTestId(id)).toBeInTheDocument();
+    }
+    expect(doors().onResize).toBeTypeOf("function");
+    expect(doors().onTakeOff).toBeTypeOf("function");
+    expect(doors().onRegrid).toBeUndefined();
+    expect(doors().onFilterWidth).toBeUndefined();
+    expect(doors().onSelect).toBeUndefined();
+  });
+
+  it("on, a cockpit opens to be read: one bar — its history and Edit — and the reader's own doors only", async () => {
+    api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true } });
+    show();
+    expect(await screen.findByTestId("cockpit-edit")).toBeInTheDocument();
+    for (const id of ["cockpit-card-new", "cockpit-note-new", "cockpit-arrange-open", "cockpit-publish-open", "cockpit-retire-open", "cockpit-ask"]) {
+      expect(screen.queryByTestId(id)).toBeNull();
+    }
+    expect(screen.getByRole("button", { name: /History/ })).toBeInTheDocument();
+    await waitFor(() => expect(Object.entries(doors()).filter(([, v]) => v !== undefined).map(([k]) => k)).toEqual(["onRefresh"]));
+  });
+
+  it("Edit opens the builder: the strip folds into the name, the rail into its icons — never into the person's preference — and Done gives both back", async () => {
+    document.documentElement.removeAttribute("data-nav");
+    await openBuilder();
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    expect(screen.getByLabelText("The cockpit being edited")).toBeInTheDocument();
+    expect(document.documentElement.getAttribute("data-nav")).toBe("collapsed");
+    expect(localStorage.getItem("aughor_nav_collapsed")).toBeNull();
+    expect(screen.getByTestId("builder-saved")).toHaveTextContent("version 3");
+    for (const id of ["cockpit-card-new", "cockpit-note-new", "cockpit-publish-open", "cockpit-retire-open", "cockpit-ask"]) {
+      expect(screen.getByTestId(id)).toBeInTheDocument();
+    }
+    expect(doors().onSelect).toBeTypeOf("function");
+    fireEvent.click(screen.getByTestId("builder-done"));
+    await waitFor(() => expect(screen.queryByTestId("cockpit-builder")).toBeNull());
+    expect(document.documentElement.hasAttribute("data-nav")).toBe(false);
+    expect(localStorage.getItem("aughor_nav_collapsed")).toBeNull();
+    expect(stripTabs()).toContain("Returns");
+  });
+
+  it("undo keeps the version before as the next one, and redo the one after", async () => {
+    await openBuilder();
+    await waitFor(() => expect(doors().onRegrid).toBeTypeOf("function"));
+    act(() => { doors().onRegrid!("card-net", { w: 6, h: 5 }, {}); });
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(shown()["card-net"].props.w).toBeUndefined();                                       // drawn back at once
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    expect(api.keepCockpit.mock.calls[1][2]).toEqual(SPEC);
+    expect(api.keepCockpit.mock.calls[1][3]).toBe("undone by hand");
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(3), { timeout: 3000 });
+    expect((api.keepCockpit.mock.calls[2][2] as { elements: Record<string, { props: Record<string, unknown> }> }).elements["card-net"].props)
+      .toMatchObject({ w: 6, h: 5 });
+    expect(api.keepCockpit.mock.calls[2][3]).toBe("redone by hand");
+  });
+
+  it("a note placed while a resize waits to be kept is kept with it — the resize never lands after it and takes it back", async () => {
+    await openBuilder();
+    await waitFor(() => expect(doors().onRegrid).toBeTypeOf("function"));
+    act(() => { doors().onRegrid!("card-net", { w: 6, h: 5 }, {}); });
+    fireEvent.click(screen.getByTestId("cockpit-note-new"));
+    fireEvent.change(await screen.findByLabelText("The note's words"), { target: { value: "Watch returns in Q4" } });
+    fireEvent.click(screen.getByRole("button", { name: "Place the note" }));
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1));
+    const kept = api.keepCockpit.mock.calls[0][2] as { elements: Record<string, { type: string; props: Record<string, unknown> }> };
+    expect(kept.elements["card-net"].props).toMatchObject({ w: 6, h: 5 });
+    expect(Object.values(kept.elements).some(el => el.type === "Note" && el.props.text === "Watch returns in Q4")).toBe(true);
+    await new Promise(r => setTimeout(r, 1200));                                                // past the burst's moment
+    expect(api.keepCockpit).toHaveBeenCalledTimes(1);
+  });
+
+  it("a note placed while a keep is on its way is kept after it lands, never before it", async () => {
+    let land: (v: unknown) => void = () => {};
+    api.keepCockpit.mockImplementationOnce(() => new Promise(r => { land = r; }));
+    await openBuilder();
+    await waitFor(() => expect(doors().onRegrid).toBeTypeOf("function"));
+    act(() => { doors().onRegrid!("card-net", { w: 6, h: 5 }, {}); });
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1), { timeout: 3000 });   // the resize, on its way
+    fireEvent.click(screen.getByTestId("cockpit-note-new"));
+    fireEvent.change(await screen.findByLabelText("The note's words"), { target: { value: "After the resize" } });
+    fireEvent.click(screen.getByRole("button", { name: "Place the note" }));
+    await new Promise(r => setTimeout(r, 50));
+    expect(api.keepCockpit).toHaveBeenCalledTimes(1);                                          // it waits for the first
+    await act(async () => { land({ status: "kept", kept: true, version: 4, artifact_id: "a4", sentences: [] }); });
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(2));
+    const second = api.keepCockpit.mock.calls[1][2] as { elements: Record<string, { type: string; props: Record<string, unknown> }> };
+    expect(second.elements["card-net"].props).toMatchObject({ w: 6, h: 5 });
+    expect(Object.values(second.elements).some(el => el.type === "Note" && el.props.text === "After the resize")).toBe(true);
+  });
+
+  it("what a refused keep said is gone once a later change is kept", async () => {
+    api.keepCockpit.mockRejectedValueOnce(new (await import("@/lib/api")).CockpitRefused(
+      { status: "refused", kept: false, version: null, artifact_id: "", sentences: ["Refused for a reason."] }));
+    await openBuilder();
+    await waitFor(() => expect(doors().onRegrid).toBeTypeOf("function"));
+    act(() => { doors().onRegrid!("card-net", { w: 6, h: 5 }, {}); });
+    expect(await screen.findByText(/Refused for a reason/, {}, { timeout: 3000 })).toBeInTheDocument();
+    act(() => { doors().onRegrid!("card-net", { w: 7, h: 5 }, {}); });
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    await waitFor(() => expect(screen.queryByText(/Refused for a reason/)).toBeNull());
+  });
+});
+
+describe("action buttons, placed by hand (Arc AP-3)", () => {
+  const OPEN_CASE = { id: "open_case", display_name: "Open a case", description: "", entity: "order", object_type: "order", kind: "annotate",
+    risk: "low", edits: [], params: [] };
+  const builderWith = async (flags: Record<string, { value: boolean }>) => {
+    api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true }, ...flags });
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-edit"));
+    await screen.findByTestId("cockpit-builder");
+  };
+
+  it("are offered only where cockpits are wired", async () => {
+    await builderWith({});
+    expect(screen.getByTestId("cockpit-note-new")).toBeInTheDocument();
+    expect(screen.queryByTestId("cockpit-buttons-new")).toBeNull();
+  });
+
+  it("are placed with the first action declared here, and kept as a version said in words", async () => {
+    api.getDeclaredActions.mockResolvedValue({ open_case: OPEN_CASE, flag_for_review: { ...OPEN_CASE, id: "flag_for_review" } });
+    await builderWith({ "cockpit.wiring": { value: true } });
+    fireEvent.click(await screen.findByTestId("cockpit-buttons-new"));
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1));
+    const kept = api.keepCockpit.mock.calls[0][2] as { elements: Record<string, { type: string; props: Record<string, unknown> }> };
+    const placed = Object.values(kept.elements).filter(el => el.type === "ActionButtons");
+    expect(placed).toHaveLength(1);
+    expect(placed[0].props.buttons).toEqual([{ action: "open_case" }]);
+    expect(api.keepCockpit.mock.calls[0][3]).toBe("action buttons placed by hand");
+  });
+
+  it("say that no action is declared, and place nothing", async () => {
+    api.getDeclaredActions.mockResolvedValue({});
+    await builderWith({ "cockpit.wiring": { value: true } });
+    fireEvent.click(await screen.findByTestId("cockpit-buttons-new"));
+    await waitFor(() => expect(toasts.error).toHaveBeenCalledWith("No action is declared here", expect.objectContaining({
+      description: expect.stringContaining("Ontology ▸ Actions") })));
+    await new Promise(r => setTimeout(r, 50));
+    expect(api.keepCockpit).not.toHaveBeenCalled();
+  });
+});
+
+describe("what each object suggests (Arc AP-5)", () => {
+  it("lists each object with the shape it fits, and a click opens the starter on it", async () => {
+    api.getSystemFlags.mockResolvedValue({ "ontology.cockpit_pieces": { value: true }, "ontology.object_cockpits": { value: true } });
+    // answered after the object catalog, as the live API answers: the catalog's arrival must not drop them
+    api.getSuggestedShapes.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve([
+      { entity: "order", type_id: "Order", name: "Customer Order", shape: "queue", short: "a dispatch promise · 2 actions" },
+      { entity: "distribution_center", type_id: "DistributionCenter", name: "Distribution Center", shape: "map", short: "a latitude and a longitude" }]), 60)));
+    api.getCockpitFromObject.mockReturnValue(new Promise(() => {}));
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-new-open"));
+    fireEvent.click(await screen.findByTestId("cockpit-new-object"));
+    const rows = await screen.findAllByTestId("cockpit-new-suggestion");
+    expect(rows.map(r => [r.dataset.shape, r.textContent])).toEqual([
+      ["queue", "Customer OrderQueuea dispatch promise · 2 actions"], ["map", "Distribution CenterMapa latitude and a longitude"]]);
+    fireEvent.click(rows[1]);
+    await waitFor(() => expect(api.getCockpitFromObject).toHaveBeenCalledWith("thelook", "distribution_center", "thelook"));
+    expect(screen.queryByTestId("cockpit-new-suggested")).toBeNull();
+  });
+});
+
+describe("History, in words (Arc AP-6)", () => {
+  it("says what each version changed, and counts as before where a server says no words", async () => {
+    api.getSystemFlags.mockResolvedValue({});
+    api.getCockpit.mockResolvedValue({ ...READ, history: [
+      { ...version(3), said: ["Added the map · distribution center", "Moved a note to the section Waiting"] },
+      { ...version(2), current: false, said: [] , source: "published to Operations" },
+      { ...version(1), current: false, changes: { added: ["a", "b"], removed: [], changed: ["c"] } },
+    ] });
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: /History/ }));
+    const rows = within(await screen.findByTestId("cockpit-history")).getAllByRole("listitem");
+    expect(within(rows[0]).getByTestId("cockpit-history-said")).toHaveTextContent("Added the map · distribution center · Moved a note to the section Waiting");
+    expect(within(rows[1]).queryByTestId("cockpit-history-said")).toBeNull();          // published: its source says it
+    expect(rows[1]).toHaveTextContent("published to Operations");
+    expect(rows[2]).toHaveTextContent("2 added · 1 changed");
+  });
+});
+
+describe("previewing as a group (Arc AP-6)", () => {
+  it("reads the cockpit as the person and a member of the group, with no door that changes it, and says what is withheld", async () => {
+    api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true }, "ontology.security": { value: true } });
+    api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [{ id: "support", name: "Support" }, { id: "fulfilment", name: "Fulfilment" }] });
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-edit"));
+    await screen.findByTestId("cockpit-builder");
+    await waitFor(() => expect(optionsOf(screen.getByLabelText("Preview as")).map(o => o.value)).toEqual(["", "support", "fulfilment"]));
+    await choose(screen.getByLabelText("Preview as"), "support");
+    const banner = await screen.findByTestId("cockpit-preview-banner");
+    expect(banner).toHaveTextContent("Previewing as Support.");
+    expect(within(banner).getByTestId("cockpit-preview-nothing")).toHaveTextContent("No row policy or mask holds back what these pieces read from this group.");
+    const props = drawn.props.at(-1)! as { asGroup?: string; doors: Record<string, unknown>; onSaid: (line: string) => void };
+    expect(props.asGroup).toBe("support");
+    expect(Object.keys(props.doors).sort()).toEqual(["onReadState", "onRefresh"]);           // nothing that changes the cockpit
+    const WITHHELD = [
+      "only the Order objects user:amit previewing as support may see are shown — support: status in cancelled",
+      "counted over only the Order objects user:amit previewing as support may see — support: status in cancelled",
+      "Order.revenue is restricted — masked for group:support; finance may read it",
+      "Order is shown by group, and marketing is none of its groups (fulfilment, support) — a member of marketing sees no Order object",
+    ];
+    act(() => {
+      for (const line of WITHHELD) props.onSaid(line);
+      props.onSaid("the compiler read status through its own column");                         // not a withholding: not said here
+      props.onSaid(WITHHELD[0]);                                                                   // said again: once
+    });
+    expect(within(banner).getAllByTestId("cockpit-preview-withheld").map(w => w.textContent)).toEqual(WITHHELD.map(w => `Withheld — ${w}.`));
+    // another group: what the last one was told withheld goes with it
+    await choose(screen.getByLabelText("Preview as"), "fulfilment");
+    await waitFor(() => expect(screen.getByTestId("cockpit-preview-banner")).toHaveTextContent("Previewing as Fulfilment."));
+    expect(screen.queryByTestId("cockpit-preview-withheld")).toBeNull();
+    fireEvent.click(within(screen.getByTestId("cockpit-preview-banner")).getByRole("button", { name: "Stop previewing" }));
+    await waitFor(() => expect(screen.queryByTestId("cockpit-preview-banner")).toBeNull());
+    expect((drawn.props.at(-1) as { asGroup?: string }).asGroup).toBeUndefined();
+  });
+
+  it("ends when the builder closes or another cockpit opens in it: the cockpit is read as the person again", async () => {
+    api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [{ id: "support", name: "Support" }] });
+    await openBuilder();
+    await waitFor(() => expect(optionsOf(screen.getByLabelText("Preview as")).map(o => o.value)).toEqual(["", "support"]));
+    await choose(screen.getByLabelText("Preview as"), "support");
+    // where limiting who sees which objects is off, a member of the group reads what the person reads — said so
+    expect(await screen.findByTestId("cockpit-preview-nothing")).toHaveTextContent(
+      "Limiting who sees which objects is off here, so a member of Support reads what you read.");
+    fireEvent.click(screen.getByTestId("builder-done"));
+    await waitFor(() => expect(screen.queryByTestId("cockpit-builder")).toBeNull());
+    fireEvent.click(await screen.findByTestId("cockpit-edit"));
+    await screen.findByTestId("cockpit-builder");
+    expect(screen.queryByTestId("cockpit-preview-banner")).toBeNull();
+    expect(screen.getByLabelText("Preview as")).toHaveValue("");
+    await choose(screen.getByLabelText("Preview as"), "support");
+    await screen.findByTestId("cockpit-preview-banner");
+    await choose(screen.getByLabelText("The cockpit being edited"), "pricing-1");
+    await waitFor(() => expect(screen.queryByTestId("cockpit-preview-banner")).toBeNull());
+    expect(screen.getByTestId("cockpit-builder")).toBeInTheDocument();
+  });
+});
+
+describe("the checks chip, as the cockpit's cells say what they read (Arc AP-6)", () => {
+  const doors = () => drawn.props.at(-1)!.doors as { onReadState?: (key: string, state: { status: "ok" | "refused" | "reading"; reason: string } | null) => void };
+
+  it("counts what each cell said, lists what to fix, and lets go of a cell once it is gone", async () => {
+    await openBuilder();
+    await waitFor(() => expect(doors().onReadState).toBeTypeOf("function"));
+    act(() => {
+      doors().onReadState!("card-rate", { status: "ok", reason: "" });
+      doors().onReadState!("card-net", { status: "refused", reason: "Not one of your cards" });
+    });
+    await waitFor(() => expect(screen.getByTestId("builder-checks")).toHaveTextContent("1 read cleanly · 1 to fix"));
+    act(() => { doors().onReadState!("card-net", null); });
+    await waitFor(() => expect(screen.getByTestId("builder-checks")).toHaveTextContent(/^1 read cleanly$/));
+  });
+});
+
+describe("your own query on the cockpit (Arc AP-7)", () => {
+  const QUERIES = { "cockpit.builder": { value: true }, "cockpit.app_pieces": { value: true }, "cockpit.queries": { value: true } };
+  const SHOWN = { as: "bar", summed: true, x: "day", bucket: "day", series: [{ column: "sales", agg: "sum" }], split: "", top: 5,
+    segments: "stacked", running: false, labels: false, columns: [], sort: "", descending: true, label: "" };
+  const queryCard = (id: string) => ({ ...card(id, "Sales by day"), sql: "SELECT day, sales FROM thelook.orders",
+    render: { shown: SHOWN, columns: [{ name: "day", type: "DATE" }, { name: "sales", type: "DOUBLE" }] } });
+  beforeEach(() => {
+    // the piece picker reads the declared actions and the processes when it opens
+    api.getDeclaredActions.mockResolvedValue({});
+    ontology.getProcesses.mockResolvedValue({ processes: [] });
+  });
+
+  it("writes a new one for the section the picker was opened for, and places the kept card there", async () => {
+    api.getSystemFlags.mockResolvedValue(QUERIES);
+    api.keepCockpitQuery.mockResolvedValue({ card: queryCard("qnew"), preview: { connection_id: "thelook", refused: [] } });
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-edit"));
+    await screen.findByTestId("cockpit-builder");
+    fireEvent.click(await screen.findByTestId("builder-add-piece"));
+    const entry = (await screen.findAllByTestId("piece-picker-entry")).find(e => e.dataset.kind === "query")!;
+    fireEvent.click(entry);
+    const setup = await screen.findByTestId("query-setup");
+    fireEvent.change(within(setup).getByLabelText("SQL"), { target: { value: "SELECT day, sales FROM thelook.orders" } });
+    api.getCockpit.mockResolvedValue({ ...READ, cards: [...READ.cards, queryCard("qnew")] });
+    fireEvent.click(within(setup).getByTestId("query-keep"));
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalled());
+    const [, , spec, note] = api.keepCockpit.mock.calls.at(-1)!;
+    expect(note).toBe("a query of your own placed by hand");                    // never "a card pinned from the Briefing"
+    const placed = Object.entries((spec as { elements: Record<string, { type: string; props: { card?: string } }> }).elements)
+      .filter(([, el]) => el.type === "Card" && el.props.card === "qnew");
+    expect(placed).toHaveLength(1);
+    expect(screen.queryByTestId("query-setup")).toBeNull();
+  });
+
+  it("sets up a card of the person's own query where it is chosen, and keeps a change by swapping the new card in", async () => {
+    api.getSystemFlags.mockResolvedValue(QUERIES);
+    api.getCockpit.mockResolvedValue({ ...READ, cards: [READ.cards[0], queryCard("c91b2002"), READ.cards[2]] });
+    api.keepCockpitQuery.mockResolvedValue({ card: queryCard("q2"), preview: { connection_id: "thelook", refused: [] } });
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-edit"));
+    await screen.findByTestId("cockpit-builder");
+    fireEvent.click((await screen.findAllByTestId("builder-line")).find(l => l.dataset.key === "card-net")!);
+    const setup = await screen.findByTestId("query-setup");
+    fireEvent.click(within(setup).getByRole("radio", { name: /Line/ }));
+    fireEvent.click(within(setup).getByTestId("query-keep"));
+    await waitFor(() => expect(api.keepCockpit).toHaveBeenCalled(), { timeout: 3000 });
+    const [, , spec, note] = api.keepCockpit.mock.calls.at(-1)!;
+    expect(note).toBe("a query of your own changed by hand");
+    const els = (spec as { elements: Record<string, { props: { card?: string } }> }).elements;
+    expect(els["card-net"].props.card).toBe("q2");
+    expect(api.keepCockpitQuery).toHaveBeenCalledWith("thelook", expect.objectContaining({ replaces: "c91b2002" }));
+  });
+
+  it("leaves a query that reads the cockpit's values to its own cell, and runs every other card as written (Arc AP-8)", async () => {
+    api.getCockpit.mockResolvedValue({ ...READ, cards: [READ.cards[0],
+      { ...queryCard("c91b2002"), sql: "SELECT day, sales FROM thelook.orders WHERE country = {{country}}" }, READ.cards[2]] });
+    show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    expect(api.runDashboardCard.mock.calls.map(c => c[0])).toEqual(["c7f3a001"]);
+    const held = (drawn.props.at(-1)!.cards as { card: { id: string }; run?: unknown }[]).find(c => c.card.id === "c91b2002")!;
+    expect(held.run).toBeUndefined();
+  });
+
+  it("offers the cockpit's values to a query's setup while variables are on, and none while they are off", async () => {
+    const valued = { ...SPEC, values: { country: { label: "Country", kind: "text", value: "China", from: { by: "reader" } } } };
+    api.getCockpit.mockResolvedValue({ ...READ, cockpit: { ...READ.cockpit, spec: valued }, cards: [READ.cards[0], queryCard("c91b2002"), READ.cards[2]] });
+    for (const variables of [true, false]) {
+      api.getSystemFlags.mockResolvedValue({ ...QUERIES, "cockpit.wiring": { value: true }, ...(variables ? { "cockpit.variables": { value: true } } : {}) });
+      const { unmount } = show();
+      fireEvent.click(await screen.findByTestId("cockpit-edit"));
+      await screen.findByTestId("cockpit-builder");
+      fireEvent.click((await screen.findAllByTestId("builder-line")).find(l => l.dataset.key === "card-net")!);
+      const setup = await screen.findByTestId("query-setup");
+      expect(!!within(setup).queryByTestId("query-values-open")).toBe(variables);
+      expect(!!screen.queryByRole("radio", { name: "Variables" })).toBe(variables);
+      unmount();
+    }
+  });
+
+  it("offers no query of your own, and sets up a card as before, while queries are off", async () => {
+    api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true }, "cockpit.app_pieces": { value: true } });
+    api.getCockpit.mockResolvedValue({ ...READ, cards: [READ.cards[0], queryCard("c91b2002"), READ.cards[2]] });
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-edit"));
+    await screen.findByTestId("cockpit-builder");
+    fireEvent.click((await screen.findAllByTestId("builder-line")).find(l => l.dataset.key === "card-net")!);
+    await screen.findByLabelText("Edge");
+    expect(screen.queryByTestId("query-setup")).toBeNull();
+    fireEvent.click(screen.getByTestId("builder-add-piece"));
+    expect((await screen.findAllByTestId("piece-picker-entry")).some(e => e.dataset.kind === "query")).toBe(false);
   });
 });

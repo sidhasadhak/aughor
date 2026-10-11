@@ -71,4 +71,25 @@ describe("CockpitArrange", () => {
     expect(onChange).not.toHaveBeenCalled();
     expect((headline as HTMLInputElement).value).toBe("Headline");            // put back, not blanked
   });
+
+  it("names a piece bound to the ontology by what it reads — never a blank line (the study's defect 1)", () => {
+    const spec: CockpitSpec = {
+      root: "cockpit",
+      elements: {
+        cockpit: { type: "Cockpit", props: { title: "Orders" }, children: ["filters", "sec"] },
+        filters: { type: "ObjectFilters", props: { entity: "order", properties: [{ path: "status", label: "Status" }] }, children: [] },
+        sec: { type: "Section", props: { title: "Orders" }, children: ["figure", "chart", "table"] },
+        figure: { type: "ObjectFigure", props: { entity: "order", label: "Orders", agg: "count" }, children: [] },
+        chart: { type: "ObjectChart", props: { entity: "order", label: "Orders per day", time: "created_at" }, children: [] },
+        table: { type: "ObjectTable", props: { entity: "order", segment: "overdue_dispatch" }, children: [] },
+      },
+    };
+    render(<CockpitArrange spec={spec} lines={LINES} onChange={vi.fn()} />);
+    const rows = screen.getAllByTestId("arrange-card");
+    expect(rows.map(r => r.dataset.kind)).toEqual(["piece", "piece", "piece"]);
+    expect(rows[0]).toHaveTextContent("Figure · Orders");
+    expect(rows[1]).toHaveTextContent("Chart · Orders per day");
+    expect(rows[2]).toHaveTextContent("Objects table · order, overdue dispatch");
+    expect(rows.every(r => !/yours, not measured/.test(r.textContent ?? ""))).toBe(true);
+  });
 });

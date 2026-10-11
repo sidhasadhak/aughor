@@ -1192,7 +1192,9 @@ class CoreClaim(BaseModel):
     the panel and rendered nowhere — see `aughor/packs/ontology_map.py`."""
     #: ON-9 adds `process` (a process the core expects the type to go through) and `rule` (a definition the core
     #: expects the business to hold — its values left for the business to fill).
-    kind: Literal["object", "link", "lifecycle", "alias", "process", "rule"]
+    #: 2026-10-10 adds `action` — an action the industry usually takes, offered only on an object this data holds,
+    #: inert until a person declares it (`aughor/packs/ontology_map.action_claims`).
+    kind: Literal["object", "link", "lifecycle", "alias", "process", "rule", "action"]
     subject: str
     expected: str
     measured: Optional[str] = None

@@ -554,37 +554,34 @@ function HomeScreen({
 
   return (
     <div className="aug-screen">
-      <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24 }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 22px 28px", display: "flex", flexDirection: "column", gap: 14,
+        maxWidth: 1180, width: "100%" }}>
 
         {/* WP-11 — ask-on-Home hero: the composer, front and centre. Shown once a connection
             exists (before that, the first-run funnel guides connecting). Enter (or Ask) fires
             the question into the chat with the chosen depth. */}
         {connections.length > 0 && (
-          <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 20px" }}>
-            <div style={{ fontSize: 13, fontWeight: 650, color: "var(--t1)", marginBottom: 10 }}>Ask anything about your data</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-2)", border: "1px solid var(--card-edge)",
+              borderRadius: "var(--r3)", padding: "6px 8px 6px 14px" }}>
               <Textarea
                 value={homeQ}
                 onChange={e => setHomeQ(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitHome(); } }}
-                placeholder="e.g. Where are we losing money? · Which segments churn most? · How did revenue trend last quarter?"
-                rows={2}
+                placeholder="Ask anything about your data"
+                rows={1}
                 aria-label="Ask a question about your data"
-                style={{ width: "100%", resize: "vertical" }}
+                style={{ flex: 1, resize: "none", border: 0, background: "transparent", boxShadow: "none", minHeight: 0 }}
               />
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <div role="group" aria-label="Answer depth" style={{ display: "flex", gap: 4, padding: 3, background: "var(--bg-3)", borderRadius: "var(--r2)", border: "1px solid var(--b1)" }}>
-                  <Button size="xs" variant={homeMode === "ask" ? "default" : "ghost"} aria-pressed={homeMode === "ask"} onClick={() => setHomeMode("ask")}>Quick</Button>
-                  <Button size="xs" variant={homeMode === "investigate" ? "default" : "ghost"} aria-pressed={homeMode === "investigate"} onClick={() => setHomeMode("investigate")}>Agent</Button>
-                </div>
-                <span style={{ fontSize: 11, color: "var(--t3)" }}>
-                  {homeMode === "ask" ? "a fast, grounded answer" : "a multi-step Agent run"}
-                </span>
-                <div style={{ flex: 1 }} />
-                <Button size="sm" disabled={!homeQ.trim()} onClick={submitHome}>Ask →</Button>
+              <div role="group" aria-label="Answer depth" style={{ display: "flex", gap: 2, padding: 2, background: "var(--bg-0)", borderRadius: "var(--r2)" }}>
+                <Button size="xs" variant={homeMode === "ask" ? "secondary" : "ghost"} aria-pressed={homeMode === "ask"}
+                  title="A fast, grounded answer" onClick={() => setHomeMode("ask")}>Quick</Button>
+                <Button size="xs" variant={homeMode === "investigate" ? "secondary" : "ghost"} aria-pressed={homeMode === "investigate"}
+                  title="A multi-step Agent run" onClick={() => setHomeMode("investigate")}>Agent</Button>
               </div>
-              <AskRecall connectionId={selectedConn} question={homeQ} onOpen={openAnswer} onRunAgain={submitHome} />
+              <Button size="sm" disabled={!homeQ.trim()} onClick={submitHome}>Ask</Button>
             </div>
+            <AskRecall connectionId={selectedConn} question={homeQ} onOpen={openAnswer} onRunAgain={submitHome} />
           </div>
         )}
 

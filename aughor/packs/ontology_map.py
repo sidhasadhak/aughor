@@ -29,7 +29,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from aughor.ontology.models import CoreClaim, OntologyGraph
+from aughor.ontology.models import CoreClaim, OntologyGraph, snake_name
 from aughor.packs.models import Pack, PackOntology
 
 _FLIP = {"1:N": "N:1", "N:1": "1:N", "1:1": "1:1", "N:N": "N:N"}
@@ -82,6 +82,9 @@ def _merge(into: PackOntology, other: PackOntology) -> None:
     rules = {r.name: r for r in into.rules}
     rules.update({r.name: r for r in other.rules})
     into.rules = list(rules.values())
+    actions = {(a.object, a.name): a for a in into.actions}
+    actions.update({(a.object, a.name): a for a in other.actions})
+    into.actions = list(actions.values())
 
 
 def resolve_ontology(pack_id: str, _seen: Optional[set[str]] = None) -> Optional[PackOntology]:
@@ -100,7 +103,8 @@ def resolve_ontology(pack_id: str, _seen: Optional[set[str]] = None) -> Optional
             _merge(merged, po)
     if pack.ontology is not None:
         _merge(merged, pack.ontology)
-    if not (merged.objects or merged.links or merged.lifecycles or merged.aliases or merged.processes or merged.rules):
+    if not (merged.objects or merged.links or merged.lifecycles or merged.aliases or merged.processes or merged.rules
+            or merged.actions):
         return None
     return merged
 
@@ -244,12 +248,13 @@ def apply_core_claims(graph: OntologyGraph, po: PackOntology, pack_id: str, db: 
                                 note="the core declares the field has aliases and none of their values"))
 
     claims += _process_claims(po, graph, matched, prov) + _rule_claims(po, graph, matched, prov)
+    claims += action_claims(po, graph, matched, prov)
 
     graph.core_claims = [c for c in graph.core_claims if c.provenance != prov] + claims
     return ClaimsReport(pack_id=pack_id, claims=claims, matched=matched)
 
 
-def _moment_named_like(entity, hints: list[str]) -> str:
+def moment_named_like(entity, hints: list[str]) -> str:
     """The first date or timestamp property of ``entity`` whose name holds one of ``hints``, tried in hint order."""
     moments = [name for name, p in (entity.properties or {}).items()
                if (p.semantic_type or "") == "timestamp" or any(t in (p.data_type or "").upper() for t in ("DATE", "TIME"))]
@@ -284,7 +289,7 @@ def _process_claims(po: PackOntology, graph: OntologyGraph, matched: dict[str, s
             continue
         for stage in proc.stages:
             subject = f"{proc.name} · {stage.name}"
-            moment = _moment_named_like(entity, stage.timestamp_hints)
+            moment = moment_named_like(entity, stage.timestamp_hints)
             if moment:
                 out.append(CoreClaim(kind="process", subject=subject, expected=f"the moment {proc.object} reaches {stage.name}",
                                      measured=f"{eid}.{moment}", tier="measured-true", provenance=prov,
@@ -325,6 +330,28 @@ def _rule_claims(po: PackOntology, graph: OntologyGraph, matched: dict[str, str]
             out.append(CoreClaim(kind="rule", subject=rule.name, expected=expected, tier="expected", provenance=prov,
                                  note=("the core declares the definition and none of its values — the business fills them"
                                        if not rule.values else f"the core suggests {', '.join(rule.values)}")))
+    return out
+
+
+def action_claims(po: PackOntology, graph: OntologyGraph, matched: dict[str, str], prov: str) -> list[CoreClaim]:
+    """The actions the industry usually takes, offered ONLY on objects this data holds — an action on an object the
+    connection has no table for is not this business's process, so it is not mentioned. Each is a suggestion (tier
+    `expected`): inert until a person declares it in the action designer, `human` once an action of that name is
+    declared on the object."""
+    out: list[CoreClaim] = []
+    declared = {(a.entity or a.object_type or "", snake_name(a.display_name or a.id)) for a in graph.declared_actions()}
+    for action in po.actions:
+        eid = matched.get(action.object)
+        if not eid:
+            continue
+        subject = f"{eid}: {action.name}"
+        if (eid, snake_name(action.name)) in declared:
+            out.append(CoreClaim(kind="action", subject=subject, expected="declarable", measured="declared",
+                                 tier="human", provenance=prov, note="a person declared it"))
+            continue
+        out.append(CoreClaim(kind="action", subject=subject, expected="declarable", tier="expected", provenance=prov,
+                             note=(action.description or "suggested by the industry pack")[:200]
+                                  + f" — {action.risk} risk; declare it in the action designer to make it runnable"))
     return out
 
 

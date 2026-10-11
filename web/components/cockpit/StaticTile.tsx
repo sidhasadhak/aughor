@@ -17,6 +17,7 @@ import { useState, type ReactNode } from "react";
 
 import { Foot, Frame, Title } from "@/components/cockpit/CockpitTile";
 import { NoteProse } from "@/components/cockpit/NoteProse";
+import { useCellBox } from "@/components/cockpit/cellBox";
 import { SizePick } from "@/components/cockpit/SizePick";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -114,6 +115,7 @@ export function ImageTile({ elementKey, caption, stamp, size, doors }: {
   size: Size;
   doors: StaticDoors;
 }) {
+  const box = useCellBox();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(caption);
   const own = elementKey !== null;
@@ -148,7 +150,7 @@ export function ImageTile({ elementKey, caption, stamp, size, doors }: {
           {/* An uploaded file, not a Next asset: it is read from the API with the reader's own access. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={stamp!.url} alt={caption} data-testid="cockpit-image-bytes"
-            style={{ maxWidth: "100%", maxHeight: SPAN[size].h === 2 ? 360 : 160, objectFit: "contain", display: "block" }} />
+            style={{ maxWidth: "100%", maxHeight: box.onGrid ? "100%" : SPAN[size].h === 2 ? 360 : 160, objectFit: "contain", display: "block" }} />
         </div>
       ) : (
         <div className="aug-fs-sm" data-testid="cockpit-image-withheld" style={{ color: "var(--t2)", display: "flex", alignItems: "center", gap: 8 }}>

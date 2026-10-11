@@ -283,6 +283,9 @@ def book_pack_claims(report, *, connection_id: str, schema_name: str = "", finge
     by_state: dict[str, int] = {}
     booked = 0
     for c in claims:
+        if c.kind == "action":
+            # an action the pack SUGGESTS is an offer to the business, not a statement about it (2026-10-10)
+            continue
         state = PACK_CLAIM_STATE.get(c.tier, "open")
         measured = f" — measured: {c.measured}" if c.measured else ""
         text = f"{c.kind}: {c.subject} — the pack expects {c.expected}{measured}"

@@ -383,6 +383,10 @@ def _typed_response(result, payload: dict, limit: int, duration_ms: float,
     }
 
 
+
+#: The typed response by its public name — the cockpit's own query cards read a run the way the SQL editor does (Arc AP-7).
+typed_response = _typed_response
+
 @router.post("/query/run")
 async def query_run(body: _QueryRunRequest, request: Request):
     """Execute a SQL query against a registered connection — as written. A statement that measures

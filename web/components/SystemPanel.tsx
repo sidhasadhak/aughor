@@ -10,6 +10,8 @@ import { subscribeKernelEvents } from "@/lib/events";
 import { getApiBase, getApiBaseSource, setApiBase, normalizeApiBase, API_BASE_DEFAULT } from "@/lib/config";
 import { formatCount, pct as fmtPct } from "@/lib/format";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Icon, type IconName } from "@/components/ui/icon";
 
 function fmt(n: number | undefined | null): string {
   return n == null ? "—" : formatCount(n);
@@ -415,22 +417,22 @@ function FeatureFlags() {
   // operator owes — and a search query reopens everything it matches.
   const GROUPS: Array<{ key: string; title: string; hint: string; open?: boolean }> = [
     { key: "intentionally_off", title: "Deliberate opt-ins", open: true,
-      hint: "Off for a stated reason (cost, privacy, outward sends). The only toggles meant to be flipped by hand." },
+      hint: "Off on purpose. Turn on by hand." },
     // "performance_profile" left with flag endgame Wave 6 (2026-08-06): parallelism is
     // transport-derived in the backend ModelProfile; no switch to render.
     { key: "experiment", title: "Experiments", open: true,
-      hint: "Each adds model calls for a claimed gain; the note names the measurement that settles it." },
+      hint: "Being measured. Some add model calls." },
     { key: "migration", title: "Migrations", open: true,
-      hint: "Temporary forks of old vs new code paths — these flags are scheduled to be deleted, not tuned." },
+      hint: "Old and new code side by side, to be removed." },
     { key: "graduation_queue", title: "Queued to graduate",
-      hint: "Dispositioned default-on pending their receipt — safe to try, expected to become default." },
-    { key: "default_on", title: "Graduated (on by default)",
-      hint: "Receipted defaults. The toggle is the operator escape hatch, not a decision you owe." },
+      hint: "Working, waiting for evidence. Safe to try." },
+    { key: "default_on", title: "On by default",
+      hint: "On for everyone. Turn off only to undo." },
   ];
   const q = query.trim().toLowerCase();
   const matches = ([name, f]: [string, SystemFlag]) =>
-    !q || name.includes(q) || f.label.toLowerCase().includes(q)
-    || f.description.toLowerCase().includes(q) || (f.disposition_note || "").toLowerCase().includes(q);
+    !q || name.includes(q) || f.label.toLowerCase().includes(q) || (f.summary || "").toLowerCase().includes(q)
+    || f.description.toLowerCase().includes(q) || (f.facts || []).some(x => x.text.toLowerCase().includes(q));
   const byGroup = new Map<string, Array<[string, SystemFlag]>>();
   for (const [name, f] of entries) {
     if (!matches([name, f])) continue;
@@ -440,15 +442,16 @@ function FeatureFlags() {
   }
   byGroup.forEach(list => list.sort((a, b) => a[1].label.localeCompare(b[1].label)));
 
+  // Only a value that is NOT the default earns a chip — "default" on every row said nothing.
   const sourceChip = (f: SystemFlag) =>
-    f.source === "runtime" ? "override" : f.source === "default" ? "default" : `env: ${f.env_var}`;
+    f.source === "runtime" ? "changed here" : f.source === "run" ? "this run" : f.source === "env" ? `env: ${f.env_var}` : "";
 
   return (
     <Section title="Feature flags">
       <div className="flex items-center gap-2 pb-2">
         <Input
           value={query} onChange={e => setQuery(e.target.value)}
-          placeholder={`Search ${entries.length} flags — name, description, exit note…`}
+          placeholder={`Search ${entries.length} flags`}
           className="w-full"
         />
         {q && (
@@ -478,34 +481,48 @@ function FeatureFlags() {
   );
 }
 
-/** One flag row — the long registry description clamps to two lines with a more/less toggle. */
+/** What a fact chip means, drawn as a glyph. A kind the registry adds later still renders,
+ *  with the neutral dot, until it is given one here. */
+const FACT_ICON: Record<string, IconName> = {
+  model: "spark", free: "ok", schedule: "clock", sends: "send",
+  warehouse: "db", needs: "plug", private: "lock", route: "flow",
+};
+
+/** One flag row: the label and switch, a summary of at most two sentences, what it costs and
+ *  touches as chips, and the rest behind Details. The registry's engineering note (why it is
+ *  still an experiment, what would retire it) stays in the API for engineers and is not drawn. */
 function FlagRow({ name, f, chip, busy, onToggle }: {
   name: string; f: SystemFlag; chip: string; busy: boolean; onToggle: (v: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const long = f.description.length > 180;
   return (
-    <div className="flex items-start justify-between gap-4 py-2 border-b border-white/5 last:border-0">
+    <div className="flex items-start justify-between gap-4 py-2.5 border-b border-white/5 last:border-0">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-zinc-200">{f.label}</span>
-          <span className="text-[11px] font-mono px-1 py-0.5 rounded" style={{ background: "var(--bg-1)", color: "var(--t3)" }}>
-            {chip}
-          </span>
+          <span className="text-xs font-medium text-zinc-200">{f.label}</span>
+          {chip && <Badge variant="outline">{chip}</Badge>}
         </div>
-        <p className="aug-fs-xs text-zinc-500 mt-0.5 leading-snug"
-           style={expanded || !long ? undefined
-             : { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-          {f.description}
-        </p>
-        {f.disposition_note && (
-          <p className="aug-fs-xs mt-0.5 leading-snug italic" style={{ color: "var(--t3)" }}>{f.disposition_note}</p>
+        {f.summary && (
+          <p className="aug-fs-xs mt-0.5 leading-snug" style={{ color: "var(--t2)" }}>{f.summary}</p>
         )}
-        {long && (
-          <Button size="xs" variant="ghost" className="mt-0.5 h-5 px-1"
-                  onClick={() => setExpanded(e => !e)}>
-            {expanded ? "less" : "more"}
-          </Button>
+        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+          {(f.facts || []).map(x => (
+            <Badge key={`${x.kind}:${x.text}`} variant={x.kind === "sends" ? "amber" : "secondary"}>
+              <Icon name={FACT_ICON[x.kind] ?? "dot"} size={12} />{x.text}
+            </Badge>
+          ))}
+          {f.description && (
+            <Button size="xs" variant="ghost" className="h-5 px-1" aria-expanded={expanded}
+                    onClick={() => setExpanded(e => !e)}>
+              Details <Icon name={expanded ? "chevu" : "chevd"} size={12} />
+            </Button>
+          )}
+        </div>
+        {expanded && (
+          <div className="mt-1.5 pl-2 border-l border-white/10">
+            <p className="aug-fs-xs leading-snug" style={{ color: "var(--t3)" }}>{f.description}</p>
+            <p className="text-[11px] font-mono mt-1" style={{ color: "var(--t3)" }}>{name} · {f.env_var}</p>
+          </div>
         )}
       </div>
       <Toggle checked={f.value} disabled={busy} onChange={onToggle} />
@@ -536,7 +553,7 @@ function GraduationEvidence({ g }: { g?: EvalGraduation }) {
   if (!g) {
     return (
       <p className="aug-fs-xs pl-2 pb-1.5" style={{ color: "var(--t3)" }}>
-        No graduation decision recorded yet — run its suite and record one from Evals.
+        No evidence recorded yet.
       </p>
     );
   }

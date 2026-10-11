@@ -42,4 +42,15 @@ describe("the pin strip", () => {
     expect(screen.getByTestId("cockpit-pin").textContent).toContain("Not pinned to a release; its pieces read release 4.");
     expect(screen.queryByTestId("cockpit-repin")).toBeNull();
   });
+
+  it("names the filter column, a figure and a chart by their kind — never by an element key (the study's defect 5)", () => {
+    const spec = { elements: { "filters-1": { type: "ObjectFilters" }, "figure-0": { type: "ObjectFigure" }, "chart-x": { type: "ObjectChart" } } };
+    render(<PinStrip spec={spec} pin={pin({ current: "c/thelook@3", changes: [
+      { release: "c/thelook@3", number: 3, kind: "entity", target_id: "Order", change: "changed", class: "MEANING",
+        pieces: ["filters-1", "figure-0", "chart-x"] },
+    ] })} />);
+    const said = screen.getByTestId("cockpit-pin-change").textContent ?? "";
+    expect(said).toContain("read by the filter column, figure, chart");
+    expect(said).not.toMatch(/filters-1|figure-0|chart-x/);
+  });
 });

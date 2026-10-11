@@ -11766,6 +11766,53 @@ from records — no model fills the page.
 - **(h)** **Entity** is the word in everything a person reads, as `docs/GLOSSARY.md` already uses it. The study's
   *object type* reads *entity* from here on.
 
+### 3.57 · Arc AP — the cockpit as an App builder (DRAFTED 2026-10-10 as `docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md`, at the user's *"Go hard and deep on this"* on Palantir Workshop · ✅ ADOPTED the same day — §6 item 51, the user: *"Picture perfect… Let's finalise this and immediately start with this arc"*; every call as recommended, call 4 refined by the user: sizes move one grade at a time · AP-1 started 2026-10-10 on `claude/platform-text-density-002fe8` · AP-1 BUILT 2026-10-11 behind `cockpit.builder` (an experiment, off by default): sizes one grade at a time, Edit mode, Setup for every piece, a chart's measure and split, defects 1, 2 and 5 — the scratch receipt on theLook met, and put on the user's own UI · AP-2 + AP-3 BUILT 2026-10-11 behind `cockpit.wiring` (an experiment, off by default): sets, choices and values, and action buttons whose every run goes through the declared action's own door — the scratch receipt on theLook met; the user's own UI next · AP-4 BUILT 2026-10-11 behind `cockpit.app_pieces` (an experiment, off by default): a structure of pieces and the piece picker, then an object list, a map, a timeline, a choose-one, a search, linked objects and a drawer, and a case queue counted from the edit layer — distribution centres as a map met on theLook (scratch); PENDING item 52 holds the detail · AP-5 BUILT 2026-10-11 behind `cockpit.shapes` (an experiment, off by default): the starter offers the shapes an object fits — a queue, a map, one object, a timeline, an overview — each with a sentence of why; theLook's eight object types suggest five shapes, none a lone figure · AP-6 BUILT 2026-10-11: a changelog in words, preview as a group (one more party among the reader's, so only ever less, what is held back said), the checks chip and read times per set — met on theLook (scratch) save what a row policy withholds, which waits on a policy declared on theLook, the user's call · AP-7 (your own query, shown and set up as you choose) and AP-8 (variables, as Workshop has them) ADOPTED 2026-10-11 ("Go ahead") — study §9, mockup screens 10–12 · AP-7 BUILT 2026-10-11 behind `cockpit.queries`: screen 10 built by hand on theLook, its 75 cells equal to the query's own · AP-8a BUILT 2026-10-11 behind `cockpit.variables`: values from the reader, a set's count or the chosen object, sets comparing any variable, variables in SQL as bound parameters, the Variables pane — screens 11–12 built by hand on theLook, "Waiting in the country" 368 of 1,009 and every reader's figure equal to the SQL written out; AP-8b (linked objects, combined sets) waits on the object door)
+
+**The premise, measured on theLook (study §1).**
+
+- Today's starter gives every entity the same five pieces, or a subset of them:
+  - a distribution centre — ten places with coordinates — gets one figure;
+  - an inventory item gets "Product Category" twice;
+  - a case is refused.
+- No piece can be configured once placed.
+- The wiring is fixed: a detail follows one table, and the filter column narrows by the entity's name.
+- The rules refuse the library's `on`, `watch` and `$` expressions by law.
+- **What exists to build on:**
+  - the object door already compiles what Workshop calls object sets — an entity, a segment, conditions and paths
+    across links;
+  - the action plane is richer than the cockpit uses.
+
+**The design (study §4).**
+
+- **Edit mode is the builder.** Three panes: Layout · canvas · Setup and Look.
+  - The rail folds to icons using its own collapsed state, never written to the person's preference.
+  - The canvas shows the cockpit at 100% from about 1,700 px wide, and fits it below that, saying the zoom.
+- **Sets, choices and values.** Pieces read named sets. What a reader chooses or ticks in one piece is read by
+  another.
+- **Wiring by name, never by expression.** Typed reference props are checked the way `follows` is.
+- **Action buttons** take each parameter from one source: the chosen object, the ticked objects, a set, the form, or
+  a fixed value.
+- **Shapes are inferred from the ontology**: queue, map, one object, overview, timeline, process.
+- **Sizes move one grade at a time.** A section has twelve columns and rows of 40 px. A drag snaps one grade at a
+  time; − and + move one grade; Alt+arrow keys move one grade. Each kind has its own minimum and maximum.
+
+**The laws it keeps.**
+
+- A piece holds no SQL.
+- A model may arrange a piece, and never adds or wires one.
+- Read first, edit behind *Edit*.
+- Withheld is said.
+- What a reader chooses is theirs alone.
+
+| # | Builds | Receipt on theLook | Falsifier |
+|---|---|---|---|
+| **AP-1** | **Edit mode** (three panes, the tree, the toolbar), the reading-mode one bar, **Setup for every existing piece** (table columns, sort and segment; figure aggregate, property and format; chart measure, grain and split; filter-column properties) and **sizes one grade at a time** (the 12-column grid, drag, steppers, keys, a minimum and maximum per kind; one version per burst) | Resize the Order cockpit's chart and table grade by grade; split its chart by status; change its table's columns — with no spec written by hand | Of cockpits started from an object, fewer than 1 in 5 edited within 2 weeks → Setup is not where people look |
+| **AP-2** | Sets, choices and values (vocabulary v6 — v5 is AP-1's sizes — wiring by name); the Data tab; the v4 upgrade, with nothing a reader sees changing | The dispatch desk built by hand; its numbers equal the door's | A v4 cockpit draws differently after the upgrade → stop |
+| **AP-3** | Actions on the page: parameter sources, typed inputs, the form or run at once, disabled with the reason, ticked runs (at most 50), what runs after | Open a case from the desk — a live write, run with the user's OK at the time | A run reaches the executor without its criteria → stop |
+| **AP-4** | New pieces (object list, linked objects, map, timeline, search, choose one); drawer and form; rows, columns and tabs inside a section; counts for platform-owned entities | Distribution centres as a map; a case queue | — |
+| **AP-5** | Shapes in the starter, offered with why | theLook's 7 entities get ≥ 4 different shapes | A cockpit read on ≥ 3 days in 2 weeks no more often than today's, per shape |
+| **AP-6** | Preview as a group, a changelog in words, read times per set | The desk previewed as a group with a row policy | — |
+
 ---
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
@@ -13999,6 +14046,28 @@ the browser** · **measure the premise before building.**
     - **(j)** Ossie import only, in OC-8; export stays refused (§4.6).
     - (e), (g), (i) and (j) were taken after the user asked for each to be explained.
     - Review: **one PR after OC-2**.
+51. ✅ **DECIDED 2026-10-10 — Arc AP, the cockpit as an App builder, adopted** (§3.57;
+    `docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md`, `design-mockups/cockpit-builder.html`).
+    - The user asked *"Go hard and deep on this"* on 22 screenshots of Palantir Workshop. On the mockup's resolution:
+      *"consider the resolution at which they operate…"*.
+    - After the seven screens: *"Picture perfect. Just make sure that these charts tables graphs or filters are size
+      adjustables in a swift manner.. at the moment they become either too large or small.. The size needs to be
+      adjusted one grade point at a time.. Let's finalise this and immediately start with this arc.."*
+    - The study's eight calls, as recommended:
+      - **(1)** Adopt.
+      - **(2)** Wiring by name: typed reference props, checked like `follows`. No `$` expressions, no `on`.
+      - **(3)** The words: set · chosen · ticked · value · drawer · form · shape (`docs/GLOSSARY.md`).
+      - **(4)** Sizes are grid units, never pixels — **refined by the user to one grade at a time**:
+        - twelve columns and rows of 40 px;
+        - a drag snaps per grade, − and + move one grade, Alt+arrow keys move one grade;
+        - each kind has a minimum and a maximum;
+        - the six named sizes stay the spans a v4 cockpit says, drawn as they were.
+      - **(5)** Ticked runs, at most 50; a high-risk action is one proposal each.
+      - **(6)** AP-1 first, then AP-2 and AP-3 as one.
+      - **(7)** Built on `claude/platform-text-density-002fe8`.
+      - **(8)** Drawn for 1920 × 1080, fitting a laptop and saying the zoom.
+    - This supersedes the six-size *Size* of 2026-10-08 (*"make each component size adjustable… without losing the
+      elegance"*).
 ---
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)

@@ -147,11 +147,41 @@ def latest(home: Home) -> Optional[dict]:
     return _entry(row, with_spec=True) if row else None
 
 
+def _card_titles(specs) -> dict:
+    """The title of every card the specs place, by card id — History names a card by what it is called, never its id."""
+    from aughor.dashboard.store import get_card
+    ids = {str((el.get("props") or {}).get("card") or "") for spec in specs if isinstance(spec, dict)
+           for el in (spec.get("elements") or {}).values() if isinstance(el, dict) and el.get("type") == "Card"}
+    out = {}
+    for card_id in sorted(i for i in ids if i):
+        card = get_card(card_id)
+        if card is not None and card.title:
+            out[card_id] = card.title
+    return out
+
+
 def history(home: Home, *, limit: int = 50) -> list[dict]:
-    """Every version, newest first, without the specs."""
+    """Every version, newest first, without the specs — each saying in words what it changed of the one before it
+    (Arc AP-6, `changelog`), read from the two specs the ledger keeps."""
+    from aughor.cockpit import changelog
     from aughor.kernel.ledger import Ledger
-    rows = Ledger.default().artifact_versions(home.key, limit=limit)
-    return [_entry(r, with_spec=False) for r in rows if _mine(r)]
+    rows = [r for r in Ledger.default().artifact_versions(home.key, limit=limit + 1) if _mine(r)]
+    titles = _card_titles(r["payload"].get("spec") for r in rows)
+    out = []
+    for i, row in enumerate(rows[:limit]):
+        entry = _entry(row, with_spec=False)
+        payload = row["payload"]
+        before = rows[i + 1]["payload"] if i + 1 < len(rows) else {}
+        if payload.get("retired"):
+            entry["said"] = ["Retired the cockpit"]
+        elif before.get("retired"):
+            entry["said"] = ["Brought the cockpit back"]
+        elif before and _canonical(before.get("spec")) == _canonical(payload.get("spec")):
+            entry["said"] = []                  # published, unpublished or re-pinned: its source says which
+        else:
+            entry["said"] = changelog.said(before.get("spec"), payload.get("spec"), titles)
+        out.append(entry)
+    return out
 
 
 def version(home: Home, number: int) -> Optional[dict]:
@@ -303,8 +333,15 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
     not_held = images.not_held(home.connection_id, spec)
     if not_held:
         return Kept(REFUSED, sentences=tuple(not_held))
-    from aughor.cockpit import pieces
-    unresolved = pieces.not_resolved(home.connection_id, spec)
+    from aughor.cockpit import app_pieces, builder, pieces, variables, wiring
+    off = builder.refused(spec) + wiring.refused_off(spec) + app_pieces.refused_off(spec) + variables.refused_off(spec)
+    if off:
+        return Kept(REFUSED, sentences=tuple(off))
+    # Arc AP-2 — what each set reads, as the web reads it, once: the pieces that read a set are probed over it
+    wired = wiring.read(spec)
+    unresolved = pieces.not_resolved(home.connection_id, spec, wiring=wired) \
+        + wiring.not_resolved(home.connection_id, spec, wiring=wired) \
+        + variables.not_resolved(home.connection_id, spec, wiring=wired) + variables.unheld(spec, verdict.cards)
     if unresolved:
         return Kept(REFUSED, sentences=tuple(unresolved))
     copies = twin_cards(verdict.cards, before.get("cards") or [])

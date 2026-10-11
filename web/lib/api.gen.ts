@@ -3087,6 +3087,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cockpits/from-object": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Propose From Object
+         * @description What a cockpit started from ``entity`` is offered (2026-10-10): its categories as filters, its numbers as
+         *     figures, a chart of its objects per day, a table of them and the actions declared on them — each measured through
+         *     the object door, with a preview. Nothing is kept and no model is asked; the person ticks what they want and keeps
+         *     it as any new cockpit is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path.
+         */
+        get: operations["propose_from_object_cockpits_from_object_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cockpits/images": {
         parameters: {
             query?: never;
@@ -3144,6 +3167,71 @@ export interface paths {
          *     theirs, its spec their cockpit's first version, and the canvas's is retired with a note.
          */
         post: operations["move_cockpit_cockpits_move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/queries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep Query
+         * @description Arc AP-7 — keep a person's own query as a card of theirs, as it is to be shown. The query is run first and the
+         *     setup checked against what it returns; a refusal says why and keeps nothing. A change to a card of theirs is a new
+         *     card, and the one it replaces is superseded, never deleted — so a cockpit's earlier versions still read their own.
+         */
+        post: operations["keep_query_cockpits_queries_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/queries/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Query
+         * @description Arc AP-7 — run a person's own query as the builder would keep it, and say what it returns and how it would be
+         *     shown — or what stops it. Nothing is kept. It runs through the connection's own door, read-only, stopped after the
+         *     connection's time limit. Registered before ``/cockpits/{cockpit_id}``.
+         */
+        post: operations["preview_query_cockpits_queries_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cockpits/shapes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Suggested Shapes
+         * @description Arc AP-5 — what each object suggests a cockpit be: the shape that fits it best, with a short line of why, read
+         *     from the served ontology alone — no warehouse read, no model. Registered before ``/cockpits/{cockpit_id}``.
+         */
+        get: operations["suggested_shapes_cockpits_shapes_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -11717,6 +11805,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/explore/pack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explore Ontology With Pack
+         * @description 2026-10-10 — an industry pack proposes its STRUCTURE over the tables this scope holds: which tables are one
+         *     object (an order and its lines), the verbs its found links are read with, a link it expects where both tables hold
+         *     the key, and the stages an object moves through (`aughor/packs/drafter.py`). It never proposes an object the data
+         *     has no table for. No model call: the pack is read deterministically against the built graph. Every proposal goes
+         *     through the explorer's own path — measured before it lands, written with `pack:<id>@<version>` provenance,
+         *     PROPOSED until a person confirms it, never proposed again once withdrawn. The answer also lists the actions the
+         *     pack suggests for the objects this data holds — inert until a person declares one.
+         */
+        post: operations["explore_ontology_with_pack_ontology_explore_pack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/export": {
         parameters: {
             query?: never;
@@ -16788,6 +16902,22 @@ export interface components {
             /** Prev Value */
             prev_value?: number | null;
         };
+        /**
+         * CardRunValues
+         * @description Arc AP-8 — the cockpit's values a card of a person's own query reads as ``{{name}}``, as the page holds them now:
+         *     name → ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement.
+         */
+        CardRunValues: {
+            /**
+             * Values
+             * @default {}
+             */
+            values: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+        };
         /** CaseIn */
         CaseIn: {
             /**
@@ -18862,7 +18992,7 @@ export interface components {
              * @default =
              * @enum {string}
              */
-            op: "=" | "!=" | ">" | ">=" | "<" | "<=" | "in" | "not_in" | "between" | "is_null" | "not_null" | "exists" | "not_exists";
+            op: "=" | "!=" | ">" | ">=" | "<" | "<=" | "in" | "not_in" | "between" | "is_null" | "not_null" | "exists" | "not_exists" | "in_last" | "contains";
             /** Path */
             path: string;
             /** Value */
@@ -19517,6 +19647,40 @@ export interface components {
             to: {
                 [key: string]: unknown;
             }[];
+        };
+        /**
+         * QueryRequest
+         * @description Arc AP-7 — a person's own query, how it is shown, and — when it changes a card of theirs — the card it replaces.
+         */
+        QueryRequest: {
+            /**
+             * Replaces
+             * @default
+             */
+            replaces: string;
+            /**
+             * Shown
+             * @default {}
+             */
+            shown: {
+                [key: string]: unknown;
+            };
+            /** Sql */
+            sql: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Values
+             * @default {}
+             */
+            values: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
         };
         /**
          * QueryTemplate
@@ -27518,7 +27682,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CardRunValues"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -27998,6 +28166,41 @@ export interface operations {
             };
         };
     };
+    propose_from_object_cockpits_from_object_get: {
+        parameters: {
+            query: {
+                entity: string;
+                connection_id: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upload_image_cockpits_images_post: {
         parameters: {
             query: {
@@ -28082,6 +28285,114 @@ export interface operations {
                 "application/json": components["schemas"]["MoveRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    keep_query_cockpits_queries_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_query_cockpits_queries_preview_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggested_shapes_cockpits_shapes_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -40090,6 +40401,8 @@ export interface operations {
                 schema_name?: string | null;
                 /** @description False returns the compiled SQL and plan without running it */
                 execute?: boolean;
+                /** @description Arc AP-6 — read as you and a member of this group would: only ever less */
+                as_group?: string | null;
             };
             header?: never;
             path?: never;
@@ -40130,6 +40443,8 @@ export interface operations {
                 execute?: boolean;
                 /** @description ON-8 — query an organisation's ontology, whose types may live on several connections */
                 domain?: string | null;
+                /** @description Arc AP-6 — read as you and a member of this group would: only ever less */
+                as_group?: string | null;
             };
             header?: never;
             path?: never;
@@ -40278,6 +40593,8 @@ export interface operations {
                 connection_id?: string;
                 schema_name?: string | null;
                 domain?: string | null;
+                /** @description Arc AP-6 — read as you and a member of this group would: only ever less */
+                as_group?: string | null;
             };
             header?: never;
             path: {
@@ -42486,6 +42803,40 @@ export interface operations {
     explore_ontology_ontology_explore_post: {
         parameters: {
             query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    explore_ontology_with_pack_ontology_explore_pack_post: {
+        parameters: {
+            query: {
+                /** @description The pack whose structure is proposed, e.g. core-ecommerce */
+                pack: string;
                 connection_id?: string | null;
                 schema_name?: string | null;
             };

@@ -183,7 +183,9 @@ class Connector(DatabaseConnection):
         return handle if handle is not None else getattr(self, "_duckdb", None)
 
     def _bind_execute(self, sql: str, params: dict) -> tuple[list[str], list]:
-        """Run already-rendered `sql` with `params` as bind values; return (columns, rows).
+        """Run already-rendered `sql` with `params` as bind values; return (columns, rows) — or (columns, rows,
+        types), the engine's type of each column, when the driver reads them (Arc AP-8: a bound read is then typed,
+        as an unbound one is, for a caller that asked for typed rows).
 
         The ONE piece that differs per driver. Everything around it — the safety pre-check,
         the row policy, the row cap, the value formatting, the post-check — is identical in
@@ -236,8 +238,13 @@ class Connector(DatabaseConnection):
 
         _t0 = time.monotonic()
         try:
-            columns, rows_raw = self._bind_execute(rendered, bind_params)
+            read = self._bind_execute(rendered, bind_params)
+            columns, rows_raw = read[0], read[1]
             cap = max(1, max_rows or self.max_rows)
+            if len(read) > 2:
+                # the same slice the result keeps, so the post-pass mirrors its budget and redaction onto it
+                from aughor.db.connection import offer_typed_rows
+                offer_typed_rows(rows_raw[:cap], truncated=len(rows_raw) > cap, types=list(read[2]))
             rows = [[str(v) if v is not None else "NULL" for v in row]
                     for row in rows_raw[:cap]]
             result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=columns,

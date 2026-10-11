@@ -137,6 +137,31 @@ FLAG_ENV = {
     # and the object door resolves each promise's overdue segment (`overdue_<noun>`). OFF: the cockpit vocabulary
     # refuses those pieces and the compiler resolves exactly the names it did; POST /objects/list still lists.
     "ontology.cockpit_pieces": "AUGHOR_ONTOLOGY_COCKPIT_PIECES",
+    # The cockpit started from an object (2026-10-10, design-mockups/cockpit-from-object.html). ON: a cockpit may hold
+    # a filter column over an entity's categories, figures and a chart of its objects, every piece narrowed by the
+    # reader's own filters; and a person may start a cockpit from an object, its pieces proposed from what the object
+    # holds. OFF: the cockpit vocabulary refuses those three pieces and nothing is proposed.
+    "ontology.object_cockpits": "AUGHOR_ONTOLOGY_OBJECT_COCKPITS",
+    # Arc AP-1 (ROADMAP §3.57, docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md). ON: a cockpit opens to be read, and Edit
+    # shows it between its layout and the setup of the piece chosen — sizes one grade at a time on a section's grid, and
+    # every piece set up there, never typed as a spec. OFF: a cockpit is arranged by its six sizes and Arrange, the
+    # server refuses a section on the grid, and the writer of a cockpit is told nothing about the grid.
+    "cockpit.builder": "AUGHOR_COCKPIT_BUILDER",
+    # Arc AP-2 and AP-3 (ROADMAP §3.57). ON: a cockpit may name sets and values its pieces read, a table may name what a
+    # click chooses and ticks collect, a figure may switch a list, and action buttons run declared actions on what a
+    # reader chose or ticked, on a set, or with what they fill in. OFF: the server refuses a spec that says any of it,
+    # and the builder offers none of it.
+    "cockpit.wiring": "AUGHOR_COCKPIT_WIRING",
+    "cockpit.app_pieces": "AUGHOR_COCKPIT_APP_PIECES",
+    "cockpit.shapes": "AUGHOR_COCKPIT_SHAPES",
+    # Arc AP-7 (ROADMAP §3.57). ON: a card on a cockpit may read a person's own SQL — one table, several, another schema —
+    # shown as a table, a figure or a chart set up as they choose, each run stopped after the connection's time limit.
+    # OFF: the builder offers no query of your own, the doors answer 404, and every card runs as it always did.
+    "cockpit.queries": "AUGHOR_COCKPIT_QUERIES",
+    # Arc AP-8 (ROADMAP §3.57). ON: a cockpit's value may come from the reader on the page, a set's count or the object a
+    # reader chose; a set compares any value; a query of your own reads one as a bound parameter. OFF: a value is the
+    # author's and only days reach a set, as before; the server refuses a spec that says more.
+    "cockpit.variables": "AUGHOR_COCKPIT_VARIABLES",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -387,95 +412,343 @@ FLAG_DEFAULT: dict = {
     #   the deployment-env kill switch a flag provided is now the caller's own field).
 }
 
-# Human-facing copy for the Settings UI.
+# Human-facing copy for Settings → System. Three layers, each for one reader:
+#   label   — what it is, a few words;
+#   summary — what the person gets, always visible: two sentences at most, 20 words each;
+#   facts   — what it costs and touches, drawn as chips: model · free · schedule · sends ·
+#             warehouse · needs · private · route;
+#   description — the rest, behind "Details": plain sentences, what Off means last.
+# No route, arc or wave id, ROADMAP section, function name or decision date in any of them:
+# that history lives in the comments and dispositions above and below, where engineers read
+# it. tests/unit/test_flag_copy.py holds the line (house style, PLATFORM text-density pilot).
 FLAG_META = {
     "aggregates.share": {
-        "label": "Let this install's aggregate priors leave it",
-        "description": "Allows POST /ledger/v1/aggregates/export to hand out this install's aggregate: how often each pack's claims held here, each play's learned success rate with its count, the normal band of metrics stated as a share, and registered methods' backtests. Never a connection id, a claim's text, a name or an absolute value of a metric that is not a share — a check refuses any document that carries one. Off by default: nothing leaves, the export door refuses and says so, and the aggregate can still be read locally at GET /ledger/v1/aggregates.",
+        "label": "Share summary statistics with other installs",
+        "summary": "Allows exporting summary statistics, like how often each pack's claims held here. "
+                   "Names, ids and raw values never leave.",
+        "facts": [{"kind": "sends", "text": "Data leaves this install"}],
+        "description": "The export holds pack success rates, learned play success rates, normal ranges "
+                       "for share metrics and method test results. A check refuses any export with a "
+                       "connection id, claim text, name or absolute metric value. Off: export is refused "
+                       "and says so, and the statistics can still be read here.",
     },
     "agents.testing_centre": {
-        "label": "A testing centre for custom agents",
-        "description": "On an agent's Quality tab, 'Draft questions' asks the model for up to six golden QUESTIONS drawn from the connection's governed metrics and the agent's purpose — one model call per batch; the model never writes the answer, a person certifies each with SQL before it counts. Every night each enabled agent with certified goldens is re-measured on the production path and the result says which goldens newly fail or pass. Costs one model call per certified golden per agent per night. Off by default → the tab is exactly as today: goldens by hand, evaluation on a click.",
+        "label": "Test custom agents every night",
+        "summary": "Drafts test questions for each custom agent from its approved metrics. "
+                   "A person checks each one with SQL, then it runs every night.",
+        "facts": [{"kind": "schedule", "text": "Nightly"},
+                  {"kind": "model", "text": "1 call per draft batch"},
+                  {"kind": "model", "text": "1 call per test run"}],
+        "description": "Draft questions is on the agent's Quality tab and asks for up to six. The model "
+                       "never writes the answer. Each night the tab shows which checked questions now "
+                       "pass or fail. Off: you write test questions by hand and run them on a click.",
     },
     "agents.learning_loop": {
-        "label": "Let each custom agent learn from the verdicts on its own answers",
-        "description": "A reviewer's reject or correct on one of the agent's answers becomes a line in its brief ('corrected before', the last three, bounded); an accepted answer becomes a golden CANDIDATE on its Quality tab for a person to certify with SQL; a configuration change or every fifth verdict re-runs its evaluation, and the page shows what it learned — corrections, goldens certified from use, pass before → after. Nothing a model authored is saved as a fact; no weights move. Off by default → verdicts are recorded exactly as today and the agent's brief is unchanged.",
+        "label": "Let custom agents learn from reviews",
+        "summary": "When a reviewer corrects an agent's answer, the agent sees that correction next time. "
+                   "Nothing a model writes is saved as fact.",
+        "facts": [{"kind": "model", "text": "Re-tests after every 5 reviews"}],
+        "description": "The agent keeps its last three corrections. An accepted answer becomes a test "
+                       "question for a person to check with SQL. The Quality tab shows what the agent "
+                       "learned and its pass rate before and after. Off: reviews are recorded and the "
+                       "agent does not change.",
     },
     "slack.managed_supervisor": {
-        "label": "Run the Slack bot supervisor from the API",
-        "description": "The API starts the Slack socket supervisor (bots/slack) itself when it boots, watches it, and restarts it with a backoff when it exits — so a Slack bot listens without anyone opening a terminal. Integrations → Slack shows the process's state and a Restart button, and the bot card reads listening from its heartbeat. Needs Node.js and bots/slack/node_modules (the installer provisions them when this is on). Off by default → nothing is spawned; the supervisor is started by hand with `npm run dev`, exactly as today.",
+        "label": "Start the Slack bot automatically",
+        "summary": "Aughor starts the Slack bot when it boots and restarts it if it stops. "
+                   "No terminal needed.",
+        "facts": [{"kind": "needs", "text": "Needs Node.js"},
+                  {"kind": "free", "text": "No model calls"}],
+        "description": "Integrations → Slack shows whether the bot is running, with a Restart button. "
+                       "The installer adds what the bot needs when this is on. Off: start the bot by "
+                       "hand from a terminal.",
     },
     "grounding.data_profiles": {
-        "label": "Show the SQL writer what the data holds, not only its schema",
-        "description": "Adds a DATA PROFILE block to the quick answer's prompt for the tables the question was linked to: each table's row count and date range, and per column the values a low-cardinality column takes, a measure's range and median, and null rates of 20% or more — read from the profiler's cache, so no question pays for profiling, and held under 2,400 characters with any table left out named. Off by default → the prompt is exactly as today.",
+        "label": "Show the SQL writer what the data holds",
+        "summary": "Adds a short data profile to the quick answer prompt: row counts, date ranges, "
+                   "common values and null rates.",
+        "facts": [{"kind": "free", "text": "No extra queries"},
+                  {"kind": "model", "text": "Slightly longer prompts"}],
+        "description": "Profiles come from the cache, so no question waits for profiling. The profile "
+                       "stays under 2,400 characters and names any table it leaves out. Off: the prompt "
+                       "holds the schema only.",
     },
     "chat.buttons_reach_agent": {
-        "label": "Send the chat's Quick and Agent buttons to the conversation agent",
-        "description": "Without it Quick posts /chat and the Agent button /investigate; only Edit, starters, clarify answers and re-runs reach /ask, where the conversation agent holds the ontology's tools (look up an object, describe a type). On, Quick goes through /ask at quick depth and Agent at deep depth. A conversation turn costs about 20k tokens. On by default since 2026-09-24 (the user's call); off → every turn is sent exactly as before.",
+        "label": "Send chat buttons to the conversation agent",
+        "summary": "The Quick and Agent buttons go to the conversation agent, which can look up "
+                   "objects in the ontology.",
+        "facts": [{"kind": "model", "text": "About 20k tokens a turn"}],
+        "description": "Quick runs the agent at quick depth and Agent runs it at deep depth. Off: the "
+                       "two buttons use the older direct paths.",
     },
     "ontology.explore_on_connect": {
-        "label": "Propose a new connection's business terms when it is added",
-        "description": "When a connection's ontology is first built, run the business explorer once — the one model call that proposes its entities, links, processes and rules (the same as Ontology ▸ Explore). Every proposal is measured before it lands and stays PROPOSED until a person confirms it. A scope already explored is skipped, so a restart spends nothing. On by default since 2026-09-24 (the user's call); off → a new connection gets no business terms until a person presses Explore.",
+        "label": "Propose business terms for a new connection",
+        "summary": "When you add a connection, Aughor proposes its entities, links, processes "
+                   "and rules. Nothing is used until a person confirms it.",
+        "facts": [{"kind": "model", "text": "1 model call per connection"}],
+        "description": "This is the same as Explore on the Ontology tab. Each proposal is checked "
+                       "against the data first. A connection already explored is skipped, so a restart "
+                       "costs nothing. Off: a new connection gets no business terms until someone "
+                       "presses Explore.",
     },
     "answers.recheck": {
-        "label": "Tell people when an answer they were given changes",
-        "description": "Once a day, re-run the query behind each chat answer given in the last 14 days and compare it with what the person was told. When a number moved by 5% or more, say so where they were answered — a reply in the Slack thread, through the departure gate, or on the answer in the web — with the old number, the new one, and whether it is late rows (the day was still settling when we answered) or a restatement. On by default since 2026-09-24 (the user's call); off → nothing is re-run, recorded or sent.",
+        "label": "Tell people when their answer changes",
+        "summary": "Aughor re-runs the answers from the last 14 days. If a number changes "
+                   "by 5% or more, it tells the person who asked.",
+        "facts": [{"kind": "schedule", "text": "Daily"},
+                  {"kind": "warehouse", "text": "Queries your warehouse"},
+                  {"kind": "sends", "text": "Replies in Slack and the web"}],
+        "description": "The notice gives the old number, the new one, and the reason: rows that "
+                       "arrived late, or a restatement. A Slack reply passes the same checks as any "
+                       "other message. Off: nothing is run again or sent.",
     },
     "ontology.cockpit_pieces": {
         "label": "Build cockpits from the ontology",
-        "description": "A cockpit may hold pieces bound to the business ontology instead of SQL: a process board (each stage, each promise with how often it is broken and how many objects are open and already past it), an objects table over an entity or a segment — the overdue objects of a promise among them — an object detail that follows the table's selection, and a button that runs a declared action, or proposes it when it needs approval. Each piece names what it reads by id, so a piece whose entity, process or action is gone says so. Off by default: those pieces cannot be added and the object door resolves exactly the names it did.",
+        "summary": "Adds cockpit pieces that read the ontology: a process board, an objects table, "
+                   "an object detail and an action button.",
+        "facts": [{"kind": "free", "text": "No model calls"}],
+        "description": "The process board shows each stage and how often each promise is broken. The "
+                       "table can list the objects past a promise. An action that needs approval is "
+                       "proposed, not run. A piece whose source is gone says so. Off: these pieces "
+                       "cannot be added.",
+    },
+    "ontology.object_cockpits": {
+        "label": "Start a cockpit from an object",
+        "summary": "Pick an object and get a cockpit of its filters, figures, a daily chart and its "
+                   "objects. A click on a filter narrows every piece.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Queries your warehouse"}],
+        "description": "The pieces are proposed from what the object holds, and you tick the ones you "
+                       "want. Filters are each reader's own and never change the cockpit. Saved cards "
+                       "beside them say they are not filtered. Off: these pieces cannot be added.",
+    },
+    "cockpit.wiring": {
+        "label": "Wire a cockpit's pieces and actions",
+        "summary": "Pieces read named sets, and a row chosen in one is read by the others. Buttons run actions on "
+                   "the chosen or ticked rows.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Queries your warehouse"}],
+        "description": "A set is a named group of objects, such as the ones waiting past a promise. A button runs a "
+                       "declared action, with its own checks and approvals, once per chosen or ticked row. Off: a "
+                       "cockpit's pieces read only their own entity.",
+    },
+    "cockpit.app_pieces": {
+        "label": "Split cockpits into sections and add more pieces",
+        "summary": "A section splits into columns, rows or tabs, and an empty one offers a piece. The picker "
+                   "places every piece by hand.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Changes only your own cockpits"}],
+        "description": "A section holds pieces on its twelve columns, or is split into sections of its own. Sections "
+                       "side by side take widths one column at a time. An empty section offers a piece or a split, and a "
+                       "reader is drawn nothing there. Off: a cockpit's sections hold pieces only.",
+    },
+    "cockpit.shapes": {
+        "label": "Start a cockpit from a shape",
+        "summary": "Starting from an object offers the shapes its ontology fits, and says why. A queue, a map, one "
+                   "object, a timeline or an overview.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Changes only your own cockpits"}],
+        "description": "A queue fits what waits past a promise with actions on it. A map fits a latitude and a "
+                       "longitude, and a timeline two moments on each object. One object fits a name and several kinds "
+                       "of objects linking to it. One to three are offered, the best first, each with a sentence of why "
+                       "from the data. Off: every object starts one way.",
+    },
+    "cockpit.queries": {
+        "label": "Your own query on a cockpit",
+        "summary": "Write SQL over one table, several or another schema. Show it as a table, a figure or a chart "
+                   "set up as you choose.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Changes only your own cockpits"}],
+        "description": "Choose what runs along the bottom and in what buckets, what is summed, and what splits it — "
+                       "stacked, side by side or as shares. Your query runs read-only and stops after the connection's "
+                       "time limit. Off: a card is drawn by the shape of its result.",
+    },
+    "cockpit.variables": {
+        "label": "Variables on a cockpit",
+        "summary": "A value may come from the reader, a set's count or the object chosen. Sets and your own queries read it.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Changes only your own cockpits"}],
+        "description": "A reader changes a value on the page, kept in their browser and never in the cockpit. A set "
+                       "compares any value, and a query of your own reads one as a bound parameter, never pasted in. "
+                       "Off: a value is set once by its author.",
+    },
+    "cockpit.builder": {
+        "label": "Build cockpits in place",
+        "summary": "A cockpit opens to be read, and Edit shows it between its outline and the setup of what you "
+                   "pick. Every size moves one step at a time.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Changes only your own cockpits"}],
+        "description": "A table's columns and sort, a figure's calculation and a chart's measure and split are "
+                       "chosen in the setup, never typed. Each change is kept as a version you can go back to. "
+                       "Off: a cockpit is arranged by its six sizes and Arrange.",
     },
     "ontology.keyed_metrics": {
-        "label": "Read approved metrics by the entity they measure",
-        "description": "Once a person confirms which entity an approved metric measures (Semantic Layer, or PUT /metrics/{name}/entity), the object door reads the metric's own statement over any set of that entity's objects — a declared segment, a rule, or a filter through a measured link — restricting the statement's table to those objects' keys, so the approved definition is what is computed. Off by default: the object door and the question frame read exactly as before.",
+        "label": "Compute approved metrics for any segment",
+        "summary": "Link a metric to the entity it measures. Then its approved definition is used "
+                   "for any segment of that entity.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "route", "text": "Changes what answers compute"}],
+        "description": "Link a metric in the Semantic Layer. A segment, a rule, or a filter through a "
+                       "link then reads the approved definition. Off: a metric is computed only as "
+                       "written.",
     },
     "ontology.release": {
         "label": "Publish ontology changes as releases",
-        "description": "A change to the business ontology — a person's, the explorer's or a pack's — waits in a draft that the Ontology screens show, each change classed (breaks something · changes a meaning · worth a look · safe) with the automations, claims and cockpit cards it touches. The agent, the Briefing, metrics and automations keep reading what was published until a person publishes the draft as the next release; a change that would break something is refused, a model's proposal is published only once a person confirms it, and every claim computed under a definition whose meaning changed is restated. Each claim records the release it was computed under. Keeps every declaration's history too. Off by default: a declaration is served the moment it is saved.",
+        "summary": "Ontology changes wait in a draft until a person publishes them. Until then, "
+                   "everything keeps reading the last release.",
+        "facts": [{"kind": "free", "text": "No model calls"}],
+        "description": "Each change is rated: breaks something, changes a meaning, worth a look, or safe. "
+                       "It lists the automations, claims and cards it touches. A change that would "
+                       "break something is refused. When a meaning changes, claims made under the old "
+                       "one say so. Off: a change applies as soon as it is saved.",
     },
     "ontology.history": {
-        "label": "Keep every ontology declaration's history, and refuse a withdrawal something depends on",
-        "description": "Every time a person (or the explorer, or a pack) saves or withdraws a declaration — an entity, a link, a process with its promises, a rule, an action — the version is kept with who made it and when, so what a promise said on any past day can be read back (Ontology ▸ history, GET /ontology/history?as_of=…). A measurement written back onto a declaration is not a new version. With it on, withdrawing something an automation, a process, a rule or an action relies on is refused, and the refusal names each one. Off by default: declarations are replaced and deleted as before, and nothing is refused.",
+        "label": "Keep ontology history",
+        "summary": "Keeps every version of each entity, link, process, rule and action, with who "
+                   "changed it and when. Blocks a removal that something depends on.",
+        "facts": [{"kind": "free", "text": "No model calls"}],
+        "description": "You can read what a promise said on any past day. A refused removal names each "
+                       "automation, process, rule or action that depends on it. Off: a change replaces "
+                       "the old version, and nothing is refused.",
     },
     "ontology.census": {
-        "label": "Keep a daily ontology census",
-        "description": "Once a day, count what every built ontology declares (entities, links and their names, processes, promises, rules, segments, declared actions), what the data verified of it, and what leans on it (automations that read it, and the Record's claims by what they are about and whether they name a metric, a segment or a definition version), and keep the reading in the journal. Each later Arc OC wave is judged against these readings. Reads cached ontologies only — nothing is built and no warehouse is queried. Off by default: nothing is kept; GET /ontology/census still counts on request.",
+        "label": "Count the ontology once a day",
+        "summary": "Records what every ontology declares, what the data confirmed, and what "
+                   "depends on it.",
+        "facts": [{"kind": "schedule", "text": "Daily"},
+                  {"kind": "free", "text": "No model calls or queries"}],
+        "description": "It counts entities, links, processes, promises, rules, segments and actions, and "
+                       "the automations and claims that use them. It reads saved ontologies only. Off: "
+                       "nothing is recorded, and a count is still available on request.",
     },
     "actions.outbox": {
-        "label": "Send a declared action's calls through an outbox",
-        "description": "A declared action's calls to other systems are kept as rows and delivered by a worker that holds a lease on each, instead of once, inline, in the press. A call that did not go out is retried — by why it failed: a refused connection or a server error again later, a rate limit after a pause, a refusal from the far end never. A call that got no answer is checked with the action's own verification read before anything is sent again, so a call that landed is never made twice. A call that cannot be delivered waits for a person under Actions ▸ Sends, with Retry and Dismiss. An action may also name one call that must succeed BEFORE its edits are written (a writeback); its failure leaves everything unwritten. Off by default: calls go out once, inline, as before.",
+        "label": "Send action calls through an outbox",
+        "summary": "Calls a declared action makes to other systems are queued and retried by a worker. "
+                   "A call that landed is never sent twice.",
+        "facts": [{"kind": "sends", "text": "Calls other systems"},
+                  {"kind": "free", "text": "No model calls"}],
+        "description": "A failed call is retried by why it failed; a refusal is never retried. A call with "
+                       "no answer is checked with the action's verification read before any resend. An "
+                       "undeliverable call waits under Actions → Sends for a person. An action may also "
+                       "require one call to succeed before its edits are written. Off: calls go out once, "
+                       "inline, as before.",
     },
     "ontology.builder_doors": {
-        "label": "Doors for builders: the ontology as a contract outside programs read",
-        "description": "Opens the versioned doors an outside program uses: GET /ontology/v1/contract (a JSON Schema per entity and per declared action, stamped with the published release), GET /ontology/v1/types.d.ts (the same as TypeScript declarations), POST /objects/v1/list (a page of objects or a segment of them) and POST /objects/v1/actions/{id}/propose (a proposal staged for a person — never run from there). The MCP server offers the same as tools: list_objects, and one propose tool per declared action. Off by default: every one of those doors answers that it is off.",
+        "label": "Let outside programs read the ontology",
+        "summary": "Outside programs can read your objects and their types, and propose an action for "
+                   "a person to approve. Nothing runs from outside.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "route", "text": "Also offered over MCP"}],
+        "description": "Programs read a versioned contract: a schema per object and per declared action, "
+                       "also as TypeScript types. They can list objects or a segment. A proposed action "
+                       "waits for a person and never runs from there. Off: an outside program is told "
+                       "these doors are off.",
     },
     "ontology.security": {
-        "label": "Security on the ontology: who sees which objects, and which properties",
-        "description": "Enforces what an entity declares about who reads it, on every object door — the cockpit's tables and details, the object pages, the object query and the doors for builders. A row policy names a group and the conditions its members' objects meet; once an entity has any, each reader sees only the objects a policy of one of their groups admits, and is told so. A sensitive property names the groups that read it; for everyone else it is masked — empty, with why — and refused anywhere it would shape an answer. An agent acting for a person reads only what both may. Off by default: every reader sees every object and property, as today.",
+        "label": "Limit who sees which objects and properties",
+        "summary": "Each reader sees only the objects their groups may see. Sensitive properties are "
+                   "masked for everyone else.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Readers are told what is hidden"}],
+        "description": "A row policy names a group and the conditions its objects meet. A sensitive "
+                       "property names the groups that may read it; others see it empty, with the reason, "
+                       "and it cannot shape an answer. An agent acting for a person reads only what both "
+                       "may. It applies to cockpits, object pages and outside programs. Off: every reader "
+                       "sees every object and property.",
     },
     "cockpit.composed": {
         "label": "A cockpit in each Data Canvas",
-        "description": "Adds a Cockpit tab to the Data Canvas, beside Chat, History and Artifacts. It shows the canvas's own cards arranged in tabs and sections, and a card can be set to appear only when a condition holds — for example while a watch is over its limit. The arrangement is kept as versions, so every change can be read and undone. Off: the Data Canvas is unchanged.",
+        "summary": "Adds a Cockpit tab to the Data Canvas. Arrange its cards in tabs and sections, "
+                   "and show a card only when a condition holds.",
+        "facts": [{"kind": "free", "text": "No model calls"}],
+        "description": "For example, a card can appear only while a watch is over its limit. Every "
+                       "change to the layout is kept, so it can be undone. Off: the Data Canvas is "
+                       "unchanged.",
     },
     "briefing.ranges": {
-        "label": "Briefings for any date range, measured from approved metrics",
-        "description": "Replaces the Briefing's Standing · Day · Week · Month · Year switch with one date-range control (presets plus a custom range) that scopes the whole page. Headline figures come from the connection's APPROVED metrics, each measured for the range by its own date column — set automatically by rule and corrected by a person in the metric editor — and each says whether it is final, still provisional or to date. Day, Week, Month and Year are written as different jobs: act, steer, review, strategy. Off by default → the Briefing is exactly as today.",
+        "label": "Briefings for any date range",
+        "summary": "One date-range control replaces the Day, Week, Month and Year switch. "
+                   "Headline figures come from approved metrics.",
+        "facts": [{"kind": "warehouse", "text": "Queries your warehouse"}],
+        "description": "Each figure says whether it is final, still settling, or to date. Each metric's "
+                       "date column is set by rule, and a person can correct it in the metric editor. "
+                       "Off: the Briefing keeps its switch.",
     },
     "briefing.by_period": {
-        "label": "Briefings by period — daily, weekly, monthly and yearly",
-        "description": "Adds a Briefing for one period beside the standing one: the most recent complete day, week, month or (fiscal) year whose numbers have settled, each headline metric measured for that period against the one before, the alerts and findings recorded inside it, and a narrator told which version it is writing. A brief subscription can then send that briefing instead of the alert summary, and may run monthly or yearly. On by default since 2026-09-24 (the user's call); off → the Briefing, its subscriptions and their alert summaries behave exactly as before, and a request for a period brief is refused with the reason.",
+        "label": "Briefings by day, week, month and year",
+        "summary": "Adds a Briefing for the last complete day, week, month or year. "
+                   "A subscription can send it on that schedule.",
+        "facts": [{"kind": "model", "text": "Model writes the narrative"},
+                  {"kind": "schedule", "text": "Monthly or yearly sends"}],
+        "description": "Each headline metric is compared with the period before. The Briefing also "
+                       "lists the alerts and findings from that period. Off: only the standing "
+                       "Briefing exists, and a period Briefing is refused with the reason.",
     },
     "ask.converse": {
-        "label": "Answer through a conversation, not a single compiled query",
-        "description": "Add agent bodies behind /ask: a quick turn becomes a real conversation whose tools wrap the existing guarded pipelines, and a deep turn becomes the ANALYST loop (CA-3) — the phase library as tools, the model choosing each next slice after seeing the last, the narrator writing the report from the evidence. Guards are unchanged and stay INSIDE the tools; the deterministic quick body and the deep phase script survive as the fallback whenever this is off. Off by default → /ask behaves exactly as today.",
+        "label": "Answer through a conversation with tools",
+        "summary": "Quick answers and deep analyses run as an agent that uses tools step by step. "
+                   "The same checks run inside every tool.",
+        "facts": [{"kind": "model", "text": "Model calls per step"}],
+        "description": "In a deep analysis, the model picks the next cut after it reads the last one. "
+                       "Off: a fixed script answers, as it did before.",
     },
     "explore.route_wide": {
-        "label": "Route wide questions to the explore wave",
-        "description": "Send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single deep analysis. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay deep analyses. Consulted by /ask's auto route AND the chat door (/investigate — the Agent chip's path, which otherwise pins a single investigation; added 2026-08-29 when a live soak found the wave unreachable from the UI). Off by default.",
+        "label": "Answer broad questions as a survey",
+        "summary": "A broad question, like how sales vary across the business, gets many cuts at once. "
+                   "A why question still gets a deep analysis.",
+        "facts": [{"kind": "free", "text": "No model call to decide"},
+                  {"kind": "route", "text": "Changes routing"}],
+        "description": "A fixed rule, not a model, decides which questions are broad. It applies to the "
+                       "Agent button and to automatic routing. Off: every such question gets one deep "
+                       "analysis.",
     },
     "federation.planner": {
-        "label": "Cross-source federated planner",
-        "description": "Enable POST /query/federated-answer — answer a natural-language question that spans TWO connections. One LLM call grounds both schemas and emits a structured plan (a grounded sub-query per source + the join keys); the plan is validated deterministically (each sub-query executes and outputs its key) and executed through the batched-foreach engine. Plan-then-execute, guarded, inspectable (the plan is returned). Off by default → the route 404s. Stage 3 of cross-source federation. ⚠️ NOT purely invocation-gated: with the flag on, a fresh /ask turn at auto depth may AUTO-FEDERATE (see _federation_eligible) — an LLM-bearing routing change, which is why this stays an EXPERIMENT (flag strategy batch B premise check) until that delta is measured.",
+        "label": "Answer questions across two connections",
+        "summary": "Answers a question that needs data from two connections. A model plans one "
+                   "query for each, and how to join them.",
+        "facts": [{"kind": "model", "text": "1 planning call per question"},
+                  {"kind": "route", "text": "Can route new questions here"}],
+        "description": "Each planned query runs as a check before the results are joined. The plan is "
+                       "shown with the answer. When on, some new questions are sent here automatically. "
+                       "Off: this planner is not used.",
+    },
+    "semops.banded_cascade": {
+        "label": "Send only unsure rows to the strong model",
+        "summary": "When a model judges text rows, a cheap model judges each row first. Only the rows "
+                   "it is unsure about go to the strong model.",
+        "facts": [{"kind": "model", "text": "Fewer strong-model calls"}],
+        "description": "This applies to filters over text columns, like reviews or tickets. A row still "
+                       "unsure after the strong model is kept and marked for a person. Off: a sample "
+                       "decides, and one disagreement re-runs every row on the strong model.",
+    },
+    "semops.jev_cheap_tier": {
+        "label": "Use Jev as the cheap model",
+        "summary": "TypeSafe's hosted Jev service judges text rows first. "
+                   "Unsure rows still go to your strong model.",
+        "facts": [{"kind": "sends", "text": "Row text leaves this install"},
+                  {"kind": "needs", "text": "Needs a TypeSafe key"},
+                  {"kind": "private", "text": "Personal data is never sent"}],
+        "description": "Needs TYPESAFE_API_KEY and AUGHOR_JEV_MODEL. Every call counts against your "
+                       "usage caps and is logged. If Jev "
+                       "cannot answer, your own cheap model answers. Off: your own cheap model judges "
+                       "every row.",
+    },
+    "judgment.shadow_treatment": {
+        "label": "Record how much work each question needed",
+        "summary": "After each question, a model notes the smallest answer that would have "
+                   "done, from a lookup to a deep analysis. It changes nothing that runs.",
+        "facts": [{"kind": "model", "text": "1 model call per question"}],
+        "description": "The record sits beside what actually ran, so the two can be compared later. "
+                       "It is for measurement only. Off: nothing is recorded and no call is made.",
+    },
+    "grounding.full_schema_first": {
+        "label": "Show the SQL writer every table",
+        "summary": "For a small schema, the SQL writer sees every table, not only the ones picked "
+                   "for the question.",
+        "facts": [{"kind": "model", "text": "Longer prompts"}],
+        "description": "It applies only when the whole schema fits the size limit. In two test runs it "
+                       "never wrote a worse query, and twice it answered where the shorter schema "
+                       "could not. Off: the SQL writer sees only the tables picked for the question.",
     },
 }
 
@@ -547,6 +820,33 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
+    # Arc AP-1, 2026-10-10. It changes where a cockpit is changed, so it is watched before it graduates.
+    # Arc AP-2 and AP-3, 2026-10-11. It changes what a cockpit can do — an action a reader runs from it — so it is watched
+    # before it graduates.
+    "cockpit.wiring": "does a wired cockpit become a place work is done — of the wired cockpits, is an action run from "
+                      "one at least weekly? Falsifiers (§3.57): a cockpit drawn before the wiring renders differently "
+                      "with it on, or a run reaches the executor without its declared criteria — either stops it",
+    "cockpit.app_pieces": "does a cockpit built from sections stay read — of the cockpits split into sections, is each "
+                          "read as often as one that is not? Falsifiers (§3.57): a cockpit drawn before sections renders "
+                          "differently with it on, or one split into sections is read less often in two weeks",
+    "cockpit.shapes": "does a cockpit started from a shape get read again — of the cockpits started from an object, is "
+                      "each shape's opened on three or more days in its first two weeks more often than one started "
+                      "before shapes? Falsifier (§3.57, AP-5): a shape's cockpits are read no more often than today's",
+    "cockpit.queries": "do people show their own queries — of the cards made on cockpits in two weeks, is one in five or "
+                       "more a query of their own? Falsifier (§3.57, AP-7): fewer than one in five, and the setup is not "
+                       "what they needed",
+    "cockpit.variables": "do readers change what a cockpit shows — of the cockpits with a value a reader sets, is one in "
+                         "five or more changed by a reader within two weeks? Falsifier (§3.57, AP-8): a variable reaches SQL "
+                         "other than as a bound parameter — stop",
+    "cockpit.builder": "is the setup where people change a cockpit — of the cockpits started from an object, is one in "
+                       "five or more edited within two weeks of starting? Falsifier (§3.57): fewer than one in five, "
+                       "and the setup is not where people look",
+    # The cockpit started from an object, 2026-10-10. It is a new way to read objects, so it is watched before it
+    # graduates.
+    "ontology.object_cockpits": "does a cockpit started from an object get read again — opened on three or more "
+                                "days in its first two weeks — more often than one started empty or for a "
+                                "process? Falsifier: started cockpits are opened no more than the others, and "
+                                "the starter and its three pieces go",
     # Arc OC-3 (ROADMAP §3.56), 2026-10-09. It changes what the question frame hands an analysis, so it is measured
     # before it graduates.
     "ontology.keyed_metrics": "does reading an approved metric by the entity it measures — over a declared segment, "
@@ -1016,6 +1316,8 @@ def list_flags() -> dict:
                        else "env" if _env_present(name) else "default"),
             "env_var": var,
             "label": meta.get("label", name),
+            "summary": meta.get("summary", ""),
+            "facts": meta.get("facts", []),
             "description": meta.get("description", ""),
             # The declared disposition (flag strategy §5.1) — lets the Settings UI
             # group by KIND instead of rendering one flat list of toggles.

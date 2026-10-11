@@ -15,6 +15,7 @@ vi.mock("@/lib/home", async (importOriginal) => {
       { id: "f1", text: "Email drives the most unique user activity.", domain: "Key Questions", generated_at: "2026-09-27" },
     ]),
     bookSaid: vi.fn(async (body: unknown) => { booked.push(body); return {}; }),
+    leadDetail: vi.fn(async () => ({ summary: "More orders, smaller ones.", figure: null, confidence: "HIGH", why: "" })),
     readYou: vi.fn(async () => ({ principal: "user:amit", n: 0, by_kind: {}, predictions: { scored: 0, inside: 0, coverage_observed: null } })),
     dismissFinding: vi.fn(async () => undefined),
     recheckFinding: vi.fn(async () => ({ status: "confirmed" })),
@@ -52,12 +53,31 @@ describe("HomeDesk", () => {
 
   it("leads with the move, asks the question, and offers the finding — each from its record", async () => {
     render(<HomeDesk connectionId="c1" analyses={ANALYSES} onOpenAnalysis={() => {}} onDraft={() => {}} />);
+    // an analysis holding no baseline figure is led by its headline; its summary stays in the analysis (CLARITY)
     expect(screen.getByTestId("home-lead")).toHaveTextContent("Revenue decreased 15.0% on September 27");
-    expect(await screen.findByText(/More orders, smaller ones\./)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("home-lead")).toHaveTextContent("Looked into on"));
+    expect(screen.queryByText(/More orders, smaller ones\./)).not.toBeInTheDocument();
     expect(screen.getByTestId("home-question")).toHaveTextContent("Did the team do anything that explains it?");
+    expect(screen.getByTestId("home-question")).toHaveTextContent("August 2026 Revenue Increased by 13.2%");
     expect(await screen.findByText("Email drives the most unique user activity.")).toBeInTheDocument();
-    expect(screen.getByText(/No question has been asked here three times yet/)).toBeInTheDocument();
-    expect(screen.getByText(/Nothing on the record lands in the next seven days/)).toBeInTheDocument();
+    // an empty section is one muted line
+    expect(screen.getByTestId("home-standing")).toHaveTextContent("No question asked three times yet.");
+    expect(screen.getByTestId("home-week")).toHaveTextContent("Nothing lands in the next seven days.");
+  });
+
+  it("leads with the figure when its analysis holds one: the value, its change and the baseline's verdict as chips", async () => {
+    const { leadDetail } = await import("@/lib/home");
+    vi.mocked(leadDetail).mockResolvedValueOnce({ summary: "", confidence: "MEDIUM", why: "a refutation challenged it",
+      figure: { metric: "Revenue", day: "2026-10-02", value: "$19,087.76", change: "+$209.55", pct: 0.0111,
+                verdict: "within normal range", unusual: false } });
+    render(<HomeDesk connectionId="c1" analyses={ANALYSES} onOpenAnalysis={() => {}} onDraft={() => {}} />);
+    expect(await screen.findByTestId("home-lead-value")).toHaveTextContent("$19,087.76");
+    const lead = screen.getByTestId("home-lead");
+    expect(lead).toHaveTextContent("Revenue · Fri 2 Oct");
+    expect(lead).toHaveTextContent("+$209.55 · +1.1%");
+    expect(lead).toHaveTextContent("within normal range");
+    // a conclusion below high confidence says so beside the figure, with why on hover
+    expect(screen.getByText("medium confidence")).toHaveAttribute("title", "a refutation challenged it");
   });
 
   it("books a person's answer about the analysis that asked it, without asking their name", async () => {

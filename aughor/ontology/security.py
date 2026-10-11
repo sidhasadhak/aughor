@@ -35,6 +35,10 @@ AGENT_HEADER = "X-Aughor-Acting-Agent"
 
 _acting_agent: contextvars.ContextVar[str] = contextvars.ContextVar("aughor_acting_agent", default="")
 _unfiltered: contextvars.ContextVar[bool] = contextvars.ContextVar("aughor_security_unfiltered", default=False)
+#: Arc AP-6 — the group a builder previews a cockpit as (`previewing`); "" when none.
+_previewing: contextvars.ContextVar[str] = contextvars.ContextVar("aughor_security_previewing", default="")
+#: How a previewed group is named among a reader's parties.
+PREVIEW_PREFIX = "group:"
 _PRINCIPAL = re.compile(r"^agent:[A-Za-z0-9_.:-]{1,128}$")
 
 
@@ -52,6 +56,24 @@ def unfiltered() -> Iterator[None]:
         yield
     finally:
         _unfiltered.reset(token)
+
+
+@contextlib.contextmanager
+def previewing(group: str) -> Iterator[None]:
+    """Arc AP-6 — read as the person AND a member of ``group`` would read: one more party among the reader's, whose
+    groups are that group and everyone. A row condition is met by every party and a property is masked when any party
+    may not read it, so a preview only ever NARROWS what the person sees — it shows them what the group would not see,
+    never what they may not."""
+    token = _previewing.set((group or "").strip())
+    try:
+        yield
+    finally:
+        _previewing.reset(token)
+
+
+def set_previewing(group: str) -> "contextvars.Token[str]":
+    """Arc AP-6 — preview the rest of this request as ``group`` (see `previewing`); a request's own context holds it."""
+    return _previewing.set((group or "").strip())
 
 
 def set_acting_agent(principal: str) -> "contextvars.Token[str]":
@@ -76,8 +98,15 @@ class Reader:
     principals: list[str]
     groups: dict[str, set[str]] = field(default_factory=dict)
 
+    def parties(self) -> list[str]:
+        """The people and agents among the principals — a previewed group is not one."""
+        return [p for p in self.principals if not p.startswith(PREVIEW_PREFIX)] or self.principals[:1]
+
     def words(self) -> str:
-        return " acting for ".join(reversed(self.principals)) if len(self.principals) > 1 else self.principals[0]
+        people = self.parties()
+        said = " acting for ".join(reversed(people)) if len(people) > 1 else people[0]
+        group = next((p[len(PREVIEW_PREFIX):] for p in self.principals if p.startswith(PREVIEW_PREFIX)), "")
+        return f"{said} previewing as {group}" if group else said
 
 
 def reader() -> Reader:
@@ -90,8 +119,13 @@ def reader() -> Reader:
     agent = _acting_agent.get() or (current_actor() if (current_actor() or "").startswith("agent:") else "")
     if agent and agent not in principals:
         principals.append(agent)
-    return Reader(principals=principals,
-                  groups={p: set(groups_of(org, p)) | {EVERYONE} for p in principals})
+    groups = {p: set(groups_of(org, p)) | {EVERYONE} for p in principals}
+    preview = _previewing.get()
+    if preview:
+        # Arc AP-6 — the previewed group, one more party: it can only narrow what the others read
+        principals.append(f"{PREVIEW_PREFIX}{preview}")
+        groups[f"{PREVIEW_PREFIX}{preview}"] = {preview, EVERYONE}
+    return Reader(principals=principals, groups=groups)
 
 
 # ── rows ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -155,14 +189,30 @@ def rows_said(entity: OntologyEntity, who: Optional[Reader] = None) -> Optional[
     groups = sorted({p.group for p in entity.row_policies})
     for principal in who.principals:
         mine = _admitted(entity, who.groups.get(principal, {EVERYONE}))
+        if not mine and principal.startswith(PREVIEW_PREFIX):
+            group = principal[len(PREVIEW_PREFIX):]
+            return (f"{entity.id} is shown by group, and {group} is none of its groups ({', '.join(groups)}) — a member "
+                    f"of {group} sees no {entity.id} object")
         if not mine:
             return (f"{entity.id} is shown by group, and {principal} is in none of its groups ({', '.join(groups)}) — "
                     f"no {entity.id} object is shown; ask an administrator to add {principal} to one")
     return (f"only the {entity.id} objects {who.words()} may see are shown — {_policies_said(entity, who)}"
-            + (" (both the person's and the agent's)" if len(who.principals) > 1 else ""))
+            + (" (both the person's and the agent's)" if len(who.parties()) > 1 else ""))
 
 
 def _policies_said(entity: OntologyEntity, who: Reader) -> str:
+    preview = next((pr for pr in who.principals if pr.startswith(PREVIEW_PREFIX)), "")
+    if preview:
+        # Arc AP-6 — a preview shows the group's objects, within the person's own: said as the group's policy, and the
+        # person's too when it holds back some of what the group would see
+        theirs = _admitted(entity, who.groups.get(preview, {EVERYONE}))
+        said = "; ".join(f"{p.group}: {_words(p.conditions)}" for p in theirs)
+        people = who.parties()
+        mine = [p for pr in people for p in _admitted(entity, who.groups.get(pr, {EVERYONE}))]
+        if any(p not in mine for p in theirs):
+            said += (f" — and only those {' and '.join(people)} may see too ("
+                     + "; ".join(f"{p.group}: {_words(p.conditions)}" for p in entity.row_policies if p in mine) + ")")
+        return said
     return "; ".join(f"{p.group}: {_words(p.conditions)}" for p in entity.row_policies
                      if any(p in _admitted(entity, who.groups.get(pr, {EVERYONE})) for pr in who.principals))
 

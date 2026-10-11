@@ -106,10 +106,21 @@ def vocabulary() -> Optional[dict]:
     return out
 
 
+def wiring(spec: Any) -> Optional[dict]:
+    """Arc AP-2 and AP-3 — each set of ``spec`` as the object door would read it, and each button's parameters with the
+    kind and entity of their source, as the web reads them (`web/lib/cockpit/sets.ts`) — or None when the rules cannot
+    run. The server compiles each set before a keep; it keeps no second copy of what a set reads."""
+    out, _why = _run({"op": "wiring", "spec": spec})
+    return out if isinstance(out, dict) else None
+
+
 def grammar() -> Optional[str]:
     """What the writer of a cockpit is told, as the web writes it from its own catalog — or
-    None when the rules cannot run. The server keeps no copy (CT-5)."""
-    out, _why = _run({"op": "grammar"})
+    None when the rules cannot run. The server keeps no copy (CT-5). The grid is told of only
+    while building cockpits in place is on (Arc AP-1), and sections split into sections only while that is on (Arc AP-4);
+    off, the text is as it was before them."""
+    from aughor.cockpit import app_pieces, builder
+    out, _why = _run({"op": "grammar", "grid": builder.on(), "structure": app_pieces.on()})
     text = (out or {}).get("text")
     return text if isinstance(text, str) and text else None
 

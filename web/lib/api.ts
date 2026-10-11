@@ -2545,6 +2545,92 @@ export interface CardRunResult {
    *  phrase. `equal_age` is false until the range is final — part of any difference is then
    *  age, not a move. `value` null says why; it is never read as zero. */
   previous?: CardRunPrevious | null;
+  /** Arc AP-7 — a card of a person's own query, as it is shown: its figure, its table or its chart's points. */
+  shown?: QueryShaped | null;
+  duration_ms?: number;
+}
+
+// ── Arc AP-7 — your own query on the cockpit (flag `cockpit.queries`) ───────────────────────────────────────────────
+
+export type QueryShownAs = "table" | "figure" | "bar" | "line" | "area" | "scatter";
+export type QueryAgg = "count" | "count_distinct" | "sum" | "avg" | "min" | "max";
+export type QueryBucket = "" | "day" | "week" | "month" | "quarter" | "year";
+export type QuerySegments = "stacked" | "side_by_side" | "shares";
+
+/** How a card of a person's own query is shown (`aughor/cockpit/queries.py` `Shown`). */
+export interface QueryShown {
+  as: QueryShownAs;
+  /** True: the platform sums the query's rows; false: it is drawn as the query returns it. */
+  summed: boolean;
+  x: string;
+  bucket: QueryBucket;
+  series: { column: string; agg: QueryAgg }[];
+  split: string;
+  top: number;
+  segments: QuerySegments;
+  running: boolean;
+  labels: boolean;
+  columns: string[];
+  sort: string;
+  descending: boolean;
+  label: string;
+}
+
+export interface QueryChartPoint { x: string | number | null; s: string; v: number | null }
+
+/** A run of a query card, shaped as it is shown — what was left out said in `said`. */
+export type QueryShaped =
+  | { as: "figure"; value: number | null; label: string; said: string[] }
+  | { as: "table"; columns: TypedColumn[]; rows: (string | number | boolean | null)[][]; more: boolean; said: string[] }
+  | { as: "bar" | "line" | "area" | "scatter"; x: { name: string; kind: "number" | "date" | "time" | "text"; bucket: QueryBucket };
+      series: string[]; points: QueryChartPoint[]; other: boolean; said: string[] };
+
+/** A query run as the builder would keep it: its typed columns and first rows, the card as shown — or what stops it. */
+export interface QueryPreview {
+  connection_id: string;
+  refused: string[];
+  columns?: TypedColumn[];
+  rows?: (string | number | boolean | null)[][];
+  more?: boolean;
+  duration_ms?: number;
+  caveats?: string[];
+  tables?: string[];
+  setup?: QueryShown;
+  shown?: QueryShaped;
+  /** Arc AP-8 — the cockpit's values it reads, by name (`{{name}}`). */
+  reads?: string[];
+}
+
+export interface QueryAsked {
+  sql: string; shown: Partial<QueryShown>; title?: string; replaces?: string;
+  /** Arc AP-8 — the cockpit's values it reads, as the page holds them now; each bound by the engine. */
+  values?: Record<string, { kind: string; value: unknown }>;
+}
+
+/** A query that could not be kept: each reason, as the server says it. */
+export class QueryRefused extends Error {
+  constructor(public reasons: string[]) { super(reasons.join(" ")); }
+}
+
+export async function previewCockpitQuery(connectionId: string, asked: QueryAsked): Promise<QueryPreview> {
+  const res = await fetch(`${getApiBase()}/cockpits/queries/preview?connection_id=${encodeURIComponent(connectionId)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(asked),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The query could not be run"));
+  return res.json();
+}
+
+export async function keepCockpitQuery(connectionId: string, asked: QueryAsked): Promise<{ card: CockpitCard; preview: QueryPreview }> {
+  const res = await fetch(`${getApiBase()}/cockpits/queries?connection_id=${encodeURIComponent(connectionId)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(asked),
+  });
+  if (res.status === 422) {
+    const body = await res.json().catch(() => ({}));
+    const refused = (body as { detail?: { refused?: string[] } }).detail?.refused;
+    throw new QueryRefused(refused?.length ? refused : [fastApiError(body, "The query could not be kept")]);
+  }
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The query could not be kept"));
+  return res.json();
 }
 
 export interface CardRunPrevious {
@@ -2662,7 +2748,7 @@ export async function saveVizConfig(
 /** Recompute a card's value now (guard-on-read). Returns the current result + the rolling
  *  last/prev value for a delta. */
 export async function runDashboardCard(cardId: string, range?: BriefingRange | null,
-  opts: { compare?: boolean } = {}): Promise<CardRunResult> {
+  opts: { compare?: boolean; values?: Record<string, { kind: string; value: unknown }> } = {}): Promise<CardRunResult> {
   const q = new URLSearchParams();
   if (range) {
     if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
@@ -2674,7 +2760,10 @@ export async function runDashboardCard(cardId: string, range?: BriefingRange | n
   // template as the route, and a conditional inside it read as "/run${qs".
   const url = `${getApiBase()}/cards/${encodeURIComponent(cardId)}/run`;
   const qs = q.toString();
-  const res = await fetch(qs ? `${url}?${qs}` : url, { method: "POST" });
+  // Arc AP-8 — a query that reads the cockpit's values is sent them; every other card is run as it always was
+  const res = await fetch(qs ? `${url}?${qs}` : url, opts.values
+    ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values: opts.values }) }
+    : { method: "POST" });
   if (!res.ok) throw new Error("Failed to refresh dashboard card");
   return res.json();
 }
@@ -2696,6 +2785,8 @@ export interface CockpitVersion {
   written_by_model: boolean;
   cards: string[];
   changes: { added: string[]; removed: string[]; changed: string[] };
+  /** Arc AP-6 — what this version changed of the one before it, in words ("Added the map · distribution center"). */
+  said?: string[];
   spec?: unknown;
   /** Who this version reaches beyond its owner, and who published it (the canvas, B5). */
   published_to?: { kind: "group" | "role"; id: string; name: string }[];
@@ -2912,6 +3003,83 @@ export async function keepCockpit(
 export async function startMyCockpit(connectionId: string): Promise<CockpitKept> {
   const res = await fetch(cockpitUrl("/cockpits/start", connectionId), { method: "POST" });
   return cockpitWrite(res, "Failed to start your cockpit");
+}
+
+/** What a cockpit started from an object is offered (2026-10-10, `aughor/cockpit/from_object.py`): each piece with a
+ *  preview the object door measured. Nothing is kept and no model is asked. */
+export interface CockpitFromObject {
+  connection_id: string;
+  schema_name: string;
+  entity: string;
+  type_id: string;
+  /** The object's name; `title` is its plural, what the count is called. */
+  name: string;
+  title: string;
+  total: number | null;
+  /** Each category: its path, label, the object it is read through ("" for its own) and its top values. */
+  filters: { path: string; label: string; via: string; values: [unknown, number | null][] }[];
+  figures: { label: string; agg: "count" | "count_distinct" | "sum" | "avg" | "min" | "max"; path: string;
+             format: "number" | "money"; value: number | null }[];
+  /** Objects per day over the last whole days they hold, ending (exclusive) at `end`. */
+  chart: { time: string; label: string; days: number; end: string; bars: number[] } | null;
+  table: { columns: string[]; labels: string[] };
+  /** Whether its objects can be listed one by one — false for a type that declares no key (an event log). */
+  listable?: boolean;
+  actions: { id: string; label: string }[];
+  caveats: string[];
+  /** Arc AP-5 — the shapes it fits, the best first, each with one sentence of why; present while shapes are on. */
+  shapes?: ShapeOffer[];
+  /** What the shapes are laid out from, read from the ontology (`aughor/cockpit/shapes.py`). */
+  signals?: ShapeSignals;
+}
+
+export type ShapeName = "queue" | "map" | "one" | "timeline" | "overview";
+export interface ShapeOffer { shape: ShapeName; short: string; why?: string }
+export interface ShapeSignals {
+  entity: string;
+  type_id: string;
+  name: string;
+  /** The property each object is called by — "" when it has none. */
+  label: string;
+  /** A queue waits past a measured promise, or on a platform-owned type's status. */
+  queue: ({ kind: "promise"; process: string; noun: string; placed: string; reached: string; stage: string;
+            overdue: string; late: string; promise: string }
+          | { kind: "states"; status: string; final: string[]; moves: string }) | null;
+  /** The actions a cockpit can fill: an object parameter of the entity's own from the chosen one, a value asked. */
+  actions: { id: string; label: string; params: { name: string; source: "chosen" | "ask" }[] }[];
+  places: { lat: string; lng: string; via: string; through?: string } | null;
+  moments: { start: string; end: string } | null;
+  one: { label: string; links: ShapeLink[]; kinds: number } | null;
+  /** The first kind of objects that link to one — an order's lines. */
+  lines: ShapeLink | null;
+  window: number;
+  measured: Record<string, number | null>;
+}
+export interface ShapeLink {
+  entity: string; type_id: string; path: string; label: string;
+  /** Whether its objects can be listed — a kind that declares no key is counted instead. */
+  listable?: boolean;
+}
+
+/** Arc AP-5 — what each object suggests a cockpit be, read from the ontology alone. */
+export async function getSuggestedShapes(connectionId: string, schema?: string): Promise<{ entity: string; type_id: string; name: string; shape: ShapeName; short: string }[]> {
+  const q = new URLSearchParams();
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(cockpitUrl("/cockpits/shapes", connectionId, q));
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return ((await res.json()) as { objects: { entity: string; type_id: string; name: string; shape: ShapeName; short: string }[] }).objects;
+}
+
+export async function getCockpitFromObject(connectionId: string, entity: string, schema?: string): Promise<CockpitFromObject> {
+  const q = new URLSearchParams({ entity });
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(cockpitUrl("/cockpits/from-object", connectionId, q));
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
+    const d = body?.detail;
+    throw new Error(typeof d === "string" ? d : (d as { refused?: string } | undefined)?.refused ?? `HTTP ${res.status}`);
+  }
+  return res.json();
 }
 
 /** ⚑ Spends model calls. Draft a new cockpit for an area the person names. */
@@ -8481,6 +8649,12 @@ export interface SystemFlag {
   source: "run" | "runtime" | "env" | "default";
   env_var: string;
   label: string;
+  /** What the person gets — at most two short sentences, always shown. */
+  summary?: string;
+  /** What it costs and touches, drawn as chips (kinds: model · free · schedule · sends ·
+   *  warehouse · needs · private · route). */
+  facts?: Array<{ kind: string; text: string }>;
+  /** The rest, behind "Details" — ends by saying what Off means. */
   description: string;
   // Capabilities Auto-mode (Wave 1 · E3) — present on every flag:
   state?: CapabilityState;          // effective tri-state

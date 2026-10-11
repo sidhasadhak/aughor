@@ -25,6 +25,7 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { useMarkRead } from "@/components/cockpit/readSlot";
 import { CardAlertForm, usePersistViz, type CardState } from "@/components/brief/PinnedCardBody";
 import { seriesTrend, type SeriesTrend } from "@/components/brief/Sparkline";
 import { deltaInfo, formatMetric } from "@/components/brief/metricFormat";
@@ -32,21 +33,31 @@ import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { type ChartCustom } from "@/components/Chart";
 import { type VizConfig } from "@/components/charts/vizConfig";
 import { VegaChart } from "@/components/charts/vega/VegaChart";
+import { useCellBox, useMeasured } from "@/components/cockpit/cellBox";
 import { SizePick } from "@/components/cockpit/SizePick";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
-import { readMetricTrend, type BriefingRange, type CardRunPrevious, type CockpitCard, type StatedRange } from "@/lib/api";
+import { readMetricTrend, type BriefingRange, type CardRunPrevious, type CockpitCard, type QueryShaped, type QueryShown, type StatedRange } from "@/lib/api";
+import { readVegaTokens } from "@/components/charts/vega/config";
+import { queryChartSpec } from "@/lib/cockpit/queryChart";
+import { cellText } from "@/lib/cockpit/objectView";
 import { SPAN, type Size } from "@/lib/cockpit/catalog";
 import { cardValue } from "@/lib/cockpit/hostStatus";
 import type { CardStatus } from "@/lib/cockpit/hostState";
-import { fmtDate, formatMetricValue } from "@/lib/format";
+import { fmtDate, formatMetricValue, formatSeconds } from "@/lib/format";
 
 export type TileShape = "figure" | "trend" | "rows";
 
-/** How a card is drawn, from its run. A failed run is a figure that says it failed. */
+/** How a card is drawn, from its run. A failed run is a figure that says it failed. A query of a person's own not run
+ *  yet — one waiting on a value (Arc AP-8) — takes the room its setup asks for, so it does not jump when it is read. */
 export function tileShape(cs: CardState): TileShape {
   const { run, failed } = cs;
+  const setup = (cs.card.render as { shown?: { as?: string } } | undefined)?.shown;
+  if (!run && !failed && setup?.as) return setup.as === "figure" ? "figure" : "rows";
   if (failed || !run || run.error) return "figure";
+  // Arc AP-7 — a card of a person's own query is drawn as they set it up, never by its result's shape
+  const shown = (run as { shown?: QueryShaped | null }).shown;
+  if (shown) return shown.as === "figure" ? "figure" : "rows";
   if (seriesTrend(run.columns, run.rows)) return "trend";
   // One cell is one figure, even an empty one: a total over a period with no rows is NULL, and
   // that is "no figure for the period", never a one-cell table reading "NULL".
@@ -139,8 +150,12 @@ export function Frame({ testid, shape, over, dashed, children, doors }: {
   return (
     <div className="group" data-testid={testid} data-shape={shape} style={{
       position: "relative", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column",
+      // on a section's grid the box is fixed: what it holds stays inside it, and a piece's own body scrolls (Arc AP-1)
+      minHeight: 0, overflow: "hidden",
       gap: 6, padding: "14px 16px 12px", background: "var(--bg-2)", borderRadius: "var(--r3)",
-      border: `1px ${dashed ? "dashed" : "solid"} ${over ? "color-mix(in srgb, var(--red4) 55%, var(--b1))" : "var(--b1)"}`,
+      // a card stands on the page by its fill; an edge is drawn only where it says something — dashed for a piece
+      // that cannot be read, red for a figure over its limit (CLARITY.md, "cards on the ground")
+      border: `1px ${dashed ? "dashed" : "solid"} ${over ? "color-mix(in srgb, var(--red4) 55%, var(--b1))" : dashed ? "var(--b1)" : "var(--card-edge)"}`,
     }}>
       {children}
       {doors}
@@ -226,6 +241,14 @@ function Moved({ value, previous, card }: { value: number; previous: CardRunPrev
   );
 }
 
+/** How tall a chart in a tile is drawn: on a section's grid, the height its box leaves it, followed as the box is
+ *  resized one grade at a time; off the grid, the height its size names, as before (Arc AP-1). */
+function useChartHeight(offGrid: number): [(el: HTMLDivElement | null) => void, number] {
+  const box = useCellBox();
+  const [ref, room] = useMeasured<HTMLDivElement>();
+  return [ref, box.onGrid && room.height > 0 ? Math.max(60, room.height) : offGrid];
+}
+
 /** A metric's trend over the ranges before the one the cockpit is read for — what a bigger figure
  *  tile has the room to show (the user, 2026-10-08: "a bigger tile shows the same figure larger, with
  *  its trend"). Read once per card and range; nothing is re-measured, and the figure above it is
@@ -250,10 +273,11 @@ function MetricTrendStrip({ card, place, sym }: { card: CockpitCard; place: Tile
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
   }, [card.id, card.connection_id, metric, rangeKey, place.schema]);
   const spec = useMemo(() => (got?.trend ? trendSpec(got.trend, card, sym, got.labels) : null), [got, card, sym]);
+  const [room, height] = useChartHeight(SPAN[place.size].h === 2 ? 220 : 110);
   if (!spec) return null;
   return (
-    <div data-testid="tile-trend" style={{ flex: 1, minHeight: 0, marginTop: 4 }}>
-      <VegaChart spec={spec} tier={2} height={SPAN[place.size].h === 2 ? 220 : 110} />
+    <div ref={room} data-testid="tile-trend" style={{ flex: 1, minHeight: 0, marginTop: 4 }}>
+      <VegaChart spec={spec} tier={2} height={height} />
     </div>
   );
 }
@@ -272,9 +296,12 @@ function FigureTile({ cs, status, sym, doors, place }: { cs: CardState & { card:
   // Standing: what it moved by since the card last ran, if it did.
   const standingPrev = !ranged ? (run?.refresh?.prev_value ?? null) : null;
   const caveats = run?.caveats ?? [];
-  // A bigger tile shows the same figure larger — and, for a metric read for a range, its trend.
+  // A bigger tile shows the same figure larger — and, for a metric read for a range, its trend. On the grid, bigger is
+  // five columns or five rows and more (Arc AP-1).
+  const box = useCellBox();
   const span = SPAN[place.size];
-  const big = span.w > 1 || span.h > 1;
+  const big = box.onGrid ? box.w >= 5 || box.h >= 5 : span.w > 1 || span.h > 1;
+  const widest = box.onGrid ? box.w >= 9 : span.w >= 3;
   const withTrend = big && ranged && !errored && (card.made_from === "metric" || !!card.provenance.metric) && !!place.range;
 
   return (
@@ -286,7 +313,7 @@ function FigureTile({ cs, status, sym, doors, place }: { cs: CardState & { card:
       ) : shown ? (
         <div className="aug-fs-display" data-testid="tile-figure" data-size={place.size} title={shown.outside ? `Outside what its unit states (${card.unit})` : undefined}
           style={{ fontWeight: 600, lineHeight: 1.15, color: over ? "var(--red4)" : "var(--t1)", fontVariantNumeric: "tabular-nums",
-            fontSize: span.w >= 3 ? "2.6em" : big ? "2.1em" : undefined }}>
+            fontSize: widest ? "2.6em" : big ? "2.1em" : undefined }}>
           {shown.text}
         </div>
       ) : (
@@ -377,13 +404,14 @@ function TrendTile({ cs, trend, status, sym, doors, place }: { cs: CardState & {
   const spec = useMemo(() => trendSpec(trend, card, sym), [trend, card, sym]);
   const n = trend.values.length;
   const newest = `${fmtDate(trend.dates[n - 1], trend.gran)} · ${figureText(trend.values[n - 1], card, sym).text}`;
+  const [room, height] = useChartHeight(SPAN[place.size].h === 2 ? 340 : 170);
   return (
     <Frame testid="cockpit-tile" shape="trend" over={status === "over"} doors={<Doors card={card} doors={doors} place={place} />}>
       <Title title={card.title} right={
         <span className="aug-fs-sm" data-testid="tile-newest" style={{ color: "var(--t1)", fontWeight: 500, whiteSpace: "nowrap" }}>{newest}</span>
       } />
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <VegaChart spec={spec} tier={2} height={SPAN[place.size].h === 2 ? 340 : 170} />
+      <div ref={room} style={{ flex: 1, minHeight: 0 }}>
+        <VegaChart spec={spec} tier={2} height={height} />
       </div>
       <Foot icon={source.icon}>{source.words}, by {trend.gran}</Foot>
     </Frame>
@@ -397,14 +425,15 @@ function RowsTile({ cs, doors, place }: { cs: CardState & { card: CockpitCard };
   const render = (card.render || {}) as {
     chartType?: string; chartConfig?: Record<string, unknown>; custom?: ChartCustom; showDataLabels?: boolean; viz?: VizConfig;
   };
+  const [room, height] = useChartHeight(SPAN[place.size].h === 2 ? 400 : 200);
   return (
     <Frame testid="cockpit-tile" shape="rows" doors={<Doors card={card} doors={doors} place={place} />}>
       <Title title={card.title} />
-      <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+      <div ref={room} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
         {run && (
           <ResultChartCard columns={run.columns} rows={run.rows as unknown[][]}
             chartType={render.chartType ?? null} chartConfig={render.chartConfig ?? null} custom={render.custom ?? null}
-            defaultShowLabels={render.showDataLabels} fillHeight={SPAN[place.size].h === 2 ? 400 : 200} config={render.viz ?? null} onConfigChange={persistViz} />
+            defaultShowLabels={render.showDataLabels} fillHeight={height} config={render.viz ?? null} onConfigChange={persistViz} />
         )}
       </div>
       <Foot icon={source.icon}>{source.words}{run?.scoped && !run.scoped.standing ? `, for ${run.scoped.covers}` : ""}</Foot>
@@ -412,11 +441,26 @@ function RowsTile({ cs, doors, place }: { cs: CardState & { card: CockpitCard };
   );
 }
 
-export function CockpitTile({ cs, status, sym, doors, place = STANDING }: {
+/** Arc AP-8 — what a query reading the cockpit's values waits on: a value still being read, or the choice a value read
+ *  off a chosen object waits on, in words. */
+export type QueryWaiting = { reading: true } | { waiting: ReactNode };
+
+export function CockpitTile({ cs, status, sym, doors, place = STANDING, waits = null }: {
   cs: CardState & { card: CockpitCard }; status: CardStatus; sym: string; doors: TileDoors;
   /** The element this tile draws and its size; left out, the tile stands alone at the small size. */
   place?: TilePlace;
+  waits?: QueryWaiting | null;
 }) {
+  if (waits) {
+    const chrome = <Doors card={cs.card} doors={doors} place={place} />;
+    return "reading" in waits ? <QueryReading title={cs.card.title} doors={chrome} />
+      : <Frame testid="cockpit-tile" doors={chrome}><Title title={cs.card.title} />
+        <div className="aug-fs-sm" data-testid="query-tile-waiting" style={{ color: "var(--t3)" }}>{waits.waiting}</div></Frame>;
+  }
+  // Arc AP-7 — a card of a person's own query, run while queries are on (the run then says how it is shown)
+  if (cs.run && "shown" in cs.run && (cs.card.render as { shown?: unknown })?.shown) {
+    return <QueryTile cs={cs} doors={doors} place={place} />;
+  }
   const shape = tileShape(cs);
   const trend = shape === "trend" && cs.run ? seriesTrend(cs.run.columns, cs.run.rows) : null;
   if (trend) return <TrendTile cs={cs} trend={trend} status={status} sym={sym} doors={doors} place={place} />;
@@ -424,8 +468,87 @@ export function CockpitTile({ cs, status, sym, doors, place = STANDING }: {
   return <FigureTile cs={cs} status={status} sym={sym} doors={doors} place={place} />;
 }
 
+/** Arc AP-7 — a card of a person's own query, as they set it up: its figure, its table or its chart, and what the run
+ *  left out said beneath it. A query that cannot be read says why, in its place. */
+function QueryTile({ cs, doors, place }: { cs: CardState & { card: CockpitCard }; doors: TileDoors; place: TilePlace }) {
+  const { card, run } = cs;
+  const shaped = run?.shown ?? null;
+  const setup = (card.render as { shown?: QueryShown }).shown;
+  const [room, height] = useChartHeight(SPAN[place.size].h === 2 ? 400 : 200);
+  const spec = useMemo(() => {
+    if (!shaped || !setup || shaped.as === "figure" || shaped.as === "table") return null;
+    const t = readVegaTokens();
+    return queryChartSpec(shaped, setup, { palette: t.palette, other: t.deemph });
+  }, [shaped, setup]);
+  const foot = (
+    <Foot icon="sql">
+      Your query{run?.duration_ms != null ? ` · ${formatSeconds(run.duration_ms)}` : ""}
+      {run?.scoped && !run.scoped.standing ? `, for ${run.scoped.covers}` : ""} · read straight from the tables
+    </Foot>
+  );
+  if (!shaped) return <QueryUnread title={card.title} why={run?.error || "It returned nothing this card can read."} doors={<Doors card={card} doors={doors} place={place} />} />;
+  const said = shaped.said.length > 0 && (
+    <div className="aug-fs-xs" data-testid="query-tile-said" style={{ color: "var(--t3)" }}>{shaped.said.join(" ")}</div>
+  );
+  return (
+    <Frame testid="cockpit-tile" shape={shaped.as === "figure" ? "figure" : "rows"} doors={<Doors card={card} doors={doors} place={place} />}>
+      <Title title={card.title} />
+      {shaped.as === "figure" ? (
+        <div data-testid="query-tile-figure" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span className="aug-fs-h1" style={{ fontWeight: 600, color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>{formatMetricValue(shaped.value)}</span>
+          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{shaped.label}</span>
+        </div>
+      ) : shaped.as === "table" ? (
+        <div ref={room} data-testid="query-tile-table" style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+          <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums" }}>
+            <thead><tr>{shaped.columns.map((c, j) => (
+              <th key={`${c.name}-${j}`} style={{ textAlign: /INT|DOUBLE|FLOAT|DECIMAL|NUMERIC|REAL/i.test(c.type) ? "right" : "left", color: "var(--t3)", fontWeight: 500, padding: "4px 6px", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap" }}>{c.name}</th>
+            ))}</tr></thead>
+            <tbody>{shaped.rows.map((r, i) => (
+              <tr key={i}>{r.map((v, j) => (
+                <td key={j} style={{ padding: "4px 6px", borderBottom: "1px solid var(--b1)", whiteSpace: "nowrap", textAlign: /INT|DOUBLE|FLOAT|DECIMAL|NUMERIC|REAL/i.test(shaped.columns[j]?.type ?? "") ? "right" : "left" }}>
+                  {cellText(v, shaped.columns[j]?.type)}
+                </td>
+              ))}</tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ) : (
+        <div ref={room} data-testid="query-tile-chart" style={{ flex: 1, minHeight: 0 }}>
+          {spec && <VegaChart spec={spec} tier={2} height={height} />}
+        </div>
+      )}
+      {said}
+      {foot}
+    </Frame>
+  );
+}
+
+/** A query reading a value still being read: its place held, and marked reading for the builder's checks. */
+function QueryReading({ title, doors }: { title: string; doors: ReactNode }) {
+  useMarkRead("reading");
+  return (
+    <Frame testid="cockpit-tile" doors={doors}>
+      <Title title={title} />
+      <div className="aug-fs-sm" data-testid="query-tile-reading" style={{ color: "var(--t3)" }}>Reading…</div>
+    </Frame>
+  );
+}
+
+/** A query card that cannot be read, in its place — said, and marked for the builder's checks. */
+function QueryUnread({ title, why, doors }: { title: string; why: string; doors: ReactNode }) {
+  useMarkRead("refused", `${title}: ${why}`);
+  return (
+    <Frame testid="cockpit-tile" dashed doors={doors}>
+      <Title title={title} />
+      <div className="aug-fs-sm" data-testid="query-tile-unread" style={{ color: "var(--t2)" }}>This query cannot be read: {why}</div>
+    </Frame>
+  );
+}
+
 /** A card the reader may not see, in its place: said, never an empty box. */
 export function WithheldTile() {
+  useMarkRead("refused", "Withheld: you may not see this card");
   return (
     <Frame testid="cockpit-card-said">
       <div className="aug-fs-ui" style={{ color: "var(--t2)" }}>Withheld</div>
@@ -440,6 +563,7 @@ export function WithheldTile() {
 
 /** A placed card the reader does not have, or one that failed to draw. */
 export function SaidTile({ what, children }: { what: string; children: ReactNode }) {
+  useMarkRead("refused", what);
   return (
     <Frame testid="cockpit-card-said" dashed>
       <div className="aug-fs-ui" style={{ color: "var(--t1)", fontWeight: 500 }}>{what}</div>
