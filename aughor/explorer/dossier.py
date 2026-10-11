@@ -67,6 +67,11 @@ def _structural_ctx(state: dict, tables: Iterable[str]) -> dict:
     return out
 
 
+def _key(connection_id: str, finding_id: str) -> str:
+    # FROZEN ledger natural-key prefix — the stored provenance identity, not a display word.
+    return f"insight:{connection_id}:{finding_id}"
+
+
 def update_dossier(connection_id: str, insight_id: str, *, merge: dict,
                    lineage_edge: Optional[tuple] = None) -> Optional[int]:
     """Write a new version of a finding's artifact with ``merge`` folded into its
@@ -75,7 +80,7 @@ def update_dossier(connection_id: str, insight_id: str, *, merge: dict,
     finding has no dossier yet. Best-effort: callers tolerate None/exceptions."""
     from aughor.kernel.ledger import Ledger
     led = Ledger.default()
-    nk = f"insight:{connection_id}:{insight_id}"
+    nk = _key(connection_id, insight_id)
     art = led.artifact_latest(nk)
     if not art:
         return None
@@ -88,6 +93,25 @@ def update_dossier(connection_id: str, insight_id: str, *, merge: dict,
     led.artifact_write("finding", nk, payload, conn_id=connection_id,
                        lineage=[lineage_edge] if lineage_edge else None)
     return int(art.get("version", 0)) + 1
+
+
+def record_measured(connection_id: str, finding: dict, dossier: dict, *, state: dict) -> int:
+    """Record a finding the platform MEASURED rather than the explorer emitted — a Briefing's metric move — as a
+    finding artifact carrying its dossier, where an explorer finding's lives: its Evidence then reads the same
+    derivation, and an investigation opened from it starts from it. Its structural ground is sliced from ``state``
+    (the explorer's facts for the dataset) by the tables its query reads. Supersedes the previous measurement of the
+    same finding. Returns the artifact id; a failed write raises, for the caller to tolerate."""
+    from aughor.explorer.scope import tables_in_sql
+    from aughor.kernel.ledger import Ledger
+
+    sql = str(finding.get("sql") or "")
+    tables = sorted(tables_in_sql(sql)) if sql else []
+    lineage: list[tuple] = [("source_sql", "sql", sql)]
+    lineage += [("input", f"table:{t}", None) for t in tables[:8]]
+    lineage.append(("derivation", "dossier", "measured by the Briefing"))
+    payload = {**finding, "dossier": {**dossier, "structural_ctx": _structural_ctx(state or {}, tables)}}
+    return Ledger.default().artifact_write("finding", _key(connection_id, str(finding.get("id") or "")), payload,
+                                           conn_id=connection_id, lineage=lineage)
 
 
 def build_dossier(

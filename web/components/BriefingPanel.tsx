@@ -420,7 +420,8 @@ export function findingOfCitation(citation: BriefingCitation, held?: Exploration
     id: citation.insight_id, domain: citation.domain, angle: citation.angle,
     entities_involved: [], dimensions: [], measures: [],
     finding: citation.finding, sql: citation.sql ?? "",
-    confidence: citation.confidence ?? Number.NaN, novelty: citation.novelty ?? Number.NaN, generated_at: "",
+    confidence: citation.confidence ?? Number.NaN, novelty: citation.novelty ?? Number.NaN,
+    generated_at: citation.generated_at ?? "",
   };
 }
 
@@ -1208,7 +1209,7 @@ export function DossierTrace({ dossier }: { dossier: FindingDossier }) {
     <div style={{ display: "flex", flexDirection: "column" as const, gap: 16 }}>
       {dossier.question && (
         <div>
-          <Label>Question the explorer asked</Label>
+          <Label>{dossier.asked_by === "briefing" ? "Question the Briefing measured" : "Question the explorer asked"}</Label>
           <div className="aug-fs-ui" style={{ color: "var(--t2)", lineHeight: 1.55, fontStyle: "italic" as const }}>“{dossier.question}”</div>
         </div>
       )}

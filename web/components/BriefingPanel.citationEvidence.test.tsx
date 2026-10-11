@@ -10,8 +10,8 @@
 import { render, screen } from "@/lib/testing";
 import { describe, expect, it } from "vitest";
 
-import { EvidenceDrawer, findingOfCitation } from "@/components/BriefingPanel";
-import type { BriefingCitation } from "@/lib/api";
+import { DossierTrace, EvidenceDrawer, findingOfCitation } from "@/components/BriefingPanel";
+import type { BriefingCitation, FindingDossier } from "@/lib/api";
 
 const SQL = "SELECT day, SUM(converted) * 1.0 / COUNT(*) AS rate FROM web_sessions GROUP BY day ORDER BY day";
 const MOVE: BriefingCitation = {
@@ -45,5 +45,22 @@ describe("a citation the Briefing's list does not hold", () => {
   it("is the Briefing's own finding whenever its list holds it", () => {
     const held = findingOfCitation(BUILT_BEFORE);
     expect(findingOfCitation(MOVE, held)).toBe(held);
+  });
+});
+
+describe("a derivation's question", () => {
+  const base: FindingDossier = {
+    dossier_version: 1, question: "How has GMV moved between its first and last whole months?", sql: "SELECT 1",
+    finding: "f", rationale: "", result_cells: "", grounding: { grounded: true, checked: 0, ungrounded: [] },
+    structural_ctx: { null_meanings: {}, joins: [], lifecycles: {}, distributions: {} },
+    generated_at: "", data_fingerprint: null,
+  };
+
+  it("is the Briefing's when the Briefing measured it, and the explorer's otherwise", () => {
+    const { unmount } = render(<DossierTrace dossier={{ ...base, asked_by: "briefing" }} />);
+    expect(screen.getByText("Question the Briefing measured")).toBeInTheDocument();
+    unmount();
+    render(<DossierTrace dossier={base} />);
+    expect(screen.getByText("Question the explorer asked")).toBeInTheDocument();
   });
 });

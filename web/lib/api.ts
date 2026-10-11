@@ -7207,6 +7207,7 @@ export interface BriefingCitation {
   sql?: string;
   confidence?: number | null;
   novelty?: number | null;
+  generated_at?: string | null;
   /** CB-6 — the declared goal this finding bears on, or "". */
   priority?: string;
   /** CB-7 — the one action beside this item, or null. */
@@ -8078,6 +8079,8 @@ export async function getAuditStats(connectionId?: string): Promise<AuditStats> 
  *  recompute, instead of re-running a deep analysis to reconstruct it. */
 export interface FindingDossier {
   dossier_version: number;
+  /** "briefing" when the Briefing MEASURED it (a metric's move) rather than the explorer asking it. */
+  asked_by?: string;
   question: string;
   sql: string;
   finding: string;

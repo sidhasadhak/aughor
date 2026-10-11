@@ -496,7 +496,7 @@ def generate_narrative(
             "narrative":      str,
             "headline_theme": str,
             "citations":      [{"ref", "insight_id", "domain", "angle", "finding",
-                                "sql", "confidence", "novelty", "priority", "action"}, ...],
+                                "sql", "confidence", "novelty", "generated_at", "priority", "action"}, ...],
             "held_back":      [{"finding", "domain", "severity", "reason", "count", "domains"}, ...],
                               # grouped by (severity, reason) — see `group_held_back`
             "currency_code":  str,
@@ -778,6 +778,7 @@ def generate_narrative(
             "sql":        source.get("sql", ""),
             "confidence": source.get("confidence"),
             "novelty":    source.get("novelty"),
+            "generated_at": source.get("generated_at"),
             "priority":   source.get("_priority", ""),      # CB-6: the declared goal this bears on, or ""
             "action":     _brief_action(source),            # CB-7: the one action beside this item, or None
         })
