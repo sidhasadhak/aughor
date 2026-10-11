@@ -649,3 +649,61 @@ in the Cockpit tab.
 
 **Every theLook number** here and on the mockup was read on 2026-10-10 through `POST /objects/query` and
 `/objects/list` on the live API. The answers are kept beside the mockup's generator.
+
+---
+
+## 9 · After the arc: your own query, and variables (proposed 2026-10-11)
+
+The user, after AP-1–AP-6: *"we are rather reading or even structuring the widgets intelligently but it is not flexible
+enough for the users to choose what they really want to show… an SQL statement that they want to run either just for one
+table or maybe across the table or even across schema… and then try to show it as either a table or a card or a bar
+chart… the most robust dashboarding as well as an action oriented workflow"*, with three Workshop screenshots (Chart XY's
+setup; a chart over a filtered set; a set's definition with its variables), and *"variables… which we can apply on the
+objects that you select… It's not very hard, but we may need to make it robust."* Drawn as screens 10–12 of
+`design-mockups/cockpit-builder.html`, on theLook.
+
+### 9.1 What was measured first (2026-10-11, read-only)
+
+- **A card already runs a person's SQL, safely.** `DashboardCard` keeps `sql` and an untyped `render`
+  (`aughor/dashboard/models.py:52-70`). A run goes through `execute_guarded` (`routers/dashboard.py:354-456`), behind a
+  trust gate, the connector's fail-closed pre-check (a forbidden-keyword gate, then sqlglot: the root must be a SELECT or
+  a set operation), the safety checker and an engine opened read-only (`db/connection.py:39-114`, `sql/readonly.py`).
+  Nothing limits a statement to one schema: `schema.table` and `dataset.table` parse and run.
+- **What is missing is all on the author's side.**
+  - The builder has no SQL box. The card composer builds one table's count or sum (`NewCardComposer.tsx:53-60`); only
+    the SQL editor's visual mode joins typed SQL to a chosen chart (`QueryBuilder.tsx`).
+  - A card's chosen chart is not what is drawn: its shape comes from its result, so any date series is drawn as a
+    line (`CockpitTile.tsx:46-58`).
+  - `render` has no split shown stacked, side by side or as shares, no buckets for dates, no running total
+    (`components/charts/vizConfig.ts:26-51`).
+  - A card run has no timeout — only the SQL editor's runs are stopped (`routers/query.py:560-574`) — and returns its
+    first 200 rows (`dashboard.py:448`).
+  - A card reads no variable. Bound parameters exist for the SQL editor — `:name`, typed per dialect, BigQuery
+    `@name` (`aughor/sql/params.py`, `connectors/warehouse/bigquery.py:200-228`) — and no card uses them.
+- **The variables AP-2 built are a third of Workshop's.** Sets (an entity or another set, a segment, up to six
+  conditions, one link to a choice), values (days, a number, words; only days can feed a condition) and choices
+  (chosen, ticked, shown). Workshop's are twelve types defined seven ways — static, a function, an aggregation of a set,
+  a property of one object, a set's definition (filters on a property, using a variable, on a link; search around to
+  linked objects), a transformation, and an SQL query — listed in one panel with what reads each and what it holds now
+  (`workshop/concepts-variables`, read 2026-10-11).
+- **On theLook** (`POST /query/run`, `/objects/query`, `/objects/list`): sales by day by country across `orders`,
+  `users` and `order_items`, the last 14 days — 174 rows in 1.1 s, $618,820 over 7,150 orders, 14 countries; the
+  Waiting set holds 1,009 orders from 971 customers, and 368 from 357 customers in China.
+
+### 9.2 Proposed phases
+
+| # | Builds | Receipt on theLook | Falsifier |
+|---|---|---|---|
+| **AP-7** | **Your own query on the cockpit.** A card reads a set, a metric or **your own SQL**: written in the builder's Setup beside a browser of the connection's schemas and tables, run there (time, rows, typed columns), kept as a card of yours. **Shown as** a table, a figure, a bar, a line, an area or a scatter — and what is chosen is what is drawn. **Set up like Workshop's chart:** what runs along the bottom (a date bucketed by day, week, month, quarter or year), what is summed (count, count of different, sum, average, least, most; more than one series; a running total), what splits it (the top few, the rest as Other), stacked, side by side or as shares, labels; a figure's value and label; a table's columns, order and paging. SQL that returns rows is summed by the platform around it; SQL that already sums is drawn as it returns. **Robust:** every card run stopped after a set time, a cut by the row budget said, the columns a setup names checked against the result when the cockpit is kept, and "read straight from the tables" said on the card | Screen 10 built by hand on theLook: sales by day by country, stacked, from three tables; the same query as a figure and a table — the numbers equal to the query's own | Of the cards people make in two weeks, fewer than 1 in 5 are their own query → the setup is not what they needed |
+| **AP-8** | **Variables, as Workshop has them.** The Data tab becomes **Variables**: values, sets and what the pieces output in one list, each saying where it comes from, what reads it and what it holds now. **More kinds of value:** days, a number, a date, words, yes or no, a list — **coming from** you, the reader (a control on the page), a count or a sum of a set, a property of the chosen object, or the first value of a query. **Sets defined as Workshop defines them:** a starting set; filters on a property, **using any variable**, or on a link; get linked objects (the customers of the waiting orders); combine with another set (either, both, but not) — each step counted by the object door as it is built. **Variables in SQL** as bound parameters, typed per dialect, never pasted into the statement. What a piece outputs — the chosen object, the ticked ones, the filter column's ticks, a search's words — is a variable other definitions read | Screens 11–12 on theLook: Window read by a set and three queries; "Waiting in the country" = 368 orders from 1,009, changing with the reader's Country | A variable reaches SQL other than as a bound parameter → stop |
+
+**The order recommended:** AP-7, then AP-8 — AP-8's variables in SQL need AP-7's query card first.
+
+### 9.3 The user's calls
+
+| # | Question | Recommended |
+|---|---|---|
+| 1 | **A query and row policies.** Your own SQL reads the tables straight, so a row policy cannot narrow it per reader. While "limit who sees which objects" is on: (a) say so on the card and run it for every reader, as cards run today; (b) run it only for readers who may see every row of its tables; or (c) refuse to keep a query over a table whose entity has a row policy, saying why and offering a set instead | (c) — nothing a reader may not see is shown as if it were theirs |
+| 2 | **Who may write SQL on a cockpit** | Whoever may run SQL in the SQL editor, by the same rule |
+| 3 | **Where a query lives.** As a card of yours, as cards live today (one store, its versions in History), or inside the cockpit's spec | A card — one store per concept; the spec names it |
+| 4 | **The words**: *your own query* (a card that reads SQL), *variable* (for set, value and output together), *comes from*, *along the bottom*, *split by*, *stacked · side by side · shares* | These |
