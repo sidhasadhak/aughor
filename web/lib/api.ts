@@ -7202,6 +7202,11 @@ export interface BriefingCitation {
   domain: string;
   angle: string;
   finding: string;
+  /** The cited finding's evidence, carried so a citation the Briefing's own list does not hold (a metric's move, a
+   *  range's segment) opens onto its query and its measured confidence — absent on a brief built before 2026-10-11. */
+  sql?: string;
+  confidence?: number | null;
+  novelty?: number | null;
   /** CB-6 — the declared goal this finding bears on, or "". */
   priority?: string;
   /** CB-7 — the one action beside this item, or null. */

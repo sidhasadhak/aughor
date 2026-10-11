@@ -257,7 +257,7 @@ def test_a_period_move_is_phrased_the_way_the_triage_reads_a_change():
 
 def _stored(recorded_at: str, text: str, fid: str) -> dict:
     return {"id": fid, "finding": text, "generated_at": recorded_at, "confidence": 0.8,
-            "novelty": 3, "sql": ""}
+            "novelty": 3, "sql": "SELECT 1"}
 
 
 def test_the_weekly_brief_is_built_from_the_weeks_evidence_and_told_its_version(con, narrator):

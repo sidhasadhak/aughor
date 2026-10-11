@@ -407,6 +407,23 @@ function NarrativeCard({
   );
 }
 
+/** A measured figure as words, or "—" when it was never measured — never an invented 0. */
+function known(v: number | null | undefined, words: (v: number) => string): string {
+  return typeof v === "number" && Number.isFinite(v) ? words(v) : "—";
+}
+
+/** The finding a citation opens onto: the Briefing's own when its list holds it, else one made of what the citation
+ *  carries — its query, its measured confidence and novelty. A figure it does not carry is unknown (NaN, shown "—"),
+ *  never an invented 0: "Confidence 0%" and "no query recorded" stood beside a measured move (2026-10-11). */
+export function findingOfCitation(citation: BriefingCitation, held?: ExplorationInsight): ExplorationInsight {
+  return held ?? {
+    id: citation.insight_id, domain: citation.domain, angle: citation.angle,
+    entities_involved: [], dimensions: [], measures: [],
+    finding: citation.finding, sql: citation.sql ?? "",
+    confidence: citation.confidence ?? Number.NaN, novelty: citation.novelty ?? Number.NaN, generated_at: "",
+  };
+}
+
 /** Anchored action menu for a narrative citation — resolves the cited insight (or a
  *  minimal stand-in if it was filtered out) and offers the same actions as a finding
  *  card: Monitor / Promote / Share / Evidence / Dismiss, plus Investigate. */
@@ -426,11 +443,7 @@ function CitationActionsPopover({
   onClose: () => void;
 }) {
   const resolved = ctx.insightById.get(citation.insight_id);
-  const insight: ExplorationInsight = resolved?.insight ?? {
-    id: citation.insight_id, domain: citation.domain, angle: citation.angle,
-    entities_involved: [], dimensions: [], measures: [],
-    finding: citation.finding, sql: "", confidence: 0, novelty: 0, generated_at: "",
-  };
+  const cited = findingOfCitation(citation, resolved?.insight);
   const domain = resolved?.domain ?? citation.domain;
   const left = Math.max(12, Math.min(x, (typeof window !== "undefined" ? window.innerWidth : 1280) - 332));
   const top  = Math.min(y + 10, (typeof window !== "undefined" ? window.innerHeight : 800) - 180);
@@ -454,7 +467,7 @@ function CitationActionsPopover({
           {citation.finding.length > 180 ? citation.finding.slice(0, 180) + "…" : citation.finding}
         </div>
         <FindingActions
-          insight={insight}
+          insight={cited}
           domain={domain}
           connectionId={ctx.connectionId}
           canvasId={ctx.canvasId}
@@ -468,7 +481,7 @@ function CitationActionsPopover({
             variant="ghost"
             onClick={() => onPull({
               question: `Why is this happening? ${citation.finding}`,
-              seedSql: insight.sql || null,
+              seedSql: cited.sql || null,
               seedContext: `SEED FINDING (the briefing claim being investigated): ${citation.finding}`,
               key: citation.insight_id,
             })}
@@ -1361,8 +1374,8 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
           <div style={{ fontSize: 15, color: "var(--t1)", lineHeight: 1.6, fontWeight: 500 }}>{insight.finding}</div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
-            <Stat label="Confidence" value={`${Math.round((insight.confidence ?? 0) * 100)}%`} />
-            <Stat label="Novelty" value={`${insight.novelty}/10`} />
+            <Stat label="Confidence" value={known(insight.confidence, c => `${Math.round(c * 100)}%`)} />
+            <Stat label="Novelty" value={known(insight.novelty, n => `${n}/10`)} />
             <Stat label="Freshness" value={fresh} />
           </div>
 

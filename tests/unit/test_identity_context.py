@@ -34,7 +34,7 @@ def test_briefing_narrator_prepends_org_context(monkeypatch):
                         lambda workspace_id=None: "ORGANIZATION: Acme Foods, HQ Berlin — industry: Food Delivery.\n")
     domain_data = {"sales": [{"id": "f1", "domain": "sales", "angle": "trend",
                               "finding": "Revenue grew 10% to 1.2M this quarter.",
-                              "confidence": 0.7, "novelty": 3}]}
+                              "confidence": 0.7, "novelty": 3, "sql": "SELECT 1"}]}
     with pytest.raises(_Boom):
         B.generate_narrative(domain_data, [], "conn-x", workspace_id="ws-1")
     assert captured["user"].startswith("ORGANIZATION: Acme Foods, HQ Berlin")
@@ -50,7 +50,7 @@ def test_briefing_narrator_workspace_id_threads_to_org_context(monkeypatch):
 
     monkeypatch.setattr("aughor.orgsettings.org_context", _org)
     domain_data = {"sales": [{"id": "f1", "domain": "sales", "angle": "t",
-                              "finding": "Revenue grew 10% to 1.2M.", "confidence": 0.7, "novelty": 3}]}
+                              "finding": "Revenue grew 10% to 1.2M.", "confidence": 0.7, "novelty": 3, "sql": "SELECT 1"}]}
     with pytest.raises(_Boom):                  # reaches the (capturing) provider — org failure didn't break it
         B.generate_narrative(domain_data, [], "conn-x", workspace_id="ws-42")
     assert seen["ws"] == "ws-42"                # workspace override path reached
@@ -63,7 +63,7 @@ def test_briefing_org_context_failure_is_fail_open(monkeypatch):
     monkeypatch.setattr("aughor.orgsettings.org_context",
                         lambda workspace_id=None: (_ for _ in ()).throw(ValueError("boom")))
     domain_data = {"s": [{"id": "f1", "domain": "s", "angle": "t",
-                          "finding": "Revenue grew 10% to 1.2M.", "confidence": 0.7, "novelty": 3}]}
+                          "finding": "Revenue grew 10% to 1.2M.", "confidence": 0.7, "novelty": 3, "sql": "SELECT 1"}]}
     with pytest.raises(_Boom):
         B.generate_narrative(domain_data, [], "conn-x", workspace_id="ws-1")
     assert "user" in captured                   # narrator still called despite org_context error

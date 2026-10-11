@@ -343,9 +343,24 @@ def alert_findings(conn_id: str, window: PeriodWindow) -> list[dict]:
     return [{"id": f"alert::{a.id}", "domain": "Alerts", "angle": "Alert",
              "finding": f"On {a.triggered_at[:10]} the {a.monitor_name or 'monitor'} alert fired: "
                         f"{a.message}",
-             "sql": "", "confidence": 0.9 if a.severity == "critical" else 0.7,
+             "sql": _alert_sql(a.monitor_id), "confidence": 0.9 if a.severity == "critical" else 0.7,
              "novelty": 2, "dated": True}
             for a in alerts]
+
+
+def _alert_sql(monitor_id: str) -> str:
+    """The query the alert's monitor runs — its evidence in the brief; "" when the monitor is gone or resolves to none,
+    and the brief then holds the alert back rather than cite it unbacked."""
+    try:
+        from aughor.monitors.runner import monitor_sql
+        from aughor.monitors.store import get_monitor
+        monitor = get_monitor(monitor_id)
+        return (monitor_sql(monitor) or "") if monitor is not None else ""
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an alert's monitor could not be read; the brief holds the alert back",
+                 counter="briefing.period.alert_sql")
+        return ""
 
 
 def findings_in_window(domain_data: dict, window: PeriodWindow) -> dict:

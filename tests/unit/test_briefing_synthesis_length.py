@@ -88,7 +88,7 @@ def test_paragraph_breaks_survive_generation(fake):
     """`generate_narrative` runs the text through currency and number normalisation on the
     way out. If either collapsed whitespace, every paragraph break would vanish and the
     prompt change would look like it simply had not worked."""
-    result = generate_narrative({"sales": [{"id": "s0", "finding": "f"}]},
+    result = generate_narrative({"sales": [{"id": "s0", "finding": "f", "sql": "SELECT 1"}]},
                                 patterns=[], connection_id="c")
     assert "\n\n" in result["narrative"]
     assert result["narrative"].count("\n\n") == 2          # all three paragraphs intact
@@ -99,7 +99,7 @@ def test_currency_rewrite_does_not_eat_paragraphs(monkeypatch):
     business, the case where that substitution actually runs."""
     fp = FakeProvider("Revenue hit $1.2M [1].\n\nMargins held.")
     monkeypatch.setattr(prov, "get_provider", lambda role=None: fp)
-    result = generate_narrative({"sales": [{"id": "s0", "finding": "f"}]},
+    result = generate_narrative({"sales": [{"id": "s0", "finding": "f", "sql": "SELECT 1"}]},
                                 patterns=[], connection_id="c",
                                 profile={"currency_code": "EUR"})
     assert "\n\n" in result["narrative"]
@@ -111,7 +111,7 @@ def test_a_short_narrative_is_still_accepted(monkeypatch):
     not be treated as a failure anywhere in the path."""
     fp = FakeProvider("Only one thing happened [1].")
     monkeypatch.setattr(prov, "get_provider", lambda role=None: fp)
-    result = generate_narrative({"sales": [{"id": "s0", "finding": "f"}]},
+    result = generate_narrative({"sales": [{"id": "s0", "finding": "f", "sql": "SELECT 1"}]},
                                 patterns=[], connection_id="c")
     assert result["narrative"] == "Only one thing happened [1]."
 
@@ -126,7 +126,7 @@ def test_per_finding_attribution_reads_every_paragraph(fake, monkeypatch):
         captured[insight_id] = (merge or {}).get("narrative", "")
 
     monkeypatch.setattr("aughor.explorer.dossier.update_dossier", fake_update)
-    data = {"sales": [{"id": f"s{i}", "finding": f"finding {i}"} for i in range(4)]}
+    data = {"sales": [{"id": f"s{i}", "finding": f"finding {i}", "sql": "SELECT 1"} for i in range(4)]}
     generate_narrative(data, patterns=[], connection_id="c")
     # ref [1] maps to the first ranked insight; its attributed text is drawn from the lede
     assert captured, "no finding received an attributed narrative"

@@ -683,7 +683,14 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  // The connection this conversation is on. Moving to ANOTHER connection starts a new conversation; mounting does
+  // not — the session `useState` minted above is already new. Minting a second one on mount replaced the conversation
+  // a beat after an injected question (the Briefing's Open in Ask) had been sent into the first: the run started and the
+  // screen showed an empty conversation (2026-10-11). A connection arriving late ("" → an id) is not a move either.
+  const onConnectionRef = useRef(connectionId);
   useEffect(() => {
+    const moved = !!onConnectionRef.current && onConnectionRef.current !== connectionId;
+    onConnectionRef.current = connectionId;
     // `resumeId`, not `restoreSessionId`: a reload resuming from `?chat=` must not be
     // cleared out from under the restore that is about to run.
     //
@@ -692,7 +699,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     // empty for as long as its fetch is in flight, so that version deleted the id a beat
     // before the turns arrived — and the id is the only handle the conversation has.
     if (!resumeId) {
-      setSessionId(newSessionId()); // a fresh Chat instance — the conversation resets with it
+      if (moved) setSessionId(newSessionId()); // a fresh Chat instance — the conversation resets with it
       const params = new URLSearchParams(window.location.search);
       if (params.has("chat")) {
         params.delete("chat");
@@ -910,8 +917,13 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
   // Auto-submit a question injected from outside (e.g. "Investigate" from the Ontology canvas)
   const initialFiredRef = useRef(false);
+  // The send of the conversation ON SCREEN when the timer fires — not the one this effect's render held, which belongs
+  // to whichever conversation was current then.
+  const sendQuestionRef = useRef(sendQuestion);
+  useEffect(() => { sendQuestionRef.current = sendQuestion; });
   useEffect(() => {
-    if (!initialQuestion || initialFiredRef.current || busy) return;
+    // …and only once there is a connection to ask: a question sent on none is refused, and lost.
+    if (!initialQuestion || initialFiredRef.current || busy || !connectionId) return;
     if (initialMode) setMode(initialMode);
     // Small delay so the component is fully mounted and mode is set.
     // The fired-latch is set INSIDE the timer: StrictMode's dev double-invoke
@@ -919,11 +931,11 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     // would make the second setup bail — auto-submit would never fire in dev.
     const t = setTimeout(() => {
       initialFiredRef.current = true;
-      sendQuestion(initialQuestion, initialMode ?? "investigate", { insightId: initialInsightId });
+      sendQuestionRef.current(initialQuestion, initialMode ?? "investigate", { insightId: initialInsightId });
     }, 80);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialQuestion]);
+  }, [initialQuestion, connectionId]);
 
   /** Upload one attachment through the door its kind names, and SHOW the outcome. */
   const takeFile = useCallback(async (file: File) => {

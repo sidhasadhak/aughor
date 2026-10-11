@@ -44,7 +44,7 @@ def fake(monkeypatch):
 
 
 def _domain(prefix: str, n: int) -> list[dict]:
-    return [{"id": f"{prefix}{i}", "finding": f"{prefix} finding {i}", "novelty": float(n - i)}
+    return [{"id": f"{prefix}{i}", "finding": f"{prefix} finding {i}", "novelty": float(n - i), "sql": "SELECT 1"}
             for i in range(n)]
 
 

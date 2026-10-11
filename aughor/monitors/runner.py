@@ -79,6 +79,12 @@ def _resolve_sql(monitor: Monitor, db=None) -> Optional[str]:
     return sql
 
 
+def monitor_sql(monitor: Monitor) -> Optional[str]:
+    """The query this monitor runs — its own SQL, else its metric's — as written, not re-anchored: the evidence an
+    alert it fired stands on. None when it resolves to none."""
+    return _resolve_sql(monitor)
+
+
 def _scalar(db, sql: str) -> Optional[float]:
     """First cell of a monitor query as float, or None. Wrapper over ``db.scalar``, declared
     DuckDB as `_query` is: the threshold, any-change and trend-reversal monitors read this

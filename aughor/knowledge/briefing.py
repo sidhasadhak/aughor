@@ -495,7 +495,8 @@ def generate_narrative(
         {
             "narrative":      str,
             "headline_theme": str,
-            "citations":      [{"ref", "insight_id", "domain", "angle", "finding"}, ...],
+            "citations":      [{"ref", "insight_id", "domain", "angle", "finding",
+                                "sql", "confidence", "novelty", "priority", "action"}, ...],
             "held_back":      [{"finding", "domain", "severity", "reason", "count", "domains"}, ...],
                               # grouped by (severity, reason) — see `group_held_back`
             "currency_code":  str,
@@ -546,6 +547,17 @@ def generate_narrative(
     trusted:   list[dict] = []
     for ins in all_insights:
         finding = ins.get("finding", "")
+        # A brief cites only what a query shows — the user, 2026-10-11: "no full synthesis entry should be without an
+        # evidence backing it". A candidate that carries no query (a promise chain's stamped figures) is held back, and
+        # the reason rides `held_back`; every citation then carries the query a reader opens as its evidence.
+        if not str(ins.get("sql") or "").strip():
+            held_back.append({
+                "finding":  _cur(finding),
+                "domain":   ins.get("domain", ""),
+                "severity": "unbacked",
+                "reason":   "no query backs it — the brief cites only what a query shows",
+            })
+            continue
         # `col_types` (bare + qualified column → declared dtype) lets triage suppress a
         # finding whose SQL applies a non-additive aggregate to a non-numeric column
         # (SUM over a VARCHAR fiscal-year) BEFORE the narrator sees it — so the AI prose
@@ -761,6 +773,11 @@ def generate_narrative(
             "domain":     source.get("domain", cit.domain),
             "angle":      source.get("angle", cit.angle),
             "finding":    _cur(source.get("finding", cit.finding)),
+            # The evidence, carried: a cited finding the Briefing's own list does not hold (a metric's move, a range's
+            # segment) was opened as a stand-in reading "no query recorded" and "Confidence 0%" — neither was true.
+            "sql":        source.get("sql", ""),
+            "confidence": source.get("confidence"),
+            "novelty":    source.get("novelty"),
             "priority":   source.get("_priority", ""),      # CB-6: the declared goal this bears on, or ""
             "action":     _brief_action(source),            # CB-7: the one action beside this item, or None
         })

@@ -201,7 +201,7 @@ def why_links(moves: list[dict], domain_data: dict, *, per_move: int = 2) -> lis
         if len(g) < 4:
             continue
         hits = [{"segment": g, "dimension": cell["dimension"], "domain": dom, "id": i.get("id"),
-                 "finding": i["finding"]}
+                 "finding": i["finding"], "sql": i.get("sql") or ""}
                 for dom, i in rows if g.lower() in str(i["finding"]).lower()]
         out += hits[:per_move]
     return out
@@ -289,12 +289,12 @@ def apply(conn_id: str, spec: Any, got: dict, *, run_sql: Callable[[str], tuple]
         out["candidates"]["What moved"] = [
             {"id": f"range-segment::{block['key']}::{c['metric']}::{c['dimension']}::{c['group']}"[:180],
              "domain": "What moved", "angle": "Segment", "finding": move_line(c, block, currency),
-             "sql": "", "confidence": 0.8, "novelty": 3, "period_move": True} for c in out["moves"]]
+             "sql": c.get("sql") or "", "confidence": 0.8, "novelty": 3, "period_move": True} for c in out["moves"]]
     if "why" in sections and out["moves"]:
         out["why"] = why_links(out["moves"], domain_data)
         out["candidates"]["What we know"] = [
             {"id": w["id"] or f"why::{w['segment']}", "domain": "What we know", "angle": "Standing",
-             "finding": w["finding"], "sql": "", "confidence": 0.7, "novelty": 1} for w in out["why"]]
+             "finding": w["finding"], "sql": w.get("sql") or "", "confidence": 0.7, "novelty": 1} for w in out["why"]]
     if "early_read" in sections:
         out["early"] = early_read(metrics, spec, run_sql, dialect=dialect)
         for f in out["early"]["figures"]:
