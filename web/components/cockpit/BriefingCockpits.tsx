@@ -57,11 +57,11 @@ import { toast } from "@/components/ui/toast";
 import {
   CockpitRefused, acceptProposal, askCockpit, cockpitAudiences, cockpitImageUrl, copySharedCockpit, draftCockpit, findingOfCard,
   getDeclaredActions,
-  getCockpit, getProposalById, getSharedCockpit, getSystemFlags, keepCockpit, listCockpits, listSharedCockpits, moveCanvasCockpit,
+  getCockpit, getProposalById, getSharedCockpit, getSuggestedShapes, getSystemFlags, keepCockpit, listCockpits, listSharedCockpits, moveCanvasCockpit,
   publishCockpit, rejectProposal, restoreCockpit, retireCockpit, runDashboardCard, startMyCockpit, unpublishCockpit,
   uploadCockpitImage,
   type BriefingRange, type CockpitAudience, type CockpitDrafted, type CockpitKept, type CockpitList, type CockpitVersion,
-  type PersonCockpit, type SharedCockpit, type SharedCockpitListed, type StagedProposal,
+  type PersonCockpit, type ShapeName, type SharedCockpit, type SharedCockpitListed, type StagedProposal,
 } from "@/lib/api";
 import { MAX_CAPTION, MAX_NOTE, type Layout, type Size } from "@/lib/cockpit/catalog";
 import {
@@ -70,8 +70,10 @@ import {
   type Box,
 } from "@/lib/cockpit/edit";
 import { hostStateOf } from "@/lib/cockpit/hostStatus";
+import { SHAPES } from "@/lib/cockpit/shapes";
 import { emptyCockpitSpec, overdueSegmentOf, processCockpitHolds, processCockpitSpec, startCockpit } from "@/lib/cockpit/start";
 import { formatDateTime } from "@/lib/format";
+import { withUniqueKeys } from "@/lib/listKeys";
 import { foldNavFor } from "@/lib/navCollapse";
 import { cachedObjectCatalog } from "@/lib/objects";
 import { getProcesses, type ProcessDetail } from "@/lib/objectTypes";
@@ -289,6 +291,8 @@ function NewCockpit({ connectionId, schema, fromObject, sym, onKept, onClose }: 
   const [way, setWay] = useState<"empty" | "object" | "process" | "draft">("empty");
   const [types, setTypes] = useState<{ object_type: string; display_name: string }[] | null>(null);
   const [entity, setEntity] = useState("");
+  // Arc AP-5 — what each object suggests a cockpit be; none while shapes are off (the route says so with a 404)
+  const [suggested, setSuggested] = useState<{ entity: string; name: string; shape: ShapeName; short: string }[] | null>(null);
   useEffect(() => {
     if (way !== "object" || types) return;
     let live = true;
@@ -297,6 +301,13 @@ function NewCockpit({ connectionId, schema, fromObject, sym, onKept, onClose }: 
       .catch(() => { if (live) setTypes([]); });
     return () => { live = false; };
   }, [way, types, connectionId]);
+  // read on its own: the catalog answering first re-runs the read above, and must not drop these on the way
+  useEffect(() => {
+    if (way !== "object" || suggested) return;
+    let live = true;
+    getSuggestedShapes(connectionId, schema).then(s => { if (live) setSuggested(s); }).catch(() => { /* shapes are off here */ });
+    return () => { live = false; };
+  }, [way, suggested, connectionId, schema]);
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [processes, setProcesses] = useState<ProcessDetail[] | null>(null);
@@ -374,6 +385,25 @@ function NewCockpit({ connectionId, schema, fromObject, sym, onKept, onClose }: 
                 {types.map(t => <option key={t.object_type} value={t.object_type}>{t.display_name || t.object_type}</option>)}
               </SelectField>
             )}
+          {!entity && suggested && suggested.length > 0 && (
+            <div data-testid="cockpit-new-suggested">
+              <div className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em", margin: "2px 0 6px" }}>What each object suggests</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 6 }}>
+                {withUniqueKeys(suggested, x => x.entity).map(([k, x]) => (
+                  <Button key={k} variant="outline" data-testid="cockpit-new-suggestion" data-shape={x.shape} onClick={() => setEntity(x.entity)}
+                    style={{ height: "auto", justifyContent: "flex-start", textAlign: "left", whiteSpace: "normal", padding: "8px 10px" }}>
+                    <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                      <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                        <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 500 }}>{x.name}</span>
+                        <span className="aug-fs-xs" style={{ color: "var(--accent-11)" }}>{SHAPES[x.shape].label}</span>
+                      </span>
+                      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{x.short}</span>
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
           {entity && (
             <ObjectCockpitStarter connectionId={connectionId} schema={schema} entity={entity} sym={sym}
               onKept={onKept} onCancel={() => setEntity("")} />
@@ -985,7 +1015,11 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           <li key={v.artifact_id} className="aug-fs-sm" style={{ display: "flex", alignItems: "baseline", gap: 12, padding: "7px 0", borderBottom: "1px solid var(--b1)", color: "var(--t2)", flexWrap: "wrap" }}>
             <span style={{ color: "var(--t1)", fontWeight: 500, minWidth: 74 }}>Version {v.version}</span>
             <span style={{ flex: 1, minWidth: 0 }}>
-              {v.retired ? "Retired" : changed(v.changes)} · {person(v.approved_by)} · {formatDateTime(v.kept_at)}
+              {/* Arc AP-6 — what it changed, in words; a server before the words says its counts, as before */}
+              {v.said ? (v.said.length > 0 && (
+                <span data-testid="cockpit-history-said" style={{ display: "block", color: "var(--t1)" }}>{v.said.join(" · ")}</span>
+              )) : <>{v.retired ? "Retired" : changed(v.changes)} · </>}
+              {person(v.approved_by)} · {formatDateTime(v.kept_at)}
               {v.source ? ` · ${v.source}` : ""}{v.note ? ` · ${v.note}` : ""}
             </span>
             {v.current ? <span style={{ color: "var(--t3)" }}>current</span> : v.retired ? null : (

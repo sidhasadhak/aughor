@@ -2696,6 +2696,8 @@ export interface CockpitVersion {
   written_by_model: boolean;
   cards: string[];
   changes: { added: string[]; removed: string[]; changed: string[] };
+  /** Arc AP-6 — what this version changed of the one before it, in words ("Added the map · distribution center"). */
+  said?: string[];
   spec?: unknown;
   /** Who this version reaches beyond its owner, and who published it (the canvas, B5). */
   published_to?: { kind: "group" | "role"; id: string; name: string }[];
@@ -2932,8 +2934,51 @@ export interface CockpitFromObject {
   /** Objects per day over the last whole days they hold, ending (exclusive) at `end`. */
   chart: { time: string; label: string; days: number; end: string; bars: number[] } | null;
   table: { columns: string[]; labels: string[] };
+  /** Whether its objects can be listed one by one — false for a type that declares no key (an event log). */
+  listable?: boolean;
   actions: { id: string; label: string }[];
   caveats: string[];
+  /** Arc AP-5 — the shapes it fits, the best first, each with one sentence of why; present while shapes are on. */
+  shapes?: ShapeOffer[];
+  /** What the shapes are laid out from, read from the ontology (`aughor/cockpit/shapes.py`). */
+  signals?: ShapeSignals;
+}
+
+export type ShapeName = "queue" | "map" | "one" | "timeline" | "overview";
+export interface ShapeOffer { shape: ShapeName; short: string; why?: string }
+export interface ShapeSignals {
+  entity: string;
+  type_id: string;
+  name: string;
+  /** The property each object is called by — "" when it has none. */
+  label: string;
+  /** A queue waits past a measured promise, or on a platform-owned type's status. */
+  queue: ({ kind: "promise"; process: string; noun: string; placed: string; reached: string; stage: string;
+            overdue: string; late: string; promise: string }
+          | { kind: "states"; status: string; final: string[]; moves: string }) | null;
+  /** The actions a cockpit can fill: an object parameter of the entity's own from the chosen one, a value asked. */
+  actions: { id: string; label: string; params: { name: string; source: "chosen" | "ask" }[] }[];
+  places: { lat: string; lng: string; via: string; through?: string } | null;
+  moments: { start: string; end: string } | null;
+  one: { label: string; links: ShapeLink[]; kinds: number } | null;
+  /** The first kind of objects that link to one — an order's lines. */
+  lines: ShapeLink | null;
+  window: number;
+  measured: Record<string, number | null>;
+}
+export interface ShapeLink {
+  entity: string; type_id: string; path: string; label: string;
+  /** Whether its objects can be listed — a kind that declares no key is counted instead. */
+  listable?: boolean;
+}
+
+/** Arc AP-5 — what each object suggests a cockpit be, read from the ontology alone. */
+export async function getSuggestedShapes(connectionId: string, schema?: string): Promise<{ entity: string; type_id: string; name: string; shape: ShapeName; short: string }[]> {
+  const q = new URLSearchParams();
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(cockpitUrl("/cockpits/shapes", connectionId, q));
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return ((await res.json()) as { objects: { entity: string; type_id: string; name: string; shape: ShapeName; short: string }[] }).objects;
 }
 
 export async function getCockpitFromObject(connectionId: string, entity: string, schema?: string): Promise<CockpitFromObject> {

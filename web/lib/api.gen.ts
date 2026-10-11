@@ -3173,6 +3173,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cockpits/shapes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Suggested Shapes
+         * @description Arc AP-5 — what each object suggests a cockpit be: the shape that fits it best, with a short line of why, read
+         *     from the served ontology alone — no warehouse read, no model. Registered before ``/cockpits/{cockpit_id}``.
+         */
+        get: operations["suggested_shapes_cockpits_shapes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cockpits/shared": {
         parameters: {
             query?: never;
@@ -18911,7 +18932,7 @@ export interface components {
              * @default =
              * @enum {string}
              */
-            op: "=" | "!=" | ">" | ">=" | "<" | "<=" | "in" | "not_in" | "between" | "is_null" | "not_null" | "exists" | "not_exists" | "in_last";
+            op: "=" | "!=" | ">" | ">=" | "<" | "<=" | "in" | "not_in" | "between" | "is_null" | "not_null" | "exists" | "not_exists" | "in_last" | "contains";
             /** Path */
             path: string;
             /** Value */
@@ -28166,6 +28187,40 @@ export interface operations {
                 "application/json": components["schemas"]["MoveRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggested_shapes_cockpits_shapes_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

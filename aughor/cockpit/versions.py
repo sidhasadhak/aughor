@@ -148,10 +148,26 @@ def latest(home: Home) -> Optional[dict]:
 
 
 def history(home: Home, *, limit: int = 50) -> list[dict]:
-    """Every version, newest first, without the specs."""
+    """Every version, newest first, without the specs — each saying in words what it changed of the one before it
+    (Arc AP-6, `changelog`), read from the two specs the ledger keeps."""
+    from aughor.cockpit import changelog
     from aughor.kernel.ledger import Ledger
-    rows = Ledger.default().artifact_versions(home.key, limit=limit)
-    return [_entry(r, with_spec=False) for r in rows if _mine(r)]
+    rows = [r for r in Ledger.default().artifact_versions(home.key, limit=limit + 1) if _mine(r)]
+    out = []
+    for i, row in enumerate(rows[:limit]):
+        entry = _entry(row, with_spec=False)
+        payload = row["payload"]
+        before = rows[i + 1]["payload"] if i + 1 < len(rows) else {}
+        if payload.get("retired"):
+            entry["said"] = ["Retired the cockpit"]
+        elif before.get("retired"):
+            entry["said"] = ["Brought the cockpit back"]
+        elif before and _canonical(before.get("spec")) == _canonical(payload.get("spec")):
+            entry["said"] = []                  # published, unpublished or re-pinned: its source says which
+        else:
+            entry["said"] = changelog.said(before.get("spec"), payload.get("spec"))
+        out.append(entry)
+    return out
 
 
 def version(home: Home, number: int) -> Optional[dict]:

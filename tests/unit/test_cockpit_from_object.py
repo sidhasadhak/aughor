@@ -293,3 +293,26 @@ def test_each_piece_reads_its_entity():
     reads = pieces.depends(_spec(f=FILTERS, g=FIGURE, h=CHART), _graph())
     [(kind, target)] = reads
     assert kind == "entity" and sorted(reads[(kind, target)]) == ["f", "g", "h"]
+
+
+def test_a_linked_category_saying_what_an_own_one_says_is_not_offered_twice():
+    """Found on theLook (2026-10-11): an inventory item's filter column offered "Product category" twice — its own
+    `product_category` and its product's `category`. The linked one is the same filter, and is not offered again."""
+    from aughor.ontology.models import EntityProperty
+    g = _graph()
+    order = g.entities["Order"]
+    # the order's own copy of its customer's name, first among its categories; the first linked one is the same
+    order.properties = {"customer_name": EntityProperty(name="customer_name", display_name="Customer full name",
+                                                        data_type="VARCHAR", semantic_type="dimension"), **order.properties}
+
+    def run(query: dict):
+        names = [m["name"] for m in query["measures"]]
+        if query.get("by"):
+            return [query["by"][0], "n"], [["A", 3], ["B", 2]], []
+        if query.get("time"):
+            return ["day", "n"], [], []
+        return names, [[100 if n == "n" else 5 for n in names]], []
+    filters = FO.propose(g, "order", run, today=TODAY)["filters"]
+    labels = [f["label"] for f in filters]
+    assert labels.count("Customer full name") == 1 and filters[0]["path"] == "customer_name", labels
+    assert [f["via"] for f in filters if f["via"]] == ["Customer"] and "Customer full name" != filters[1]["label"], labels

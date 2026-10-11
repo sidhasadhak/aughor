@@ -74,8 +74,10 @@ export interface ObjectCockpitChoice {
 
 /** Everything the proposal offers, ticked. */
 export function everything(p: CockpitFromObject): ObjectCockpitChoice {
+  // a type that declares no key is never listed: its table, and the actions on a chosen row, are not ticked
+  const listed = p.listable !== false;
   return { filters: p.filters.map(f => f.path), figures: p.figures.map((_, i) => i), chart: !!p.chart,
-           table: true, actions: p.actions.map(a => a.id) };
+           table: listed, actions: listed ? p.actions.map(a => a.id) : [] };
 }
 
 /** Whether a choice holds a piece to narrow — a cockpit of filters alone is refused by its rules. */

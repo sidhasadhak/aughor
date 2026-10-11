@@ -153,6 +153,7 @@ FLAG_ENV = {
     # and the builder offers none of it.
     "cockpit.wiring": "AUGHOR_COCKPIT_WIRING",
     "cockpit.app_pieces": "AUGHOR_COCKPIT_APP_PIECES",
+    "cockpit.shapes": "AUGHOR_COCKPIT_SHAPES",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -533,6 +534,17 @@ FLAG_META = {
                        "side by side take widths one column at a time. An empty section offers a piece or a split, and a "
                        "reader is drawn nothing there. Off: a cockpit's sections hold pieces only.",
     },
+    "cockpit.shapes": {
+        "label": "Start a cockpit from a shape",
+        "summary": "Starting from an object offers the shapes its ontology fits, and says why. A queue, a map, one "
+                   "object, a timeline or an overview.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Changes only your own cockpits"}],
+        "description": "A queue fits what waits past a promise with actions on it. A map fits a latitude and a "
+                       "longitude, and a timeline two moments on each object. One object fits a name and several kinds "
+                       "of objects linking to it. One to three are offered, the best first, each with a sentence of why "
+                       "from the data. Off: every object starts one way.",
+    },
     "cockpit.builder": {
         "label": "Build cockpits in place",
         "summary": "A cockpit opens to be read, and Edit shows it between its outline and the setup of what you "
@@ -790,6 +802,9 @@ EXPERIMENT: dict = {
     "cockpit.app_pieces": "does a cockpit built from sections stay read — of the cockpits split into sections, is each "
                           "read as often as one that is not? Falsifiers (§3.57): a cockpit drawn before sections renders "
                           "differently with it on, or one split into sections is read less often in two weeks",
+    "cockpit.shapes": "does a cockpit started from a shape get read again — of the cockpits started from an object, is "
+                      "each shape's opened on three or more days in its first two weeks more often than one started "
+                      "before shapes? Falsifier (§3.57, AP-5): a shape's cockpits are read no more often than today's",
     "cockpit.builder": "is the setup where people change a cockpit — of the cockpits started from an object, is one in "
                        "five or more edited within two weeks of starting? Falsifier (§3.57): fewer than one in five, "
                        "and the setup is not where people look",

@@ -508,3 +508,17 @@ def test_a_cockpit_does_not_offer_back_a_superseded_card_a_deprecated_metrics_or
     assert why[old.id] == "superseded by “Return rate”"
     assert why[dep.id] == "made from gross_margin_rate, which was deprecated"
     assert keep.id not in why and desk.rate not in why        # a card of its own, and a placed one
+
+
+@needs_rules
+def test_history_says_in_words_what_each_version_changed(desk):
+    """Arc AP-6 — "2 added · 1 changed" was the spec's keys, counted; each version now says what it changed."""
+    desk.keep()
+    renamed = desk.spec()
+    renamed["elements"][renamed["root"]]["props"]["title"] = "Returns, weekly"
+    desk.keep(renamed)
+    versions.retire(desk.home, approved_by="user1")
+    desk.keep(renamed)
+    words = [(h["version"], h["said"]) for h in versions.history(desk.home)]
+    assert words == [(4, ["Brought the cockpit back"]), (3, ["Retired the cockpit"]),
+                     (2, ["Renamed the cockpit to Returns, weekly"]), (1, ["Started the cockpit"])]

@@ -166,7 +166,12 @@ def propose(graph: Any, entity_name: str, run: Run, *, today: Optional[date] = N
         return d is not None and 2 <= d <= MAX_FILTER_VALUES and (total is None or d <= total / 2)
 
     chosen_own = [(n, p) for i, (n, p) in enumerate(own) if fits(i)]
-    chosen_linked = next(((path, p, target) for j, (path, p, target) in enumerate(linked) if fits(len(own) + j)), None)
+    # a linked category that says what one of the object's own already says — an item's "product category" and its
+    # product's "category" — is the same filter twice, and is not offered again
+    said_own = {_label(p).lower() for _, p in chosen_own}
+    chosen_linked = next(((path, p, target) for j, (path, p, target) in enumerate(linked) if fits(len(own) + j)
+                          and f"{target.display_name or target.api_name} {_label(p).lower()}".lower() not in said_own),
+                         None)
     picked: list[dict] = [{"path": n, "label": _label(p), "via": ""} for n, p in chosen_own]
     if chosen_linked:
         path, p, target = chosen_linked
@@ -232,10 +237,42 @@ def propose(graph: Any, entity_name: str, run: Run, *, today: Optional[date] = N
                if _entity_of(graph, a.entity or a.object_type) == entity.id]
 
     say([rows_said(entity) or ""])
-    return {"entity": entity.api_name, "type_id": entity.id, "name": name, "title": plural(name),
-            "total": total, "filters": filters, "figures": figures, "chart": chart,
-            "table": {"columns": columns, "labels": [labels.get(c, c.replace("_", " ")) for c in columns]},
-            "actions": actions, "caveats": caveats}
+    from aughor.cockpit import shapes
+    out = {"entity": entity.api_name, "type_id": entity.id, "name": name, "title": plural(name),
+           "total": total, "filters": filters, "figures": figures, "chart": chart,
+           "table": {"columns": columns, "labels": [labels.get(c, c.replace("_", " ")) for c in columns]},
+           # a type that declares no key is counted and charted, never listed: its table is not offered as if it were
+           "listable": shapes.listable(entity), "actions": actions, "caveats": caveats}
+    if shapes.on():
+        # Arc AP-5 — what the object is for, as the ontology says it: one to three shapes, each with a sentence of why
+        from aughor.cockpit import app_pieces, wiring
+        sig = shapes.signals(graph, entity, wiring=wiring.on(), pieces=app_pieces.on())
+        offered = shapes.offered(sig)
+        measured = shapes.measure(sig, [o["shape"] for o in offered], run)
+        out["shapes"] = [{**o, "why": shapes.why(o["shape"], sig, measured)} for o in offered]
+        out["signals"] = {**sig, "window": shapes.WINDOW_DAYS, "measured": measured}
+    return out
+
+
+def platform_counts(graph: Any, query: dict, overlay: Optional[list]) -> Optional[tuple[list[str], list[list[Any]], list[str]]]:
+    """Arc AP-4 — a query over a platform-owned type (a case), counted from the edit layer as the query door counts it:
+    its columns, rows (to the query's limit) and caveats — or `ObjectQueryRefused` with why; None for a type a
+    warehouse holds. What makes a case startable: the study measured the starter refusing one."""
+    from aughor.ontology.platform_objects import is_platform, query as counted
+    from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
+    try:
+        entity = find_object_type(graph, str(query.get("object_type") or ""))
+    except ObjectQueryRefused:
+        return None
+    if not is_platform(entity):
+        return None
+    out = counted(entity, overlay, measures=list(query.get("measures") or []), by=list(query.get("by") or []),
+                  filters=list(query.get("filters") or []), segment=str(query.get("segment") or ""),
+                  time=str(query.get("time") or ""), grain=str(query.get("grain") or ""))
+    if out["path"] == "refused":
+        raise ObjectQueryRefused(out["refused"], out.get("available"))
+    rows = list(out["rows"])
+    return list(out["columns"]), rows[:int(query["limit"])] if query.get("limit") else rows, list(out["caveats"])
 
 
 @contextmanager
@@ -254,6 +291,9 @@ def reader(connection_id: str, schema_name: Optional[str], graph: Any) -> Iterat
     metrics = keyed_metrics_for(connection_id, graph.schema_name)
 
     def run(query: dict) -> tuple[list[str], list[list[Any]], list[str]]:
+        held = platform_counts(graph, query, overlay)
+        if held is not None:
+            return held
         compiled = compile_object_query(query, graph, dialect=getattr(db, "dialect", "") or "duckdb",
                                         overlay=overlay, metrics=metrics)
         result = execute_guarded(db, compiled.sql, query_id="cockpit.from_object")

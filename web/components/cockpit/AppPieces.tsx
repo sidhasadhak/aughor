@@ -325,7 +325,14 @@ export function ChooseOnePiece({ entity, set, chooses, label }: { entity?: strin
   const { page, refused } = usePage({ entity, set }, [label], { sort: label, limit: 12,
     extra: typed ? [{ path: label, op: "contains", value: typed }] : [] });
   const chosen = picked[chooses];
-  const filtered = useMemo(() => (page ? page.rows.map(r => ({ pk: String(r[0]), name: calledBy(page, r, at(page, label)) })) : []), [page, label]);
+  const filtered = useMemo(() => {
+    if (!page) return [];
+    const named = page.rows.map(r => ({ pk: String(r[0]), name: calledBy(page, r, at(page, label)) }));
+    // four customers called Zoe are four choices: a name held by more than one says its key beside it
+    const seen = new Map<string, number>();
+    for (const o of named) seen.set(o.name, (seen.get(o.name) ?? 0) + 1);
+    return named.map(o => ((seen.get(o.name) ?? 0) > 1 ? { ...o, name: `${o.name} · ${o.pk}` } : o));
+  }, [page, label]);
   if ("refused" in query) return <Unread what="This choice cannot be read">{query.refused}</Unread>;
   if ("waiting" in query) return <Frame testid="choose-one"><Title title={query.label || "Choose one"} /><div className="aug-fs-sm" style={{ color: "var(--t3)" }}><WaitingWords choice={query.waiting} what={query.label} /></div></Frame>;
   const named = !chosen ? null : kept?.pk === chosen.pk ? kept.name : filtered.find(o => o.pk === chosen.pk)?.name ?? null;

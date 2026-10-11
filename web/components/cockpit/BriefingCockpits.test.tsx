@@ -23,6 +23,7 @@ const api = vi.hoisted(() => ({
   publishCockpit: vi.fn(), unpublishCockpit: vi.fn(), askCockpit: vi.fn(), listFindingsByDomain: vi.fn(), pinFinding: vi.fn(),
   rejectProposal: vi.fn(), moveCanvasCockpit: vi.fn(), restoreCockpit: vi.fn(), retireCockpit: vi.fn(),
   getSystemFlags: vi.fn(), measureRange: vi.fn(), readExpectedNext: vi.fn(), getDeclaredActions: vi.fn(),
+  getSuggestedShapes: vi.fn(), getCockpitFromObject: vi.fn(),
 }));
 const drawn = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const ontology = vi.hoisted(() => ({ getProcesses: vi.fn() }));
@@ -790,5 +791,43 @@ describe("action buttons, placed by hand (Arc AP-3)", () => {
       description: expect.stringContaining("Ontology ▸ Actions") })));
     await new Promise(r => setTimeout(r, 50));
     expect(api.keepCockpit).not.toHaveBeenCalled();
+  });
+});
+
+describe("what each object suggests (Arc AP-5)", () => {
+  it("lists each object with the shape it fits, and a click opens the starter on it", async () => {
+    api.getSystemFlags.mockResolvedValue({ "ontology.cockpit_pieces": { value: true }, "ontology.object_cockpits": { value: true } });
+    // answered after the object catalog, as the live API answers: the catalog's arrival must not drop them
+    api.getSuggestedShapes.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve([
+      { entity: "order", type_id: "Order", name: "Customer Order", shape: "queue", short: "a dispatch promise · 2 actions" },
+      { entity: "distribution_center", type_id: "DistributionCenter", name: "Distribution Center", shape: "map", short: "a latitude and a longitude" }]), 60)));
+    api.getCockpitFromObject.mockReturnValue(new Promise(() => {}));
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-new-open"));
+    fireEvent.click(await screen.findByTestId("cockpit-new-object"));
+    const rows = await screen.findAllByTestId("cockpit-new-suggestion");
+    expect(rows.map(r => [r.dataset.shape, r.textContent])).toEqual([
+      ["queue", "Customer OrderQueuea dispatch promise · 2 actions"], ["map", "Distribution CenterMapa latitude and a longitude"]]);
+    fireEvent.click(rows[1]);
+    await waitFor(() => expect(api.getCockpitFromObject).toHaveBeenCalledWith("thelook", "distribution_center", "thelook"));
+    expect(screen.queryByTestId("cockpit-new-suggested")).toBeNull();
+  });
+});
+
+describe("History, in words (Arc AP-6)", () => {
+  it("says what each version changed, and counts as before where a server says no words", async () => {
+    api.getSystemFlags.mockResolvedValue({});
+    api.getCockpit.mockResolvedValue({ ...READ, history: [
+      { ...version(3), said: ["Added the map · distribution center", "Moved a note to the section Waiting"] },
+      { ...version(2), current: false, said: [] , source: "published to Operations" },
+      { ...version(1), current: false, changes: { added: ["a", "b"], removed: [], changed: ["c"] } },
+    ] });
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: /History/ }));
+    const rows = within(await screen.findByTestId("cockpit-history")).getAllByRole("listitem");
+    expect(within(rows[0]).getByTestId("cockpit-history-said")).toHaveTextContent("Added the map · distribution center · Moved a note to the section Waiting");
+    expect(within(rows[1]).queryByTestId("cockpit-history-said")).toBeNull();          // published: its source says it
+    expect(rows[1]).toHaveTextContent("published to Operations");
+    expect(rows[2]).toHaveTextContent("2 added · 1 changed");
   });
 });

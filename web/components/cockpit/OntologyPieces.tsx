@@ -464,7 +464,8 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
   const chosen = choice ? picked[choice] : undefined;
   const ticks_ = ticks ? ticked[ticks] ?? [] : [];
   const full = ticks_.length >= MAX_TICKED_RUNS;
-  const heading = query.label || `${words(page.type_id)}${target?.segment ? ` · ${words(target.segment)}` : ""}`;
+  // the type as a person reads it — "Distribution center", never "DistributionCenter"
+  const heading = query.label || `${typeWord(page.type_id)}${target?.segment ? ` · ${words(target.segment)}` : ""}`;
   const shown = page.rows.length;
   return (
     <Frame testid="object-table">

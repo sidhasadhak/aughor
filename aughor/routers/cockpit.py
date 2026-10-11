@@ -249,6 +249,27 @@ def propose_from_object(entity: str, connection_id: str, schema_name: Optional[s
     return {"connection_id": connection_id, "schema_name": graph.schema_name, **proposal}
 
 
+@router.get("/cockpits/shapes")
+def suggested_shapes(connection_id: str, schema_name: Optional[str] = None) -> dict:
+    """Arc AP-5 — what each object suggests a cockpit be: the shape that fits it best, with a short line of why, read
+    from the served ontology alone — no warehouse read, no model. Registered before ``/cockpits/{cockpit_id}``."""
+    _on()
+    from aughor.cockpit import app_pieces, from_object, pieces, shapes, wiring
+    from aughor.kernel.flags import flag_enabled
+    from aughor.routers.ontology import served_ontology_graph
+    if not (flag_enabled(pieces.FLAG) and flag_enabled(from_object.FLAG) and shapes.on()):
+        raise HTTPException(status_code=404, detail="Starting a cockpit from a shape is off on this install.")
+    graph = served_ontology_graph(connection_id, schema_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="No ontology is built for this connection yet.")
+    out = []
+    for entity in graph.entities.values():
+        sig = shapes.signals(graph, entity, wiring=wiring.on(), pieces=app_pieces.on())
+        best = shapes.offered(sig)[0]
+        out.append({"entity": entity.api_name, "type_id": entity.id, "name": sig["name"], **best})
+    return {"connection_id": connection_id, "schema_name": graph.schema_name, "objects": out}
+
+
 @router.get("/cockpits/{cockpit_id}")
 def read_cockpit(request: Request, cockpit_id: str, connection_id: str, preset: Optional[str] = None,
                  start: Optional[str] = None, end: Optional[str] = None,

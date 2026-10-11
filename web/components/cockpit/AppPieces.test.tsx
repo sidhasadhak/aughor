@@ -60,7 +60,9 @@ function listing(b: Asked) {
   }));
   const holds = (r: Row) => (b.filters ?? []).every(f => f.op !== "contains" || String(r[f.path] ?? "").toLowerCase().includes(String(f.value).toLowerCase()));
   const rows = Object.entries(DATA[b.entity] ?? {}).filter(([, r]) => holds(r)).map(([pk, r]) => [pk, ...columns.map(c => r[c.path] ?? null)]);
-  return { path: "listed", object_type: b.entity, type_id: b.entity, key: "id", title: "", segment_said: "", columns,
+  // a type's id as the ontology spells it — "DistributionCenter" — which no reader is shown
+  const typeId = b.entity === "distribution_center" ? "DistributionCenter" : b.entity;
+  return { path: "listed", object_type: b.entity, type_id: typeId, key: "id", title: "", segment_said: "", columns,
     names: ["id", ...columns.map(c => c.name)], rows, total: rows.length, offset: 0, limit: 50, plan: [], caveats: [], error: null };
 }
 
@@ -120,6 +122,7 @@ describe("a map", () => {
     draw(desk({
       map: { type: "ObjectMap", props: { entity: "distribution_center", lat: "latitude", lng: "longitude", label: "name" } },
       detail: { type: "ObjectDetail", props: { follows: "map" } },
+      table: { type: "ObjectTable", props: { entity: "distribution_center", columns: ["name"] } },
     }));
     await waitFor(() => expect(screen.getByTestId("vega-stub")).toBeInTheDocument());
     const layer = (lastVega().spec.layer as { data: { values?: { pk: string; lat: number; lng: number; name: string; chosen: boolean }[] } }[])[1];
@@ -127,6 +130,9 @@ describe("a map", () => {
     // an empty coordinate is no place — never 0, 0 off Africa — and the reader is told it was not drawn
     expect(screen.getByTestId("object-map-total")).toHaveTextContent("2 placed");
     expect(screen.getByTestId("object-map")).toHaveTextContent(/^Distribution centers/);   // the ontology's name, never "distribution_center"
+    await waitFor(() => expect(screen.getAllByTestId("object-table-row")).toHaveLength(3));
+    expect(screen.getByTestId("object-table")).toHaveTextContent(/^Distribution center/);
+    expect(screen.queryByText(/DistributionCenter|distribution_center/)).toBeNull();
     expect(screen.getByText(/1 with no coordinates are not drawn/)).toBeInTheDocument();
     const fit = (lastVega().spec.projection as { fit?: { geometry: { coordinates: number[][] } } }).fit;
     expect(fit?.geometry.coordinates).toHaveLength(4);
@@ -178,6 +184,16 @@ describe("choose one", () => {
     await waitFor(() => expect(screen.getAllByTestId("choose-one-option").map(b => b.textContent)).toEqual(["Memphis TN"]));
     expect(screen.getByTestId("choose-one-chosen")).toHaveTextContent("Chicago IL");
     expect(screen.getByTestId("choose-one")).toHaveTextContent(/^Choose a distribution center/);   // the title stays while one is chosen
+  });
+});
+
+describe("choose one, when names repeat", () => {
+  it("says the key beside each name held by more than one, so each is its own choice", async () => {
+    DATA.distribution_center[4] = { name: "Memphis TN", latitude: 35.1, longitude: -90 };
+    draw(desk({ pick: { type: "ChooseOne", props: { entity: "distribution_center", chooses: "chosen-centre", label: "name" } } }));
+    await waitFor(() => expect(screen.getAllByTestId("choose-one-option")).toHaveLength(4));
+    expect(screen.getAllByTestId("choose-one-option").map(b => b.textContent)).toEqual(["Memphis TN · 1", "Chicago IL", "Nowhere", "Memphis TN · 4"]);
+    delete DATA.distribution_center[4];
   });
 });
 
