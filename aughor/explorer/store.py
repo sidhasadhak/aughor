@@ -107,6 +107,16 @@ def fresh_finding_id(state: dict, base: str) -> str:
     return f"{base}~{n}"
 
 
+def scoped_finding_id(schema: str | None, base: str) -> str:
+    """A finding's id, unique across its connection. The ledger keeps a finding's receipt under the connection and
+    the id, so a run over one schema of a multi-schema connection puts the schema in front (``gold_finance:pinned__0``):
+    two schemas' ``pinned__0`` had been one receipt, and one schema's Key Question answers were read back into
+    another's (LuxExperience, 2026-10-11). A connection explored whole keeps its ids as they were."""
+    if not schema or base.startswith(f"{schema}:"):
+        return base
+    return f"{schema}:{base}"
+
+
 def keep_slot(state: dict, finding: dict) -> None:
     """Put ``finding`` in the slot its id names — the finding a pinned key question answers — replacing the one
     the run's findings hold there, else at the end. The ledger keeps every receipt under that id; the state, the latest."""

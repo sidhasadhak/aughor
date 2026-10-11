@@ -1558,6 +1558,25 @@ class Ledger:
                     batch).rowcount
         return {k: max(v, 0) for k, v in out.items()}
 
+    def purge_key_prefix(self, prefix: str) -> dict[str, int]:
+        """Delete every artifact whose natural key starts with ``prefix`` (matched as text, never as a LIKE
+        pattern — a schema's name holds ``_``), with its lineage. A removed schema's findings are
+        ``insight:{connection}:{schema}:…`` (`explorer.store.scoped_finding_id`)."""
+        if not prefix:
+            return {}
+        out: dict[str, int] = {}
+        with self._lock, self._conn:
+            ids = [r[0] for r in self._conn.execute(
+                "SELECT id FROM artifacts WHERE substr(natural_key, 1, ?) = ?", (len(prefix), prefix)).fetchall()]
+            for i in range(0, len(ids), _BACKFILL_BATCH):
+                batch = ids[i:i + _BACKFILL_BATCH]
+                marks = ",".join("?" * len(batch))
+                out["kernel_lineage"] = out.get("kernel_lineage", 0) + self._conn.execute(
+                    f"DELETE FROM lineage WHERE artifact_id IN ({marks})", batch).rowcount
+                out["kernel_artifacts"] = out.get("kernel_artifacts", 0) + self._conn.execute(
+                    f"DELETE FROM artifacts WHERE id IN ({marks})", batch).rowcount
+        return {k: max(v, 0) for k, v in out.items()}
+
     def purge_canvas(self, canvas_id: str, *, keep_kinds: tuple[str, ...] = ()) -> dict[str, int]:
         """Delete what the kernel kept for one canvas — its artifacts (but ``keep_kinds``) and
         their lineage, its jobs and its events. Found by CT-3 and measured 2026-10-04: four

@@ -86,6 +86,7 @@ def test_reading_back_an_unchanged_pinned_finding_keeps_one_copy(monkeypatch):
     # The live shape: the state already holds the pinned finding, and the run reads it back from the ledger.
     ex = SchemaExplorer.__new__(SchemaExplorer)
     ex.connection_id, ex._stopped, ex._activity_unchanged = "conn-ids", False, True
+    ex.schema_name, ex.canvas_id = None, None                            # a connection explored whole
     ex._state = {store.FINDINGS: [dict(PINNED)]}
     ex._conn = SimpleNamespace(dialect="duckdb")
 
