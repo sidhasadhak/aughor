@@ -87,7 +87,7 @@ export function BriefingStrip({ connectionId, schema, cockpitId, range, onOpenCo
         <Loading what="your cockpit" style={{ padding: "8px 0" }} />
       ) : kept?.retired || !kept?.spec ? (
         <div className="aug-fs-sm" data-testid="briefing-strip-retired" style={{ color: "var(--t2)" }}>
-          This cockpit was retired. Choose another under Sections, or bring it back in the Cockpit tab.
+          This cockpit was retired. Choose another under Sections.
         </div>
       ) : (
         <ComposedCockpit spec={kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}

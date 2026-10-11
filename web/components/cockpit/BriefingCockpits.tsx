@@ -1141,7 +1141,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                     <Icon name="send" /> {kept.published_to?.length ? `An App for ${kept.published_to.map(t => t.name).join(", ")}` : "Publish as an App"}
                   </Button>
                   <Button size="xs" variant="ghost" disabled={busy} data-testid="cockpit-retire-open" aria-expanded={retiring}
-                    title="Take this cockpit off your strip. Its history stays, and it can be brought back as it was."
+                    title="Take this cockpit off your strip for good. Its history stays in the record."
                     onClick={() => setRetiring(r => !r)}><Icon name="close" /> Retire</Button>
                 </>
               )} />
@@ -1224,7 +1224,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               {retiring && (
                 <Callout tone="amber" style={{ margin: "0 0 10px" }} data-testid="cockpit-retire-confirm">
                   <span className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    Retire this cockpit? It leaves your strip; its history stays, and it can be brought back as it was.
+                    Retire this cockpit? It leaves your strip for good and cannot be brought back; its history stays in the record.
                     <Button size="xs" disabled={busy} onClick={() => {
                       setRetiring(false); setEditing(false); previewAsGroup("");
                       void write(() => retireCockpit(connectionId, data.cockpit_id), () => "Cockpit retired. Its history stays.");
@@ -1282,24 +1282,6 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           ...shared.map(s => ({ id: `shared:${s.owner}/${s.cockpit_id}`, label: `${s.title || s.cockpit_id} · ${person(s.published_by || s.owner)}` })),
         ]}
         trailing={<Button size="xs" variant="ghost" data-testid="cockpit-new-open" onClick={() => setNewOpen(o => !o)}>+ New cockpit</Button>} />
-
-      {/* A retired cockpit leaves the strip, not the record: it is said here, and brought back
-          as the version it was before it was retired. */}
-      {list.cockpits.some(c => c.retired) && (
-        <div data-testid="cockpit-retired" className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, color: "var(--t3)" }}>
-          <span>Retired:</span>
-          {list.cockpits.filter(c => c.retired).map(c => (
-            <span key={c.cockpit_id} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <span>{c.title || c.cockpit_id}</span>
-              <Button size="xs" variant="ghost" disabled={busy || c.version < 2}
-                onClick={() => void write(() => restoreCockpit(connectionId, c.cockpit_id, c.version - 1),
-                  () => `“${c.title}” is back, as it was before it was retired.`).then(ok => { if (ok) choose(c.cockpit_id); })}>
-                Bring back
-              </Button>
-            </span>
-          ))}
-        </div>
-      )}
 
       {newOpen && (
         <NewCockpit connectionId={connectionId} schema={schema} onClose={() => setNewOpen(false)}
@@ -1411,7 +1393,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               )}
               {!arranging && !builderOn && (
                 <Button size="xs" variant="ghost" disabled={busy} data-testid="cockpit-retire-open" aria-expanded={retiring}
-                  title="Take this cockpit off your strip. Its history stays, and it can be brought back as it was."
+                  title="Take this cockpit off your strip for good. Its history stays in the record."
                   onClick={() => setRetiring(r => !r)}>
                   <Icon name="close" /> Retire
                 </Button>
@@ -1422,7 +1404,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           {retiring && (
             <Callout tone="amber" style={{ margin: "8px 0" }} data-testid="cockpit-retire-confirm">
               <span className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                Retire this cockpit? It leaves your strip; its history stays, and it can be brought back as it was.
+                Retire this cockpit? It leaves your strip for good and cannot be brought back; its history stays in the record.
                 <Button size="xs" disabled={busy} onClick={() => {
                   setRetiring(false);
                   void write(() => retireCockpit(connectionId, data.cockpit_id), () => "Cockpit retired. Its history stays.");

@@ -213,15 +213,15 @@ describe("a retired cockpit", () => {
     expect(screen.queryByRole("button", { name: "Retire this cockpit" })).toBeNull();
   });
 
-  it("leaves the strip, is said to be retired, and is brought back as it was before", async () => {
+  it("leaves the strip for good: nothing offers to bring a retired cockpit back (the user, 2026-10-11 — once it's gone it's gone)", async () => {
     api.listCockpits.mockResolvedValue({ ...LIST, cockpits: [LIST.cockpits[0], { ...LIST.cockpits[1], retired: true, version: 4, title: "Pricing" }] });
-    api.restoreCockpit.mockResolvedValue({ status: "kept", kept: true, version: 5, artifact_id: "a5", sentences: [] });
     show();
-    const retired = await screen.findByTestId("cockpit-retired");
-    expect(stripTabs()).toEqual(["Metrics", "Returns"]);
-    expect(retired).toHaveTextContent("Retired:Pricing");
-    fireEvent.click(within(retired).getByRole("button", { name: "Bring back" }));
-    await waitFor(() => expect(api.restoreCockpit).toHaveBeenCalledWith("thelook", "pricing-1", 3));
+    await waitFor(() => expect(stripTabs()).toEqual(["Metrics", "Returns"]));
+    expect(screen.queryByText(/Retired:|Pricing/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Bring back/ })).toBeNull();
+    fireEvent.click(screen.getByTestId("cockpit-retire-open"));
+    expect(screen.getByTestId("cockpit-retire-confirm")).toHaveTextContent("It leaves your strip for good and cannot be brought back");
+    expect(api.restoreCockpit).not.toHaveBeenCalled();
   });
 });
 
