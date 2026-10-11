@@ -657,3 +657,13 @@ export function zonedTimeWords(iso: string, tz?: string): string {
     return utcOnly;
   }
 }
+
+/** How long a read took, as a person reads it: "0.42 s", "3.1 s", "2 min 5 s" (Arc AP-6 — a set's read time). */
+export function formatSeconds(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const s = ms / 1000;
+  if (s < 1) return `${s.toFixed(2)} s`;
+  if (s < 60) return `${s.toFixed(1)} s`;
+  const m = Math.floor(s / 60);
+  return `${m} min ${Math.round(s - m * 60)} s`;
+}

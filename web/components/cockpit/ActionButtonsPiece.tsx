@@ -34,7 +34,7 @@ const inputType = (t: string) => (/INT|FLOAT|NUM|DEC|DOUBLE|REAL|number/i.test(t
 const isFlag = (t: string) => /BOOL/i.test(t);
 
 export function ActionButtonsPiece({ buttons }: { buttons: ActionButtonDef[] }) {
-  const { actions } = usePieces();
+  const { actions, asGroup } = usePieces();
   const [declared, setDeclared] = useState<Record<string, DeclaredAction> | null | undefined>(undefined);
   useEffect(() => {
     let alive = true;
@@ -47,6 +47,17 @@ export function ActionButtonsPiece({ buttons }: { buttons: ActionButtonDef[] }) 
         <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Reading the declared actions…</span>
       ) : declared === null ? (
         <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>The declared actions could not be read, so no button is offered.</span>
+      ) : asGroup ? (
+        // Arc AP-6 — a preview reads as the group would and changes nothing: no button is pressed from it
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }} data-testid="action-buttons-previewing">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {withUniqueKeys(buttons, b => b.action).map(([k, b]) => (
+              <Button key={k} size="sm" variant={b.primary ? "default" : "outline"} disabled>{b.label || declared[b.action]?.display_name || b.action}</Button>
+            ))}
+          </div>
+          {/* the banner above the cockpit names the group; the group's id is never a reader's word */}
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>Nothing is run from a preview.</span>
+        </div>
       ) : (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-start" }}>
           {buttons.map((b, i) => <OneButton key={`${b.action}-${i}`} def={b} declared={declared[b.action] ?? null} />)}

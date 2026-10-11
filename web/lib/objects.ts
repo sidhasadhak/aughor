@@ -296,9 +296,10 @@ function objectPath(objectType: string, pk: string): string {
 }
 
 export async function getObjectPage(
-  objectType: string, pk: string, connectionId?: string, schemaName?: string,
+  objectType: string, pk: string, connectionId?: string, schemaName?: string, asGroup?: string,
 ): Promise<ObjectPage | ObjectRefusal | ObjectMissing | ObjectWithheld> {
-  const res = await fetch(`${objectPath(objectType, pk)}${scope(connectionId, schemaName)}`);
+  // Arc AP-6 — previewing a cockpit as a group: read as the person and a member of it, only ever less
+  const res = await fetch(`${objectPath(objectType, pk)}${scope(connectionId, schemaName, asGroup ? { as_group: asGroup } : {})}`);
   if (res.status === 404) return { path: "missing", detail: await detailOf(res) };
   if (res.status === 403) return { path: "withheld", detail: await detailOf(res) };
   if (!res.ok) throw new Error(await detailOf(res));
@@ -454,9 +455,9 @@ export interface ObjectListingRequest {
 }
 
 export async function listObjects(
-  body: ObjectListingRequest, connectionId?: string, schemaName?: string,
+  body: ObjectListingRequest, connectionId?: string, schemaName?: string, asGroup?: string,
 ): Promise<ObjectListingPage | ObjectRefusal> {
-  const res = await fetch(`${getApiBase()}/objects/list${scope(connectionId, schemaName)}`, {
+  const res = await fetch(`${getApiBase()}/objects/list${scope(connectionId, schemaName, asGroup ? { as_group: asGroup } : {})}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await detailOf(res));
@@ -486,9 +487,9 @@ export type ObjectQueryResult =
   | ObjectRefusal;
 
 export async function queryObjects(
-  body: ObjectQueryRequest, connectionId?: string, schemaName?: string,
+  body: ObjectQueryRequest, connectionId?: string, schemaName?: string, asGroup?: string,
 ): Promise<ObjectQueryResult> {
-  const res = await fetch(`${getApiBase()}/objects/query${scope(connectionId, schemaName)}`, {
+  const res = await fetch(`${getApiBase()}/objects/query${scope(connectionId, schemaName, asGroup ? { as_group: asGroup } : {})}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await detailOf(res));

@@ -25,6 +25,7 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { useMarkRead } from "@/components/cockpit/readSlot";
 import { CardAlertForm, usePersistViz, type CardState } from "@/components/brief/PinnedCardBody";
 import { seriesTrend, type SeriesTrend } from "@/components/brief/Sparkline";
 import { deltaInfo, formatMetric } from "@/components/brief/metricFormat";
@@ -445,6 +446,7 @@ export function CockpitTile({ cs, status, sym, doors, place = STANDING }: {
 
 /** A card the reader may not see, in its place: said, never an empty box. */
 export function WithheldTile() {
+  useMarkRead("refused", "Withheld: you may not see this card");
   return (
     <Frame testid="cockpit-card-said">
       <div className="aug-fs-ui" style={{ color: "var(--t2)" }}>Withheld</div>
@@ -459,6 +461,7 @@ export function WithheldTile() {
 
 /** A placed card the reader does not have, or one that failed to draw. */
 export function SaidTile({ what, children }: { what: string; children: ReactNode }) {
+  useMarkRead("refused", what);
   return (
     <Frame testid="cockpit-card-said" dashed>
       <div className="aug-fs-ui" style={{ color: "var(--t1)", fontWeight: 500 }}>{what}</div>

@@ -20,7 +20,7 @@ import { MAX_LABEL, MAX_SETS, MAX_VALUES, MAX_WHERE, SET_OPS, VALUE_KINDS, type 
 import { dropWire, freshWireName, putSet, putValue, type CockpitSpec } from "@/lib/cockpit/edit";
 import { lineOf, setTitles, wireWords } from "@/lib/cockpit/names";
 import { choicesOf, doorConditions, isRefused, readSet, readersOf } from "@/lib/cockpit/sets";
-import { formatCount } from "@/lib/format";
+import { formatCount, formatSeconds } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { cachedObjectCatalog, queryObjects } from "@/lib/objects";
 
@@ -51,26 +51,38 @@ function Row({ label, hint, children, testid }: { label: string; hint?: ReactNod
   );
 }
 
-/** How many objects a set holds now, read through the object door — or the choice it waits on. */
-function useSetCount(spec: CockpitSpec, name: string, connectionId: string, schema?: string): string {
+/** A read and how long it took, in milliseconds. */
+async function timed<T>(read: () => Promise<T>): Promise<{ out: T; ms: number }> {
+  const started = performance.now();
+  const out = await read();
+  return { out, ms: performance.now() - started };
+}
+
+/** How many objects a set holds now, read through the object door — or the choice it waits on — and how long the door
+ *  took to count them (Arc AP-6: each set says its read time). */
+function useSetCount(spec: CockpitSpec, name: string, connectionId: string, schema?: string): { text: string; ms: number | null } {
   const r = readSet(spec, name);
   const read = isRefused(r) ? null : doorConditions(r, () => null);
   const body = !isRefused(r) && read && "filters" in read
     ? { object_type: r.entity, measures: [{ name: "n", agg: "count" }], ...(r.segment ? { segment: r.segment } : {}), ...(read.filters.length ? { filters: read.filters } : {}) }
     : null;
   const asked = JSON.stringify(body);
-  const [said, setSaid] = useState<{ asked: string; text: string } | null>(null);
+  const [said, setSaid] = useState<{ asked: string; text: string; ms: number | null } | null>(null);
   useEffect(() => {
     if (!body) return;
     let alive = true;
-    queryObjects(body, connectionId, schema)
-      .then(out => { if (alive) setSaid({ asked, text: out.path === "refused" ? "cannot be read" : out.error ? "cannot be read" : formatCount(Number(out.rows?.[0]?.[0] ?? 0)) }); })
-      .catch(() => { if (alive) setSaid({ asked, text: "cannot be read" }); });
+    timed(() => queryObjects(body, connectionId, schema))
+      .then(({ out, ms }) => {
+        if (!alive) return;
+        const read = out.path !== "refused" && !out.error;
+        setSaid({ asked, text: read ? formatCount(Number(out.rows?.[0]?.[0] ?? 0)) : "cannot be read", ms: read ? ms : null });
+      })
+      .catch(() => { if (alive) setSaid({ asked, text: "cannot be read", ms: null }); });
     return () => { alive = false; };
   }, [asked, connectionId, schema]); // eslint-disable-line react-hooks/exhaustive-deps -- keyed on what it asks
-  if (isRefused(r)) return "cannot be read";
-  if (read && "waiting" in read) return `waits on the ${words(read.waiting)}`;
-  return said && said.asked === asked ? said.text : "…";
+  if (isRefused(r)) return { text: "cannot be read", ms: null };
+  if (read && "waiting" in read) return { text: `waits on the ${words(read.waiting)}`, ms: null };
+  return said && said.asked === asked ? { text: said.text, ms: said.ms } : { text: "…", ms: null };
 }
 
 function SetLine({ spec, name, selected, onSelect, connectionId, schema }: {
@@ -91,7 +103,8 @@ function SetLine({ spec, name, selected, onSelect, connectionId, schema }: {
         </span>
       </span>
       <span className="aug-fs-xs" style={{ textAlign: "right", color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>
-        {count}
+        {count.text}
+        {count.ms !== null && <span data-testid="data-set-read-time" style={{ color: "var(--t3)" }}> · {formatSeconds(count.ms)}</span>}
         <span style={{ display: "block", color: "var(--t3)" }}>read by {readers.elements.length + readers.sets.length}</span>
       </span>
     </Button>
@@ -296,7 +309,10 @@ export function SetSetup({ spec, name, onChange, onGone, connectionId, schema }:
       </Row>
       <Row label="Holds now" hint="Read through the object door; each reader's row policies and masks hold on it.">
         <span className="aug-fs-sm" data-testid="set-holds" style={{ color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>
-          {isRefused(r) ? r.refused : count}
+          {isRefused(r) ? r.refused : count.text}
+          {!isRefused(r) && count.ms !== null && (
+            <span className="aug-fs-xs" data-testid="set-read-time" style={{ color: "var(--t3)" }}> · counted in {formatSeconds(count.ms)}</span>
+          )}
         </span>
       </Row>
       <ReadBy spec={spec} name={name} onChange={onChange} onGone={onGone} />

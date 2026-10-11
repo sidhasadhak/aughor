@@ -34,7 +34,7 @@ import type { RangeChoice } from "@/components/brief/BriefRange";
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CockpitArrange, type CardLine } from "@/components/cockpit/CockpitArrange";
 import { CockpitBuilder, EditBar } from "@/components/cockpit/CockpitBuilder";
-import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/ComposedCockpit";
+import { ComposedCockpit, type CockpitDoors, type ReadState } from "@/components/cockpit/ComposedCockpit";
 import { FindingPicker } from "@/components/cockpit/FindingPicker";
 import { ObjectCockpitStarter } from "@/components/cockpit/ObjectCockpitStarter";
 import { OntologyPieceComposer } from "@/components/cockpit/OntologyPieceComposer";
@@ -57,7 +57,7 @@ import { toast } from "@/components/ui/toast";
 import {
   CockpitRefused, acceptProposal, askCockpit, cockpitAudiences, cockpitImageUrl, copySharedCockpit, draftCockpit, findingOfCard,
   getDeclaredActions,
-  getCockpit, getProposalById, getSharedCockpit, getSuggestedShapes, getSystemFlags, keepCockpit, listCockpits, listSharedCockpits, moveCanvasCockpit,
+  getCockpit, getGroups, getProposalById, getSharedCockpit, getSuggestedShapes, getSystemFlags, keepCockpit, listCockpits, listSharedCockpits, moveCanvasCockpit,
   publishCockpit, rejectProposal, restoreCockpit, retireCockpit, runDashboardCard, startMyCockpit, unpublishCockpit,
   uploadCockpitImage,
   type BriefingRange, type CockpitAudience, type CockpitDrafted, type CockpitKept, type CockpitList, type CockpitVersion,
@@ -666,6 +666,11 @@ function SharedCockpitView({ connectionId, schema, owner, cockpitId, range, chos
 /** How long after the last step of a resize it is kept: a burst of steps is ONE version (Arc AP-1). */
 const KEEP_AFTER_MS = 900;
 
+/** What the object door says when a row policy or a mask holds something back from a reader (aughor/ontology/security.py):
+ *  a listing's "only the … objects … may see are shown", a count's "counted over only the … objects", a masked property,
+ *  and a group or a person in none of the policy's groups. A preview says these in its banner. */
+const WITHHELD = /may see are shown|counted over only the|masked for|sees no |none of its groups/;
+
 export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidence }: {
   connectionId: string;
   schema?: string;
@@ -688,6 +693,23 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<CockpitKept | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  // Arc AP-6 — building safely: what each element read (the checks chip), the group the builder previews the cockpit
+  // as, the groups it may preview as, and what the object door said a preview withholds
+  const [checks, setChecks] = useState<Record<string, ReadState>>({});
+  const onReadState = useCallback((key: string, state: ReadState | null) => setChecks(c => {
+    if (!state) { if (!(key in c)) return c; const rest = { ...c }; delete rest[key]; return rest; }
+    return c[key]?.status === state.status && c[key]?.reason === state.reason ? c : { ...c, [key]: state };
+  }), []);
+  // a preview lasts while this cockpit is built: leaving the builder, or opening another, reads as the person again
+  const [previewing, setPreviewing] = useState("");
+  const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
+  const [heldBack, setHeldBack] = useState<string[]>([]);
+  /** Preview as a group, or as the person again with "" — what an earlier preview was told withheld goes with it. */
+  const previewAsGroup = (group: string) => { setHeldBack([]); setPreviewing(group); };
+  const onSaid = useCallback((line: string) => {
+    // what a row policy or a mask holds back is said; a compiler's other notes are the pieces' own
+    if (WITHHELD.test(line)) setHeldBack(w => (w.includes(line) ? w : [...w, line]));
+  }, []);
   // Retire is on the toolbar (2026-10-09): inside History it read as absent — the usability walk-through's finding.
   const [retiring, setRetiring] = useState(false);
   const [arranging, setArranging] = useState<CockpitSpec | null>(null);
@@ -708,11 +730,19 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [wiringOn, setWiringOn] = useState(false);
   // Arc AP-4 — a structure of pieces and the piece picker, while `cockpit.app_pieces` is on
   const [structureOn, setStructureOn] = useState(false);
+  // Arc AP-6 — whether row policies and masks hold here (`ontology.security`): off, a previewed group reads all the person reads
+  const [limitsOn, setLimitsOn] = useState(false);
   // the picker open, for a section (none: the first that holds pieces); and where a card, a note, an image or a finding
   // handed off from it lands
   const [adding, setAdding] = useState<{ section: string | null } | null>(null);
   const target = useRef<string | null>(null);
   const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    if (!editing) return;
+    let alive = true;
+    getGroups().then(g => { if (alive) setGroups(g.groups.map(x => ({ id: x.id, name: x.name }))); }).catch(() => { /* no group to preview as */ });
+    return () => { alive = false; };
+  }, [editing]);
   const [placing, setPlacing] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [shared, setShared] = useState<SharedCockpitListed[]>([]);
@@ -742,6 +772,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
         setRangesOn(!!f["briefing.ranges"]?.value); setPiecesOn(!!f["ontology.cockpit_pieces"]?.value);
         setObjectsOn(!!f["ontology.object_cockpits"]?.value); setBuilderOn(!!f["cockpit.builder"]?.value);
         setWiringOn(!!f["cockpit.wiring"]?.value); setStructureOn(!!f["cockpit.app_pieces"]?.value);
+        setLimitsOn(!!f["ontology.security"]?.value);
       }
     }).catch(() => { if (alive) { setRangesOn(false); setPiecesOn(false); } });
     return () => { alive = false; };
@@ -827,7 +858,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     setDraft(null);
     setChosen(id); remember(connectionId, id); setArranging(null); setShowHistory(false); setRefusal(null); setProblem("");
     setPicking(false); setPublishing(false); setNoting(false); setImaging(false); setComposing(false);
-    setEditing(keepEditing); setStacks(NO_STEPS);
+    setEditing(keepEditing); setStacks(NO_STEPS); previewAsGroup("");
   };
 
   const refreshOne = useCallback(async (id: string) => {
@@ -919,7 +950,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const done = () => {
     if (burst.current.timer) sendBurst();
     setEditing(false); setShowHistory(false); setRetiring(false); setPublishing(false);
-    setStacks(NO_STEPS);
+    setStacks(NO_STEPS); previewAsGroup("");
   };
   // the rail folds to its icons while the builder is open, and comes back as the person keeps it
   useEffect(() => (editing ? foldNavFor() : undefined), [editing]);
@@ -1083,6 +1114,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
       <div data-testid="briefing-cockpits" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <CockpitBuilder spec={current} onChange={change} cardTitle={id => lines.get(id)?.title} connectionId={connectionId} schema={schema}
           wiringOn={wiringOn} structureOn={structureOn} onAddPiece={structureOn ? section => setAdding({ section }) : undefined}
+          checks={checks}
           bar={(
             <EditBar saved={saved} canUndo={stacks.past.length > 0} canRedo={stacks.future.length > 0} onUndo={undo} onRedo={redo} onDone={done}
               picker={(
@@ -1092,6 +1124,13 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               )}
               actions={(
                 <>
+                  {groups.length > 0 && (
+                    <SelectField aria-label="Preview as" data-testid="builder-preview-as" value={previewing}
+                      onChange={e => previewAsGroup(e.target.value)} style={{ maxWidth: 260 }}>
+                      <option value="">Preview as · you</option>
+                      {withUniqueKeys(groups, g => g.id).map(([k, g]) => <option key={k} value={g.id}>Preview as {g.name}</option>)}
+                    </SelectField>
+                  )}
                   <Button size="xs" variant="ghost" aria-expanded={showHistory} data-testid="builder-history" onClick={() => {
                     if (!showHistory && burst.current.since) { burst.current.since = false; reload(); }
                     setShowHistory(h => !h);
@@ -1162,13 +1201,32 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           ) : undefined}
           above={(
             <>
+              {previewing && (
+                <Callout tone="blue" style={{ margin: "0 0 10px" }} data-testid="cockpit-preview-banner">
+                  <span className="aug-fs-sm" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <b style={{ fontWeight: 600 }}>Previewing as {groups.find(g => g.id === previewing)?.name ?? previewing}.</b>
+                      Each piece reads what you and a member of it may both see; nothing is run or changed.
+                      <Button size="xs" variant="ghost" onClick={() => previewAsGroup("")}>Stop previewing</Button>
+                    </span>
+                    {heldBack.length ? withUniqueKeys(heldBack, w => w).map(([k, w]) => (
+                      <span key={k} className="aug-fs-xs" data-testid="cockpit-preview-withheld" style={{ color: "var(--t2)" }}>Withheld — {w}.</span>
+                    )) : (
+                      <span className="aug-fs-xs" data-testid="cockpit-preview-nothing" style={{ color: "var(--t3)" }}>
+                        {limitsOn ? "No row policy or mask holds back what these pieces read from this group."
+                          : `Limiting who sees which objects is off here, so a member of ${groups.find(g => g.id === previewing)?.name ?? previewing} reads what you read.`}
+                      </span>
+                    )}
+                  </span>
+                </Callout>
+              )}
               {refusal && <Refused outcome={refusal} />}
               {retiring && (
                 <Callout tone="amber" style={{ margin: "0 0 10px" }} data-testid="cockpit-retire-confirm">
                   <span className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     Retire this cockpit? It leaves your strip; its history stays, and it can be brought back as it was.
                     <Button size="xs" disabled={busy} onClick={() => {
-                      setRetiring(false); setEditing(false);
+                      setRetiring(false); setEditing(false); previewAsGroup("");
                       void write(() => retireCockpit(connectionId, data.cockpit_id), () => "Cockpit retired. Its history stays.");
                     }}>Retire it</Button>
                     <Button size="xs" variant="ghost" onClick={() => setRetiring(false)}>Keep it</Button>
@@ -1194,11 +1252,16 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               )}
             </>
           )}>
-          {({ selected, onSelect, handle, reads }) => (
-            <ComposedCockpit spec={current} cards={cards} host={host} doors={{ ...editDoors, onSelect }} sym={data.currency_symbol || "$"}
+          {({ selected, onSelect, handle, reads }) => (previewing ? (
+            // Arc AP-6 — read as the person and a member of the group, with no door that changes the cockpit
+            <ComposedCockpit key={`preview:${previewing}`} spec={current} cards={cards} host={host}
+              doors={{ onRefresh: editDoors.onRefresh, onReadState }} sym={data.currency_symbol || "$"} images={images} range={range}
+              schema={schema} connectionId={connectionId} cockpitId={`${connectionId}:${chosen}:preview`} asGroup={previewing} onSaid={onSaid} />
+          ) : (
+            <ComposedCockpit spec={current} cards={cards} host={host} doors={{ ...editDoors, onSelect, onReadState }} sym={data.currency_symbol || "$"}
               images={images} range={range} schema={schema} connectionId={connectionId} cockpitId={`${connectionId}:${chosen}`}
               selected={selected} handle={handle} reads={reads} />
-          )}
+          ))}
         </CockpitBuilder>
       </div>
     );

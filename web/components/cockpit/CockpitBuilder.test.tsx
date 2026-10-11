@@ -23,7 +23,9 @@ vi.mock("@/lib/objects", async (original) => ({
   ...(await original<typeof import("@/lib/objects")>()),
   cachedObjectCatalog: vi.fn(async () => ({ object_types: [{ object_type: "order", id: "Order", display_name: "Customer Order" }] })),
   // what a set holds now, in the Data tab (Arc AP-2): one count, never the live door
-  queryObjects: vi.fn(async (b: { segment?: string }) => ({ path: "compiled", rows: [[b.segment ? "1327" : "6619"]], caveats: [], error: null })),
+  queryObjects: vi.fn(async (b: { object_type?: string; segment?: string }) => (b.object_type === "nowhere"
+    ? { path: "refused", refused: "no entity 'nowhere' here", available: [] }
+    : { path: "compiled", rows: [[b.segment ? "1327" : "6619"]], caveats: [], error: null })),
 }));
 // the setup reads the ontology for a piece over an entity; these tests choose pieces that read none, or wait for none
 vi.mock("@/lib/objectTypes", async (original) => ({
@@ -296,5 +298,72 @@ describe("the Data tab (Arc AP-2)", () => {
     expect(reads.at(-1)).toEqual([]);
     expect(screen.getByTestId("builder-layout")).toBeInTheDocument();
     expect(screen.getByTestId("setup-empty")).toBeInTheDocument();
+  });
+});
+
+describe("building safely (Arc AP-6)", () => {
+  it("counts what read cleanly and what is still reading, and lists the ones to fix — each with why, a click choosing it", () => {
+    const seen: (string | null)[] = [];
+    render(
+      <CockpitBuilder spec={objectCockpit()} onChange={vi.fn()} connectionId="thelook" schema="thelook" bar={null}
+        checks={{ chart: { status: "ok", reason: "" }, note: { status: "ok", reason: "" }, filters: { status: "reading", reason: "" },
+          table: { status: "refused", reason: "This table cannot be read: no property 'promise_date'" }, gone: { status: "refused", reason: "x" } }}>
+        {({ selected }) => { seen.push(selected); return <div data-testid="cockpit-stub" />; }}
+      </CockpitBuilder>,
+    );
+    const chip = screen.getByTestId("builder-checks");
+    expect(chip).toHaveTextContent("2 read cleanly · 1 reading · 1 to fix");          // an element taken off is not counted
+    fireEvent.click(chip);
+    const items = screen.getAllByTestId("builder-checks-item");
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent("no property 'promise_date'");
+    fireEvent.click(items[0]);
+    expect(seen.at(-1)).toBe("table");
+    expect(screen.queryByTestId("builder-checks-list")).toBeNull();
+  });
+
+  it("says every piece read cleanly, and offers no list, when none is to fix", () => {
+    render(
+      <CockpitBuilder spec={objectCockpit()} onChange={vi.fn()} connectionId="thelook" schema="thelook" bar={null}
+        checks={{ chart: { status: "ok", reason: "" }, table: { status: "ok", reason: "" } }}>
+        {() => <div data-testid="cockpit-stub" />}
+      </CockpitBuilder>,
+    );
+    expect(screen.getByTestId("builder-checks")).toHaveTextContent("2 read cleanly");
+    expect(screen.getByTestId("builder-checks")).toBeDisabled();
+  });
+
+  it("says how long the door took to count each set", async () => {
+    render(
+      <CockpitBuilder spec={{ root: "cockpit", sets: { placed: { label: "Placed", entity: "order" } }, elements: {
+        cockpit: { type: "Cockpit", props: { title: "Desk" }, children: ["sec"] },
+        sec: { type: "Section", props: { title: "Desk" }, children: ["fig"] },
+        fig: { type: "ObjectFigure", props: { set: "placed", label: "Placed", agg: "count" }, children: [] } } }}
+        onChange={vi.fn()} connectionId="thelook" schema="thelook" bar={null} wiringOn>
+        {() => <div data-testid="cockpit-stub" />}
+      </CockpitBuilder>,
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Data" }));
+    await waitFor(() => expect(screen.getByTestId("data-set-read-time")).toHaveTextContent(/^· \d+\.\d{2} s$/));
+    fireEvent.click(screen.getByTestId("data-set"));
+    await waitFor(() => expect(screen.getByTestId("set-read-time")).toHaveTextContent(/^· counted in \d+\.\d{2} s$/));
+  });
+
+  it("says no read time for a set the door could not count", async () => {
+    render(
+      <CockpitBuilder spec={{ root: "cockpit", sets: { gone: { label: "Gone", entity: "nowhere" } }, elements: {
+        cockpit: { type: "Cockpit", props: { title: "Desk" }, children: ["sec"] },
+        sec: { type: "Section", props: { title: "Desk" }, children: ["fig"] },
+        fig: { type: "ObjectFigure", props: { set: "gone", label: "Gone", agg: "count" }, children: [] } } }}
+        onChange={vi.fn()} connectionId="thelook" schema="thelook" bar={null} wiringOn>
+        {() => <div data-testid="cockpit-stub" />}
+      </CockpitBuilder>,
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Data" }));
+    await waitFor(() => expect(screen.getByTestId("data-set")).toHaveTextContent("cannot be read"));
+    expect(screen.queryByTestId("data-set-read-time")).toBeNull();
+    fireEvent.click(screen.getByTestId("data-set"));
+    await waitFor(() => expect(screen.getByTestId("set-holds")).toHaveTextContent("cannot be read"));
+    expect(screen.queryByTestId("set-read-time")).toBeNull();
   });
 });

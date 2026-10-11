@@ -12,7 +12,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ComposedCockpit } from "@/components/cockpit/ComposedCockpit";
+import { ComposedCockpit, readStateOf } from "@/components/cockpit/ComposedCockpit";
 import type { CockpitHostState } from "@/lib/cockpit/hostState";
 
 const objects = vi.hoisted(() => ({
@@ -279,5 +279,86 @@ describe("a drawer", () => {
     expect(within(drawer).getByTestId("object-detail")).toBeInTheDocument();
     fireEvent.click(within(drawer).getByTestId("drawer-add"));
     expect(onAddPiece).toHaveBeenCalledWith("drawer");
+  });
+});
+
+describe("building safely (Arc AP-6)", () => {
+  it("has each cell say what it read — cleanly, refused with why, or still reading — and nothing once it goes", async () => {
+    objects.listObjects.mockImplementation(async (b: Asked) => (b.entity === "nowhere"
+      ? { path: "refused", refused: "no entity 'nowhere' here", available: [] } : listing(b)));
+    const onReadState = vi.fn();
+    const { unmount } = render(<ComposedCockpit spec={desk({
+      list: { type: "ObjectList", props: { entity: "order", title: "status" } },
+      bad: { type: "ObjectList", props: { entity: "nowhere" } },
+    })} cards={[]} host={HOST} doors={{ onRefresh: vi.fn(), onReadState }} connectionId="thelook" />);
+    await waitFor(() => expect(onReadState).toHaveBeenCalledWith("list", { status: "ok", reason: "" }));
+    expect(onReadState).toHaveBeenCalledWith("list", { status: "reading", reason: "" });           // before its page came
+    await waitFor(() => expect(onReadState).toHaveBeenCalledWith("bad", { status: "refused", reason: "This list cannot be read: no entity 'nowhere' here" }));
+    unmount();
+    expect(onReadState).toHaveBeenCalledWith("list", null);
+  });
+
+  it("previews every read as the group — a list, a table, a figure, a detail — says once what the door withheld, and runs nothing", async () => {
+    const ORDERS = "only the Order objects user:amit previewing as support may see are shown — support: status in cancelled";
+    const CENTRES = "only the DistributionCenter objects user:amit previewing as support may see are shown — support: name in Memphis TN";
+    const COUNTED = "counted over only the DistributionCenter objects user:amit previewing as support may see — support: name in Memphis TN";
+    objects.listObjects.mockImplementation(async (b: Asked) => ({ ...listing(b), caveats: [b.entity === "order" ? ORDERS : CENTRES] }));
+    objects.queryObjects.mockResolvedValue({ path: "compiled", columns: [], rows: [["1"]], caveats: [COUNTED], error: null });
+    objects.getDeclaredActions.mockResolvedValue({ flag_for_review: { id: "flag_for_review", display_name: "Flag for review", params: [] } });
+    const onSaid = vi.fn();
+    render(<ComposedCockpit spec={desk({
+      list: { type: "ObjectList", props: { entity: "order", title: "status" } },
+      again: { type: "ObjectList", props: { entity: "order", title: "status" } },
+      table: { type: "ObjectTable", props: { entity: "distribution_center", columns: ["name"] } },
+      count: { type: "ObjectFigure", props: { entity: "distribution_center", label: "Centres", agg: "count" } },
+      detail: { type: "ObjectDetail", props: { follows: "list" } },
+      buttons: { type: "ActionButtons", props: { buttons: [{ action: "flag_for_review" }] } },
+    })} cards={[]} host={HOST} doors={{ onRefresh: vi.fn() }} connectionId="thelook" asGroup="support" onSaid={onSaid} />);
+    await waitFor(() => expect(screen.getAllByTestId("object-list-card")).toHaveLength(4));
+    await waitFor(() => expect(screen.getAllByTestId("object-table-row")).toHaveLength(3));
+    await waitFor(() => expect(objects.queryObjects).toHaveBeenCalled());
+    expect(objects.listObjects.mock.calls.map(c => c[3])).toEqual(objects.listObjects.mock.calls.map(() => "support"));
+    expect(objects.queryObjects.mock.calls.map(c => c[3])).toEqual(objects.queryObjects.mock.calls.map(() => "support"));
+    // each line once, however many pieces read it: two lists of orders hear the same policy
+    await waitFor(() => expect(onSaid.mock.calls.map(c => c[0]).sort()).toEqual([COUNTED, CENTRES, ORDERS].sort()));
+    fireEvent.click(screen.getAllByTestId("object-list-card")[0]);
+    await waitFor(() => expect(objects.getObjectPage).toHaveBeenCalledWith("order", "101", "thelook", undefined, "support"));
+    expect(await screen.findByTestId("action-buttons-previewing")).toHaveTextContent("Nothing is run from a preview.");
+    expect(screen.getByTestId("action-buttons-previewing")).not.toHaveTextContent("support");          // a group's id is no reader's word
+    expect(within(screen.getByTestId("action-buttons-previewing")).getByRole("button", { name: "Flag for review" })).toBeDisabled();
+  });
+
+  it("reads again as another group when the preview changes", async () => {
+    const at = (group: string) => (
+      <ComposedCockpit spec={desk({ list: { type: "ObjectList", props: { entity: "order", title: "status" } } })} cards={[]} host={HOST}
+        doors={{ onRefresh: vi.fn() }} connectionId="thelook" asGroup={group} />);
+    const { rerender } = render(at("support"));
+    await waitFor(() => expect(objects.listObjects.mock.calls.at(-1)?.[3]).toBe("support"));
+    rerender(at("fulfilment"));
+    await waitFor(() => expect(objects.listObjects.mock.calls.at(-1)?.[3]).toBe("fulfilment"));
+  });
+
+  it("marks a card withheld from the person, or not one of theirs, as refused — with why", async () => {
+    const onReadState = vi.fn();
+    render(<ComposedCockpit spec={desk({
+      secret: { type: "Card", props: { card: "c-secret" } },
+      stray: { type: "Card", props: { card: "c-stray" } },
+    })} cards={[]} host={{ ...HOST, cards: { "c-secret": { status: "withheld" } } } as CockpitHostState}
+      doors={{ onRefresh: vi.fn(), onReadState }} connectionId="thelook" />);
+    await waitFor(() => expect(onReadState).toHaveBeenCalledWith("secret", { status: "refused", reason: "Withheld: you may not see this card" }));
+    expect(onReadState).toHaveBeenCalledWith("stray", { status: "refused", reason: "Not one of your cards" });
+  });
+
+  it("says a cell refused when any part of it is — what to fix outranks what is still reading", () => {
+    expect(readStateOf([])).toEqual({ status: "ok", reason: "" });
+    expect(readStateOf([{ status: "reading", reason: "" }])).toEqual({ status: "reading", reason: "" });
+    expect(readStateOf([{ status: "reading", reason: "" }, { status: "refused", reason: "no property 'x'" }]))
+      .toEqual({ status: "refused", reason: "no property 'x'" });
+  });
+
+  it("reads as the person, with no fourth word to the door, while nothing is previewed", async () => {
+    draw(desk({ list: { type: "ObjectList", props: { entity: "order", title: "status" } } }));
+    await waitFor(() => expect(screen.getAllByTestId("object-list-card")).toHaveLength(2));
+    expect(objects.listObjects.mock.calls[0]).toHaveLength(3);
   });
 });

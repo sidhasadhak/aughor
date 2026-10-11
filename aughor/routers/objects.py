@@ -26,6 +26,32 @@ from aughor.semantic.object_query import ObjectListing, ObjectQuery
 router = APIRouter(tags=["objects"], dependencies=[Depends(refuse_organisation_scope), Depends(connection_owner_guard),
                                                   Depends(acting_agent_from_request)])   # Arc OC-7 — an agent reads only what its person may
 
+
+#: Arc AP-6 — the group a builder previews a cockpit as: one more party among the reader's, so it only narrows.
+AS_GROUP = Query(default=None, description="Arc AP-6 — read as you and a member of this group would: only ever less")
+
+
+def _preview(as_group: Optional[str]):
+    """The group a request previews as, checked to be one of this organisation's — or nothing to preview."""
+    import contextlib
+    if not isinstance(as_group, str) or not as_group:      # called as a function, the default is FastAPI's Query
+        return contextlib.nullcontext()
+    from aughor.ontology.security import previewing
+    from aughor.org.context import current_org_id
+    from aughor.rbac.groups import list_groups
+    if as_group not in {g.id for g in list_groups(current_org_id())}:
+        raise HTTPException(status_code=422, detail=f"There is no group {as_group!r} here to preview as.")
+    return previewing(as_group)
+
+
+async def preview_from_request(as_group: Optional[str] = AS_GROUP) -> None:
+    """A route dependency: the group a builder previews a cockpit as, held for the rest of the request — set on the
+    request's own context, as the acting agent's header is, so it reaches the read and no other request."""
+    if isinstance(as_group, str) and as_group:
+        from aughor.ontology.security import set_previewing
+        _preview(as_group)                                  # refuses a group this organisation does not have
+        set_previewing(as_group)
+
 #: Rows a response carries; `row_count` still says how many the query returned.
 _MAX_ROWS = 1000
 
@@ -118,7 +144,7 @@ def _domain_sources(scope):
             db.close()
 
 
-@router.get("/objects/{object_type}/{pk}")
+@router.get("/objects/{object_type}/{pk}", dependencies=[Depends(preview_from_request)])
 def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
                     schema_name: Optional[str] = Query(default=None), domain: Optional[str] = Query(default=None)):
     """ON-3: one object, resolved live through its backing — its properties, and its links resolved
@@ -387,7 +413,7 @@ def get_object_paths(source: str, target: str, connection_id: str = BUILTIN_ID,
     return {"path": "paths", "connection_id": connection_id, "schema_name": graph.schema_name, **found}
 
 
-@router.post("/objects/query")
+@router.post("/objects/query", dependencies=[Depends(preview_from_request)])
 def post_object_query(
     query: ObjectQuery,
     connection_id: str = BUILTIN_ID,
@@ -450,7 +476,7 @@ def post_object_query(
         db.close()
 
 
-@router.post("/objects/list")
+@router.post("/objects/list", dependencies=[Depends(preview_from_request)])
 def post_object_listing(
     listing: ObjectListing,
     connection_id: str = BUILTIN_ID,

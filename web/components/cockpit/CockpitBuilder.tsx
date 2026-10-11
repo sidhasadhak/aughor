@@ -21,7 +21,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { CanvasScale } from "@/components/cockpit/cellBox";
-import type { CockpitHandle } from "@/components/cockpit/ComposedCockpit";
+import type { CockpitHandle, ReadState } from "@/components/cockpit/ComposedCockpit";
 import { PieceSetup } from "@/components/cockpit/PieceSetup";
 import { ChoiceSetup, DataPane, SetSetup, ValueSetup } from "@/components/cockpit/WiringSetup";
 import { Segmented } from "@/components/ui/segmented";
@@ -33,9 +33,10 @@ import {
   addSectionInside, canMove, duplicate, inColumns, moveWithin, outline, setFilterWidth, setSectionWidth, splitSection, takeOffAll,
   type Box, type CockpitSpec, type Side,
 } from "@/lib/cockpit/edit";
-import { nameOf, setTitles } from "@/lib/cockpit/names";
+import { lineOf, nameOf, setTitles } from "@/lib/cockpit/names";
 import { readersOf } from "@/lib/cockpit/sets";
 import { checkCockpitSpec } from "@/lib/cockpit/rules";
+import { withUniqueKeys } from "@/lib/listKeys";
 import { cachedObjectCatalog } from "@/lib/objects";
 
 /** The name the ontology gives each entity, by its id and its api name — "Customer Order" for `order` — read once a
@@ -125,7 +126,7 @@ function Steps({ label, value, least, most, onStep }: { label: string; value: nu
 const Rule = () => <span aria-hidden="true" style={{ width: 1, height: 16, background: "var(--b2)", margin: "0 6px" }} />;
 
 export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, aside, above, connectionId, schema, wiringOn = false,
-  structureOn = false, onAddPiece, children }: {
+  structureOn = false, onAddPiece, checks, children }: {
   spec: CockpitSpec;
   /** Every change, as the next spec and the version's note. */
   onChange: (next: CockpitSpec, note: string) => void;
@@ -148,6 +149,8 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
   structureOn?: boolean;
   /** Arc AP-4 — open the piece picker for a section: the one chosen, the one a chosen piece sits in, or none. */
   onAddPiece?: (section: string | null) => void;
+  /** Arc AP-6 — what each element drawn read, by key: the checks chip counts them and lists the ones to fix. */
+  checks?: Record<string, ReadState>;
   /** The cockpit, drawn with the element chosen, the door that chooses one, the handle the steps use, and — while a
    *  set, a value or a choice is chosen — the pieces that read it. */
   children: (p: { selected: string | null; onSelect: (key: string) => void; handle: { current: CockpitHandle | null }; reads: string[] }) => ReactNode;
@@ -347,6 +350,7 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
             ) : (
               <span style={{ color: "var(--t3)", flex: 1 }}>Choose a piece on the cockpit, or a line in its layout.</span>
             )}
+            {checks && <ChecksChip spec={spec} checks={checks} onChoose={choose} cardTitle={cardTitle} entityTitle={entityTitle} />}
             <Rule />
             <Button size="xs" variant="ghost" data-testid="builder-zoom" disabled={fits >= 1}
               title={fits >= 1 ? "The cockpit is drawn at its full size" : whole ? "Fit the cockpit to the canvas" : "Draw the cockpit at its full size"}
@@ -377,6 +381,44 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
         </aside>
       </div>
     </div>
+  );
+}
+
+/** Arc AP-6 — the checks chip: how many elements read cleanly, how many are still reading, and the ones to fix — each
+ *  with why, a click choosing it. Counted over what the cockpit holds now, as each cell said it. */
+function ChecksChip({ spec, checks, onChoose, cardTitle, entityTitle }: {
+  spec: CockpitSpec; checks: Record<string, ReadState>; onChoose: (key: string) => void;
+  cardTitle?: (id: string) => string | undefined; entityTitle?: (id: string) => string | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const held = Object.entries(checks).filter(([k]) => k in spec.elements);
+  const fix = held.filter(([, c]) => c.status === "refused");
+  const reading = held.filter(([, c]) => c.status === "reading").length;
+  const clean = held.filter(([, c]) => c.status === "ok").length;
+  if (!held.length) return null;
+  return (
+    <span style={{ position: "relative", marginLeft: 6 }}>
+      <Button size="xs" variant={fix.length ? "secondary" : "ghost"} data-testid="builder-checks" aria-expanded={open} disabled={!fix.length}
+        title={fix.length ? "The pieces that could not be read, and why" : "Every piece read cleanly"} onClick={() => setOpen(o => !o)}>
+        <Icon name={fix.length ? "alert" : "check"} size={13} />
+        {`${clean} read cleanly`}{reading ? ` · ${reading} reading` : ""}{fix.length ? ` · ${fix.length} to fix` : ""}
+      </Button>
+      {open && fix.length > 0 && (
+        <span role="list" data-testid="builder-checks-list" style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 30, width: 340,
+          display: "flex", flexDirection: "column", gap: 2, padding: 6, background: "var(--bg-1)", border: "1px solid var(--b1)",
+          borderRadius: "var(--r3)", boxShadow: "var(--shadow-md)" }}>
+          {withUniqueKeys(fix, ([k]) => k).map(([id, [key, c]]) => (
+            <Button key={id} role="listitem" variant="ghost" data-testid="builder-checks-item" onClick={() => { setOpen(false); onChoose(key); }}
+              style={{ height: "auto", justifyContent: "flex-start", textAlign: "left", whiteSpace: "normal", padding: "6px 8px" }}>
+              <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                <span className="aug-fs-sm" style={{ color: "var(--t1)" }}>{lineOf(spec.elements, key, cardTitle, entityTitle, setTitles(spec))}</span>
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{c.reason || "It could not be read."}</span>
+              </span>
+            </Button>
+          ))}
+        </span>
+      )}
+    </span>
   );
 }
 

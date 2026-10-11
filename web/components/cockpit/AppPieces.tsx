@@ -58,7 +58,7 @@ const calledBy = (page: ObjectListingPage, row: unknown[], i: number) => {
  *  ran. A key that changes resets the page to the first — kept beside what it was read for, never reset in an effect. */
 function usePage(props: Record<string, unknown>, columns: string[], { sort = "", descending = false, limit, extra = [] }:
   { sort?: string; descending?: boolean; limit: number; extra?: Record<string, unknown>[] }) {
-  const { connectionId, schema, tick } = usePieces();
+  const { connectionId, schema, tick, asGroup, say } = usePieces();
   const query = useSetQuery(props);
   const target = "entity" in query ? query : null;
   const conditions = target ? [...target.conditions, ...extra] : [];
@@ -69,15 +69,19 @@ function usePage(props: Record<string, unknown>, columns: string[], { sort = "",
   useEffect(() => {
     if (!target || !connectionId) return;
     let alive = true;
-    const key = `${asked}|${offset}|${limit}|${tick}`;
+    const key = `${asked}|${offset}|${limit}|${tick}|${asGroup}`;
     listObjects({ entity: target.entity, segment: target.segment, columns, order_by: sort, descending, offset, limit, filters: conditions as typeof target.conditions },
-      connectionId, schema)
-      .then(out => { if (alive) setRead(out.path === "refused" ? { asked: key, page: null, refused: out.refused } : { asked: key, page: out, refused: out.error ?? "" }); })
+      connectionId, schema, ...(asGroup ? [asGroup] : []))
+      .then(out => {
+        if (!alive) return;
+        if (out.path !== "refused") say(out.caveats);
+        setRead(out.path === "refused" ? { asked: key, page: null, refused: out.refused } : { asked: key, page: out, refused: out.error ?? "" });
+      })
       .catch(e => { if (alive) setRead({ asked: key, page: null, refused: (e as Error).message }); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what it asks
-  }, [asked, offset, limit, connectionId, schema, tick]);
-  const now = read && read.asked === `${asked}|${offset}|${limit}|${tick}` ? read : null;
+  }, [asked, offset, limit, connectionId, schema, tick, asGroup]);
+  const now = read && read.asked === `${asked}|${offset}|${limit}|${tick}|${asGroup}` ? read : null;
   // a page read for another ask — another chosen object's links, a set switched — is never shown as this one's
   return { query, target, page: target ? now?.page ?? null : null, refused: now?.refused ?? "", offset, setOffset: (o: number) => setAt({ asked, offset: o }) };
 }

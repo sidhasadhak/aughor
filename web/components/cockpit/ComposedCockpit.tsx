@@ -42,6 +42,7 @@ import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CanvasScale, CellBoxContext, OFF_GRID, useMeasured, type CellBox } from "@/components/cockpit/cellBox";
 import { CockpitTile, SaidTile, WIDE, WithheldTile, tileShape, type TileDoors } from "@/components/cockpit/CockpitTile";
 import { ActionButtonsPiece } from "@/components/cockpit/ActionButtonsPiece";
+import { ReadSlotContext, type ReadSlot, type ReadStatus } from "@/components/cockpit/readSlot";
 import { ChooseOnePiece, ObjectListPiece, ObjectMapPiece, ObjectSearchPiece, ObjectTimelinePiece } from "@/components/cockpit/AppPieces";
 import {
   ActionButtonPiece, FilterBar, NotFiltered, ObjectChartPiece, ObjectDetailPiece, ObjectFigurePiece,
@@ -77,6 +78,8 @@ export interface CockpitDoors extends TileDoors, StaticDoors {
   /** Arc AP-4 — an empty section's offer: a piece placed in it, or sections of its own laid out in it. */
   onAddPiece?: (sectionKey: string) => void;
   onLayOut?: (sectionKey: string, layout: Layout) => void;
+  /** Arc AP-6 — what each placed element read: refused (with why), still reading, or read cleanly; null once it goes. */
+  onReadState?: (key: string, state: ReadState | null) => void;
 }
 
 /** What the builder may ask of a cockpit it draws (Arc AP-1): an element's room on its section's grid — measured from
@@ -593,6 +596,18 @@ function WidthHandle({ from, onPreview, onDone }: { from: number; onPreview: (g:
   );
 }
 
+/** What a placed element read, as the builder's checks count it (Arc AP-6). */
+export interface ReadState { status: "ok" | ReadStatus; reason: string }
+let lastMark = 0;
+
+/** What a cell read, from the marks of what it draws: refused when any part of it is — what to fix outranks what is
+ *  still coming — still reading while any part is, and read cleanly when nothing marks it. */
+export function readStateOf(held: { status: ReadStatus; reason: string }[]): ReadState {
+  const refused = held.find(m => m.status === "refused");
+  if (refused) return { status: "refused", reason: refused.reason };
+  return held.some(m => m.status === "reading") ? { status: "reading", reason: "" } : { status: "ok", reason: "" };
+}
+
 /** Alt+arrows: one grade wider, narrower, taller or shorter. */
 const STEP: Record<string, [number, number]> = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] };
 
@@ -614,6 +629,19 @@ function Cell({ type, props, size, testid, extra, children }: {
   const { doors, selected, steppers, reads } = useCockpit();
   const { columns, grid: gridded, stacked } = useContext(SectionKeys);
   const key = useElementKey(type, props);
+  // Arc AP-6 — what this cell's element read, as what it draws marks it: refused, still reading, or read cleanly
+  const [marks, setMarks] = useState<Record<number, { status: ReadStatus; reason: string }>>({});
+  const slot = useMemo<ReadSlot>(() => ({
+    mark: (status, reason) => {
+      const id = ++lastMark;
+      setMarks(m => ({ ...m, [id]: { status, reason } }));
+      return () => setMarks(m => { const rest = { ...m }; delete rest[id]; return rest; });
+    },
+  }), []);
+  const readState = readStateOf(Object.values(marks));
+  const onReadState = doors.onReadState;
+  useEffect(() => { if (key) onReadState?.(key, readState); }, [key, readState.status, readState.reason, onReadState]); // eslint-disable-line react-hooks/exhaustive-deps -- by what it says
+  useEffect(() => () => { if (key) onReadState?.(key, null); }, [key, onReadState]);
   const ref = useRef<HTMLDivElement>(null);
   const [preview, setPreview] = useState<Box | null>(null);
   const [ghostColumn, setGhostColumn] = useState(0);
@@ -672,7 +700,7 @@ function Cell({ type, props, size, testid, extra, children }: {
         step(d[0], d[1]);
       } : undefined}
       style={{ position: "relative", borderRadius: "var(--r3)", minWidth: 0, outline: ring, outlineOffset: 2, ...style, ...extra?.style }}>
-      <CellBoxContext.Provider value={box}>{children(key)}</CellBoxContext.Provider>
+      <ReadSlotContext.Provider value={slot}><CellBoxContext.Provider value={box}>{children(key)}</CellBoxContext.Provider></ReadSlotContext.Provider>
       {/* off the grid a drag draws where the element would land, until the section moves onto the grid on release */}
       {preview && !gridded && ghostColumn > 0 && (
         <span data-testid="grid-ghost" aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, zIndex: 2, pointerEvents: "none",
@@ -992,7 +1020,7 @@ const NO_IMAGES: Record<string, ImageStamp> = {};
 const NO_READS: readonly string[] = [];
 
 export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = NO_IMAGES, range = null, schema, connectionId, cockpitId,
-  selected = null, handle, reads = NO_READS }: {
+  selected = null, handle, reads = NO_READS, asGroup, onSaid }: {
   spec: unknown;
   cards: CardState[];
   host: CockpitHostState;
@@ -1014,6 +1042,10 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
   handle?: Ref<CockpitHandle>;
   /** Arc AP-2 — the elements that read what the builder has chosen in its Data tab. */
   reads?: readonly string[];
+  /** Arc AP-6 — the group the cockpit is previewed as: every object read as the person and a member of it. */
+  asGroup?: string;
+  /** Arc AP-6 — each line the object door said beside a read (what a row policy withholds), once. */
+  onSaid?: (line: string) => void;
 }) {
   // A spec is known by what it says, not by which object says it: a caller that parses the
   // same JSON again on every render hands over a new object each time, and that must not
@@ -1074,6 +1106,7 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
   return (
     <CockpitContext.Provider value={context}>
       <PiecesProvider connectionId={connectionId} schema={schema} elements={context.elements} onPlaceTable={doors.onPlaceTable}
+        asGroup={asGroup} onSaid={onSaid}
         sets={check.valid ? (spec as WireSpec).sets : undefined} values={check.valid ? (spec as WireSpec).values : undefined}
         cockpitId={cockpitId}>
         <JSONUIProvider registry={REGISTRY as ComponentRegistry} store={store}>

@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { act, choose, fireEvent, render, screen, waitFor, within } from "@/lib/testing";
+import { act, choose, fireEvent, optionsOf, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BriefingCockpits } from "@/components/cockpit/BriefingCockpits";
@@ -23,7 +23,7 @@ const api = vi.hoisted(() => ({
   publishCockpit: vi.fn(), unpublishCockpit: vi.fn(), askCockpit: vi.fn(), listFindingsByDomain: vi.fn(), pinFinding: vi.fn(),
   rejectProposal: vi.fn(), moveCanvasCockpit: vi.fn(), restoreCockpit: vi.fn(), retireCockpit: vi.fn(),
   getSystemFlags: vi.fn(), measureRange: vi.fn(), readExpectedNext: vi.fn(), getDeclaredActions: vi.fn(),
-  getSuggestedShapes: vi.fn(), getCockpitFromObject: vi.fn(),
+  getSuggestedShapes: vi.fn(), getCockpitFromObject: vi.fn(), getGroups: vi.fn(),
 }));
 const drawn = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const ontology = vi.hoisted(() => ({ getProcesses: vi.fn() }));
@@ -104,6 +104,7 @@ beforeEach(() => {
   localStorage.setItem("aughor:cockpit:thelook", "returns-1");
   // Ranges off unless a test turns them on: the cockpit then reads as written.
   api.getSystemFlags.mockResolvedValue({});
+  api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [] });
   api.listCockpits.mockResolvedValue(LIST);
   api.listSharedCockpits.mockResolvedValue([]);
   api.getCockpit.mockResolvedValue(READ);
@@ -829,5 +830,79 @@ describe("History, in words (Arc AP-6)", () => {
     expect(within(rows[1]).queryByTestId("cockpit-history-said")).toBeNull();          // published: its source says it
     expect(rows[1]).toHaveTextContent("published to Operations");
     expect(rows[2]).toHaveTextContent("2 added · 1 changed");
+  });
+});
+
+describe("previewing as a group (Arc AP-6)", () => {
+  it("reads the cockpit as the person and a member of the group, with no door that changes it, and says what is withheld", async () => {
+    api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true }, "ontology.security": { value: true } });
+    api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [{ id: "support", name: "Support" }, { id: "fulfilment", name: "Fulfilment" }] });
+    show();
+    fireEvent.click(await screen.findByTestId("cockpit-edit"));
+    await screen.findByTestId("cockpit-builder");
+    await waitFor(() => expect(optionsOf(screen.getByLabelText("Preview as")).map(o => o.value)).toEqual(["", "support", "fulfilment"]));
+    await choose(screen.getByLabelText("Preview as"), "support");
+    const banner = await screen.findByTestId("cockpit-preview-banner");
+    expect(banner).toHaveTextContent("Previewing as Support.");
+    expect(within(banner).getByTestId("cockpit-preview-nothing")).toHaveTextContent("No row policy or mask holds back what these pieces read from this group.");
+    const props = drawn.props.at(-1)! as { asGroup?: string; doors: Record<string, unknown>; onSaid: (line: string) => void };
+    expect(props.asGroup).toBe("support");
+    expect(Object.keys(props.doors).sort()).toEqual(["onReadState", "onRefresh"]);           // nothing that changes the cockpit
+    const WITHHELD = [
+      "only the Order objects user:amit previewing as support may see are shown — support: status in cancelled",
+      "counted over only the Order objects user:amit previewing as support may see — support: status in cancelled",
+      "Order.revenue is restricted — masked for group:support; finance may read it",
+      "Order is shown by group, and marketing is none of its groups (fulfilment, support) — a member of marketing sees no Order object",
+    ];
+    act(() => {
+      for (const line of WITHHELD) props.onSaid(line);
+      props.onSaid("the compiler read status through its own column");                         // not a withholding: not said here
+      props.onSaid(WITHHELD[0]);                                                                   // said again: once
+    });
+    expect(within(banner).getAllByTestId("cockpit-preview-withheld").map(w => w.textContent)).toEqual(WITHHELD.map(w => `Withheld — ${w}.`));
+    // another group: what the last one was told withheld goes with it
+    await choose(screen.getByLabelText("Preview as"), "fulfilment");
+    await waitFor(() => expect(screen.getByTestId("cockpit-preview-banner")).toHaveTextContent("Previewing as Fulfilment."));
+    expect(screen.queryByTestId("cockpit-preview-withheld")).toBeNull();
+    fireEvent.click(within(screen.getByTestId("cockpit-preview-banner")).getByRole("button", { name: "Stop previewing" }));
+    await waitFor(() => expect(screen.queryByTestId("cockpit-preview-banner")).toBeNull());
+    expect((drawn.props.at(-1) as { asGroup?: string }).asGroup).toBeUndefined();
+  });
+
+  it("ends when the builder closes or another cockpit opens in it: the cockpit is read as the person again", async () => {
+    api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [{ id: "support", name: "Support" }] });
+    await openBuilder();
+    await waitFor(() => expect(optionsOf(screen.getByLabelText("Preview as")).map(o => o.value)).toEqual(["", "support"]));
+    await choose(screen.getByLabelText("Preview as"), "support");
+    // where limiting who sees which objects is off, a member of the group reads what the person reads — said so
+    expect(await screen.findByTestId("cockpit-preview-nothing")).toHaveTextContent(
+      "Limiting who sees which objects is off here, so a member of Support reads what you read.");
+    fireEvent.click(screen.getByTestId("builder-done"));
+    await waitFor(() => expect(screen.queryByTestId("cockpit-builder")).toBeNull());
+    fireEvent.click(await screen.findByTestId("cockpit-edit"));
+    await screen.findByTestId("cockpit-builder");
+    expect(screen.queryByTestId("cockpit-preview-banner")).toBeNull();
+    expect(screen.getByLabelText("Preview as")).toHaveValue("");
+    await choose(screen.getByLabelText("Preview as"), "support");
+    await screen.findByTestId("cockpit-preview-banner");
+    await choose(screen.getByLabelText("The cockpit being edited"), "pricing-1");
+    await waitFor(() => expect(screen.queryByTestId("cockpit-preview-banner")).toBeNull());
+    expect(screen.getByTestId("cockpit-builder")).toBeInTheDocument();
+  });
+});
+
+describe("the checks chip, as the cockpit's cells say what they read (Arc AP-6)", () => {
+  const doors = () => drawn.props.at(-1)!.doors as { onReadState?: (key: string, state: { status: "ok" | "refused" | "reading"; reason: string } | null) => void };
+
+  it("counts what each cell said, lists what to fix, and lets go of a cell once it is gone", async () => {
+    await openBuilder();
+    await waitFor(() => expect(doors().onReadState).toBeTypeOf("function"));
+    act(() => {
+      doors().onReadState!("card-rate", { status: "ok", reason: "" });
+      doors().onReadState!("card-net", { status: "refused", reason: "Not one of your cards" });
+    });
+    await waitFor(() => expect(screen.getByTestId("builder-checks")).toHaveTextContent("1 read cleanly · 1 to fix"));
+    act(() => { doors().onReadState!("card-net", null); });
+    await waitFor(() => expect(screen.getByTestId("builder-checks")).toHaveTextContent(/^1 read cleanly$/));
   });
 });

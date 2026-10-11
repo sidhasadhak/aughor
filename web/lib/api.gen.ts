@@ -40229,6 +40229,8 @@ export interface operations {
                 schema_name?: string | null;
                 /** @description False returns the compiled SQL and plan without running it */
                 execute?: boolean;
+                /** @description Arc AP-6 — read as you and a member of this group would: only ever less */
+                as_group?: string | null;
             };
             header?: never;
             path?: never;
@@ -40269,6 +40271,8 @@ export interface operations {
                 execute?: boolean;
                 /** @description ON-8 — query an organisation's ontology, whose types may live on several connections */
                 domain?: string | null;
+                /** @description Arc AP-6 — read as you and a member of this group would: only ever less */
+                as_group?: string | null;
             };
             header?: never;
             path?: never;
@@ -40417,6 +40421,8 @@ export interface operations {
                 connection_id?: string;
                 schema_name?: string | null;
                 domain?: string | null;
+                /** @description Arc AP-6 — read as you and a member of this group would: only ever less */
+                as_group?: string | null;
             };
             header?: never;
             path: {

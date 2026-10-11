@@ -39,6 +39,7 @@ import {
 } from "@/lib/cockpit/objectView";
 import { CHOOSERS, MAX_TICKED_RUNS, SWITCHED, rowsTall, type PieceName } from "@/lib/cockpit/catalog";
 import { choicesOf, doorConditions, isRefused, pieceSet, readSet, type DoorCondition, type WireSpec } from "@/lib/cockpit/sets";
+import { useMarkRead } from "@/components/cockpit/readSlot";
 import { formatCount, formatDateTime, isNumericType, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { objectHref } from "@/lib/objectLinks";
@@ -85,6 +86,10 @@ interface PiecesValue {
   clear: (entity?: string) => void;
   /** Arc AP-4 — words a reader typed in a search box, narrowing every set of an entity; none lets the search go. */
   search: (entity: string, path: string, words: string) => void;
+  /** Arc AP-6 — the group the cockpit is previewed as, every read made as the person and a member of it; "" for none. */
+  asGroup: string;
+  /** What the object door said beside what it read — what a row policy withholds, a property masked — for the page. */
+  say: (lines: string[] | undefined) => void;
 }
 
 const PiecesContext = createContext<PiecesValue | null>(null);
@@ -106,9 +111,13 @@ function remembered(cockpit?: string): Filters {
   } catch { return {}; }
 }
 
-export function PiecesProvider({ connectionId, schema, elements, sets, values, onPlaceTable, cockpitId, children }: {
+export function PiecesProvider({ connectionId, schema, elements, sets, values, onPlaceTable, cockpitId, asGroup = "", onSaid, children }: {
   connectionId?: string;
   schema?: string;
+  /** Arc AP-6 — preview every read as the person and a member of this group. */
+  asGroup?: string;
+  /** Arc AP-6 — each line the object door said beside a read, once, for the page. */
+  onSaid?: (line: string) => void;
   elements: Record<string, { type?: string; props?: Record<string, unknown> } | undefined>;
   /** Arc AP-2 — the sets and values the cockpit names, read by its pieces. */
   sets?: WireSpec["sets"];
@@ -200,11 +209,20 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
   const actions = useCallback(() => (connectionId
     ? once(`actions|${schema ?? ""}`, () => getDeclaredActions(connectionId, schema))
     : Promise.reject(new Error("This cockpit names no connection."))), [connectionId, schema, once]);
+  // each line said once to the page: a table, a figure and a chart of the same objects hear the same policy
+  const heard = useRef(new Set<string>());
+  const onSaidRef = useRef(onSaid);
+  useEffect(() => { onSaidRef.current = onSaid; }, [onSaid]);
+  const say = useCallback((lines: string[] | undefined) => {
+    for (const line of lines ?? []) {
+      if (line && !heard.current.has(line)) { heard.current.add(line); onSaidRef.current?.(line); }
+    }
+  }, []);
   const value = useMemo<PiecesValue>(() => ({
     connectionId, schema, picked, pick, ticked, tickOne, tickNone, shown, show, wire, followable, tick, bump, tables, onPlaceTable,
-    processes, actions, filters, toggle, clear, search,
+    processes, actions, filters, toggle, clear, search, asGroup, say,
   }), [connectionId, schema, picked, pick, ticked, tickOne, tickNone, shown, show, wire, followable, tick, bump, tables, onPlaceTable,
-    processes, actions, filters, toggle, clear, search]);
+    processes, actions, filters, toggle, clear, search, asGroup, say]);
   return <PiecesContext.Provider value={value}>{children}</PiecesContext.Provider>;
 }
 
@@ -277,6 +295,7 @@ export function NotFiltered() {
 
 /** A piece that cannot be read says so, in its place. */
 export function Unread({ what, children }: { what: string; children: ReactNode }) {
+  useMarkRead("refused", typeof children === "string" ? `${what}: ${children}` : what);
   return (
     <Frame testid="ontology-piece-unread" dashed>
       <div className="aug-fs-ui" style={{ color: "var(--t1)", fontWeight: 500 }}>{what}</div>
@@ -297,6 +316,7 @@ export function Body({ children, gap = 6, testid }: { children: ReactNode; gap?:
 }
 
 export function Reading({ what }: { what: string }) {
+  useMarkRead("reading");
   return (
     <Frame testid="ontology-piece-reading">
       <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Reading {what}…</div>
@@ -416,7 +436,7 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
   descending?: boolean | null;
   tall: boolean;
 }) {
-  const { connectionId, schema, tick, picked, pick, ticked, tickOne, tickNone } = usePieces();
+  const { connectionId, schema, tick, picked, pick, ticked, tickOne, tickNone, asGroup, say } = usePieces();
   const query = useSetQuery({ entity, segment, set, set_from: setFrom });
   const target = "entity" in query ? query : null;
   const [offset, setOffset] = useState(0);
@@ -435,16 +455,17 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
     if (!target) return;
     let alive = true;
     listObjects({ entity: target.entity, segment: target.segment, columns: columns ?? [], order_by: sort ?? "",
-                  descending: !!descending, offset, limit, filters: target.conditions }, connectionId, schema)
+                  descending: !!descending, offset, limit, filters: target.conditions }, connectionId, schema, ...(asGroup ? [asGroup] : []))
       .then(out => {
         if (!alive) return;
         if (out.path === "refused") { setRefused(out.refused); setPage(null); return; }
+        say(out.caveats);
         setRefused(out.error ?? ""); setPage(out);
       })
       .catch(e => { if (alive) setRefused((e as Error).message); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what the table asks
-  }, [asked, offset, limit, connectionId, schema, tick]);
+  }, [asked, offset, limit, connectionId, schema, tick, asGroup]);
 
   if ("refused" in query) return <Unread what="This table cannot be read">{query.refused}</Unread>;
   if ("waiting" in query) {
@@ -560,14 +581,14 @@ export function ObjectTablePiece({ elementKey, entity, segment, set, setFrom, ch
 const DetailObject = createContext<{ page: ObjectPage | null; table: string }>({ page: null, table: "" });
 
 export function ObjectDetailPiece({ follows, children }: { follows: string; children?: ReactNode }) {
-  const { connectionId, schema, picked, tick, followable } = usePieces();
+  const { connectionId, schema, picked, tick, followable, asGroup } = usePieces();
   const chosen = picked[followable.get(follows) ?? follows];
   const [page, setPage] = useState<ObjectPage | null>(null);
   const [problem, setProblem] = useState("");
   useEffect(() => {
     if (!chosen) { setPage(null); setProblem(""); return; }
     let alive = true;
-    getObjectPage(chosen.objectType, chosen.pk, connectionId, schema)
+    getObjectPage(chosen.objectType, chosen.pk, connectionId, schema, ...(asGroup ? [asGroup] : []))
       .then(out => {
         if (!alive) return;
         if (out.path === "object") { setPage(out); setProblem(""); }
@@ -575,7 +596,7 @@ export function ObjectDetailPiece({ follows, children }: { follows: string; chil
       })
       .catch(e => { if (alive) setProblem((e as Error).message); });
     return () => { alive = false; };
-  }, [chosen?.objectType, chosen?.pk, connectionId, schema, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chosen?.objectType, chosen?.pk, connectionId, schema, tick, asGroup]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!followable.has(follows)) {
     return <Unread what="Follows nothing here">This detail follows “{follows}”, which no piece on this cockpit chooses in.</Unread>;
@@ -750,22 +771,23 @@ type Read = { rows: unknown[][]; caveats: string[] } | { refused: string } | nul
 
 /** One object query, asked again when what it asks, the connection or the tick changes. Null asks nothing. */
 function useObjectQuery(body: ObjectQueryRequest | null): Read {
-  const { connectionId, schema, tick } = usePieces();
+  const { connectionId, schema, tick, asGroup, say } = usePieces();
   const [read, setRead] = useState<Read>(null);
   const asked = JSON.stringify(body);
   useEffect(() => {
     if (!body) { setRead(null); return; }
     let alive = true;
-    queryObjects(body, connectionId, schema)
+    queryObjects(body, connectionId, schema, ...(asGroup ? [asGroup] : []))
       .then(out => {
         if (!alive) return;
+        if (out.path !== "refused") say(out.caveats);
         if (out.path === "refused") setRead({ refused: out.refused });
         else if (out.error) setRead({ refused: out.error });
         else setRead({ rows: out.rows, caveats: out.caveats ?? [] });
       })
       .catch(e => { if (alive) setRead({ refused: (e as Error).message }); });
     return () => { alive = false; };
-  }, [asked, connectionId, schema, tick]); // eslint-disable-line react-hooks/exhaustive-deps -- keyed on what it asks
+  }, [asked, connectionId, schema, tick, asGroup]); // eslint-disable-line react-hooks/exhaustive-deps -- keyed on what it asks
   return read;
 }
 
