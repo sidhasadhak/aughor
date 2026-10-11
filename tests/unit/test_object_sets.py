@@ -109,7 +109,23 @@ def test_a_listing_of_a_set_counts_what_it_lists_and_says_its_own_segment_never_
     assert total == _ref(warehouse, "SELECT COUNT(*) FROM orders o WHERE o.status = 'delivered' AND NOT "
                                     f"({ACTIVE} OR o.total_amount >= 200)")
     assert len(warehouse.execute(compiled.sql).fetchall()) == min(total, 200) > 0
-    assert "active" not in compiled.segment_said.lower()
+    own = compile_object_listing(ObjectListing(entity="order", segment="delivered_orders", limit=200), _graph(), dialect="duckdb")
+    assert compiled.segment_said == own.segment_said != ""
+
+
+def test_a_set_reached_through_a_link_is_tied_by_the_link_s_own_two_columns_each_on_its_own_side():
+    """The samples' links join columns of the same name, so their counts cannot tell the tie's two ends apart; theLook's
+    order → user link is `user_id` to `id`. A link whose ends differ: the set's own column on the set's side."""
+    g = _graph()
+    rel = next(r for r in g.relationships.values() if {r.from_entity, r.to_entity} == {"Customer", "Order"})
+    if rel.from_entity == "Order":
+        rel.from_col = "buyer_id"
+    else:
+        rel.to_col = "buyer_id"
+    via = next(h.name for h in object_links(g, g.entities["Order"]) if h.target.id == "Customer")
+    sql = _compile({"object_type": "customer", "measures": [{"agg": "count"}],
+                    "filters": [{"path": "", "op": "in_set", "sets": [{"entity": "order", "via": via}]}]}, g).sql
+    assert '.buyer_id = t0.customer_id' in sql.replace('"', ""), sql
 
 
 # ── what is refused, in words ─────────────────────────────────────────────────────────────────────────────────────

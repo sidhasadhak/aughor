@@ -137,7 +137,9 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, que
   }, [of, connectionId, schema]);
   const ef = fields && fields.entity === of ? fields.f : null;
   const noun = entities.find(e => e.value === of)?.label ?? words(of);
-  const sets = wiringOn ? Object.keys(spec.sets ?? {}).map(n => ({ n, r: readSet(spec, n) })).filter(x => !isRefused(x.r)) : [];
+  // the sets of the entity chosen — a set of the customers a set of orders reaches is offered under Customer (Arc AP-8b)
+  const sets = wiringOn ? Object.keys(spec.sets ?? {}).map(n => ({ n, r: readSet(spec, n) }))
+    .filter(x => !isRefused(x.r) && (!entity || (x.r as { entity: string }).entity === entity)) : [];
   // the pieces a click chooses in, by their keys — a choose-one always names its choice, so it is followed by that
   const tables = Object.entries(spec.elements).filter(([, el]) => ["ObjectTable", "ObjectList", "ObjectMap", "ObjectTimeline"].includes(el.type));
   const chosen = [...choicesOf(spec).values()].filter(c => c.kind === "chosen");

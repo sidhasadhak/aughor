@@ -102,6 +102,13 @@ describe("a set combined with another", () => {
     expect((readSet(deep, "d4") as { refused: string }).refused).toBe('The set "d4" reads sets more than 4 deep.');
   });
 
+  it("refuses a value counted from a set that, through a set it is combined with, reads that value back", () => {
+    const s = desk();
+    s.values!.n = { label: "Waiting count", kind: "number", from: { by: "count", set: "lone" } };
+    s.sets!.ticked.where = [{ path: "num_of_item", op: ">=", value_from: "n" }];
+    expect(valueRing(s)).toEqual(["n", "lone", "ticked", "n"]);
+  });
+
   it("says the set it is combined with reads it — so neither is taken away while the other reads it", () => {
     expect(readersOf(desk(), "ticked").sets).toEqual(["lone"]);
     expect(readersOf(desk(), "waiting").sets).toEqual(["customers", "lone"]);

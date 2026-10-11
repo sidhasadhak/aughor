@@ -31,8 +31,11 @@ import { cachedObjectCatalog, queryObjects } from "@/lib/objects";
 type Change = (next: CockpitSpec, note: string) => void;
 const words = (s: string) => wireWords(s);
 
-/** Arc AP-8b — how a set is combined with another, as a person reads it. */
-const COMBINE_WORDS: Record<SetCombine, string> = { either: "Or in", both: "And in", but_not: "But not in" };
+/** Arc AP-8b — how a set is combined with another, as a person reads it (the mockup's words, screen 12): in the setup,
+ *  and on the set's line beside the set it is combined with. */
+const COMBINE_WORDS: Record<SetCombine, string> = { either: "Either", both: "Both", but_not: "But not" };
+const COMBINE_LINE: Record<SetCombine, (other: string) => string> = {
+  either: o => `either this or ${o}`, both: o => `both this and ${o}`, but_not: o => `but not ${o}` };
 
 /** What an operator says, as a person reads it. */
 const OP_WORDS: Record<SetOp, string> = {
@@ -115,7 +118,7 @@ function SetLine({ spec, name, selected, onSelect, connectionId, schema }: {
         <span className="aug-fs-xs" style={{ display: "block", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {from}{set?.segment ? ` · ${words(set.segment)}` : ""}{set?.where?.length ? ` · ${set.where.length} condition${set.where.length === 1 ? "" : "s"}` : ""}
           {set?.traverse ? ` → ${words(set.traverse.entity)}` : ""}
-          {set?.combine ? ` · ${COMBINE_WORDS[set.combine.op].toLowerCase()} ${spec.sets?.[set.combine.set]?.label ?? words(set.combine.set)}` : ""}
+          {set?.combine ? ` · ${COMBINE_LINE[set.combine.op](spec.sets?.[set.combine.set]?.label ?? words(set.combine.set))}` : ""}
         </span>
       </span>
       <span className="aug-fs-xs" style={{ textAlign: "right", color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>
@@ -374,11 +377,10 @@ export function SetSetup({ spec, name, onChange, onGone, connectionId, schema, v
   const [shownLabel, setShownLabel] = useState(set?.label ?? "");
   if (shownLabel !== (set?.label ?? "")) { setShownLabel(set?.label ?? ""); setLabel(set?.label ?? ""); }
   const others = Object.keys(spec.sets ?? {}).filter(n => n !== name);
-  // Arc AP-8b — the other sets of the objects it holds that it may be combined with: none that reads it back
-  const combinable = others.filter(n => {
-    const o = readSet(spec, n);
-    return !isRefused(o) && o.entity === reached && !isRefused(readSet({ ...spec, sets: { ...spec.sets, [name]: { ...set!, combine: { op: "both", set: n } } } }, name));
-  });
+  // Arc AP-8b — the other sets it may be combined with: the ones it reads well with — of the objects it holds, and none
+  // that reads it back
+  const combinable = others.filter(n => !isRefused(readSet(spec, n))
+    && !isRefused(readSet({ ...spec, sets: { ...spec.sets, [name]: { ...set!, combine: { op: "both", set: n } } } }, name)));
   const chosen = [...choicesOf(spec).values()].filter(c => c.kind === "chosen");
   const props = fields?.fields ?? [];
   if (!set) return null;
@@ -445,7 +447,7 @@ export function SetSetup({ spec, name, onChange, onGone, connectionId, schema, v
       )}
       {variablesOn && (
         <Row label="Combined with" testid="set-combine"
-          hint="Another set of the same objects: in either, in both, or in this one but not that one.">
+          hint="Another set of the same objects: either one, both, or this one but not that one.">
           <Pick label="How it is combined" value={set.combine?.op ?? ""} none="Not combined"
             options={SET_COMBINES.map(o => ({ value: o, label: COMBINE_WORDS[o] }))}
             onPick={v => {

@@ -286,7 +286,7 @@ describe("a set read whole (Arc AP-8b)", () => {
     types.getObjectType.mockImplementation(async (name: string) => (name === "order"
       ? { ...ORDER, links: [link("placed_by", "user", "Customer", "to-one"), link("order_items", "order_item", "Order line", "to-many"),
         { ...link("untrusted", "product", "Product", "to-many"), traversable: false }] }
-      : { ...ORDER, id: name, object_type: name, links: [] }));
+      : { ...ORDER, id: name, object_type: name, links: [], segments: [], properties: [prop("id", "key", "INT64"), prop("country", "dimension")] }));
   });
 
   it("gets its objects' linked objects through any link the door may cross — the set then holds those", async () => {
@@ -312,6 +312,21 @@ describe("a set read whole (Arc AP-8b)", () => {
     expect(optionsOf(screen.getAllByLabelText("The set it is combined with").at(-1)!).map(o => o.value)).toEqual(["placed", "waiting"]);   // never Their customers
   });
 
+  it("never offers a set that reads it back, and keeps a set's conditions on the objects it starts from", async () => {
+    const spec = desk();
+    spec.sets!.back = { label: "Back", entity: "order", combine: { op: "both", set: "big" } };
+    spec.sets!.big.combine = { op: "but_not", set: "placed" };
+    render(<SetSetup spec={spec} name="big" onChange={vi.fn()} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
+    expect(optionsOf(screen.getByLabelText("The set it is combined with")).map(o => o.value)).toEqual(["placed", "waiting"]);   // never Back
+    const theirs = desk();
+    theirs.sets!.theirs = { label: "Their customers", from: "waiting", traverse: { link: "placed_by", entity: "user" } };
+    render(<SetSetup spec={theirs} name="theirs" onChange={vi.fn()} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />,
+      { container: document.body.appendChild(document.createElement("div")) });
+    // its conditions narrow the waiting orders before their customers are reached: an order's properties are offered
+    await waitFor(() => expect(optionsOf(screen.getAllByLabelText("Add a condition").at(-1)!).map(o => o.value)).toContain("num_of_item"));
+    expect(screen.getAllByLabelText("Gets its linked objects").at(-1)!).toHaveTextContent("Customer · through placed by");
+  });
+
   it("says in the Variables list what it reaches and what it is combined with", () => {
     const spec = desk();
     spec.sets!.theirs = { label: "Their customers", from: "waiting", traverse: { link: "placed_by", entity: "user" } };
@@ -319,7 +334,7 @@ describe("a set read whole (Arc AP-8b)", () => {
     render(<DataPane spec={spec} selected={null} onSelect={vi.fn()} onChange={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
     const line = (n: string) => screen.getAllByTestId("data-set").find(x => x.dataset.name === n)!;
     expect(line("theirs")).toHaveTextContent("Waiting → user");
-    expect(line("big")).toHaveTextContent("1 condition · but not in Placed");
+    expect(line("big")).toHaveTextContent("1 condition · but not Placed");
   });
 
   it("offers neither while variables are off", () => {
