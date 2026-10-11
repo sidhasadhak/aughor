@@ -110,6 +110,22 @@ def test_the_receipt_carries_the_statement_the_user_wrote():
     assert ":v" in result.sql and "$v" not in result.sql
 
 
+class _Typed(_Bindable):
+    def _bind_execute(self, sql, params):
+        return ["n", "day"], [(1, "2026-10-11"), (2, "2026-10-12"), (3, "2026-10-13")], ["BIGINT", "DATE"]
+
+
+def test_a_bound_read_is_typed_when_the_driver_reads_its_types_and_aligned_with_the_rows_kept():
+    """Arc AP-8 — a cockpit's query reading a value runs bound, and asks for typed rows as an unbound one does: a
+    driver that reads its column types hands them back, and the envelope offers exactly the rows the result keeps."""
+    result, payload = _bare(_Typed).execute_with_params_typed("query_workbench", "SELECT :v", {"v": 1}, max_rows=2)
+    assert result.error is None and payload is not None
+    assert payload["types"] == ["BIGINT", "DATE"] and payload["rows"] == [[1, "2026-10-11"], [2, "2026-10-12"]]
+    assert payload["truncated"] is True
+    # a driver that reads no types is as it was: nothing typed is claimed
+    assert _bare(_Bindable).execute_with_params_typed("query_workbench", "SELECT :v", {"v": 1})[1] is None
+
+
 def test_an_unknown_bind_style_is_an_error_not_a_raw_statement():
     """A style with no placeholder must refuse. Passing `:name` through to an engine that
     does not speak it is a confusing failure; interpolating would be a catastrophic one."""
@@ -202,6 +218,30 @@ def test_bigquery_declares_a_type_for_every_parameter():
     declared = {p.name: (p.type_, p.value) for p in _bq({"s": "x", "n": 2, "f": 1.5})}
 
     assert declared == {"s": ("STRING", "x"), "n": ("INT64", 2), "f": ("FLOAT64", 1.5)}
+
+
+def test_bigquery_binds_a_day_as_a_date_and_a_moment_as_a_timestamp():
+    """Arc AP-8 — a cockpit's day value; `datetime` is a subclass of `date`, so it is checked first."""
+    import datetime as dt
+    declared = {p.name: p.type_ for p in _bq({"d": dt.date(2026, 10, 11), "t": dt.datetime(2026, 10, 11, 9)})}
+
+    assert declared == {"d": "DATE", "t": "TIMESTAMP"}
+
+
+def test_a_bound_bigquery_read_says_each_column_s_type_as_an_unbound_one_does():
+    from aughor.connectors.warehouse.bigquery import BigQueryConnection
+    field = type("F", (), {})
+    sales, day = field(), field()
+    sales.name, sales.field_type, sales.precision, sales.scale = "sales", "FLOAT", None, None
+    day.name, day.field_type, day.precision, day.scale = "day", "DATE", None, None
+    rows = type("Rows", (), {"schema": [day, sales], "__iter__": lambda _s: iter([type("R", (), {"values": lambda _r: ("2026-10-11", 2.5)})()])})()
+    job = type("J", (), {"result": lambda _s, max_results=None: rows, "cancel": lambda _s: True})()
+    client = type("C", (), {"query": lambda _s, sql, job_config: job})()
+    conn = _bare(BigQueryConnection, _client=client, _project="p", _dataset="d", max_rows=10)
+    out = conn._bind_execute("SELECT @v", {"v": 1})
+
+    assert len(out) == 3, "a bound read says its columns' types"
+    assert out[0] == ["day", "sales"] and out[1] == [["2026-10-11", 2.5]] and out[2] == ["DATE", "DOUBLE"]
 
 
 def test_a_boolean_is_a_bool_and_not_an_int64():

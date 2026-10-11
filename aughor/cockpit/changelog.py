@@ -95,8 +95,21 @@ def _wiring(before: Any, after: Any, kind: str, noun: str) -> list[str]:
     def label(defs: dict, name: str) -> str:
         d = defs.get(name)
         return str(d.get("label") or name) if isinstance(d, dict) else name
-    out = [f"Named the {noun} {label(a, n)}" for n in a if n not in b]
-    out += [f"Took off the {noun} {label(b, n)}" for n in b if n not in a]
+    def same(x: Any, y: Any) -> bool:
+        """The same definition but for its label — one renamed whose name followed (Arc AP-8)."""
+        if not (isinstance(x, dict) and isinstance(y, dict)):
+            return False
+        return json.dumps({**x, "label": ""}, sort_keys=True, default=str) == json.dumps({**y, "label": ""}, sort_keys=True, default=str)
+    added, gone = [n for n in a if n not in b], [n for n in b if n not in a]
+    # one taken off and one named the same but for its label is a rename, never a removal
+    moved = {}
+    for n in added:
+        was = next((m for m in gone if m not in moved.values() and same(a[n], b[m])), None)
+        if was is not None:
+            moved[n] = was
+    out = [f"Renamed the {noun} {label(b, moved[n])} to {label(a, n)}" for n in added if n in moved]
+    out += [f"Named the {noun} {label(a, n)}" for n in added if n not in moved]
+    out += [f"Took off the {noun} {label(b, n)}" for n in gone if n not in moved.values()]
     out += [f"Changed the {noun} {label(a, n)}" for n in a if n in b and
             json.dumps(a[n], sort_keys=True, default=str) != json.dumps(b[n], sort_keys=True, default=str)]
     return out

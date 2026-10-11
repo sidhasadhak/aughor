@@ -48,9 +48,12 @@ import { fmtDate, formatMetricValue, formatSeconds } from "@/lib/format";
 
 export type TileShape = "figure" | "trend" | "rows";
 
-/** How a card is drawn, from its run. A failed run is a figure that says it failed. */
+/** How a card is drawn, from its run. A failed run is a figure that says it failed. A query of a person's own not run
+ *  yet — one waiting on a value (Arc AP-8) — takes the room its setup asks for, so it does not jump when it is read. */
 export function tileShape(cs: CardState): TileShape {
   const { run, failed } = cs;
+  const setup = (cs.card.render as { shown?: { as?: string } } | undefined)?.shown;
+  if (!run && !failed && setup?.as) return setup.as === "figure" ? "figure" : "rows";
   if (failed || !run || run.error) return "figure";
   // Arc AP-7 — a card of a person's own query is drawn as they set it up, never by its result's shape
   const shown = (run as { shown?: QueryShaped | null }).shown;
@@ -438,11 +441,22 @@ function RowsTile({ cs, doors, place }: { cs: CardState & { card: CockpitCard };
   );
 }
 
-export function CockpitTile({ cs, status, sym, doors, place = STANDING }: {
+/** Arc AP-8 — what a query reading the cockpit's values waits on: a value still being read, or the choice a value read
+ *  off a chosen object waits on, in words. */
+export type QueryWaiting = { reading: true } | { waiting: ReactNode };
+
+export function CockpitTile({ cs, status, sym, doors, place = STANDING, waits = null }: {
   cs: CardState & { card: CockpitCard }; status: CardStatus; sym: string; doors: TileDoors;
   /** The element this tile draws and its size; left out, the tile stands alone at the small size. */
   place?: TilePlace;
+  waits?: QueryWaiting | null;
 }) {
+  if (waits) {
+    const chrome = <Doors card={cs.card} doors={doors} place={place} />;
+    return "reading" in waits ? <QueryReading title={cs.card.title} doors={chrome} />
+      : <Frame testid="cockpit-tile" doors={chrome}><Title title={cs.card.title} />
+        <div className="aug-fs-sm" data-testid="query-tile-waiting" style={{ color: "var(--t3)" }}>{waits.waiting}</div></Frame>;
+  }
   // Arc AP-7 — a card of a person's own query, run while queries are on (the run then says how it is shown)
   if (cs.run && "shown" in cs.run && (cs.card.render as { shown?: unknown })?.shown) {
     return <QueryTile cs={cs} doors={doors} place={place} />;
@@ -506,6 +520,17 @@ function QueryTile({ cs, doors, place }: { cs: CardState & { card: CockpitCard }
       )}
       {said}
       {foot}
+    </Frame>
+  );
+}
+
+/** A query reading a value still being read: its place held, and marked reading for the builder's checks. */
+function QueryReading({ title, doors }: { title: string; doors: ReactNode }) {
+  useMarkRead("reading");
+  return (
+    <Frame testid="cockpit-tile" doors={doors}>
+      <Title title={title} />
+      <div className="aug-fs-sm" data-testid="query-tile-reading" style={{ color: "var(--t3)" }}>Reading…</div>
     </Frame>
   );
 }

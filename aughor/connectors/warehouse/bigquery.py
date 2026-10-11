@@ -12,6 +12,7 @@ Optional dep:
 """
 from __future__ import annotations
 
+import datetime as _dt
 import re
 from contextlib import contextmanager
 
@@ -204,8 +205,11 @@ class BigQueryConnection(Connector):
 
     #: Python type → BigQuery scalar type. `bool` is checked before `int` because it is a
     #: SUBCLASS of int in Python: ordered the other way, every True binds as INT64 1 and a
-    #: `WHERE is_active = @flag` silently compares a boolean column to a number.
-    _PARAM_TYPES = ((bool, "BOOL"), (int, "INT64"), (float, "FLOAT64"), (str, "STRING"))
+    #: `WHERE is_active = @flag` silently compares a boolean column to a number. A day binds as
+    #: a DATE (Arc AP-8, a cockpit's day value) — and `datetime` before `date`, its subclass, so
+    #: a moment stays a TIMESTAMP.
+    _PARAM_TYPES = ((bool, "BOOL"), (int, "INT64"), (float, "FLOAT64"), (str, "STRING"),
+                    (_dt.datetime, "TIMESTAMP"), (_dt.date, "DATE"))
 
     def _bind_execute(self, sql: str, params: dict):
         from google.cloud import bigquery
@@ -224,10 +228,15 @@ class BigQueryConnection(Connector):
                     f"Use a string, number or boolean, or inline that value in the SQL.")
             declared.append(bigquery.ScalarQueryParameter(name, bq_type, value))
 
+        from aughor.connectors.base import stage_type
         job_config = self._job_config(query_parameters=declared)
         with self._running(self._client.query(sql, job_config=job_config)) as job:
             rows_it = job.result(max_results=self.max_rows + 1)   # one past the cap, so a cut read shows
-            return [f.name for f in rows_it.schema], [list(row.values()) for row in rows_it]
+            schema = list(rows_it.schema)
+            # each column's type, as the unbound read gives it: a bound read is typed too (Arc AP-8)
+            return ([f.name for f in schema], [list(row.values()) for row in rows_it],
+                    [stage_type(getattr(f, "field_type", ""), getattr(f, "precision", None), getattr(f, "scale", None))
+                     for f in schema])
 
     def is_healthy(self) -> bool:
         """For the pool (DE-3d): BigQuery is an HTTP API with no session to lose, so a connection is healthy while

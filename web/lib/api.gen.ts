@@ -16902,6 +16902,22 @@ export interface components {
             /** Prev Value */
             prev_value?: number | null;
         };
+        /**
+         * CardRunValues
+         * @description Arc AP-8 — the cockpit's values a card of a person's own query reads as ``{{name}}``, as the page holds them now:
+         *     name → ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement.
+         */
+        CardRunValues: {
+            /**
+             * Values
+             * @default {}
+             */
+            values: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+        };
         /** CaseIn */
         CaseIn: {
             /**
@@ -19656,6 +19672,15 @@ export interface components {
              * @default
              */
             title: string;
+            /**
+             * Values
+             * @default {}
+             */
+            values: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
         };
         /**
          * QueryTemplate
@@ -27657,7 +27682,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CardRunValues"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

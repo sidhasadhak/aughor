@@ -158,6 +158,10 @@ FLAG_ENV = {
     # shown as a table, a figure or a chart set up as they choose, each run stopped after the connection's time limit.
     # OFF: the builder offers no query of your own, the doors answer 404, and every card runs as it always did.
     "cockpit.queries": "AUGHOR_COCKPIT_QUERIES",
+    # Arc AP-8 (ROADMAP §3.57). ON: a cockpit's value may come from the reader on the page, a set's count or the object a
+    # reader chose; a set compares any value; a query of your own reads one as a bound parameter. OFF: a value is the
+    # author's and only days reach a set, as before; the server refuses a spec that says more.
+    "cockpit.variables": "AUGHOR_COCKPIT_VARIABLES",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -559,6 +563,15 @@ FLAG_META = {
                        "stacked, side by side or as shares. Your query runs read-only and stops after the connection's "
                        "time limit. Off: a card is drawn by the shape of its result.",
     },
+    "cockpit.variables": {
+        "label": "Variables on a cockpit",
+        "summary": "A value may come from the reader, a set's count or the object chosen. Sets and your own queries read it.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Changes only your own cockpits"}],
+        "description": "A reader changes a value on the page, kept in their browser and never in the cockpit. A set "
+                       "compares any value, and a query of your own reads one as a bound parameter, never pasted in. "
+                       "Off: a value is set once by its author.",
+    },
     "cockpit.builder": {
         "label": "Build cockpits in place",
         "summary": "A cockpit opens to be read, and Edit shows it between its outline and the setup of what you "
@@ -822,6 +835,9 @@ EXPERIMENT: dict = {
     "cockpit.queries": "do people show their own queries — of the cards made on cockpits in two weeks, is one in five or "
                        "more a query of their own? Falsifier (§3.57, AP-7): fewer than one in five, and the setup is not "
                        "what they needed",
+    "cockpit.variables": "do readers change what a cockpit shows — of the cockpits with a value a reader sets, is one in "
+                         "five or more changed by a reader within two weeks? Falsifier (§3.57, AP-8): a variable reaches SQL "
+                         "other than as a bound parameter — stop",
     "cockpit.builder": "is the setup where people change a cockpit — of the cockpits started from an object, is one in "
                        "five or more edited within two weeks of starting? Falsifier (§3.57): fewer than one in five, "
                        "and the setup is not where people look",

@@ -600,6 +600,19 @@ export function putValue(spec: unknown, name: string, def: CockpitValueDef): Coc
   return s;
 }
 
+/** Arc AP-8 — the value `from` renamed `label`: while nothing reads it, its name follows — `{{country}}`, never the
+ *  `{{window-2}}` it was made as — kept in its place among the values; once something reads it, the name stays and
+ *  only the label changes, so nothing that reads it is left reading nothing. The name it has after. */
+export function renameValue(spec: unknown, from: string, label: string, read: boolean): { spec: CockpitSpec; name: string } {
+  const s = copy(spec);
+  const def = s.values?.[from];
+  if (!def) return { spec: s, name: from };
+  const others = { ...s, values: Object.fromEntries(Object.entries(s.values ?? {}).filter(([k]) => k !== from)) };
+  const name = read ? from : freshWireName(others, label);
+  s.values = Object.fromEntries(Object.entries(s.values ?? {}).map(([k, v]) => (k === from ? [name, { ...v, label }] : [k, v])));
+  return { spec: s, name };
+}
+
 /** Take a set or a value away — only one nothing reads; one something reads is left as it is, and `readersOf` says
  *  what reads it. A cockpit left with none carries no empty map. */
 export function dropWire(spec: unknown, name: string): CockpitSpec {

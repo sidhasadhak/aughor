@@ -2597,9 +2597,15 @@ export interface QueryPreview {
   tables?: string[];
   setup?: QueryShown;
   shown?: QueryShaped;
+  /** Arc AP-8 — the cockpit's values it reads, by name (`{{name}}`). */
+  reads?: string[];
 }
 
-export interface QueryAsked { sql: string; shown: Partial<QueryShown>; title?: string; replaces?: string }
+export interface QueryAsked {
+  sql: string; shown: Partial<QueryShown>; title?: string; replaces?: string;
+  /** Arc AP-8 — the cockpit's values it reads, as the page holds them now; each bound by the engine. */
+  values?: Record<string, { kind: string; value: unknown }>;
+}
 
 /** A query that could not be kept: each reason, as the server says it. */
 export class QueryRefused extends Error {
@@ -2742,7 +2748,7 @@ export async function saveVizConfig(
 /** Recompute a card's value now (guard-on-read). Returns the current result + the rolling
  *  last/prev value for a delta. */
 export async function runDashboardCard(cardId: string, range?: BriefingRange | null,
-  opts: { compare?: boolean } = {}): Promise<CardRunResult> {
+  opts: { compare?: boolean; values?: Record<string, { kind: string; value: unknown }> } = {}): Promise<CardRunResult> {
   const q = new URLSearchParams();
   if (range) {
     if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
@@ -2754,7 +2760,10 @@ export async function runDashboardCard(cardId: string, range?: BriefingRange | n
   // template as the route, and a conditional inside it read as "/run${qs".
   const url = `${getApiBase()}/cards/${encodeURIComponent(cardId)}/run`;
   const qs = q.toString();
-  const res = await fetch(qs ? `${url}?${qs}` : url, { method: "POST" });
+  // Arc AP-8 — a query that reads the cockpit's values is sent them; every other card is run as it always was
+  const res = await fetch(qs ? `${url}?${qs}` : url, opts.values
+    ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values: opts.values }) }
+    : { method: "POST" });
   if (!res.ok) throw new Error("Failed to refresh dashboard card");
   return res.json();
 }

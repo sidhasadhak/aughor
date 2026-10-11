@@ -45,6 +45,8 @@ AGG_WORDS = {"count": "Count", "count_distinct": "Count of different", "sum": "S
              "min": "Least", "max": "Most"}
 _SOURCE = "cockpit_query"
 _INNER = "aughor_q_inner"
+#: Arc AP-8 — a variable in a query of the person's own: ``{{name}}``, one of the cockpit's values by its name.
+PARAM = re.compile(r"\{\{\s*([a-z][a-z0-9_-]{0,39})\s*\}\}")
 
 
 class Refused(ValueError):
@@ -194,6 +196,85 @@ def check(shown: Shown, columns: list[dict]) -> list[str]:
     if shown.running and shown.as_ == "scatter":
         out.append("A scatter has no running total.")
     return out
+
+
+# ── variables: a value of the cockpit's, bound — never pasted in ──────────────────────────────────────────────────────
+
+def params_of(sql: str) -> list[str]:
+    """The cockpit's values a query reads, by name, each once, in the order it names them."""
+    out: list[str] = []
+    for m in PARAM.finditer(sql or ""):
+        if m.group(1) not in out:
+            out.append(m.group(1))
+    return out
+
+
+def engine_name(name: str) -> str:
+    """A value's name as a placeholder may spell it: ``window`` → ``v_window``, ``chosen-order`` → ``v_chosen_order``."""
+    return "v_" + name.replace("-", "_")
+
+
+#: What a value's kind is (`web/lib/cockpit/catalog.ts` VALUE_KINDS), and the longest word a value holds there.
+VALUE_KINDS = ("days", "number", "text", "date")
+MAX_WORD = 120
+#: A string, a quoted name or a comment — where ``{{name}}`` would be read as those words, never bound.
+_QUOTED = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"|`[^`]*`|--[^\n]*|/\*.*?\*/", re.S)
+
+
+def quoted_params(sql: str) -> list[str]:
+    """Each value named inside quotes or a comment, once: there it is part of the words, and the engine never binds it."""
+    out: list[str] = []
+    for m in _QUOTED.finditer(sql or ""):
+        for p in PARAM.finditer(m.group(0)):
+            if p.group(1) not in out:
+                out.append(p.group(1))
+    return out
+
+
+def typed_value(name: str, kind: str, value: Any) -> Any:
+    """A value as the engine binds it: a number of days or a number as a number, a word as text, a day as a date."""
+    import datetime as dt
+    if kind not in VALUE_KINDS:
+        raise Refused(f"The query reads {{{{{name}}}}}, a {kind or 'value'} — a value is days, a number, words or a day.")
+    if value is None or value == "":
+        raise Refused(f"The query reads {{{{{name}}}}}, which holds nothing yet.")
+    try:
+        if kind in ("days", "number"):
+            if isinstance(value, bool):
+                raise TypeError(value)
+            n = float(value)
+            if n != n or n in (float("inf"), float("-inf")):
+                raise ValueError(value)
+            if kind == "days" and not (n.is_integer() and n >= 1):
+                raise ValueError(value)
+            return int(n) if n.is_integer() else n
+        if kind == "date":
+            return dt.date.fromisoformat(str(value))
+        if not isinstance(value, str) or len(value) > MAX_WORD:
+            raise ValueError(value)
+        return value
+    except (TypeError, ValueError):
+        what = {"days": "a whole number of days", "number": "a number", "date": "a day, written 2026-10-11"}.get(
+            kind, f"words, at most {MAX_WORD} characters")
+        raise Refused(f"The query reads {{{{{name}}}}} as {what}, and it holds {str(value)[:40]!r}.")
+
+
+def bind(sql: str, values: dict) -> tuple[str, dict]:
+    """The statement with each ``{{name}}`` as the SQL editor's own ``:name`` placeholder, and the values to bind to them —
+    the engine binds each; it is never pasted into the statement. ``values`` is name → ``{"kind", "value"}``: the
+    cockpit's values as the page holds them now. A name the cockpit holds no value for is refused, said, and so is one
+    written inside quotes or a comment, where it would be read as words and never as the value."""
+    quoted = quoted_params(sql)
+    if quoted:
+        raise Refused(f"{', '.join('{{' + n + '}}' for n in quoted)} is written inside quotes or a comment, where it is read "
+                      f"as those words and never as the value. Write it bare: WHERE country = {{{{{quoted[0]}}}}}.")
+    names = params_of(sql)
+    missing = [n for n in names if not isinstance((values or {}).get(n), dict)]
+    if missing:
+        raise Refused(f"The query reads {', '.join('{{' + n + '}}' for n in missing)}, and this cockpit holds no value of "
+                      f"{'that name' if len(missing) == 1 else 'those names'}.")
+    params = {engine_name(n): typed_value(n, str(values[n].get("kind") or ""), values[n].get("value")) for n in names}
+    return PARAM.sub(lambda m: ":" + engine_name(m.group(1)), sql), params
 
 
 # ── the statement around a person's own ───────────────────────────────────────────────────────────────────────────────
@@ -419,7 +500,7 @@ def tables_of(sql: str, dialect: str) -> list[str]:
     import sqlglot
     from sqlglot import exp
     try:
-        tree = sqlglot.parse_one(_inner(sql), read=dialect or None)
+        tree = sqlglot.parse_one(PARAM.sub("NULL", _inner(sql)), read=dialect or None)
     except Exception:
         return []
     ctes = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
@@ -484,13 +565,16 @@ def stopped_after(db: Any, seconds: float) -> Iterator[dict]:
         timer.cancel()
 
 
-def execute(db: Any, sql: str, *, max_rows: int, seconds: float) -> dict:
+def execute(db: Any, sql: str, *, max_rows: int, seconds: float, params: Optional[dict] = None) -> dict:
     """One statement through the connection's own door — the read-only checks every person's SQL meets in the SQL editor —
-    typed, bounded and stopped after ``seconds``."""
+    typed, bounded and stopped after ``seconds``; with ``params``, its ``:name`` placeholders bound by the engine."""
     from aughor.routers.query import typed_response
     started = time.monotonic()
     with stopped_after(db, seconds) as watch:
-        result, payload = db.execute_typed(_SOURCE, sql, max_rows=max_rows)
+        if params:
+            result, payload = db.execute_with_params_typed(_SOURCE, sql, params, max_rows=max_rows)
+        else:
+            result, payload = db.execute_typed(_SOURCE, sql, max_rows=max_rows)
     ms = (time.monotonic() - started) * 1000
     if watch["stopped"]:
         return {"error": f"The query was stopped after {seconds:g} s.", "columns": [], "rows": [], "duration_ms": ms,
@@ -507,15 +591,15 @@ def dialect_of(db: Any) -> str:
     return str(getattr(db, "dialect", "") or "duckdb").lower()
 
 
-def probe(db: Any, sql: str, *, seconds: float, rows: int = PREVIEW_ROWS) -> dict:
+def probe(db: Any, sql: str, *, seconds: float, rows: int = PREVIEW_ROWS, params: Optional[dict] = None) -> dict:
     """The statement as it is: its typed columns and first rows, and how long it took."""
-    return execute(db, _inner(sql), max_rows=rows + 1, seconds=seconds)
+    return execute(db, _inner(sql), max_rows=rows + 1, seconds=seconds, params=params)
 
 
-def run(db: Any, sql: str, shown: Shown, columns: list[dict], *, seconds: float) -> dict:
+def run(db: Any, sql: str, shown: Shown, columns: list[dict], *, seconds: float, params: Optional[dict] = None) -> dict:
     """A card shown as asked: the statement around the person's own, run and shaped."""
     stmt, max_rows = statement(sql, shown, columns, dialect_of(db))
-    out = execute(db, stmt, max_rows=max_rows, seconds=seconds)
+    out = execute(db, stmt, max_rows=max_rows, seconds=seconds, params=params)
     if out["error"]:
         return {**out, "shown": None}
     return {**out, "shown": shape(out["columns"], out["rows"], shown)}

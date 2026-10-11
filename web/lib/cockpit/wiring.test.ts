@@ -103,10 +103,10 @@ describe("the choices a reader makes, and what reads each", () => {
 
   it("says what reads a set, a choice or a value — pieces and sets — so nothing read is taken away", () => {
     const s = desk();
-    expect(readersOf(s, "waiting")).toEqual({ elements: ["fig-waiting", "chart", "table", "buttons"], sets: [] });
-    expect(readersOf(s, "placed")).toEqual({ elements: ["fig-waiting"], sets: ["waiting", "shipped"] });
-    expect(readersOf(s, "chosen-order")).toEqual({ elements: ["detail", "buttons"], sets: ["lines"] });
-    expect(readersOf(s, "window")).toEqual({ elements: [], sets: ["placed"] });
+    expect(readersOf(s, "waiting")).toEqual({ elements: ["fig-waiting", "chart", "table", "buttons"], sets: [], values: [] });
+    expect(readersOf(s, "placed")).toEqual({ elements: ["fig-waiting"], sets: ["waiting", "shipped"], values: [] });
+    expect(readersOf(s, "chosen-order")).toEqual({ elements: ["detail", "buttons"], sets: ["lines"], values: [] });
+    expect(readersOf(s, "window")).toEqual({ elements: [], sets: ["placed"], values: [] });
   });
 
   it("hands the server each set as the door reads it and each button's sources with their kind and entity", () => {

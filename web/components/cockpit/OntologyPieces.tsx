@@ -32,14 +32,17 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
+import { SelectField } from "@/components/ui/select";
 import {
   anyFilter, cellText, chosenWords, conditionsFor, dayLabel, daysBefore, entityKey, figureText, onDays, plural, propertyLabel,
   splitOnDays, typeWord, inLastWindow, withWords, WORDS,
   ticks, toggled, topValues, windowEnd, type Filters,
 } from "@/lib/cockpit/objectView";
 import { CHOOSERS, MAX_TICKED_RUNS, SWITCHED, rowsTall, type PieceName } from "@/lib/cockpit/catalog";
-import { choicesOf, doorConditions, isRefused, pieceSet, readSet, type DoorCondition, type WireSpec } from "@/lib/cockpit/sets";
+import { choicesOf, doorConditions, isRefused, pieceSet, readSet, type DoorCondition, type ValueNow, type WireSpec } from "@/lib/cockpit/sets";
 import { useMarkRead } from "@/components/cockpit/readSlot";
+import { typedValue, valueFits } from "@/lib/cockpit/values";
 import { formatCount, formatDateTime, isNumericType, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { objectHref } from "@/lib/objectLinks";
@@ -90,6 +93,12 @@ interface PiecesValue {
   asGroup: string;
   /** What the object door said beside what it read — what a row policy withholds, a property masked — for the page. */
   say: (lines: string[] | undefined) => void;
+  /** Arc AP-8 — what each of the cockpit's values holds now: the author's, the reader's own, a set's count, or a property
+   *  of the object a reader chose — or the choice it waits on, or still being read. */
+  valueOf: (name: string) => ValueNow;
+  /** The values a reader set on the page, by name — kept in their browser, never in the cockpit. */
+  readerValues: Record<string, unknown>;
+  setValue: (name: string, value: unknown) => void;
 }
 
 const PiecesContext = createContext<PiecesValue | null>(null);
@@ -102,6 +111,16 @@ export function usePieces(): PiecesValue {
 
 /** Where a reader's filters for one cockpit are remembered: their browser, and only theirs. */
 const filtersKey = (cockpit: string) => `aughor:cockpit-filters:${cockpit}`;
+/** Arc AP-8 — where the values a reader set on one cockpit are remembered: their browser, and only theirs. */
+const valuesKey = (cockpit: string) => `aughor:cockpit-values:${cockpit}`;
+
+function rememberedValues(cockpit?: string): Record<string, unknown> {
+  if (!cockpit) return {};
+  try {
+    const raw = JSON.parse(localStorage.getItem(valuesKey(cockpit)) ?? "{}") as unknown;
+    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  } catch { return {}; }
+}
 
 function remembered(cockpit?: string): Filters {
   if (!cockpit) return {};
@@ -218,11 +237,111 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
       if (line && !heard.current.has(line)) { heard.current.add(line); onSaidRef.current?.(line); }
     }
   }, []);
+  // Arc AP-8 — the values: the reader's own, kept in their browser; a set's count and a chosen object's property, read here
+  const [readerValues, setReaderValues] = useState<Record<string, unknown>>(() => rememberedValues(cockpitId));
+  useEffect(() => { setReaderValues(rememberedValues(cockpitId)); }, [cockpitId]);
+  const setValue = useCallback((name: string, v: unknown) => {
+    setReaderValues(prev => {
+      // undefined lets the reader's own go: the value is the author's again
+      const { [name]: _gone, ...rest } = prev;
+      void _gone;
+      const next = v === undefined ? rest : { ...prev, [name]: v };
+      if (cockpitId) {
+        try { localStorage.setItem(valuesKey(cockpitId), JSON.stringify(next)); } catch { /* it lasts while the cockpit is open */ }
+      }
+      return next;
+    });
+    // like a filter: what the sets hold changes, so what was chosen and ticked from them is let go
+    setPicked({});
+    setTicked({});
+  }, [cockpitId]);
+  const [counted, setCounted] = useState<Record<string, { asked: string; n: number; refused?: string }>>({});
+  const [readOff, setReadOff] = useState<Record<string, { pk: string; value: unknown; refused?: string }>>({});
+  const valueOf = useCallback((name: string): ValueNow => {
+    const def = values?.[name];
+    if (!def) return { value: null };
+    const from = def.from;
+    if (!from || from.by === "author") return { value: def.value ?? null };
+    if (from.by === "reader") {
+      // the reader's own while it is still one the author offers, of the value's kind — else the author's
+      const mine = readerValues[name];
+      const offered = from.options ?? [];
+      const ok = name in readerValues && valueFits(def.kind, mine) && (!offered.length || offered.some(o => o === mine));
+      return { value: ok ? mine : def.value ?? null };
+    }
+    if (from.by === "chosen") {
+      const p = picked[from.choice];
+      if (!p) return { waiting: from.choice };
+      const got = readOff[name];
+      if (!got || got.pk !== p.pk) return { reading: true };
+      return got.refused ? { refused: got.refused } : { value: got.value };
+    }
+    const got = counted[name];
+    if (!got) return { reading: true };
+    return got.refused ? { refused: got.refused } : { value: got.n };
+  }, [values, readerValues, picked, readOff, counted]);
+  // what each counted value asks the object door — its set, read with the values as they stand now
+  const countAsks = useMemo(() => Object.fromEntries(Object.entries(values ?? {}).flatMap(([name, def]): [string, ObjectQueryRequest][] => {
+    if (def.from?.by !== "count") return [];
+    const r = readSet(wire, def.from.set, valueOf);
+    if (isRefused(r)) return [];
+    const read = doorConditions(r, c => picked[c]?.pk ?? null);
+    if (!("filters" in read)) return [];
+    return [[name, { object_type: r.entity, measures: [{ name: "n", agg: "count" }], ...(r.segment ? { segment: r.segment } : {}),
+      ...(read.filters.length ? { filters: read.filters } : {}) } as ObjectQueryRequest]];
+  })), [values, wire, valueOf, picked]);
+  const countKey = JSON.stringify(countAsks);
+  useEffect(() => {
+    if (!connectionId) return;
+    let alive = true;
+    for (const [name, body] of Object.entries(countAsks)) {
+      const asked = JSON.stringify(body);
+      if (counted[name]?.asked === `${asked}|${tick}`) continue;
+      const at = `${asked}|${tick}`;
+      queryObjects(body, connectionId, schema, ...(asGroup ? [asGroup] : []))
+        .then(out => {
+          if (!alive) return;
+          // a count that cannot be read says why to what reads it — never a zero, never reading for ever
+          const refused = out.path === "refused" ? out.refused : out.error ?? "";
+          const n = out.path === "refused" ? 0 : Number(out.rows?.[0]?.[0] ?? 0);
+          setCounted(prev => ({ ...prev, [name]: refused ? { asked: at, n: 0, refused } : { asked: at, n } }));
+        })
+        .catch(e => { if (alive) setCounted(prev => ({ ...prev, [name]: { asked: at, n: 0, refused: (e as Error).message || "The count could not be read." } })); });
+    }
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what each count asks
+  }, [countKey, connectionId, schema, tick, asGroup]);
+  // a property of the object a reader chose, read off its page
+  const chosenKey = JSON.stringify(Object.entries(values ?? {}).flatMap(([name, def]) =>
+    def.from?.by === "chosen" && picked[def.from.choice] ? [[name, picked[def.from.choice]?.pk]] : []));
+  useEffect(() => {
+    if (!connectionId) return;
+    let alive = true;
+    for (const [name, def] of Object.entries(values ?? {})) {
+      if (def.from?.by !== "chosen") continue;
+      const p = picked[def.from.choice];
+      if (!p || readOff[name]?.pk === p.pk) continue;
+      const path = def.from.path;
+      const pk = p.pk;
+      getObjectPage(p.objectType, pk, connectionId, schema, ...(asGroup ? [asGroup] : []))
+        .then(out => {
+          if (!alive) return;
+          // what the chosen object holds — or why it cannot be read: refused, gone, withheld, masked, or not one of its own
+          const prop = out.path === "object" ? out.properties.find(x => x.name === path) : undefined;
+          const refused = out.path === "refused" ? out.refused : out.path !== "object" ? out.detail
+            : !prop ? `The chosen object has no property ${path}.` : prop.withheld ? `${prop.display_name || path} is withheld from you: ${prop.withheld}` : "";
+          setReadOff(prev => ({ ...prev, [name]: refused ? { pk, value: null, refused } : { pk, value: prop?.value ?? null } }));
+        })
+        .catch(e => { if (alive) setReadOff(prev => ({ ...prev, [name]: { pk, value: null, refused: (e as Error).message || "The chosen object could not be read." } })); });
+    }
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the objects chosen
+  }, [chosenKey, connectionId, schema, asGroup]);
   const value = useMemo<PiecesValue>(() => ({
     connectionId, schema, picked, pick, ticked, tickOne, tickNone, shown, show, wire, followable, tick, bump, tables, onPlaceTable,
-    processes, actions, filters, toggle, clear, search, asGroup, say,
+    processes, actions, filters, toggle, clear, search, asGroup, say, valueOf, readerValues, setValue,
   }), [connectionId, schema, picked, pick, ticked, tickOne, tickNone, shown, show, wire, followable, tick, bump, tables, onPlaceTable,
-    processes, actions, filters, toggle, clear, search, asGroup, say]);
+    processes, actions, filters, toggle, clear, search, asGroup, say, valueOf, readerValues, setValue]);
   return <PiecesContext.Provider value={value}>{children}</PiecesContext.Provider>;
 }
 
@@ -233,13 +352,16 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
 export type SetQuery =
   | { entity: string; segment: string; conditions: DoorCondition[]; label: string; set: string; narrowed: boolean }
   | { waiting: string; label: string }
+  | { reading: true; label: string }
   | { refused: string };
 
 export function useSetQuery(props: Record<string, unknown>, { reader: withReader = true }: { reader?: boolean } = {}): SetQuery {
-  const { wire, picked, shown, filters } = usePieces();
-  const r = pieceSet(wire, props, c => shown[c] ?? null);
+  const { wire, picked, shown, filters, valueOf } = usePieces();
+  const r = pieceSet(wire, props, c => shown[c] ?? null, valueOf);
   if (isRefused(r)) return r;
   const read = doorConditions(r, c => picked[c]?.pk ?? null);
+  // a value it reads is still being counted, or read off the object chosen (Arc AP-8)
+  if ("reading" in read) return { reading: true, label: r.label };
   if ("waiting" in read) return { waiting: read.waiting, label: r.label };
   // the whole of a set, beside what a reader's filters leave of it, is read without them
   const reader = withReader ? conditionsFor(filters, r.entity) as unknown as DoorCondition[] : [];
@@ -251,14 +373,19 @@ export function useSetQuery(props: Record<string, unknown>, { reader: withReader
  *  lines here." — the choice's entity in words, never its name. */
 export function WaitingWords({ choice, what }: { choice: string; what: string }) {
   const { wire } = usePieces();
+  // "Products of the chosen distribution center" is the centre's products: what the set holds, said once
+  const held = what.replace(/^its\s+/i, "").replace(/\s+of the\s.*$/i, "").toLowerCase();
+  return <>{chooseWords(wire, choice)} to see {held ? `its ${held}` : "what it links to"} here.</>;
+}
+
+/** Where a reader makes a choice, in words: "Choose an order in its table" — a table, a list, a map, a timeline, or by
+ *  its name in a choose-one (Arc AP-4). */
+export function chooseWords(wire: WireSpec, choice: string): string {
   const made = choicesOf(wire).get(choice);
   const entity = words(made?.entity || "one").toLowerCase();
   const an = /^[aeiou]/.test(entity) ? "an" : "a";
-  // where the reader chooses it (Arc AP-4): a table, a list, a map, a timeline — or by its name, in a choose-one
   const where = WHERE[String(wire.elements[made?.madeBy[0] ?? ""]?.type ?? "ObjectTable")] ?? "";
-  // "Products of the chosen distribution center" is the centre's products: what the set holds, said once
-  const held = what.replace(/^its\s+/i, "").replace(/\s+of the\s.*$/i, "").toLowerCase();
-  return <>Choose {an} {entity}{where} to see {held ? `its ${held}` : "what it links to"} here.</>;
+  return `Choose ${an} ${entity}${where}`;
 }
 const WHERE: Record<string, string> = {
   ObjectTable: " in its table", ObjectList: " in its list", ObjectMap: " on its map", ObjectTimeline: " on its timeline", ChooseOne: "",
@@ -825,11 +952,12 @@ export function ObjectFiltersPiece({ entity, properties, set }: { entity: string
  *  counts every object of its entity as it did before sets. */
 function useCountsWithin(set: string | null | undefined): { entity: string; segment: string; conditions: DoorCondition[]; label: string }
   | { refused: string } | null {
-  const { wire, picked } = usePieces();
+  const { wire, picked, valueOf } = usePieces();
   if (!set) return null;
-  const r = readSet(wire, set);
+  const r = readSet(wire, set, valueOf);
   if (isRefused(r)) return r;
   const read = doorConditions(r, c => picked[c]?.pk ?? null);
+  if ("reading" in read) return { refused: "Reading the value its counts wait on…" };
   if ("waiting" in read) return { refused: `Its counts wait on the ${words(read.waiting)}.` };
   return { entity: r.entity, segment: r.segment, conditions: read.filters, label: r.label };
 }
@@ -913,6 +1041,84 @@ function Facet({ entity, prop, set }: { entity: string; prop: FilterProperty; se
 }
 
 /** Above the pieces a filter column narrows: what is chosen, a way out, and how many objects that leaves. */
+// ── Arc AP-8 — the values a reader sets ─────────────────────────────────────────────────────
+
+/** The most choices drawn side by side; more are a list to pick from. */
+const SIDE_BY_SIDE = 6;
+const valueText = (kind: string, v: unknown) => (v === null || v === undefined ? "" : kind === "number" && typeof v === "number" ? formatCount(v) : String(v));
+/** A value as a box to type in holds it: never grouped, so it reads back as typed. */
+const boxText = (v: unknown) => (v === null || v === undefined ? "" : String(v));
+
+/** The values a reader sets on the page, above its pieces: each a control of its own — the choices its author offers,
+ *  or a box to type in — remembered in the reader's browser, never in the cockpit. Nothing when it offers none. */
+export function ValuesBar({ spaced = true }: { spaced?: boolean }) {
+  const { wire, valueOf, readerValues, setValue } = usePieces();
+  const offered = Object.entries(wire.values ?? {}).filter(([, v]) => v.from?.by === "reader");
+  if (!offered.length) return null;
+  return (
+    <div role="group" aria-label="Values you set" data-testid="cockpit-values" className="aug-fs-sm"
+      style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap", marginBottom: spaced ? 14 : 0 }}>
+      {offered.map(([name, def]) => {
+        const now = valueOf(name);
+        const value = "value" in now ? now.value : def.value ?? null;
+        return (
+          <ReaderValue key={name} name={name} label={def.label} kind={def.kind} value={value}
+            options={def.from?.by === "reader" ? def.from.options ?? [] : []}
+            changed={name in readerValues && value !== (def.value ?? null)} start={def.value ?? null}
+            onSet={v => setValue(name, v)} onReset={() => setValue(name, undefined)} />
+        );
+      })}
+    </div>
+  );
+}
+
+function ReaderValue({ name, label, kind, value, options, changed, start, onSet, onReset }: {
+  name: string; label: string; kind: string; value: unknown; options: (string | number)[]; changed: boolean; start: unknown;
+  onSet: (v: unknown) => void; onReset: () => void;
+}) {
+  const [text, setText] = useState(boxText(value));
+  const [shown, setShown] = useState(value);
+  if (shown !== value) { setShown(value); setText(boxText(value)); }
+  const [wrong, setWrong] = useState(false);
+  const commit = () => {
+    const v = typedValue(kind, text);
+    if (v === null) { setWrong(true); return; }
+    setWrong(false);
+    if (v !== value) onSet(v);
+  };
+  const unit = kind === "days" ? "days" : "";
+  const control = options.length && options.length <= SIDE_BY_SIDE ? (
+    <Segmented label={label} value={options.some(o => o === value) ? String(value) : ""}
+      options={options.map(o => ({ value: String(o), label: valueText(kind, o) }))}
+      onChange={v => onSet(options.find(o => String(o) === v))} />
+  ) : options.length ? (
+    <SelectField aria-label={label} value={String(value ?? "")} onChange={e => onSet(options.find(o => String(o) === e.target.value))}>
+      {options.map(o => <option key={String(o)} value={String(o)}>{valueText(kind, o)}</option>)}
+    </SelectField>
+  ) : (
+    <Input aria-label={label} aria-invalid={wrong || undefined} value={text} onChange={e => { setText(e.target.value); setWrong(false); }}
+      type={kind === "date" ? "date" : kind === "text" ? "text" : "number"} inputMode={kind === "days" || kind === "number" ? "decimal" : undefined}
+      onBlur={commit} onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setText(boxText(value)); setWrong(false); } }}
+      style={{ width: kind === "text" ? 160 : kind === "date" ? 150 : 90 }} />
+  );
+  return (
+    <span data-testid="cockpit-value" data-name={name} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <span style={{ color: "var(--t3)" }}>{label}</span>
+      {control}
+      {unit && <span style={{ color: "var(--t3)" }}>{unit}</span>}
+      {wrong && (
+        <span className="aug-fs-xs" data-testid="cockpit-value-wrong" style={{ color: "var(--t2)" }}>
+          {kind === "days" ? "A whole number of days, one or more." : kind === "number" ? "A number." : kind === "date" ? "A day." : "Some words, at most 120."}
+        </span>
+      )}
+      {changed && (
+        <Button size="xs" variant="ghost" data-testid="cockpit-value-reset" title={`Back to ${valueText(kind, start)}${unit ? ` ${unit}` : ""}, as the cockpit was made`}
+          onClick={onReset}>Reset</Button>
+      )}
+    </span>
+  );
+}
+
 export function FilterBar({ entity, properties, set }: { entity: string; properties: FilterProperty[]; set?: string | null }) {
   const { filters, toggle, clear } = usePieces();
   const noun = useNoun(entity);

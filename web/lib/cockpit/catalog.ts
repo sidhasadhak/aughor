@@ -42,8 +42,10 @@ import { z } from "zod";
  *  named `sets` and `values` the pieces read, the objects a reader chooses and ticks named and read by others
  *  (`chooses`, `ticks`, `shows`, `set_from`, `of`), and ActionButtons whose parameters come from them. 7: a structure of
  *  pieces (Arc AP-4, 2026-10-11) — a section laid out in columns, rows or tabs of sections of its own (`layout`, a child's
- *  `w` in twelfths), a section that holds nothing yet, and one that goes untitled. */
-export const COCKPIT_VOCABULARY_VERSION = 7;
+ *  `w` in twelfths), a section that holds nothing yet, and one that goes untitled. 8: variables (Arc AP-8, 2026-10-11) — a
+ *  value of a day, a value that comes from the reader, a set's count or the object a reader chose (`from`), and a set's
+ *  condition comparing any value as its kind allows. */
+export const COCKPIT_VOCABULARY_VERSION = 8;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
 export const TONES = ["good", "warn", "bad", "info", "neutral"] as const;
@@ -136,8 +138,18 @@ export const MAX_TICKED_RUNS = 50;
 /** What a set's condition may say: the object door's own operators, and `in_last` — the last N days, today included. */
 export const SET_OPS = ["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "is_null", "not_null", "in_last"] as const;
 export type SetOp = (typeof SET_OPS)[number];
-/** What a value is: a number of days a condition counts back, a number, or a word. */
-export const VALUE_KINDS = ["days", "number", "text"] as const;
+/** What a value is: a number of days a condition counts back, a number, a word — or a day (Arc AP-8, "2026-10-11"). */
+export const VALUE_KINDS = ["days", "number", "text", "date"] as const;
+/** Arc AP-8 — where a value comes from: the author, who sets it once; the reader, on the page, from the choices the
+ *  author offers or as they type; how many objects a set holds; or a property of the object a reader chose. */
+export const VALUE_SOURCES = ["author", "reader", "count", "chosen"] as const;
+/** The most choices a reader's value offers. */
+export const MAX_VALUE_OPTIONS = 12;
+/** What a set's condition may compare with a value: an equality for a word, any comparison for a number or a day, and
+ *  the last days for a number of days. */
+export const VALUE_OPS = ["=", "!=", ">", ">=", "<", "<=", "in_last"] as const;
+/** A day, as a value holds it. */
+export const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 const literal = z.union([z.string().max(120), z.number().finite(), z.boolean()]);
 
@@ -164,11 +176,22 @@ export const cockpitSet = z.object({
 }).strict();
 export type CockpitSetDef = z.infer<typeof cockpitSet>;
 
-/** A value the author sets once and sets read (Arc AP-2): "Window · 14 days". */
+/** Arc AP-8 — where a value comes from; none, the author. */
+export const valueSource = z.union([
+  z.object({ by: z.literal("author") }).strict(),
+  z.object({ by: z.literal("reader"), options: z.array(z.union([z.number().finite(), z.string().max(120)])).max(MAX_VALUE_OPTIONS).nullable().optional() }).strict(),
+  z.object({ by: z.literal("count"), set: z.string().regex(WIRE_NAME) }).strict(),
+  z.object({ by: z.literal("chosen"), choice: z.string().regex(WIRE_NAME), path: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/) }).strict(),
+]);
+export type ValueSource = z.infer<typeof valueSource>;
+
+/** A value sets and queries read (Arc AP-2): "Window · 14 days" — set once by the author, or (Arc AP-8) by the reader on
+ *  the page, counted from a set, or read from the object a reader chose. A value counted or read has no value of its own. */
 export const cockpitValue = z.object({
   label: z.string().min(1).max(MAX_LABEL),
   kind: z.enum(VALUE_KINDS),
-  value: z.union([z.number().finite(), z.string().max(120)]),
+  value: z.union([z.number().finite(), z.string().max(120)]).nullable().optional(),
+  from: valueSource.nullable().optional(),
 }).strict();
 export type CockpitValueDef = z.infer<typeof cockpitValue>;
 

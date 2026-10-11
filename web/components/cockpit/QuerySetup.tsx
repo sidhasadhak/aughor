@@ -26,7 +26,9 @@ import {
   QueryRefused, getCatalogTree, keepCockpitQuery, previewCockpitQuery,
   type CockpitCard, type QueryAgg, type QueryBucket, type QueryPreview, type QueryShown, type QueryShownAs, type TypedColumn,
 } from "@/lib/api";
+import type { CockpitValueDef } from "@/lib/cockpit/catalog";
 import { cellText } from "@/lib/cockpit/objectView";
+import { typedValue, valuesRead, type ValuesSent } from "@/lib/cockpit/values";
 import { formatCount, formatSeconds } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 
@@ -104,13 +106,20 @@ function Column({ label, value, columns, onPick, none, only }: {
   );
 }
 
-export function QuerySetup({ connectionId, card, onKept, onClose }: {
+/** Arc AP-8 — what a value of the cockpit's is called and holds, as the setup offers it and tries a query with it. */
+const KIND_WORDS: Record<string, string> = { days: "days", number: "a number", text: "words", date: "a day" };
+const startText = (def: CockpitValueDef) =>
+  (def.from?.by ?? "author") === "author" || def.from?.by === "reader" ? (def.value === null || def.value === undefined ? "" : String(def.value)) : "";
+
+export function QuerySetup({ connectionId, card, onKept, onClose, values }: {
   connectionId: string;
   /** The card of the person's own query being changed; none — a new one. */
   card?: CockpitCard | null;
   /** The card kept — a new one, or the one that replaces `card` — for the page to place or to swap in. */
   onKept: (kept: CockpitCard, replaced: string | null) => void;
   onClose?: () => void;
+  /** Arc AP-8 — the cockpit's values, while variables are on: each may be read in the SQL as `{{name}}`. */
+  values?: Record<string, CockpitValueDef> | null;
 }) {
   const render = (card?.render ?? {}) as { shown?: QueryShown; columns?: TypedColumn[] };
   const [sql, setSql] = useState(card?.sql ?? "");
@@ -121,6 +130,10 @@ export function QuerySetup({ connectionId, card, onKept, onClose }: {
   const [busy, setBusy] = useState<"" | "run" | "keep">("");
   const [tables, setTables] = useState<string[] | null>(null);
   const [showTables, setShowTables] = useState(false);
+  // Arc AP-8 — the values it reads, and what each is tried with here: the value it starts from, or one typed to try
+  const [showValues, setShowValues] = useState(false);
+  const [tried, setTried] = useState<Record<string, string>>({});
+  const reads = valuesRead(sql);
   const box = useRef<HTMLTextAreaElement>(null);
   const columns = useMemo(() => preview?.got.columns ?? render.columns ?? [], [preview, render.columns]);
   const ranThis = !!preview && preview.sql === sql;
@@ -141,11 +154,28 @@ export function QuerySetup({ connectionId, card, onKept, onClose }: {
     const el = box.current;
     const at = el ? el.selectionStart : sql.length;
     setSql(sql.slice(0, at) + text + sql.slice(el ? el.selectionEnd : at));
+    // the writing goes on where it was, after what was put in
+    requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(at + text.length, at + text.length); });
+  };
+  /** The values the SQL reads as the query is tried with them — or what stops it, said here before anything runs. */
+  const sent = (): { values: ValuesSent } | { refused: string[] } => {
+    const out: ValuesSent = {};
+    const said: string[] = [];
+    for (const name of reads) {
+      const def = values?.[name];
+      if (!def) { said.push(`{{${name}}} is not one of this cockpit's values.`); continue; }
+      const v = typedValue(def.kind, tried[name] ?? startText(def));
+      if (v === null) said.push(`Give ${def.label} ${KIND_WORDS[def.kind] ?? "a value"} to try the query with.`);
+      else out[name] = { kind: def.kind, value: v };
+    }
+    return said.length ? { refused: said } : { values: out };
   };
   const run = async () => {
     setBusy("run"); setRefused([]);
+    const given = sent();
+    if ("refused" in given) { setRefused(given.refused); setBusy(""); return; }
     try {
-      const got = await previewCockpitQuery(connectionId, { sql, shown: setup, title });
+      const got = await previewCockpitQuery(connectionId, { sql, shown: setup, title, ...(reads.length ? { values: given.values } : {}) });
       setPreview({ sql, got });
       setRefused(got.refused);
     } catch (e) {
@@ -154,8 +184,11 @@ export function QuerySetup({ connectionId, card, onKept, onClose }: {
   };
   const keep = async () => {
     setBusy("keep"); setRefused([]);
+    const given = sent();
+    if ("refused" in given) { setRefused(given.refused); setBusy(""); return; }
     try {
-      const out = await keepCockpitQuery(connectionId, { sql, shown: setup, title: title.trim() || undefined, ...(card ? { replaces: card.id } : {}) });
+      const out = await keepCockpitQuery(connectionId, { sql, shown: setup, title: title.trim() || undefined, ...(card ? { replaces: card.id } : {}),
+        ...(reads.length ? { values: given.values } : {}) });
       setPreview({ sql, got: out.preview });
       onKept(out.card, card?.id ?? null);
     } catch (e) {
@@ -187,9 +220,15 @@ export function QuerySetup({ connectionId, card, onKept, onClose }: {
           onChange={e => setSql(e.target.value)} onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && sql.trim()) { e.preventDefault(); void run(); } }}
           style={{ fontFamily: "var(--font-mono)" }} />
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Button size="xs" variant="ghost" aria-expanded={showTables} data-testid="query-tables-open" onClick={() => setShowTables(o => !o)}>
+          <Button size="xs" variant="ghost" aria-expanded={showTables} data-testid="query-tables-open" onClick={() => { setShowTables(o => !o); setShowValues(false); }}>
             <Icon name="db" size={13} /> Tables
           </Button>
+          {values && (
+            <Button size="xs" variant="ghost" aria-expanded={showValues} data-testid="query-values-open" onClick={() => { setShowValues(o => !o); setShowTables(false); }}
+              title="One of the cockpit's values, read as a bound parameter: the engine binds it, never pasted into the statement.">
+              <Icon name="plus" size={13} /> A variable
+            </Button>
+          )}
           <Button size="xs" variant="secondary" data-testid="query-run" disabled={!sql.trim() || !!busy} onClick={() => void run()} style={{ marginLeft: "auto" }}>
             <Icon name="run" size={13} /> {busy === "run" ? "Running…" : "Run"}
           </Button>
@@ -201,6 +240,38 @@ export function QuerySetup({ connectionId, card, onKept, onClose }: {
                 : withUniqueKeys(tables, t => t).map(([k, t]) => (
                   <Button key={k} role="listitem" size="xs" variant="ghost" onClick={() => insert(t)} style={{ justifyContent: "flex-start", fontFamily: "var(--font-mono)" }}>{t}</Button>
                 ))}
+          </div>
+        )}
+        {showValues && values && (
+          <div data-testid="query-values" role="list" style={{ display: "flex", flexDirection: "column", maxHeight: 160, overflow: "auto", border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
+            {Object.keys(values).length === 0
+              ? <span className="aug-fs-xs" style={{ padding: 6, color: "var(--t3)" }}>This cockpit holds no value yet: add one in Variables.</span>
+              : Object.entries(values).map(([name, def]) => (
+                <Button key={name} role="listitem" size="xs" variant="ghost" onClick={() => { insert(`{{${name}}}`); setShowValues(false); }}
+                  style={{ justifyContent: "flex-start", gap: 8 }}>
+                  <span style={{ fontFamily: "var(--font-mono)" }}>{`{{${name}}}`}</span>
+                  <span style={{ color: "var(--t3)" }}>{def.label} · {KIND_WORDS[def.kind] ?? def.kind}</span>
+                </Button>
+              ))}
+          </div>
+        )}
+        {reads.length > 0 && (
+          <div data-testid="query-tried" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>Tried here with these; on the page it reads what the page holds.</span>
+            {reads.map(name => {
+              const def = values?.[name];
+              return (
+                <label key={name} className="aug-fs-xs" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 120px", alignItems: "center", gap: 6, color: "var(--t2)" }}>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ fontFamily: "var(--font-mono)" }}>{`{{${name}}}`}</span>{def ? ` ${def.label}` : " — not a value of this cockpit"}
+                  </span>
+                  {def && (
+                    <Input aria-label={`Try ${def.label} as`} value={tried[name] ?? startText(def)} type={def.kind === "date" ? "date" : def.kind === "text" ? "text" : "number"}
+                      onChange={e => setTried(t => ({ ...t, [name]: e.target.value }))} />
+                  )}
+                </label>
+              );
+            })}
           </div>
         )}
         {refused.length > 0 && (

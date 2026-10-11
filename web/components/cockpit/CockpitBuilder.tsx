@@ -23,7 +23,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { CanvasScale } from "@/components/cockpit/cellBox";
 import type { CockpitHandle, ReadState } from "@/components/cockpit/ComposedCockpit";
 import { PieceSetup } from "@/components/cockpit/PieceSetup";
-import { ChoiceSetup, DataPane, SetSetup, ValueSetup } from "@/components/cockpit/WiringSetup";
+import { ChoiceSetup, DataPane, SetSetup, ValueSetup, readingElements } from "@/components/cockpit/WiringSetup";
 import { Segmented } from "@/components/ui/segmented";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
@@ -34,7 +34,6 @@ import {
   type Box, type CockpitSpec, type Side,
 } from "@/lib/cockpit/edit";
 import { lineOf, nameOf, setTitles } from "@/lib/cockpit/names";
-import { readersOf } from "@/lib/cockpit/sets";
 import { checkCockpitSpec } from "@/lib/cockpit/rules";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { cachedObjectCatalog } from "@/lib/objects";
@@ -126,7 +125,7 @@ function Steps({ label, value, least, most, onStep }: { label: string; value: nu
 const Rule = () => <span aria-hidden="true" style={{ width: 1, height: 16, background: "var(--b2)", margin: "0 6px" }} />;
 
 export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, aside, above, connectionId, schema, wiringOn = false,
-  structureOn = false, onAddPiece, checks, cardSetup, children }: {
+  structureOn = false, onAddPiece, checks, cardSetup, variablesOn = false, cardReads, children }: {
   spec: CockpitSpec;
   /** Every change, as the next spec and the version's note. */
   onChange: (next: CockpitSpec, note: string) => void;
@@ -153,6 +152,10 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
   checks?: Record<string, ReadState>;
   /** Arc AP-7 — the setup of a card the page knows more of (a card of a person's own query), by its id; null for none. */
   cardSetup?: (cardId: string) => ReactNode | null;
+  /** Arc AP-8 — whether this install has variables: the Data tab is Variables, and a value says where it comes from. */
+  variablesOn?: boolean;
+  /** Arc AP-8 — the cockpit's values a card of the person's own query reads, by the card's id. */
+  cardReads?: (cardId: string) => string[];
   /** The cockpit, drawn with the element chosen, the door that chooses one, the handle the steps use, and — while a
    *  set, a value or a choice is chosen — the pieces that read it. */
   children: (p: { selected: string | null; onSelect: (key: string) => void; handle: { current: CockpitHandle | null }; reads: string[] }) => ReactNode;
@@ -163,7 +166,7 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
   const [wire, setWire] = useState<string | null>(null);
   const wireName = wire ? wire.slice(wire.indexOf(":") + 1) : "";
   const wireKind = wire ? wire.slice(0, wire.indexOf(":")) : "";
-  const reads = wire ? readersOf(spec, wireName).elements : [];
+  const reads = wire ? readingElements(spec, wireName, variablesOn ? cardReads : undefined) : [];
   const entityTitle = useEntityTitles(connectionId);
   const handle = useRef<CockpitHandle | null>(null);
   // an element taken off, by hand or by an undo, is no longer chosen; nor is an element while a set is
@@ -241,13 +244,13 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
         <aside aria-label="Layout" style={{ minHeight: 0, overflow: "auto", borderRight: "1px solid var(--b1)", background: "var(--bg-1)", display: "flex", flexDirection: "column" }}>
           {wiringOn && (
             <div style={{ padding: "10px 10px 0" }}>
-              <Segmented label="The left pane" value={tab} options={[{ value: "layout", label: "Layout" }, { value: "data", label: "Data" }]}
+              <Segmented label="The left pane" value={tab} options={[{ value: "layout", label: "Layout" }, { value: "data", label: variablesOn ? "Variables" : "Data" }]}
                 onChange={v => { setTab(v as "layout" | "data"); if (v === "layout") setWire(null); }} />
             </div>
           )}
           {tab === "data" && wiringOn ? (
             <DataPane spec={spec} selected={wire} onSelect={key => { setWire(key); setSelected(null); }} onChange={apply}
-              connectionId={connectionId} schema={schema} />
+              connectionId={connectionId} schema={schema} variablesOn={variablesOn} cardReads={variablesOn ? cardReads : undefined} />
           ) : (
             <>
               <PaneLabel>Layout · {lines} {lines === 1 ? "line" : "lines"}</PaneLabel>
@@ -278,7 +281,7 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
             {wire ? (
               <>
                 <span className="aug-fs-xs" style={{ color: "var(--accent-11)", textTransform: "uppercase", letterSpacing: ".06em", marginRight: 6 }}>
-                  {wireKind === "set" ? "Set" : wireKind === "value" ? "Value" : "Chosen"}
+                  {wireKind === "set" ? "Set" : wireKind === "value" ? (variablesOn ? "Variable" : "Value") : "Chosen"}
                 </span>
                 <span style={{ color: "var(--t1)" }}>{wireKind === "set" ? spec.sets?.[wireName]?.label : wireKind === "value" ? spec.values?.[wireName]?.label : wireName.replace(/[-_]/g, " ")}</span>
                 <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: 10, flex: 1 }}>
@@ -375,8 +378,11 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
 
         <aside aria-label="Setup" data-testid="builder-setup"
           style={{ minHeight: 0, overflow: "auto", borderLeft: "1px solid var(--b1)", background: "var(--bg-1)" }}>
-          {aside ?? (wireKind === "set" ? <SetSetup spec={spec} name={wireName} onChange={apply} onGone={() => setWire(null)} connectionId={connectionId} schema={schema} />
-            : wireKind === "value" ? <ValueSetup spec={spec} name={wireName} onChange={apply} onGone={() => setWire(null)} />
+          {aside ?? (wireKind === "set" ? <SetSetup spec={spec} name={wireName} onChange={apply} onGone={() => setWire(null)} connectionId={connectionId} schema={schema}
+            variablesOn={variablesOn} />
+            : wireKind === "value" ? <ValueSetup spec={spec} name={wireName} onChange={apply} onGone={() => setWire(null)} variablesOn={variablesOn}
+              connectionId={connectionId} schema={schema} cardReads={variablesOn ? cardReads : undefined} cardTitle={cardTitle}
+              onRenamed={n => setWire(`value:${n}`)} />
               : wireKind === "choice" ? <ChoiceSetup spec={spec} name={wireName} />
                 : <PieceSetup spec={spec} selected={selected} onChange={apply} connectionId={connectionId} schema={schema} cardTitle={cardTitle}
                   entityTitle={entityTitle} wiringOn={wiringOn} cardSetup={cardSetup} />)}

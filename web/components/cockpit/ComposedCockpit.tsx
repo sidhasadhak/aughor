@@ -40,20 +40,21 @@ import {
 
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CanvasScale, CellBoxContext, OFF_GRID, useMeasured, type CellBox } from "@/components/cockpit/cellBox";
-import { CockpitTile, SaidTile, WIDE, WithheldTile, tileShape, type TileDoors } from "@/components/cockpit/CockpitTile";
+import { CockpitTile, SaidTile, WIDE, WithheldTile, tileShape, type QueryWaiting, type TileDoors } from "@/components/cockpit/CockpitTile";
 import { ActionButtonsPiece } from "@/components/cockpit/ActionButtonsPiece";
 import { ReadSlotContext, type ReadSlot, type ReadStatus } from "@/components/cockpit/readSlot";
 import { ChooseOnePiece, ObjectListPiece, ObjectMapPiece, ObjectSearchPiece, ObjectTimelinePiece } from "@/components/cockpit/AppPieces";
 import {
   ActionButtonPiece, FilterBar, NotFiltered, ObjectChartPiece, ObjectDetailPiece, ObjectFigurePiece,
-  ObjectFiltersPiece, ObjectTablePiece, PiecesProvider, ProcessBoardPiece, useFiltering, usePieceFiltering, usePieces, type FilterProperty,
+  ObjectFiltersPiece, ObjectTablePiece, PiecesProvider, ProcessBoardPiece, ValuesBar, chooseWords, useFiltering, usePieceFiltering, usePieces,
+  type FilterProperty,
 } from "@/components/cockpit/OntologyPieces";
 import { ImageTile, NoteTile, type ImageStamp, type StaticDoors } from "@/components/cockpit/StaticTile";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Refusal } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { BriefingRange, CockpitCard } from "@/lib/api";
+import { runDashboardCard, type BriefingRange, type CardRunResult, type CockpitCard } from "@/lib/api";
 import {
   FILTER_DEFAULT_PX, FILTER_WIDTH, GRADE, GRID, LIMITS, SPAN, rowsTall, sizeOf, type ActionButtonDef, type ComponentName,
   type GridKind, type Layout, type Size, type Tone,
@@ -62,6 +63,7 @@ import { boxOf, clampBox, type Box } from "@/lib/cockpit/edit";
 import { stateModel, type CockpitHostState } from "@/lib/cockpit/hostState";
 import { checkCockpitSpec, openingTab } from "@/lib/cockpit/rules";
 import type { WireSpec } from "@/lib/cockpit/sets";
+import { valuesFor, valuesRead, type ValuesSent } from "@/lib/cockpit/values";
 
 /** What a cockpit may ask of the page that holds it. The static doors and `onResize` are absent
  *  on a cockpit the reader may not change — a published one, a strip. */
@@ -154,7 +156,7 @@ function CockpitRoot({ element, children }: ComponentRenderProps<{ title: string
   const first = elements[firstKey];
   const [preview, setPreview] = useState<number | null>(null);
   if (first?.type !== "ObjectFilters") {
-    return <div role="region" aria-label={element.props.title} data-testid="cockpit">{children}</div>;
+    return <div role="region" aria-label={element.props.title} data-testid="cockpit"><ValuesBar />{children}</div>;
   }
   // A cockpit started from an object: its filter column at the left, the pieces it narrows beside it, and above them
   // what is chosen and how many objects that leaves (the rules hold the column to the root's first child, once).
@@ -177,6 +179,7 @@ function CockpitRoot({ element, children }: ComponentRenderProps<{ title: string
         )}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+        <ValuesBar spaced={false} />
         <FilterBar entity={props.entity} properties={props.properties} set={props.set} />
         {rest}
       </div>
@@ -719,11 +722,49 @@ function Cell({ type, props, size, testid, extra, children }: {
   );
 }
 
+/** Arc AP-8 — a card of a person's own query that reads the cockpit's values: run here, with them as the page holds them
+ *  now — the page that keeps the cockpit runs it without, and would only be told it holds none — again whenever one
+ *  changes; or what it waits on. Every other card is as the page ran it. */
+function useValuedRun(cs: CardState | undefined, range: BriefingRange | null | undefined): {
+  cs: CardState | undefined; waits: QueryWaiting | null; onRefresh: (() => void) | null;
+} {
+  const { valueOf, wire } = usePieces();
+  const names = valuesRead(cs?.card.sql);
+  const now = names.length ? valuesFor(names, wire.values, valueOf) : null;
+  const sent = now && "values" in now ? JSON.stringify(now.values) : "";
+  const [tick, setTick] = useState(0);
+  const refresh = useCallback(() => setTick(t => t + 1), []);
+  const key = cs && sent ? `${cs.card.id}|${sent}|${JSON.stringify(range ?? null)}|${tick}` : "";
+  const [got, setGot] = useState<{ key: string; run?: CardRunResult; failed?: boolean } | null>(null);
+  useEffect(() => {
+    if (!key || !cs) return;
+    let alive = true;
+    runDashboardCard(cs.card.id, range, { values: JSON.parse(sent) as ValuesSent })
+      .then(run => { if (alive) setGot({ key, run }); })
+      .catch(() => { if (alive) setGot({ key, failed: true }); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what it is sent
+  }, [key]);
+  if (!cs || !now) return { cs, waits: null, onRefresh: null };
+  const onRefresh = refresh;
+  const card = cs.card;
+  if ("refused" in now) {
+    const run = { columns: [], rows: [], row_count: 0, caveats: [], error: now.refused, value: null, refresh: card.refresh, shown: null } as CardRunResult;
+    return { cs: { card, run }, waits: null, onRefresh };
+  }
+  if ("waiting" in now) return { cs: { card }, waits: { waiting: <>{chooseWords(wire, now.waiting)} — this reads {now.label} from it.</> }, onRefresh };
+  if ("reading" in now || !got || got.key !== key) return { cs: { card }, waits: { reading: true }, onRefresh };
+  return { cs: { card, run: got.run, failed: got.failed }, waits: null, onRefresh };
+}
+
 function CockpitCard({ element }: ComponentRenderProps<{ card: string; tone?: Tone | null; size?: Size | null }>) {
-  const { cards, host, tileDoors: doors, sym, range, schema } = useCockpit();
+  const { cards, host, tileDoors, sym, range, schema } = useCockpit();
   const id = element.props.card;
   const tone = element.props.tone ?? null;
-  const cs = cards.get(id);
+  const valued = useValuedRun(cards.get(id), range);
+  const cs = valued.cs;
+  const own = valued.onRefresh;
+  const doors = useMemo(() => (own ? { ...tileDoors, onRefresh: own } : tileDoors), [tileDoors, own]);
   const status = host.cards[id]?.status ?? "unmeasured";
   // A card that says no size takes what its shape asks, as it did before sizes: a chart or a
   // table two columns, a figure one.
@@ -741,7 +782,7 @@ function CockpitCard({ element }: ComponentRenderProps<{ card: string; tone?: To
           : (
             <CardBoundary key={`${id}:${cs.run ? JSON.stringify(cs.run.rows).length : 0}:${cs.failed ? 1 : 0}`}>
               <CockpitTile cs={cs as CardState & { card: CockpitCard }} status={status} sym={sym} doors={doors}
-                place={{ elementKey: key, size, range, schema }} />
+                place={{ elementKey: key, size, range, schema }} waits={valued.waits} />
             </CardBoundary>
           )}</>}
     </Cell>

@@ -20,10 +20,11 @@ import type { z } from "zod";
 
 import {
   CHOOSERS, COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, GRADE, GRID, LIMITS, MAX_DEPTH, MAX_SETS, MAX_VALUES, MAY_BE_CONDITIONAL, MAY_HOLD,
-  PLACED, READER_TEXT, SET_READERS, SPLIT_AGGS, SIZES, SWITCHED, TONES, cockpitCatalog, cockpitSet, cockpitValue, type ActionButtonDef,
+  ISO_DAY, PLACED, READER_TEXT, SET_READERS, SPLIT_AGGS, SIZES, SWITCHED, TONES, VALUE_OPS, cockpitCatalog, cockpitSet, cockpitValue,
+  type ActionButtonDef,
   type ComponentName, type GridKind, type Layout, type PieceName,
 } from "@/lib/cockpit/catalog";
-import { choicesOf, isRefused, readSet, type WireSpec } from "@/lib/cockpit/sets";
+import { choicesOf, isRefused, readSet, setNamesOf, valueRing, type WireSpec } from "@/lib/cockpit/sets";
 import { CARD_STATUSES, RANGE_STATUSES, TAB_PATH, publishedPath } from "@/lib/cockpit/hostState";
 
 export const MAX_ELEMENTS = 200;
@@ -197,14 +198,43 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
       continue;
     }
     const v = parsed.data;
-    if ((v.kind === "days" || v.kind === "number") && typeof v.value !== "number") {
-      issues.push({ code: "bad_prop", message: `The value ${q(name)} is a ${v.kind} and holds ${JSON.stringify(v.value)}. A ${v.kind} holds a number.` });
-    } else if (v.kind === "days" && (!Number.isInteger(v.value) || (v.value as number) < 1)) {
-      issues.push({ code: "bad_prop", message: `The value ${q(name)} counts ${JSON.stringify(v.value)} days. Days are a whole number, one or more.` });
-    } else if (v.kind === "text" && typeof v.value !== "string") {
-      issues.push({ code: "bad_prop", message: `The value ${q(name)} is a word and holds a number.` });
+    const by = v.from?.by ?? "author";
+    // a value the author or the reader sets holds one of its own — the reader's first; a value counted or read holds none
+    const held = by === "author" || by === "reader" ? [v.value, ...(v.from?.by === "reader" ? v.from.options ?? [] : [])] : [];
+    if ((by === "author" || by === "reader") && (v.value === undefined || v.value === null)) {
+      issues.push({ code: "bad_prop", message: `The value ${q(name)} holds nothing. A value ${by === "author" ? "you set" : "the reader sets"} holds one to start from.` });
+    } else if ((by === "count" || by === "chosen") && v.value !== undefined && v.value !== null) {
+      issues.push({ code: "bad_prop", message: `The value ${q(name)} is ${by === "count" ? "counted" : "read from the object chosen"} and holds one of its own. It holds none.` });
+    }
+    for (const h of held) {
+      if (h === undefined || h === null) continue;
+      if ((v.kind === "days" || v.kind === "number") && typeof h !== "number") {
+        issues.push({ code: "bad_prop", message: `The value ${q(name)} is a ${v.kind} and holds ${JSON.stringify(h)}. A ${v.kind} holds a number.` });
+      } else if (v.kind === "days" && (!Number.isInteger(h) || (h as number) < 1)) {
+        issues.push({ code: "bad_prop", message: `The value ${q(name)} counts ${JSON.stringify(h)} days. Days are a whole number, one or more.` });
+      } else if (v.kind === "text" && typeof h !== "string") {
+        issues.push({ code: "bad_prop", message: `The value ${q(name)} is a word and holds a number.` });
+      } else if (v.kind === "date" && !(typeof h === "string" && ISO_DAY.test(h))) {
+        issues.push({ code: "bad_prop", message: `The value ${q(name)} is a day and holds ${JSON.stringify(h)}. A day is written 2026-10-11.` });
+      }
+    }
+    if (v.from?.by === "reader" && v.from.options?.length) {
+      const opts = v.from.options;
+      if (new Set(opts.map(o => JSON.stringify(o))).size !== opts.length) {
+        issues.push({ code: "bad_prop", message: `The value ${q(name)} offers the same choice twice.` });
+      } else if (v.value !== undefined && v.value !== null && !opts.some(o => o === v.value)) {
+        issues.push({ code: "bad_prop", message: `The value ${q(name)} starts from ${JSON.stringify(v.value)}, which is not one of the choices it offers.` });
+      }
+    }
+    if (v.from?.by === "count") {
+      if (v.kind !== "number") issues.push({ code: "bad_prop", message: `The value ${q(name)} counts a set, so it holds a number — not ${v.kind === "text" ? "words" : v.kind === "date" ? "a day" : "days"}.` });
+      if (!setNamesOf(spec).includes(v.from.set)) issues.push({ code: "bad_prop", message: `The value ${q(name)} counts the set ${q(v.from.set)}, which this cockpit does not hold.` });
+    } else if (v.from?.by === "chosen" && choices.get(v.from.choice)?.kind !== "chosen") {
+      issues.push({ code: "bad_prop", message: `The value ${q(name)} reads ${v.from.path} of ${q(v.from.choice)}, and no click chooses ${q(v.from.choice)}.` });
     }
   }
+  const ring = valueRing(spec);
+  if (ring) issues.push({ code: "bad_prop", message: `${ring.map(q).join(" → ")} read each other in a ring: a value counted from a set that reads it.` });
   for (const [name, raw] of Object.entries(sets ?? {})) {
     const parsed = cockpitSet.safeParse(raw);
     if (!parsed.success) {
@@ -216,6 +246,15 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
     for (const c of set.where ?? []) {
       const said = `The set ${q(name)} keeps ${c.path} ${c.op}`;
       const lit = c.value !== undefined && c.value !== null;
+      // Arc AP-8 — a value compares as its kind allows: a word for equality, a number or a day for any comparison
+      const v = c.value_from && isObj(values?.[c.value_from]) ? values?.[c.value_from] as { kind?: string } : null;
+      if (c.value_from && v && !(VALUE_OPS as readonly string[]).includes(c.op)) {
+        issues.push({ code: "bad_prop", message: `${said} the value ${q(c.value_from)}. A value is compared with =, !=, >, >=, <, <= or counted back by in_last.` });
+      } else if (c.value_from && v?.kind === "text" && !["=", "!="].includes(c.op)) {
+        issues.push({ code: "bad_prop", message: `${said} the word ${q(c.value_from)}. A word is compared with = or !=.` });
+      } else if (c.value_from && v && c.op !== "in_last" && v.kind === "days") {
+        issues.push({ code: "bad_prop", message: `${said} the days ${q(c.value_from)}. Days are counted back by in_last.` });
+      }
       if ((c.op === "is_null" || c.op === "not_null") && (lit || c.values?.length || c.value_from)) {
         issues.push({ code: "bad_prop", message: `${said} with something to compare. ${c.op} compares with nothing.` });
       } else if ((c.op === "in" || c.op === "not_in") && !(c.values?.length) && !c.value_from) {

@@ -35,7 +35,14 @@ export interface SetRead {
   linkedTo: { choice: string; path: string } | null;
   /** The set, then each it starts from. */
   chain: string[];
+  /** Arc AP-8 — a value it reads that is not there yet: the choice a value read from a chosen object waits on, or a
+   *  value still being counted. */
+  pending?: { waiting: string } | { reading: true };
 }
+
+/** Arc AP-8 — what a value holds now, as the page knows it: a value; the choice a value read from a chosen object waits
+ *  on; still being read (a count, a chosen object's property); or why it cannot be read. */
+export type ValueNow = { value: unknown } | { waiting: string } | { reading: true } | { refused: string };
 export type Refused = { refused: string };
 export const isRefused = (r: unknown): r is Refused => typeof r === "object" && r !== null && "refused" in r;
 
@@ -43,13 +50,14 @@ const q = (s: string) => JSON.stringify(s);
 
 /** What `name` reads, or why it cannot be read: a set it starts from that is not there, a ring of sets each starting
  *  from the next, two segments down one chain, a value no one set. */
-export function readSet(spec: WireSpec, name: string): SetRead | Refused {
+export function readSet(spec: WireSpec, name: string, valueOf?: (value: string) => ValueNow): SetRead | Refused {
   const sets = spec.sets ?? {};
   const values = spec.values ?? {};
   const chain: string[] = [];
   const where: DoorCondition[] = [];
   let segment = "";
   let linkedTo: SetRead["linkedTo"] = null;
+  let pending: SetRead["pending"];
   let at: string | null | undefined = name;
   while (at) {
     if (chain.includes(at)) return { refused: `The sets ${[...chain, at].map(q).join(" → ")} start from each other in a ring.` };
@@ -77,7 +85,11 @@ export function readSet(spec: WireSpec, name: string): SetRead | Refused {
         if (c.op === "in_last" && v.kind !== "days") {
           return { refused: `The set ${q(at)} counts the last days by the value ${q(c.value_from)}, which is a ${v.kind}, not a number of days.` };
         }
-        cond.value = v.value;
+        // the value as the page holds it now — the reader's, a count, the chosen object's — else the one the author set
+        const now: ValueNow = valueOf ? valueOf(c.value_from) : { value: v.value ?? null };
+        if ("refused" in now) return { refused: `The set ${q(at)} reads the value ${q(c.value_from)}, which cannot be read: ${now.refused}` };
+        if ("value" in now) cond.value = now.value;
+        else pending = pending ?? now;
       } else if (c.op === "in" || c.op === "not_in") {
         cond.values = c.values ?? [];
       } else if (c.op !== "is_null" && c.op !== "not_null") {
@@ -87,12 +99,56 @@ export function readSet(spec: WireSpec, name: string): SetRead | Refused {
     }
     if (set.entity) {
       if (set.from) return { refused: `The set ${q(at)} names an entity and a set it starts from. It names one.` };
-      return { name, label: sets[name]?.label ?? name, entity: set.entity, segment, where, linkedTo, chain };
+      return { name, label: sets[name]?.label ?? name, entity: set.entity, segment, where, linkedTo, chain, ...(pending ? { pending } : {}) };
     }
     if (!set.from) return { refused: `The set ${q(at)} names neither an entity nor a set it starts from.` };
     at = set.from;
   }
   return { refused: `The set ${q(name)} reads nothing.` };
+}
+
+/** The names of the sets a cockpit holds. */
+export const setNamesOf = (spec: WireSpec): string[] => Object.keys(spec.sets ?? {});
+
+/** Arc AP-8 — a value counted from a set that, down the sets it starts from and the values they read, reads that value
+ *  again: the names round the ring, or null. */
+export function valueRing(spec: WireSpec): string[] | null {
+  const values = spec.values ?? {};
+  const sets = spec.sets ?? {};
+  const next = (node: string): string[] => {
+    if (node.startsWith("v:")) {
+      const v = values[node.slice(2)];
+      return v?.from?.by === "count" ? [`s:${v.from.set}`] : [];
+    }
+    const set = sets[node.slice(2)];
+    return set ? [...(set.from ? [`s:${set.from}`] : []), ...(set.where ?? []).filter(c => c.value_from).map(c => `v:${c.value_from}`)] : [];
+  };
+  for (const name of Object.keys(values)) {
+    if (values[name]?.from?.by !== "count") continue;
+    const start = `v:${name}`;
+    const path: string[] = [];
+    const seen = new Set<string>();
+    const walk = (node: string): string[] | null => {
+      if (node === start && path.length) return [...path, node];
+      if (seen.has(node)) return null;
+      seen.add(node);
+      path.push(node);
+      for (const n of next(node)) {
+        const found = walk(n);
+        if (found) return found;
+      }
+      path.pop();
+      return null;
+    };
+    const ring = walk(start);
+    if (ring) return ring.map(n => n.slice(2));
+  }
+  return null;
+}
+
+/** A value of `kind` that stands for one the page has not read yet, for the server's compile of every set (Arc AP-8). */
+export function probeValue(kind: string): unknown {
+  return kind === "text" ? "probe" : kind === "date" ? "2026-01-01" : 1;
 }
 
 /** Every object of `entity` — the set a piece that names an entity reads, as every piece did before sets. */
@@ -107,11 +163,12 @@ export interface Choice { name: string; kind: ChoiceKind; madeBy: string[]; enti
 
 /** The set a piece reads: the set a figure shows in its stead when one does, else its named set, else every object of
  *  the entity it names. */
-export function pieceSet(spec: WireSpec, props: Record<string, unknown>, shown?: (choice: string) => string | null): SetRead | Refused {
+export function pieceSet(spec: WireSpec, props: Record<string, unknown>, shown?: (choice: string) => string | null,
+  valueOf?: (value: string) => ValueNow): SetRead | Refused {
   const from = typeof props.set_from === "string" ? props.set_from : "";
   const instead = from && shown ? shown(from) : null;
-  if (instead) return readSet(spec, instead);
-  if (typeof props.set === "string" && props.set) return readSet(spec, props.set);
+  if (instead) return readSet(spec, instead, valueOf);
+  if (typeof props.set === "string" && props.set) return readSet(spec, props.set, valueOf);
   if (typeof props.entity === "string" && props.entity) return everyObject(props.entity, typeof props.segment === "string" ? props.segment : "");
   return { refused: "This piece names neither an entity nor a set." };
 }
@@ -142,7 +199,7 @@ export function choicesOf(spec: WireSpec): Map<string, Choice> {
 
 /** The element keys that read `name` — a set, a value or a choice — and the sets that do, each once. A set nothing reads
  *  may be taken away; one something reads says what. */
-export function readersOf(spec: WireSpec, name: string): { elements: string[]; sets: string[] } {
+export function readersOf(spec: WireSpec, name: string): { elements: string[]; sets: string[]; values: string[] } {
   const elements: string[] = [];
   for (const [key, el] of Object.entries(spec.elements)) {
     const p = el?.props ?? {};
@@ -154,12 +211,17 @@ export function readersOf(spec: WireSpec, name: string): { elements: string[]; s
   }
   const sets = Object.entries(spec.sets ?? {}).filter(([, s]) =>
     s.from === name || s.linked_to?.choice === name || (s.where ?? []).some(c => c.value_from === name)).map(([k]) => k);
-  return { elements, sets };
+  // Arc AP-8 — a value counted from a set reads it; one read from a chosen object reads the choice
+  const values = Object.entries(spec.values ?? {}).filter(([, v]) =>
+    (v.from?.by === "count" && v.from.set === name) || (v.from?.by === "chosen" && v.from.choice === name)).map(([k]) => k);
+  return { elements, sets, values };
 }
 
 /** What a set reads as the object door's conditions — or the choice it waits on, when it reads what a chosen object
  *  links to and nothing is chosen yet. `chosen` names the key of the object a choice holds. */
-export function doorConditions(r: SetRead, chosen: (choice: string) => string | null): { filters: DoorCondition[] } | { waiting: string } {
+export function doorConditions(r: SetRead, chosen: (choice: string) => string | null):
+  { filters: DoorCondition[] } | { waiting: string } | { reading: true } {
+  if (r.pending) return r.pending;
   const filters = [...r.where];
   if (r.linkedTo) {
     const pk = chosen(r.linkedTo.choice);
@@ -174,10 +236,17 @@ export function doorConditions(r: SetRead, chosen: (choice: string) => string | 
 export function wiring(spec: WireSpec): {
   sets: Record<string, { entity: string; segment: string; filters: DoorCondition[] } | Refused>;
   buttons: { element: string; index: number; action: string; params: Record<string, { source: string; entity: string }> }[];
+  /** Arc AP-8 — each value that is not the author's: where it comes from, and for one read off a chosen object, the
+   *  entity that object is and the property read. */
+  values: Record<string, { by: string; set?: string; choice?: string; entity?: string; path?: string }>;
 } {
   const sets: ReturnType<typeof wiring>["sets"] = {};
   for (const name of Object.keys(spec.sets ?? {})) {
-    const r = readSet(spec, name);
+    const r = readSet(spec, name, v => {
+      const def = spec.values?.[v];
+      const by = def?.from?.by ?? "author";
+      return { value: by === "author" || by === "reader" ? def?.value ?? null : probeValue(def?.kind ?? "number") };
+    });
     if (isRefused(r)) { sets[name] = r; continue; }
     const read = doorConditions(r, () => "probe");
     sets[name] = { entity: r.entity, segment: r.segment, filters: "filters" in read ? read.filters : [] };
@@ -202,5 +271,12 @@ export function wiring(spec: WireSpec): {
       buttons.push({ element: key, index, action: b.action, params });
     });
   }
-  return { sets, buttons };
+  const values: ReturnType<typeof wiring>["values"] = {};
+  for (const [name, v] of Object.entries(spec.values ?? {})) {
+    const from = v.from;
+    if (!from || from.by === "author") continue;
+    values[name] = from.by === "chosen" ? { by: "chosen", choice: from.choice, path: from.path, entity: choices.get(from.choice)?.entity ?? "" }
+      : from.by === "count" ? { by: "count", set: from.set } : { by: from.by };
+  }
+  return { sets, buttons, values };
 }

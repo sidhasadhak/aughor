@@ -85,12 +85,16 @@ export function queryChartSpec(c: QueryChart, setup: Pick<QueryShown, "segments"
     // side-by-side bar by each series' value there; along categories each bar is
     const lastX = temporal || numericX ? values.at(-1)?.x : undefined;
     const only = lastX !== undefined && lastX !== null ? [{ filter: { field: "x", equal: lastX } }] : [];
+    // side by side, a label for each series sat on a bar a few pixels wide, over its neighbours' (seen on theLook,
+    // 2026-10-11): only the highest at each labelled place says its number
+    const lead = bars && split && setup.segments === "side_by_side"
+      ? [{ window: [{ op: "rank", as: "at" }], sort: [{ field: "v", order: "descending" }], groupby: ["x"] }, { filter: "datum.at === 1" }] : [];
     layer.push(bars && stack === "zero"
       ? { transform: [...only, { aggregate: [{ op: "sum", field: "v", as: "total" }], groupby: ["x"] }],
         mark: { type: "text", dy: -6, fontSize: 10.5 },
         encoding: { x: { field: "x", type: x.type, sort: xSort }, y: { field: "total", type: "quantitative" },
           text: { field: "total", type: "quantitative", format: ".3~s" } } }
-      : { transform: only, mark: { type: "text", dy: -6, fontSize: 10.5 },
+      : { transform: [...only, ...lead], mark: { type: "text", dy: -6, fontSize: 10.5 },
         encoding: { x, y: { field: "v", type: "quantitative", stack }, text: { field: "v", type: "quantitative", format: ".3~s" },
           ...(bars && split && setup.segments === "side_by_side" ? { xOffset: { field: "s", sort: named } } : {}) } });
   }

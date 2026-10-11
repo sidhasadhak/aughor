@@ -961,6 +961,32 @@ describe("your own query on the cockpit (Arc AP-7)", () => {
     expect(api.keepCockpitQuery).toHaveBeenCalledWith("thelook", expect.objectContaining({ replaces: "c91b2002" }));
   });
 
+  it("leaves a query that reads the cockpit's values to its own cell, and runs every other card as written (Arc AP-8)", async () => {
+    api.getCockpit.mockResolvedValue({ ...READ, cards: [READ.cards[0],
+      { ...queryCard("c91b2002"), sql: "SELECT day, sales FROM thelook.orders WHERE country = {{country}}" }, READ.cards[2]] });
+    show();
+    await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
+    expect(api.runDashboardCard.mock.calls.map(c => c[0])).toEqual(["c7f3a001"]);
+    const held = (drawn.props.at(-1)!.cards as { card: { id: string }; run?: unknown }[]).find(c => c.card.id === "c91b2002")!;
+    expect(held.run).toBeUndefined();
+  });
+
+  it("offers the cockpit's values to a query's setup while variables are on, and none while they are off", async () => {
+    const valued = { ...SPEC, values: { country: { label: "Country", kind: "text", value: "China", from: { by: "reader" } } } };
+    api.getCockpit.mockResolvedValue({ ...READ, cockpit: { ...READ.cockpit, spec: valued }, cards: [READ.cards[0], queryCard("c91b2002"), READ.cards[2]] });
+    for (const variables of [true, false]) {
+      api.getSystemFlags.mockResolvedValue({ ...QUERIES, "cockpit.wiring": { value: true }, ...(variables ? { "cockpit.variables": { value: true } } : {}) });
+      const { unmount } = show();
+      fireEvent.click(await screen.findByTestId("cockpit-edit"));
+      await screen.findByTestId("cockpit-builder");
+      fireEvent.click((await screen.findAllByTestId("builder-line")).find(l => l.dataset.key === "card-net")!);
+      const setup = await screen.findByTestId("query-setup");
+      expect(!!within(setup).queryByTestId("query-values-open")).toBe(variables);
+      expect(!!screen.queryByRole("radio", { name: "Variables" })).toBe(variables);
+      unmount();
+    }
+  });
+
   it("offers no query of your own, and sets up a card as before, while queries are off", async () => {
     api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true }, "cockpit.app_pieces": { value: true } });
     api.getCockpit.mockResolvedValue({ ...READ, cards: [READ.cards[0], queryCard("c91b2002"), READ.cards[2]] });

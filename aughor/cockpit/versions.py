@@ -333,14 +333,15 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
     not_held = images.not_held(home.connection_id, spec)
     if not_held:
         return Kept(REFUSED, sentences=tuple(not_held))
-    from aughor.cockpit import app_pieces, builder, pieces, wiring
-    off = builder.refused(spec) + wiring.refused_off(spec) + app_pieces.refused_off(spec)
+    from aughor.cockpit import app_pieces, builder, pieces, variables, wiring
+    off = builder.refused(spec) + wiring.refused_off(spec) + app_pieces.refused_off(spec) + variables.refused_off(spec)
     if off:
         return Kept(REFUSED, sentences=tuple(off))
     # Arc AP-2 — what each set reads, as the web reads it, once: the pieces that read a set are probed over it
     wired = wiring.read(spec)
     unresolved = pieces.not_resolved(home.connection_id, spec, wiring=wired) \
-        + wiring.not_resolved(home.connection_id, spec, wiring=wired)
+        + wiring.not_resolved(home.connection_id, spec, wiring=wired) \
+        + variables.not_resolved(home.connection_id, spec, wiring=wired) + variables.unheld(spec, verdict.cards)
     if unresolved:
         return Kept(REFUSED, sentences=tuple(unresolved))
     copies = twin_cards(verdict.cards, before.get("cards") or [])

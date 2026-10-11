@@ -73,6 +73,7 @@ import {
 import { hostStateOf } from "@/lib/cockpit/hostStatus";
 import { SHAPES } from "@/lib/cockpit/shapes";
 import { emptyCockpitSpec, overdueSegmentOf, processCockpitHolds, processCockpitSpec, startCockpit } from "@/lib/cockpit/start";
+import { valuesRead } from "@/lib/cockpit/values";
 import { formatDateTime } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { foldNavFor } from "@/lib/navCollapse";
@@ -609,6 +610,8 @@ function SharedCockpitView({ connectionId, schema, owner, cockpitId, range, chos
         const read = await getSharedCockpit(connectionId, owner, cockpitId, range);
         const placed = new Set(read.cockpit.spec ? cardsPlaced(read.cockpit.spec) : []);
         const runs = await Promise.all(read.cards.filter(c => placed.has(c.id)).map(async (card): Promise<CardState> => {
+          // Arc AP-8 — a query reading the cockpit's values is run by its own cell, with them
+          if (valuesRead(card.sql).length) return { card };
           try { return { card, run: await runDashboardCard(card.id, range, { compare: true }) }; }
           catch { return { card, failed: true }; }
         }));
@@ -735,6 +738,8 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [limitsOn, setLimitsOn] = useState(false);
   // Arc AP-7 — a query of the person's own, while `cockpit.queries` is on; a new one is written for a section
   const [queriesOn, setQueriesOn] = useState(false);
+  // Arc AP-8 — variables, while `cockpit.variables` is on: the Variables pane, and a query reading the cockpit's values
+  const [variablesOn, setVariablesOn] = useState(false);
   const [writing, setWriting] = useState<{ section: string | null } | null>(null);
   // the picker open, for a section (none: the first that holds pieces); and where a card, a note, an image or a finding
   // handed off from it lands
@@ -779,6 +784,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
         setObjectsOn(!!f["ontology.object_cockpits"]?.value); setBuilderOn(!!f["cockpit.builder"]?.value);
         setWiringOn(!!f["cockpit.wiring"]?.value); setStructureOn(!!f["cockpit.app_pieces"]?.value);
         setLimitsOn(!!f["ontology.security"]?.value); setQueriesOn(!!f["cockpit.queries"]?.value);
+        setVariablesOn(!!f["cockpit.variables"]?.value);
       }
     }).catch(() => { if (alive) { setRangesOn(false); setPiecesOn(false); } });
     return () => { alive = false; };
@@ -816,6 +822,8 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
         const read = await getCockpit(connectionId, chosen, range);
         const placed = new Set(read.cockpit.spec ? cardsPlaced(read.cockpit.spec) : []);
         const runs = await Promise.all(read.cards.filter(c => placed.has(c.id)).map(async (card): Promise<CardState> => {
+          // Arc AP-8 — a query reading the cockpit's values is run by its own cell, with them
+          if (valuesRead(card.sql).length) return { card };
           try { return { card, run: await runDashboardCard(card.id, range, { compare: true }) }; }
           catch { return { card, failed: true }; }
         }));
@@ -1122,7 +1130,8 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
       <div data-testid="briefing-cockpits" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <CockpitBuilder spec={current} onChange={change} cardTitle={id => lines.get(id)?.title} connectionId={connectionId} schema={schema}
           wiringOn={wiringOn} structureOn={structureOn} onAddPiece={structureOn ? section => setAdding({ section }) : undefined}
-          checks={checks}
+          checks={checks} variablesOn={variablesOn && wiringOn}
+          cardReads={id => valuesRead(data.cards.find(c => c.id === id)?.sql)}
           bar={(
             <EditBar saved={saved} canUndo={stacks.past.length > 0} canRedo={stacks.future.length > 0} onUndo={undo} onRedo={redo} onDone={done}
               picker={(
@@ -1203,7 +1212,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
             const held = data.cards.find(c => c.id === cardId);
             if (!held || !held.own || !(held.render as { shown?: unknown })?.shown) return null;
             return (
-              <QuerySetup key={held.id} connectionId={connectionId} card={held}
+              <QuerySetup key={held.id} connectionId={connectionId} card={held} values={variablesOn ? current.values ?? {} : null}
                 onKept={(kept, replaced) => replaced
                   && edit(s => swapCard(s, replaced, kept.id), "a query of your own changed by hand", `Kept the change to “${kept.title}”.`)} />
             );
@@ -1217,7 +1226,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               {historyPanel}
             </div>
           ) : writing && queriesOn ? (
-            <QuerySetup connectionId={connectionId} onClose={() => setWriting(null)}
+            <QuerySetup connectionId={connectionId} onClose={() => setWriting(null)} values={variablesOn ? current.values ?? {} : null}
               onKept={() => {
                 target.current = writing.section; adopt.current = true; adoptNote.current = "a query of your own placed by hand";
                 setWriting(null); reload();

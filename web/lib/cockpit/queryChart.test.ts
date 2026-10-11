@@ -70,6 +70,16 @@ describe("a query card's chart", () => {
     expect(layers(queryChartSpec(chart("bar"), setup("shares", true), COLOURS))).toHaveLength(1);   // a share needs no number
   });
 
+  it("labels side by side bars by the highest at the last date alone — never a number over its neighbours", () => {
+    const side = layers(queryChartSpec(chart("bar"), setup("side_by_side", true), COLOURS));
+    expect(side[1].transform).toEqual([{ filter: { field: "x", equal: xText(DAYS[2], "date", "day") } },
+      { window: [{ op: "rank", as: "at" }], sort: [{ field: "v", order: "descending" }], groupby: ["x"] }, { filter: "datum.at === 1" }]);
+    expect(side[1].encoding.xOffset).toEqual({ field: "s", sort: ["China", "United States", "Other"] });
+    // a line ends each series' run with its own number
+    expect(layers(queryChartSpec(chart("line"), setup("stacked", true), COLOURS))[1].transform).toEqual([
+      { filter: { field: "x", equal: xText(DAYS[2], "date", "day") } }]);
+  });
+
   it("says a day by its month and day — the year only where the chart spans two — lays its legend flat, and keeps numbers short", () => {
     const one = queryChartSpec(chart("bar"), setup("stacked", true), COLOURS);
     expect((one.data as { values: { x: string }[] }).values.map(v => v.x).slice(0, 1)).toEqual(["Oct 8"]);

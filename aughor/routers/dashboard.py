@@ -351,10 +351,16 @@ def _card_range(conn_id: str, preset: Optional[str], start: Optional[str], end: 
     return spec
 
 
+class CardRunValues(BaseModel):
+    """Arc AP-8 — the cockpit's values a card of a person's own query reads as ``{{name}}``, as the page holds them now:
+    name → ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement."""
+    values: Dict[str, Dict[str, Any]] = {}
+
+
 @router.post("/cards/{card_id}/run")
 def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[str] = None,
                    end: Optional[str] = None, workspace_id: Optional[str] = None,
-                   compare: bool = False) -> dict:
+                   compare: bool = False, body: Optional[CardRunValues] = None) -> dict:
     """Recompute a card's value NOW: re-run its SQL through the guard battery and return the
     current result. A single numeric cell is recorded as the card's latest value (rolling the
     previous one into prev_value) so a KPI can show a delta. Guard-on-read keeps a card honest
@@ -395,7 +401,15 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
     # or stale metrics").
     base = _metric_statement(metric) or card.sql
     sql, scoped, cut_on = base, None, None
-    if spec is not None:
+    shown, unread = _shown_of(card)
+    reads = _reads_values(card) if shown is not None else False
+    if spec is not None and reads:
+        # Arc AP-8 — a query that reads the cockpit's values is read as it says: cutting it would rewrite the statement
+        # its values are bound into
+        from aughor.briefing.ranges import phrases
+        scoped = {"covers": phrases(spec)["covers"], "standing": True, "grain": None,
+                  "why": "It reads the cockpit's own values, so it is read as its query says, not cut to the range."}
+    elif spec is not None:
         from aughor.briefing.ranges import phrases
         from aughor.briefing.reask import grain_for
         from aughor.semantic.metric_statement import scoped_statement
@@ -414,11 +428,10 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         else:
             sql, cut_on = cut, (table, col, dialect)
             scoped = {"covers": covers, "standing": False, "why": "", "grain": f"{table}.{col}"}
-    shown, unread = _shown_of(card)
     if shown is not None or unread:
         # Arc AP-7 — a card of a person's own query, shown as they asked
         try:
-            return _run_shown(db, card, shown, unread, sql, scoped)
+            return _run_shown(db, card, shown, unread, sql, scoped, values=body.values if body else {})
         finally:
             try:
                 db.close()
@@ -485,9 +498,16 @@ def _shown_of(card):
         return None, str(e)
 
 
-def _run_shown(db, card, shown, unread: str, sql: str, scoped) -> dict:
+def _reads_values(card) -> bool:
+    """Arc AP-8 — whether a card's query reads any of the cockpit's values (``{{name}}``)."""
+    from aughor.cockpit import queries
+    return bool(queries.params_of(card.sql or ""))
+
+
+def _run_shown(db, card, shown, unread: str, sql: str, scoped, *, values: Optional[dict] = None) -> dict:
     """Arc AP-7 — run a query card as it is shown: refused while a row policy narrows a table it reads (it reads the
-    table straight), summed around the person's statement, stopped after the connection's time limit."""
+    table straight), summed around the person's statement, stopped after the connection's time limit. Arc AP-8 — the
+    cockpit's values it reads are bound by the engine, as the page holds them now; one it holds nothing for is said."""
     from aughor.cockpit import pieces, queries
 
     def said(why: str) -> dict:
@@ -495,6 +515,15 @@ def _run_shown(db, card, shown, unread: str, sql: str, scoped) -> dict:
                 "refresh": card.refresh.model_dump(), "scoped": scoped, "shown": None}
     if unread:
         return said(unread)
+    params = None
+    if queries.params_of(sql):
+        from aughor.cockpit import variables
+        if not variables.on():
+            return said(variables.refused_query(sql))
+        try:
+            sql, params = queries.bind(sql, values or {})
+        except queries.Refused as e:
+            return said(str(e))
     try:
         graph = pieces.served_graph(card.connection_id)
     except Exception:
@@ -505,7 +534,7 @@ def _run_shown(db, card, shown, unread: str, sql: str, scoped) -> dict:
     seconds = queries.time_limit(card.connection_id)
     columns = card.render.get("columns") if isinstance(card.render, dict) else None
     if not isinstance(columns, list) or not columns:
-        probe = queries.probe(db, sql, seconds=seconds)
+        probe = queries.probe(db, sql, seconds=seconds, params=params)
         if probe["error"]:
             return said(probe["error"])
         columns = probe["columns"]
@@ -513,11 +542,12 @@ def _run_shown(db, card, shown, unread: str, sql: str, scoped) -> dict:
     problems = queries.check(shown, columns)
     if problems:
         return said(" ".join(problems))
-    ran = queries.run(db, sql, shown, columns, seconds=seconds)
+    ran = queries.run(db, sql, shown, columns, seconds=seconds, params=params)
     if ran["error"]:
         return said(ran["error"])
     value = ran["shown"].get("value") if ran["shown"]["as"] == "figure" else None
-    card = _recorded(card, value if (scoped is None or scoped["standing"]) else None)
+    # a figure read for one reader's values is theirs, never the card's standing value
+    card = _recorded(card, value if (scoped is None or scoped["standing"]) and params is None else None)
     return {"columns": [c.get("name") for c in ran["columns"]], "rows": ran["rows"][:200], "row_count": len(ran["rows"]),
             "caveats": ran["caveats"], "error": None, "value": value, "refresh": card.refresh.model_dump(),
             "scoped": scoped, "shown": ran["shown"], "duration_ms": ran["duration_ms"]}

@@ -62,6 +62,9 @@ class QueryRequest(BaseModel):
     shown: dict[str, Any] = {}
     title: str = ""
     replaces: str = ""
+    #: Arc AP-8 — the cockpit's values the query reads as ``{{name}}``, as the page holds them now: name →
+    #: ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement.
+    values: dict[str, dict[str, Any]] = {}
 
 
 class AskRequest(BaseModel):
@@ -297,6 +300,16 @@ def _read_query(connection_id: str, req: QueryRequest) -> dict:
         shown = queries.Shown.model_validate(req.shown or {"as": "table"})
     except Exception as e:
         return {"refused": [f"How the card is shown cannot be read: {e}"]}
+    # Arc AP-8 — the cockpit's values it reads, bound: refused while variables are off, or when one holds nothing
+    run_sql, params = sql, None
+    if queries.params_of(sql):
+        from aughor.cockpit import variables
+        if not variables.on():
+            return {"refused": [variables.refused_query(sql)]}
+        try:
+            run_sql, params = queries.bind(sql, req.values)
+        except queries.Refused as e:
+            return {"refused": [str(e)]}
     try:
         db = open_connection_for(connection_id)
     except Exception as e:
@@ -311,7 +324,7 @@ def _read_query(connection_id: str, req: QueryRequest) -> dict:
         if refusal:
             return {"refused": [refusal], "tables": tables}
         seconds = queries.time_limit(connection_id)
-        probe = queries.probe(db, sql, seconds=seconds)
+        probe = queries.probe(db, run_sql, seconds=seconds, params=params)
         if probe["error"]:
             return {"refused": [probe["error"]], "tables": tables}
         columns = probe["columns"]
@@ -319,10 +332,11 @@ def _read_query(connection_id: str, req: QueryRequest) -> dict:
         problems = queries.check(shown, columns)
         out = {"columns": columns, "rows": probe["rows"][:queries.PREVIEW_ROWS],
                "more": probe["truncated"] or len(probe["rows"]) > queries.PREVIEW_ROWS,
-               "duration_ms": probe["duration_ms"], "caveats": probe["caveats"], "tables": tables, "setup": shown.said()}
+               "duration_ms": probe["duration_ms"], "caveats": probe["caveats"], "tables": tables, "setup": shown.said(),
+               "reads": queries.params_of(sql)}
         if problems:
             return {**out, "refused": problems}
-        ran = queries.run(db, sql, shown, columns, seconds=seconds)
+        ran = queries.run(db, run_sql, shown, columns, seconds=seconds, params=params)
         if ran["error"]:
             return {**out, "refused": [ran["error"]]}
         return {**out, "refused": [], "shown": ran["shown"]}

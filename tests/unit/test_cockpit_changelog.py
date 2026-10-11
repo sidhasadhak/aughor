@@ -62,6 +62,21 @@ def test_a_rename_says_the_new_name_and_the_sets_and_values_are_said_by_their_la
     assert changelog.said(after, later) == ["Took off the set Shipped late", "Changed the value Window"]
 
 
+def test_a_value_whose_name_followed_its_rename_is_said_renamed_never_taken_off():
+    """Arc AP-8 — a value nothing reads yet takes its new label's name ({{country}}, never {{window-2}}): the versions
+    hold one value gone and one new, the same but for the label, and History says the rename."""
+    before, after = _desk(), _desk()
+    before["values"] = {"window": {"label": "Window", "kind": "days", "value": 14},
+                        "window-2": {"label": "Window", "kind": "days", "value": 14}}
+    after["values"] = {"window": {"label": "Window", "kind": "days", "value": 14},
+                       "country": {"label": "Country", "kind": "days", "value": 14}}
+    assert changelog.said(before, after) == ["Renamed the value Window to Country"]
+    # a value taken off as another is named — a different definition — is said as both
+    other = copy.deepcopy(after)
+    other["values"] = {"window": before["values"]["window"], "since": {"label": "Since", "kind": "date", "value": "2026-10-01"}}
+    assert changelog.said(after, other) == ["Named the value Since", "Took off the value Country"]
+
+
 def test_many_changes_say_the_first_and_count_the_rest():
     before, after = _desk(), _desk()
     for i in range(6):

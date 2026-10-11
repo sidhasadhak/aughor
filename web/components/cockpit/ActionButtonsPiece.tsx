@@ -70,7 +70,7 @@ export function ActionButtonsPiece({ buttons }: { buttons: ActionButtonDef[] }) 
 type Outcome = { status: "ran" } | { status: "proposed" } | { status: "refused"; message: string } | { status: "failed"; message: string };
 
 function OneButton({ def, declared }: { def: ActionButtonDef; declared: DeclaredAction | null }) {
-  const { connectionId, schema, wire, picked, ticked, filters, bump } = usePieces();
+  const { connectionId, schema, wire, picked, ticked, filters, bump, valueOf } = usePieces();
   const [open, setOpen] = useState(false);
   const [asked, setAsked] = useState<Record<string, unknown>>({});
   const [busy, setBusy] = useState(false);
@@ -95,9 +95,10 @@ function OneButton({ def, declared }: { def: ActionButtonDef; declared: Declared
 
   /** A set's objects, read at the press — at most the most one press runs on, and its count. */
   const readSetKeys = async (name: string) => {
-    const r = readSet(wire, name);
+    const r = readSet(wire, name, valueOf);
     if (isRefused(r)) { setSaid(r.refused); return null; }
     const read = doorConditions(r, c => picked[c]?.pk ?? null);
+    if ("reading" in read) { setSaid("The set waits on a value still being read; press again in a moment."); return null; }
     if ("waiting" in read) { setSaid(`Choose one in ${words(read.waiting)} first.`); return null; }
     const out = await listObjects({ entity: r.entity, segment: r.segment, columns: [], order_by: "", descending: false, offset: 0,
       limit: MAX_TICKED_RUNS, filters: [...read.filters, ...(conditionsFor(filters, r.entity) as typeof read.filters)] }, connectionId, schema);
