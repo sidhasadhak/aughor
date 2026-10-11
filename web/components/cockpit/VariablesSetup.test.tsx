@@ -277,3 +277,54 @@ describe("a query of the person's own, reading values", () => {
     expect(api.previewCockpitQuery.mock.calls[0][1]).not.toHaveProperty("values");
   });
 });
+
+describe("a set read whole (Arc AP-8b)", () => {
+  const link = (name: string, to: string, to_name: string, kind: "to-one" | "to-many") =>
+    ({ name, to, to_name, kind, traversable: true, business_name: "", business_name_source: "", verb: "", relationship: name, direction: "out",
+      to_type: to, cardinality: kind === "to-one" ? "N:1" : "1:N", measured: true, on: "" });
+  beforeEach(() => {
+    types.getObjectType.mockImplementation(async (name: string) => (name === "order"
+      ? { ...ORDER, links: [link("placed_by", "user", "Customer", "to-one"), link("order_items", "order_item", "Order line", "to-many"),
+        { ...link("untrusted", "product", "Product", "to-many"), traversable: false }] }
+      : { ...ORDER, id: name, object_type: name, links: [] }));
+  });
+
+  it("gets its objects' linked objects through any link the door may cross — the set then holds those", async () => {
+    const onChange = vi.fn();
+    render(<SetSetup spec={desk()} name="waiting" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
+    await waitFor(() => expect(optionsOf(screen.getByLabelText("Gets its linked objects")).map(o => o.text))
+      .toEqual(["No — its own order objects", "Customer · through placed by", "Order line · through order items"]));
+    await choose(screen.getByLabelText("Gets its linked objects"), "placed_by");
+    expect(onChange.mock.calls[0][0].sets.waiting).toEqual({ label: "Waiting", from: "placed", segment: "overdue_dispatch",
+      traverse: { link: "placed_by", entity: "user" }, combine: null });
+  });
+
+  it("is combined only with sets of the objects it holds, in either, both or but not", async () => {
+    const onChange = vi.fn();
+    render(<SetSetup spec={desk()} name="big" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
+    await choose(screen.getByLabelText("How it is combined"), "but_not");
+    expect(onChange.mock.calls[0][0].sets.big.combine).toEqual({ op: "but_not", set: "placed" });
+    const spec = desk();
+    spec.sets!.big.combine = { op: "but_not", set: "placed" };
+    spec.sets!.theirs = { label: "Their customers", from: "waiting", traverse: { link: "placed_by", entity: "user" } };
+    render(<SetSetup spec={spec} name="big" onChange={onChange} onGone={vi.fn()} connectionId={`c${++conn}`} variablesOn />,
+      { container: document.body.appendChild(document.createElement("div")) });
+    expect(optionsOf(screen.getAllByLabelText("The set it is combined with").at(-1)!).map(o => o.value)).toEqual(["placed", "waiting"]);   // never Their customers
+  });
+
+  it("says in the Variables list what it reaches and what it is combined with", () => {
+    const spec = desk();
+    spec.sets!.theirs = { label: "Their customers", from: "waiting", traverse: { link: "placed_by", entity: "user" } };
+    spec.sets!.big.combine = { op: "but_not", set: "placed" };
+    render(<DataPane spec={spec} selected={null} onSelect={vi.fn()} onChange={vi.fn()} connectionId={`c${++conn}`} variablesOn />);
+    const line = (n: string) => screen.getAllByTestId("data-set").find(x => x.dataset.name === n)!;
+    expect(line("theirs")).toHaveTextContent("Waiting → user");
+    expect(line("big")).toHaveTextContent("1 condition · but not in Placed");
+  });
+
+  it("offers neither while variables are off", () => {
+    render(<SetSetup spec={desk()} name="big" onChange={vi.fn()} onGone={vi.fn()} connectionId={`c${++conn}`} />);
+    expect(screen.queryByTestId("set-traverse")).toBeNull();
+    expect(screen.queryByTestId("set-combine")).toBeNull();
+  });
+});

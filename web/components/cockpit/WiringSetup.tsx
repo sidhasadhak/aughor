@@ -17,7 +17,8 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select";
 import {
-  MAX_LABEL, MAX_SETS, MAX_VALUE_OPTIONS, MAX_VALUES, MAX_WHERE, SET_OPS, VALUE_KINDS, VALUE_OPS, type CockpitSetDef, type CockpitValueDef, type SetOp,
+  MAX_LABEL, MAX_SETS, MAX_VALUE_OPTIONS, MAX_VALUES, MAX_WHERE, SET_COMBINES, SET_OPS, VALUE_KINDS, VALUE_OPS, type CockpitSetDef, type CockpitValueDef,
+  type SetCombine, type SetOp,
 } from "@/lib/cockpit/catalog";
 import { dropWire, freshWireName, putSet, putValue, renameValue, type CockpitSpec } from "@/lib/cockpit/edit";
 import { lineOf, setTitles, wireWords } from "@/lib/cockpit/names";
@@ -29,6 +30,9 @@ import { cachedObjectCatalog, queryObjects } from "@/lib/objects";
 
 type Change = (next: CockpitSpec, note: string) => void;
 const words = (s: string) => wireWords(s);
+
+/** Arc AP-8b — how a set is combined with another, as a person reads it. */
+const COMBINE_WORDS: Record<SetCombine, string> = { either: "Or in", both: "And in", but_not: "But not in" };
 
 /** What an operator says, as a person reads it. */
 const OP_WORDS: Record<SetOp, string> = {
@@ -110,6 +114,8 @@ function SetLine({ spec, name, selected, onSelect, connectionId, schema }: {
         <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{set?.label ?? name}</span>
         <span className="aug-fs-xs" style={{ display: "block", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {from}{set?.segment ? ` · ${words(set.segment)}` : ""}{set?.where?.length ? ` · ${set.where.length} condition${set.where.length === 1 ? "" : "s"}` : ""}
+          {set?.traverse ? ` → ${words(set.traverse.entity)}` : ""}
+          {set?.combine ? ` · ${COMBINE_WORDS[set.combine.op].toLowerCase()} ${spec.sets?.[set.combine.set]?.label ?? words(set.combine.set)}` : ""}
         </span>
       </span>
       <span className="aug-fs-xs" style={{ textAlign: "right", color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>
@@ -358,13 +364,21 @@ export function SetSetup({ spec, name, onChange, onGone, connectionId, schema, v
   const set = spec.sets?.[name];
   const entities = useEntities(connectionId);
   const r = readSet(spec, name);
-  const entity = isRefused(r) ? set?.entity ?? "" : r.entity;
+  // Arc AP-8b — its conditions read its objects before they reach others: the entity it starts from, its own
+  const own = set && (set.traverse || set.combine) ? readSet({ ...spec, sets: { ...spec.sets, [name]: { ...set, traverse: null, combine: null } } }, name) : r;
+  const entity = isRefused(own) ? set?.entity ?? "" : own.entity;
   const fields = useFields(entity, connectionId, schema);
+  const reached = isRefused(r) ? "" : r.entity;
   const count = useSetCount(spec, name, connectionId, schema);
   const [label, setLabel] = useState(set?.label ?? "");
   const [shownLabel, setShownLabel] = useState(set?.label ?? "");
   if (shownLabel !== (set?.label ?? "")) { setShownLabel(set?.label ?? ""); setLabel(set?.label ?? ""); }
   const others = Object.keys(spec.sets ?? {}).filter(n => n !== name);
+  // Arc AP-8b — the other sets of the objects it holds that it may be combined with: none that reads it back
+  const combinable = others.filter(n => {
+    const o = readSet(spec, n);
+    return !isRefused(o) && o.entity === reached && !isRefused(readSet({ ...spec, sets: { ...spec.sets, [name]: { ...set!, combine: { op: "both", set: n } } } }, name));
+  });
   const chosen = [...choicesOf(spec).values()].filter(c => c.kind === "chosen");
   const props = fields?.fields ?? [];
   if (!set) return null;
@@ -417,6 +431,38 @@ export function SetSetup({ spec, name, onChange, onGone, connectionId, schema, v
             onPick={v => put({ ...set, linked_to: { choice: set.linked_to!.choice, path: v } }, "a set's link chosen by hand")} />
         )}
       </Row>
+      {variablesOn && (
+        <Row label="Gets its linked objects" testid="set-traverse"
+          hint="The objects its objects link to — the customers of the waiting orders. The set then holds those, each once.">
+          <Pick label="Gets its linked objects" value={set.traverse?.link ?? ""} none={`No — its own ${words(entity).toLowerCase()} objects`}
+            options={[...(fields?.reaches ?? []).map(l => ({ value: l.name, label: `${l.toName} · through ${words(l.name)}` })),
+              ...(set.traverse && !(fields?.reaches ?? []).some(l => l.name === set.traverse!.link) ? [{ value: set.traverse.link, label: words(set.traverse.link) }] : [])]}
+            onPick={v => {
+              const l = (fields?.reaches ?? []).find(x => x.name === v);
+              put({ ...set, traverse: v && l ? { link: v, entity: l.to } : null, combine: null }, v ? "a set's linked objects chosen by hand" : "a set's linked objects let go by hand");
+            }} />
+        </Row>
+      )}
+      {variablesOn && (
+        <Row label="Combined with" testid="set-combine"
+          hint="Another set of the same objects: in either, in both, or in this one but not that one.">
+          <Pick label="How it is combined" value={set.combine?.op ?? ""} none="Not combined"
+            options={SET_COMBINES.map(o => ({ value: o, label: COMBINE_WORDS[o] }))}
+            onPick={v => {
+              if (!v) { put({ ...set, combine: null }, "a set's combination let go by hand"); return; }
+              const with_ = set.combine?.set ?? combinable[0];
+              if (with_) put({ ...set, combine: { op: v as SetCombine, set: with_ } }, "a set combined by hand");
+            }} />
+          {set.combine && (
+            <Pick label="The set it is combined with" value={set.combine.set}
+              options={[...combinable, ...(combinable.includes(set.combine.set) ? [] : [set.combine.set])].map(n => ({ value: n, label: `The set ${spec.sets?.[n]?.label ?? n}` }))}
+              onPick={v => put({ ...set, combine: { op: set.combine!.op, set: v } }, "a set combined by hand")} />
+          )}
+          {!set.combine && !combinable.length && (
+            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>No other set holds {words(reached || entity).toLowerCase()} objects yet.</span>
+          )}
+        </Row>
+      )}
       <Row label="Holds now" hint="Read through the object door; each reader's row policies and masks hold on it.">
         <span className="aug-fs-sm" data-testid="set-holds" style={{ color: "var(--t1)", fontVariantNumeric: "tabular-nums" }}>
           {isRefused(r) ? r.refused : count.text}

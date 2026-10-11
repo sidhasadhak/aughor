@@ -11,7 +11,9 @@
  * the validator bundle and compiles each set before a cockpit is kept (`aughor/cockpit/pieces.py`), so the two cannot
  * come to read a set differently.
  */
-import { CHOOSERS, TICKERS, type ActionButtonDef, type CockpitSetDef, type CockpitValueDef, type PieceName, type SetOp } from "@/lib/cockpit/catalog";
+import {
+  CHOOSERS, MAX_SET_DEPTH, TICKERS, type ActionButtonDef, type CockpitSetDef, type CockpitValueDef, type PieceName, type SetOp,
+} from "@/lib/cockpit/catalog";
 
 type El = { type?: string; props?: Record<string, unknown>; children?: string[] };
 export interface WireSpec {
@@ -20,8 +22,14 @@ export interface WireSpec {
   elements: Record<string, El | undefined>;
 }
 
-/** One condition as the object door reads it. */
-export interface DoorCondition { path: string; op: SetOp; value?: unknown; values?: unknown[]; [more: string]: unknown }
+/** Arc AP-8b — a condition that reads whole sets: the object is in any of them, or in none. */
+export type SetRelation = "in_set" | "not_in_set";
+/** One condition as the object door reads it. Arc AP-8b — one that reads whole sets holds them as reads (`reads`) until
+ *  the choices they wait on are known; the door is sent them as `sets` (`doorConditions`). */
+export interface DoorCondition { path: string; op: SetOp | SetRelation; value?: unknown; values?: unknown[]; [more: string]: unknown }
+/** A set inside a condition, as it is read: another set's read and — for one of another entity — the link of its
+ *  objects that reaches this set's own. */
+interface SetInSet { read: SetRead; via?: string }
 
 /** A set as the object door reads it: its entity and segment, and every condition down the sets it starts from — a
  *  value's condition with the value in place — and the choice it waits on, when it reads what an object links to. */
@@ -49,8 +57,44 @@ export const isRefused = (r: unknown): r is Refused => typeof r === "object" && 
 const q = (s: string) => JSON.stringify(s);
 
 /** What `name` reads, or why it cannot be read: a set it starts from that is not there, a ring of sets each starting
- *  from the next, two segments down one chain, a value no one set. */
-export function readSet(spec: WireSpec, name: string, valueOf?: (value: string) => ValueNow): SetRead | Refused {
+ *  from the next, two segments down one chain, a value no one set. Arc AP-8b — then, in order, the objects its objects
+ *  reach through a link (`traverse`), and the set it is combined with (`combine`): either, both, or but not. A set that
+ *  reads another one whole — one it starts from that traverses or combines, one it combines with — reads it as a set,
+ *  never as conditions merged into its own, so each condition holds on one object. */
+export function readSet(spec: WireSpec, name: string, valueOf?: (value: string) => ValueNow, visiting: string[] = []): SetRead | Refused {
+  if (visiting.includes(name)) return { refused: `The sets ${[...visiting, name].map(q).join(" → ")} read each other in a ring.` };
+  if (visiting.length >= MAX_SET_DEPTH) return { refused: `The set ${q(visiting[0])} reads sets more than ${MAX_SET_DEPTH} deep.` };
+  const own = spec.sets?.[name];
+  const base = walkSet(spec, name, valueOf, [...visiting, name]);
+  if (isRefused(base) || !own) return base;
+  let r: SetRead = base;
+  if (own.traverse) {
+    r = { name, label: own.label ?? name, entity: own.traverse.entity, segment: "", linkedTo: null, chain: base.chain,
+      where: [{ path: "", op: "in_set", reads: [{ read: base, via: own.traverse.link }] }], ...(base.pending ? { pending: base.pending } : {}) };
+  }
+  if (own.combine) {
+    const other = readSet(spec, own.combine.set, valueOf, [...visiting, name]);
+    if (isRefused(other)) {
+      return { refused: other.refused.includes(" in a ring") || other.refused.includes(" deep.") ? other.refused
+        : `The set ${q(name)} is combined with ${q(own.combine.set)}, which cannot be read: ${other.refused}` };
+    }
+    if (other.entity !== r.entity) {
+      return { refused: `The set ${q(name)} holds ${r.entity} objects and is combined with ${q(own.combine.set)}, which holds ${other.entity}. Sets combined hold the same entity.` };
+    }
+    const pending = r.pending ?? other.pending;
+    const op = own.combine.op;
+    r = op === "either"
+      ? { name, label: r.label, entity: r.entity, segment: "", linkedTo: null, chain: r.chain,
+        where: [{ path: "", op: "in_set", reads: [{ read: { ...r, pending: undefined } }, { read: { ...other, pending: undefined } }] }] }
+      : { ...r, where: [...r.where, { path: "", op: op === "both" ? "in_set" : "not_in_set", reads: [{ read: { ...other, pending: undefined } }] }] };
+    if (pending) r.pending = pending; else delete r.pending;
+  }
+  return r;
+}
+
+/** A set's own start, segment, conditions and chosen-object link, down the sets it starts from — and a set it starts
+ *  from that traverses or combines, read whole (Arc AP-8b). */
+function walkSet(spec: WireSpec, name: string, valueOf: ((value: string) => ValueNow) | undefined, visiting: string[]): SetRead | Refused {
   const sets = spec.sets ?? {};
   const values = spec.values ?? {};
   const chain: string[] = [];
@@ -65,6 +109,15 @@ export function readSet(spec: WireSpec, name: string, valueOf?: (value: string) 
     if (!set) {
       return { refused: chain.length ? `The set ${q(chain[chain.length - 1])} starts from ${q(at)}, which this cockpit does not hold.`
         : `This cockpit holds no set named ${q(at)}.` };
+    }
+    if (chain.length && (set.traverse || set.combine)) {
+      // a set it starts from that reaches other objects, or is combined: its objects, read whole
+      const inner = readSet(spec, at, valueOf, [...visiting, ...chain.slice(1)]);
+      if (isRefused(inner)) return inner;
+      where.push({ path: "", op: "in_set", reads: [{ read: { ...inner, pending: undefined } }] });
+      pending = pending ?? inner.pending;
+      return { name, label: sets[name]?.label ?? name, entity: inner.entity, segment, where, linkedTo, chain: [...chain, ...inner.chain],
+        ...(pending ? { pending } : {}) };
     }
     chain.push(at);
     if (set.segment) {
@@ -121,7 +174,8 @@ export function valueRing(spec: WireSpec): string[] | null {
       return v?.from?.by === "count" ? [`s:${v.from.set}`] : [];
     }
     const set = sets[node.slice(2)];
-    return set ? [...(set.from ? [`s:${set.from}`] : []), ...(set.where ?? []).filter(c => c.value_from).map(c => `v:${c.value_from}`)] : [];
+    return set ? [...(set.from ? [`s:${set.from}`] : []), ...(set.combine ? [`s:${set.combine.set}`] : []),
+      ...(set.where ?? []).filter(c => c.value_from).map(c => `v:${c.value_from}`)] : [];
   };
   for (const name of Object.keys(values)) {
     if (values[name]?.from?.by !== "count") continue;
@@ -210,7 +264,7 @@ export function readersOf(spec: WireSpec, name: string): { elements: string[]; s
     if (named) elements.push(key);
   }
   const sets = Object.entries(spec.sets ?? {}).filter(([, s]) =>
-    s.from === name || s.linked_to?.choice === name || (s.where ?? []).some(c => c.value_from === name)).map(([k]) => k);
+    s.from === name || s.linked_to?.choice === name || s.combine?.set === name || (s.where ?? []).some(c => c.value_from === name)).map(([k]) => k);
   // Arc AP-8 — a value counted from a set reads it; one read from a chosen object reads the choice
   const values = Object.entries(spec.values ?? {}).filter(([, v]) =>
     (v.from?.by === "count" && v.from.set === name) || (v.from?.by === "chosen" && v.from.choice === name)).map(([k]) => k);
@@ -222,7 +276,19 @@ export function readersOf(spec: WireSpec, name: string): { elements: string[]; s
 export function doorConditions(r: SetRead, chosen: (choice: string) => string | null):
   { filters: DoorCondition[] } | { waiting: string } | { reading: true } {
   if (r.pending) return r.pending;
-  const filters = [...r.where];
+  const filters: DoorCondition[] = [];
+  for (const c of r.where) {
+    const reads = c.reads as SetInSet[] | undefined;
+    if (!reads) { filters.push(c); continue; }
+    // Arc AP-8b — each set read whole, its own choices resolved: what the door is sent
+    const inSets: Record<string, unknown>[] = [];
+    for (const { read, via } of reads) {
+      const inner = doorConditions(read, chosen);
+      if (!("filters" in inner)) return inner;
+      inSets.push({ entity: read.entity, ...(read.segment ? { segment: read.segment } : {}), filters: inner.filters, ...(via ? { via } : {}) });
+    }
+    filters.push({ path: "", op: c.op, sets: inSets });
+  }
   if (r.linkedTo) {
     const pk = chosen(r.linkedTo.choice);
     if (pk === null) return { waiting: r.linkedTo.choice };

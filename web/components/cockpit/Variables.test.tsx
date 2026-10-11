@@ -231,3 +231,20 @@ describe("a query of the person's own that reads values", () => {
     expect(screen.queryByTestId("query-tile-figure")).toBeNull();
   });
 });
+
+describe("a set read whole (Arc AP-8b)", () => {
+  it("asks the door for the customers of the waiting orders as one set — with the reader's window in it, read again when it changes", async () => {
+    const spec = { ...SPEC, values: { window: SPEC.values.window }, sets: { placed: SPEC.sets.placed,
+      waiting: { label: "Waiting", from: "placed", segment: "overdue_dispatch" },
+      theirs: { label: "Their customers", from: "waiting", traverse: { link: "placed_by", entity: "user" } } },
+      elements: { cockpit: SPEC.elements.cockpit, sec: { ...SPEC.elements.sec, children: ["custs"] },
+        custs: { type: "ObjectTable", props: { set: "theirs", columns: ["country"] }, children: [] } } };
+    draw(spec, []);
+    const asked = () => objects.listObjects.mock.calls.map(c => c[0] as { entity: string; filters: unknown[] }).filter(b => b.entity === "user");
+    await waitFor(() => expect(asked().at(-1)?.filters).toEqual([{ path: "", op: "in_set", sets: [{ entity: "order", segment: "overdue_dispatch",
+      filters: [{ path: "created_at", op: "in_last", value: 14 }], via: "placed_by" }] }]));
+    fireEvent.click(within(value("window")).getByRole("radio", { name: "7" }));
+    await waitFor(() => expect(asked().at(-1)?.filters).toEqual([{ path: "", op: "in_set", sets: [{ entity: "order", segment: "overdue_dispatch",
+      filters: [{ path: "created_at", op: "in_last", value: 7 }], via: "placed_by" }] }]));
+  });
+});

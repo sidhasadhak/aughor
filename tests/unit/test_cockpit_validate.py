@@ -179,7 +179,7 @@ def test_a_spec_that_is_not_json_is_refused_before_anything_runs(premise):
 @needs_rules
 def test_the_server_reads_the_vocabulary_the_web_declares():
     vocab = V.vocabulary()
-    assert vocab["version"] == 8                 # 3: the ontology's pieces (Arc OC-4); 4: a cockpit from an object; 5: sizes one grade at a time (Arc AP-1); 6: the wiring (AP-2, AP-3); 7: the structure and the picker's pieces (AP-4); 8: variables (AP-8)
+    assert vocab["version"] == 9                 # 3: the ontology's pieces (Arc OC-4); 4: a cockpit from an object; 5: sizes one grade at a time (Arc AP-1); 6: the wiring (AP-2, AP-3); 7: the structure and the picker's pieces (AP-4); 8: variables (AP-8); 9: sets read whole (AP-8b)
     assert vocab["components"] == ["Cockpit", "Tabs", "Tab", "Section", "Card", "Note", "Image",
                                    "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton",
                                    "ObjectFilters", "ObjectFigure", "ObjectChart", "ActionButtons",

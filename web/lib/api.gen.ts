@@ -18992,9 +18992,11 @@ export interface components {
              * @default =
              * @enum {string}
              */
-            op: "=" | "!=" | ">" | ">=" | "<" | "<=" | "in" | "not_in" | "between" | "is_null" | "not_null" | "exists" | "not_exists" | "in_last" | "contains";
+            op: "=" | "!=" | ">" | ">=" | "<" | "<=" | "in" | "not_in" | "between" | "is_null" | "not_null" | "exists" | "not_exists" | "in_last" | "contains" | "in_set" | "not_in_set";
             /** Path */
             path: string;
+            /** Sets */
+            sets?: components["schemas"]["ObjectSetRef"][];
             /** Value */
             value?: unknown;
             /**
@@ -19129,6 +19131,29 @@ export interface components {
              * @default
              */
             time: string;
+        };
+        /**
+         * ObjectSetRef
+         * @description Arc AP-8b — a set of objects a condition reads: an entity, kept to a segment and its own conditions — which may
+         *     name sets in turn. With `via`, the set's objects reach the condition's own objects through that link of theirs:
+         *     `{"entity": "order", "segment": "overdue_dispatch", "via": "placed_by"}` read by a user is "a user who placed an order
+         *     waiting past its promise". Without it, the set is of the condition's own entity and the object is one of them.
+         */
+        ObjectSetRef: {
+            /** Entity */
+            entity: string;
+            /** Filters */
+            filters?: components["schemas"]["ObjectFilter"][];
+            /**
+             * Segment
+             * @default
+             */
+            segment: string;
+            /**
+             * Via
+             * @default
+             */
+            via: string;
         };
         /** ObjectiveIn */
         ObjectiveIn: {
