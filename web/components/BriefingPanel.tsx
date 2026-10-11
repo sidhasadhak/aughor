@@ -74,7 +74,7 @@ import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
 import { RangeControl, RangeFigures, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
-import { buildRangeBriefing, isRangeBlock, readRangeBriefing, type BriefingRange, type BriefingRangeBlock } from "@/lib/api";
+import { buildRangeBriefing, isRangeBlock, readRangeBriefing, type BriefingOff, type BriefingRange, type BriefingRangeBlock } from "@/lib/api";
 import { StatTile } from "@/components/brief/StatTile";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
 import { claimBriefingEntrance } from "@/components/brief/firstOpen";
@@ -89,6 +89,7 @@ import { GroundedNumber, withGroundedNumbers } from "@/components/brief/Grounded
 import { BriefAskPanel } from "@/components/brief/BriefAskPanel";
 import { BriefingSections, HiddenSection } from "@/components/brief/BriefingSections";
 import { BriefingStrip } from "@/components/brief/BriefingStrip";
+import { BriefingOffNotice } from "@/components/brief/BriefingOff";
 import { NewCardComposer } from "@/components/brief/NewCardComposer";
 import { getMyPreferences, listCockpits, putMyPreference } from "@/lib/api";
 import {
@@ -2510,6 +2511,8 @@ export function BriefingPanel({
   const [periodsOn, setPeriodsOn]           = useState(false);
   // A period with nothing to brief on is a statement about the period, not a failure.
   const [periodNote, setPeriodNote]         = useState<string | null>(null);
+  // The scope is turned off for analysis: the page says so and nothing found before is shown.
+  const [offScope, setOffScope]             = useState<BriefingOff | null>(null);
   // Arc BR-3 — `briefing.ranges`: one control for any range, the standing view being what the
   // platform knows. The range scopes the page; off, the switch above is exactly §3.27's.
   const [rangesOn, setRangesOn]             = useState(false);
@@ -2611,6 +2614,7 @@ export function BriefingPanel({
     setNarrativeLoading(true);
     setNarrativeError(null);
     setPeriodNote(null);
+    setOffScope(null);
     // Drop the OUTGOING brief up front. It belongs to whatever scope was current when it
     // was fetched; from here on the only correct thing to paint is this call's result or
     // an error. Leaving it up is how a previous schema's synthesis ended up rendered under
@@ -2623,7 +2627,7 @@ export function BriefingPanel({
         // user's call (§6 item 34(g)): a custom range is built without asking.
         const r = range as BriefingRange;
         const snap = forceRefresh ? null : await readRangeBriefing(connectionId, r, schema, workspaceId);
-        return snap && snap.built ? snap : buildRangeBriefing(connectionId, r, schema, workspaceId, forceRefresh);
+        return snap && (snap.built || snap.off) ? snap : buildRangeBriefing(connectionId, r, schema, workspaceId, forceRefresh);
       };
       const result = onRange ? await readRange() : canvasId
         ? await generateCanvasBriefingNarrative(canvasId, forceRefresh, workspaceId)
@@ -2640,7 +2644,8 @@ export function BriefingPanel({
         setNarrativeError("This briefing was generated for a different scope — regenerating.");
         return;
       }
-      if (result.available) setNarrative(result);
+      if (result.off) setOffScope(result.off);
+      else if (result.available) setNarrative(result);
       else if (result.period) setPeriodNote(periodUnavailable(result.period));
       else setNarrativeError("No domain intelligence available — run an exploration first.");
     } catch (e) {
@@ -3053,6 +3058,14 @@ export function BriefingPanel({
     return (
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div className="aug-fs-sm" style={{ color: "var(--red4)" }}>{error}</div>
+      </div>
+    );
+  }
+
+  if (offScope && !canvasId) {
+    return (
+      <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "20px 28px" }}>
+        <BriefingOffNotice off={offScope} connectionId={connectionId} />
       </div>
     );
   }

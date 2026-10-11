@@ -270,10 +270,14 @@ def load_aggregate(connection_id: str) -> dict:
 def get_aggregate_domain_findings(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
     """by_domain findings merged across all per-schema runs of a connection. Each one is
     tagged with its `source_schema` so the briefing can keep UNRELATED businesses apart
-    (a beauty-ecommerce finding and a bakery finding must not be synthesized as one story)."""
+    (a beauty-ecommerce finding and a bakery finding must not be synthesized as one story).
+    A schema a person turned off is left out: off means off, its findings included."""
+    from aughor.ontology.visibility import schema_off
     found: list[dict] = []
     for k in schema_run_keys(connection_id):
         sch = k.split("__", 1)[1] if "__" in k else ""
+        if sch and schema_off(connection_id, sch) is not None:
+            continue
         for d, ins in get_domain_findings(k, include_invalid=include_invalid).items():
             for i in ins:
                 if sch:

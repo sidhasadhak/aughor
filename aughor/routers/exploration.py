@@ -251,6 +251,18 @@ def domain_findings_for(conn_id: str, schema: str | None) -> dict:
 _domain_insights_for = domain_findings_for
 
 
+def briefing_off_for(conn_id: str, schema: str | None) -> dict | None:
+    """Why this scope has no Briefing — its schema, or every schema of the connection, turned off — or None."""
+    from aughor.ontology.visibility import briefing_off
+    from aughor.routers._shared import schemas_of_connection
+    return briefing_off(conn_id, schema, schemas=lambda: schemas_of_connection(conn_id))
+
+
+def _off_response(off: dict, scope_key: str, **extra) -> dict:
+    return {"narrative": "", "headline_theme": "", "citations": [], "generated_at": None, "available": False,
+            "built": False, "off": off, "scope_key": scope_key, **extra}
+
+
 def _needs_filter(conn_id: str, schema: str | None) -> bool:
     """A specific-schema view needs the qualified post-filter ONLY when it falls back to the
     connection-level state (the legacy single-run case). A per-schema run is already isolated;
@@ -896,6 +908,9 @@ def read_briefing(conn_id: str, schema: str | None = None, workspace_id: str | N
 
     scope_key = f"{conn_id}:{schema}" if schema else conn_id
     block = ranges.range_block(spec)
+    off = briefing_off_for(conn_id, schema)
+    if off:
+        return _off_response(off, scope_key, period=block)
     entry = peek_entry(f"{scope_key}#{spec.key}")
     same = isinstance(entry, dict) and all(
         (entry.get("period") or {}).get(k) == block.get(k) for k in ("start", "end", "lag_days"))
@@ -1013,6 +1028,10 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     schema = canonical_schema(conn_id, schema)
     if period and period != "history" and spec is None:
         _refuse_unless_period_allowed(period)
+    # A schema turned off has no Briefing: none is re-validated, measured or written from what was found before.
+    off = briefing_off_for(conn_id, requested_schema)
+    if off:
+        return _off_response(off, f"{conn_id}:{requested_schema}" if requested_schema else conn_id)
     from aughor.knowledge.patterns import get_patterns
     from aughor.knowledge.briefing import get_briefing
 

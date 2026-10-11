@@ -212,9 +212,20 @@ def _build_range_departure(sub: BriefSubscription, *, runner=None) -> dict:
             "markdown": render_period_markdown(block, kept, len(held))}
 
 
+def _turned_off(sub: BriefSubscription) -> str:
+    """Why *sub*'s scope has no Briefing to send — its schema, or every schema of the connection, turned off — or ""."""
+    from aughor.ontology.visibility import briefing_off
+    from aughor.routers._shared import schemas_of_connection
+    off = briefing_off(sub.conn_id, sub.schema_name or None, schemas=lambda: schemas_of_connection(sub.conn_id))
+    return off["said"] if off else ""
+
+
 def preview_subscription(sub: BriefSubscription) -> dict:
     """Arc BR-5 — what a send WOULD post, built and judged line by line exactly as a send is, and
     not sent. The whole-message gate records a departure, so it runs at the real send only."""
+    off = _turned_off(sub)
+    if off:
+        return {"status": "failed", "error": off, "sent": False}
     try:
         built = build_period_departure(sub)
     except Exception as exc:  # noqa: BLE001 — a preview that fails says why
@@ -388,6 +399,10 @@ def _deliver_period(sub: BriefSubscription, trigger, result: dict) -> None:
         result["error"] = f"not sent — {why}"
         return
     try:
+        off = _turned_off(sub)
+        if off:
+            result["error"] = f"not sent — {off}"
+            return
         built = build_period_departure(sub)
         result["summary"], result["markdown"] = built["summary"], built["markdown"]
         verdict = gate_departure(

@@ -7259,6 +7259,16 @@ export interface BriefingNarrativeResponse {
   /** Present only on a period brief (idea 3), or a range brief (Arc BR-3 — `isRangeBlock`):
    *  the window it covers and what it measured. */
   period?: BriefingPeriodBlock | BriefingRangeBlock;
+  /** Why this scope has no Briefing: its schema — or, read whole, every schema of the connection — is turned off
+   *  for analysis. Nothing is written from what was found before. */
+  off?: BriefingOff;
+}
+
+export interface BriefingOff {
+  schemas: string[];
+  reason: string;
+  declared_by: string;
+  said: string;
 }
 
 /** PENDING item 9 — the company-brain map: every store behind what Aughor knows, as a box with a

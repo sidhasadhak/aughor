@@ -181,6 +181,31 @@ def without_excluded(conn: str, schema_text: str, *, default_schema: Optional[st
     return without_tables(schema_text, _off)
 
 
+def schema_off(conn: str, schema: Optional[str]) -> Optional[Exclusion]:
+    """The exclusion that turns a whole schema off, or None. A table turned off alone leaves its schema on, and no
+    schema named is none turned off."""
+    return excluded(conn, schema)
+
+
+def briefing_off(conn: str, schema: Optional[str], *, schemas=None) -> Optional[dict]:
+    """Why a scope has no Briefing, or None: its schema is turned off — or, read whole, every schema of the
+    connection is. A Briefing of it would be written from what was found before it was turned off (LuxExperience,
+    2026-10-11: all three schemas off, and the rebuilt Briefing still synthesised its leftovers). ``schemas`` is
+    called for the connection's schemas only when the scope is the whole connection and some schema is off."""
+    every = connection_exclusions(conn)
+    if not any(SCHEMA_WIDE in rows for rows in every.values()):
+        return None
+    names = [schema] if schema else [str(s) for s in ((schemas() if callable(schemas) else schemas) or [])]
+    offs = [schema_off(conn, s) for s in names]
+    if not names or any(e is None for e in offs):
+        return None
+    by = sorted({e.declared_by for e in offs if e and e.declared_by})
+    one = len(names) == 1
+    return {"schemas": names, "reason": offs[0].reason, "declared_by": ", ".join(by),
+            "said": f"{names[0] if one else 'Every schema'} {'is' if one else 'of this connection is'} turned off "
+                    "for analysis, so no Briefing is written for it."}
+
+
 def is_table_off(conn: str, schema: Optional[str], table: str) -> bool:
     """Whether a person turned this table — or its schema — off."""
     return excluded(conn, schema, table) is not None
