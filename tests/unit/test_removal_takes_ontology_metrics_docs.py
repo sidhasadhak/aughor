@@ -70,12 +70,13 @@ def test_a_removed_connection_takes_every_tree_it_has(trees):
 
     roots, unregistered = trees
     got = purge("workspace")
-    assert got == {"ontology_trees": 6, "context_graph": 1, "schema_docs": 2}
+    assert got == {"ontology_trees": 6, "org_ontology": 0, "context_graph": 1, "schema_docs": 2}
     assert {k: v for k, v in _left(roots, "workspace").items() if k != "seed"} == {
         k: [] for k in roots if k != "seed"}
     assert _left(roots, "workspace")["seed"] == ["luxexperience", "main"]
     assert unregistered == ["all:workspace"]
-    assert purge("workspace") == {"ontology_trees": 0, "context_graph": 0, "schema_docs": 2}   # idempotent
+    assert purge("workspace") == {"ontology_trees": 0, "org_ontology": 0, "context_graph": 0,
+                                  "schema_docs": 2}                          # idempotent
 
 
 @pytest.fixture
@@ -158,3 +159,59 @@ def test_a_removed_dataset_is_cleared_through_its_door_and_a_listed_one_is_not(m
     got = client.post("/connections/workspace/schemas/luxexperience/purge").json()
     assert guarded == [("connection.schema.delete", "workspace:luxexperience")]
     assert got["removed"] == {"ontology_trees": 6, "metrics": 4} and got["invalidated"] == ["profile"]
+
+
+def _write_yaml(path, data):
+    import yaml
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data))
+
+
+def test_the_organisations_declarations_that_stood_only_on_removed_connections_go_and_their_links(trees, monkeypatch):
+    """2026-10-11: the organisation's Order, Customer and the link between them were bound only to two removed
+    LuxExperience connections. A declaration still tied to a connection that exists stays."""
+    from aughor.db import registry
+    from aughor.ontology.removal import purge
+
+    roots, _ = trees
+    monkeypatch.setattr(registry, "is_registered", lambda c: c == "live1")
+    scope = roots["overrides"] / "org=default" / "default"
+    _write_yaml(scope / "entity" / "Order.yaml", {"target_id": "Order", "fields": {"backing": {"connection_id": "gone1"}},
+                                                  "binding": {"history": [{"connection_id": "gone2"}]}})
+    _write_yaml(scope / "entity" / "Customer.yaml", {"fields": {"backing": {"connection_id": "gone1"}},
+                                                     "binding": {"also": {"connection_id": "live1"}}})
+    _write_yaml(scope / "entity" / "Product.yaml", {"fields": {"backing": {"connection_id": "live1"}}})
+    _write_yaml(scope / "link" / "Order_placed_by_Customer.yaml", {"fields": {"from_entity": "Order", "to_entity": "Customer"}})
+    _write_yaml(scope / "link" / "Product_bought_by_Customer.yaml", {"fields": {"from_entity": "Product", "to_entity": "Customer"}})
+
+    got = purge("gone1")
+    assert got["org_ontology"] == 2                                             # Order, then the link it ended
+    assert sorted(p.name for p in scope.rglob("*.yaml")) == [
+        "Customer.yaml", "Product.yaml", "Product_bought_by_Customer.yaml"]
+
+
+def test_a_file_the_repository_ships_is_never_removed_with_a_dataset(tmp_path, monkeypatch):
+    """2026-10-11: purging the Workspace's removed datasets deleted 63 files the repository tracks — governed column
+    configs and a legacy override — modifying the checkout. Shipped content stays; the rest of the tree goes."""
+    import subprocess
+
+    from aughor.ontology import removal
+
+    repo = tmp_path / "repo"
+    tree = repo / "data" / "ontology_column_config" / "workspace" / "default"
+    tree.mkdir(parents=True)
+    (tree / "airports.yaml").write_text("shipped: true")
+    for cmd in (["git", "init", "-q"], ["git", "add", "."],
+                ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "ship"]):
+        subprocess.run(cmd, cwd=repo, check=True)
+    (tree / "bookings.yaml").write_text("this install's")
+    (tree / "nested").mkdir()
+    (tree / "nested" / "x.yaml").write_text("this install's")
+    monkeypatch.setattr(removal, "_trees", lambda: [repo / "data" / "ontology_column_config"])
+    monkeypatch.setattr(removal, "_context_graph_root", lambda: tmp_path / "none")
+    monkeypatch.setattr("aughor.knowledge.indexer.delete_document", lambda doc_id: False)
+
+    got = removal.purge("workspace", "default")
+    assert got["kept_shipped"] == 1 and got["ontology_trees"] == 1
+    assert sorted(p.name for p in tree.rglob("*")) == ["airports.yaml"]          # its own files gone, empty dirs too
+    assert subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True).stdout == ""
