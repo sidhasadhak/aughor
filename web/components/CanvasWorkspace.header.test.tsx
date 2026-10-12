@@ -89,7 +89,8 @@ describe("the header, when the row is short of room", () => {
     // What it is, in one line — the first to give way, whole on hover.
     const what = screen.getByTestId("canvas-what");
     expect(what).toHaveAttribute("title", "Orders, items and returns for the online shop.");
-    expect(what).toHaveStyle({ minWidth: "0", flexShrink: "6", overflow: "hidden", whiteSpace: "nowrap" });
+    // a basis of 0: it takes only the room the name and chips leave, so it never cuts the name
+    expect(what).toHaveStyle({ minWidth: "0", flexGrow: "1", flexShrink: "1", flexBasis: "0%", overflow: "hidden", whiteSpace: "nowrap" });
     // The connection's chip gives way next, and says the whole of itself on hover.
     const chip = screen.getByTestId("canvas-connection");
     expect(chip).toHaveStyle({ flexShrink: "3", minWidth: "56px", overflow: "hidden" });

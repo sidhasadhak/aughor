@@ -66,7 +66,9 @@ function CanvasHead({ name, what, chips, actions, onBack, overlay }: {
       </span>
       {what && (
         <span data-testid="canvas-what" className="aug-fs-sm" title={what}
-          style={{ ...MUTED, ...ONE_LINE, flexShrink: 6 }}>{what}</span>
+          // A basis of 0: it takes only the room left. Shrink weights scale by each item's own width, so a long
+          // description at flexShrink 6 still cut the name to "E-Commerce Operations Overv…" (2026-10-12, live).
+          style={{ ...MUTED, ...ONE_LINE, flex: "1 1 0%" }}>{what}</span>
       )}
       {chips}
       <span style={{ marginLeft: "auto", ...ROW, flexWrap: "nowrap", flexShrink: 0 }}>{actions}</span>

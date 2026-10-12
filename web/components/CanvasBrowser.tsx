@@ -25,13 +25,17 @@ import { countNoun, formatCount } from "@/lib/format";
 
 interface Props {
   connections: Connection[];
+  /** Every connection the install has. A canvas reading a connection of another workspace still has it — judged
+   *  against this workspace's alone, two of the live install's four canvases read "connection gone" (2026-10-12). */
+  allConnections?: Connection[];
   onSelect: (canvas: Canvas) => void;
   onNew: () => void;
   /** Active workspace — scopes the canvas list to its connections. */
   workspaceId?: string;
 }
 
-export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Props) {
+export function CanvasBrowser({ connections: wsConnections, allConnections, onSelect, onNew, workspaceId }: Props) {
+  const connections = allConnections?.length ? allConnections : wsConnections;
   const [canvases, setCanvases] = useState<Canvas[]>([]);
   const [loading, setLoading] = useState(true);
   // A failed read used to read as "No Data Canvases yet" — teaching the reader they had none.

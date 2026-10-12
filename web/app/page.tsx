@@ -2042,6 +2042,7 @@ export default function Home() {
             {tab === "canvases" && (
               <CanvasBrowser
                 connections={wsConnections}
+                allConnections={connections}
                 workspaceId={selectedWorkspace}
                 onSelect={handleCanvasSelect}
                 onNew={() => setShowCanvasCreator(true)}

@@ -50,6 +50,21 @@ const show = (props: Partial<React.ComponentProps<typeof CanvasBrowser>> = {}) =
   return { onSelect, onNew };
 };
 
+describe("a connection in another workspace", () => {
+  it("is not gone: a canvas reading it needs nobody (2026-10-12, the TheLook workspace flagged two live canvases)", async () => {
+    show({ connections: [CONNS[0]], allConnections: CONNS });
+    expect(await screen.findByTestId("fig-canvases-value")).toHaveTextContent("4");
+    expect(screen.queryByText(/connection is gone/)).toBeNull();
+    expect(screen.queryByText("connection gone")).toBeNull();
+  });
+
+  it("is gone only when the install has no such connection", async () => {
+    show({ connections: [CONNS[0]], allConnections: [CONNS[0], CONNS[2]] });
+    expect(await screen.findByText(/Superstore Sales Analytics: its connection is gone/)).toBeInTheDocument();
+    expect(screen.queryByText(/Airline And Sales Operations: its connection is gone/)).toBeNull();
+  });
+});
+
 describe("the figures", () => {
   it("open the page: how many canvases and on how many connections, and how many were used in 30 days", async () => {
     show();
