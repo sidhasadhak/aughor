@@ -26,12 +26,13 @@ export const ONE_LINE: CSSProperties = { whiteSpace: "nowrap", overflow: "hidden
 export const ROW: CSSProperties = { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" };
 export const NUM: CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
-/** The page a redone screen sits on: a column of cards, 14px apart, at the mockups' width. */
+/** The page a redone screen sits on: a column of cards, 14px apart, across the whole width the screen has (the user,
+ *  2026-10-12: the pages use the full page width — no column capped at the mockups' 1180). */
 export function Page({ children, testId }: { children: ReactNode; testId?: string }) {
   return (
     <div style={{ flex: 1, minHeight: 0, overflowY: "auto", background: "var(--bg-0)" }}>
       <div data-testid={testId} style={{ display: "flex", flexDirection: "column", gap: 14, padding: "16px 22px 28px",
-        maxWidth: 1180 }}>
+        width: "100%" }}>
         {children}
       </div>
     </div>

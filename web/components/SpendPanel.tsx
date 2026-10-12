@@ -166,7 +166,7 @@ export function SpendPanel() {
 
   return (
     <div style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
-      <div style={{ padding: "14px 22px 28px", display: "flex", flexDirection: "column", gap: 14, maxWidth: 1180 }}>
+      <div style={{ padding: "14px 22px 28px", display: "flex", flexDirection: "column", gap: 14, width: "100%" }}>
         <div data-testid="spend-figures" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14 }}>
           <Figure testId="spend-spent" label={spent?.label ?? "Spent"} value={spent?.value ?? "—"}
             tone={spent?.unknown ? "var(--t3)" : undefined}>

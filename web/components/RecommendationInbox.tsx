@@ -168,7 +168,7 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
   const today = new Date().toISOString().slice(0, 10);
 
   return (
-    <div data-testid="inbox" style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 1180 }}>
+    <div data-testid="inbox" style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%" }}>
       <Figures testId="inbox-figures">
         <Figure testId="inbox-fig-open" label="Open" value={formatCount(open)}
           title={`Recommendations nobody has verified, rejected or dismissed, from the newest ${READ} deep analyses`}

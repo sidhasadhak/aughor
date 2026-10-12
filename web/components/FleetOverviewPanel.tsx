@@ -274,7 +274,7 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
       background: "var(--bg-0)" }}>
       <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
         <div data-testid="ao-overview" style={{ display: "flex", flexDirection: "column", gap: 14,
-          padding: "16px 22px 28px", maxWidth: 1180 }}>
+          padding: "16px 22px 28px", width: "100%" }}>
 
           {/* ── the figures, each a door ──────────────────────────────────────────── */}
           <Figures testId="ao-figures">
