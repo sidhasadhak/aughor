@@ -14,15 +14,17 @@
  * as props from the workbench — insertion in SQL mode, add-to-query and drag in Visual
  * mode — so this file has no opinion about which mode is up.
  *
- * The one thing it draws itself is the mode hint under the header, because "drag to
- * auto-join" is true in Visual mode and a lie in SQL mode, and an affordance line that
- * lies is worse than no line.
+ * What it draws itself is its section label — "CATALOG", the table count at its right — and the mode hint under
+ * it, because "drag to auto-join" is true in Visual mode and a lie in SQL mode, and an affordance line that
+ * lies is worse than no line. SQL mode passes none: its rows each say "Insert … at the cursor" on hover.
  *
  * It does NOT set its own width. The rail lives inside a `ResizableSplit`, and a pane
  * that hardcodes a width silently wins against the drag handle above it — the reason
  * this panel was unadjustable when it looked like it should not be.
  */
 import { CatalogTree, type CatalogTable, type CatalogColumn } from "@/components/query/CatalogTree";
+import { Label } from "@/components/clarity/kit";
+import { formatCount } from "@/lib/format";
 
 export type RailTable = CatalogTable;
 export type RailColumn = CatalogColumn;
@@ -65,14 +67,16 @@ export function CatalogRail({
         borderRight: "1px solid var(--b1)", background: "var(--bg-0)", overflow: "hidden",
       }}
     >
-      {hint && (
-        <p
-          className="aug-fs-ui"
-          style={{ padding: "8px 10px 0", color: "var(--t3)", flexShrink: 0 }}
-        >
-          {hint}
-        </p>
-      )}
+      {/* The rail's section label (CLARITY): small and uppercase, what it counts at its right; the mode's one line
+          of affordance under it only where it says something a row's hover does not. */}
+      <div style={{ padding: "10px 10px 0", flexShrink: 0 }}>
+        <Label right={loading && !tables.length ? null : `${formatCount(tables.length)} ${tables.length === 1 ? "table" : "tables"}`}>
+          Catalog
+        </Label>
+        {hint && (
+          <p className="aug-fs-xs" style={{ color: "var(--t3)", margin: "-4px 0 0" }}>{hint}</p>
+        )}
+      </div>
       <CatalogTree
         tables={tables}
         catalogName={connectionName}

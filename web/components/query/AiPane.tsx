@@ -23,6 +23,7 @@ import { EditorState } from "@codemirror/state";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { aughorEditorTheme, aughorSyntaxHighlighting } from "@/components/query/editor/theme";
+import { Chip, Label } from "@/components/clarity/kit";
 import { assistSql } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 
@@ -132,17 +133,18 @@ export function AiPane({
         borderLeft: "1px solid var(--b1)", background: "var(--bg-1)", overflow: "hidden",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px 6px", flexShrink: 0 }}>
-        <Icon name="spark" size={13} />
-        <span className="aug-label">Assistant</span>
-        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>proposes — never runs</span>
+      {/* The pane's section label, and its one rule as a chip: it proposes, it never runs — Apply edits the
+          document, and running stays the person's (said once here, not under every proposal). */}
+      <div style={{ padding: "10px 10px 0", flexShrink: 0 }}>
+        <Label right={<Chip title="A proposal arrives as a diff. Apply edits the document; running stays yours.">
+          proposes · never runs
+        </Chip>}>Assistant</Label>
       </div>
 
       <div ref={scroller} style={{ flex: 1, overflowY: "auto", padding: "0 10px 8px" }}>
         {msgs.length === 0 && (
-          <div className="aug-fs-ui" style={{ color: "var(--t3)", lineHeight: 1.6, padding: "4px 2px" }}>
-            Ask about this connection's data, or about the SQL in the editor.
-            Proposed changes arrive as a diff you apply or dismiss.
+          <div className="aug-fs-ui" style={{ color: "var(--t3)", lineHeight: 1.6, padding: "0 2px" }}>
+            Ask about the data on this connection, or the SQL in the editor.
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
               {["/optimize", "/explain", "/fix"].map(s => (
                 <Button key={s} variant="secondary" size="xs" className="aug-fs-ui font-mono"
@@ -177,6 +179,7 @@ export function AiPane({
                   ) : (
                     <>
                       <Button variant="default" size="xs" className="aug-fs-ui"
+                        title="Edits the document — running stays yours"
                         onClick={() => { onApply(m.proposedSql!); settle(i, "applied"); }}>
                         Apply
                       </Button>
@@ -184,9 +187,6 @@ export function AiPane({
                         onClick={() => settle(i, "dismissed")}>
                         Dismiss
                       </Button>
-                      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-                        edits the document — running stays yours
-                      </span>
                     </>
                   )}
                 </div>

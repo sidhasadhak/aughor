@@ -9,21 +9,21 @@
  * exist anyway. A dedicated history table would be a second source of truth that could
  * disagree with the audit — and the audit is the one with the compliance claim on it.
  *
- * That inheritance is why each row shows the VERDICT alongside duration and rows: the
+ * That inheritance is why a row says the VERDICT when it is not a plain pass: the
  * log's purpose is to record what the guards decided, and a history that showed only
  * "ran, 5 rows" would drop the most interesting fact about a query that was blocked.
+ * A pass is the ordinary case, so it is not said on every row (CLARITY: say a thing
+ * once) — blocked, withheld, flagged and failed each wear a chip, and are counted at the
+ * label.
  */
 import { useCallback, useEffect, useState } from "react";
 import { getQueryHistory, type AuditRecord } from "@/lib/api";
-import { relTime } from "@/lib/format";
+import { formatCount, relTime } from "@/lib/format";
+import { runMark, runMeta } from "@/lib/query/workbench";
+import { Chip, Empty, Label, NUM } from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { ReadFailed } from "@/components/ui/states";
-
-const VERDICT_COLOR: Record<string, string> = {
-  safe: "var(--grn4)",
-  blocked: "var(--red4)",
-  suspicious: "var(--amb4)",
-};
 
 /** One line of SQL for the rail, collapsed from whatever the user wrote. */
 function preview(sql: string): string {
@@ -54,6 +54,13 @@ export function HistoryRail({
   }, [connId]);
 
   useEffect(() => { load(); }, [load, refreshKey]);
+  // "40 · 1 blocked · 2 failed": what did not simply pass, counted once at the label rather than said per row.
+  const tally = new Map<string, number>();
+  for (const r of rows) {
+    const m = runMark(r);
+    if (m) tally.set(m.word, (tally.get(m.word) ?? 0) + 1);
+  }
+  const stopped = [...tally.entries()].map(([w, n]) => `${formatCount(n)} ${w}`).join(" · ");
 
   return (
     <div
@@ -62,45 +69,53 @@ export function HistoryRail({
         borderLeft: "1px solid var(--b1)", background: "var(--bg-1)", overflow: "hidden",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "8px 10px 6px", flexShrink: 0 }}>
-        <span className="aug-label">History</span>
-        <Button variant="ghost" size="xs" onClick={load} title="Refresh">↻</Button>
+      {/* The rail's section label, its count at the right — and how many the guards stopped, folded into that count
+          rather than a "safe" said on every row. */}
+      <div style={{ padding: "10px 10px 0", flexShrink: 0 }}>
+        <Label right={<>
+          {loaded && failed === null && rows.length > 0 && (
+            <span style={NUM}>{formatCount(rows.length)}{stopped ? ` · ${stopped}` : ""}</span>
+          )}
+          <Button variant="ghost" size="xs" onClick={load} title="Read the history again" aria-label="Refresh">
+            <Icon name="refresh" size={12} />
+          </Button>
+        </>}>Recent runs</Label>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0 6px 8px" }}>
         {loaded && failed !== null && (
           <ReadFailed what="the query history" error={failed} onRetry={load} style={{ padding: "6px 4px" }} />
         )}
         {loaded && failed === null && rows.length === 0 && (
-          <div style={{ fontSize: 13, color: "var(--t3)", padding: "6px 4px", lineHeight: 1.5 }}>
-            Queries you run here appear in this list.
-          </div>
+          <div style={{ padding: "2px 4px" }}><Empty>Queries you run here appear in this list.</Empty></div>
         )}
-        {rows.map(r => (
-          <Button
-            key={r.id}
-            variant="ghost"
-            onClick={() => onRestore(r.sql_full || r.sql_digest)}
-            title="Open this query in a new tab"
-            className="mb-0.5 block h-auto w-full whitespace-normal px-2 py-1.5 text-left font-normal"
-          >
-            <span
-              style={{
-                display: "block", fontFamily: "var(--font-code, monospace)", fontSize: 13,
-                color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
+        {rows.map(r => {
+          const mark = runMark(r);
+          return (
+            <Button
+              key={r.id}
+              variant="ghost"
+              onClick={() => onRestore(r.sql_full || r.sql_digest)}
+              title="Open this query in a new tab"
+              className="mb-0.5 block h-auto w-full whitespace-normal px-2 py-1.5 text-left font-normal"
             >
-              {preview(r.sql_full || r.sql_digest)}
-            </span>
-            <span style={{ display: "block", fontSize: 13, color: "var(--t3)", marginTop: 2 }}>
-              <span style={{ color: VERDICT_COLOR[r.verdict] ?? "var(--t3)" }}>{r.verdict}</span>
-              {r.row_count != null && ` · ${r.row_count} rows`}
-              {r.duration_ms != null && ` · ${Math.round(r.duration_ms)} ms`}
-              {r.ts && ` · ${relTime(r.ts)} ago`}
-            </span>
-          </Button>
-        ))}
+              <span
+                className="aug-fs-sm"
+                style={{
+                  display: "block", fontFamily: "var(--font-code, monospace)",
+                  color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {preview(r.sql_full || r.sql_digest)}
+              </span>
+              <span className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--t3)",
+                marginTop: 2, ...NUM }}>
+                {mark && <Chip tone={mark.tone === "red" ? "down" : "amber"} title={r.error ?? undefined}>{mark.word}</Chip>}
+                <span>{[runMeta(r), r.ts ? `${relTime(r.ts)} ago` : ""].filter(Boolean).join(" · ")}</span>
+              </span>
+            </Button>
+          );
+        })}
       </div>
     </div>
   );

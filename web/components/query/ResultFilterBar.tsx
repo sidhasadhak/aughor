@@ -42,14 +42,10 @@ export function ResultFilterBar({
   columns,
   filters,
   onChange,
-  shown,
-  total,
 }: {
   columns: string[];
   filters: ActiveFilter[];
   onChange: (next: ActiveFilter[]) => void;
-  shown: number;
-  total: number;
 }) {
   const [draft, setDraft] = useState("");
 
@@ -120,15 +116,11 @@ export function ResultFilterBar({
           </span>
         );
       })}
+      {/* How many rows the chips leave is said once, on the results' figures line ("2 of 5 rows") — not again here. */}
       {filters.length > 0 && (
-        <>
-          <span className="aug-fs-ui" style={{ color: "var(--t3)" }}>
-            {shown === total ? `${total} rows` : `${shown} of ${total} rows`}
-          </span>
-          <Button variant="ghost" size="xs" className="aug-fs-ui" onClick={() => onChange([])}>
-            Clear
-          </Button>
-        </>
+        <Button variant="ghost" size="xs" className="aug-fs-ui" onClick={() => onChange([])}>
+          Clear
+        </Button>
       )}
     </div>
   );
