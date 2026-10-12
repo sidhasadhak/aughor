@@ -12,8 +12,9 @@
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { changeOf } from "@/components/brief/MetricDetail";
 import { requestTab } from "@/lib/navigate";
-import type { BriefingDesk, DeskColumn, DeskItem } from "@/lib/api";
+import type { BriefingDesk, BriefingRangeBlock, DeskColumn, DeskItem } from "@/lib/api";
 
 const SERIF = "var(--font-serif)";
 const RULE = "1px solid var(--b1)";
@@ -91,7 +92,30 @@ export function PaperLead({ kicker, headline, children }: { kicker: string; head
   );
 }
 
-export interface PaperNumber { key: string; label: string; value: string; change?: { text: string; sign: number }; unknown?: string }
+export interface PaperNumber {
+  key: string; label: string; value: string; change?: { text: string; sign: number }; unknown?: string;
+  /** Said under the label when the figure is not the edition's own: other months, or part of one. */
+  note?: string;
+}
+
+/** An edition's measured metrics as the numbers box prints them. A metric whose data ends before
+ *  the range was measured over the latest months it covers (`anchored`): its row names those months,
+ *  so "€14,306 −5%" is never read as this edition's move (LuxExperience's September 2026 edition,
+ *  2026-10-12: three of its four figures were June 2025 and April 2024). A part-period figure says
+ *  which days it holds. A metric not measured is said, never a zero. */
+export function rangeNumbers(block: BriefingRangeBlock): PaperNumber[] {
+  return [
+    ...block.measured.map(m => {
+      const t = changeOf(m, "previous");
+      const days = m.current_partial ? `only ${m.current_partial}` : "";
+      const own = m.anchored ? `${m.anchored.covers}, against ${m.anchored.compared_with} — its data ends ${m.anchored.data_ends}` : "";
+      return { key: m.metric, label: m.name, value: m.current_text ?? "—",
+               change: t && m.rel !== null ? { text: t, sign: Math.sign(m.rel) } : undefined,
+               note: [own, days].filter(Boolean).join(" · ") || undefined };
+    }),
+    ...block.unmeasured.map(u => ({ key: `unmeasured:${u.name}`, label: u.name, value: "", unknown: "not measured" })),
+  ];
+}
 
 /** The numbers box: one row per figure, its change against the comparison beside it; a figure the
  *  platform could not measure says so in the de-emphasis hatch, never as a zero. */
@@ -103,7 +127,10 @@ export function PaperNumbers({ title, rows, note }: { title: string; rows: Paper
         ? <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>No figure was measured for this edition.</div>
         : rows.map((r, i) => (
           <div key={r.key} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "6px 0", borderTop: i ? RULE : "none" }}>
-            <span className="aug-fs-sm" style={{ color: "var(--t2)", minWidth: 0, flex: 1 }}>{r.label}</span>
+            <span className="aug-fs-sm" style={{ color: "var(--t2)", minWidth: 0, flex: 1 }}>
+              {r.label}
+              {r.note && <span className="aug-fs-xs" data-testid="paper-number-note" style={{ display: "block", color: "var(--amb4)" }}>{r.note}</span>}
+            </span>
             {r.unknown
               ? <span className="aug-fs-xs" style={{ color: "var(--t3)", padding: "0 6px", borderRadius: 3,
                   background: "repeating-linear-gradient(135deg, var(--b1) 0 4px, transparent 4px 8px)" }}>{r.unknown}</span>

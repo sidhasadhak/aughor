@@ -74,10 +74,9 @@ import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
 import { RangeControl, RangeFigures, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
-import { changeOf } from "@/components/brief/MetricDetail";
 import {
   AskBar, DeskColumns, InBrief, PaperDateline, PaperFront, PaperLead, PaperMasthead, PaperNumbers, PaperSources,
-  numberDesk, openDeskAction, paperDate, type PaperNumber,
+  numberDesk, openDeskAction, paperDate, rangeNumbers, type PaperNumber,
 } from "@/components/brief/BriefPaper";
 import { getBriefingDesk, type BriefingDesk } from "@/lib/api";
 import { buildRangeBriefing, isRangeBlock, readRangeBriefing, type BriefingOff, type BriefingRange, type BriefingRangeBlock } from "@/lib/api";
@@ -288,7 +287,7 @@ interface CitationActionContext {
   onInvestigate:  (q: string, insightId?: string) => void;
 }
 
-function NarrativeCard({
+export function NarrativeCard({
   narrative,
   ctx,
   hideHeadline = false,
@@ -325,13 +324,15 @@ function NarrativeCard({
     <div style={paper ? undefined : { background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 22px" }}>
       {paper && (
         <div data-testid="paper-lead-body">
+          {/* Each paragraph is a <div>, never a <p>: a citation's hover card and a figure's receipt are blocks,
+              and a <p> may hold no block (2026-10-12: React's "<div> cannot be a descendant of <p>" on hover). */}
           {paras.map((p, i) => (i === 0 || body) && (
-            <p key={i} style={i === 0
+            <div key={i} style={i === 0
               ? { fontSize: 18, lineHeight: 1.5, color: "var(--t1)", margin: "0 0 12px", maxWidth: "70ch" }
               : { fontSize: 15, lineHeight: 1.6, color: "var(--t2)", margin: "0 0 10px", maxWidth: "70ch" }}>
               <NarrativeText text={p} citations={narrative.citations} onCitationClick={onCitationClick}
                 connectionId={ctx.connectionId} schema={ctx.schema} />
-            </p>
+            </div>
           ))}
         </div>
       )}
@@ -3225,12 +3226,7 @@ export function BriefingPanel({
   } : null;
   // ── The paper's numbers box, its desk's numbering and its sources (read by `paper()`).
   const numberRows: PaperNumber[] = rangeBlock
-    ? [...rangeBlock.measured.map(m => {
-        const t = changeOf(m, "previous");
-        return { key: m.metric, label: m.name, value: m.current_text ?? "—",
-                 change: t && m.rel !== null ? { text: t, sign: Math.sign(m.rel) } : undefined };
-      }),
-       ...rangeBlock.unmeasured.map(u => ({ key: `unmeasured:${u.name}`, label: u.name, value: "", unknown: "not measured" }))]
+    ? rangeNumbers(rangeBlock)
     // What we know: the record's own counts. A figure lifted from a finding's prose carries its
     // finding's subject, not a label a box can print ("total inventory cost" was Jeans' alone).
     : !rangeSelected && briefing
@@ -3242,7 +3238,8 @@ export function BriefingPanel({
   const editionBlock = rangeBlock ?? (editionFor && editionFor.key === rangeKey ? editionFor.block : null);
   const numbersTitle = rangeBlock ? `The ${rangeBlock.period && rangeBlock.period !== "custom" ? rangeBlock.period : "range"} in numbers`
     : rangeSelected ? "In numbers" : "The record, in numbers";
-  const numbersNote = rangeBlock ? `Each against ${rangeBlock.compared_with}.`
+  const numbersNote = rangeBlock
+    ? `Each against ${rangeBlock.compared_with}${rangeBlock.measured.some(m => m.anchored) ? ", unless its own months are named" : ""}.`
     : rangeSelected ? (narrativeLoading ? "Measuring this edition…" : undefined)
     : "Pick Day, Week or Month for the business's own figures.";
   const citationNs = hasNarrative && narrative ? narrative.citations.map(c => Number(c.ref)).filter(Number.isFinite) : [];

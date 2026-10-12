@@ -36,9 +36,9 @@ PROPOSED = Inquiry(question="Why did the delivered stage of order_fulfilment slo
 
 
 class M:
-    def __init__(self, name, status, sql="SELECT 1", label="", tables=None, proposed_by="", connection="c1"):
+    def __init__(self, name, status, sql="SELECT 1", label="", tables=None, proposed_by="", connection="c1", time_column="t.created_at"):
         self.name, self.status, self.sql, self.label = name, status, sql, label
-        self.tables, self.proposed_by, self.connection = tables or [], proposed_by, connection
+        self.tables, self.proposed_by, self.connection, self.time_column = tables or [], proposed_by, connection, time_column
 
 
 METRICS = [M("revenue", "approved", label="Revenue"),
@@ -163,3 +163,24 @@ def test_another_connections_metric_never_reaches_this_desk(monkeypatch):
                                           (10.1, False, "10.1"), (4.0, False, "4")])
 def test_figures_are_said_humanised(v, money, want):
     assert D.human(v, money) == want
+
+
+def test_approved_metrics_with_no_date_are_a_gap_said_once_with_their_names():
+    """LuxExperience, 2026-10-12: four approved metrics read tables with no recognised date, so every
+    period edition left them out while the Gaps column said nothing was missing."""
+    ms = [M("aov", "approved", label="Average Order Value"),
+          M("gm", "approved", label="Gross Margin %", time_column=""),
+          M("rr", "approved", label="Item Return Rate", time_column=None),
+          M("blank", "approved", sql="", label="No formula", time_column="")]       # said as unmeasured instead
+    out = D.gaps([], ms, None)
+    undated = [g for g in out if g["kind"] == "undated"]
+    assert len(undated) == 1
+    assert undated[0]["title"] == "2 approved metrics can't be measured for a period"
+    assert undated[0]["text"].startswith("Gross Margin %, Item Return Rate: no date column is set")
+    assert undated[0]["action"] == {"verb": "Set dates", "kind": "metric", "ref": "gm"}
+    assert [g["kind"] for g in out] == ["unmeasured", "undated"]
+
+
+def test_an_unlabelled_finding_that_mentions_a_trend_is_not_one():
+    cs = [claim("finding", "Summed amount is highest for 2026-06-30 at 27441.73; should not be read as a performance trend.", days=1)]
+    assert D.trends(cs, NOW) == []

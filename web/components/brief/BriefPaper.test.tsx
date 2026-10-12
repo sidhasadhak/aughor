@@ -7,9 +7,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 
-import { DeskColumns, InBrief, PaperNumbers, PaperSources, numberDesk, paperDate } from "@/components/brief/BriefPaper";
+import { DeskColumns, InBrief, PaperNumbers, PaperSources, numberDesk, paperDate, rangeNumbers } from "@/components/brief/BriefPaper";
 import { firstSentence } from "@/components/BriefingPanel";
-import type { BriefingDesk, DeskItem } from "@/lib/api";
+import type { BriefingDesk, BriefingRangeBlock, BriefingRangeMeasure, DeskItem } from "@/lib/api";
 
 vi.mock("@/lib/navigate", () => ({ requestTab: vi.fn() }));
 
@@ -103,5 +103,42 @@ describe("PaperSources", () => {
     fireEvent.click(screen.getByRole("button", { name: "Day Briefing" }));   // a span with the button role
     expect(open).toHaveBeenCalled();
     expect(screen.getByTestId("paper-sources")).toHaveTextContent("2Inquiry · revenue");
+  });
+});
+
+describe("rangeNumbers — a figure from other months names them (LuxExperience, September 2026)", () => {
+  const m = (over: Partial<BriefingRangeMeasure>): BriefingRangeMeasure => ({
+    name: "Average Order Value (AOV)", metric: "aov", unit: "EUR", time_kind: "flow", confirmed: false,
+    current: 581.12, previous: 590.72, last_year: 454.19, rel: -0.0162, rel_last_year: 0.279, status: "final",
+    current_text: "€581", previous_text: "€591", ...over });
+  const block = {
+    compared_with: "August 2026", covers: "September 2026",
+    measured: [
+      m({}),
+      m({ name: "Clienteling-Influenced GMV per Interaction", metric: "gmv_int", current: 14305.98, previous: 15098.17, rel: -0.0525,
+          current_text: "€14,306", previous_text: "€15,098",
+          anchored: { start: "2025-06-01", end: "2025-07-01", data_ends: "2025-06-29", covers: "June 2025", compared_with: "May 2025",
+                      why: "its data ends 2025-06-29, before this range" } }),
+      m({ name: "Markdown Penetration", metric: "md", current: 1, previous: 1, rel: null, current_text: "100%", current_partial: "2024-04-01 to 2024-04-05",
+          anchored: { start: "2024-04-01", end: "2024-05-01", data_ends: "2024-04-05", covers: "April 2024", compared_with: "March 2024", why: "x" } }),
+    ],
+    unmeasured: [{ name: "Gross Margin %", reason: "its dates cannot be set by rule" }],
+  } as unknown as BriefingRangeBlock;
+
+  it("keeps the edition's own figure plain, and names another period's months beside its change", () => {
+    const rows = rangeNumbers(block);
+    expect(rows[0]).toMatchObject({ label: "Average Order Value (AOV)", value: "€581", note: undefined });
+    expect(rows[0].change?.sign).toBe(-1);
+    expect(rows[1].note).toBe("June 2025, against May 2025 — its data ends 2025-06-29");
+    expect(rows[2].note).toBe("April 2024, against March 2024 — its data ends 2024-04-05 · only 2024-04-01 to 2024-04-05");
+    expect(rows[2].change).toBeUndefined();                                  // no change to state
+    expect(rows[3]).toMatchObject({ label: "Gross Margin %", unknown: "not measured" });
+  });
+
+  it("prints the note under the figure's name", () => {
+    render(<PaperNumbers title="The month in numbers" rows={rangeNumbers(block)} />);
+    expect(screen.getAllByTestId("paper-number-note").map(n => n.textContent)).toEqual([
+      "June 2025, against May 2025 — its data ends 2025-06-29",
+      "April 2024, against March 2024 — its data ends 2024-04-05 · only 2024-04-01 to 2024-04-05"]);
   });
 });
