@@ -209,6 +209,9 @@ def _register_purge_hooks() -> None:
     ph.register_schema_purge_hook("metrics", _metrics_schema)
     # …and its trusted queries: a connection's store, each read only by the tables it names (2026-10-12)
     ph.register_schema_purge_hook("trusted_queries", _trusted_queries_schema)
+    # …and its findings' receipts: their ids carry the schema (`explorer.store.scoped_finding_id`), so the ledger rows
+    # under that prefix are the dataset's own. A hook, not a line in `db/purge`: the platform does not import the explorer.
+    ph.register_schema_purge_hook("finding_receipts", _finding_receipts_schema)
 
     # investigation-keyed
     ph.register_investigations_purge_hook("evidence", _evidence_inv)
@@ -264,6 +267,12 @@ def _ontology_trees_schema(conn_id, schema):
 def _metrics_schema(conn_id, schema):
     from aughor.semantic.metrics import purge_scope
     return {"metrics": purge_scope(conn_id, schema)}
+
+
+def _finding_receipts_schema(conn_id, schema):
+    from aughor.explorer.dossier import receipt_key
+    from aughor.kernel.ledger import Ledger
+    return {"finding_receipts": Ledger.default().purge_key_prefix(receipt_key(conn_id, f"{schema}:")).get("kernel_artifacts", 0)}
 
 
 def _trusted_queries_schema(conn_id, schema):

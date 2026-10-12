@@ -561,13 +561,6 @@ def purge_schema_artifacts(conn_id: str, schema: str) -> dict[str, int]:
         f"episodes_{safe}__{ssafe}.jsonl",
     )
 
-    # ── this schema's findings' receipts: their ids carry the schema (`explorer.store.scoped_finding_id`) ─
-    def _findings() -> int:
-        from aughor.explorer.dossier import receipt_key
-        from aughor.kernel.ledger import Ledger
-        return Ledger.default().purge_key_prefix(receipt_key(conn_id, f"{schema}:")).get("kernel_artifacts", 0)
-    _run("finding_receipts", _findings)
-
     # ── canvases bound to this schema (platform) → their investigations + evidence ─
     canvas_ids: list[str] = []
 
