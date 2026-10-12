@@ -26,8 +26,9 @@ const EXTS = [".tsx", ".ts"];
 // rail's rows, the home tiles, the ⌘K field, the theme cards, list and menu rows, full-width
 // disclosure headers, chips and inline tokens — each a layout a Themes button would centre and
 // size (the rail showed it). A plain action is never one of them. 32 → 31 (2026-10-12): the Inbox's
-// hand-rolled status menu became Radix Themes' own DropdownMenu.
-const BASELINE = 31;
+// hand-rolled status menu became Radix Themes' own DropdownMenu. 31 → 30 (2026-10-12): the Data Canvas list's filter
+// chips went, and with them its last raw <button>.
+const BASELINE = 30;
 
 // `\s`, not a space: a <button whose first attribute sits on the next line is a raw button too
 // (three such went uncounted until 2026-10-06).

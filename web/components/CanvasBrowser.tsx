@@ -1,166 +1,27 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { getCanvases, deleteCanvas, type Canvas, type Connection } from "@/lib/api";
-import { AugTable } from "@/components/AugTable";
+/**
+ * The Data Canvas list — redone to `aughor-v2/CLARITY.md` (2026-10-12): three figures (how many canvases and on how
+ * many connections, the one asked something last, the ones not used in 30 days), then what needs a person — a canvas
+ * whose connection is gone — then the canvases, each one line: its name, its description, its facts as chips and
+ * when it was last used. Sorting and the cards view sit in Tools ▾; Delete is on the row it deletes.
+ *
+ * What it says is decided in `lib/canvasList.ts`; this file lays it out from the one kit (`components/clarity/kit.tsx`).
+ */
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+
+import { FilterBox, ToolsMenu, type ToolItem } from "@/components/catalog/CatalogTools";
+import { Card, Chip, Empty, Figure, Figures, Label, MUTED, NeedsRow, NeedsYou, NUM, ONE_LINE, Page, ROW, RULE } from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
-import type { TableColumnsType } from "antd";
-import { Icon as Glyph, type IconName } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-
-// ── Icon helper ───────────────────────────────────────────────────────────────
-
-function Icon({ name, size = 14, color = "currentColor" }: { name: IconName; size?: number; color?: string }) {
-  return (
-    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
-      <Glyph name={name} size={size} />
-    </span>
-  );
-}
-
-const SEARCH_ICON: IconName = "search";
-const PLUS_ICON: IconName = "plus";
-const SLIDERS_ICON: IconName = "sliders";
-const CHEVD_ICON: IconName = "chevd";
-const CANVAS_ICON: IconName = "canvas";
-const TRASH_ICON: IconName = "trash";
-const DB_ICON: IconName = "db";
-const PERSON_ICON: IconName = "user";
-const GRID_ICON: IconName = "builder";
-const LIST_ICON: IconName = "list";
-const CLOCK_ICON: IconName = "clock";
-const LAYERS_ICON: IconName = "layers";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function timeAgo(iso: string): string {
-  if (!iso) return "—";
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-// ── Filter chip ───────────────────────────────────────────────────────────────
-
-function FilterChip({ label, icon, active, onClick }: { label: string; icon?: IconName; active?: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick} style={{
-      display: "inline-flex", alignItems: "center", gap: 6,
-      padding: "5px 13px", borderRadius: "var(--r-chip)",
-      background: active ? "color-mix(in srgb, var(--blue4) 12%, var(--bg-2))" : "var(--bg-2)",
-      border: `1px solid ${active ? "var(--blue4)" : "var(--b1)"}`,
-      color: active ? "var(--blue4)" : "var(--t2)",
-      fontSize: 12, fontWeight: active ? 500 : 400,
-      cursor: "pointer", transition: "background-color .1s, border-color .1s, color .1s", whiteSpace: "nowrap",
-    }}>
-      {icon && <Icon name={icon} size={13} color={active ? "var(--blue4)" : "var(--t3)"} />}
-      {label}
-    </button>
-  );
-}
-
-// ── Canvas card — the rich, Databricks-Genie-style catalog tile (default view) ──
-function CanvasCard({ row, onSelect, onDelete }: { row: CanvasRow; onSelect: () => void; onDelete?: () => void }) {
-  const { canvas, connection } = row;
-  const n = canvas.scopes[0]?.tables.length ?? 0;
-  const tableLabel = n === 0 ? "All tables" : `${n} table${n !== 1 ? "s" : ""}`;
-  const updated = timeAgo(canvas.updated_at || canvas.created_at);
-  return (
-    <div
-      onClick={onSelect}
-      role="button"
-      tabIndex={0}
-      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(); } }}
-      className="aug-canvas-card"
-      style={{
-        position: "relative", display: "flex", flexDirection: "column", gap: 12,
-        padding: 16, minHeight: 148, textAlign: "left", cursor: "pointer",
-        background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
-        transition: "border-color .12s, background .12s, box-shadow .12s",
-      }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b3)"; e.currentTarget.style.background = "var(--bg-3)"; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-2)"; }}
-    >
-      {/* Header — icon + name + type label */}
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 11 }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: "var(--r2)", flexShrink: 0,
-          background: canvas.is_legacy ? "var(--bg-4)" : "color-mix(in srgb, var(--blue3) 16%, transparent)",
-          border: `1px solid ${canvas.is_legacy ? "var(--b2)" : "color-mix(in srgb, var(--blue3) 32%, transparent)"}`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <Icon name={CANVAS_ICON} size={17} color={canvas.is_legacy ? "var(--t3)" : "var(--blue4)"} />
-        </div>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", lineHeight: 1.35,
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {canvas.name}
-          </div>
-          <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 1 }}>
-            {canvas.is_legacy ? "Data Canvas · auto-generated" : "Data Canvas"}
-          </div>
-        </div>
-        {onDelete && !canvas.is_legacy && (
-          <Button variant="ghost" size="xs"
-            onClick={e => { e.stopPropagation(); onDelete(); }}
-            title="Delete Data Canvas"
-            className="aug-canvas-card-delete"
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)",
-              padding: 3, marginTop: -2, marginRight: -2, borderRadius: 4, opacity: 0, transition: "opacity .12s, color .1s" }}
-            onMouseEnter={e => { e.currentTarget.style.color = "var(--red4)"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "var(--t3)"; }}
-          >
-            <Icon name={TRASH_ICON} size={13} />
-          </Button>
-        )}
-      </div>
-
-      {/* Description — two lines, quiet */}
-      <div style={{
-        flex: 1, fontSize: 12, color: "var(--t3)", lineHeight: 1.5,
-        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
-      }}>
-        {canvas.description || "No description."}
-      </div>
-
-      {/* Footer — signal chips: connection · tables · updated */}
-      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-        {connection && (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px",
-            borderRadius: 4, background: "var(--bg-3)", border: "1px solid var(--b1)",
-            fontSize: 11, color: "var(--t2)", whiteSpace: "nowrap" }}>
-            <Icon name={DB_ICON} size={10} color="var(--t3)" />{connection.name}
-          </span>
-        )}
-        <span style={{ display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 4,
-          background: n === 0 ? "color-mix(in srgb, var(--grn3) 10%, transparent)" : "var(--bg-3)",
-          border: `1px solid ${n === 0 ? "color-mix(in srgb, var(--grn3) 25%, transparent)" : "var(--b1)"}`,
-          fontSize: 11, color: n === 0 ? "var(--grn4)" : "var(--t3)", whiteSpace: "nowrap" }}>
-          {tableLabel}
-        </span>
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap" }}>
-          {updated}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// ── Row data shape ────────────────────────────────────────────────────────────
-
-interface CanvasRow {
-  key: string;
-  canvas: Canvas;
-  connection: Connection | undefined;
-}
-
-// ── CanvasBrowser ─────────────────────────────────────────────────────────────
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Icon } from "@/components/ui/icon";
+import { Loading, ReadFailed } from "@/components/ui/states";
+import { deleteCanvas, getCanvases, type Canvas, type Connection } from "@/lib/api";
+import {
+  agoWords, canvasFigures, canvasNeeds, connectionGone, connectionIdOf, connectionKind, dayMonth, filterCanvases, IDLE_DAYS,
+  scopeWords, SORT_WORDS, sortCanvases, tablesTitle, type CanvasSort,
+} from "@/lib/canvasList";
+import { countNoun, formatCount } from "@/lib/format";
 
 interface Props {
   connections: Connection[];
@@ -171,439 +32,271 @@ interface Props {
 }
 
 export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Props) {
-  const [canvases, setCanvases]         = useState<Canvas[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [search, setSearch]             = useState("");
-  const [filter, setFilter]             = useState<"all" | "mine">("all");
-  const [sort, setSort]                 = useState<"activity" | "modified" | "name" | "tables">("activity");
-  const [sortOpen, setSortOpen]         = useState(false);
-  const [view, setView]                 = useState<"cards" | "list">("cards");
+  const [canvases, setCanvases] = useState<Canvas[]>([]);
+  const [loading, setLoading] = useState(true);
+  // A failed read used to read as "No Data Canvases yet" — teaching the reader they had none.
+  const [failed, setFailed] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [hideAuto, setHideAuto] = useState(false);
+  const [sort, setSort] = useState<CanvasSort>("activity");
+  const [view, setView] = useState<"list" | "cards">("list");
   const [pendingDelete, setPendingDelete] = useState<Canvas | null>(null);
-  const [deleting, setDeleting]         = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
-    getCanvases(workspaceId).then(setCanvases).catch(() => setCanvases([]))
+    getCanvases(workspaceId)
+      .then(list => { setCanvases(list); setFailed(null); })
+      .catch(e => { setCanvases([]); setFailed(e instanceof Error ? e.message : String(e)); })
       .finally(() => setLoading(false));
-  };
-  useEffect(load, [workspaceId]);
+  }, [workspaceId]);
+  useEffect(load, [load]);
 
   const handleDelete = async () => {
     if (!pendingDelete) return;
     setDeleting(true);
     try { await deleteCanvas(pendingDelete.id); setPendingDelete(null); load(); }
-    catch { /* ignore */ }
+    catch { /* the dialog stays open on the canvas it could not delete */ }
     finally { setDeleting(false); }
   };
 
-  const connMap = Object.fromEntries(connections.map(c => [c.id, c]));
+  const connOf = useCallback((c: Canvas) => connections.find(x => x.id === connectionIdOf(c)), [connections]);
+  // One clock per visit: "9 days ago" is read against the moment the list opened.
+  const [now] = useState(() => Date.now());
+  const figures = useMemo(() => canvasFigures(canvases, now), [canvases, now]);
+  const needs = useMemo(() => canvasNeeds(canvases, connections), [canvases, connections]);
+  const shown = useMemo(() => sortCanvases(filterCanvases(canvases, {
+    query: search, hideAuto, connectionName: c => connOf(c)?.name ?? "",
+  }), sort), [canvases, search, hideAuto, sort, connOf]);
 
-  const displayed: CanvasRow[] = useMemo(() => {
-    let list = [...canvases];
-    if (filter === "mine") list = list.filter(c => !c.is_legacy);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(c =>
-        c.name.toLowerCase().includes(q) ||
-        c.description.toLowerCase().includes(q) ||
-        (connMap[c.scopes[0]?.connection_id]?.name ?? "").toLowerCase().includes(q),
-      );
-    }
-    const activityTs = (c: Canvas) =>
-      c.last_activity ? new Date(c.last_activity).getTime() : 0;
-    const cmp = {
-      activity: (a: Canvas, b: Canvas) =>
-        activityTs(b) - activityTs(a) ||
-        new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime(),
-      modified: (a: Canvas, b: Canvas) =>
-        new Date(b.updated_at || b.created_at).getTime() -
-        new Date(a.updated_at || a.created_at).getTime(),
-      name: (a: Canvas, b: Canvas) => a.name.localeCompare(b.name),
-      tables: (a: Canvas, b: Canvas) =>
-        (b.scopes[0]?.tables.length ?? 0) - (a.scopes[0]?.tables.length ?? 0),
-    }[sort];
-    return list
-      .sort(cmp)
-      .map(c => ({ key: c.id, canvas: c, connection: connMap[c.scopes[0]?.connection_id] }));
-  }, [canvases, filter, search, sort, connMap]);
-
-  const SORT_LABELS: Record<typeof sort, string> = {
-    activity: "Latest Agent run",
-    modified: "Last modified",
-    name: "Name",
-    tables: "Table count",
-  };
-
-  // ── Ant Design column defs ────────────────────────────────────────────────
-
-  const columns: TableColumnsType<CanvasRow> = [
-    {
-      title: "Name",
-      key: "name",
-      render: (_, { canvas }) => (
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: 3, flexShrink: 0,
-            background: canvas.is_legacy
-              ? "var(--bg-3)"
-              : "color-mix(in srgb, var(--blue3) 18%, transparent)",
-            border: `1px solid ${canvas.is_legacy
-              ? "var(--b2)"
-              : "color-mix(in srgb, var(--blue3) 35%, transparent)"}`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <Icon name={CANVAS_ICON} size={13} color={canvas.is_legacy ? "var(--t3)" : "var(--blue4)"} />
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: "var(--t1)" }}>
-              {canvas.name}
-            </div>
-            {canvas.is_legacy && (
-              <div style={{ fontSize: 11, color: "var(--t3)" }}>auto-generated</div>
-            )}
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: "Description",
-      key: "description",
-      ellipsis: true,
-      render: (_, { canvas }) => (
-        <span style={{ fontSize: 12, color: "var(--t3)" }}>
-          {canvas.description || "—"}
-        </span>
-      ),
-    },
-    {
-      title: "Modified",
-      key: "modified",
-      width: 110,
-      render: (_, { canvas }) => (
-        <span style={{ fontSize: 12, color: "var(--t3)" }}>
-          {timeAgo(canvas.updated_at || canvas.created_at)}
-        </span>
-      ),
-    },
-    {
-      title: "Connection",
-      key: "connection",
-      width: 200,
-      render: (_, { connection }) => {
-        if (!connection) return <span style={{ color: "var(--t3)" }}>—</span>;
-        const ct = connection.conn_type;
-        const label = ct === "duckdb" ? "DuckDB" : ct === "postgres" ? "PG" : ct.toUpperCase().slice(0, 4);
-        return (
-          <span style={{
-            display: "inline-flex", alignItems: "center", gap: 5,
-            padding: "2px 8px", borderRadius: 3,
-            background: "var(--bg-3)", border: "1px solid var(--b1)",
-            fontSize: 11, color: "var(--t2)", whiteSpace: "nowrap",
-          }}>
-            <Icon name={DB_ICON} size={10} color="var(--t3)" />
-            {connection.name}
-            <span style={{ color: "var(--t3)", fontSize: 11 }}>{label}</span>
-          </span>
-        );
-      },
-    },
-    {
-      title: "Tables",
-      key: "tables",
-      width: 120,
-      render: (_, { canvas }) => {
-        const n = canvas.scopes[0]?.tables.length ?? 0;
-        const label = n === 0 ? "All tables" : `${n} table${n !== 1 ? "s" : ""}`;
-        return (
-          <span style={{
-            display: "inline-block", padding: "2px 8px", borderRadius: 3,
-            background: n === 0
-              ? "color-mix(in srgb, var(--grn3) 10%, transparent)"
-              : "var(--bg-3)",
-            border: `1px solid ${n === 0
-              ? "color-mix(in srgb, var(--grn3) 25%, transparent)"
-              : "var(--b1)"}`,
-            fontSize: 11,
-            color: n === 0 ? "var(--grn4)" : "var(--t3)",
-          }}>
-            {label}
-          </span>
-        );
-      },
-    },
-    {
-      title: "",
-      key: "actions",
-      width: 40,
-      render: (_, { canvas }) =>
-        canvas.is_legacy ? null : (
-          <Button variant="ghost" size="xs"
-            onClick={e => { e.stopPropagation(); setPendingDelete(canvas); }}
-            title="Delete Data Canvas"
-            style={{
-              background: "none", border: "none", cursor: "pointer",
-              color: "var(--t3)", padding: "4px", opacity: 0,
-              display: "inline-flex", alignItems: "center", borderRadius: 3,
-              transition: "color .1s, opacity .1s",
-            }}
-            className="aug-canvas-row-delete"
-            onMouseEnter={e => { e.currentTarget.style.color = "var(--red4)"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "var(--t3)"; }}
-          >
-            <Icon name={TRASH_ICON} size={13} />
-          </Button>
-        ),
-    },
+  const tools: ToolItem[] = [
+    ...(Object.keys(SORT_WORDS) as CanvasSort[]).map(s => ({
+      label: `Sort by ${SORT_WORDS[s]}`, onSelect: () => setSort(s), hidden: s === sort, testId: `canvas-sort-${s}`,
+    })),
+    { label: view === "list" ? "Show as cards" : "Show as a list", onSelect: () => setView(v => (v === "list" ? "cards" : "list")),
+      apart: true, testId: "canvas-view" },
   ];
+
+  const rowProps = (c: Canvas) => ({
+    canvas: c, connection: connOf(c), gone: connectionGone(c, connections), now,
+    onOpen: () => onSelect(c), onDelete: c.is_legacy ? undefined : () => setPendingDelete(c),
+  });
 
   return (
     <div className="aug-screen">
-
-      {/* ── Search + New ── */}
-      <div style={{ padding: "20px 32px 0", flexShrink: 0, display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{
-          flex: 1, display: "flex", alignItems: "center", gap: 10,
-          padding: "8px 14px",
-          background: "var(--bg-2)", border: "1px solid var(--b1)",
-          borderRadius: "var(--r2)", transition: "border-color .1s",
-        }}
-          onFocusCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b2)"; }}
-          onBlurCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b1)"; }}
-        >
-          <Icon name={SEARCH_ICON} size={14} color="var(--t3)" />
-          <Input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search Data Canvases, connections…"
-            style={{ flex: 1 }}
-          />
-          {search && (
-            <Button variant="ghost" size="xs" onClick={() => setSearch("")}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 0 }}>
-              ✕
-            </Button>
-          )}
-        </div>
-        <Button
-          onClick={onNew}
-          variant="default" size="sm"
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}
-        >
-          <Icon name={PLUS_ICON} size={12} color="currentColor" />
-          New
-        </Button>
-      </div>
-
-      {/* ── Filter chips ── */}
-      <div style={{
-        padding: "12px 32px 0",
-        display: "flex", alignItems: "center", gap: 6,
-        flexShrink: 0,
-      }}>
-        <div style={{
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          width: 30, height: 30, borderRadius: "var(--r2)",
-          background: "var(--bg-2)", border: "1px solid var(--b1)", color: "var(--t3)",
-          marginRight: 2,
-        }}>
-          <Icon name={SLIDERS_ICON} size={14} color="var(--t3)" />
-        </div>
-        <FilterChip label="All"           icon={LAYERS_ICON} active={filter === "all"}  onClick={() => setFilter("all")} />
-        <FilterChip label="Created by me" icon={PERSON_ICON} active={filter === "mine"} onClick={() => setFilter("mine")} />
-      </div>
-
-      {/* ── Table ── */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "14px 32px 24px" }}>
-        {/* Section bar */}
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
-          <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t2)" }}>
-            {loading ? "Loading…" : `All Data Canvases${displayed.length > 0 ? ` (${displayed.length})` : ""}`}
-          </span>
-
-          {/* View toggle + Sort — right cluster */}
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-            {/* Cards ⇄ List view toggle */}
-            <div style={{ display: "flex", alignItems: "center", gap: 1, padding: 2,
-              background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
-              {([["cards", GRID_ICON, "Card view"], ["list", LIST_ICON, "List view"]] as const).map(([v, ic, tt]) => (
-                <div key={v} role="button" tabIndex={0} title={tt} aria-label={tt} aria-pressed={view === v}
-                  onClick={() => setView(v)}
-                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setView(v); } }}
-                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center",
-                    width: 27, height: 24, borderRadius: 5, cursor: "pointer",
-                    background: view === v ? "var(--bg-4)" : "transparent",
-                    color: view === v ? "var(--t1)" : "var(--t3)", transition: "background-color .1s, color .1s" }}>
-                  <Icon name={ic} size={13} color="currentColor" />
-                </div>
-              ))}
-            </div>
-            {/* Sort control */}
-            <div style={{ position: "relative" }}>
-            <Button variant="ghost" size="xs"
-              onClick={() => setSortOpen(v => !v)}
-              onBlur={() => setTimeout(() => setSortOpen(false), 120)}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                padding: "5px 10px", borderRadius: "var(--r2)",
-                background: sortOpen ? "var(--bg-3)" : "transparent",
-                border: `1px solid ${sortOpen ? "var(--b2)" : "transparent"}`,
-                color: "var(--t2)", fontSize: 12, cursor: "pointer", transition: "background-color .1s, border-color .1s",
-              }}
-              onMouseEnter={e => { if (!sortOpen) e.currentTarget.style.background = "var(--bg-2)"; }}
-              onMouseLeave={e => { if (!sortOpen) e.currentTarget.style.background = "transparent"; }}
-            >
-              <span style={{ color: "var(--t3)" }}>Sort:</span>
-              {SORT_LABELS[sort]}
-              <Icon name={CHEVD_ICON} size={12} color="var(--t3)" />
-            </Button>
-            {sortOpen && (
-              <div style={{
-                position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30,
-                minWidth: 160, padding: 4,
-                background: "var(--bg-2)", border: "1px solid var(--b2)",
-                borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)",
-              }}>
-                {(["activity", "modified", "name", "tables"] as const).map(opt => (
-                  <Button variant="ghost" size="xs"
-                    key={opt}
-                    onMouseDown={() => { setSort(opt); setSortOpen(false); }}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 8, width: "100%",
-                      padding: "7px 9px", borderRadius: "var(--r1, 4px)", textAlign: "left",
-                      background: sort === opt ? "color-mix(in srgb, var(--blue4) 10%, transparent)" : "transparent",
-                      border: "none", cursor: "pointer",
-                      color: sort === opt ? "var(--blue4)" : "var(--t2)", fontSize: 12,
-                    }}
-                    onMouseEnter={e => { if (sort !== opt) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                    onMouseLeave={e => { if (sort !== opt) e.currentTarget.style.background = "transparent"; }}
-                  >
-                    {sort === opt
-                      ? <Icon name="check" size={12} color="var(--blue4)" />
-                      : <span style={{ width: 12 }} />}
-                    {SORT_LABELS[opt]}
-                  </Button>
-                ))}
-              </div>
-            )}
-            </div>
-          </div>
-        </div>
-
-        {!loading && displayed.length === 0 ? (
-          /* Empty state */
-          <div style={{
-            padding: "72px 0", display: "flex", flexDirection: "column",
-            alignItems: "center", gap: 14,
-          }}>
-            <div style={{
-              width: 52, height: 52, borderRadius: 4,
-              background: "color-mix(in srgb, var(--blue3) 10%, transparent)",
-              border: "1px solid color-mix(in srgb, var(--blue3) 22%, transparent)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <Icon name={CANVAS_ICON} size={22} color="var(--blue4)" />
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", marginBottom: 5 }}>
-                {search ? "No matching Data Canvases" : "No Data Canvases yet"}
-              </div>
-              <div style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.6, maxWidth: 300 }}>
-                {search
-                  ? "Try a different search or clear the filter."
-                  : "Create a Data Canvas to scope a workspace to a connection and specific tables."}
-              </div>
-            </div>
-            {!search && (
-              <Button onClick={onNew} variant="default" size="sm"
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                <Icon name={PLUS_ICON} size={12} color="currentColor" />
-                Create your first Data Canvas
-              </Button>
-            )}
-          </div>
-        ) : view === "cards" ? (
-          /* ── Card grid (default) — rich Databricks-Genie-style tiles ── */
-          <>
-            <style>{`.aug-canvas-card:hover .aug-canvas-card-delete { opacity: 1 !important; }`}</style>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
-              {displayed.map(row => (
-                <CanvasCard
-                  key={row.key}
-                  row={row}
-                  onSelect={() => onSelect(row.canvas)}
-                  onDelete={() => setPendingDelete(row.canvas)}
-                />
-              ))}
-            </div>
-          </>
-        ) : (
-          <>
-            <style>{`
-              .aug-canvas-table .ant-table-row:hover .aug-canvas-row-delete { opacity: 1 !important; }
-              .aug-canvas-table .ant-table-row { cursor: pointer; }
-              /* Databricks Genie: borderless list — rows sit on the page, hairline separators only */
-              .aug-canvas-table .ant-table,
-              .aug-canvas-table .ant-table-container,
-              .aug-canvas-table .ant-table-thead > tr > th,
-              .aug-canvas-table .ant-table-tbody > tr > td { background: transparent !important; }
-              .aug-canvas-table .ant-table-thead > tr > th {
-                border-bottom: 1px solid var(--b1) !important;
-                font-weight: 500;
-              }
-              .aug-canvas-table .ant-table-thead > tr > th::before { display: none !important; }
-              .aug-canvas-table .ant-table-tbody > tr > td { border-bottom: 1px solid var(--b0) !important; }
-              .aug-canvas-table .ant-table-tbody > tr:hover > td { background: var(--bg-hover) !important; }
-              .aug-canvas-table .ant-table-tbody > tr:last-child > td { border-bottom: none !important; }
-            `}</style>
-            <AugTable<CanvasRow>
-              className="aug-canvas-table"
-              columns={columns}
-              dataSource={displayed}
-              loading={loading}
-              pagination={false}
-              showSorterTooltip={false}
-              onRow={({ canvas }) => ({
-                onClick: () => onSelect(canvas),
-              })}
-            />
-          </>
-        )}
-      </div>
-
-      {/* ── Delete confirmation modal ── */}
-      {pendingDelete && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 60,
-          background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-          onClick={() => setPendingDelete(null)}
-        >
-          <div onClick={e => e.stopPropagation()} style={{
-            background: "var(--bg-2)", border: "1px solid var(--b2)",
-            borderRadius: "var(--r3)", padding: "24px 24px 20px",
-            width: 360, display: "flex", flexDirection: "column", gap: 12,
-            boxShadow: "var(--shadow-xl)",
-          }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Delete Data Canvas</div>
-            <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.6 }}>
-              Are you sure you want to delete{" "}
-              <strong style={{ color: "var(--t1)" }}>{pendingDelete.name}</strong>?
-              This cannot be undone.
-            </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <Button onClick={() => setPendingDelete(null)} variant="ghost" size="sm">Cancel</Button>
-              <Button variant="ghost" size="xs" onClick={handleDelete} disabled={deleting} style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                padding: "5px 12px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
-                background: "var(--red1)", border: "1px solid var(--red2)", color: "var(--red4)",
-                cursor: deleting ? "not-allowed" : "pointer", opacity: deleting ? 0.5 : 1,
-              }}>
-                {deleting ? "Deleting…" : "Delete"}
-              </Button>
-            </div>
-          </div>
+    <Page testId="canvas-list-page">
+      {loading && !canvases.length && !failed && <Loading what="the canvases" />}
+      {failed !== null && (
+        <div style={{ ...ROW, justifyContent: "space-between" }}>
+          <ReadFailed what="the canvases" error={failed} onRetry={load} />
+          <Button size="xs" onClick={onNew}>New canvas</Button>
         </div>
       )}
+
+      {!loading && failed === null && canvases.length === 0 && (
+        <Card label="Canvases" testId="canvas-none">
+          <div style={{ ...ROW, justifyContent: "space-between" }}>
+            <Empty>No canvases yet · a canvas keeps questions to one connection and the tables you choose.</Empty>
+            <Button size="xs" onClick={onNew}>New canvas</Button>
+          </div>
+        </Card>
+      )}
+
+      {failed === null && canvases.length > 0 && (
+        <>
+          <Figures testId="canvas-figures">
+            <Figure label="Canvases" value={formatCount(figures.total)} testId="fig-canvases"
+              sub={`on ${countNoun(figures.connections, "connection")}${figures.auto ? ` · ${formatCount(figures.auto)} auto-generated` : ""}`} />
+            {/* When the latest use was, but not which canvas: that one heads the list, sorted by last used. */}
+            <Figure label={`Used in the last ${IDLE_DAYS} days`} testId="fig-used"
+              value={`${formatCount(figures.total - figures.idle)} of ${formatCount(figures.total)}`}
+              sub={[
+                figures.lastUsed ? `last ${agoWords(figures.lastUsed.at, now)}` : "none asked anything yet",
+                figures.lastUsed && figures.never ? `${formatCount(figures.never)} never used` : "",
+              ].filter(Boolean).join(" · ")} />
+          </Figures>
+
+          {needs.length > 0 && (
+            <NeedsYou testId="canvas-needs" right={formatCount(needs.length)}>
+              {needs.map(c => (
+                <NeedsRow key={c.id} testId="needs-connection-gone"
+                  title={`${c.name}: its connection is gone`}
+                  detail="This workspace no longer has the connection it reads — questions here have nothing to read"
+                  actions={<>
+                    <Button size="xs" variant="secondary" onClick={() => onSelect(c)}>Open</Button>
+                    {!c.is_legacy && <Button size="xs" variant="ghost" onClick={() => setPendingDelete(c)}>Delete…</Button>}
+                  </>} />
+              ))}
+            </NeedsYou>
+          )}
+
+          <ListSection view={view} total={canvases.length} count={shown.length} sort={sort}
+            right={<>
+              <FilterBox value={search} onChange={setSearch} placeholder="Filter canvases" width={200} />
+              {figures.auto > 0 && (
+                <Button size="xs" variant={hideAuto ? "secondary" : "ghost"} aria-pressed={hideAuto}
+                  onClick={() => setHideAuto(v => !v)} data-testid="canvas-hide-auto">
+                  Hide auto-generated
+                </Button>
+              )}
+              <Button size="xs" onClick={onNew} data-testid="canvas-new">New canvas</Button>
+              <ToolsMenu items={tools} testId="canvas-tools" />
+            </>}>
+            {shown.length === 0 ? (
+              <div style={{ ...ROW, gap: 6 }}>
+                <Empty>{search.trim() ? `No canvas matches “${search.trim()}”.` : "Every canvas here is auto-generated, and they are hidden."}</Empty>
+                <Button size="xs" variant="link" onClick={() => { setSearch(""); setHideAuto(false); }}>Show all</Button>
+              </div>
+            ) : view === "list" ? (
+              <div data-testid="canvas-rows">
+                {shown.map((c, i) => <CanvasRow key={c.id} first={i === 0} {...rowProps(c)} />)}
+              </div>
+            ) : (
+              <div data-testid="canvas-cards" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+                {shown.map(c => <CanvasTile key={c.id} {...rowProps(c)} />)}
+              </div>
+            )}
+          </ListSection>
+        </>
+      )}
+
+      <Dialog open={!!pendingDelete} onOpenChange={open => { if (!open && !deleting) setPendingDelete(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {pendingDelete?.name}?</DialogTitle>
+            <DialogDescription>Its saved artifacts and exploration are deleted with it. This cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <div style={{ ...ROW, justifyContent: "flex-end" }}>
+            <Button variant="ghost" size="sm" onClick={() => setPendingDelete(null)} disabled={deleting}>Cancel</Button>
+            <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting} data-testid="canvas-delete-confirm">
+              {deleting ? "Deleting…" : "Delete"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </Page>
+    </div>
+  );
+}
+
+// ── The list's section: a card holding rows, or — for the cards view — its label on the ground above the tiles, so no
+//    box sits inside another ─────────────────────────────────────────────────────────────────────────────────────────
+
+function ListSection({ view, total, count, sort, right, children }: {
+  view: "list" | "cards"; total: number; count: number; sort: CanvasSort; right: ReactNode; children: ReactNode;
+}) {
+  const meta = (
+    <span className="aug-fs-xs" style={{ ...MUTED, ...NUM, whiteSpace: "nowrap" }} data-testid="canvas-list-meta">
+      {/* How many is the figure above; the list says only when a filter shows fewer. */}
+      {count === total ? "" : `${formatCount(count)} of ${formatCount(total)} · `}sorted by {SORT_WORDS[sort]}
+    </span>
+  );
+  const label = <Label right={<>{meta}{right}</>}>Canvases</Label>;
+  if (view === "cards") return <section aria-label="Canvases" data-testid="canvas-list">{label}{children}</section>;
+  return (
+    <Card label="Canvases" right={<>{meta}{right}</>} testId="canvas-list">{children}</Card>
+  );
+}
+
+// ── A canvas: one row of the list, or one tile of the cards view ──────────────────────────────────────────────────
+
+interface RowProps {
+  canvas: Canvas;
+  connection: Connection | undefined;
+  gone: boolean;
+  now: number;
+  onOpen: () => void;
+  onDelete?: () => void;
+}
+
+/** Its facts as chips: the connection it reads, its tables, and any caveat — said, never left to an absence. */
+function Facts({ canvas, connection, gone }: Pick<RowProps, "canvas" | "connection" | "gone">) {
+  const docs = canvas.doc_ids?.length ?? 0;
+  return (
+    <>
+      {gone
+        ? <Chip tone="amber" title="The connection this canvas reads is not in this workspace">connection gone</Chip>
+        : connection && <Chip title={`${connection.name} · ${connectionKind(connection)}`}>{connection.name}</Chip>}
+      <Chip title={tablesTitle(canvas)}>{scopeWords(canvas)}</Chip>
+      {docs > 0 && <Chip title="Always in reach for work done here; the rest of the documents stay searchable">
+        {countNoun(docs, "document")} pinned</Chip>}
+      {canvas.is_legacy && <Chip title="Made automatically from a connection, not by a person">auto-generated</Chip>}
+    </>
+  );
+}
+
+function usedWords(c: Canvas, now: number): string {
+  return c.last_activity ? `used ${agoWords(c.last_activity, now)}` : "never used";
+}
+
+function editedTitle(c: Canvas): string {
+  const made = c.created_at ? `made ${dayMonth(c.created_at)}` : "";
+  const edited = c.updated_at && c.updated_at !== c.created_at ? `edited ${dayMonth(c.updated_at)}` : "";
+  return [made, edited].filter(Boolean).join(" · ");
+}
+
+/** The name, the door to the canvas: it gives way to its chips when the line is short, and keeps its whole on hover. */
+const NAME_LINK: CSSProperties = { padding: 0, margin: 0, height: "auto", minWidth: 0, maxWidth: "100%", flexShrink: 1,
+  overflow: "hidden", color: "var(--t1)", fontWeight: 600 };
+
+function DeleteButton({ name, onDelete }: { name: string; onDelete: () => void }) {
+  return (
+    <Button variant="ghost" size="icon-xs" title="Delete canvas" aria-label={`Delete ${name}`}
+      onClick={e => { e.stopPropagation(); onDelete(); }}
+      className="opacity-0 group-hover/canvas:opacity-100 focus-visible:opacity-100 transition-opacity">
+      <Icon name="trash" size={13} />
+    </Button>
+  );
+}
+
+function CanvasRow({ canvas, connection, gone, now, onOpen, onDelete, first }: RowProps & { first: boolean }) {
+  return (
+    <div data-testid="canvas-row" className="group/canvas" onClick={onOpen}
+      style={{ ...(first ? {} : RULE), display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto", gap: 12,
+        alignItems: "center", padding: "8px 2px", cursor: "pointer" }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ ...ROW, flexWrap: "nowrap", minWidth: 0 }}>
+          <Button variant="link" size="xs" onClick={e => { e.stopPropagation(); onOpen(); }} title={`Open ${canvas.name}`}
+            style={NAME_LINK}>
+            <span className="aug-fs-chrome" style={ONE_LINE}>{canvas.name}</span>
+          </Button>
+          <Facts canvas={canvas} connection={connection} gone={gone} />
+        </div>
+        {canvas.description && (
+          <div className="aug-fs-xs" title={canvas.description} style={{ ...MUTED, ...ONE_LINE }}>{canvas.description}</div>
+        )}
+      </div>
+      <span className="aug-fs-sm" title={editedTitle(canvas)} style={{ ...MUTED, ...NUM, whiteSpace: "nowrap" }}>
+        {usedWords(canvas, now)}
+      </span>
+      <span style={{ width: 24, display: "inline-flex", justifyContent: "flex-end" }}>
+        {onDelete && <DeleteButton name={canvas.name} onDelete={onDelete} />}
+      </span>
+    </div>
+  );
+}
+
+function CanvasTile({ canvas, connection, gone, now, onOpen, onDelete }: RowProps) {
+  return (
+    <div data-testid="canvas-tile" className="group/canvas" onClick={onOpen}
+      style={{ background: "var(--bg-2)", border: "1px solid var(--card-edge)", borderRadius: "var(--r3)", padding: "12px 14px",
+        minWidth: 0, display: "flex", flexDirection: "column", gap: 8, cursor: "pointer" }}>
+      <div style={{ ...ROW, flexWrap: "nowrap" }}>
+        <Button variant="link" size="xs" onClick={e => { e.stopPropagation(); onOpen(); }} title={`Open ${canvas.name}`}
+          style={NAME_LINK}>
+          <span className="aug-fs-chrome" style={ONE_LINE}>{canvas.name}</span>
+        </Button>
+        <span style={{ marginLeft: "auto" }}>{onDelete && <DeleteButton name={canvas.name} onDelete={onDelete} />}</span>
+      </div>
+      {canvas.description && (
+        <div className="aug-fs-xs" title={canvas.description} style={{ ...MUTED, ...ONE_LINE }}>{canvas.description}</div>
+      )}
+      <div style={{ ...ROW, gap: 6 }}>
+        <Facts canvas={canvas} connection={connection} gone={gone} />
+        <span className="aug-fs-xs" title={editedTitle(canvas)} style={{ ...MUTED, ...NUM, marginLeft: "auto", whiteSpace: "nowrap" }}>
+          {usedWords(canvas, now)}
+        </span>
+      </div>
     </div>
   );
 }

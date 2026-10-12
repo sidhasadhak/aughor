@@ -1,83 +1,173 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import type { Canvas, Connection, CanvasHistoryItem as HistoryItem } from "@/lib/api";
-import { getCanvasHistory, updateCanvas, deleteInvestigation, getCanvasArtifacts, deleteCanvasArtifact, getCanvasDocuments, listDocuments, type CanvasArtifact, type CanvasDocument, type DocumentEntry } from "@/lib/api";
-import { ConfigurePanel } from "@/components/ConfigurePanel";
+/**
+ * An open Data Canvas — its chrome redone to `aughor-v2/CLARITY.md` (2026-10-12). The conversation, the reports and
+ * the configuration panel are what the person made and are drawn as before; around them: one header line (the way
+ * back, the name, what it is in a line, its facts as chips, the three views, a new conversation and one Tools menu),
+ * a two-line landing in place of a block that repeated the header, the history with a question asked eleven times said
+ * once, and the saved artifacts — each saying when it could not be read, never showing that as empty.
+ */
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+
+import { ToolsMenu, type ToolItem } from "@/components/catalog/CatalogTools";
+import { Card, Chip, Empty, Label, MUTED, NUM, ONE_LINE, Page, ROW, RULE } from "@/components/clarity/kit";
 import { ChatPanel } from "@/components/ChatPanel";
+import { ConfigurePanel } from "@/components/ConfigurePanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
 import { LifecyclePanel } from "@/components/LifecyclePanel";
 import { Button } from "@/components/ui/button";
-import { ReadFailed } from "@/components/ui/states";
-import { Icon as Glyph, type IconName } from "@/components/ui/icon";
-import { SelectField } from "@/components/ui/select";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { SelectField } from "@/components/ui/select";
+import { Loading, ReadFailed } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
-
-// ── Icon helper ───────────────────────────────────────────────────────────────
-
-/**
- * This screen's glyphs. The names below are the ones its call sites already use; the
- * drawings come from the platform set (`components/ui/icon.tsx`). Until now this file
- * carried its own 13-entry SVG path map — the fourth such map in the app, each having
- * drawn "database" and "table" a little differently from the others.
- */
-const ROLE = {
-  back: "back", canvas: "canvas", db: "db", chat: "chat", clock: "clock",
-  process: "process", catalog: "catalog", settings: "settings", close: "close",
-  check: "check", table: "table", plus: "plus",
-} as const;
-
-function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
-  const role = (ROLE as Record<string, IconName>)[name] ?? "catalog";
-  return (
-    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
-      <Glyph name={role} size={size} />
-    </span>
-  );
-}
-
-// ── Types ─────────────────────────────────────────────────────────────────────
+import type { Canvas, CanvasHistoryItem as HistoryItem, Connection } from "@/lib/api";
+import {
+  deleteCanvasArtifact, deleteInvestigation, getCanvasArtifacts, getCanvasDocuments, getCanvasHistory, listDocuments,
+  updateCanvas, type CanvasArtifact, type CanvasDocument, type DocumentEntry,
+} from "@/lib/api";
+import {
+  agoWords, connectionGone, connectionKind, dayMonth, foldHistory, RUN_KIND_WORD, runStateWord, scopeWords, tablesOf,
+  tablesTitle, type AskedQuestion, type RunKind,
+} from "@/lib/canvasList";
+import { countNoun, formatCount, formatTimestamp } from "@/lib/format";
 
 type WsTab = "chat" | "history" | "artifacts";
 
-// ── History tab ───────────────────────────────────────────────────────────────
+/** How many runs the history reads; when it reads this many, it says they are the latest. */
+const HISTORY_LIMIT = 30;
 
-function timeAgo(iso: string): string {
-  if (!iso) return "—";
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+const HIDDEN_UNTIL_HOVER = "opacity-0 group-hover/run:opacity-100 focus-visible:opacity-100 transition-opacity";
+
+// ── The header line ───────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The line an open canvas starts on — the Catalog's `PanelHead` (`catalog/CatalogTools.tsx`), drawn the same, with the
+ * two things a canvas needs that it has no slot for: a way back to the list before the name, and a name that keeps
+ * room for a word when the line is short. When it is, the description gives way first, then the connection's chip,
+ * then the name; the views and the tools never do (with a long name and four views the line was once wider than its
+ * box, and the workspace slid sideways under the rail at 1176px).
+ */
+function CanvasHead({ name, what, chips, actions, onBack, overlay }: {
+  name: string; what?: string; chips: ReactNode; actions: ReactNode; onBack: () => void;
+  /** What opens from the line — the Settings popover — placed against it. */
+  overlay?: ReactNode;
+}) {
+  return (
+    <div data-testid="canvas-head" style={{ ...ROW, flexWrap: "nowrap", gap: 10, padding: "10px 22px",
+      borderBottom: "1px solid var(--b0)", background: "var(--bg-0)", flexShrink: 0, minWidth: 0, position: "relative" }}>
+      <Button variant="ghost" size="xs" onClick={onBack} title="Back to all canvases" data-testid="canvas-back"
+        style={{ flexShrink: 0, color: "var(--t3)" }}>
+        <Icon name="back" size={12} /> Data Canvas
+      </Button>
+      <span data-testid="canvas-name" className="aug-fs-ui" title={name}
+        style={{ ...ONE_LINE, minWidth: 64, flexShrink: 1, color: "var(--t1)", fontWeight: 600 }}>
+        {name}
+      </span>
+      {what && (
+        <span data-testid="canvas-what" className="aug-fs-sm" title={what}
+          style={{ ...MUTED, ...ONE_LINE, flexShrink: 6 }}>{what}</span>
+      )}
+      {chips}
+      <span style={{ marginLeft: "auto", ...ROW, flexWrap: "nowrap", flexShrink: 0 }}>{actions}</span>
+      {overlay}
+    </div>
+  );
 }
 
-function statusColor(s: string): string {
-  if (s === "complete" || s === "completed") return "var(--grn4)";
-  if (s === "failed" || s === "timed_out") return "var(--red4)";
-  if (s === "running") return "var(--amb4)";
-  return "var(--t4)";
+/** What the pinned documents are, read once: how many of them were deleted since — or that it could not be told. */
+type PinnedState = { missing: number } | "unread" | null;
+
+function usePinnedState(canvas: Canvas): PinnedState {
+  const [state, setState] = useState<PinnedState>(null);
+  const ids = (canvas.doc_ids ?? []).join("\u0000");
+  useEffect(() => {
+    if (!ids) { setState(null); return; }
+    let alive = true;
+    const want = ids.split("\u0000").length;
+    getCanvasDocuments(canvas.id)
+      // The read answers one entry per pinned id, deleted or not; fewer means it was not read.
+      .then(d => { if (alive) setState(d.length < want ? "unread" : { missing: d.filter(x => x.missing).length }); })
+      .catch(() => { if (alive) setState("unread"); });
+    return () => { alive = false; };
+  }, [canvas.id, ids]);
+  return state;
 }
 
-function CanvasHistory({
-  canvasId,
-  onOpen,
-}: {
+function HeadChips({ canvas, connection, gone, pinned }: {
+  canvas: Canvas; connection: Connection | undefined; gone: boolean; pinned: PinnedState;
+}) {
+  const docs = canvas.doc_ids?.length ?? 0;
+  const giveWay: CSSProperties = { display: "inline-flex", flexShrink: 3, minWidth: 56, overflow: "hidden" };
+  return (
+    <>
+      {gone ? (
+        <Chip tone="amber" testId="canvas-connection-gone" title="This workspace no longer has the connection this canvas reads">
+          connection gone
+        </Chip>
+      ) : connection && (
+        <span data-testid="canvas-connection" title={`${connection.name} · ${connectionKind(connection)}`} style={giveWay}>
+          <Chip>{connection.name}</Chip>
+        </span>
+      )}
+      <span title={tablesTitle(canvas)} style={{ display: "inline-flex", flexShrink: 0 }}><Chip>{scopeWords(canvas)}</Chip></span>
+      {docs > 0 && (pinned !== null && pinned !== "unread" && pinned.missing > 0 ? (
+        <Chip tone="amber" testId="canvas-docs-missing" title="A pinned document was deleted — unpin it in Settings">
+          {`${countNoun(docs, "document")} pinned · ${formatCount(pinned.missing)} deleted`}
+        </Chip>
+      ) : (
+        <Chip testId="canvas-docs" title={pinned === "unread"
+          ? "Could not check that they still exist"
+          : "Always in reach for work done here; the rest of the documents stay searchable"}>
+          {`${countNoun(docs, "document")} pinned${pinned === "unread" ? " · not checked" : ""}`}
+        </Chip>
+      ))}
+      {canvas.is_legacy && <Chip title="Made automatically from a connection, not by a person">auto-generated</Chip>}
+    </>
+  );
+}
+
+// ── The landing — what the empty conversation opens on ────────────────────────────────────────────────────────────
+
+/** The question it invites and the two ways to answer — the name, the description and the scope are in the header. */
+function CanvasLanding({ canvas, connection, gone }: { canvas: Canvas; connection: Connection | undefined; gone: boolean }) {
+  const tables = tablesOf(canvas);
+  const about = gone ? "this canvas"
+    : tables.length === 0 ? (connection?.name ?? "this connection")
+    : tables.length === 1 ? tables[0]
+    : `these ${formatCount(tables.length)} tables`;
+  return (
+    <div data-testid="canvas-landing" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="aug-fs-h1" title={tablesTitle(canvas)} style={{ color: "var(--t1)", fontWeight: 600 }}>
+        What do you want to know about {about}?
+      </div>
+      <div style={{ ...ROW, gap: 6 }}>
+        <Chip title="One query and a straight answer">Quick · one query</Chip>
+        <Chip title="Several steps that look for what moved and why">Agent · a deep analysis</Chip>
+      </div>
+    </div>
+  );
+}
+
+// ── History ───────────────────────────────────────────────────────────────────────────────────────────────────────
+
+function CanvasHistory({ canvasId, onOpen }: {
   canvasId: string;
-  onOpen: (id: string, kind: "investigation" | "chat") => void;
+  onOpen: (id: string, kind: RunKind) => void;
 }) {
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [removing, setRemoving] = useState<string | null>(null);
   // A failed read used to read as "No deep analyses yet in this Data Canvas".
   const [failed, setFailed] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [removeFailed, setRemoveFailed] = useState(false);
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const [now] = useState(() => Date.now());
 
   useEffect(() => {
     setLoading(true);
-    getCanvasHistory(canvasId, 30)
+    getCanvasHistory(canvasId, HISTORY_LIMIT)
       .then(list => { setItems(list); setFailed(null); })
       .catch(e => { setItems([]); setFailed(e instanceof Error ? e.message : String(e)); })
       .finally(() => setLoading(false));
@@ -85,169 +175,178 @@ function CanvasHistory({
 
   async function handleRemove(id: string) {
     setRemoving(id);
+    setRemoveFailed(false);
     const prev = items;
     setItems(list => list.filter(it => it.id !== id));  // optimistic
     try {
       await deleteInvestigation(id);
     } catch {
-      setItems(prev);  // restore on failure
+      setItems(prev);  // restore on failure, and say so
+      setRemoveFailed(true);
     } finally {
       setRemoving(null);
     }
   }
 
-  if (loading) {
-    return (
-      <div style={{ padding: "40px 32px", color: "var(--t3)", fontSize: 12 }}>
-        Loading history…
-      </div>
-    );
-  }
-
-  if (failed !== null) {
-    return (
-      <div style={{ padding: "40px 32px" }}>
-        <ReadFailed what="this canvas's history" error={failed} onRetry={() => setReload(n => n + 1)} />
-      </div>
-    );
-  }
-
-  if (items.length === 0) {
-    return (
-      <div style={{ padding: "72px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-        <Icon name="clock" size={28} color="var(--t3)" />
-        <div style={{ fontSize: 13, color: "var(--t3)" }}>No deep analyses yet in this Data Canvas.</div>
-      </div>
-    );
-  }
+  const asked = useMemo(() => foldHistory(items), [items]);
+  const meta = items.length > 0 && (
+    <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }} data-testid="canvas-history-meta">
+      {items.length >= HISTORY_LIMIT ? `the latest ${formatCount(items.length)} runs` : countNoun(items.length, "run")}
+      {asked.length < items.length ? ` · ${countNoun(asked.length, "question")}` : ""}
+    </span>
+  );
+  const scope = (
+    <Chip testId="canvas-history-scope"
+      title="Runs on other canvases, and deep analyses that did not finish, are listed under Agent runs">
+      this canvas · finished runs
+    </Chip>
+  );
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "16px 32px" }}>
-      {items.map(item => {
-        const kind = (item.kind === "chat" ? "chat" : "investigation") as "investigation" | "chat";
-        const isRemoving = removing === item.id;
-        return (
-        <div
-          key={item.id}
-          onClick={() => onOpen(item.id, kind)}
-          className="group/hist"
-          style={{
-            width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 12,
-            padding: "10px 14px", marginBottom: 6,
-            background: "var(--bg-2)", border: "1px solid var(--b1)",
-            borderRadius: "var(--r2)", cursor: "pointer",
-            transition: "border-color .1s, background .1s",
-            opacity: isRemoving ? 0.4 : 1,
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b2)";
-            (e.currentTarget as HTMLDivElement).style.background = "var(--bg-3)";
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b1)";
-            (e.currentTarget as HTMLDivElement).style.background = "var(--bg-2)";
-          }}
-        >
-          <span style={{
-            width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-            background: statusColor(item.status),
-          }} />
-          <span style={{ flex: 1, fontSize: 12, color: "var(--t1)", lineHeight: 1.4, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {item.question}
-          </span>
-          <span style={{
-            display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
-            padding: "1px 6px", borderRadius: 3, fontSize: 11,
-            background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)",
-          }}>
-            <Icon name={kind === "chat" ? "chat" : "process"} size={9} color="var(--t3)" />
-            {kind === "chat" ? "Chat" : "Agent"}
-          </span>
-          <span style={{ fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap", flexShrink: 0 }}>
-            {timeAgo(item.started_at)}
-          </span>
-          <Button
-            variant="ghost" size="icon-xs"
-            title="Remove from history"
-            disabled={isRemoving}
-            onClick={e => { e.stopPropagation(); handleRemove(item.id); }}
-            className="opacity-0 group-hover/hist:opacity-100 transition-opacity"
-            style={{ flexShrink: 0 }}
-          >
-            <Glyph name="trash" size={13} />
-          </Button>
-        </div>
-        );
-      })}
-    </div>
+    <Page testId="canvas-history">
+      <Card label="History" right={<>{meta}{scope}</>} testId="canvas-history-card">
+        {removeFailed && (
+          <div role="alert" className="aug-fs-sm" style={{ color: "var(--t2)", marginBottom: 6 }}>
+            Could not remove that run — it is still here.
+          </div>
+        )}
+        {loading ? <Loading what="the history" />
+          : failed !== null ? <ReadFailed what="this canvas's history" error={failed} onRetry={() => setReload(n => n + 1)} />
+          : asked.length === 0 ? <Empty>Nothing asked on this canvas yet.</Empty>
+          : asked.map((q, i) => (
+            <AskedRow key={q.key} q={q} first={i === 0} now={now} removing={removing} open={open.has(q.group)}
+              onToggle={() => setOpen(s => { const n = new Set(s); if (n.has(q.group)) n.delete(q.group); else n.add(q.group); return n; })}
+              onOpen={run => onOpen(run.id, q.kind)}
+              onRemove={handleRemove} />
+          ))}
+      </Card>
+    </Page>
   );
 }
 
-// ── Catalog tab (filtered to canvas tables) ───────────────────────────────────
-
-function CanvasCatalog({
-  canvas,
-  connection,
-}: {
-  canvas: Canvas;
-  connection: Connection | undefined;
+/** One question: its words, its kind, how many times it was asked and when last — the newest run opens; each run,
+ *  with its own Open and Remove, behind Details. */
+function AskedRow({ q, first, now, removing, open, onToggle, onOpen, onRemove }: {
+  q: AskedQuestion; first: boolean; now: number; removing: string | null; open: boolean;
+  onToggle: () => void; onOpen: (run: HistoryItem) => void; onRemove: (id: string) => void;
 }) {
-  const scope = canvas.scopes[0];
-  const tables = scope?.tables ?? [];
-  const isFullSchema = tables.length === 0;
-
+  const state = runStateWord(q.latest.status);
+  const many = q.runs.length > 1;
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "16px 32px" }}>
-      {/* Scope summary */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 10,
-        padding: "10px 14px", marginBottom: 16,
-        background: isFullSchema
-          ? "color-mix(in srgb, var(--grn3) 8%, transparent)"
-          : "color-mix(in srgb, var(--blue3) 8%, transparent)",
-        border: `1px solid ${isFullSchema
-          ? "color-mix(in srgb, var(--grn3) 20%, transparent)"
-          : "color-mix(in srgb, var(--blue3) 20%, transparent)"}`,
-        borderRadius: "var(--r2)", fontSize: 12,
-      }}>
-        <Icon name="db" size={13} color={isFullSchema ? "var(--grn4)" : "var(--blue4)"} />
-        <span style={{ color: "var(--t2)" }}>
-          {connection
-            ? <><strong style={{ color: "var(--t1)" }}>{connection.name}</strong> {connection.conn_type === "duckdb" ? "· DuckDB" : connection.conn_type === "postgres" ? "· PostgreSQL" : ""}</>
-            : <span style={{ color: "var(--t3)" }}>Unknown connection</span>
-          }
-        </span>
-        <span style={{ marginLeft: "auto", color: isFullSchema ? "var(--grn4)" : "var(--blue4)", fontWeight: 500 }}>
-          {isFullSchema ? "All tables" : `${tables.length} table${tables.length !== 1 ? "s" : ""} selected`}
-        </span>
-      </div>
-
-      {isFullSchema ? (
-        <div style={{ padding: "24px 0", color: "var(--t3)", fontSize: 12, textAlign: "center" }}>
-          This canvas includes the full schema. Open the Catalog tab to browse all tables.
+    <div data-testid="canvas-history-row" style={{ ...(first ? {} : RULE), padding: "7px 2px",
+      opacity: removing === q.latest.id && !many ? 0.4 : 1 }}>
+      <div className="group/run" onClick={() => onOpen(q.latest)}
+        style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto", gap: 12, alignItems: "center", cursor: "pointer" }}>
+        <div style={{ ...ROW, flexWrap: "nowrap", minWidth: 0 }}>
+          <span className="aug-fs-chrome" title={q.question} style={{ ...ONE_LINE, color: "var(--t1)" }}>{q.question}</span>
+          <Chip>{RUN_KIND_WORD[q.kind]}</Chip>
+          {many && <Chip testId="canvas-history-count" title={`Asked ${q.runs.length} times — the newest opens`}>{`×${q.runs.length}`}</Chip>}
+          {state && <Chip tone={state.tone}>{state.word}</Chip>}
         </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {tables.map(table => (
-            <div key={table} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "8px 14px",
-              background: "var(--bg-2)", border: "1px solid var(--b1)",
-              borderRadius: "var(--r2)",
-            }}>
-              <Icon name="table" size={13} color="var(--t3)" />
-              <span style={{ fontSize: 12, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>
-                {table}
-              </span>
-            </div>
-          ))}
+        <span className="aug-fs-sm" title={formatTimestamp(q.latest.started_at, "short")}
+          style={{ ...MUTED, ...NUM, whiteSpace: "nowrap" }}>{agoWords(q.latest.started_at, now)}</span>
+        {many ? (
+          <Button variant="ghost" size="xs" aria-expanded={open} onClick={e => { e.stopPropagation(); onToggle(); }}>
+            Details <Icon name={open ? "chevu" : "chevd"} size={12} />
+          </Button>
+        ) : (
+          <Button variant="ghost" size="icon-xs" title="Remove from history" aria-label="Remove from history"
+            disabled={removing === q.latest.id} className={HIDDEN_UNTIL_HOVER}
+            onClick={e => { e.stopPropagation(); onRemove(q.latest.id); }}>
+            <Icon name="trash" size={13} />
+          </Button>
+        )}
+      </div>
+      {many && open && (
+        <div data-testid="canvas-history-runs" style={{ padding: "4px 0 2px 14px" }}>
+          {q.runs.map(run => {
+            const s = runStateWord(run.status);
+            return (
+              <div key={run.id} className="group/run aug-fs-sm"
+                style={{ ...ROW, flexWrap: "nowrap", padding: "3px 0", opacity: removing === run.id ? 0.4 : 1 }}>
+                <span style={{ ...MUTED, ...NUM, whiteSpace: "nowrap" }}>{formatTimestamp(run.started_at, "short")}</span>
+                {s && <Chip tone={s.tone}>{s.word}</Chip>}
+                <span style={{ marginLeft: "auto", ...ROW, flexWrap: "nowrap" }}>
+                  <Button variant="ghost" size="xs" onClick={() => onOpen(run)}>Open</Button>
+                  <Button variant="ghost" size="icon-xs" title="Remove from history" aria-label="Remove from history"
+                    disabled={removing === run.id} onClick={() => onRemove(run.id)}>
+                    <Icon name="trash" size={13} />
+                  </Button>
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-// ── Pinned documents ──────────────────────────────────────────────────────────
+// ── Artifacts ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+function ArtifactsPanel({ canvasId }: { canvasId: string }) {
+  const [items, setItems] = useState<CanvasArtifact[]>([]);
+  const [loading, setLoading] = useState(true);
+  // A failed read used to read as "No artifacts saved yet".
+  const [failed, setFailed] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [removeFailed, setRemoveFailed] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    getCanvasArtifacts(canvasId)
+      .then(list => { setItems(list); setFailed(null); })
+      .catch(e => { setItems([]); setFailed(e instanceof Error ? e.message : String(e)); })
+      .finally(() => setLoading(false));
+  }, [canvasId, reload]);
+
+  async function handleRemove(id: string) {
+    setRemoving(id);
+    setRemoveFailed(false);
+    const prev = items;
+    setItems(list => list.filter(it => it.id !== id));
+    try { await deleteCanvasArtifact(canvasId, id); }
+    catch { setItems(prev); setRemoveFailed(true); }
+    finally { setRemoving(null); }
+  }
+
+  return (
+    <Page testId="canvas-artifacts">
+      <Card label="Artifacts" right={items.length ? <span style={NUM}>{formatCount(items.length)}</span> : undefined}
+        testId="canvas-artifacts-card">
+        {removeFailed && (
+          <div role="alert" className="aug-fs-sm" style={{ color: "var(--t2)", marginBottom: 6 }}>
+            Could not remove that artifact — it is still here.
+          </div>
+        )}
+        {loading ? <Loading what="the artifacts" />
+          : failed !== null ? <ReadFailed what="this canvas's artifacts" error={failed} onRetry={() => setReload(n => n + 1)} />
+          : items.length === 0 ? <Empty>Nothing saved on this canvas yet.</Empty>
+          : items.map((item, i) => (
+            <div key={item.id} data-testid="canvas-artifact-row" className="group/run"
+              style={{ ...(i ? RULE : {}), display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto", gap: 12,
+                alignItems: "center", padding: "7px 2px", opacity: removing === item.id ? 0.4 : 1 }}>
+              <div style={{ ...ROW, flexWrap: "nowrap", minWidth: 0 }}>
+                <span className="aug-fs-chrome" title={item.description || item.question || item.title}
+                  style={{ ...ONE_LINE, color: "var(--t1)" }}>{item.title}</span>
+                <Chip>{item.kind}</Chip>
+              </div>
+              <span className="aug-fs-sm" style={{ ...MUTED, ...NUM, whiteSpace: "nowrap" }}>
+                {item.created_at ? dayMonth(item.created_at) : ""}
+              </span>
+              <Button variant="ghost" size="icon-xs" title="Remove artifact" aria-label={`Remove ${item.title}`}
+                disabled={removing === item.id} className={HIDDEN_UNTIL_HOVER} onClick={() => handleRemove(item.id)}>
+                <Icon name="trash" size={13} />
+              </Button>
+            </div>
+          ))}
+      </Card>
+    </Page>
+  );
+}
+
+// ── Settings: the name, the description, the pinned documents, the versions ─────────────────────────────────────
 
 /** Bind uploaded documents to this canvas.
  *
@@ -290,46 +389,30 @@ function CanvasDocuments({ canvas, onSaved }: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Documents</div>
+      <Label right={pinned.length ? <span style={NUM}>{formatCount(pinned.length)}</span> : undefined}>Pinned documents</Label>
 
       {pinned.length === 0 && (
-        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-          None pinned. Pinned documents are always in reach here; the rest of the
-          library stays searchable.
-        </div>
+        <Empty>None pinned · a pinned document is always in reach here; the rest stay searchable.</Empty>
       )}
 
       {pinned.map(doc => (
-        <div key={doc.doc_id} style={{
-          display: "flex", alignItems: "center", gap: 6,
-          background: "var(--bg-3)", border: "1px solid var(--b1)",
-          borderRadius: "var(--r2)", padding: "5px 8px",
-        }}>
-          <span className="aug-fs-xs" style={{
-            color: doc.missing ? "var(--t3)" : "var(--t2)",
-            flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          }}>
-            {/* A binding whose document was deleted is SHOWN, not hidden — otherwise a
-                workspace loses context with nothing to see. */}
-            {doc.missing ? `${doc.doc_id} — deleted` : (doc.title || doc.filename)}
+        <div key={doc.doc_id} className="aug-fs-sm" style={{ ...ROW, flexWrap: "nowrap" }}>
+          {/* A binding whose document was deleted is SHOWN, not hidden — otherwise a
+              workspace loses context with nothing to see. */}
+          <span style={{ ...ONE_LINE, flex: 1, color: doc.missing ? "var(--t3)" : "var(--t2)" }}>
+            {doc.missing ? doc.doc_id : (doc.title || doc.filename)}
           </span>
-          <Button
-            variant="ghost" size="xs"
-            type="button"
-            disabled={busy}
-            onClick={() => setBinding(pinnedIds.filter(id => id !== doc.doc_id))}
-          >
+          {doc.missing && <Chip tone="amber">deleted</Chip>}
+          <Button variant="ghost" size="xs" type="button" disabled={busy}
+            onClick={() => setBinding(pinnedIds.filter(id => id !== doc.doc_id))}>
             Unpin
           </Button>
         </div>
       ))}
 
       {unpinned.length > 0 && (
-        <SelectField
-          value=""
-          disabled={busy}
-          onChange={e => { if (e.target.value) setBinding([...pinnedIds, e.target.value]); }}
-        >
+        <SelectField value="" disabled={busy}
+          onChange={e => { if (e.target.value) setBinding([...pinnedIds, e.target.value]); }}>
           <option value="">Pin a document…</option>
           {unpinned.map(doc => (
             <option key={doc.doc_id} value={doc.doc_id}>{doc.title || doc.filename}</option>
@@ -337,23 +420,12 @@ function CanvasDocuments({ canvas, onSaved }: {
         </SelectField>
       )}
 
-      {all.length === 0 && (
-        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-          No documents uploaded yet — add them on the Documents surface.
-        </div>
-      )}
+      {all.length === 0 && <Empty>No documents uploaded yet — add them in Documents.</Empty>}
     </div>
   );
 }
 
-
-// ── Settings popover ──────────────────────────────────────────────────────────
-
-function SettingsPopover({
-  canvas,
-  onClose,
-  onSaved,
-}: {
+function SettingsPopover({ canvas, onClose, onSaved }: {
   canvas: Canvas;
   onClose: () => void;
   onSaved: (updated: Canvas) => void;
@@ -361,67 +433,57 @@ function SettingsPopover({
   const [name, setName] = useState(canvas.name);
   const [desc, setDesc] = useState(canvas.description);
   const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState<string | null>(null);
 
   const save = async () => {
     setSaving(true);
+    setSaveFailed(null);
     try {
       const updated = await updateCanvas(canvas.id, { name, description: desc });
       onSaved(updated);
       onClose();
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setSaveFailed(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
   };
 
+  const field: CSSProperties = { display: "flex", flexDirection: "column", gap: 4, color: "var(--t3)" };
   return (
     <>
       <div className="fixed inset-0 z-50" onClick={onClose} />
-      <div onClick={e => e.stopPropagation()} style={{
-        position: "absolute", top: 44, right: 12, zIndex: 60,
-        background: "var(--bg-2)", border: "1px solid var(--b2)",
-        borderRadius: "var(--r3)", padding: "16px",
-        width: 280, display: "flex", flexDirection: "column", gap: 10,
-        boxShadow: "var(--shadow-lg)",
+      <div data-testid="canvas-settings" onClick={e => e.stopPropagation()} style={{
+        position: "absolute", top: "calc(100% + 4px)", right: 12, zIndex: 60,
+        background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: "12px 14px",
+        width: 300, display: "flex", flexDirection: "column", gap: 10, boxShadow: "var(--shadow-lg)",
       }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginBottom: 2 }}>Data Canvas Settings</div>
-        <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", flexDirection: "column", gap: 4 }}>
+        <Label>Settings</Label>
+        <label className="aug-fs-xs" style={field}>
           Name
-          <Input
-            value={name}
-            onChange={e => setName(e.target.value)}
-          />
+          <Input value={name} onChange={e => setName(e.target.value)} />
         </label>
-        <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", flexDirection: "column", gap: 4 }}>
+        <label className="aug-fs-xs" style={field}>
           Description
-          <Textarea
-            value={desc}
-            onChange={e => setDesc(e.target.value)}
-            rows={2}
-            style={{ resize: "none" }}
-          />
+          <Textarea value={desc} onChange={e => setDesc(e.target.value)} rows={2} style={{ resize: "none" }} />
         </label>
+
+        {saveFailed && <div role="alert" className="aug-fs-sm" style={{ color: "var(--red4)" }}>Not saved — {saveFailed}</div>}
+
+        <div style={{ ...ROW, justifyContent: "flex-end" }}>
+          <Button onClick={onClose} variant="ghost" size="xs">Cancel</Button>
+          <Button onClick={save} disabled={saving || !name.trim()} variant="default" size="xs">
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </div>
 
         {/* Pinned documents save on change rather than on Save, because they are a
             binding rather than a field: Cancel restores the name you were editing,
             and an unpin that silently came back would be worse than no Cancel at all. */}
         <CanvasDocuments canvas={canvas} onSaved={onSaved} />
 
-        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 4 }}>
-          <Button onClick={onClose} variant="ghost" size="xs">Cancel</Button>
-          <Button
-            onClick={save}
-            disabled={saving || !name.trim()}
-            variant="default" size="xs"
-          >
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </div>
-
-        {/* V6b — the canvas's revision history, publish/revert, and the freeze
-            pin, on the artifact's own settings surface. Renders nothing until
-            the canvas has a revision. */}
+        {/* The canvas's revision history, publish/revert, and the freeze pin, on the
+            artifact's own settings surface. Renders nothing until the canvas has a revision. */}
         <LifecyclePanel kind="canvas" naturalKey={`canvas:${canvas.id}`}
                         connectionId={canvas.scopes[0]?.connection_id} />
       </div>
@@ -429,181 +491,7 @@ function SettingsPopover({
   );
 }
 
-// ── Tab pill ──────────────────────────────────────────────────────────────────
-
-function TabPill({
-  icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: string;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      variant={active ? "secondary" : "ghost"} size="xs"
-      onClick={onClick}
-    >
-      <Icon name={icon} size={12} color={active ? "var(--blue4)" : "var(--t3)"} />
-      {label}
-    </Button>
-  );
-}
-
-// ── Capabilities block (canvas landing — Databricks Genie style) ───────────────
-
-function CapabilitiesBlock({
-  canvas,
-  connection,
-}: {
-  canvas: Canvas;
-  connection: Connection | undefined;
-}) {
-  const scope = canvas.scopes[0];
-  const tables = scope?.tables ?? [];
-  const isFull = tables.length === 0;
-  const connType = connection
-    ? (connection.conn_type === "duckdb" ? "DuckDB" : connection.conn_type === "postgres" ? "PostgreSQL" : connection.conn_type)
-    : null;
-
-  const caps: string[] = [
-    isFull
-      ? `Query the full schema of ${connection?.name ?? "this connection"}${connType ? ` (${connType})` : ""}`
-      : `Query ${tables.length} curated table${tables.length !== 1 ? "s" : ""}${connection ? ` from ${connection.name}` : ""}${connType ? ` (${connType})` : ""}`,
-    "Ask in Quick mode for fast SQL answers, or Agentic for multi-step root-cause analysis",
-    "Build domain intelligence, outcomes, and ontology scoped to exactly this table set",
-  ];
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, textAlign: "left", marginBottom: 4 }}>
-      {/* Title — the mark sits ABOVE the name rather than beside it (the reference's arrangement),
-          so the name starts at the same left edge as the description and the capabilities
-          below it, instead of being indented by the width of an icon. */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/canvas-mark.svg"
-          alt=""
-          width={44}
-          height={44}
-          style={{ borderRadius: "var(--r2)", display: "block", flexShrink: 0 }}
-        />
-        <div style={{ fontSize: 18, fontWeight: 700, color: "var(--t1)" }}>{canvas.name}</div>
-      </div>
-
-      {/* Description */}
-      {canvas.description && (
-        <p style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.55, margin: 0 }}>
-          {canvas.description}
-        </p>
-      )}
-
-      {/* Capabilities */}
-      <div>
-        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t2)", marginBottom: 7 }}>Capabilities</div>
-        <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
-          {caps.map(c => (
-            <li key={c} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--t2)", lineHeight: 1.5 }}>
-              <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--t4)", marginTop: 7, flexShrink: 0 }} />
-              {c}
-            </li>
-          ))}
-        </ul>
-
-      </div>
-    </div>
-  );
-}
-
-// ── Artifacts tab ─────────────────────────────────────────────────────────────
-
-function ArtifactsPanel({ canvasId }: { canvasId: string }) {
-  const [items, setItems] = React.useState<CanvasArtifact[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [removing, setRemoving] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    setLoading(true);
-    getCanvasArtifacts(canvasId)
-      .then(setItems)
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
-  }, [canvasId]);
-
-  async function handleRemove(id: string) {
-    setRemoving(id);
-    const prev = items;
-    setItems(list => list.filter(it => it.id !== id));
-    try { await deleteCanvasArtifact(canvasId, id); }
-    catch { setItems(prev); }
-    finally { setRemoving(null); }
-  }
-
-  if (loading) {
-    return (
-      <div style={{ padding: "40px 32px", color: "var(--t3)", fontSize: 12 }}>
-        Loading artifacts…
-      </div>
-    );
-  }
-
-  if (items.length === 0) {
-    return (
-      <div style={{ padding: "72px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-        <Icon name="table" size={28} color="var(--t3)" />
-        <div style={{ fontSize: 13, color: "var(--t3)" }}>No artifacts saved yet in this Data Canvas.</div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "16px 32px" }}>
-      {items.map(item => (
-        <div
-          key={item.id}
-          style={{
-            width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 12,
-            padding: "10px 14px", marginBottom: 6,
-            background: "var(--bg-2)", border: "1px solid var(--b1)",
-            borderRadius: "var(--r2)",
-            transition: "border-color .1s, background .1s",
-            opacity: removing === item.id ? 0.4 : 1,
-          }}
-          onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b2)"; (e.currentTarget as HTMLDivElement).style.background = "var(--bg-3)"; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b1)"; (e.currentTarget as HTMLDivElement).style.background = "var(--bg-2)"; }}
-        >
-          <span style={{
-            display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
-            padding: "1px 6px", borderRadius: 3, fontSize: 11,
-            background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)",
-          }}>
-            {item.kind}
-          </span>
-          <span style={{ flex: 1, fontSize: 12, color: "var(--t1)", lineHeight: 1.4, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {item.title}
-          </span>
-          <span style={{ fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap", flexShrink: 0 }}>
-            {item.created_at ? new Date(item.created_at).toLocaleDateString() : ""}
-          </span>
-          <Button
-            variant="ghost" size="icon-xs"
-            title="Remove artifact"
-            disabled={removing === item.id}
-            onClick={e => { e.stopPropagation(); handleRemove(item.id); }}
-            style={{ flexShrink: 0 }}
-          >
-            <Glyph name="trash" size={13} />
-          </Button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── CanvasWorkspace ───────────────────────────────────────────────────────────
+// ── CanvasWorkspace ───────────────────────────────────────────────────────────────────────────────────────────────
 
 interface Props {
   canvas: Canvas;
@@ -616,26 +504,27 @@ interface Props {
   onOpenDocuments?: () => void;
 }
 
+const VIEWS: { id: WsTab; label: string }[] = [
+  { id: "chat", label: "Chat" }, { id: "history", label: "History" }, { id: "artifacts", label: "Artifacts" },
+];
+
 export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, initialOpenInvId, initialRestoreSessionId, onOpenDocuments }: Props) {
   const [wsTab, setWsTab] = useState<WsTab>("chat");
   const [chatKey, setChatKey] = useState(0);
   const [openInvId, setOpenInvId] = useState<string | null>(null);
   const [restoreSessionId, setRestoreSessionId] = useState<string | null>(null);
-  // Seed question for ChatPanel, set by canvas-scoped Intelligence "Investigate" actions.
+  // Seed question for ChatPanel, set by the canvas-scoped Intelligence actions that start a deep analysis.
   // ChatPanel only auto-submits on a fresh mount, so every path that bumps chatKey for
   // another reason must clear the seed or the stale question would re-submit.
   const [chatInitialQuestion, setChatInitialQuestion] = useState<string | undefined>(undefined);
   const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate" | undefined>(undefined);
   const [showSettings, setShowSettings] = useState(false);
   const [showConfigure, setShowConfigure] = useState(false);
-  const headerRef = useRef<HTMLDivElement>(null);
 
   const connectionId = canvas.scopes[0]?.connection_id ?? "";
   const connection = connections.find(c => c.id === connectionId);
-  const tableCount = canvas.scopes[0]?.tables.length ?? 0;
-  const connLabel = connection
-    ? (connection.conn_type === "duckdb" ? "DuckDB" : connection.conn_type === "postgres" ? "PostgreSQL" : connection.conn_type)
-    : null;
+  const gone = connectionGone(canvas, connections);
+  const pinned = usePinnedState(canvas);
 
   // When canvas changes, reset to chat tab, but honour initial props
   useEffect(() => {
@@ -659,11 +548,11 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
     }
   }, [canvas.id, initialOpenInvId, initialRestoreSessionId]);
 
-  // History line-item → navigate.  Investigations open the detail report in the
+  // History line-item → navigate.  Deep analyses open the detail report in the
   // History tab; chat sessions restore the conversation in the Chat tab (passing
   // a chat id to the deep-analysis detail panel would just render blank — the bug
   // behind "choosing a line item does not take me there").
-  const handleHistoryOpen = (id: string, kind: "investigation" | "chat") => {
+  const handleHistoryOpen = (id: string, kind: RunKind) => {
     if (kind === "chat") {
       setOpenInvId(null);
       setRestoreSessionId(id);
@@ -678,145 +567,57 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
     }
   };
 
+  const showView = (id: WsTab) => {
+    setWsTab(id);
+    if (id !== "artifacts") setOpenInvId(null);
+  };
+
+  const newConversation = () => {
+    setWsTab("chat"); setChatKey(k => k + 1); setOpenInvId(null); setRestoreSessionId(null);
+    setChatInitialQuestion(undefined); setChatInitialMode(undefined);
+  };
+
+  const tools: ToolItem[] = [
+    { label: "Configure…", title: "The tables it reads, its instructions and metrics, and its documents",
+      onSelect: () => { setShowConfigure(true); setShowSettings(false); }, testId: "canvas-tool-configure" },
+    { label: "Settings…", title: "Its name and description, pinned documents and versions",
+      onSelect: () => { setShowSettings(true); setShowConfigure(false); }, testId: "canvas-tool-settings" },
+  ];
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-canvas)" }}>
 
-      {/* ── Header ── */}
-      <div ref={headerRef} style={{
-        position: "relative",
-        display: "flex", alignItems: "center", gap: 8,
-        padding: "0 12px", height: 44, flexShrink: 0,
-        borderBottom: "1px solid var(--b1)", background: "var(--bg-1)",
-      }}>
-        {/* Back button */}
-        <Button
-          variant="ghost" size="xs"
-          onClick={onClose}
-          title="Back to Data Canvases"
-          style={{ flexShrink: 0 }}
-        >
-          <Icon name="back" size={12} color="currentColor" />
-          Canvases
-        </Button>
-
-        <span style={{ color: "var(--t3)", fontSize: 15, lineHeight: 1, userSelect: "none" }}>/</span>
-
-        {/* Canvas icon + name. The name and the connection's badge are the two parts of this
-            row that give way when it is short of room, the badge first: with a long name and
-            four tabs the row was wider than its box, and the whole workspace slid sideways
-            under the sidebar when a tab took focus (seen at 1176px, when the canvas briefly
-            had a fourth tab). The name keeps room for a word. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 64, flexShrink: 1 }}>
-          <div style={{
-            width: 22, height: 22, borderRadius: 3, flexShrink: 0,
-            background: canvas.is_legacy
-              ? "var(--bg-3)"
-              : "color-mix(in srgb, var(--blue3) 18%, transparent)",
-            border: `1px solid ${canvas.is_legacy ? "var(--b2)" : "color-mix(in srgb, var(--blue3) 35%, transparent)"}`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <Icon name="canvas" size={11} color={canvas.is_legacy ? "var(--t3)" : "var(--blue4)"} />
-          </div>
-          <span data-testid="canvas-name" title={canvas.name} style={{
-            fontSize: 13, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap",
-            minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
-          }}>{canvas.name}</span>
-        </div>
-
-        {/* Table count badge */}
-        <span style={{
-          display: "inline-flex", alignItems: "center", gap: 4,
-          padding: "2px 7px", borderRadius: 3,
-          background: tableCount === 0
-            ? "color-mix(in srgb, var(--grn3) 10%, transparent)"
-            : "var(--bg-3)",
-          border: `1px solid ${tableCount === 0
-            ? "color-mix(in srgb, var(--grn3) 25%, transparent)"
-            : "var(--b1)"}`,
-          fontSize: 11, flexShrink: 0, whiteSpace: "nowrap",
-          color: tableCount === 0 ? "var(--grn4)" : "var(--t3)",
-        }}>
-          {tableCount === 0 ? "All tables" : `${tableCount} table${tableCount !== 1 ? "s" : ""}`}
-        </span>
-
-        {/* Connection badge */}
-        {connection && (
-          <span style={{
-            display: "inline-flex", alignItems: "center", gap: 4,
-            padding: "2px 7px", borderRadius: 3,
-            background: "var(--bg-3)", border: "1px solid var(--b1)",
-            fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap",
-            flexShrink: 3, minWidth: 56, overflow: "hidden",
-          }} data-testid="canvas-connection" title={`${connection.name}${connLabel ? ` ${connLabel}` : ""}`}>
-            <Icon name="db" size={10} color="var(--t3)" />
-            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-              {connection.name}
-              {connLabel && <span style={{ color: "var(--t3)", marginLeft: 4 }}>{connLabel}</span>}
-            </span>
+      <CanvasHead name={canvas.name} what={canvas.description || undefined} onBack={onClose}
+        chips={<HeadChips canvas={canvas} connection={connection} gone={gone} pinned={pinned} />}
+        actions={<>
+          {/* The three views. A fresh conversation is the "+" beside them — a distinct create action, not a second
+              "go to chat". */}
+          <span data-testid="canvas-tabs" style={{ ...ROW, flexWrap: "nowrap", gap: 2, flexShrink: 0 }}>
+            {VIEWS.map(v => (
+              <Button key={v.id} variant={wsTab === v.id ? "secondary" : "ghost"} size="xs" aria-pressed={wsTab === v.id}
+                onClick={() => showView(v.id)}>
+                {v.label}
+              </Button>
+            ))}
           </span>
-        )}
-
-        {/* Spacer — pushes the tabs + actions into ONE right-stacked cluster. */}
-        <div style={{ flex: 1 }} />
-
-        {/* View tabs — Chat / History / Artifacts, stacked to the RIGHT beside the canvas
-            actions (was centered). The standalone "New" button is gone: it navigated to Chat
-            exactly like the Chat tab, so the two read as duplicates. Starting a FRESH
-            conversation now lives as the compact "+" beside them — a distinct create action,
-            not a second "go to chat". */}
-        <div data-testid="canvas-tabs" style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
-          <TabPill icon="chat"   label="Chat"      active={wsTab === "chat"}      onClick={() => { setWsTab("chat"); setOpenInvId(null); }} />
-          <TabPill icon="clock"  label="History"   active={wsTab === "history"}   onClick={() => { setWsTab("history"); setOpenInvId(null); }} />
-          <TabPill icon="table"  label="Artifacts" active={wsTab === "artifacts"} onClick={() => setWsTab("artifacts")} />
-        </div>
-
-        {/* New conversation — compact "+" (dedup of the old wordy "New" button that read the
-            same as the Chat tab). Same action: reset the chat surface to a fresh session. */}
-        <Button
-          onClick={() => { setWsTab("chat"); setChatKey(k => k + 1); setOpenInvId(null); setRestoreSessionId(null); setChatInitialQuestion(undefined); setChatInitialMode(undefined); }}
-          variant="ghost" size="xs"
-          title="New conversation"
-          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, padding: 0 }}
-        >
-          <Icon name="plus" size={15} color="currentColor" />
-        </Button>
-
-        {/* Configure */}
-        <Button
-          onClick={() => { setShowConfigure(v => !v); setShowSettings(false); }}
-          variant={showConfigure ? "default" : "ghost"} size="xs"
-          title="Configure canvas"
-          style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
-        >
-          <Icon name="settings" size={11} color="currentColor" />
-          Configure
-        </Button>
-
-        {/* Settings */}
-        <Button
-          variant={showSettings ? "secondary" : "ghost"} size="icon-sm"
-          onClick={() => setShowSettings(v => !v)}
-          title="Data Canvas settings"
-        >
-          <Icon name="settings" size={13} color="currentColor" />
-        </Button>
-
-        {showSettings && (
+          <Button onClick={newConversation} variant="ghost" size="icon-xs" title="New conversation" aria-label="New conversation">
+            <Icon name="plus" size={15} />
+          </Button>
+          <ToolsMenu items={tools} testId="canvas-tools" />
+        </>}
+        overlay={showSettings && (
           <SettingsPopover
             canvas={canvas}
             onClose={() => setShowSettings(false)}
             onSaved={updated => { onCanvasUpdate(updated); setShowSettings(false); }}
           />
-        )}
-      </div>
-
-      {/* Tab nav folded into the header above (was a second full-width bar here). */}
+        )} />
 
       {/* ── Content ── */}
       {/*
         IMPORTANT: all three panels are always mounted — never conditionally rendered.
         Switching tabs uses CSS display:none so React keeps each panel's state alive.
-        Unmounting ChatPanel mid-investigation kills its SSE stream and message list;
+        Unmounting ChatPanel mid-analysis kills its SSE stream and message list;
         the user comes back to a blank window even though the backend finished fine.
       */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
@@ -833,7 +634,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             restoreSessionId={restoreSessionId}
             initialQuestion={chatInitialQuestion}
             initialMode={chatInitialMode}
-            capabilities={<CapabilitiesBlock canvas={canvas} connection={connection} />}
+            capabilities={<CanvasLanding canvas={canvas} connection={connection} gone={gone} />}
           />
         </div>
 
@@ -844,10 +645,9 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
         }}>
           {openInvId
             ? (
-              // The "← Back" bar is gone — Back folds into HistoryDetailPanel's Report/Evidence
-              // tab bar (onBack), so viewing a run is 2 chrome rows, not 4. Flex column (not a
-              // bare overflow block) so HistoryDetailPanel's flex:1 + position:absolute report
-              // area gets a resolved height (without it the report collapses to 0px = "blank").
+              // Back folds into HistoryDetailPanel's Report/Evidence tab bar (onBack), so viewing a run is 2 chrome
+              // rows, not 4. Flex column (not a bare overflow block) so HistoryDetailPanel's flex:1 +
+              // position:absolute report area gets a resolved height (without it the report collapses to 0px).
               <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
                 <HistoryDetailPanel
                   invId={openInvId}
@@ -862,22 +662,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
                 />
               </div>
             )
-            : (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div style={{
-                  padding: "14px 32px 0", flexShrink: 0,
-                  fontSize: 12, fontWeight: 500, color: "var(--t2)",
-                }}>
-                  Recent deep analyses
-                  {/* Scope label — this list is canvas-scoped by design; without saying so,
-                      runs launched elsewhere look like they vanished (live confusion). */}
-                  <span style={{ fontWeight: 400, color: "var(--t3)", marginLeft: 8, fontSize: 11 }}>
-                    on this canvas · all runs live under Deep analyses in the sidebar
-                  </span>
-                </div>
-                <CanvasHistory canvasId={canvas.id} onOpen={handleHistoryOpen} />
-              </div>
-            )
+            : <CanvasHistory canvasId={canvas.id} onOpen={handleHistoryOpen} />
           }
         </div>
 
@@ -888,8 +673,6 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
         }}>
           <ArtifactsPanel canvasId={canvas.id} />
         </div>
-
-
       </div>
 
       {/* Configure slide-over */}
