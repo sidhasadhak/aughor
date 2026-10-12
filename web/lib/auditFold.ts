@@ -73,6 +73,10 @@ export function callerName(hypothesisId: string): { agent: string; detail?: stri
     case "cb2_review":            return { agent: "Curator", detail: "measurement" };
   }
   if (h.startsWith("card:")) return { agent: "You", detail: "a pinned card" };
+  // the object door's reads: a cockpit's figures and charts count, its tables list, an object's page reads the rest
+  if (h === "objects") return { agent: "Objects", detail: "counted" };
+  if (h === "objects.list") return { agent: "Objects", detail: "listed" };
+  if (h.startsWith("objects.")) return { agent: "Objects", detail: "an object's page" };
   // A deep analysis's hypotheses and sub-questions (h1, inv2, subq_3, …) are the Analyst's.
   if (/^(h|inv|subq|hypothesis)[\d_]/i.test(h) || h.startsWith("intake") || h.startsWith("clarify")) {
     return { agent: "Analyst", detail: h };

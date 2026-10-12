@@ -43,6 +43,10 @@ describe("isPlatformCaller", () => {
     expect(callerText("__brief_period__")).toBe("Briefer · period comparison");
     expect(callerText("__trust_coltypes__")).toBe("Trust check · column types");
     expect(callerText("query_workbench")).toBe("You · SQL Editor");
+    // the object door's reads, in words — never its route names (theLook, 2026-10-12: "objects.list", "objects")
+    expect(callerText("objects")).toBe("Objects · counted");
+    expect(callerText("objects.list")).toBe("Objects · listed");
+    expect(callerText("objects.findings_scan")).toBe("Objects · an object's page");
     // an unknown dunder still reads as words, never as a key
     expect(callerText("__some_new_probe__")).toBe("some new probe");
   });
