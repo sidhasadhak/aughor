@@ -7428,6 +7428,10 @@ export interface BriefingRangeMeasure {
   equal_age?: { equal: boolean; why: string };
   /** The income-statement line it reads on, when the connection's industry declares a statement. */
   line?: { line: string; label: string } | null;
+  /** Its data ends before the range: it was measured over the latest month (week, day) it covers
+   *  instead — those are its own `covers` / `compared_with`, not the range's. Absent when it covers
+   *  the range itself. */
+  anchored?: { start: string; end: string; data_ends: string; covers: string; compared_with: string; why: string } | null;
 }
 
 /** Arc BR-4 — a segment's move inside a metric (what moved). */
