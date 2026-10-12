@@ -919,6 +919,27 @@ def read_briefing(conn_id: str, schema: str | None = None, workspace_id: str | N
     return {**entry, "available": bool(entry.get("narrative")), "built": True, "scope_key": scope_key}
 
 
+@router.get("/exploration/{conn_id}/briefing/desk")
+def read_briefing_desk(conn_id: str, schema: str | None = None, workspace_id: str | None = None,
+                       period: str | None = None, preset: str | None = None,
+                       start: str | None = None, end: str | None = None):
+    """The morning paper's three columns — Trends, Gaps, Decide — from what the Record and the metric
+    registry already hold (`briefing/desk.py`). A read: no warehouse query, no model call. With a
+    range named, its data lag is one of the gaps."""
+    scope_key = f"{conn_id}:{schema}" if schema else conn_id
+    off = briefing_off_for(conn_id, schema)
+    if off:
+        return _off_response(off, scope_key)
+    block = None
+    if preset or start or end:
+        spec = _range_spec_or_refuse(conn_id, period, preset, start, end, workspace_id, schema)
+        if spec is not None:
+            from aughor.briefing import ranges
+            block = ranges.range_block(spec)
+    from aughor.briefing.desk import desk
+    return {**desk(conn_id, schema, period=block), "scope_key": scope_key}
+
+
 @router.post("/exploration/{conn_id}/briefing/measures")
 def measure_range_metrics(conn_id: str, schema: str | None = None, workspace_id: str | None = None,
                           preset: str | None = None, start: str | None = None, end: str | None = None):

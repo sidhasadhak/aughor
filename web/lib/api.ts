@@ -7523,6 +7523,52 @@ export interface FindingsReask {
   cached: boolean;
 }
 
+/** One story on the Briefing's desk (`aughor/briefing/desk.py`): read from the Record and the
+ *  metric registry, never written by a model. */
+export interface DeskItem {
+  kind: string;
+  title: string;
+  text?: string;
+  status?: string;
+  as_of?: string;
+  /** What a person can do about it; `kind` names where the button leads. */
+  action?: { verb: string; kind: "inquiry" | "metric"; ref: string };
+  source: { kind: string; ref: string; label: string };
+}
+
+export interface DeskColumn { items: DeskItem[]; more: number }
+
+/** The morning paper's three columns. A column a store could not fill is `null`, and `unread`
+ *  says which store and why — never an empty column that reads as "nothing to say". */
+export interface BriefingDesk {
+  connection_id: string;
+  schema: string | null;
+  as_of: string;
+  trends: DeskColumn | null;
+  gaps: DeskColumn | null;
+  decide: DeskColumn | null;
+  unread: Record<string, string>;
+  off?: BriefingOff;
+}
+
+export async function getBriefingDesk(
+  connectionId: string, range: BriefingRange | null, schema?: string, workspaceId?: string,
+): Promise<BriefingDesk> {
+  const q = new URLSearchParams();
+  if (range) {
+    if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
+    else q.set("preset", range.preset);
+  }
+  if (schema) q.set("schema", schema);
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/desk?${q}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.detail === "string" ? err.detail : "The Briefing's desk could not be read");
+  }
+  return res.json();
+}
+
 export async function getFindingsReask(
   connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string,
 ): Promise<FindingsReask> {

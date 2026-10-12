@@ -74,6 +74,12 @@ import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
 import { RangeControl, RangeFigures, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
+import { changeOf } from "@/components/brief/MetricDetail";
+import {
+  AskBar, DeskColumns, InBrief, PaperDateline, PaperFront, PaperLead, PaperMasthead, PaperNumbers, PaperSources,
+  numberDesk, openDeskAction, paperDate, type PaperNumber,
+} from "@/components/brief/BriefPaper";
+import { getBriefingDesk, type BriefingDesk } from "@/lib/api";
 import { buildRangeBriefing, isRangeBlock, readRangeBriefing, type BriefingOff, type BriefingRange, type BriefingRangeBlock } from "@/lib/api";
 import { StatTile } from "@/components/brief/StatTile";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
@@ -287,6 +293,8 @@ function NarrativeCard({
   ctx,
   hideHeadline = false,
   collapsible = false,
+  paper = false,
+  body = true,
 }: {
   narrative: BriefingNarrativeResponse;
   ctx: CitationActionContext;
@@ -296,6 +304,11 @@ function NarrativeCard({
   /** Direction B: render only the lede (clamped + bottom fade) with a "Read full
    *  synthesis" toggle, so the synthesis reads as the argument's close, not a second wall. */
   collapsible?: boolean;
+  /** The morning paper's lead (2026-10-12): no card; the first paragraph is the standfirst, the
+   *  rest the story, each paragraph its own block with its citations live. */
+  paper?: boolean;
+  /** In `paper`, whether the story after the standfirst is printed (the Sections switch "synthesis"). */
+  body?: boolean;
 }) {
   const [active, setActive] = useState<{ citation: BriefingCitation; x: number; y: number } | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -305,12 +318,25 @@ function NarrativeCard({
   // Capability A — an inline investigation pulled from a citation, streamed below the prose.
   const [thread, setThread] = useState<{ question: string; seedSql: string | null; seedContext: string; key: string } | null>(null);
 
+  const paras = paper ? narrative.narrative.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean) : [];
   return (
     // Flat panel in the shared card language (was a blue-gradient card). The section's .aug-label
     // header outside already frames it; the prose carries the analysis.
-    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 22px" }}>
+    <div style={paper ? undefined : { background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 22px" }}>
+      {paper && (
+        <div data-testid="paper-lead-body">
+          {paras.map((p, i) => (i === 0 || body) && (
+            <p key={i} style={i === 0
+              ? { fontSize: 18, lineHeight: 1.5, color: "var(--t1)", margin: "0 0 12px", maxWidth: "70ch" }
+              : { fontSize: 15, lineHeight: 1.6, color: "var(--t2)", margin: "0 0 10px", maxWidth: "70ch" }}>
+              <NarrativeText text={p} citations={narrative.citations} onCitationClick={onCitationClick}
+                connectionId={ctx.connectionId} schema={ctx.schema} />
+            </p>
+          ))}
+        </div>
+      )}
       {/* Header */}
-      {!hideHeadline && (
+      {!hideHeadline && !paper && (
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <span className="aug-label">AI Synthesis</span>
         {narrative.headline_theme && (
@@ -328,6 +354,7 @@ function NarrativeCard({
 
       {/* Narrative prose with inline citations. When collapsible, only the lede shows —
           clamped with a bottom fade to the card surface — until "Read full synthesis". */}
+      {!paper && (
       <div style={{ position: "relative" }}>
         {/* No measure cap: a 72ch column left most of a wide panel empty and wrapped the
             synthesis into a narrow ribbon. The prose fills the card it was given. */}
@@ -355,7 +382,8 @@ function NarrativeCard({
           <div aria-hidden style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 54, background: "linear-gradient(180deg, rgba(0,0,0,0), var(--bg-2))", pointerEvents: "none" }} />
         )}
       </div>
-      {collapsible && (
+      )}
+      {collapsible && !paper && (
         <div style={{ marginTop: 8 }}>
           <Button variant="ghost" size="xs" onClick={() => setExpanded(e => !e)}
             style={{ color: "var(--blue4)", fontSize: 13, fontWeight: 500, padding: "2px 8px" }}>
@@ -444,7 +472,7 @@ function CitationActionsPopover({
   onPull: (t: { question: string; seedSql: string | null; seedContext: string; key: string }) => void;
   onClose: () => void;
 }) {
-  const resolved = ctx.insightById.get(citation.insight_id);
+  const resolved = heldSignal(ctx, citation);
   const cited = findingOfCitation(citation, resolved?.insight);
   const domain = resolved?.domain ?? citation.domain;
   const left = Math.max(12, Math.min(x, (typeof window !== "undefined" ? window.innerWidth : 1280) - 332));
@@ -883,6 +911,22 @@ export function reasonWords(reasons: [string, number][], top = 2): string {
   const rest = reasons.slice(top).reduce((t, [, n]) => t + n, 0);
   return [...said, ...(rest ? [`${formatCount(rest)} for other reasons`] : [])].join(" · ");
 }
+
+/** The Briefing's own signal for a citation, when its list holds the cited finding. */
+function heldSignal(held: { insightById: Map<string, SynthesisSignal> } | null | undefined, citation: BriefingCitation): SynthesisSignal | undefined {
+  return held?.insightById.get(citation.insight_id);
+}
+
+/** A finding's first sentence, for a one-line "In brief" — a decimal point is not a sentence end. */
+export function firstSentence(text: string, max = 180): string {
+  const t = (text ?? "").trim();
+  const m = t.match(/^(.+?[.!?])(?=\s+[A-Z("“]|$)/);
+  const s = m ? m[1] : t;
+  return s.length > max ? s.slice(0, max - 1).trimEnd() + "…" : s;
+}
+
+/** The sections a person keeps BELOW the paper; the lead, the story and the findings are the paper's. */
+const PAPER_BELOW = new Set<SectionId>(["key_metrics", "cockpit", "patterns"]);
 
 /** A re-asked figure, shown as the range's number: a rate-looking measure in 0..1 as a
  *  percentage, a large count compact, anything else plain. */
@@ -1979,7 +2023,9 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
 }
 
 /** The finding's own id — the key the re-ask (BR-7) and the saved chart display are stored under. */
-const findingId = (s: SynthesisSignal) => s.insight.id;
+const findingId = (s: SynthesisSignal) => findingOf(s).id;
+/** The finding a signal carries. */
+const findingOf = (s: SynthesisSignal) => s.insight;
 
 function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, onEvidence, scrollRef, vizConfigFor, onVizConfigChange, onRange, reask }: {
   signals:        SynthesisSignal[];
@@ -2074,7 +2120,7 @@ function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, o
       ) : (
         <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
           {top.map(sig => {
-            const ident = signalIdentity(sig.insight);
+            const ident = signalIdentity(findingOf(sig));
             return (
               <LedgerRow key={ident} signal={sig} connectionId={connectionId}
                 expanded={expandedId === ident}
@@ -2706,6 +2752,7 @@ export function BriefingPanel({
         // user's call (§6 item 34(g)): a custom range is built without asking.
         const r = range as BriefingRange;
         const snap = forceRefresh ? null : await readRangeBriefing(connectionId, r, schema, workspaceId);
+        if (snap && isRangeBlock(snap.period)) setEditionFor({ key: JSON.stringify(r), block: snap.period as BriefingRangeBlock });
         return snap && (snap.built || snap.off) ? snap : buildRangeBriefing(connectionId, r, schema, workspaceId, forceRefresh);
       };
       const result = onRange ? await readRange() : canvasId
@@ -3041,7 +3088,7 @@ export function BriefingPanel({
         scopeDomain
           ? briefing.allSignals.filter(s => s.domain === scopeDomain)
           : [...briefing.signals, ...briefing.allSignals],
-      ).map(s => ({ s, ident: signalIdentity(s.insight) }));
+      ).map(s => ({ s, ident: signalIdentity(findingOf(s)) }));
   const scopedSignals  = scopePool.filter(x => x.ident !== headlineIdent && !moverIdents.has(x.ident)).map(x => x.s);
   const scopedPatterns = !briefing
     ? []
@@ -3074,6 +3121,26 @@ export function BriefingPanel({
     return () => { alive = false; };
   }, [rangeSelected, connectionId, schema, range, rangeKey]);
   const reask          = rangeSelected && reaskFor && reaskFor.key === rangeKey ? reaskFor.data : null;
+  // The morning paper's desk (Trends · Gaps · Decide): records the platform already kept, read for
+  // the edition on screen — no warehouse query, no model call. Keyed like the re-ask, so a column
+  // never prints under another edition's heading.
+  const deskKey        = `${connectionId}|${schema ?? ""}|${rangeSelected ? rangeKey : "standing"}`;
+  const [deskFor, setDeskFor] = useState<{ key: string; data: BriefingDesk | null; error: string | null } | null>(null);
+  useEffect(() => {
+    if (canvasId || !connectionId) return;
+    let alive = true;
+    getBriefingDesk(connectionId, rangeSelected ? (range as BriefingRange) : null, schema, workspaceId)
+      .then(data => { if (alive) setDeskFor({ key: deskKey, data, error: null }); })
+      .catch(e => { if (alive) setDeskFor({ key: deskKey, data: null, error: e instanceof Error ? e.message : "The desk could not be read" }); });
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deskKey, canvasId]);
+  const desk           = deskFor && deskFor.key === deskKey ? deskFor : null;
+  const [allFindings, setAllFindings] = useState(false);
+  // The edition's dates and lag, as the range READ gave them — known before its story is written
+  // (a read never builds), so the dateline names the days even while the story is being written.
+  const [editionFor, setEditionFor]   = useState<{ key: string; block: BriefingRangeBlock } | null>(null);
+  const [toolsOpen, setToolsOpen]     = useState(false);
   const isEmpty        = !briefing || briefing.totalInsights === 0;
 
   // BR-7's re-ask, as TILES. Under a range the hero showed the governed figures and nothing
@@ -3150,6 +3217,48 @@ export function BriefingPanel({
     return () => clearTimeout(done);
   }, [entering]);
 
+  const findingsTotal = briefing?.totalInsights ?? 0;
+  // One context for every citation on the page — the lead's and the story's.
+  const citationCtx: CitationActionContext | null = briefing ? {
+    insightById: briefing.insightById, connectionId, canvasId, schema, triggers, onEvidence: openEvidence,
+    onTriggersHint: showTriggersHint, onDismissed: load, onInvestigate,
+  } : null;
+  // ── The paper's numbers box, its desk's numbering and its sources (read by `paper()`).
+  const numberRows: PaperNumber[] = rangeBlock
+    ? [...rangeBlock.measured.map(m => {
+        const t = changeOf(m, "previous");
+        return { key: m.metric, label: m.name, value: m.current_text ?? "—",
+                 change: t && m.rel !== null ? { text: t, sign: Math.sign(m.rel) } : undefined };
+      }),
+       ...rangeBlock.unmeasured.map(u => ({ key: `unmeasured:${u.name}`, label: u.name, value: "", unknown: "not measured" }))]
+    // What we know: the record's own counts. A figure lifted from a finding's prose carries its
+    // finding's subject, not a label a box can print ("total inventory cost" was Jeans' alone).
+    : !rangeSelected && briefing
+      ? [{ key: "findings", label: "Findings", value: formatCount(findingsTotal) },
+         { key: "domains", label: "Domains", value: formatCount(briefing.domainCount) },
+         ...(explorerStatus?.tables_total ? [{ key: "tables", label: "Tables explored", value: formatCount(explorerStatus.tables_total) }] : []),
+         ...(explorerStatus?.completed_at ? [{ key: "explored", label: "Last explored", value: new Date(explorerStatus.completed_at).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) }] : [])]
+      : [];
+  const editionBlock = rangeBlock ?? (editionFor && editionFor.key === rangeKey ? editionFor.block : null);
+  const numbersTitle = rangeBlock ? `The ${rangeBlock.period && rangeBlock.period !== "custom" ? rangeBlock.period : "range"} in numbers`
+    : rangeSelected ? "In numbers" : "The record, in numbers";
+  const numbersNote = rangeBlock ? `Each against ${rangeBlock.compared_with}.`
+    : rangeSelected ? (narrativeLoading ? "Measuring this edition…" : undefined)
+    : "Pick Day, Week or Month for the business's own figures.";
+  const citationNs = hasNarrative && narrative ? narrative.citations.map(c => Number(c.ref)).filter(Number.isFinite) : [];
+  const deskRefs = numberDesk(desk?.data ?? null, (citationNs.length ? Math.max(...citationNs) : 0) + 1);
+  const paperRefs = [
+    ...(hasNarrative && narrative ? narrative.citations.map(c => ({
+      n: Number(c.ref),
+      label: `${c.domain ? `${c.domain} · ` : ""}${c.finding.length > 110 ? c.finding.slice(0, 110) + "…" : c.finding}`,
+      onOpen: () => { const sig = heldSignal(briefing, c); if (sig) openEvidence(findingOf(sig), sig.domain); },
+    })) : []),
+    ...[...deskRefs.entries()].map(([it, n]) => ({ n, label: it.source.label,
+      onOpen: it.action ? () => openDeskAction(it.action!, connectionId) : undefined })),
+  ].filter(r => Number.isFinite(r.n)).sort((x, y) => x.n - y.n);
+  const ranged = rangeSelected && reask ? rangeLedger(ledgerSignals, findingId, reask) : null;
+  const briefSignals = rangeSelected ? (ranged?.rows ?? []) : scopedSignals;
+
   if (loading)  return <BriefingLoading />;
 
   if (error) {
@@ -3179,89 +3288,111 @@ export function BriefingPanel({
           feedback now go through the shared <Toaster/> (toast.*), mounted in the root layout. */}
       <EvidenceDrawer insight={evidenceInsight} domain={evidenceDomain} connectionId={connectionId} onClose={() => setEvidenceInsight(null)} />
 
-      {/* ── One row: the range, which scopes the whole page, and at its right the controls that
-          run the explorer. The run's phase is not said here (2026-10-06, the user: it is machinery;
-          Agent runs has it). What a control is doing, and an action that was refused, still are. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-        {rangesOn && !canvasId && (
-          <RangeControl value={range} onChange={setRange} disabled={narrativeLoading} />
-        )}
-        {explorerError && (
-          <GuardChip verdict="refused" title={explorerError}>
-            {explorerError.length > 60 ? explorerError.slice(0, 60) + "…" : explorerError}
-          </GuardChip>
-        )}
-        {/* A dispatched action, named, until the status shows it. Without this the only
-            feedback a click produced was a 42ms disabled flicker followed by seconds of
-            an unchanged screen — indistinguishable from a dead button. */}
-        {(explorerPending || birthStep) && (
-          <span style={{ fontSize: 11, color: "var(--blue4)", fontWeight: 500 }}>
-            {birthStep ? (BIRTH_STEP_LABELS[birthStep] ?? `${birthStep}…`) : explorerPending}
-          </span>
-        )}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+      {/* ── The masthead: the paper's name, its scope, the edition (the range, which scopes the whole
+          page) and its tools in one menu. The run's phase is not said here (2026-10-06: it is machinery);
+          what a control is doing, an action that was refused, and a run in flight still are. */}
+      <PaperMasthead
+        scope={schema ?? ""}
+        edition={rangesOn && !canvasId ? <RangeControl value={range} onChange={setRange} disabled={narrativeLoading} /> : null}
+        tools={<>
+          {run && (
+            <Button variant="secondary" size="xs" disabled={controlsLocked} onClick={runStop}>
+              {explorerPending === "Stopping…" ? "Stopping…" : "Stop"}
+            </Button>
+          )}
+          <div style={{ position: "relative" }}>
+            <Button variant={toolsOpen ? "secondary" : "ghost"} size="xs" data-testid="briefing-tools" aria-expanded={toolsOpen}
+              onClick={() => setToolsOpen(o => !o)}>Tools ▾</Button>
+            {toolsOpen && (
+              <div role="menu" style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 30, minWidth: 210,
+                background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)",
+                padding: 8, display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6 }}>
+                <GenerateBriefButton loading={narrativeLoading} hasNarrative={hasNarrative} onClick={() => generateNarrative(hasNarrative)} />
+                <Button variant="ghost" size="xs" onClick={load}>↻ Reload</Button>
           {!run && (!explorerStatus || explorerStatus.phase === "complete" || explorerStatus.phase === "pending" || explorerStatus.phase === "failed") ? (
-            <>
-              {/* "Start" only when starting is the honest verb — nothing has run yet.
-                  A completed run already has findings on screen behind these controls,
-                  and offering to start one implies none exists; the two things you can
-                  actually do to it are add intelligence or redo it, which is what
-                  Trigger Intel and Refresh are. `runRefresh` IS the restart
-                  (`restartExplorer`), so Start alongside it was also a duplicate.
-                  This is the taxonomy `BriefingEmpty` already uses one level down —
-                  "Start exploration" for never, "Restart exploration" for failed —
-                  which the control bar was contradicting. */}
-              {/* 🔴 These keyed on `phase === "complete"`, which contradicted the very
-                  taxonomy described above. A run that FAILED after producing findings —
-                  or, as seen live, a later run that failed on top of an earlier
-                  successful one — kept 54 findings and a grounded briefing on screen
-                  while the control bar offered only "Start". Trigger Intel and Refresh,
-                  the two things the comment says you can actually do to a body of
-                  findings, were both hidden precisely when someone would reach for them.
+                  <>
+                    {/* "Start" only when starting is the honest verb — nothing has run yet.
+                        A completed run already has findings on screen behind these controls,
+                        and offering to start one implies none exists; the two things you can
+                        actually do to it are add intelligence or redo it, which is what
+                        Trigger Intel and Refresh are. `runRefresh` IS the restart
+                        (`restartExplorer`), so Start alongside it was also a duplicate.
+                        This is the taxonomy `BriefingEmpty` already uses one level down —
+                        "Start exploration" for never, "Restart exploration" for failed —
+                        which the control bar was contradicting. */}
+                    {/* 🔴 These keyed on `phase === "complete"`, which contradicted the very
+                        taxonomy described above. A run that FAILED after producing findings —
+                        or, as seen live, a later run that failed on top of an earlier
+                        successful one — kept 54 findings and a grounded briefing on screen
+                        while the control bar offered only "Start". Trigger Intel and Refresh,
+                        the two things the comment says you can actually do to a body of
+                        findings, were both hidden precisely when someone would reach for them.
 
-                  The honest discriminator is not the phase, it is whether there ARE
-                  findings: "offering to start one implies none exists" is exactly as
-                  true for a failed run with 54 of them. So `hasFindings` decides, and
-                  the phase decides only the VERB — Start when nothing has ever run,
-                  Restart when something ran and did not finish. */}
-              {!hasFindings && (
-                <Button
-                  variant="secondary" size="xs"
-                  disabled={controlsLocked} onClick={runExplorer}
-                >{explorerPending === "Starting…" ? "Starting…"
-                  : explorerStatus?.phase === "failed" ? "Restart" : "Start"}</Button>
-              )}
-              {hasFindings && (
-                <Button
-                  variant="secondary" size="xs"
-                  disabled={controlsLocked} onClick={runTriggerIntel}
-                >{explorerPending === "Triggering…" ? "Triggering…" : "Trigger Intel"}</Button>
-              )}
-              {hasFindings && (
-                <Button
-                  variant="secondary" size="xs"
-                  disabled={controlsLocked} onClick={runRefresh}
-                  title="Clear stale findings and re-run intelligence from scratch (drops 'no data' findings, re-anchors the window)"
-                >{explorerPending === "Refreshing…" ? "Refreshing…" : "↻ Refresh"}</Button>
-              )}
-            </>
-          ) : (
-            <Button
-              variant="secondary" size="xs"
-              disabled={controlsLocked} onClick={runStop}
-            >{explorerPending === "Stopping…" ? "Stopping…" : "Stop"}</Button>
+                        The honest discriminator is not the phase, it is whether there ARE
+                        findings: "offering to start one implies none exists" is exactly as
+                        true for a failed run with 54 of them. So `hasFindings` decides, and
+                        the phase decides only the VERB — Start when nothing has ever run,
+                        Restart when something ran and did not finish. */}
+                    {!hasFindings && (
+                      <Button
+                        variant="secondary" size="xs"
+                        disabled={controlsLocked} onClick={runExplorer}
+                      >{explorerPending === "Starting…" ? "Starting…"
+                        : explorerStatus?.phase === "failed" ? "Restart" : "Start"}</Button>
+                    )}
+                    {hasFindings && (
+                      <Button
+                        variant="secondary" size="xs"
+                        disabled={controlsLocked} onClick={runTriggerIntel}
+                      >{explorerPending === "Triggering…" ? "Triggering…" : "Trigger Intel"}</Button>
+                    )}
+                    {hasFindings && (
+                      <Button
+                        variant="secondary" size="xs"
+                        disabled={controlsLocked} onClick={runRefresh}
+                        title="Clear stale findings and re-run intelligence from scratch (drops 'no data' findings, re-anchors the window)"
+                      >{explorerPending === "Refreshing…" ? "Refreshing…" : "↻ Refresh"}</Button>
+                    )}
+                  </>
+                ) : (
+                  <Button
+                    variant="secondary" size="xs"
+                    disabled={controlsLocked} onClick={runStop}
+                  >{explorerPending === "Stopping…" ? "Stopping…" : "Stop"}</Button>
+                )}
+                {!rangesOn && periodsOn && !canvasId && (
+                  <PeriodSwitch value={period} onChange={setPeriod} disabled={narrativeLoading} />
+                )}
+                {/* PX-6 — the scheduled-delivery door. */}
+                <Button variant={showSchedule ? "secondary" : "ghost"} size="xs"
+                  onClick={() => setShowSchedule(s => !s)}>Schedule</Button>
+                {/* The canvas (B1) — the Briefing's switches: a person's own view of the platform's Briefing. */}
+                <Button variant={sectionsOpen ? "secondary" : "ghost"} size="xs" data-testid="briefing-sections-open"
+                  aria-expanded={sectionsOpen} onClick={() => setSectionsOpen(s => !s)}>Sections</Button>
+              </div>
+            )}
+          </div>
+        </>}
+      />
+      <PaperDateline today={paperDate(new Date())}
+        covers={editionBlock ? `covering ${editionBlock.covers}` : rangeSelected ? "covering this range" : "everything recorded, not tied to dates"}
+        lagDays={editionBlock?.lag_days} records={paperRefs.length} />
+      {(explorerError || explorerPending || birthStep) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+          {explorerError && (
+            <GuardChip verdict="refused" title={explorerError}>
+              {explorerError.length > 60 ? explorerError.slice(0, 60) + "…" : explorerError}
+            </GuardChip>
           )}
-          {!rangesOn && periodsOn && !canvasId && (
-            <PeriodSwitch value={period} onChange={setPeriod} disabled={narrativeLoading} />
+          {/* A dispatched action, named, until the status shows it. */}
+          {(explorerPending || birthStep) && (
+            <span style={{ fontSize: 11, color: "var(--blue4)", fontWeight: 500 }}>
+              {birthStep ? (BIRTH_STEP_LABELS[birthStep] ?? `${birthStep}…`) : explorerPending}
+            </span>
           )}
-          {/* PX-6 — the scheduled-delivery door (five wrappers, zero callers until now). */}
-          <Button variant={showSchedule ? "secondary" : "ghost"} size="xs"
-            onClick={() => setShowSchedule(s => !s)}>Schedule</Button>
-          {/* The canvas (B1) — the Briefing's switches: a person's own view of the platform's Briefing. */}
-          <Button variant={sectionsOpen ? "secondary" : "ghost"} size="xs" data-testid="briefing-sections-open"
-            aria-expanded={sectionsOpen} onClick={() => setSectionsOpen(s => !s)}>Sections</Button>
         </div>
-      </div>
+      )}
+      <div style={{ height: 14 }} />
 
       {run && !canvasId && <RunningNotice run={run} />}
       {showSchedule && <BriefSchedule connId={connectionId} />}
@@ -3282,13 +3413,17 @@ export function BriefingPanel({
           canvasId={canvasId}
         />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          {/* The canvas (B1): the sections in the person's order, each shown or hidden by their
-              switches. A hidden one leaves a line saying so. What each section HOLDS is the
-              platform's, written below exactly as before the switches. */}
-          {sections.sections.filter(s => !isPart(s.id)).map(s => (s.on
-            ? <div key={s.id} data-testid={`briefing-section-${s.id}`}>{section(s.id)}</div>
-            : <HiddenSection key={s.id} id={s.id} onShow={() => void saveSections(toggled(sections, s.id, true), `Shown: ${s.id.replace("_", " ")}.`)} />))}
+        <div>
+          {/* ── The morning paper (2026-10-12; design-mockups/briefing.html): the lead story beside the
+              edition's numbers, then Trends · Gaps · Decide, then In brief, the sources, a follow-up. */}
+          {paper()}
+          {/* The person's own sections ride below the paper, in their order, each shown or hidden by
+              their switches; the lead, the story and the findings are the paper's own. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 22 }}>
+            {sections.sections.filter(s => !isPart(s.id) && PAPER_BELOW.has(s.id)).map(s => (s.on
+              ? <div key={s.id} data-testid={`briefing-section-${s.id}`}>{section(s.id)}</div>
+              : <HiddenSection key={s.id} id={s.id} onShow={() => void saveSections(toggled(sections, s.id, true), `Shown: ${s.id.replace("_", " ")}.`)} />))}
+          </div>
         </div>
       )}
 
@@ -3307,6 +3442,59 @@ export function BriefingPanel({
       )}
     </div>
   );
+
+  /** The morning paper: the lead story beside the edition's numbers, the desk's three columns, In
+   *  brief with the door to every finding, the sources, and a follow-up. */
+  function paper(): ReactNode {
+    if (!briefing) return null;
+    const on = (id: SectionId) => sections.sections.find(s => s.id === id)?.on !== false;
+    const synthesisOn = on("synthesis");
+    const headlineText = hasNarrative && narrative?.headline_theme ? narrative.headline_theme
+      : hasNarrative && narrative ? firstSentence(narrative.narrative, 120)
+      : !rangeSelected && briefing.headline ? firstSentence(findingOf(briefing.headline).finding, 220)
+      : narrativeLoading ? "Writing this edition…" : "This edition hasn't been written yet";
+    const lead = (
+      <PaperLead kicker={rangeSelected ? `Lead · ${editionBlock?.covers ?? "this range"}` : "Lead · what we know"} headline={headlineText}>
+        {narrativeLoading && <SynthesisSkeleton />}
+        {!narrativeLoading && narrativeError && (
+          <ErrorState kind="The story could not be written" what={narrativeError}
+            means="The columns and findings below are unaffected; only the written story is missing." />
+        )}
+        {!narrativeLoading && periodNote && <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>{periodNote}</div>}
+        {!narrativeLoading && hasNarrative && narrative && (
+          <NarrativeCard narrative={narrative} paper body={synthesisOn} ctx={citationCtx!} />
+        )}
+        {!narrativeLoading && !hasNarrative && !narrativeError && (
+          <div className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", color: "var(--t3)", marginTop: 4 }}>
+            The written story for this edition has not been generated.
+            <GenerateBriefButton loading={narrativeLoading} hasNarrative={false} onClick={() => generateNarrative(false)} />
+          </div>
+        )}
+      </PaperLead>
+    );
+    const briefEmpty = !rangeSelected ? undefined
+      : !reask ? (reaskFailedFor === rangeKey ? "The findings could not be measured for this range just now — they are in What we know."
+                                               : `Measuring the findings for ${rangeBlock?.covers ?? "this range"}…`)
+      : `No finding could be measured for ${reask.covers}${ranged && ranged.elsewhere ? `. ${ranged.elsewhere === 1 ? "The 1 finding is" : `All ${ranged.elsewhere} are`} about all history: ${reasonWords(ranged.reasons)}` : ""}.`;
+    return (
+      <>
+        {on("verdict") && <PaperFront lead={lead} side={<PaperNumbers title={numbersTitle} rows={numberRows} note={numbersNote} />} />}
+        {!canvasId && (
+          <DeskColumns desk={desk ? desk.data : undefined} error={desk?.error ?? null} refs={deskRefs} connectionId={connectionId} />
+        )}
+        {on("findings") && <InBrief
+          title={rangeSelected ? `In brief — measured for ${rangeBlock?.covers ?? "this range"}` : "In brief — what we know"}
+          items={briefSignals.slice(0, 6).map(sig => ({ id: signalIdentity(findingOf(sig)), node: renderFigures(firstSentence(findingOf(sig).finding)) }))}
+          total={rangeSelected ? (ranged?.rows.length ?? 0) : findingsTotal}
+          empty={briefEmpty}
+          onAll={() => setAllFindings(o => !o)} allOpen={allFindings}
+          standing={rangeSelected ? () => setRange({ preset: "standing" }) : undefined} />}
+        {allFindings && <div style={{ padding: "14px 0" }}>{section("findings")}</div>}
+        <PaperSources refs={paperRefs} />
+        {!askOpen && <AskBar onOpen={() => setAskOpen(true)} />}
+      </>
+    );
+  }
 
   /** One of the Briefing's sections, as the product writes it. */
   function section(id: SectionId): ReactNode {
@@ -3427,17 +3615,7 @@ export function BriefingPanel({
               narrative={narrative}
               hideHeadline
               collapsible
-              ctx={{
-                insightById:    briefing!.insightById,
-                connectionId,
-                canvasId,
-                schema,
-                triggers,
-                onEvidence:     openEvidence,
-                onTriggersHint: showTriggersHint,
-                onDismissed:    load,
-                onInvestigate,
-              }}
+              ctx={citationCtx!}
             />
           )}
         </div>
@@ -3480,7 +3658,7 @@ export function BriefingPanel({
             suggestions={movers.slice(0, 3).map(m => ({ insightId: m.insightId, value: m.value, label: m.sublabel || m.domain }))}
             onPinned={() => setPinnedRefresh(n => n + 1)}
             onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)}
-            onEvidence={(iid) => { const sig = briefing!.insightById.get(iid); if (sig) openEvidence(sig.insight, sig.domain); }} />
+            onEvidence={(iid) => { const sig = briefing!.insightById.get(iid); if (sig) openEvidence(findingOf(sig), sig.domain); }} />
         </div>
       )}
         </>
