@@ -19,9 +19,11 @@
  * worker and the linter by the tab count, and 20 tabs is an allowed state.
  *
  * Redone to `aughor-v2/CLARITY.md` (2026-10-12): the toolbar is Run (or Cancel), the schema, the guards' verdict as
- * a chip, Ask and ONE Tools ▾ — Explain, Run all, Format and its preferences, Open, Recent runs and the keys moved
+ * a chip and ONE Tools ▾ — Explain, Run all, Format and its preferences, Open, Recent runs and the keys moved
  * there from a row of buttons and icons, unchanged in what they do. Before anything runs, the results pane is a
- * starting point (`QueryStart`): recent runs, saved queries, the largest tables.
+ * starting point (`QueryStart`): recent runs, saved queries, the largest tables. The assistant that sat in a pane on
+ * the right is `/ask` in the editor itself (`editor/ask.ts`): a line `/ask <what you want>` becomes the statement the
+ * platform's question-to-SQL path writes (`POST /query/ask`), never run.
  *
  * Drafts persist per connection so a layer switch or a reload does not lose work in
  * progress. Two rules from this codebase apply and both are load-bearing: storage is
@@ -32,9 +34,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlEditorPane } from "@/components/query/editor/SqlEditorPane";
+import { blankAskLines } from "@/components/query/editor/ask";
 import { ResultsPanel } from "@/components/query/ResultsPanel";
 import { HistoryRail } from "@/components/query/HistoryRail";
-import { AiPane } from "@/components/query/AiPane";
 import { Icon } from "@/components/ui/icon";
 import { ParamBar } from "@/components/query/ParamBar";
 import { type SavedQueryBinding } from "@/components/query/SavedQueryBar";
@@ -51,8 +53,7 @@ import { OpenQueryDialog } from "@/components/query/OpenQueryDialog";
 import { QueryStart } from "@/components/query/QueryStart";
 import { resolveParamValue, type ParamDef, type ParamValue } from "@/lib/query/paramDefs";
 import {
-  runWorkbenchQuery, QueryCancelled, type QueryValidation, type SavedQuery, type TypedQueryResult, type TypedQueryPage,
-} from "@/lib/api";
+  runWorkbenchQuery, QueryCancelled, type QueryValidation, type SavedQuery, type TypedQueryResult, type TypedQueryPage, askForSql } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ShortcutSheet } from "@/components/query/ShortcutSheet";
 import { ToolsMenu } from "@/components/catalog/CatalogTools";
@@ -195,7 +196,7 @@ export function SqlMode({
   const [verdict, setVerdict] = useState<QueryValidation | null>(null);
   // SE-8E — ONE right rail, two occupants: history, or the assistant. Mutually
   // exclusive by construction (they share the space), sharing one persisted width.
-  const [rail, setRail] = useState<"" | "history" | "ai">("");
+  const [rail, setRail] = useState<"" | "history">("");
   const [historyKey, setHistoryKey] = useState(0);
   // SE-3 F — the in-flight run's abort handle and when it started.
   const abort = useRef<AbortController | null>(null);
@@ -213,17 +214,13 @@ export function SqlMode({
   const quoteForEngine = useCallback((name: string) => quoteIdentifier(name, engine), [engine]);
   const cursor = useRef(0);
   const selection = useRef<{ from: number; to: number } | null>(null);
-  // SE-8E — the assistant reads the buffer and the last error AT SEND TIME through
-  // these, so typing never re-renders the pane and a send never sees a stale closure.
-  const sqlRef = useRef("");
-  const errorRef = useRef("");
   const editorApi = useRef<EditorApi | null>(null);
   const relint = useRef<(() => void) | null>(null);
 
   const active = tabs.find(t => t.id === activeId) ?? null;
   const sqlText = active?.sql ?? "";
-  sqlRef.current = sqlText;
-  errorRef.current = error;
+  // What a run reads: the text with every `/ask` request blanked — a request is never sent to the warehouse as SQL.
+  const runnable = useMemo(() => blankAskLines(sqlText), [sqlText]);
 
   // SE-8A — the run settings live on the TAB (see EditorTab), read with defaults here.
   const limit = active?.limit ?? 500;
@@ -252,11 +249,11 @@ export function SqlMode({
   // whether a button is offered, never what runs.
   useEffect(() => {
     let alive = true;
-    void splitStatements(sqlText).then(r => {
+    void splitStatements(runnable).then(r => {
       if (alive) setStatementCount(r.filter(x => x.text.trim()).length || 1);
     }).catch(() => { if (alive) setStatementCount(1); });
     return () => { alive = false; };
-  }, [sqlText]);
+  }, [runnable]);
   const paramValues = active?.params ?? EMPTY_PARAMS;
   const paramDefs = active?.paramDefs ?? EMPTY_DEFS;
   // Only the names still present in the SQL, so a value left behind by a deleted
@@ -380,10 +377,10 @@ export function SqlMode({
   const statementToRun = useCallback(async (): Promise<string> => {
     const sel = selection.current;
     const text = (sel && sel.to > sel.from)
-      ? sqlText.slice(sel.from, sel.to)
-      : statementAt(await splitStatements(sqlText), cursor.current)?.text ?? sqlText;
+      ? runnable.slice(sel.from, sel.to)
+      : statementAt(await splitStatements(runnable), cursor.current)?.text ?? runnable;
     return text.trim().replace(/;\s*$/, "");
-  }, [sqlText]);
+  }, [runnable]);
 
   const run = useCallback(async (override?: string) => {
     if (!connId || running) return;
@@ -459,7 +456,7 @@ export function SqlMode({
    *  results design that PR I revisits. */
   const runAll = useCallback(async () => {
     if (!connId || running) return;
-    const ranges = await splitStatements(sqlText);
+    const ranges = await splitStatements(runnable);
     const statements = ranges
       .map(r => r.text.trim().replace(/;\s*$/, ""))
       .filter(Boolean);
@@ -514,7 +511,7 @@ export function SqlMode({
       setStartedAt(0);
       setHistoryKey(k => k + 1);
     }
-  }, [connId, running, sqlText, boundParams, patchActive, run, limit]);
+  }, [connId, running, runnable, boundParams, patchActive, run, limit]);
 
   /** Abort the in-flight fetch. Closing the socket is what reaches the server, which
    *  interrupts the engine — so this stops the QUERY, not just the waiting. */
@@ -726,18 +723,6 @@ export function SqlMode({
           {verdictView && (
             <Chip tone={verdictView.tone} title={verdictView.title} testId="sql-verdict">{verdictView.text}</Chip>
           )}
-          {/* SE-8E — the assistant: opens a pane; nothing fires until a message is sent. */}
-          <Button
-            variant={rail === "ai" ? "secondary" : "ghost"}
-            size="xs"
-            className="aug-fs-ui"
-            onClick={() => setRail(r => r === "ai" ? "" : "ai")}
-            title={rail === "ai" ? "Close the assistant" : "Ask about this data or this SQL — proposals arrive as a diff"}
-            data-testid="sql-ai-toggle"
-          >
-            <Icon name="spark" size={13} />
-            Ask
-          </Button>
           {/* Everything else this editor does, in ONE menu (CLARITY: "Tools in one menu", not a row of icons):
               Explain, Run all, Format and its preferences, Open, Recent runs, the keys — and the workbench's
               own (version history, the share link, the catalog). Format's preferences open beneath it. */}
@@ -818,6 +803,8 @@ export function SqlMode({
                 quote={quoteForEngine}
                 joins={joins}
                 diagnostics={diagnostics}
+                onAsk={connId ? (request, context, signal) =>
+                  askForSql(connId, request, { sql: context, schema: defaultSchema, signal }) : undefined}
               />
               <ParamBar
                 connId={connId}
@@ -893,20 +880,13 @@ export function SqlMode({
       collapsed={!rail}
       style={{ flex: 1, minWidth: 0, minHeight: 0 }}
       left={editorPane}
-      right={rail === "ai" ? (
-        <AiPane
-          connId={connId}
-          getSql={() => sqlRef.current}
-          getError={() => errorRef.current}
-          onApply={fixed => setSql(fixed)}
-        />
-      ) : (
+      right={
         <HistoryRail
           connId={connId}
           refreshKey={historyKey}
           onRestore={sql => openInNewTab(sql, "History")}
         />
-      )}
+      }
     />
   );
 }

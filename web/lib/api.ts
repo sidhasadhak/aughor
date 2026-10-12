@@ -4166,35 +4166,31 @@ export interface QuickFix {
   diagnosis: string;
 }
 
-// SE-8E — the editor's AI pane. Same consent model as Quick Fix, generalised: SQL
-// only ever comes back as a PROPOSAL for a diff; the server never executes it.
-export interface AssistReply {
-  reply: string;
-  proposed_sql: string;
-  changed: boolean;
+/** `/ask` in the SQL editor: the statement the platform's own question-to-SQL path writes (Quick analysis's core,
+ *  stopped before it runs), and what its guards did to it. Nothing is executed. A request the path declines throws
+ *  with the server's own sentence, which the editor says on the `/ask` line. */
+export interface AskedSql {
+  sql: string;
+  notes: string[];
+  outcome: string;
 }
 
-export async function assistSql(
-  connId: string,
-  instruction: string,
-  opts: {
-    sql?: string; error?: string;
-    history?: { role: "user" | "assistant"; content: string }[];
-  } = {},
-): Promise<AssistReply> {
-  const res = await fetch(`${getApiBase()}/query/assist`, {
+export async function askForSql(
+  connId: string, request: string, opts: { sql?: string; schema?: string; signal?: AbortSignal } = {},
+): Promise<AskedSql> {
+  const res = await fetch(`${getApiBase()}/query/ask`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal: opts.signal,
     body: JSON.stringify({
-      conn_id: connId, instruction,
-      ...(opts.sql ? { sql: opts.sql } : {}),
-      ...(opts.error ? { error: opts.error } : {}),
-      ...(opts.history?.length ? { history: opts.history } : {}),
+      conn_id: connId, request,
+      ...(opts.sql?.trim() ? { sql: opts.sql } : {}),
+      ...(opts.schema ? { schema_name: opts.schema } : {}),
     }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(err, "The assistant is unavailable"));
+    throw new Error(fastApiError(err, "the SQL could not be written just now"));
   }
   return res.json();
 }

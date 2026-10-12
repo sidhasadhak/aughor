@@ -178,8 +178,9 @@ header tool cluster with ⤢ maximize; parameters became gear-configured widgets
 ⚡ dynamic dates) that bind through `expand_list_params` (`IN :name` from a list,
 expanded to scalar binds pre-translate at every connector seam) and save with the
 query as `param_defs`; Schedule creates the monitor in place (`any_change` only —
-thresholds stay un-invented); a ✨ assistant pane proposes SQL as Apply/Reject
-diffs through `POST /query/assist` (coder role, run-gated buffer, never executes);
+thresholds stay un-invented); `/ask <what you want>` typed in the editor is answered by
+Quick analysis's own core stopped at the statement — `POST /query/ask`, `frame_only`, never executes
+(2026-10-12; it replaced the ✨ assistant pane and its one-call `/query/assist`);
 plus open-existing search, formatter preferences, OR result-filters, Esc-H,
 ⌥± font size, and CSV-for-Excel (the BOM is the feature).
 

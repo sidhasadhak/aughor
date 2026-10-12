@@ -2107,13 +2107,16 @@ def _answer_core(
                         emit("headline", {"headline": _answer_text})
                         emit("done", {})
                         try:
-                            save_chat_turn(
-                                question=_persist_q, connection_id=connection_id,
-                                headline=_answer_text[:2000], sql="", session_id=session_id,
-                                columns=[], rows=[], chart_type="none", tables_used=[],
-                                intent="", approach=[],
-                                canvas_id=canvas_id,
-                            )
+                            # `frame_only` callers (an agent's evaluation, the SQL editor's /ask) never become a
+                            # chat turn — the contract the framed return below states, kept on this path too.
+                            if not frame_only:
+                                save_chat_turn(
+                                    question=_persist_q, connection_id=connection_id,
+                                    headline=_answer_text[:2000], sql="", session_id=session_id,
+                                    columns=[], rows=[], chart_type="none", tables_used=[],
+                                    intent="", approach=[],
+                                    canvas_id=canvas_id,
+                                )
                         except Exception as exc:
                             from aughor.kernel.errors import tolerate
                             tolerate(exc, "definitional-answer turn save is best-effort; the answer was already streamed",
@@ -2337,10 +2340,11 @@ def _answer_core(
             emit("headline", {"headline": _abstain})
             emit("done", {})
             try:
-                save_chat_turn(
-                    question=_persist_q, connection_id=connection_id, headline=_abstain[:2000],
-                    sql="", session_id=session_id, columns=[], rows=[], chart_type="none",
-                    tables_used=[], intent="", approach=[], canvas_id=canvas_id)
+                if not frame_only:   # a framed call (an evaluation, the editor's /ask) is never a chat turn
+                    save_chat_turn(
+                        question=_persist_q, connection_id=connection_id, headline=_abstain[:2000],
+                        sql="", session_id=session_id, columns=[], rows=[], chart_type="none",
+                        tables_used=[], intent="", approach=[], canvas_id=canvas_id)
             except Exception as exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "abstention turn save is best-effort; the message was already streamed",

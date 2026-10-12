@@ -23,6 +23,7 @@
  * attaches to the whole statement rather than being dropped. A finding the user cannot
  * see is the same as a finding we never made.
  */
+import { blankAskLines } from "@/components/query/editor/ask";
 import { linter, type Diagnostic } from "@codemirror/lint";
 import { StateEffect } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
@@ -147,7 +148,8 @@ export function sqlDiagnostics(opts: {
 
   return linter(
     async (view: EditorView): Promise<Diagnostic[]> => {
-      const sql = view.state.doc.toString();
+      // An `/ask` line is a request, not SQL: blanked (same length, so offsets hold) before either tier reads it.
+      const sql = blankAskLines(view.state.doc.toString());
       if (!sql.trim()) {
         if (lastVerdict) { lastVerdict = null; opts.onVerdict?.(null); }
         return [];

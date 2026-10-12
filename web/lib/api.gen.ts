@@ -13704,7 +13704,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/query/assist": {
+    "/query/ask": {
         parameters: {
             query?: never;
             header?: never;
@@ -13714,16 +13714,20 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Query Assist
-         * @description SE-8E — the editor's AI pane. PROPOSES, never runs.
+         * Query Ask
+         * @description `/ask` in the SQL editor — the statement written by the platform's own question-to-SQL path, never run.
          *
-         *     Same consent model as ``/query/quickfix``, which this generalises: any SQL the
-         *     model suggests comes back in ``proposed_sql`` and lands in a diff the user accepts
-         *     or rejects — there is no code path from this endpoint to ``execute()``, and the
-         *     platform's own decision (a grant authorises PROPOSE, never EXECUTE) is the reason.
-         *     Called only from a user's explicit message in the pane; nothing polls it.
+         *     The user, 2026-10-12: "a user typing '/ask' and after that writing what is expected from the SQL … we only
+         *     deliver SQL". This is Quick analysis's own core (`answer_core`) — the same governed metrics, ontology, trusted
+         *     queries, corrections, dialect rules, lint, de-fan, preflight repair and grounded-literal guards — stopped at the
+         *     statement (`frame_only`): no execute, no narrative, no chat turn. It replaced `/query/assist` (the assistant pane),
+         *     which was one model call over the bare schema text.
+         *
+         *     The answer passes two checks that need no rows: it must not write, and it must not read a table a person turned
+         *     off. What the guards did to it comes back as notes. A request the path declines (an abstention, a definition
+         *     rather than rows) is said, as a 422 with its own words. It costs the core's model calls (1–2 typically).
          */
-        post: operations["query_assist_query_assist_post"];
+        post: operations["query_ask_query_ask_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -21267,24 +21271,17 @@ export interface components {
             /** New Type */
             new_type: string;
         };
-        /** _AssistRequest */
-        _AssistRequest: {
+        /** _AskRequest */
+        _AskRequest: {
             /** Conn Id */
             conn_id: string;
+            /** Request */
+            request: string;
             /**
-             * Error
+             * Schema Name
              * @default
              */
-            error: string;
-            /**
-             * History
-             * @default []
-             */
-            history: {
-                [key: string]: unknown;
-            }[];
-            /** Instruction */
-            instruction: string;
+            schema_name: string;
             /**
              * Sql
              * @default
@@ -46166,7 +46163,7 @@ export interface operations {
             };
         };
     };
-    query_assist_query_assist_post: {
+    query_ask_query_ask_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -46175,7 +46172,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["_AssistRequest"];
+                "application/json": components["schemas"]["_AskRequest"];
             };
         };
         responses: {
