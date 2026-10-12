@@ -266,10 +266,15 @@ def test_every_store_env_override_is_pointed_at_the_test_dir():
 
     assert found, "found no resolve_db_path call sites — this guard has gone blind"
     repo_data = (_REPO / "data").resolve()
+    # …nor the live data home: since the data-home move the install's own stores sit in `~/.aughor` (the default home,
+    # whatever AUGHOR_HOME the suite sets), so an override pointed there would write the live state (2026-10-12).
+    from aughor.db.home import default_home
+    live_home = default_home().resolve()
 
     def _leaks(env: str) -> bool:
         resolved = pathlib.Path(os.environ.get(env, "") or "").resolve()
-        return not os.environ.get(env) or repo_data in resolved.parents or resolved == repo_data
+        return (not os.environ.get(env) or repo_data in resolved.parents or resolved == repo_data
+                or live_home in resolved.parents or resolved == live_home)
 
     unisolated = {env: where for env, where in sorted(found.items()) if _leaks(env)}
     assert unisolated == {}, (
