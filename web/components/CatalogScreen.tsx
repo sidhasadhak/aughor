@@ -1,345 +1,51 @@
 "use client";
-import { Pending, SkeletonRows } from "@/components/ui/motion";
-import { CONNECTORS } from "@/lib/connectors.gen";
 
 /**
- * CatalogScreen — Unity Catalog-style 4-level hierarchy
+ * CatalogScreen — the catalog tree on the left, and what is chosen in it on the right.
  *
- *  Section (Sample Catalog / My Connections)
+ *  Section (Catalogs)
  *    └── Catalog  (one per connection)
- *          └── Schema  (ecommerce / public / analytics …)
+ *          └── Schema
  *                └── Table
  *
- * Left panel  : collapsible tree navigator (260 px)
- * Right panel : detail view that adapts per level
- *
- *   Catalog  → header | tabs (Overview) | schema-list + About sidebar
- *   Schema   → header | tabs (Tables)   | table-list  + About sidebar
- *   Table    → header | tabs (Overview / Sample Data) | columns + About sidebar
+ * Left panel  : the collapsible tree (its look and behaviour unchanged by the 2026-10-12 redo).
+ * Right panel : redone to `aughor-v2/CLARITY.md` from the approved `design-mockups/catalog.html` —
+ *   nothing chosen → every catalog (`catalog/CatalogHome.tsx`)
+ *   a catalog or a schema → its page (`catalog/CatalogScope.tsx`)
+ *   a table → its page (`catalog/CatalogTable.tsx`)
+ * What the right panel says is folded in `lib/catalogSummary.ts`.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { SqlResultTable } from "@/components/AugTable";
+import { SkeletonRows } from "@/components/ui/motion";
+import { CONNECTORS } from "@/lib/connectors.gen";
 import { useSchema } from "@/lib/schema-context";
-import { compactNumber, isNumericType, formatTimestamp } from "@/lib/format";
-import { bare, schemaOf } from "@/lib/tableName";
 import {
-  getCatalogTree, getConnections, addConnection, deleteConnection,
-  testConnection, sampleTable, getSchemaRich, getTableColumns, getExplorationFindings,
-  deleteConnectionSchema, deleteConnectionTable,
-  alterColumn, getConnectionSettings, updateConnectionSettings,
+  getCatalogTree, addConnection, testConnection, getDatasets, getKnowledgeStatus,
   type CatalogTree, type CatalogEntry, type CatalogSchemaInfo, type CatalogTableInfo,
-  type Connection, type SchemaTable, type SchemaColumn, type TableSample,
-  type TableColumn, type DistributionProfile, type RichSchema,
+  type Connection, type DatasetsView, type KnowledgeStatus,
 } from "@/lib/api";
-import { ERDiagram } from "@/components/ERDiagram";
-import { SchemaShape } from "@/components/SchemaShape";
-import { VolumesPanel, PermissionsPanel } from "@/components/catalog/MetastorePanels";
-import { GlossaryPanel } from "@/components/catalog/GlossaryPanel";
-import { ExplorationBadge } from "@/components/ExplorationBadge";
-import { ConnectionProgram, MaturityBars, SchemaProgram, TableProgram } from "@/components/DatasetProgram";
-import { getDatasets, type DatasetsView } from "@/lib/api";
-import { SchemaPanel } from "@/components/SchemaPanel";
-import { listDocuments, getKnowledgeStatus, type DocumentEntry, type KnowledgeStatus } from "@/lib/api";
+import { MaturityBars } from "@/components/DatasetProgram";
 import { AddDataPanel } from "@/components/AddDataPanel";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { Button } from "@/components/ui/button";
 import { Chevron, IcoCatalog, IcoSchema, IcoTable } from "@/components/icons/catalog";
-import { ColumnTypeIcon } from "@/components/icons/columnType";
-import { useRichSchema, richSchemaKey } from "@/lib/schema-context";
-import { useQueryClient } from "@tanstack/react-query";
+import { Icon } from "@/components/ui/icon";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { CatalogHome } from "@/components/catalog/CatalogHome";
+import { CatalogScope } from "@/components/catalog/CatalogScope";
+import { CatalogTable } from "@/components/catalog/CatalogTable";
+import { recents } from "@/components/catalog/CatalogTools";
+import { explored, findDuplicates, itemKey, type CatalogItem } from "@/lib/catalogSummary";
 
 /** <Button> forces child SVGs to size-4/size-3; this restores each icon's own
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
 const SVG_SIZE_AUTO = "[&_svg:not([class*='size-'])]:size-auto";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+/** A connector's name, from each engine's one declaration (`lib/connectors.gen.ts`). */
+const connectorLabel = (t: string) => CONNECTORS[t]?.label ?? t;
 
-function fmtRows(n: number | string | null | undefined): string {
-  if (n == null) return "—";
-  const num = Number(n);
-  if (isNaN(num)) return "—";
-  return compactNumber(num, 1);
-}
-
-const TYPE_OPTIONS = [
-  "VARCHAR", "TEXT", "INTEGER", "BIGINT", "SMALLINT", "TINYINT",
-  "DOUBLE", "FLOAT", "DECIMAL", "NUMERIC", "BOOLEAN",
-  "DATE", "TIMESTAMP", "TIME", "TIMESTAMPTZ", "INTERVAL",
-  "BLOB", "JSON", "UUID",
-];
-
-/* `typeColor` lived here: a fourth palette for a column's type, disagreeing with the
-   three others in this app about what colour an INT is. The glyph in front of the name
-   states the type now, so the label beside it is plain `--t3` text — the type is read,
-   not decoded. */
-
-// ── Distribution mini-viz (shared with exploration) ──────────────────────────
-
-const DIST_SHAPE_PILL: Record<string, { label: string; bg: string; text: string; border: string; barColor: string }> = {
-  fraction_0_1: { label: "0–1 ratio",    bg: "var(--grn1)", text: "var(--grn4)", border: "var(--grn2)", barColor: "var(--grn2)" },
-  normal:       { label: "Normal",        bg: "var(--blue1)", text: "var(--blue4)", border: "var(--blue2)", barColor: "var(--blue2)" },
-  concentrated: { label: "Concentrated", bg: "var(--vio1)", text: "var(--vio4)", border: "var(--vio2)", barColor: "var(--vio2)" },
-  skewed_right: { label: "Right-skewed", bg: "var(--amb1)", text: "var(--amb4)", border: "var(--amb2)", barColor: "var(--amb2)" },
-  skewed_left:  { label: "Left-skewed",  bg: "var(--amb1)", text: "var(--amb4)", border: "var(--amb2)", barColor: "var(--amb2)" },
-  uniform:      { label: "Uniform",      bg: "var(--grn1)", text: "var(--grn4)", border: "var(--grn2)", barColor: "var(--grn2)" },
-  bimodal:      { label: "Bimodal",      bg: "var(--red1)", text: "var(--red4)", border: "var(--red2)", barColor: "var(--red2)" },
-};
-
-function miniBarHeights(shape: string): number[] {
-  switch (shape) {
-    case "normal":       return [4, 8, 22, 24, 16, 6];
-    case "fraction_0_1": return [6, 14, 24, 16, 8, 4];
-    case "concentrated": return [3, 10, 24, 18, 8, 3];
-    case "skewed_right": return [24, 20, 14, 8, 4, 2];
-    case "skewed_left":  return [2, 4, 8, 14, 20, 24];
-    case "uniform":      return [20, 22, 22, 21, 20, 21];
-    case "bimodal":      return [20, 8, 4, 8, 22, 16];
-    default:             return [10, 14, 18, 16, 12, 8];
-  }
-}
-
-function fmtNum(n: number | null | undefined): string {
-  if (n == null) return "—";
-  return compactNumber(n, 1);
-}
-
-/** Compact per-column distribution strip shown under a column row in Catalog. */
-function ColumnDistribution({ d }: { d: DistributionProfile }) {
-  const pill = DIST_SHAPE_PILL[d.shape] ?? { label: d.shape, bg: "var(--bg-1)", text: "var(--t3)", border: "var(--b1)", barColor: "var(--b2)" };
-  const barH = miniBarHeights(d.shape);
-  const maxH = Math.max(...barH);
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "6px 16px 8px 30px", background: "var(--bg-0)", borderBottom: "0.5px solid var(--b0)" }}>
-      {/* mini histogram */}
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 1.5, height: 24, width: 64, flexShrink: 0 }}>
-        {barH.map((h, i) => (
-          <div key={i} style={{ flex: 1, height: `${h}px`, background: h >= maxH * 0.6 ? pill.barColor : "var(--b2)", borderRadius: "2px 2px 0 0" }} />
-        ))}
-      </div>
-      {/* percentiles */}
-      <div style={{ display: "flex", gap: 12, fontFamily: "var(--font-mono)", fontSize: 11 }}>
-        {([["p25", d.p25], ["p50", d.p50], ["p75", d.p75], ["mean", d.mean]] as const).map(([label, value]) => (
-          <div key={label} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <span style={{ color: "var(--t3)", letterSpacing: "0.04em" }}>{label}</span>
-            <span style={{ color: label === "p50" || label === "mean" ? "var(--t1)" : "var(--t2)" }}>{fmtNum(value)}</span>
-          </div>
-        ))}
-        {d.min != null && d.max != null && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <span style={{ color: "var(--t3)", letterSpacing: "0.04em" }}>range</span>
-            <span style={{ color: "var(--t2)" }}>{fmtNum(d.min)}–{fmtNum(d.max)}</span>
-          </div>
-        )}
-      </div>
-      {/* shape pill */}
-      <span style={{ marginLeft: "auto", fontSize: 11, padding: "1px 8px", borderRadius: 4, whiteSpace: "nowrap", background: pill.bg, color: pill.text, border: `0.5px solid ${pill.border}` }}>
-        {pill.label}
-      </span>
-    </div>
-  );
-}
-
-// DE-3b: the label and the colour are facts on each engine's one declaration
-// (`lib/connectors.gen.ts`, generated from `aughor/connectors/declarations.py`). This map had
-// drifted — MotherDuck, Exasol, Google Sheets and SQLite were missing — which a generated map
-// cannot do. The chip is neutral with the brand colour as its text.
-const CONN_TAG: Record<string, { label: string; color: string; bg: string; border: string }> = Object.fromEntries(
-  Object.values(CONNECTORS).map(c => [c.type, { label: c.label, color: c.brandColor, bg: "var(--bg-1)", border: "var(--b2)" }]),
-);
-
-// ── Connector action panel (sync / upload / knowledge-sync) ───────────────────
-
-import { getApiBase } from "@/lib/config";
-import { Icon } from "@/components/ui/icon";
-import { Loading, ReadFailed } from "@/components/ui/states";
-import { SelectField } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-const _SYNCABLE      = ["stripe", "hubspot", "salesforce", "s3"];
-const _KNOWLEDGE     = ["confluence", "notion"];
-const _FILE_UPLOAD   = ["local_upload"];
-
-/** Per-connection opt-in for the Briefing workspace. Opt-out by default (enabled
- *  unless turned off here); persisted via connection settings. */
-function BriefingsToggle({ connId }: { connId: string }) {
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [saving, setSaving]   = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    getConnectionSettings(connId)
-      .then(s => { if (alive) setEnabled(s.briefings_enabled !== false); })
-      .catch(() => { if (alive) setEnabled(true); });
-    return () => { alive = false; };
-  }, [connId]);
-
-  const toggle = async () => {
-    if (enabled === null || saving) return;
-    const next = !enabled;
-    setEnabled(next);
-    setSaving(true);
-    try { await updateConnectionSettings(connId, { briefings_enabled: next }); }
-    catch { setEnabled(!next); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--b1)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)" }}>Briefings</div>
-        <div style={{ fontSize: 11, color: "var(--t3)" }}>Show this connection in the Briefing workspace.</div>
-      </div>
-      <Button
-        variant="ghost"
-        role="switch"
-        aria-checked={enabled === true}
-        aria-label="Enable briefings for this connection"
-        disabled={enabled === null || saving}
-        onClick={toggle}
-        className="h-auto p-0"
-        style={{
-          flexShrink: 0, width: 38, height: 22, borderRadius: 11, position: "relative", padding: 0,
-          cursor: enabled === null ? "default" : "pointer", border: "none",
-          background: enabled ? "var(--blue3)" : "var(--bg-3)", transition: "background .15s", opacity: saving ? 0.6 : 1,
-        }}
-      >
-        <span style={{
-          position: "absolute", top: 2, left: enabled ? 18 : 2, width: 18, height: 18, borderRadius: "50%",
-          background: "var(--bg-0)", transition: "left .15s",
-        }} />
-      </Button>
-    </div>
-  );
-}
-
-function ConnectorActions({ connId, connType }: { connId: string; connType: string }) {
-  const [status, setStatus]   = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [files,   setFiles]   = useState<Array<{ filename: string; table_name: string; size_bytes: number }>>([]);
-  const [uploading, setUploading] = useState(false);
-  const [restoreMsg, setRestoreMsg] = useState<string | null>(null);
-  const fileInputRef = (typeof document !== "undefined") ? { current: null as HTMLInputElement | null } : { current: null };
-
-  const isSyncable    = _SYNCABLE.includes(connType);
-  const isKnowledge   = _KNOWLEDGE.includes(connType);
-  const isFileUpload  = _FILE_UPLOAD.includes(connType);
-
-  useEffect(() => {
-    if (isSyncable || isKnowledge) {
-      const endpoint = isKnowledge
-        ? `${getApiBase()}/connections/${connId}/knowledge-sync/status`
-        : `${getApiBase()}/connections/${connId}/sync-status`;
-      fetch(endpoint).then(r => r.json())
-        .then(d => setStatus(d.last_sync ? `Last sync: ${formatTimestamp(d.last_sync)}` : "Never synced"))
-        .catch(() => setStatus(null));
-    }
-    if (isFileUpload) {
-      fetch(`${getApiBase()}/connections/${connId}/files`).then(r => r.json())
-        .then(d => setFiles(d.files ?? []))
-        .catch(() => {});
-    }
-  }, [connId, connType, isSyncable, isKnowledge, isFileUpload]);
-
-  const handleSync = async () => {
-    setSyncing(true);
-    const endpoint = isKnowledge
-      ? `${getApiBase()}/connections/${connId}/knowledge-sync`
-      : `${getApiBase()}/connections/${connId}/sync`;
-    try {
-      await fetch(endpoint, { method: "POST" });
-      setStatus("Sync triggered — running in background…");
-    } catch {
-      setStatus("Sync failed");
-    }
-    setSyncing(false);
-  };
-
-  const handleFileUpload = async (file: File) => {
-    setUploading(true);
-    const form = new FormData();
-    form.append("file", file);
-    try {
-      const resp = await fetch(`${getApiBase()}/connections/${connId}/files`, { method: "POST", body: form });
-      if (resp.ok) {
-        const fresh = await fetch(`${getApiBase()}/connections/${connId}/files`).then(r => r.json());
-        setFiles(fresh.files ?? []);
-      }
-    } catch { /* silent */ }
-    setUploading(false);
-  };
-
-  const handleDelete = async (filename: string) => {
-    await fetch(`${getApiBase()}/connections/${connId}/files/${encodeURIComponent(filename)}`, { method: "DELETE" });
-    setFiles(f => f.filter(x => x.filename !== filename));
-  };
-
-  const handleRestoreSamples = async () => {
-    setRestoreMsg("Restoring…");
-    try {
-      const r = await fetch(`${getApiBase()}/connections/${connId}/restore-samples`, { method: "POST" });
-      setRestoreMsg(r.ok ? "Sample data restored — refresh to see it." : "Restore failed.");
-    } catch {
-      setRestoreMsg("Restore failed.");
-    }
-  };
-
-  if (!isSyncable && !isKnowledge && !isFileUpload) return null;
-
-  const BtnStyle: React.CSSProperties = {
-    display: "inline-flex", alignItems: "center", gap: 6,
-    padding: "5px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500,
-    cursor: syncing || uploading ? "not-allowed" : "pointer",
-    background: "var(--blue1, #152B50)", border: "1px solid var(--blue2, #1A3A6E)",
-    color: "var(--blue5, #88BAFF)", transition: "background-color .12s, border-color .12s, color .12s, opacity .12s",
-    opacity: syncing || uploading ? 0.5 : 1,
-  };
-
-  return (
-    <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--b1)" }}>
-      {(isSyncable || isKnowledge) && (
-        <div style={{ marginBottom: 10 }}>
-          <Button variant="ghost" className="h-auto p-0 font-normal" style={BtnStyle} onClick={handleSync} disabled={syncing}>
-            {syncing ? "⏳ Syncing…" : isKnowledge ? "📚 Knowledge Sync" : "🔄 Sync Now"}
-          </Button>
-          {status && <p style={{ fontSize: 11, color: "var(--t3)", marginTop: 6 }}>{status}</p>}
-        </div>
-      )}
-      {isFileUpload && (
-        <div>
-          <label style={{ ...BtnStyle, cursor: uploading ? "not-allowed" : "pointer" }}>
-            {uploading ? "Uploading…" : "+ Upload CSV / Parquet / Excel"}
-            <input
-              type="file"
-              accept=".csv,.tsv,.parquet,.parq,.xlsx,.xls,.json"
-              style={{ display: "none" }}
-              disabled={uploading}
-              onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }}
-            />
-          </label>
-          {files.length > 0 && (
-            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
-              {files.map(f => (
-                <div key={f.filename} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--t2)" }}>
-                  <span style={{ fontFamily: "var(--font-mono, monospace)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.filename}</span>
-                  <span style={{ color: "var(--t3)", fontSize: 11 }}>{Math.round(f.size_bytes / 1024)}KB</span>
-                  <Button variant="ghost" onClick={() => handleDelete(f.filename)} className="h-auto p-0 font-normal" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 0, fontSize: 12 }} title="Remove">✕</Button>
-                </div>
-              ))}
-            </div>
-          )}
-          <Button variant="ghost" onClick={handleRestoreSamples}
-            className="h-auto p-0 font-normal"
-            style={{ marginTop: 10, background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 0, fontSize: 11, textDecoration: "underline" }}
-            title="Re-add the bundled sample schemas you previously removed">
-            Restore sample data
-          </Button>
-          {restoreMsg && <p style={{ fontSize: 11, color: "var(--t3)", marginTop: 6 }}>{restoreMsg}</p>}
-        </div>
-      )}
-    </div>
-  );
-}
-const connMeta = (t: string) => CONN_TAG[t] ?? { label: t, color: "var(--t2)", bg: "var(--bg-1)", border: "var(--b2)" };
 
 // ── Selection type ────────────────────────────────────────────────────────────
 
@@ -348,110 +54,6 @@ type Sel =
   | { level: "schema";  connId: string; schemaName: string; entry: CatalogSchemaInfo }
   | { level: "catalog"; connId: string; entry: CatalogEntry }
   | null;
-
-// ── Shared layout primitives ──────────────────────────────────────────────────
-
-/** The right-panel header bar — icon, name, type tag */
-function DetailHeader({
-  icon, name, tag, breadcrumb, meta,
-}: {
-  icon:       React.ReactNode;
-  name:       string;
-  tag?:       React.ReactNode;
-  breadcrumb?: string;
-  meta?:       string;
-}) {
-  return (
-    <div style={{ padding: "16px 20px 12px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)" }}>
-      {breadcrumb && (
-        <p style={{ fontSize: 11, color: "var(--t3)", marginBottom: 6 }}>
-          {breadcrumb}
-        </p>
-      )}
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ color: "var(--t3)", display: "flex", alignItems: "center" }}>{icon}</span>
-        <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {name}
-        </span>
-        {tag}
-      </div>
-      {meta && <p style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>{meta}</p>}
-    </div>
-  );
-}
-
-/** Tab bar used by all detail panels */
-function TabBar({ tabs, active, onChange }: {
-  tabs:    { id: string; label: string }[];
-  active:  string;
-  onChange:(id: string) => void;
-}) {
-  return (
-    <div style={{ display: "flex", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, padding: "0 8px", background: "var(--bg-0)" }}>
-      {tabs.map(t => (
-        <Button
-          variant="ghost"
-          key={t.id}
-          onClick={() => onChange(t.id)}
-          className="h-auto p-0 font-normal rounded-none"
-          style={{
-            fontSize: 12, padding: "8px 12px", cursor: "pointer", border: "none",
-            background: "transparent", fontFamily: "inherit",
-            color: active === t.id ? "var(--t1)" : "var(--t3)",
-            borderBottom: `2px solid ${active === t.id ? "var(--blue4)" : "transparent"}`,
-            transition: "color .1s",
-            marginBottom: -1,
-          }}
-        >
-          {t.label}
-        </Button>
-      ))}
-    </div>
-  );
-}
-
-/** "About this X" sidebar card used in all three detail panels */
-function AboutSidebar({ title, rows }: {
-  title: string;
-  rows:  { label: string; value: React.ReactNode }[];
-}) {
-  return (
-    <div style={{
-      width: 220, flexShrink: 0, borderLeft: "0.5px solid var(--b1)",
-      padding: "16px 16px", overflowY: "auto", background: "var(--bg-0)",
-    }}>
-      <p style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.07em" }}>
-        {title}
-      </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {rows.map(r => (
-          <div key={String(r.label)}>
-            <p style={{ fontSize: 11, color: "var(--t3)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.label}</p>
-            <div style={{ fontSize: 11, color: "var(--t2)" }}>{r.value}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** Inline search box used inside tab bodies */
-function FilterBox({ value, onChange, placeholder }: { value: string; onChange:(v:string)=>void; placeholder?: string }) {
-  return (
-    <div style={{ position: "relative", flexShrink: 0 }}>
-      <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--t3)", pointerEvents: "none", display: "inline-flex" }}>
-        <Icon name="search" size={11} />
-      </span>
-      <Input
-        value={value} onChange={e => onChange(e.target.value)}
-        placeholder={placeholder ?? "Filter…"}
-        style={{ width: 220 }}
-      />
-    </div>
-  );
-}
-
-// ── Icons ─────────────────────────────────────────────────────────────────────
 
 
 // ── Add-connection inline form ────────────────────────────────────────────────
@@ -501,868 +103,6 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
         <Button variant="ghost" type="button" onClick={onCancel} className="h-auto p-0 font-normal" style={{ fontSize: 11, padding: "5px 10px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)" }}>Cancel</Button>
       </div>
     </form>
-  );
-}
-
-// ── Sample grid ───────────────────────────────────────────────────────────────
-
-function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableName: string; schemaName?: string }) {
-  const [data, setData]    = useState<TableSample | null>(null);
-  const [loading, setLoad] = useState(false);
-  const [error, setErr]    = useState<string | null>(null);
-  const fetched = useRef(false);
-
-  useEffect(() => { setData(null); setErr(null); fetched.current = false; }, [connId, tableName, schemaName]);
-  useEffect(() => {
-    if (fetched.current) return;
-    fetched.current = true;
-    setLoad(true);
-    sampleTable(connId, tableName, 200, schemaName)
-      .then(d => {
-        // Three distinct states: execution error ≠ empty table ≠ data.
-        if (d.error) setErr(d.error);
-        else setData(d);
-      })
-      .catch(e => setErr(`Could not load sample: ${(e as Error).message}`))
-      .finally(() => setLoad(false));
-  }, [connId, tableName, schemaName]);
-
-  if (loading) return (
-    <div style={{ flex: 1, padding: 16 }} aria-label="Loading sample data">
-      <SkeletonRows rows={8} />
-    </div>
-  );
-  if (error) return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ maxWidth: 460, textAlign: "center" }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--red4)", marginBottom: 4 }}>Sample unavailable</div>
-        <div style={{ fontSize: 11, color: "var(--t3)", wordBreak: "break-word" }}>{error}</div>
-      </div>
-    </div>
-  );
-  if (!data || data.rows.length === 0) return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <span style={{ fontSize: 11, color: "var(--t3)" }}>Table is empty — no rows to display.</span>
-    </div>
-  );
-
-  return (
-    <div style={{ flex: 1, overflow: "auto", padding: 12 }}>
-      <SqlResultTable columns={data.columns} rows={data.rows as unknown[][]} maxHeight={520} />
-      <div style={{ padding: "5px 4px", fontSize: 11, color: "var(--t3)" }}>
-        {data.rows.length} row{data.rows.length !== 1 ? "s" : ""}
-      </div>
-    </div>
-  );
-}
-
-// ── Right: TABLE detail ───────────────────────────────────────────────────────
-
-type TableTab = "overview" | "sample" | "distribution" | "comments";
-
-function TableDetailPanel({ sel, onAsk, onRemoved, view, onProgramChanged }: {
-  sel:   Extract<Sel, { level: "table" }>;
-  onAsk?: (table: string, connId: string) => void;
-  onRemoved?: () => void;
-  view?: DatasetsView | null;
-  onProgramChanged?: () => void;
-}) {
-  const [tab, setTab]           = useState<TableTab>("overview");
-  const [colFilter, setColFilter] = useState("");
-  const [richTable, setRich]    = useState<SchemaTable | null>(null);
-  const [baseCols, setBaseCols] = useState<TableColumn[]>([]);
-  const [loading, setLoad]      = useState(false);
-  const [distMap, setDistMap]   = useState<Record<string, DistributionProfile>>({});
-  const [expandedCols, setExpandedCols] = useState<Set<string>>(new Set());
-  const [editingCol, setEditingCol]   = useState<string | null>(null);
-  const [editType, setEditType]       = useState("");
-  const [alterBusy, setAlterBusy]     = useState(false);
-  // One shared read per connection, serving this panel's overview AND its ERD tab.
-  const { schema: catalogSchema } = useRichSchema(sel.connId);
-  const qc = useQueryClient();
-
-  // Fetch column detail when table changes. The authoritative column list comes
-  // from the reliable per-table reader (same path as Sample Data); the heavy
-  // whole-connection rich schema only layers on FK flags + descriptions.
-  useEffect(() => {
-    setTab("overview"); setColFilter(""); setRich(null); setBaseCols([]); setExpandedCols(new Set());
-    setLoad(true);
-    getTableColumns(sel.connId, sel.table.name, sel.schemaName)
-      .then(setBaseCols)
-      .catch(err => { console.error("[Catalog] getTableColumns failed:", err); setBaseCols([]); })
-      .finally(() => setLoad(false));
-  }, [sel.connId, sel.schemaName, sel.table.name]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // The selected table's rich entry, derived from the shared per-connection schema
-  // rather than fetched again — this panel, the ERD tab below and every other surface
-  // now read one cached answer per connection.
-  useEffect(() => {
-    setRich(catalogSchema?.tables.find(t => t.name === sel.table.name) ?? null);
-  }, [catalogSchema, sel.table.name]);
-
-  // Fetch column distributions (exploration profiling) for this table
-  useEffect(() => {
-    setDistMap({});
-    getExplorationFindings(sel.connId)
-      .then(f => {
-        const m: Record<string, DistributionProfile> = {};
-        // The explorer keys distributions as "<table>:<column>", where <table>
-        // may be schema-qualified (e.g. "public.orders") while the catalog tree
-        // exposes the bare table name. Match leniently on the final segment.
-        const target = bare(sel.table.name);
-        for (const [key, d] of Object.entries(f.distributions ?? {})) {
-          const sep = key.lastIndexOf(":");
-          if (sep < 0) continue;
-          const tbl = key.slice(0, sep);
-          const col = key.slice(sep + 1);
-          if (bare(tbl) === target && col && d.shape !== "unknown") m[col] = d;
-        }
-        setDistMap(m);
-      })
-      .catch(() => setDistMap({}));
-  }, [sel.connId, sel.table.name]);
-
-  // Unify: authoritative per-table columns, enriched with rich-schema FK/desc.
-  const enrichMap = new Map((richTable?.columns ?? []).map(c => [c.name, c]));
-  const cols: SchemaColumn[] = baseCols.length
-    ? baseCols.map(b => {
-        const e = enrichMap.get(b.name);
-        const overrideType = b.type?.trim?.() ? b.type : undefined;
-        return { ...(e ?? {}), name: b.name, type: overrideType ?? e?.type ?? "" } as SchemaColumn;
-      })
-    : (richTable?.columns ?? []);
-  const q    = colFilter.toLowerCase();
-  const filteredCols = q ? cols.filter(c => c.name.toLowerCase().includes(q) || c.type.toLowerCase().includes(q)) : cols;
-  const fkCount = cols.filter(c => c.is_fk).length;
-  // Distributions (p25/p50/mean/…) only make sense for numeric columns. Gate on the
-  // column's *live* declared type — so a VARCHAR id never shows numeric percentiles,
-  // and saving a column's type to VARCHAR immediately hides its (stale) distribution.
-  const numericDist = (c: SchemaColumn) => (isNumericType(c.type) ? distMap[c.name] : undefined);
-  const distCount = cols.filter(numericDist).length;
-  const toggleCol = (name: string) => setExpandedCols(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
-
-  const handleSave = async (colName: string) => {
-    if (!editType.trim() || editType.trim() === (cols.find(c => c.name === colName)?.type ?? "")) {
-      setEditingCol(null);
-      return;
-    }
-    setAlterBusy(true);
-    try {
-      const res = await alterColumn(sel.connId, sel.table.name, colName, editType.trim(), sel.schemaName);
-      // Refresh columns and rich schema so both are in sync
-      const [refreshed, rich] = await Promise.all([
-        getTableColumns(sel.connId, sel.table.name, sel.schemaName),
-        // Deliberately NOT the cached read: this runs immediately after alterColumn and
-        // needs post-mutation truth. The cache is invalidated below so every other
-        // consumer stops serving the pre-ALTER shape.
-        getSchemaRich(sel.connId).then(s => s.tables.find(t => t.name === sel.table.name) ?? null).catch(() => null),
-      ]);
-      qc.invalidateQueries({ queryKey: richSchemaKey(sel.connId) });
-      setBaseCols(refreshed);
-      if (rich) setRich(rich);
-      // Be honest when the change is a display-only override (connector can't ALTER).
-      if (res && res.applied === false && res.message) alert(res.message);
-    } catch (e) {
-      alert((e as Error).message || "Failed to alter column");
-    } finally {
-      setAlterBusy(false);
-      setEditingCol(null);
-    }
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <DetailHeader
-        icon={<IcoTable active size={16} />}
-        name={sel.table.name}
-        breadcrumb={`${sel.connId}  ›  ${sel.schemaName}`}
-        meta={`${fmtRows(sel.table.row_count)} rows · ${cols.length || "…"} columns${fkCount ? ` · ${fkCount} FK` : ""}`}
-      />
-      {(() => {
-        const ds = view?.schemas.find(s => s.name === sel.schemaName);
-        return <TableProgram connId={sel.connId} schema={sel.schemaName} t={ds?.tables.find(t => t.name === sel.table.name)}
-          view={view ?? null} schemaOff={!!ds?.off} onChanged={() => onProgramChanged?.()} />;
-      })()}
-
-      <TabBar
-        tabs={[{ id: "overview", label: "Overview" }, { id: "sample", label: "Sample Data" }, { id: "distribution", label: "Distribution" }, { id: "comments", label: "Comments" }]}
-        active={tab}
-        onChange={id => setTab(id as TableTab)}
-      />
-
-      {/* ── Comments (glossary) tab ──
-            The schema was being stripped here and thrown away, so a comment on `orders` in one
-            schema overwrote every other schema's. It was already in scope — sibling calls above
-            pass it (alterColumn / getTableColumns) and the breadcrumb renders it. */}
-      {tab === "comments" && (
-        <GlossaryPanel table={bare(sel.table.name)} columns={cols.map(c => c.name)} schema={sel.schemaName} connectionId={sel.connId} />
-      )}
-
-      {/* ── Distribution tab — per-column profile + shape, scoped to this table.
-              Relocated from the (removed) Briefing › Domains › Distributions view. ── */}
-      {tab === "distribution" && (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <SchemaShape connectionId={sel.connId} schemaTables={[sel.table.name]} />
-        </div>
-      )}
-
-      {/* ── Overview tab ── */}
-      {tab === "overview" && (
-        <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-          {/* Main: column list */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            {/* Filter row */}
-            <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)", display: "flex", alignItems: "center", gap: 10 }}>
-              <FilterBox value={colFilter} onChange={setColFilter} placeholder="Filter columns…" />
-              {distCount > 0 && (
-                <span style={{ fontSize: 11, color: "var(--t3)" }}>{distCount} profiled · click a column for its distribution</span>
-              )}
-              {onAsk && (
-                <Button variant="ghost" onClick={() => onAsk(sel.table.name, sel.connId)}
-                  className="h-auto p-0 font-normal"
-                  style={{ marginLeft: "auto", fontSize: 11, padding: "4px 11px", borderRadius: 4, cursor: "pointer", background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", whiteSpace: "nowrap" }}>
-                  Ask about this table →
-                </Button>
-              )}
-              {onRemoved && (
-                <Button variant="ghost" onClick={async () => {
-                  if (!confirm(`Remove table "${sel.table.name}" from the workspace? This drops the table and deletes its uploaded file.`)) return;
-                  try { await deleteConnectionTable(sel.connId, sel.table.name, sel.schemaName); onRemoved(); }
-                  catch (e) { alert((e as Error).message); }
-                }}
-                  className="h-auto p-0 font-normal"
-                  style={{ marginLeft: onAsk ? 0 : "auto", fontSize: 11, padding: "4px 11px", borderRadius: 4, cursor: "pointer", background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)", whiteSpace: "nowrap" }}>
-                  Remove
-                </Button>
-              )}
-            </div>
-
-            {/* Column header */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "5px 16px", borderBottom: "0.5px solid var(--b1)", background: "var(--bg-0)", flexShrink: 0 }}>
-              {["Column", "Type", ""].map(h => (
-                <span key={h} style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{h}</span>
-              ))}
-            </div>
-
-            {/* Column rows */}
-            <div style={{ flex: 1, overflowY: "auto" }}>
-              {loading && (
-                <div style={{ padding: "8px 12px" }} aria-label="Loading columns">
-                  <SkeletonRows rows={6} />
-                </div>
-              )}
-              {!loading && filteredCols.length === 0 && (
-                <p style={{ padding: "20px 16px", fontSize: 11, color: "var(--t3)" }}>
-                  {q ? "No columns match." : "Column details unavailable."}
-                </p>
-              )}
-              {!loading && filteredCols.map((col) => {
-                const dist = numericDist(col);
-                const open = expandedCols.has(col.name);
-                return (
-                <div key={col.name}>
-                  <div
-                    onClick={dist ? () => toggleCol(col.name) : undefined}
-                    style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "6px 16px", borderBottom: "0.5px solid var(--b0)", alignItems: "center", background: open ? "var(--bg-0)" : "transparent", cursor: dist ? "pointer" : "default" }}
-                    onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.background = "var(--bg-1)"; }}
-                    onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }} title={col.description || ""}>
-                      {/* Two slots, not one. The type mark used to share this space with
-                          the distribution chevron, so the columns that HAVE a distribution
-                          — the numeric ones — were the only columns that never showed
-                          their type. The chevron keeps a fixed 12px whether or not it is
-                          drawn, which is also what keeps the names in a straight line. */}
-                      <span style={{ width: 12, flexShrink: 0, display: "flex" }}>
-                        {dist && <Chevron open={open} />}
-                      </span>
-                      <ColumnTypeIcon type={col.type} size={13} />
-                      <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.name}</span>
-                      {col.description && (
-                        <span style={{ fontSize: 11, color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{col.description}</span>
-                      )}
-                    </div>
-                    {editingCol === col.name ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <SelectField
-                          value={editType}
-                          onChange={e => setEditType(e.target.value)}
-                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleSave(col.name); } if (e.key === "Escape") { setEditingCol(null); } }}
-                          autoFocus
-                          style={{ width: 110, cursor: "pointer" }}
-                        >
-                          {TYPE_OPTIONS.map(t => (
-                            <option key={t} value={t} style={{ background: "var(--bg-0)", color: "var(--t1)" }}>{t}</option>
-                          ))}
-                        </SelectField>
-                        <Button
-                          variant="ghost"
-                          onClick={() => handleSave(col.name)}
-                          disabled={alterBusy}
-                          className="h-auto p-0 font-normal"
-                          style={{ fontSize: 11, padding: "1px 4px", borderRadius: 3, background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", cursor: "pointer" }}
-                        >Save</Button>
-                      </div>
-                    ) : (
-                      <span
-                        onClick={() => { setEditingCol(col.name); setEditType(col.type); }}
-                        title="Click to edit type"
-                        style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", cursor: "pointer", borderBottom: "1px dashed var(--b2)" }}
-                      >{col.type || "—"}</span>
-                    )}
-                    {col.is_fk
-                      ? <span style={{ fontSize: 11, padding: "2px 5px", borderRadius: 3, background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>FK</span>
-                      : <span />
-                    }
-                  </div>
-                  {dist && open && <ColumnDistribution d={dist} />}
-                </div>
-              ); })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Sample Data tab ── */}
-      {tab === "sample" && (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 11, color: "var(--t3)" }}>First 200 rows</span>
-          </div>
-          <SampleGrid connId={sel.connId} tableName={sel.table.name} schemaName={sel.schemaName} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Right: SCHEMA detail ──────────────────────────────────────────────────────
-
-type SchemaTab = "tables" | "erd" | "shape";
-
-function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved, view, onProgramChanged }: {
-  sel:           Extract<Sel, { level: "schema" }>;
-  onSelectTable: (table: CatalogTableInfo) => void;
-  onAsk?:        (table: string, connId: string) => void;
-  connName?:     string;
-  onRemoved?:    () => void;
-  view?:         DatasetsView | null;
-  onProgramChanged?: () => void;
-}) {
-  const [filter, setFilter] = useState("");
-  const [tab, setTab]       = useState<SchemaTab>("tables");
-  const [erdSchema, setErdSchema] = useState<RichSchema | null>(null);
-  const [erdLoading, setErdLoading] = useState(false);
-  const [erdError, setErdError]   = useState<string | null>(null);
-  // Same shared read the table panel uses — the ERD no longer re-fetches a schema
-  // the catalog already has.
-  const { schema: catalogSchema } = useRichSchema(sel.connId);
-  const { entry } = sel;
-  const q = filter.toLowerCase();
-  const tables = q ? entry.tables.filter(t => t.name.toLowerCase().includes(q)) : entry.tables;
-  const totalRows = entry.tables.reduce((s, t) => s + (Number(t.row_count) || 0), 0);
-
-  // Fetch rich schema and filter to the selected schema's tables
-  useEffect(() => {
-    if (tab !== "erd") return;
-    setErdLoading(true);
-    setErdError(null);
-    Promise.resolve(catalogSchema)
-      .then(full => {
-        if (!full) return;
-        // The rich schema reports fully-qualified names (bakehouse.media_reviews)
-        // while the catalog entry lists bare names (media_reviews). Matching them
-        // directly filters a multi-schema connection's ERD down to nothing
-        // ("No tables found"). Match on the bare last segment, scoped to this
-        // schema, and keep the original qualified names so the diagram's internal
-        // table↔join matching stays consistent.
-        const allowed = new Set(entry.tables.map(t => bare(t.name)));
-        const inSchema = (n: string) => {
-          const s = schemaOf(n);
-          const schemaOk = !s || s === entry.name.toLowerCase();
-          return schemaOk && allowed.has(bare(n));
-        };
-        const filtered: RichSchema = {
-          tables: full.tables.filter(t => inSchema(t.name)),
-          joins: full.joins.filter(j => inSchema(j.t1) && inSchema(j.t2)),
-          isolated: full.isolated?.filter(n => inSchema(n)) ?? [],
-          warnings: full.warnings ?? [],
-        };
-        setErdSchema(filtered);
-      })
-      .catch(() => setErdError("Failed to load schema diagram"))
-      .finally(() => setErdLoading(false));
-  }, [sel.connId, entry.name, tab, entry.tables]);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <DetailHeader
-        icon={<IcoSchema color="var(--blue3)" size={16} />}
-        name={entry.name}
-        breadcrumb={sel.connId}
-        meta={`${entry.tables.length} table${entry.tables.length !== 1 ? "s" : ""}`}
-      />
-      <SchemaProgram connId={sel.connId} ds={view?.schemas.find(s => s.name === entry.name)} view={view ?? null}
-        onChanged={() => onProgramChanged?.()} />
-
-      <TabBar
-        tabs={[
-          { id: "tables", label: `Tables  ${entry.tables.length}` },
-          { id: "erd", label: "ERD" },
-          { id: "shape", label: "Schema Shape" },
-        ]}
-        active={tab}
-        onChange={id => setTab(id as SchemaTab)}
-      />
-
-      {tab === "shape" ? (
-        <div style={{ flex: 1, overflow: "hidden", minWidth: 0, display: "flex", flexDirection: "column" }}>
-          <SchemaShape connectionId={sel.connId} schemaTables={entry.tables.map(t => t.name)} />
-        </div>
-      ) : tab === "erd" ? (
-        <div style={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
-          {erdLoading ? (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: 8 }}>
-              <Pending />
-              <Loading what="the diagram" inline />
-            </div>
-          ) : erdError ? (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
-              <span style={{ fontSize: 11, color: "var(--t3)" }}>{erdError}</span>
-            </div>
-          ) : erdSchema ? (
-            <ERDiagram schema={erdSchema} />
-          ) : null}
-        </div>
-      ) : (
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        {/* Main: table list */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          {/* Filter row */}
-          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)", display: "flex", alignItems: "center", gap: 10 }}>
-            <FilterBox value={filter} onChange={setFilter} placeholder="Filter tables…" />
-            {onRemoved && entry.name.toLowerCase() !== "main" && (
-              <Button variant="ghost" onClick={async () => {
-                if (!confirm(`Remove the entire "${entry.name}" schema from the workspace? This drops all ${entry.tables.length} table(s), their files, and this dataset's saved intelligence (profile + exploration).`)) return;
-                try { await deleteConnectionSchema(sel.connId, entry.name); onRemoved(); }
-                catch (e) { alert((e as Error).message); }
-              }}
-                className="h-auto p-0 font-normal"
-                style={{ marginLeft: "auto", fontSize: 11, padding: "4px 11px", borderRadius: 4, cursor: "pointer", background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)", whiteSpace: "nowrap" }}>
-                Remove schema
-              </Button>
-            )}
-          </div>
-
-          {/* Table header */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "5px 16px", borderBottom: "0.5px solid var(--b1)", background: "var(--bg-0)", flexShrink: 0 }}>
-            {["Name", "Rows", ""].map(h => (
-              <span key={h} style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Rows" ? "right" as const : "left" as const }}>{h}</span>
-            ))}
-          </div>
-
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            {tables.length === 0 && (
-              <p style={{ padding: "20px 16px", fontSize: 11, color: "var(--t3)" }}>{q ? "No tables match." : "No tables found."}</p>
-            )}
-            {tables.map((t, i) => (
-              <div key={t.name}
-                onClick={() => onSelectTable(t)}
-                style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "8px 16px", borderBottom: "0.5px solid var(--b0)", cursor: "pointer", alignItems: "center", background: "transparent" }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "var(--bg-1)"}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                  <IcoTable size={12} />
-                  <span style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
-                  <TableMark view={view} schema={entry.name} table={t.name} />
-                </div>
-                <span style={{ fontSize: 11, color: "var(--t3)", textAlign: "right" }}>{fmtRows(t.row_count)}</span>
-                {onAsk && (
-                  <Button
-                    variant="ghost"
-                    onClick={e => { e.stopPropagation(); onAsk(t.name, sel.connId); }}
-                    className="h-auto p-0 font-normal"
-                    style={{ fontSize: 11, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)", justifySelf: "end" as const }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--blue4)"; (e.currentTarget as HTMLElement).style.background = "var(--blue1)"; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t3)"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                  >Ask →</Button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* About sidebar */}
-        <AboutSidebar
-          title="About this schema"
-          rows={[
-            { label: "Tables",     value: String(entry.tables.length) },
-            { label: "Total rows", value: totalRows > 0 ? fmtRows(totalRows) : "—" },
-            { label: "Catalog",    value: <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{sel.connId}</span> },
-            ...(sel.connId !== "samples" ? [{ label: "Explorer", value: <ExplorationBadge connectionId={sel.connId} /> }] : []),
-          ]}
-        />
-      </div>
-      )}
-    </div>
-  );
-}
-
-// ── Right: CATALOG detail ─────────────────────────────────────────────────────
-
-type CatalogTab = "schemas";
-
-function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testing, testResult, onOpenDocuments, view, onProgramChanged }: {
-  view?:          DatasetsView | null;
-  onProgramChanged?: () => void;
-  sel:            Extract<Sel, { level: "catalog" }>;
-  onSelectSchema: (schema: CatalogSchemaInfo) => void;
-  conn?:          Connection;
-  onTest?:        (id: string) => void;
-  onDelete?:      (id: string) => void;
-  testing?:       boolean;
-  testResult?:    boolean;
-  onOpenDocuments?: () => void;
-}) {
-  const [filter, setFilter] = useState("");
-  const [tab, setTab]       = useState<"overview" | "knowledge" | "volumes" | "permissions">("overview");
-  const [confirmDel, setConfirmDel] = useState(false);
-  const { entry } = sel;
-  const cm = connMeta(entry.conn_type);
-  const effTab = entry.builtin && tab === "knowledge" ? "overview" : tab;
-  const q = filter.toLowerCase();
-  const schemas = q ? entry.schemas.filter(s => s.name.toLowerCase().includes(q) || s.tables.some(t => t.name.toLowerCase().includes(q))) : entry.schemas;
-  const totalTables = entry.schemas.reduce((s, sc) => s + sc.tables.length, 0);
-  const totalRows   = entry.schemas.reduce((s, sc) => s + sc.tables.reduce((a, t) => a + (Number(t.row_count) || 0), 0), 0);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <DetailHeader
-        icon={<IcoCatalog color={cm.color} />}
-        name={entry.name}
-        meta={`${entry.schemas.length} schema${entry.schemas.length !== 1 ? "s" : ""}  ·  ${totalTables} table${totalTables !== 1 ? "s" : ""}`}
-      />
-
-      <TabBar
-        tabs={[
-          { id: "overview", label: `Overview  ${entry.schemas.length}` },
-          { id: "volumes", label: "Volumes" },
-          { id: "permissions", label: "Permissions" },
-          // "Schema docs", not "Knowledge": this tab shows what the ontology COMPILED for
-          // this connection, which is genuinely per-connection. Uploaded documents are
-          // not — `index_file` takes no connection — and calling both Knowledge was how
-          // this tab came to promise a scope the corpus does not have.
-          ...(entry.builtin ? [] : [{ id: "knowledge", label: "Schema docs" }]),
-        ]}
-        active={effTab}
-        onChange={id => setTab(id as "overview" | "knowledge" | "volumes" | "permissions")}
-      />
-
-      {effTab === "volumes" ? (
-        <VolumesPanel catalogId={entry.conn_id} />
-      ) : effTab === "permissions" ? (
-        <PermissionsPanel catalogId={entry.conn_id} />
-      ) : effTab === "knowledge" ? (
-        <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
-          <SchemaDocsTab entry={entry} onOpenDocuments={onOpenDocuments} />
-        </div>
-      ) : (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Main: schema list (Overview tab) */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-          {/* Filter row */}
-          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)" }}>
-            <FilterBox value={filter} onChange={setFilter} placeholder="Filter schemas…" />
-          </div>
-
-          {/* Schema header */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "5px 16px", borderBottom: "0.5px solid var(--b1)", background: "var(--bg-0)", flexShrink: 0 }}>
-            {["Name", "Tables", ""].map((h, i) => (
-              <span key={h + i} style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Tables" ? "right" as const : "left" as const }}>{h}</span>
-            ))}
-          </div>
-
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            {schemas.length === 0 && (
-              <p style={{ padding: "20px 16px", fontSize: 11, color: "var(--t3)" }}>{q ? "No schemas match." : "No schemas found."}</p>
-            )}
-            {schemas.map((sc, i) => {
-              const schRows = sc.tables.reduce((s, t) => s + (Number(t.row_count) || 0), 0);
-              return (
-                <div key={sc.name}
-                  onClick={() => onSelectSchema(sc)}
-                  style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "10px 16px", borderBottom: "0.5px solid var(--b0)", cursor: "pointer", alignItems: "center", background: "transparent" }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "var(--bg-1)"}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                    <IcoSchema color="var(--blue3)" size={14} />
-                    <div>
-                      <p style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)", display: "flex", alignItems: "center", gap: 8 }}>
-                        {sc.name}
-                        <SchemaMark view={view} schema={sc.name} />
-                      </p>
-                      <p style={{ fontSize: 11, color: "var(--t3)", marginTop: 1 }}>{schRows > 0 ? fmtRows(schRows) + " rows" : ""}</p>
-                    </div>
-                  </div>
-                  <span style={{ fontSize: 11, color: "var(--t3)", textAlign: "right" }}>{sc.tables.length}</span>
-                  <span style={{ color: "var(--t3)", justifySelf: "end" as const, display: "inline-flex" }}>
-                    <Icon name="chevr" size={12} />
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Footer: briefings opt-in (all real connections) + connector actions + management */}
-        {entry.conn_id !== "samples" && (
-          <div style={{ flexShrink: 0, background: "var(--bg-0)" }}>
-          <ConnectionProgram connId={entry.conn_id} view={view ?? null} onChanged={() => onProgramChanged?.()} />
-          <BriefingsToggle connId={entry.conn_id} />
-          {!entry.builtin && (
-          <>
-          <ConnectorActions connId={entry.conn_id} connType={entry.conn_type} />
-
-          {/* Connection management actions (test / remove) */}
-          {conn && (
-            <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--b1)", display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
-              <Button variant="ghost" onClick={() => onTest?.(entry.conn_id)} disabled={testing}
-                className="h-auto p-0"
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500, cursor: testing ? "not-allowed" : "pointer",
-                  background: "var(--bg-1)", border: `0.5px solid ${testResult === true ? "var(--grn2)" : testResult === false ? "var(--red2)" : "var(--b2)"}`,
-                  color: testResult === true ? "var(--grn4)" : testResult === false ? "var(--red4)" : "var(--t2)", opacity: testing ? 0.6 : 1 }}>
-                {testing ? "Testing…" : testResult === true ? "✓ Connection OK" : testResult === false ? "✗ Failed" : "Test connection"}
-              </Button>
-              <Button variant="ghost" onClick={() => setConfirmDel(true)}
-                className="h-auto p-0"
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500, cursor: "pointer",
-                  background: "transparent", border: "0.5px solid var(--red2)", color: "var(--red4)" }}>
-                Remove connection
-              </Button>
-
-              {/* Confirmation popup */}
-              {confirmDel && (
-                <>
-                  <div onClick={() => setConfirmDel(false)} style={{ position: "fixed", inset: 0, background: "var(--scrim)", zIndex: 300 }} />
-                  <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 301, width: 340,
-                    background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 8, padding: 20, boxShadow: "var(--shadow-xl)" }}>
-                    <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", marginBottom: 8 }}>Remove connection?</p>
-                    <p style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.5, marginBottom: 18 }}>
-                      <span style={{ color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{entry.name}</span> will be disconnected and removed from your catalog. This cannot be undone.
-                    </p>
-                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                      <Button variant="ghost" onClick={() => setConfirmDel(false)}
-                        className="h-auto p-0 font-normal"
-                        style={{ fontSize: 12, padding: "6px 14px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)" }}>Cancel</Button>
-                      <Button variant="ghost" onClick={() => { setConfirmDel(false); onDelete?.(entry.conn_id); }}
-                        className="h-auto p-0"
-                        style={{ fontSize: 12, padding: "6px 14px", borderRadius: 4, cursor: "pointer", background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)", fontWeight: 500 }}>Remove</Button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-          </>
-          )}
-          </div>
-        )}
-      </div>
-      )}
-    </div>
-  );
-}
-
-// ── Right: Catalog home (Suggested / Favorites / Recents) ──────────────────────
-
-const FAVS_KEY    = "aug.catalog.favs";
-const RECENTS_KEY = "aug.catalog.recents";
-
-interface FlatItem {
-  key:        string;
-  name:       string;
-  type:       "Catalog" | "Schema" | "Table";
-  path:       string;
-  reason:     string;
-  rows:       number | null;
-  connId:     string;
-  schemaName?: string;
-  tableName?:  string;
-}
-
-function readLS(key: string): string[] {
-  try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch { return []; }
-}
-function writeLS(key: string, v: string[]) { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* noop */ } }
-function pushRecent(key: string) {
-  const cur = readLS(RECENTS_KEY).filter(k => k !== key);
-  writeLS(RECENTS_KEY, [key, ...cur].slice(0, 15));
-}
-
-function flattenTree(tree: CatalogTree | null): FlatItem[] {
-  if (!tree) return [];
-  const out: FlatItem[] = [];
-  tree.sections.forEach(sec => sec.entries.forEach(cat => {
-    const totT = cat.schemas.reduce((s, x) => s + x.tables.length, 0);
-    out.push({ key: `${cat.conn_id}::`, name: cat.name, type: "Catalog", path: sec.label,
-      reason: `${cat.schemas.length} schema${cat.schemas.length !== 1 ? "s" : ""} · ${totT} table${totT !== 1 ? "s" : ""}`, rows: null, connId: cat.conn_id });
-    cat.schemas.forEach(sc => {
-      out.push({ key: `${cat.conn_id}:${sc.name}:`, name: sc.name, type: "Schema", path: cat.name,
-        reason: `${sc.tables.length} table${sc.tables.length !== 1 ? "s" : ""}`, rows: null, connId: cat.conn_id, schemaName: sc.name });
-      sc.tables.forEach(t => {
-        out.push({ key: `${cat.conn_id}:${sc.name}:${t.name}`, name: t.name, type: "Table", path: `${cat.name}.${sc.name}`,
-          reason: t.row_count != null ? `${fmtRows(t.row_count)} rows` : "Table", rows: t.row_count, connId: cat.conn_id, schemaName: sc.name, tableName: t.name });
-      });
-    });
-  }));
-  return out;
-}
-
-const typeIcon = (t: FlatItem["type"]) =>
-  t === "Catalog" ? <IcoCatalog color="var(--t2)" /> :
-  t === "Schema"  ? <IcoSchema color="var(--blue3)" size={15} /> :
-                    <IcoTable size={15} />;
-
-function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: (it: FlatItem) => void }) {
-  const [view, setView]     = useState<"suggested" | "favorites" | "recents">("suggested");
-  const [filter, setFilter] = useState("");
-  const [favs, setFavs]       = useState<string[]>([]);
-  const [recents, setRecents] = useState<string[]>([]);
-  useEffect(() => { setFavs(readLS(FAVS_KEY)); setRecents(readLS(RECENTS_KEY)); }, []);
-
-  const all   = useMemo(() => flattenTree(tree), [tree]);
-  const byKey = useMemo(() => Object.fromEntries(all.map(i => [i.key, i])), [all]);
-
-  const toggleFav = (k: string) => setFavs(prev => {
-    const n = prev.includes(k) ? prev.filter(x => x !== k) : [k, ...prev];
-    writeLS(FAVS_KEY, n);
-    return n;
-  });
-
-  let items: FlatItem[];
-  if (view === "favorites")    items = favs.map(k => byKey[k]).filter(Boolean);
-  else if (view === "recents") items = recents.map(k => byKey[k]).filter(Boolean);
-  else {
-    const tables  = all.filter(i => i.type === "Table").sort((a, b) => (b.rows || 0) - (a.rows || 0));
-    const schemas = all.filter(i => i.type === "Schema");
-    const cats    = all.filter(i => i.type === "Catalog");
-    items = [...tables.slice(0, 14), ...schemas.slice(0, 6), ...cats].slice(0, 26);
-  }
-  const q = filter.toLowerCase();
-  if (q) items = items.filter(i => i.name.toLowerCase().includes(q) || i.path.toLowerCase().includes(q));
-
-  const chips: { id: typeof view; label: string; icon: React.ReactNode }[] = [
-    { id: "suggested", label: "Suggested", icon: <Icon name="idea" size={13} /> },
-    { id: "favorites", label: "Favorites", icon: <Icon name="star" size={13} /> },
-    { id: "recents",   label: "Recents",   icon: <Icon name="clock" size={13} /> },
-  ];
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--bg-0)" }}>
-      <div style={{ padding: "20px 28px 0", flexShrink: 0 }}>
-        {/* Chips + filter */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
-          <div style={{ display: "flex", gap: 8 }}>
-            {chips.map(c => {
-              const on = view === c.id;
-              return (
-                <Button variant="ghost" key={c.id} onClick={() => setView(c.id)}
-                  className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
-                  style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 500, padding: "6px 14px", borderRadius: "var(--r-chip)", cursor: "pointer",
-                    background: on ? "rgba(45,114,210,0.13)" : "transparent",
-                    color: on ? "var(--blue5)" : "var(--t2)",
-                    border: `1px solid ${on ? "rgba(45,114,210,0.45)" : "var(--b1)"}` }}
-                  onMouseEnter={e => { if (!on) (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)"; }}
-                  onMouseLeave={e => { if (!on) (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; }}
-                >
-                  <span style={{ display: "flex" }}>{c.icon}</span>{c.label}
-                </Button>
-              );
-            })}
-          </div>
-          <FilterBox value={filter} onChange={setFilter} placeholder="Filter…" />
-        </div>
-      </div>
-
-      {/* Table */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "10px 16px 24px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(0,1.6fr) 120px", padding: "7px 12px", borderBottom: "0.5px solid var(--b1)", position: "sticky", top: 0, background: "var(--bg-0)", zIndex: 1 }}>
-          {["Name", view === "suggested" ? "Reason for suggestion" : "Location", "Type"].map(h => (
-            <span key={h} style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</span>
-          ))}
-        </div>
-
-        {items.length === 0 ? (
-          <p style={{ fontSize: 13, color: "var(--t3)", padding: "28px 12px", lineHeight: 1.6 }}>
-            {/* PX-1 — this pane once said "Add a connection to get started" while the
-                tree beside it was still LOADING seven live connections. Each state
-                tells its own truth: loading is loading, a filter miss is a filter
-                miss, and the add-a-connection door is offered only when there
-                genuinely is no connection. */}
-            {view === "favorites" ? "No favorites yet. Hover a row and tap the star to pin it here."
-              : view === "recents" ? "No recent items yet. Open a table to see it here."
-              : tree === null ? "Loading the catalog…"
-              : filter.trim() ? "Nothing in the catalog matches that filter."
-              : tree.sections.some(s => s.entries.length > 0)
-                ? "No tables have surfaced yet — open a connection in the tree to browse its schemas."
-                : "No connections yet. Add one to get started."}
-          </p>
-        ) : items.map(it => {
-          const fav = favs.includes(it.key);
-          return (
-            <div key={it.key + view} onClick={() => onPick(it)}
-              className="aug-home-row"
-              style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(0,1.6fr) 120px", alignItems: "center",
-                padding: "10px 12px", borderBottom: "0.5px solid var(--b0)", cursor: "pointer", borderRadius: 4 }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)"}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
-                <span style={{ display: "flex", flexShrink: 0 }}>{typeIcon(it.type)}</span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--blue5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>{it.path}</div>
-                </div>
-              </div>
-              <span style={{ fontSize: 13, color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {view === "suggested" ? it.reason : it.path}
-              </span>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                <span style={{ fontSize: 13, color: "var(--t2)" }}>{it.type}</span>
-                <Button variant="ghost" onClick={e => { e.stopPropagation(); toggleFav(it.key); }} title={fav ? "Unfavorite" : "Favorite"}
-                  className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
-                  style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: fav ? "var(--amb4)" : "var(--t3)", display: "flex" }}
-                  onMouseEnter={e => { if (!fav) (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
-                  onMouseLeave={e => { if (!fav) (e.currentTarget as HTMLElement).style.color = "var(--t3)"; }}
-                >
-                  <Icon name="star" size={13} className={fav ? "aug-icon-filled" : undefined} />
-                </Button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── Right: Empty state ────────────────────────────────────────────────────────
-
-function EmptyDetail() {
-  return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 40 }}>
-      <span style={{ color: "var(--t3)", display: "inline-flex" }}>
-        <Icon name="db" size={48} />
-      </span>
-      <div style={{ textAlign: "center" }}>
-        <p style={{ fontSize: 15, fontWeight: 500, color: "var(--t3)", marginBottom: 6 }}>Select an item to view details</p>
-        <p style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.6 }}>
-          Click a catalog, schema, or table<br />in the tree to explore it
-        </p>
-      </div>
-    </div>
   );
 }
 
@@ -1446,110 +186,14 @@ function TreeRow({
   );
 }
 
-// ── Main CatalogScreen ────────────────────────────────────────────────────────
-
-/** What the ontology compiled FOR THIS CONNECTION, which is the only part of the corpus
- *  that is per-connection at all.
- *
- *  This tab used to host the uploader and tell people it gave Aughor "institutional
- *  knowledge about {connection}". It did not: `index_file` takes no connection, so an
- *  upload here was retrievable everywhere and belonged to nothing. Schema docs are the
- *  genuine article — `doctree::<connection>::<schema>`, one chunk per table, rebuilt when
- *  intelligence runs — so this tab now shows those and sends uploads to their real home.
- *
- *  The chunk count comes from the registry, and the registry is not the index: measured on
- *  a real install, one document claimed 59 chunks where the store held 5. When they
- *  disagree, both numbers appear. */
-function SchemaDocsTab({ entry, onOpenDocuments }: {
-  entry: { conn_id: string; name: string };
-  onOpenDocuments?: () => void;
-}) {
-  const [docs, setDocs] = useState<DocumentEntry[]>([]);
-  const [status, setStatus] = useState<KnowledgeStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  // A failed read of the documents used to read as "Nothing compiled yet".
-  const [failed, setFailed] = useState<string | null>(null);
-  const [reload, setReload] = useState(0);
-
-  useEffect(() => {
-    let alive = true;
-    let docsFailed: string | null = null;
-    Promise.all([
-      listDocuments().catch(e => { docsFailed = String(e?.message || e); return [] as DocumentEntry[]; }),
-      getKnowledgeStatus().catch(() => null),
-    ]).then(([d, st]) => {
-        if (!alive) return;
-        setDocs(d.filter(x => x.doc_id.startsWith(`doctree::${entry.conn_id}::`)));
-        setStatus(st);
-        setFailed(docsFailed);
-        setLoading(false);
-      });
-    return () => { alive = false; };
-  }, [entry.conn_id, reload]);
-
-  return (
-    <div style={{ maxWidth: 640 }}>
-      <p className="aug-fs-sm" style={{ color: "var(--t2)", marginBottom: 14, lineHeight: 1.5 }}>
-        Documentation Aughor compiled for{" "}
-        <span style={{ color: "var(--t1)", fontWeight: 500 }}>{entry.name}</span> — one entry
-        per schema, one chunk per table, rebuilt whenever intelligence runs over it. Answers
-        retrieve from these the same way they retrieve from uploaded documents.
-      </p>
-
-      {loading ? (
-        <Loading what="the schema documentation" />
-      ) : failed !== null ? (
-        <ReadFailed what="the schema documentation" error={failed} onRetry={() => setReload(n => n + 1)} />
-      ) : docs.length === 0 ? (
-        <p className="aug-fs-sm" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
-          Nothing compiled yet. Schema documentation is written when intelligence runs over
-          a schema, so this fills in after the first exploration of {entry.name}.
-        </p>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {docs.map(d => {
-            const drift = status?.consistency.mismatched_documents?.[d.doc_id];
-            return (
-              <div key={d.doc_id} style={{
-                display: "flex", justifyContent: "space-between", alignItems: "baseline",
-                padding: "8px 10px", border: "1px solid var(--b1)", borderRadius: 6,
-              }}>
-                <span className="aug-fs-sm" style={{ color: "var(--t1)" }}>{d.title}</span>
-                <span className="aug-fs-xs" style={{ color: drift ? "var(--amb4)" : "var(--t3)", fontFamily: "var(--font-mono)" }}>
-                  {drift
-                    ? `${drift.store} indexed of ${drift.registry} claimed`
-                    : `${d.chunk_count} chunk${d.chunk_count !== 1 ? "s" : ""}`}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <p className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 16, lineHeight: 1.5 }}>
-        Uploading your own documents — policies, runbooks, reports — happens in{" "}
-        {onOpenDocuments ? (
-          <Button
-            variant="link" size="xs"
-            type="button"
-            onClick={onOpenDocuments}
-          >
-            Intelligence → Documents
-          </Button>
-        ) : "Intelligence → Documents"}
-        . That corpus is shared across every connection, which is why it does not live here.
-      </p>
-    </div>
-  );
-}
-
-
 interface Props {
   connections:      Connection[];
   selectedConn:     string;
   onSelect:         (id: string) => void;
   onDeleteConn:     (conn: Connection) => void;
   onChatWithTable?: (table: string, connId: string) => void;
+  /** Ask about a catalog or a schema of it — the question in words, for the chat to answer. */
+  onAsk?:           (question: string, connId: string) => void;
   /** Active workspace — scopes the catalog tree to its connections' schemas. */
   workspaceId?:     string;
   /** Open the global document corpus. Threaded from the shell rather than linked by
@@ -1565,10 +209,12 @@ interface Props {
   openAddDataNonce?: number;
 }
 
-export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteConn, onChatWithTable, workspaceId, onOpenDocuments, openAddDataNonce = 0 }: Props) {
+export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteConn, onChatWithTable, onAsk, workspaceId, onOpenDocuments, openAddDataNonce = 0 }: Props) {
   const { refresh: refreshSchema } = useSchema();
   const [tree, setTree]         = useState<CatalogTree | null>(null);
   const [treeLoading, setTreeL] = useState(true);
+  // A failed read of the tree is said on the right, with a retry — never "Loading the catalog…" for ever.
+  const [treeError, setTreeError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["section:connections", "catalog:workspace", "schema:workspace:ecommerce"]));
   const [sel, setSel]           = useState<Sel>(null);
   const [showAddData, setShowAddData] = useState(false);
@@ -1577,13 +223,20 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
   const [testRes, setTestRes]   = useState<Record<string, boolean>>({});
   const q = search.toLowerCase();
   const selConn = connections.find(c => c.id === selectedConn);
-  // Each open catalog's datasets — layer, off, maturity, budget — read once it is opened.
+  // Each catalog's datasets — layer, off, maturity, budget. Read for every catalog once the tree is in (the overview
+  // says how far each is explored), and again after a change; absent is "being read", null is "the read failed".
   const [datasets, setDatasets] = useState<Record<string, DatasetsView | null>>({});
+  const inFlight = useRef(new Set<string>());
   const loadDatasets = (connId: string) => {
     if (connId === "samples") return;
+    inFlight.current.add(connId);
     getDatasets(connId)
       .then(v => setDatasets(prev => ({ ...prev, [connId]: v })))
-      .catch(err => { console.error("[CatalogScreen] datasets read failed:", err); setDatasets(prev => ({ ...prev, [connId]: null })); });
+      .catch(err => { console.error("[CatalogScreen] datasets read failed:", err); setDatasets(prev => ({ ...prev, [connId]: null })); })
+      .finally(() => inFlight.current.delete(connId));
+  };
+  const loadDatasetsOnce = (connId: string) => {
+    if (!(connId in datasets) && !inFlight.current.has(connId)) loadDatasets(connId);
   };
 
   const loadTree = () => {
@@ -1591,6 +244,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
     return getCatalogTree(workspaceId)
       .then(t => {
         setTree(t);
+        setTreeError(null);
         const uc = t.sections.find(s => s.id === "connections");
         if (uc && uc.entries.length > 0) {
           const first = uc.entries[0];
@@ -1603,7 +257,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         }
         return t;   // callers await this to confirm a new connection is really listed
       })
-      .catch(err => { console.error("[CatalogScreen] tree load failed:", err); return null; })
+      .catch(err => { console.error("[CatalogScreen] tree load failed:", err); setTreeError(String(err?.message ?? err)); return null; })
       .finally(() => setTreeL(false));
   };
 
@@ -1623,8 +277,25 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
   useEffect(() => {
     const open = [...expanded].filter(k => k.startsWith("catalog:")).map(k => k.slice("catalog:".length));
     if (sel?.connId) open.push(sel.connId);
-    for (const id of new Set(open)) if (!(id in datasets)) loadDatasets(id);
+    for (const id of new Set(open)) loadDatasetsOnce(id);
   }, [expanded, sel?.connId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The search index's status — which documents it cannot search — read ONCE while this screen is mounted: the read
+  // probes the embedder with one embedding call, so a panel must not repeat it on every selection.
+  const [indexStatus, setIndexStatus] = useState<KnowledgeStatus | null | undefined>(undefined);
+  useEffect(() => {
+    let alive = true;
+    getKnowledgeStatus().then(s => { if (alive) setIndexStatus(s); }).catch(() => { if (alive) setIndexStatus(null); });
+    return () => { alive = false; };
+  }, []);
+
+  const entries = useMemo(() => tree?.sections.flatMap(s => s.entries) ?? [], [tree]);
+  useEffect(() => { for (const e of entries) loadDatasetsOnce(e.conn_id); }, [entries]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Two connections listing the same tables with the same row counts; the one explored less is the copy.
+  const dups = useMemo(() => findDuplicates(entries, id => {
+    const v = datasets[id];
+    return v ? explored(v.schemas).percent : null;
+  }), [entries, datasets]);
 
   const handleDelete = (id: string) => {
     const conn = connections.find(c => c.id === id);
@@ -1730,7 +401,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
                 badge={<TableMark view={datasets[entry.conn_id]} schema={schema.name} table={table.name} />}
                 isSelected={isSel}
                 hasChildren={false}
-                onClick={() => { pushRecent(`${entry.conn_id}:${schema.name}:${table.name}`); setSel({ level: "table", connId: entry.conn_id, schemaName: schema.name, table }); }}
+                onClick={() => { recents.push(itemKey.table(entry.conn_id, schema.name, table.name)); setSel({ level: "table", connId: entry.conn_id, schemaName: schema.name, table }); }}
               />
             );
           });
@@ -1740,56 +411,69 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
     return nodes;
   };
 
+  const entryOf = (connId: string) => entries.find(e => e.conn_id === connId);
+  const expand = (...keys: string[]) => setExpanded(p => { const n = new Set(p); keys.forEach(k => n.add(k)); return n; });
+  const removed = () => { setSel(null); loadTree(); refreshSchema(); };
+
+  const openCatalog = (connId: string) => {
+    const cat = entryOf(connId);
+    if (!cat) return;
+    setSel({ level: "catalog", connId, entry: cat });
+    onSelect(connId);
+    expand(`catalog:${connId}`);
+  };
+  const openSchema = (connId: string, sc: CatalogSchemaInfo) => {
+    setSel({ level: "schema", connId, schemaName: sc.name, entry: sc });
+    expand(`catalog:${connId}`, `schema:${connId}:${sc.name}`);
+  };
+  const openTable = (connId: string, schemaName: string, table: CatalogTableInfo) => {
+    // The tree's own table, so the row it highlights is the one opened.
+    const tb = entryOf(connId)?.schemas.find(s => s.name === schemaName)?.tables.find(t => t.name === table.name) ?? table;
+    recents.push(itemKey.table(connId, schemaName, tb.name));
+    setSel({ level: "table", connId, schemaName, table: tb });
+    expand(`catalog:${connId}`, `schema:${connId}:${schemaName}`);
+  };
+  const pick = (it: CatalogItem) => {
+    onSelect(it.connId);
+    const cat = entryOf(it.connId);
+    if (!cat) return;
+    expand(`catalog:${it.connId}`, ...(it.schemaName ? [`schema:${it.connId}:${it.schemaName}`] : []));
+    if (it.type === "Table" && it.schemaName && it.tableName) {
+      const tb = cat.schemas.find(s => s.name === it.schemaName)?.tables.find(t => t.name === it.tableName);
+      if (tb) openTable(it.connId, it.schemaName, tb);
+    } else if (it.type === "Schema" && it.schemaName) {
+      const sc = cat.schemas.find(s => s.name === it.schemaName);
+      if (sc) openSchema(it.connId, sc);
+    } else {
+      setSel({ level: "catalog", connId: it.connId, entry: cat });
+    }
+  };
+
   const renderDetail = () => {
     if (!sel) return (
-      <CatalogHomePanel tree={tree} onPick={it => {
-        setExpanded(p => { const n = new Set(p); n.add(`catalog:${it.connId}`); if (it.schemaName) n.add(`schema:${it.connId}:${it.schemaName}`); return n; });
-        onSelect(it.connId);
-        const cat = tree?.sections.flatMap(s => s.entries).find(e => e.conn_id === it.connId);
-        if (!cat) return;
-        if (it.type === "Table" && it.schemaName && it.tableName) {
-          const sc = cat.schemas.find(s => s.name === it.schemaName);
-          const tb = sc?.tables.find(t => t.name === it.tableName);
-          if (tb) { pushRecent(it.key); setSel({ level: "table", connId: it.connId, schemaName: it.schemaName, table: tb }); }
-        } else if (it.type === "Schema" && it.schemaName) {
-          const sc = cat.schemas.find(s => s.name === it.schemaName);
-          if (sc) setSel({ level: "schema", connId: it.connId, schemaName: it.schemaName, entry: sc });
-        } else {
-          setSel({ level: "catalog", connId: it.connId, entry: cat });
-        }
-      }} />
+      <CatalogHome tree={tree} treeError={treeError} onRetryTree={() => { loadTree(); }} views={datasets} dups={dups}
+        status={indexStatus}
+        label={connectorLabel} onOpenCatalog={openCatalog} onRetryViews={loadDatasets} onPick={pick} />
     );
     if (sel.level === "table") return (
-      <TableDetailPanel sel={sel} onAsk={onChatWithTable}
-        onRemoved={() => { setSel(null); loadTree(); refreshSchema(); }}
-        view={datasets[sel.connId]} onProgramChanged={() => loadDatasets(sel.connId)}
-      />
+      <CatalogTable key={`${sel.connId}:${sel.schemaName}:${sel.table.name}`} connId={sel.connId}
+        catalogName={entryOf(sel.connId)?.name ?? sel.connId} schemaName={sel.schemaName} table={sel.table}
+        view={datasets[sel.connId]} onAsk={onChatWithTable} onRemoved={removed}
+        onProgramChanged={() => loadDatasets(sel.connId)} />
     );
-    if (sel.level === "schema") return (
-      <SchemaDetailPanel sel={sel}
-        connName={connections.find(c => c.id === sel.connId)?.name}
-        onSelectTable={t => setSel({ level: "table", connId: sel.connId, schemaName: sel.schemaName, table: t })}
-        onAsk={onChatWithTable}
-        onRemoved={() => { setSel(null); loadTree(); refreshSchema(); }}
-        view={datasets[sel.connId]} onProgramChanged={() => loadDatasets(sel.connId)}
-      />
+    const entry: CatalogEntry = entryOf(sel.connId) ?? (sel.level === "catalog" ? sel.entry
+      : { conn_id: sel.connId, name: sel.connId, conn_type: "", builtin: false, schemas: [sel.entry] });
+    const schema = sel.level === "schema" ? (entry.schemas.find(s => s.name === sel.schemaName) ?? sel.entry) : undefined;
+    return (
+      <CatalogScope key={`${sel.connId}:${schema?.name ?? ""}`} entry={entry} schema={schema}
+        view={datasets[sel.connId]} conn={connections.find(c => c.id === sel.connId)} dups={dups} label={connectorLabel}
+        status={indexStatus}
+        onOpenTable={(sch, t) => openTable(sel.connId, sch, t)} onOpenSchema={sc => openSchema(sel.connId, sc)}
+        onOpenCatalog={openCatalog} onProgramChanged={() => loadDatasets(sel.connId)}
+        onAsk={onAsk ? question => onAsk(question, sel.connId) : undefined}
+        onTest={() => handleTest(sel.connId)} testing={testing === sel.connId} testResult={testRes[sel.connId]}
+        onDelete={() => handleDelete(sel.connId)} onRemoved={removed} onOpenDocuments={onOpenDocuments} />
     );
-    if (sel.level === "catalog") return (
-      <CatalogDetailPanel sel={sel}
-        view={datasets[sel.connId]} onProgramChanged={() => loadDatasets(sel.connId)}
-        onOpenDocuments={onOpenDocuments}
-        conn={connections.find(c => c.id === sel.connId)}
-        onTest={handleTest}
-        onDelete={handleDelete}
-        testing={testing === sel.connId}
-        testResult={testRes[sel.connId]}
-        onSelectSchema={sc => {
-          setSel({ level: "schema", connId: sel.connId, schemaName: sc.name, entry: sc });
-          setExpanded(p => { const n = new Set(p); n.add(`schema:${sel.connId}:${sc.name}`); return n; });
-        }}
-      />
-    );
-    return <EmptyDetail />;
   };
 
   if (showAddData) {

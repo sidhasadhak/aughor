@@ -2386,6 +2386,10 @@ export default function Home() {
                         if (connId !== selectedConn) setSelectedConn(connId);
                         goToChat(`Tell me about the ${table} table`);
                       }}
+                      onAsk={(question, connId) => {
+                        if (connId !== selectedConn) setSelectedConn(connId);
+                        goToChat(question);
+                      }}
                     />
                   );
                 }}
