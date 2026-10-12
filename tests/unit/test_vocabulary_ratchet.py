@@ -546,11 +546,13 @@ BASELINE: dict[str, int] = {
     "databricks": 45,
     # 2026-09-13: 165 → 145. Instrument redrew the Briefing: its digest tiles went, and with them
     # every spelling left in BriefingPanel.tsx.
-    "digest": 145,
+    # 2026-10-12: 145 → 139. Security & Audit redone to CLARITY: the log's SQL cell names its text `short`.
+    "digest": 139,
     "expertise": 43,
     # 58 → 28: FleetOverviewPanel and the api.ts client are exempt — they name the
     # frozen /control-room/fleet route and its component. No reader sees the word.
-    "fleet": 26,
+    # 2026-10-12: 26 → 25. Security & Audit's caller names moved to lib/auditFold.ts without the old roster note.
+    "fleet": 25,
     "foundry": 0,
     "genie": 23,
     "hire": 24,  # paid down 2026-08-22: the create flow replaced the hire wording
@@ -578,7 +580,8 @@ BASELINE: dict[str, int] = {
     # (GET /investigations, `investigation.*` events) and the header's Investigate door.
     # 2026-09-14: 573 → 583, a RAISE: the restored Briefing's Investigate doors (+15), less
     # the shell header's Investigate door that the restore took out (−5).
-    "investigation_in_web": 581,
+    # 2026-10-12: 581 → 576, measured; Security & Audit's redo took one, the rest is slack other waves left.
+    "investigation_in_web": 576,
     # Lowered twice over, by two waves that landed together. DS-11's completion reworded
     # four prose hits in `actions/inbox.py` and exempted the inbox suite; DS-13 exempted
     # `aughor/actions/executor.py` and its own suite, where every hit is a type name, an

@@ -5156,6 +5156,8 @@ export interface MonitorProof {
   /** "last proven working …" / "never proven — no drill, no delivered alert" — the server's sentence. */
   sentence: string;
   last_drill: MonitorDrill | null;
+  /** The last real alert this monitor delivered (a notification log row), when there was one. */
+  last_real_delivery?: { fired_at?: string; [k: string]: unknown } | null;
 }
 
 async function monitorProofCall<T>(path: string, init?: RequestInit): Promise<T> {

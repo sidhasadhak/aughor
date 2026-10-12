@@ -1,5 +1,11 @@
 "use client";
-import React, { useEffect, useState, useCallback } from "react";
+/**
+ * Monitors — redone to `aughor-v2/CLARITY.md` (2026-10-12): four figures (how many, open alerts, proven to fire,
+ * checks a day), then what needs a person — open alerts, monitors never proven to fire — then the alerts over twelve
+ * weeks, then the monitors as rows of one line each. A monitor's rule, query, proof and its Edit and Delete sit behind
+ * its Details; identical alerts fold into one row with a count.
+ */
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   MonitorDef,
   MonitorAlert,
@@ -17,8 +23,6 @@ import {
   drillMonitor,
   getMonitorProof,
 } from "@/lib/api";
-import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
@@ -26,10 +30,19 @@ import { TabStrip } from "@/components/ui/tab-strip";
 import { RadioCards } from "@radix-ui/themes";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { takeMonitorDraft } from "@/lib/query/monitorDraft";
-import { Loading } from "@/components/ui/states";
+import { Loading, ReadFailed } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Icon } from "@/components/ui/icon";
+import { formatCount, relTime } from "@/lib/format";
+import {
+  alertText, alertsByWeek, channelWords, checksPerDay, dayMonth, FIRES, foldAlerts, proofState, proofWords, ruleWords,
+  scheduleMix, scheduleWords, short, type AlertGroup, type ProofState,
+} from "@/lib/monitorSummary";
+import {
+  CARD, Chip, Columns, Dot, Figure, Figures, Label, MUTED, NeedsRow, NeedsYou, ONE_LINE, Page, ROW, type Tone,
+} from "@/components/clarity/kit";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -53,15 +66,20 @@ const CRON_PRESETS = [
   { label: "Custom",   cron: "" },
 ];
 
-const SEVERITY_COLOR: Record<string, string> = {
-  critical: "var(--red3)",
-  warning:  "var(--amb3)",
-  info:     "var(--blue3)",
+/** A severity names a state by its hue (INSTRUMENT §3): critical adverse, warning needs a person, info plain. */
+const SEVERITY_HUE: Record<string, "red" | "amber" | "blue"> = { critical: "red", warning: "amber", info: "blue" };
+
+const plural = (n: number, one: string, many = `${one}s`) => `${formatCount(n)} ${n === 1 ? one : many}`;
+
+/** The proof chip's tone: amber where a person is owed a proof, green where the alert path was seen end to end. */
+const PROOF_TONE: Record<ProofState, Tone> = {
+  proven: "up", delivered: "up", checked: "plain", undelivered: "amber", silent: "amber", never: "amber", unknown: "plain",
 };
-/** The same severities as a badge: the hue names the state (INSTRUMENT.md §2). */
-const SEVERITY_BADGE: Record<string, "destructive" | "amber" | "default"> = {
-  critical: "destructive", warning: "amber", info: "default",
-};
+
+/** The server's proof sentence with its timestamps as a person reads them. */
+function proofSentence(s: string): string {
+  return s.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?/g, iso => dayMonth(iso));
+}
 
 // ── Blank form state ──────────────────────────────────────────────────────────
 
@@ -101,6 +119,8 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
   const [alerts, setAlerts]       = useState<MonitorAlert[]>([]);
   const [metrics, setMetrics]     = useState<Metric[]>([]);
   const [loading, setLoading]     = useState(false);
+  const [loaded, setLoaded]       = useState(false);
+  const [readFailed, setReadFailed] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<MonitorDef | null>(null);
   const [form, setForm]           = useState<Partial<MonitorDef> & { conn_id: string; name: string }>(blankForm(connId ?? ""));
   const [cronPreset, setCronPreset] = useState("0 * * * *");
@@ -109,6 +129,10 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
   const [runResult, setRunResult] = useState<Record<string, string>>({});
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState<string | null>(null);
+  /** Each monitor's proof — null where the read failed, absent while it is being read. */
+  const [proofs, setProofs]       = useState<Record<string, MonitorProof | null>>({});
+  const [checking, setChecking]   = useState(false);
+  const [openRows, setOpenRows]   = useState<ReadonlySet<string>>(new Set());
 
   // SE-4 I — a statement handed over by the query workbench's "Schedule". Opens the
   // form on the custom-SQL source with the SQL already in it, and stops there: the
@@ -123,6 +147,14 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
     setView("form");
   }, [connId]);
 
+  const readProofs = useCallback(async (ms: MonitorDef[]) => {
+    const got = await Promise.allSettled(ms.map(m => getMonitorProof(m.id)));
+    setProofs(Object.fromEntries(ms.map((m, i) => {
+      const r = got[i];
+      return [m.id, r.status === "fulfilled" ? r.value : null];
+    })));
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -134,12 +166,15 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
       setMonitors(ms);
       setAlerts(as);
       setMetrics(mets);
-    } catch (e: any) {
-      setError(e.message);
+      setReadFailed(null);
+      void readProofs(ms);
+    } catch (e: unknown) {
+      setReadFailed(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
-  }, [connId, workspaceId]);
+  }, [connId, workspaceId, readProofs]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -183,8 +218,8 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
       }
       await load();
       setView("list");
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
@@ -206,7 +241,7 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
       const res = await triggerMonitor(id);
       const msg = "fired" in res && res.fired === false
         ? "No condition met"
-        : `Fired: ${(res as MonitorAlert).severity} — ${(res as MonitorAlert).message}`;
+        : `Fired: ${(res as MonitorAlert).severity} — ${alertText((res as MonitorAlert).message)}`;
       setRunResult(r => ({ ...r, [id]: msg }));
       setTimeout(() => setRunResult(r => { const n = { ...r }; delete n[id]; return n; }), 6000);
     } catch {
@@ -223,14 +258,26 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
     await load();
   }
 
-  async function ack(alertId: string) {
-    try {
-      await acknowledgeAlert(alertId);
-      setAlerts(as => as.map(a => a.id === alertId ? { ...a, acknowledged: true } : a));
-    } catch (e) {
+  async function ack(ids: string[]) {
+    const failed: string[] = [];
+    await Promise.all(ids.map(id => acknowledgeAlert(id).then(
+      () => setAlerts(as => as.map(a => a.id === id ? { ...a, acknowledged: true } : a)),
       // Optimistic flip on a failed ack left the UI lying until the next load.
-      setError(e instanceof Error ? e.message : "Acknowledge failed");
+      e => { failed.push(e instanceof Error ? e.message : "Acknowledge failed"); },
+    )));
+    if (failed.length) setError(failed[0]);
+  }
+
+  /** Feeds each rule a synthetic outlier — no warehouse query, nothing sent — and reads the proofs again. */
+  async function checkRules(ms: MonitorDef[]) {
+    setChecking(true);
+    setError(null);
+    for (const m of ms) {
+      try { await drillMonitor(m.id, false); }
+      catch (e) { setError(`${m.name}: ${e instanceof Error ? e.message : "the check failed"}`); }
     }
+    await readProofs(monitors);
+    setChecking(false);
   }
 
   // ── Cron picker ───────────────────────────────────────────────────────────────
@@ -245,75 +292,28 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
     }
   }
 
-  // ── Alert count badge ─────────────────────────────────────────────────────────
-
-  const unackedCount = alerts.filter(a => !a.acknowledged).length;
+  const unacked = useMemo(() => alerts.filter(a => !a.acknowledged), [alerts]);
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-0)", color: "var(--t1)" }}>
-      {/* Header: the views as a tab strip — the form, while it is open, is a tab of its own that the
-          others do not leave — and the row's one door at its end. */}
+      {/* The views as a tab strip — the form, while it is open, is a tab of its own that the others do not leave —
+          and the row's one door at its end. The first view is "Overview": the tab above already says "Monitors". */}
       <TabStrip label="Monitor views" value={view} onChange={v => { if (view !== "form") setView(v); }}
         style={{ padding: "12px 20px 0", flexShrink: 0 }}
         tabs={[
-          { id: "list" as View, label: "Monitors" },
-          { id: "alerts" as View, label: "Alerts", badge: unackedCount },
+          { id: "list" as View, label: "Overview" },
+          { id: "alerts" as View, label: "Alerts", badge: unacked.length },
           ...(view === "form" ? [{ id: "form" as View, label: "Configure" }] : []),
         ]}
         trailing={<>
-          {view === "list" && <Button variant="ghost" size="xs" onClick={openCreate}>+ New monitor</Button>}
-          {view === "form" && <Button variant="ghost" size="xs" onClick={() => setView("list")}>← Back</Button>}
+          {view !== "form" && <Button variant="ghost" size="xs" onClick={openCreate}><Icon name="plus" size={12} />New monitor</Button>}
+          {view === "form" && <Button variant="ghost" size="xs" onClick={() => setView("list")}><Icon name="back" size={12} />Back</Button>}
         </>} />
 
-      {/* Body */}
-      <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-        {loading && <Loading what="monitors" />}
-        {error && <p style={{ color: "var(--red3)", fontSize: 13, marginBottom: 12 }}>{error}</p>}
-
-        {/* ── Summary ── real counts across the workspace's monitors/alerts */}
-        {view === "list" && !loading && monitors.length > 0 && (
-          <MiniStatRow>
-            <MiniStat value={monitors.length} label="Total monitors" />
-            <MiniStat value={monitors.filter(m => m.enabled).length} label="Active" tone="var(--grn4)" />
-            <MiniStat value={unackedCount} label="Unacked alerts" tone={unackedCount > 0 ? "var(--amb4)" : "var(--t1)"} />
-          </MiniStatRow>
-        )}
-
-        {/* ── Monitor list ── */}
-        {view === "list" && !loading && (
-          monitors.length === 0
-            ? <EmptyState onAdd={openCreate} />
-            : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {monitors.map(m => (
-                  <MonitorCard
-                    key={m.id}
-                    monitor={m}
-                    runResult={runResult[m.id]}
-                    alerts={alerts.filter(a => a.monitor_id === m.id)}
-                    onEdit={() => openEdit(m)}
-                    onDelete={() => remove(m.id)}
-                    onRun={() => runNow(m.id)}
-                    onToggle={() => toggle(m)}
-                  />
-                ))}
-              </div>
-        )}
-
-        {/* ── Alert inbox ── */}
-        {view === "alerts" && !loading && (
-          alerts.length === 0
-            ? <p style={{ color: "var(--t3)", fontSize: 13 }}>No alerts yet.</p>
-            : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {alerts.map(a => (
-                  <AlertRow key={a.id} alert={a} onAck={() => ack(a.id)} />
-                ))}
-              </div>
-        )}
-
-        {/* ── Create / edit form ── */}
-        {view === "form" && (
+      {view === "form" ? (
+        <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
           <MonitorForm
             form={form}
             setField={setField}
@@ -330,73 +330,220 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
             onSave={save}
             onCancel={() => setView("list")}
           />
-        )}
-      </div>
+        </div>
+      ) : (
+        <Page testId={view === "list" ? "monitors-overview" : "monitors-alerts"}>
+          {error && <div role="alert" className="aug-fs-sm" style={{ color: "var(--red4)" }}>{error}</div>}
+          {readFailed && <ReadFailed what="the monitors" error={readFailed} onRetry={load} />}
+          {!loaded && loading && <Loading what="monitors" />}
+          {loaded && !readFailed && view === "alerts" && <AlertsList alerts={alerts} onAck={ack} />}
+          {loaded && !readFailed && view === "list" && (monitors.length === 0
+            ? <EmptyState onAdd={openCreate} />
+            : <Overview monitors={monitors} alerts={alerts} unacked={unacked} proofs={proofs} metrics={metrics}
+                checking={checking} runResult={runResult} openRows={openRows}
+                onToggleRow={id => setOpenRows(p => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
+                onAck={ack} onSeeAlerts={() => setView("alerts")} onCheckRules={checkRules} onEdit={openEdit}
+                onDelete={m => remove(m.id)} onRun={m => runNow(m.id)} onToggle={toggle}
+                onProofChanged={() => readProofs(monitors)} />)}
+        </Page>
+      )}
     </div>
   );
 }
 
-// ── Monitor card ──────────────────────────────────────────────────────────────
+// ── The overview: figures, Needs you, the picture, the list ───────────────────
 
-function MonitorCard({
-  monitor, runResult, alerts, onEdit, onDelete, onRun, onToggle,
-}: {
-  monitor: MonitorDef;
-  runResult?: string;
+function Overview({ monitors, alerts, unacked, proofs, metrics, checking, runResult, openRows, onToggleRow, onAck, onSeeAlerts,
+  onCheckRules, onEdit, onDelete, onRun, onToggle, onProofChanged }: {
+  monitors: MonitorDef[];
   alerts: MonitorAlert[];
+  unacked: MonitorAlert[];
+  proofs: Record<string, MonitorProof | null>;
+  metrics: Metric[];
+  checking: boolean;
+  runResult: Record<string, string>;
+  openRows: ReadonlySet<string>;
+  onToggleRow: (id: string) => void;
+  onAck: (ids: string[]) => void;
+  onSeeAlerts: () => void;
+  onCheckRules: (ms: MonitorDef[]) => void;
+  onEdit: (m: MonitorDef) => void;
+  onDelete: (m: MonitorDef) => void;
+  onRun: (m: MonitorDef) => void;
+  onToggle: (m: MonitorDef) => void;
+  onProofChanged: () => void;
+}) {
+  const on = monitors.filter(m => m.enabled);
+  const read = monitors.filter(m => m.id in proofs);
+  const unread = read.filter(m => proofs[m.id] === null);
+  const stateOf = (m: MonitorDef) => proofState(proofs[m.id]);
+  const fires = read.filter(m => FIRES.has(stateOf(m)));
+  const endToEnd = read.filter(m => stateOf(m) === "proven" || stateOf(m) === "delivered");
+  const never = read.filter(m => stateOf(m) === "never");
+  const broken = read.filter(m => stateOf(m) === "silent" || stateOf(m) === "undelivered");
+  const perDay = on.map(m => checksPerDay(m.check_cron));
+  const known = perDay.filter((n): n is number => n != null);
+  const lastAlert = [...alerts].sort((a, b) => b.triggered_at.localeCompare(a.triggered_at))[0];
+
+  const openByMonitor = new Map<string, MonitorAlert[]>();
+  for (const a of unacked) openByMonitor.set(a.monitor_id, [...(openByMonitor.get(a.monitor_id) ?? []), a]);
+  const alertsOf = (id: string) => alerts.filter(a => a.monitor_id === id);
+
+  const weeks = alertsByWeek(alerts, new Date(), 12);
+  const inWeeks = weeks.reduce((s, w) => s + w.n, 0);
+
+  return (
+    <>
+      <Figures testId="monitor-figures">
+        <Figure label="Monitors" value={formatCount(monitors.length)} testId="fig-monitors"
+          sub={on.length === monitors.length ? "all on" : `${on.length} on · ${monitors.length - on.length} off`} />
+        <Figure label="Open alerts" value={formatCount(unacked.length)} tone={unacked.length ? "amber" : undefined} testId="fig-open"
+          sub={alerts.length === 0 ? "none has fired here yet"
+            : `${formatCount(alerts.length - unacked.length)} acknowledged · last ${dayMonth(lastAlert.triggered_at)}`} />
+        <Figure label="Proven to fire" testId="fig-proven"
+          value={read.length < monitors.length ? "—" : `${fires.length} of ${monitors.length}`}
+          sub={read.length < monitors.length ? "reading their proofs…"
+            : unread.length ? `${unread.length} could not be read`
+            : endToEnd.length ? `${endToEnd.length} delivered end to end` : "none delivered end to end"} />
+        <Figure label="Checks a day" value={known.length ? short(known.reduce((s, n) => s + n, 0)) : "—"} testId="fig-checks"
+          title="Each check runs the monitor's query on its connection"
+          sub={on.length ? `${scheduleMix(on)}${known.length < on.length ? " · not all counted" : ""}` : "every monitor is off"} />
+      </Figures>
+
+      <NeedsYou testId="monitor-needs" empty={read.length < monitors.length || unread.length
+        ? "Nothing needs you · no open alert"
+        : "Nothing needs you · no open alert, and every monitor has been seen to fire"}>
+        {[
+          ...[...openByMonitor.entries()].map(([id, open]) => (
+            <NeedsRow key={`open-${id}`} testId="needs-open"
+              title={`${open[0].monitor_name} · ${plural(open.length, "open alert")}`}
+              detail={`${alertText(open[0].message)}${open.some(a => a.caveat) ? " · value may be mis-computed" : ""}`}
+              actions={<>
+                <Button size="xs" variant="secondary" onClick={() => onAck(open.map(a => a.id))}>
+                  {open.length === 1 ? "Acknowledge" : "Acknowledge all"}
+                </Button>
+                <Button size="xs" variant="ghost" onClick={onSeeAlerts}>See alerts</Button>
+              </>} />
+          )),
+          never.length > 0 && (
+            <NeedsRow key="never" testId="needs-never"
+              title={`${never.length === 1 ? "1 monitor has" : `${never.length} monitors have`} never been proven to fire`}
+              detail="Checking feeds each rule a made-up outlier — no query runs and nothing is sent"
+              actions={<Button size="xs" variant="secondary" disabled={checking} onClick={() => onCheckRules(never)}>
+                {checking ? "Checking…" : never.length === 1 ? "Check its rule" : "Check their rules"}
+              </Button>} />
+          ),
+          ...broken.map(m => (
+            <NeedsRow key={`broken-${m.id}`} testId="needs-broken"
+              title={`${m.name}: ${stateOf(m) === "silent" ? "its rule did not fire in a drill" : "its test alert was not delivered"}`}
+              detail={proofs[m.id]?.last_drill?.detail}
+              actions={<Button size="xs" variant="secondary" onClick={() => onEdit(m)}>Edit</Button>} />
+          )),
+        ]}
+      </NeedsYou>
+
+      {/* The picture appears when there is something to picture: with no alert in the twelve weeks, the figure above
+          already says when the last one fired, or that none has. */}
+      {inWeeks > 0 && (
+        <section aria-label="Alerts over twelve weeks" data-testid="monitor-alert-weeks" style={CARD}>
+          <Label right={<span>{`${plural(inWeeks, "alert")}${alerts.length >= 100 ? " · of the latest 100 read" : ""}`}</span>}>
+            Alerts · last 12 weeks
+          </Label>
+          <Columns columns={weeks.map(w => ({
+            key: w.start.toISOString(), value: w.n, label: dayMonth(w.start.toISOString()),
+            tip: `Week of ${dayMonth(w.start.toISOString())}: ${plural(w.n, "alert")}${w.n ? ` — ${Object.entries(w.bySeverity)
+              .map(([s, n]) => `${n} ${s}`).join(", ")}` : ""}`,
+          }))} />
+        </section>
+      )}
+
+      <section aria-label="Monitors" data-testid="monitor-list" style={CARD}>
+        <Label>Monitors</Label>
+        {monitors.map((m, i) => (
+          <MonitorRow key={m.id} monitor={m} first={i === 0} proof={proofs[m.id]} proofRead={m.id in proofs}
+            metricLabel={m.metric_name ? (metrics.find(x => x.name === m.metric_name)?.label ?? m.metric_name) : null}
+            alerts={alertsOf(m.id)} open={openRows.has(m.id)} runResult={runResult[m.id]}
+            onToggleOpen={() => onToggleRow(m.id)} onEdit={() => onEdit(m)} onDelete={() => onDelete(m)}
+            onRun={() => onRun(m)} onToggle={() => onToggle(m)} onProofChanged={onProofChanged} />
+        ))}
+      </section>
+    </>
+  );
+}
+
+// ── A monitor, one row ────────────────────────────────────────────────────────
+
+function MonitorRow({ monitor, first, proof, proofRead, metricLabel, alerts, open, runResult, onToggleOpen, onEdit, onDelete,
+  onRun, onToggle, onProofChanged }: {
+  monitor: MonitorDef;
+  first: boolean;
+  proof: MonitorProof | null | undefined;
+  proofRead: boolean;
+  metricLabel: string | null;
+  alerts: MonitorAlert[];
+  open: boolean;
+  runResult?: string;
+  onToggleOpen: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onRun: () => void;
   onToggle: () => void;
+  onProofChanged: () => void;
 }) {
-  const lastAlert = alerts[0];
+  const lastAlert = [...alerts].sort((a, b) => b.triggered_at.localeCompare(a.triggered_at))[0];
   const unacked = alerts.filter(a => !a.acknowledged).length;
+  const state = proofRead ? proofState(proof) : "unknown";
+  const meta = [
+    ruleWords(monitor), scheduleWords(monitor.check_cron), channelWords(monitor.notification_channel),
+    metricLabel ?? "your own query", lastAlert ? `last fired ${relTime(lastAlert.triggered_at)} ago` : "",
+  ].filter(Boolean).join(" · ");
 
   return (
-    <div style={{
-      background: "var(--bg-1)",
-      border: "1px solid var(--bg-3)",
-      borderRadius: 6,
-      padding: "12px 16px",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <Switch checked={monitor.enabled} onChange={onToggle} title={monitor.enabled ? "Disable" : "Enable"} aria-label={monitor.enabled ? "Disable" : "Enable"} />
-
-        {/* Name + type */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontWeight: 600, fontSize: 13, color: "var(--t1)" }}>{monitor.name}</span>
-            <TypeBadge type={monitor.alert_on} />
-            {unacked > 0 && (
-              <Badge variant="destructive">{unacked} alert{unacked > 1 ? "s" : ""}</Badge>
+    <div data-testid="monitor-row" style={{ borderTop: first ? undefined : "1px solid var(--b0)", padding: "9px 2px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto auto", gap: 12, alignItems: "center" }}>
+        <Switch checked={monitor.enabled} onChange={onToggle}
+          title={monitor.enabled ? "Turn off" : "Turn on"} aria-label={`${monitor.enabled ? "Turn off" : "Turn on"} ${monitor.name}`} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <span className="aug-fs-chrome" title={monitor.name} style={{ ...ONE_LINE, fontWeight: 600, color: "var(--t1)" }}>{monitor.name}</span>
+            {proofRead && (
+              <Chip tone={PROOF_TONE[state]} title={proof ? proofSentence(proof.sentence) : "Could not read whether this alert was proven"}>
+                {proof ? proofWords(proof) : "proof unread"}
+              </Chip>
             )}
+            {unacked > 0 && <Chip tone="amber">{`${unacked} open`}</Chip>}
+            {!monitor.enabled && <Chip>off</Chip>}
           </div>
-          <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
-            {monitor.metric_name ?? "Custom SQL"} · {cronLabel(monitor.check_cron)}
-            {lastAlert && (
-              <span style={{ marginLeft: 8, color: SEVERITY_COLOR[lastAlert.severity] ?? "var(--t3)" }}>
-                · last fired {relTime(lastAlert.triggered_at)}
-              </span>
-            )}
-          </div>
+          <div className="aug-fs-xs" title={meta} style={{ ...MUTED, ...ONE_LINE }}>{meta}</div>
         </div>
-
-        {/* Actions */}
-        <div style={{ display: "flex", gap: 6 }}>
-          <Button variant="ghost" onClick={onRun} className="h-auto" style={{ fontSize: 11, padding: "3px 9px", opacity: 0.85 }}>
-            Run now
-          </Button>
-          <Button variant="ghost" onClick={onEdit} className="h-auto p-0 font-normal" style={ghostBtn}>Edit</Button>
-          <Button variant="ghost" onClick={onDelete} className="h-auto p-0 font-normal" style={{ ...ghostBtn, color: "var(--red3)" }}>Delete</Button>
-        </div>
+        <Button size="xs" variant="outline" onClick={onRun}>Run now</Button>
+        <Button size="xs" variant="ghost" aria-expanded={open} onClick={onToggleOpen}>
+          Details <Icon name={open ? "chevu" : "chevd"} size={12} />
+        </Button>
       </div>
 
-      {runResult && (
-        <div style={{ marginTop: 8, fontSize: 11, color: "var(--t3)", paddingLeft: 42 }}>
-          {runResult}
+      {runResult && <div role="status" className="aug-fs-xs" style={{ ...MUTED, marginTop: 6, paddingLeft: 48 }}>{runResult}</div>}
+
+      {open && (
+        <div data-testid="monitor-details" style={{ padding: "10px 0 2px 48px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <MonitorProofRow monitorId={monitor.id} proof={proofRead ? proof : undefined} onChanged={onProofChanged} />
+          <div style={ROW}>
+            <Chip title="After an alert, the same or a lower severity stays quiet this long; a worse one fires at once">
+              {`quiet ${monitor.grace_period_hours} h after an alert`}
+            </Chip>
+            {monitor.created_at && <Chip>{`made ${dayMonth(monitor.created_at)}`}</Chip>}
+          </div>
+          {monitor.custom_sql ? (
+            <pre className="aug-fs-xs" style={{ margin: 0, background: "var(--code-bg)", borderRadius: "var(--r2)", padding: "8px 10px",
+              whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 160, overflow: "auto", fontFamily: "var(--font-code)",
+              color: "var(--t2)" }}>{monitor.custom_sql}</pre>
+          ) : <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>Watches the metric {metricLabel ?? monitor.metric_name}</div>}
+          <div style={ROW}>
+            <Button size="xs" variant="outline" onClick={onEdit}>Edit</Button>
+            <Button size="xs" variant="destructive" onClick={onDelete}>Delete</Button>
+          </div>
         </div>
       )}
-      <MonitorProofRow monitorId={monitor.id} />
     </div>
   );
 }
@@ -407,18 +554,29 @@ function MonitorCard({
 
 type ProofOutcome = { tone: "ok" | "warn"; text: string };
 
-export function MonitorProofRow({ monitorId }: { monitorId: string }) {
-  const [proof, setProof] = useState<MonitorProof | null>(null);
-  const [proofFailed, setProofFailed] = useState(false);
+/** The proof's sentence and the three ways to earn one. Reads its own proof when the page has not (`proof` absent). */
+export function MonitorProofRow({ monitorId, proof: given, onChanged }: {
+  monitorId: string;
+  /** The page's read of this monitor's proof — null when that read failed; absent to read it here. */
+  proof?: MonitorProof | null;
+  onChanged?: () => void;
+}) {
+  const [own, setOwn] = useState<MonitorProof | null>(null);
+  const [ownFailed, setOwnFailed] = useState(false);
   const [busy, setBusy] = useState<"" | "backtest" | "check" | "send">("");
   const [outcome, setOutcome] = useState<ProofOutcome | null>(null);
+  const standalone = given === undefined;
 
   const readProof = useCallback(() => {
+    if (!standalone) { onChanged?.(); return; }
     getMonitorProof(monitorId)
-      .then(p => { setProof(p); setProofFailed(false); })
-      .catch(() => setProofFailed(true));
-  }, [monitorId]);
-  useEffect(() => { readProof(); }, [readProof]);
+      .then(p => { setOwn(p); setOwnFailed(false); })
+      .catch(() => setOwnFailed(true));
+  }, [monitorId, standalone, onChanged]);
+  useEffect(() => { if (standalone) readProof(); }, [standalone, readProof]);
+
+  const proof = standalone ? own : given;
+  const failed = standalone ? ownFailed : given === null;
 
   async function run(kind: "backtest" | "check" | "send") {
     if (kind === "send" && !confirm(
@@ -450,28 +608,27 @@ export function MonitorProofRow({ monitorId }: { monitorId: string }) {
   }
 
   const btn = (kind: "backtest" | "check" | "send", label: string, title: string) => (
-    <Button variant="ghost" onClick={() => run(kind)} disabled={busy !== ""} title={title}
-            className="h-auto p-0 font-normal" style={ghostBtn}>
+    <Button size="xs" variant="ghost" onClick={() => run(kind)} disabled={busy !== ""} title={title}>
       {busy === kind ? `${label}…` : label}
     </Button>
   );
 
   return (
-    <div style={{ marginTop: 8, paddingLeft: 42 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        {proof || proofFailed ? (
-          <span style={{ fontSize: 11, color: "var(--t3)", flex: 1, minWidth: 160 }}>
-            {proof ? proof.sentence : "Could not read whether this alert was proven."}
+    <div>
+      <div style={{ ...ROW, gap: 6 }}>
+        {proof || failed ? (
+          <span className="aug-fs-xs" style={{ ...MUTED, flex: "1 1 160px", minWidth: 160 }}>
+            {proof ? proofSentence(proof.sentence) : "Could not read whether this alert was proven."}
           </span>
         ) : (
-          <Loading what="its proof" inline style={{ fontSize: 11, flex: 1, minWidth: 160 }} />
+          <Loading what="its proof" inline style={{ flex: "1 1 160px", minWidth: 160 }} />
         )}
         {btn("backtest", "Backtest", "Replay the last year of this monitor's own series under its rule — one warehouse query")}
         {btn("check", "Check rule", "Feed the rule a synthetic outlier; nothing is sent")}
         {btn("send", "Send test alert", "Feed the rule a synthetic outlier and deliver the [DRILL] alert through its real channel")}
       </div>
       {outcome && (
-        <div role="status" style={{ marginTop: 6, fontSize: 11, color: outcome.tone === "ok" ? "var(--t2)" : "var(--amb4)" }}>
+        <div role="status" className="aug-fs-xs" style={{ marginTop: 6, color: outcome.tone === "ok" ? "var(--t2)" : "var(--amb4)" }}>
           {outcome.text}
         </div>
       )}
@@ -479,42 +636,47 @@ export function MonitorProofRow({ monitorId }: { monitorId: string }) {
   );
 }
 
-// ── Alert row ─────────────────────────────────────────────────────────────────
+// ── Alerts, repeats folded ────────────────────────────────────────────────────
 
-function AlertRow({ alert, onAck }: { alert: MonitorAlert; onAck: () => void }) {
+function AlertsList({ alerts, onAck }: { alerts: MonitorAlert[]; onAck: (ids: string[]) => void }) {
+  const groups = useMemo(() => foldAlerts(alerts), [alerts]);
+  const open = alerts.filter(a => !a.acknowledged).length;
   return (
-    <div style={{
-      display: "flex", alignItems: "flex-start", gap: 12,
-      background: alert.acknowledged ? "var(--bg-1)" : "var(--bg-2)",
-      border: `1px solid ${alert.acknowledged ? "var(--bg-3)" : SEVERITY_COLOR[alert.severity] ?? "var(--bg-3)"}`,
-      borderRadius: 6, padding: "10px 14px",
-      opacity: alert.acknowledged ? 0.6 : 1,
-    }}>
-      <Badge variant={SEVERITY_BADGE[alert.severity] ?? "secondary"} style={{ textTransform: "uppercase", flexShrink: 0, marginTop: 1 }}>
-        {alert.severity}
-      </Badge>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--t1)" }}>{alert.monitor_name}</div>
-        <div style={{ fontSize: 12, color: "var(--t2)", marginTop: 2 }}>{alert.message}</div>
-        {alert.caveat && (
-          <div style={{
-            fontSize: 11, color: SEVERITY_COLOR.warning, marginTop: 4,
-          }}>
-            ⚠ Value may be mis-computed — {alert.caveat}
+    <section aria-label="Alerts" data-testid="alert-list" style={CARD}>
+      <Label right={alerts.length ? <span>{`${formatCount(alerts.length)}${alerts.length >= 100 ? " latest" : ""} · ${open} open`}</span> : null}>
+        Alerts
+      </Label>
+      {groups.length === 0 ? <div className="aug-fs-sm" style={MUTED}>No alerts yet.</div>
+        : groups.map((g, i) => <AlertRow key={g.key} g={g} first={i === 0} onAck={() => onAck(g.open)} />)}
+    </section>
+  );
+}
+
+function AlertRow({ g, first, onAck }: { g: AlertGroup; first: boolean; onAck: () => void }) {
+  const a = g.latest;
+  const settled = g.open.length === 0;
+  const when = g.count === 1 ? `${relTime(a.triggered_at)} ago`
+    : dayMonth(g.first) === dayMonth(g.last) ? `${g.count} times · ${dayMonth(g.last)}` : `${g.count} times · ${dayMonth(g.first)} – ${dayMonth(g.last)}`;
+  return (
+    <div data-testid="alert-row" style={{ borderTop: first ? undefined : "1px solid var(--b0)", padding: "8px 2px", opacity: settled ? 0.6 : 1 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "12px minmax(0, 1fr) auto auto", gap: 10, alignItems: "center" }}>
+        <Dot hue={SEVERITY_HUE[a.severity] ?? "grey"} title={a.severity} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <span className="aug-fs-chrome" style={{ ...ONE_LINE, fontWeight: 500, color: "var(--t1)" }}>{a.monitor_name}</span>
+            <span className="aug-fs-xs" style={MUTED}>{a.severity}</span>
+            {a.caveat && <Chip tone="amber" title={a.caveat}>value may be mis-computed</Chip>}
           </div>
-        )}
-        {alert.current_value != null && (
-          <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>
-            Value: <strong>{alert.current_value}</strong>
-            {alert.previous_value != null && <> (prev: {alert.previous_value})</>}
-            {alert.threshold != null && <> · threshold: {alert.threshold}</>}
+          <div className="aug-fs-xs" title={a.message} style={{ ...MUTED, ...ONE_LINE }}>
+            {alertText(a.message)}{a.previous_value != null ? ` · was ${short(a.previous_value)}` : ""} · {when}
           </div>
-        )}
-        <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>{relTime(alert.triggered_at)}</div>
+        </div>
+        <span className="aug-fs-chrome" style={{ color: "var(--t2)", fontVariantNumeric: "tabular-nums", minWidth: 24, textAlign: "right" }}>
+          {g.count > 1 ? `×${g.count}` : ""}
+        </span>
+        {settled ? <span className="aug-fs-xs" style={MUTED}>acknowledged</span>
+          : <Button size="xs" variant="secondary" onClick={onAck}>{g.open.length > 1 ? `Acknowledge ${g.open.length}` : "Acknowledge"}</Button>}
       </div>
-      {!alert.acknowledged && (
-        <Button variant="ghost" onClick={onAck} className="h-auto p-0 font-normal" style={ghostBtn}>Ack</Button>
-      )}
     </div>
   );
 }
@@ -545,7 +707,7 @@ function MonitorForm({
 
   return (
     <div style={{ maxWidth: 560, display: "flex", flexDirection: "column", gap: 20 }}>
-      <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>
+      <h3 className="aug-fs-h2" style={{ margin: 0, fontWeight: 600, color: "var(--t1)" }}>
         {isEdit ? "Edit monitor" : "New monitor"}
       </h3>
 
@@ -586,7 +748,7 @@ function MonitorForm({
           onValueChange={v => setField("alert_on", v as AlertOn)}>
           {ALERT_TYPES.map(at => (
             <RadioCards.Item key={at.value} value={at.value} style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
-              <span style={{ fontWeight: 600, fontSize: 12 }}>{at.label}</span>
+              <span className="aug-fs-sm" style={{ fontWeight: 600 }}>{at.label}</span>
               <span className="aug-fs-xs" style={{ color: "var(--t3)", textAlign: "left" }}>{at.desc}</span>
             </RadioCards.Item>
           ))}
@@ -623,7 +785,7 @@ function MonitorForm({
                 value={form.sigma_threshold ?? 2.5}
                 onChange={e => setField("sigma_threshold", Number(e.target.value) as any)}
                 style={{ width: "100%" }} />
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--t3)" }}>
+              <div className="aug-fs-xs" style={{ display: "flex", justifyContent: "space-between", color: "var(--t3)" }}>
                 <span>1σ (sensitive)</span><span>5σ (strict)</span>
               </div>
             </Field>
@@ -689,7 +851,7 @@ function MonitorForm({
             style={{ width: "100%" }} />
         )}
         {!isCustomCron && (
-          <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2 }}>
             Runs: <code style={{ fontFamily: "var(--font-code)" }}>{form.check_cron}</code>
           </div>
         )}
@@ -701,8 +863,8 @@ function MonitorForm({
           value={form.grace_period_hours ?? 4}
           onChange={e => setField("grace_period_hours", Number(e.target.value) as any)}
           style={{ width: 120 }} />
-        <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
-          After an alert fires, suppress further same- or lower-severity alerts for this many hours (anti-flap). Escalations fire immediately.
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2 }}>
+          After an alert, the same or a lower severity stays quiet this long; a worse one fires at once.
         </div>
       </Field>
 
@@ -713,14 +875,14 @@ function MonitorForm({
       </Field>
 
       {/* Error */}
-      {error && <p style={{ color: "var(--red3)", fontSize: 12, margin: 0 }}>{error}</p>}
+      {error && <p className="aug-fs-sm" style={{ color: "var(--red4)", margin: 0 }}>{error}</p>}
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-        <Button variant="ghost" className="h-auto" onClick={onSave} disabled={saving} style={{ minWidth: 100 }}>
+        <Button size="sm" onClick={onSave} disabled={saving} style={{ minWidth: 100 }}>
           {saving ? "Saving…" : isEdit ? "Update" : "Create monitor"}
         </Button>
-        <Button variant="ghost" onClick={onCancel} className="h-auto p-0 font-normal" style={{ ...ghostBtn, padding: "6px 14px" }}>Cancel</Button>
+        <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
       </div>
     </div>
   );
@@ -731,61 +893,17 @@ function MonitorForm({
 function Field({ label, children, style }: { label: string; children: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
-      <label className="aug-label" style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</label>
+      <label className="aug-label aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</label>
       {children}
     </div>
   );
 }
 
-function TypeBadge({ type }: { type: AlertOn }) {
-  const tones: Record<AlertOn, "default" | "violet" | "amber" | "cyan" | "destructive" | "secondary"> = {
-    threshold_cross: "default",
-    anomaly:         "violet",
-    trend_reversal:  "amber",
-    segment_drift:   "cyan",
-    data_freshness:  "destructive",
-    any_change:      "secondary",
-  };
-  const labels: Record<AlertOn, string> = {
-    threshold_cross: "Threshold",
-    anomaly:         "Anomaly",
-    trend_reversal:  "Trend",
-    segment_drift:   "Drift",
-    data_freshness:  "Freshness",
-    any_change:      "Any change",
-  };
-  return <Badge variant={tones[type]}>{labels[type]}</Badge>;
-}
-
 function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
     <SharedEmptyState icon="gauge" title="No monitors yet"
-      action={<Button variant="ghost" className="h-auto" onClick={onAdd}>Create first monitor</Button>}>
-      Set up a monitor to get alerted when metrics cross thresholds, drift, or go stale.
+      action={<Button variant="secondary" size="xs" onClick={onAdd}>Create first monitor</Button>}>
+      A monitor alerts you when a metric crosses a line, drifts, or goes stale.
     </SharedEmptyState>
   );
 }
-
-function cronLabel(cron: string): string {
-  const match = CRON_PRESETS.find(p => p.cron === cron && p.label !== "Custom");
-  return match ? match.label : cron;
-}
-
-function relTime(iso: string): string {
-  try {
-    const diff = Date.now() - new Date(iso).getTime();
-    const m = Math.floor(diff / 60000);
-    if (m < 2)  return "just now";
-    if (m < 60) return `${m}m ago`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-    return `${Math.floor(h / 24)}d ago`;
-  } catch { return ""; }
-}
-
-const ghostBtn: React.CSSProperties = {
-  background: "none", border: "1px solid var(--bg-3)",
-  color: "var(--t2)", borderRadius: 4, cursor: "pointer",
-  fontSize: 11, padding: "3px 9px",
-};
-
