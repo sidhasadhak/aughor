@@ -155,6 +155,12 @@ describe("the governance window, folded", () => {
     })]);
   });
 
+  it("says the model calls the feed carries in words — never the log's own name", () => {
+    const call = () => ev({ category: "model_call", kind: "llm_call", summary: "coder call · deepseek/deepseek-v4.1-flash" });
+    expect(foldFeed([call()], names).map(f => f.title)).toEqual(["A model call"]);
+    expect(foldFeed([call(), call()], names).map(f => [f.title, f.count])).toEqual([["Model calls", 2]]);
+  });
+
   it("puts a flagged or blocked query that is not the platform's own in amber, first", () => {
     const folds = foldFeed([query("safe", "objects"), query("suspicious", "h1"), query("blocked", "h2"), query("blocked", "h3")], names);
     expect(folds.map(f => [f.title, f.tone, f.count])).toEqual([

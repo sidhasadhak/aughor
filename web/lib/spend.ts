@@ -277,6 +277,13 @@ const DECISIONS: Record<string, { group: string; tone: FoldTone; one: string; ma
 
 const TONE_RANK: Record<FoldTone, number> = { amber: 0, accent: 1, green: 2, plain: 3 };
 
+/** Kinds of event the feed carries by an engineering name, said as a reader says them (one, many) — "Llm call" was
+ *  the session log's `llm_call` with its first letter raised (theLook, 2026-10-12). */
+const KIND_NAMES: Record<string, [string, string]> = {
+  llm_call: ["A model call", "Model calls"],
+  decision_replay: ["A decision kept for replay", "Decisions kept for replay"],
+};
+
 function distinct(xs: string[], max = 3): string {
   const seen = [...new Set(xs.filter(Boolean))];
   return seen.length > max ? `${seen.slice(0, max).join(", ")} +${seen.length - max}` : seen.join(", ");
@@ -313,6 +320,9 @@ export function foldFeed(events: AuditFeedEvent[], connName: (id: string) => str
     } else if (e.kind === "mcp.tool_call") {
       if (d.allowed === false) add("mcp_refused", "amber", "An MCP agent was refused", "MCP agents were refused", e);
       else add("mcp", "plain", "Tool call from an MCP agent", "Tool calls from MCP agents", e);
+    } else if (KIND_NAMES[e.kind]) {
+      const [one, many] = KIND_NAMES[e.kind];
+      add(`kind_${e.kind}`, e.category === "enforcement" ? "amber" : "plain", one, many, e);
     } else {
       const said = words(e.kind) || words(e.category);
       const title = said.charAt(0).toUpperCase() + said.slice(1);
