@@ -125,8 +125,9 @@ export function ProcessPanel({ connectionId, schema, processId, version, onOpenT
       onClose={onClose} onChanged={onChanged} onChangeProcess={onChangeProcess} scope={scope} />;
   }
   return (
+    // As wide as the entity panel it takes the place of, so opening a process does not move the map.
     <aside aria-label="Process" data-testid="process-panel"
-      style={{ width: 360, flexShrink: 0, borderLeft: RULE, display: "flex", flexDirection: "column", minHeight: 0,
+      style={{ width: 470, flexShrink: 0, borderLeft: RULE, display: "flex", flexDirection: "column", minHeight: 0,
                background: "var(--bg-0)" }}>
       <div style={{ flex: 1, overflowY: "auto" }}>{body}</div>
     </aside>

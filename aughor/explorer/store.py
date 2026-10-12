@@ -107,6 +107,16 @@ def fresh_finding_id(state: dict, base: str) -> str:
     return f"{base}~{n}"
 
 
+def scoped_finding_id(schema: str | None, base: str) -> str:
+    """A finding's id, unique across its connection. The ledger keeps a finding's receipt under the connection and
+    the id, so a run over one schema of a multi-schema connection puts the schema in front (``gold_finance:pinned__0``):
+    two schemas' ``pinned__0`` had been one receipt, and one schema's Key Question answers were read back into
+    another's (LuxExperience, 2026-10-11). A connection explored whole keeps its ids as they were."""
+    if not schema or base.startswith(f"{schema}:"):
+        return base
+    return f"{schema}:{base}"
+
+
 def keep_slot(state: dict, finding: dict) -> None:
     """Put ``finding`` in the slot its id names — the finding a pinned key question answers — replacing the one
     the run's findings hold there, else at the end. The ledger keeps every receipt under that id; the state, the latest."""
@@ -260,10 +270,14 @@ def load_aggregate(connection_id: str) -> dict:
 def get_aggregate_domain_findings(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
     """by_domain findings merged across all per-schema runs of a connection. Each one is
     tagged with its `source_schema` so the briefing can keep UNRELATED businesses apart
-    (a beauty-ecommerce finding and a bakery finding must not be synthesized as one story)."""
+    (a beauty-ecommerce finding and a bakery finding must not be synthesized as one story).
+    A schema a person turned off is left out: off means off, its findings included."""
+    from aughor.ontology.visibility import schema_off
     found: list[dict] = []
     for k in schema_run_keys(connection_id):
         sch = k.split("__", 1)[1] if "__" in k else ""
+        if sch and schema_off(connection_id, sch) is not None:
+            continue
         for d, ins in get_domain_findings(k, include_invalid=include_invalid).items():
             for i in ins:
                 if sch:

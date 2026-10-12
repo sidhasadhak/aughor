@@ -5156,6 +5156,8 @@ export interface MonitorProof {
   /** "last proven working …" / "never proven — no drill, no delivered alert" — the server's sentence. */
   sentence: string;
   last_drill: MonitorDrill | null;
+  /** The last real alert this monitor delivered (a notification log row), when there was one. */
+  last_real_delivery?: { fired_at?: string; [k: string]: unknown } | null;
 }
 
 async function monitorProofCall<T>(path: string, init?: RequestInit): Promise<T> {
@@ -7259,6 +7261,16 @@ export interface BriefingNarrativeResponse {
   /** Present only on a period brief (idea 3), or a range brief (Arc BR-3 — `isRangeBlock`):
    *  the window it covers and what it measured. */
   period?: BriefingPeriodBlock | BriefingRangeBlock;
+  /** Why this scope has no Briefing: its schema — or, read whole, every schema of the connection — is turned off
+   *  for analysis. Nothing is written from what was found before. */
+  off?: BriefingOff;
+}
+
+export interface BriefingOff {
+  schemas: string[];
+  reason: string;
+  declared_by: string;
+  said: string;
 }
 
 /** PENDING item 9 — the company-brain map: every store behind what Aughor knows, as a box with a
@@ -10354,6 +10366,30 @@ export interface UsageSummary {
     calls_without_usage: number;
   }>;
   roles: Array<{ role: string; calls: number; total_tokens: number }>;
+}
+
+/** What a model call was for, read off the `caller` the provider stamps on every call
+ *  (`<module>:<function>`, served as `UsageSummary.sites`). The prefixes are the backend's own
+ *  module names, spelled verbatim like every other wire value in this file. A caller no prefix
+ *  names is `null`, and the Spend screen folds it into "Other" — counted, never dropped. The
+ *  first matching prefix wins, so the narrower one comes first. */
+export type CallerFeature = "deep_analysis" | "conversation" | "survey" | "exploration"
+  | "sql_repair" | "sql_writing" | "business_profile" | "semantic_layer" | "ontology";
+
+export const CALLER_FEATURES: ReadonlyArray<readonly [string, CallerFeature]> = [
+  ["aughor.agent.investigate:", "deep_analysis"],
+  ["aughor.agent.tool_loop:", "conversation"],
+  ["aughor.agent.explore:", "survey"],
+  ["aughor.explorer.", "exploration"],
+  ["aughor.sql.writer:fix", "sql_repair"],
+  ["aughor.sql.writer:", "sql_writing"],
+  ["aughor.business_profile.", "business_profile"],
+  ["aughor.semantic.", "semantic_layer"],
+  ["aughor.ontology.", "ontology"],
+];
+
+export function callerFeature(caller: string): CallerFeature | null {
+  return CALLER_FEATURES.find(([prefix]) => caller.startsWith(prefix))?.[1] ?? null;
 }
 
 export async function getUsageSummary(params?: {

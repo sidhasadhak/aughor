@@ -214,9 +214,11 @@ def engine_name(name: str) -> str:
     return "v_" + name.replace("-", "_")
 
 
-#: What a value's kind is (`web/lib/cockpit/catalog.ts` VALUE_KINDS), and the longest word a value holds there.
-VALUE_KINDS = ("days", "number", "text", "date")
+#: What a value's kind is (`web/lib/cockpit/catalog.ts` VALUE_KINDS), and the longest word a value holds there. Arc AP-8c
+#: — yes or no, bound as the engine's boolean; and a list, bound one item to a placeholder (`IN ({{countries}})`).
+VALUE_KINDS = ("days", "number", "text", "date", "yesno", "list")
 MAX_WORD = 120
+MAX_LIST = 30
 #: A string, a quoted name or a comment — where ``{{name}}`` would be read as those words, never bound.
 _QUOTED = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"|`[^`]*`|--[^\n]*|/\*.*?\*/", re.S)
 
@@ -235,10 +237,25 @@ def typed_value(name: str, kind: str, value: Any) -> Any:
     """A value as the engine binds it: a number of days or a number as a number, a word as text, a day as a date."""
     import datetime as dt
     if kind not in VALUE_KINDS:
-        raise Refused(f"The query reads {{{{{name}}}}}, a {kind or 'value'} — a value is days, a number, words or a day.")
-    if value is None or value == "":
+        raise Refused(f"The query reads {{{{{name}}}}}, a {kind or 'value'} — a value is days, a number, words, a day, yes or "
+                      "no, or a list.")
+    if value is None or value == "" or value == []:
         raise Refused(f"The query reads {{{{{name}}}}}, which holds nothing yet.")
     try:
+        if kind == "yesno":
+            if not isinstance(value, bool):
+                raise TypeError(value)
+            return value
+        if kind == "list":
+            if not isinstance(value, list) or len(value) > MAX_LIST:
+                raise ValueError(value)
+            items = []
+            for x in value:
+                if isinstance(x, bool) or not isinstance(x, (int, float, str)) or (isinstance(x, str) and not (
+                        x.strip() and len(x) <= MAX_WORD)) or (isinstance(x, float) and x != x):
+                    raise ValueError(value)
+                items.append(int(x) if isinstance(x, float) and x.is_integer() else x)
+            return items
         if kind in ("days", "number"):
             if isinstance(value, bool):
                 raise TypeError(value)
@@ -254,7 +271,8 @@ def typed_value(name: str, kind: str, value: Any) -> Any:
             raise ValueError(value)
         return value
     except (TypeError, ValueError):
-        what = {"days": "a whole number of days", "number": "a number", "date": "a day, written 2026-10-11"}.get(
+        what = {"days": "a whole number of days", "number": "a number", "date": "a day, written 2026-10-11",
+                "yesno": "yes or no", "list": f"a list of 1 to {MAX_LIST} numbers or words"}.get(
             kind, f"words, at most {MAX_WORD} characters")
         raise Refused(f"The query reads {{{{{name}}}}} as {what}, and it holds {str(value)[:40]!r}.")
 
@@ -273,8 +291,20 @@ def bind(sql: str, values: dict) -> tuple[str, dict]:
     if missing:
         raise Refused(f"The query reads {', '.join('{{' + n + '}}' for n in missing)}, and this cockpit holds no value of "
                       f"{'that name' if len(missing) == 1 else 'those names'}.")
-    params = {engine_name(n): typed_value(n, str(values[n].get("kind") or ""), values[n].get("value")) for n in names}
-    return PARAM.sub(lambda m: ":" + engine_name(m.group(1)), sql), params
+    typed = {n: typed_value(n, str(values[n].get("kind") or ""), values[n].get("value")) for n in names}
+    params: dict = {}
+    for n, v in typed.items():
+        if isinstance(v, list):     # a list: one placeholder per item, each bound — `IN ({{countries}})`
+            params.update({f"{engine_name(n)}_{i}": x for i, x in enumerate(v)})
+        else:
+            params[engine_name(n)] = v
+
+    def _placed(m) -> str:
+        n = m.group(1)
+        if isinstance(typed[n], list):
+            return ", ".join(f":{engine_name(n)}_{i}" for i in range(len(typed[n])))
+        return ":" + engine_name(n)
+    return PARAM.sub(_placed, sql), params
 
 
 # ── the statement around a person's own ───────────────────────────────────────────────────────────────────────────────

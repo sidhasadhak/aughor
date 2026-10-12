@@ -1,85 +1,76 @@
 "use client";
 
 /**
- * Agent Ops · Overview — the operating picture.
+ * Agent Ops · Overview — the operating picture, laid out to CLARITY (`aughor-v2/CLARITY.md`): four figures (runs,
+ * failed, running now, model spend), then what needs a person in amber with its buttons on the row, then runs by
+ * agent as a chart, then the agents and their runs as lists.
  *
- * An operations view answers three questions IN ORDER, and this panel is that order top to
- * bottom: **what's wrong** (the status rail and the needs-you strip), **what's running**
- * (the KPI tiles and the activity chart), **what it cost** (the cost tile and the fleet
- * table). The previous Overview opened with tokens/hour and never answered the first
- * question at all.
+ * Four rules it keeps, each from an earlier defect:
  *
- * Four rules it exists to keep:
+ * **Every number is a door.** A figure opens "where this number comes from" — what is counted, out of what, how
+ * much of the population could carry it — and the list whose count equals it.
  *
- * **Every number is a door.** Click any tile and the drawer says what is counted, what it
- * is out of, how much of the population could have carried the fact, and opens the list
- * whose count equals it. A tile that shows 24 and opens a list of 31 teaches the reader the
- * page is decorative; the parity is a backend test.
+ * **One range.** The figures, the chart, the agents' sparks and the runs list read the range the workspace holds;
+ * a brush on the chart narrows the same range.
  *
- * **One window.** The tiles, the chart, the row sparks and the jobs list all read the range
- * held by the workspace. This surface used to draw client-side minute buckets over an hour
- * beside server-side hourly buckets over a day, in the same table.
+ * **Background runs are not agents.** The automation engine's per-minute check outnumbers agent work by about a
+ * thousand to one; it is counted apart, never summed into the agents, with a switch for anyone who wants it in.
  *
- * **Runners are not agents.** The automation engine's evaluation tick was 1,291 of 1,316
- * jobs in twenty-four hours (measured 2026-08-17) and sat in the agent table as "Unassigned
- * kinds", setting the shape of every metric on the page. It has its own muted lane now,
- * never summed into the agent totals, with a toggle for anyone who wants it back.
- *
- * **Unknown is never zero.** Unmetered runs, unpriced calls, orphaned restarts and an agent
- * that is not metered at all each say so in their own words rather than rendering a 0 or a
- * dash that reads as "nothing happened".
+ * **Unknown is never zero.** Unpriced calls, runs that reported no usage, runs a restart cut off and a built-in
+ * agent with no runs of its own each say so as a chip, never as a 0 or a dash.
  */
-import { needsYouTitle } from "@/lib/names";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-import { useVisiblePoll } from "@/lib/useVisiblePoll";
 
 import { ActivityChart, colorFor } from "@/components/agentops/ActivityChart";
 import { ProvenanceDrawer, type Provenance } from "@/components/agentops/ProvenanceDrawer";
-import { rangeLabel, rangeParams, type RangeKey, type TimeRange } from "@/components/agentops/useTimeRange";
+import { RANGE_LABELS, rangeParams, type TimeRange } from "@/components/agentops/useTimeRange";
 import { Sparkline } from "@/components/brief/Sparkline";
-import { StatTile } from "@/components/brief/StatTile";
-import { StatusChip } from "@/components/brief/StatusChip";
-import { Button } from "@/components/ui/button";
 import {
-  acceptProposal, cancelJob, getFleetOverview, getJobs, getNeedsHuman, getObsTimeseries,
-  patchAgent, patchUserAgent, rejectProposal,
-  type FleetJob, type FleetOverview, type FleetRow, type FleetRunnerRow,
-  type NeedsHumanRow, type TimeSeriesResponse,
-} from "@/lib/api";
-import { fmtMs } from "@/lib/cost";
-import { subscribeKernelEvents } from "@/lib/events";
-import { compactNumber, formatCost, formatCount, pct, relTime } from "@/lib/format";
-import { Loading, ReadFailed } from "@/components/ui/states";
-import { Term } from "@/components/agentops/Term";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+  CARD, Card, Chip, Dot, Empty, Figure, Figures, MUTED, NUM, NeedsYou, ONE_LINE, ROW, RULE,
+} from "@/components/clarity/kit";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Icon } from "@/components/ui/icon";
+import { Segmented } from "@/components/ui/segmented";
+import { Loading, ReadFailed } from "@/components/ui/states";
+import {
+  BUILT_IN_AGENT_KIND, acceptProposal, cancelJob, getFleetOverview, getJobs, getNeedsHuman, getObsTimeseries,
+  patchAgent, patchUserAgent, rejectProposal,
+  type FleetJob, type FleetOverview, type FleetRow, type FleetRunnerRow, type NeedsHumanRow, type TimeSeriesResponse,
+} from "@/lib/api";
+import { subscribeKernelEvents } from "@/lib/events";
+import { compactNumber, countNoun, formatCost, formatCount, pct, relTime } from "@/lib/format";
+import { needsYouTitle } from "@/lib/names";
+import { runDisplayTitle } from "@/lib/runTitle";
+import { useVisiblePoll } from "@/lib/useVisiblePoll";
 
-type Density = "calm" | "noc";
-type JobFilter = "active" | "all" | "succeeded" | "failed";
+type RunFilter = "active" | "failed" | "succeeded" | "all";
 
-const JOB_STATE_HUE: Record<string, "positive" | "negative" | "caution" | "info" | "muted"> = {
-  RUNNING: "info", PENDING: "muted", PAUSED: "caution",
-  SUCCEEDED: "positive", FAILED: "negative", CANCELLED: "caution",
-  // Interrupted is not an error — the process died holding the job, and nobody observed a
-  // failure. Caution, like Cancelled, rather than the negative hue.
-  INTERRUPTED: "caution",
-};
-
-const JOB_FILTERS: { id: JobFilter; label: string }[] = [
-  { id: "active", label: "Active" },
-  { id: "all", label: "All" },
-  { id: "succeeded", label: "Succeeded" },
-  { id: "failed", label: "Failed / Stopped" },
+const RUN_FILTERS: { value: RunFilter; label: string; title: string }[] = [
+  { value: "active", label: "Running", title: "In flight now, of any age" },
+  { value: "failed", label: "Failed or stopped", title: "Failed, cancelled, or cut off by a restart, in this range" },
+  { value: "succeeded", label: "Succeeded", title: "Succeeded in this range" },
+  { value: "all", label: "All", title: "Every agent run in this range" },
 ];
 
+const ACTIVE = ["RUNNING", "PENDING", "PAUSED"];
+/** A restart-killed run is terminal; without INTERRUPTED here it would show under no filter but "All". */
+const STOPPED = ["FAILED", "CANCELLED", "INTERRUPTED"];
+
+/** The needs-a-person source a proposed action arrives from — the API's own name for it. */
+const PROPOSAL_SOURCE = "kinetic_inbox";
 const SOURCE_LABEL: Record<NeedsHumanRow["source"], string> = {
-  kinetic_inbox: "proposal", paused_run: "paused run", automation_approval: "automation",
+  [PROPOSAL_SOURCE]: "proposal", paused_run: "paused run", automation_approval: "automation",
   agent_alert: "alert", automation_broken: "broken automation",
 };
-const SOURCE_HUE: Record<NeedsHumanRow["source"], "accent" | "negative" | "caution"> = {
-  kinetic_inbox: "accent", paused_run: "negative", automation_approval: "caution",
-  agent_alert: "negative", automation_broken: "negative",
+
+/** How a run's state reads as a mark, and its colour. */
+const STATE_MARK: Record<string, { word: string; color: string }> = {
+  RUNNING: { word: "running", color: "var(--blue4)" }, PENDING: { word: "waiting to start", color: "var(--t3)" },
+  PAUSED: { word: "paused", color: "var(--amb4)" }, SUCCEEDED: { word: "succeeded", color: "var(--grn4)" },
+  FAILED: { word: "failed", color: "var(--red4)" }, CANCELLED: { word: "cancelled", color: "var(--amb4)" },
+  // Not an error: the process died holding the run, and nobody observed a failure.
+  INTERRUPTED: { word: "cut off by a restart", color: "var(--amb4)" },
 };
 
 /** A live age, counted up from the moment the item started waiting. */
@@ -92,6 +83,40 @@ function waitedFor(ms: number | null, tick: number): string {
   return `${s}s`;
 }
 
+/** A run's length as a person reads it: "820 ms", "3.2 s", "10 min", "1 h 5 min". */
+export function duration(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms)) return "—";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
+  const min = Math.round(ms / 60_000);
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ""}`;
+}
+
+/** "per hour", "per 6 hours", "per day" — what one bar of the chart holds. */
+function perBucket(seconds: number): string {
+  if (seconds % 86_400 === 0) return seconds === 86_400 ? "per day" : `per ${seconds / 86_400} days`;
+  if (seconds % 3600 === 0) return seconds === 3600 ? "per hour" : `per ${seconds / 3600} hours`;
+  if (seconds % 60 === 0) return seconds === 60 ? "per minute" : `per ${seconds / 60} minutes`;
+  return `per ${seconds} s`;
+}
+
+/** Runs that are the same work ending the same way, folded into one row with a count (CLARITY: say a thing once). */
+export interface RunGroup { key: string; title: string; agent: string; state: string; runs: FleetJob[] }
+
+export function foldRuns(runs: FleetJob[]): RunGroup[] {
+  const groups = new Map<string, RunGroup>();
+  for (const j of runs) {
+    const title = runDisplayTitle(j.title || j.kind).title;
+    const agent = j.agent?.agent || j.kind;
+    const key = `${agent}\u0000${title}\u0000${j.state}`;
+    const g = groups.get(key) ?? { key, title, agent, state: j.state, runs: [] };
+    g.runs.push(j);
+    groups.set(key, g);
+  }
+  return [...groups.values()];
+}
+
 export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvestigation, range,
   onBrush, onClearBrush }: {
   onOpenAgent?: (id: string, kind: "charter" | "persona") => void;
@@ -102,39 +127,38 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
   onClearBrush: () => void;
 }) {
   const [data, setData] = useState<FleetOverview | null>(null);
-  const [jobs, setJobs] = useState<FleetJob[]>([]);
+  const [active, setActive] = useState<FleetJob[]>([]);
   const [chart, setChart] = useState<TimeSeriesResponse | null>(null);
   const [attention, setAttention] = useState<NeedsHumanRow[]>([]);
-  const [density, setDensity] = useState<Density>("calm");
-  const [jobFilter, setJobFilter] = useState<JobFilter>("active");
+  const [runFilter, setRunFilter] = useState<RunFilter>("active");
   const [showRunners, setShowRunners] = useState(false);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
   const [prov, setProv] = useState<Provenance | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A pause, an accept or a reject the server refused — said on the page, never swallowed.
+  const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  const runsRef = useRef<HTMLElement | null>(null);
 
   const params = useMemo(() => rangeParams(range), [range]);
 
-  // AO-3 — a chart or an attention list whose read REJECTED says so with a Retry; each
-  // used to fall through to its empty state ("No agent runs in this window", "Nothing
-  // needs a human"), which is the one thing a failed read must never say.
+  // A chart, a list or "needs you" whose read REJECTED says so with a Retry; each used to fall through to its
+  // empty state, which is the one thing a failed read must never say.
   const [chartError, setChartError] = useState<string | null>(null);
-  const [jobsError, setJobsError] = useState<string | null>(null);
+  const [activeError, setActiveError] = useState<string | null>(null);
   const [attentionError, setAttentionError] = useState<string | null>(null);
   const load = useCallback(() => {
     getFleetOverview({ ...params, include_runners: showRunners })
       .then(d => { setData(d); setError(null); })
       .catch(e => setError(String(e?.message || e)));
-    // A failed read used to leave the list on "Nothing running right now".
-    getJobs({ limit: 200 })
-      .then(j => { setJobs(j); setJobsError(null); })
-      .catch(e => setJobsError(String(e?.message || e)));
-    // `source: "jobs"` — this chart is headed "Runs by agent" and must plot the same runs
-    // the Runs tile counts. Grouping model CALLS by charter draws an honest chart of a
-    // different quantity, and on any history predating the attribution column every bar
-    // reads "(unattributed)".
+    // In flight now, of ANY age and any kind: the newest page of runs is almost all background checks, so
+    // reading it and filtering here missed an agent run that had been going longer than a few minutes.
+    getJobs({ state: "active", limit: 200 })
+      .then(j => { setActive(j); setActiveError(null); })
+      .catch(e => setActiveError(String(e?.message || e)));
+    // `source: "jobs"` — the chart plots the same runs the Runs figure counts.
     getObsTimeseries({ source: "jobs", ...params })
       .then(c => { setChart(c); setChartError(null); })
       .catch(e => { setChart(null); setChartError(String(e?.message || e)); });
@@ -143,58 +167,69 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
       .catch(e => setAttentionError(String(e?.message || e)));
   }, [params, showRunners]);
 
-  // Only while this layer is on screen: a hidden Overview reloaded four endpoints every 15 s
-  // and on every job event (useVisiblePoll's note). Shown again, it refreshes at once.
-  const active = useVisiblePoll(load, 15_000);   // slow fallback if the stream is down
-  const activeRef = useRef(active);
-  useEffect(() => { activeRef.current = active; }, [active]);
+  // Only while this layer is on screen; shown again, it refreshes at once.
+  const visible = useVisiblePoll(load, 15_000);   // slow fallback if the stream is down
+  const visibleRef = useRef(visible);
+  useEffect(() => { visibleRef.current = visible; }, [visible]);
   useEffect(() => {
     load();
-    const unsub = subscribeKernelEvents(() => { if (activeRef.current) load(); },
-                                        { kinds: ["job.state"] });
+    const unsub = subscribeKernelEvents(() => { if (visibleRef.current) load(); }, { kinds: ["job.state"] });
     return () => { unsub(); };
   }, [load]);
 
-  // The waiting timers count up on their own — an age frozen at fetch time reads as a
-  // stale page, and "how long has this been waiting" is the whole point of the strip.
+  // The waiting timers count up on their own — an age frozen at fetch time reads as a stale page.
   useVisiblePoll(useCallback(() => setTick(t => t + 1000), []), 1000);
+
+  // The kinds of work each built-in agent owns: the runs list reads THOSE, in the range, one kind at a time —
+  // a single read of the newest runs is all background checks and would hold none of the runs the figures count.
+  const agentKinds = useMemo(() => [...new Set((data?.rows ?? [])
+    .flatMap(r => (r.kind === BUILT_IN_AGENT_KIND ? r.job_kinds : [])))].sort(), [data]);
+  const runnerKinds = useMemo(() => [...new Set((data?.runners ?? []).flatMap(r => r.job_kinds))].sort(), [data]);
+  const [ranged, setRanged] = useState<{ runs: FleetJob[]; capped: string[] } | null>(null);
+  const [rangedError, setRangedError] = useState<string | null>(null);
+  const kindsKey = [...agentKinds, ...(showRunners ? runnerKinds : [])].join(",");
+  const loadRanged = useCallback(() => {
+    if (runFilter === "active" || !kindsKey) return;
+    const kinds = kindsKey.split(",");
+    Promise.all(kinds.map(kind => getJobs({ kind, ...params, limit: 200 }).then(rows => ({ kind, rows }))))
+      .then(parts => {
+        const runs = parts.flatMap(p => p.rows).sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+        setRanged({ runs, capped: parts.filter(p => p.rows.length >= 200).map(p => p.kind) });
+        setRangedError(null);
+      })
+      .catch(e => setRangedError(String(e?.message || e)));
+  }, [runFilter, kindsKey, params]);
+  useEffect(() => { loadRanged(); }, [loadRanged]);
+  // Read only while a range's runs are on screen, and more slowly than the figures: one read per kind of work.
+  useVisiblePoll(loadRanged, 30_000);
 
   const liveByKind = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const j of jobs) {
-      if (["RUNNING", "PENDING", "PAUSED"].includes(j.state)) m[j.kind] = (m[j.kind] || 0) + 1;
-    }
+    for (const j of active) if (ACTIVE.includes(j.state)) m[j.kind] = (m[j.kind] || 0) + 1;
     return m;
-  }, [jobs]);
-
-  const filteredJobs = useMemo(() => {
-    if (jobFilter === "all") return jobs;
-    if (jobFilter === "active") return jobs.filter(j => ["RUNNING", "PENDING", "PAUSED"].includes(j.state));
-    if (jobFilter === "succeeded") return jobs.filter(j => j.state === "SUCCEEDED");
-    // INTERRUPTED belongs here so a restart-killed job is still findable — it is terminal,
-    // and without it those rows would appear under no filter but "All".
-    return jobs.filter(j => ["FAILED", "CANCELLED", "INTERRUPTED"].includes(j.state));
-  }, [jobs, jobFilter]);
+  }, [active]);
 
   const togglePause = async (row: FleetRow) => {
     setBusy(row.id);
+    setActionError(null);
     try {
-      if (row.kind === "charter") await patchAgent(row.id, { enabled: !row.enabled });
+      if (row.kind === BUILT_IN_AGENT_KIND) await patchAgent(row.id, { enabled: !row.enabled });
       else await patchUserAgent(row.id, { enabled: !row.enabled });
       load();
     } catch (e) {
-      setError(String((e as Error)?.message || e));
+      setActionError(String((e as Error)?.message || e));
     } finally { setBusy(null); }
   };
 
-  const resolveInbox = async (row: NeedsHumanRow, action: "accept" | "reject") => {
+  const resolveProposal = async (row: NeedsHumanRow, action: "accept" | "reject") => {
     setBusy(row.id);
+    setActionError(null);
     try {
       if (action === "accept") await acceptProposal(row.id, "agent-ops");
       else await rejectProposal(row.id, "agent-ops");
       load();
     } catch (e) {
-      setError(String((e as Error)?.message || e));
+      setActionError(String((e as Error)?.message || e));
     } finally { setBusy(null); }
   };
 
@@ -206,13 +241,20 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
   }
 
   const { tiles } = data;
-  const noc = density === "noc";
-  const charters = data.rows.filter(r => r.kind === "charter");
-  const personas = data.rows.filter(r => r.kind === "persona");
+  const builtIn = data.rows.filter(r => r.kind === BUILT_IN_AGENT_KIND);
+  const custom = data.rows.filter(r => r.kind !== BUILT_IN_AGENT_KIND);
   const runners = data.runners ?? [];
   const order = (chart?.series ?? []).map(s => s.key);
-  const label = rangeLabel(range);
-  const windowText = `${label}${range.since ? " (brushed)" : ""}`;
+  const rangeWords = range.since ? "the brushed range" : RANGE_LABELS[range.key].toLowerCase();
+  const liveOf = (row: FleetRow) => (row.kind === BUILT_IN_AGENT_KIND
+    ? row.job_kinds.reduce((n, k) => n + (liveByKind[k] || 0), 0) : 0);
+  const runningNow = builtIn.reduce((n, r) => n + liveOf(r), 0);
+  const on = data.rows.filter(r => r.enabled).length;
+  const paused = data.rows.length - on;
+  const calls = tiles.cost?.calls ?? 0;
+  const unpriced = tiles.cost?.unpriced_calls ?? 0;
+  const pricedShare = calls ? 1 - unpriced / calls : null;
+  const unmetered = tiles.tokens.unmetered_runs;
 
   // Which buckets the current brush covers, for the chart's highlight overlay.
   const selection: [number, number] | null = (() => {
@@ -221,403 +263,257 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
     return s < 0 ? null : [Math.max(0, s), chart.edges.length - 1];
   })();
 
-  const openProv = (p: Provenance) => setProv(p);
+  const openRuns = (filter: RunFilter) => {
+    setRunFilter(filter);
+    setProv(null);
+    runsRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  };
 
   return (
-    <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column",
-                  minHeight: 0, background: "var(--bg-0)" }}>
-      <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex",
-                    flexDirection: "column", gap: 14, minHeight: 0 }}>
+    <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", minHeight: 0,
+      background: "var(--bg-0)" }}>
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+        <div data-testid="ao-overview" style={{ display: "flex", flexDirection: "column", gap: 14,
+          padding: "16px 22px 28px", width: "100%" }}>
 
-        {/* ── 1 · what's running, at a glance ─────────────────────────────────── */}
-        <section aria-label="Agents right now">
-          <SectionHead title="Agents · right now"
-            sub={`${charters.filter(r => r.kind === "charter" && r.enabled).length} active · ${runners.length} background runner${runners.length === 1 ? "" : "s"}`} />
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {[...charters, ...personas].map(row => {
-              const live = row.kind === "charter"
-                ? row.job_kinds.reduce((n, k) => n + (liveByKind[k] || 0), 0) : 0;
-              const state = !row.enabled ? "paused" : live > 0 ? "running" : "idle";
-              return (
-                <Button key={row.id} variant="ghost" size="sm"
-                  onClick={() => { setExpanded(row.id); document.getElementById(`ao-row-${row.id}`)?.scrollIntoView({ block: "center" }); }}
-                  title={`${row.name} — ${state}`}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 7, height: "auto",
-                    padding: "5px 10px 5px 8px", border: "1px solid var(--b2)",
-                    borderRadius: "var(--r-chip)", background: "var(--bg-2)",
-                    color: "var(--t1)", fontSize: 12,
-                  }}>
-                  <span aria-hidden style={{
-                    width: 8, height: 8, borderRadius: "50%",
-                    background: state === "running" ? "var(--grn4)"
-                      : state === "paused" ? "var(--amb4)" : "var(--t4)",
-                  }} />
-                  {row.name}
-                  <span className="aug-fs-xs" style={{ color: "var(--t2)", fontFamily: "var(--font-mono)" }}>
-                    {state === "running" ? `${live} live` : state}
-                  </span>
-                </Button>
-              );
-            })}
-          </div>
-        </section>
+          {/* ── the figures, each a door ──────────────────────────────────────────── */}
+          <Figures testId="ao-figures">
+            <Figure testId="ao-fig-runs" label={showRunners ? "Runs · with background" : "Runs"}
+              value={formatCount(tiles.runs_started)}
+              title={`Agent runs started in ${rangeWords} — open for where this number comes from`}
+              sub={<>
+                {tiles.truncated && <Chip tone="amber" title="This range holds more runs than one read returns">a floor</Chip>}
+                <span>{tiles.p50_duration_ms == null ? "none finished yet"
+                  : `typical ${duration(tiles.p50_duration_ms)} · slow ${duration(tiles.p95_duration_ms)}`}</span>
+              </>}
+              onOpen={() => setProv({
+                eyebrow: "Where this number comes from", title: "Runs", value: formatCount(tiles.runs_started),
+                window: rangeWords,
+                definition: "Runs started in this range by the kinds of work the built-in agents own. The automation "
+                  + "engine's per-minute check is background work: it is counted apart unless it is switched in.",
+                denominator: `${formatCount(tiles.runs_started)} agent runs · ${formatCount(tiles.runner_runs)} background runs counted apart`,
+                coverage: tiles.truncated ? "a floor — this range holds more runs than one read returns"
+                  : "every run carries its kind",
+                facts: [["Typical run", duration(tiles.p50_duration_ms)], ["Slow run (95th percentile)", duration(tiles.p95_duration_ms)]],
+                open: { label: "Open these runs", hint: "every agent run in this range, in the list below",
+                        onOpen: () => openRuns("all") },
+              })} />
 
-        {/* ── 2 · what needs a human, oldest first ────────────────────────────── */}
-        <section aria-label="Needs you">
-          <SectionHead title="Needs you"
-            action={attention.length > 0 && onOpenAttention
-              ? { label: `${attention.length} waiting · open Attention →`, onClick: onOpenAttention }
-              : undefined} />
-          {attentionError ? (
-            <Card>
-              <ReadFailed what="what needs a human" error={attentionError} onRetry={load} />
-            </Card>
-          ) : attention.length === 0 ? (
-            <Card>
-              <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>
-                {/* No count. It said "three" while there were four, and five after
-                    VA-8's broken-automation source — a number in copy is a fact that
-                    goes stale the next time somebody adds a source. */}
-                Nothing needs a human. Every source is empty right now.
-              </span>
-            </Card>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 8 }}>
-              {attention.slice(0, 3).map(row => (
-                <div key={`${row.source}:${row.id}`} className="aug-anim-fade" style={{
-                  background: "var(--bg-2)", border: "1px solid var(--b1)",
-                  borderLeft: `3px solid ${row.source === "paused_run" ? "var(--red4)" : "var(--amb4)"}`,
-                  borderRadius: "var(--r3)", padding: "10px 12px",
-                  display: "flex", flexDirection: "column", gap: 6,
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                    <StatusChip hue={SOURCE_HUE[row.source]} strength="soft">
-                      {SOURCE_LABEL[row.source]}
-                    </StatusChip>
-                    <span className="aug-fs-sm" style={{
-                      fontFamily: "var(--font-mono)",
-                      color: row.source === "paused_run" ? "var(--red4)" : "var(--amb4)",
-                    }} title={row.since_basis === "started_at"
-                      ? "since start — the pause event aged out of the journal" : undefined}>
-                      {waitedFor(row.waiting_ms, tick)}
-                      {row.since_basis === "started_at" && " *"}
-                    </span>
-        </div>
-                  {/* The API composes `<action key>: <reasoning>`; the reader gets the names the
-                      key joins on one line and the sentence under it (lib/names.ts). */}
-                  {(() => { const t = needsYouTitle(row.title); return (
-                    <div title={row.title}>
-                      <div className="aug-text-ui" style={{ fontWeight: 600 }}>{t.subject ?? t.body}</div>
-                      {t.subject && t.body && <div className="aug-fs-sm" style={{ color: "var(--t2)", marginTop: 2 }}>{t.body}</div>}
-                    </div>
-                  ); })()}
-                  <div style={{ display: "flex", gap: 6 }}>
-                    {/* DS-8 — an automation's approval resolves through the same proposal
-                        the agent's does, so it gets the same two buttons. Before the pause
-                        was durable this card could only "Open automation", which led to a
-                        panel with nothing on it that could approve anything. */}
-                    {row.source === "kinetic_inbox"
-                      || (row.source === "automation_approval" && row.resolve?.proposal_id) ? (
-                      <>
-                        <Button size="xs" variant="ghost" disabled={busy === row.id}
-                          onClick={() => resolveInbox(row, "accept")}>Accept</Button>
-                        <Button size="xs" variant="ghost" disabled={busy === row.id}
-                          onClick={() => resolveInbox(row, "reject")}>Reject</Button>
-                      </>
-                    ) : (
-                      <Button size="xs" variant="ghost"
-                        onClick={() => {
-                          const inv = row.resolve?.investigation_id;
-                          if (inv && onOpenInvestigation) onOpenInvestigation(inv);
-                          else onOpenAttention?.();
-                        }}>
-                        {row.source === "paused_run" ? "Open & resume" : "Open automation"}
-                      </Button>
-                    )}
-        </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+            <Figure testId="ao-fig-failed" label="Failed" value={formatCount(tiles.failed_runs)}
+              tone={tiles.failed_runs > 0 ? "red" : undefined}
+              title="Runs that failed for a reason the agent produced — open for where this number comes from"
+              sub={<>
+                <span>{tiles.error_rate == null ? "nothing finished yet" : `${pct(tiles.error_rate)} of finished runs`}</span>
+                {tiles.orphaned_runs > 0 && (
+                  <Chip tone="amber" title="A server restart cut these runs off — infrastructure, counted apart">
+                    +{formatCount(tiles.orphaned_runs)} cut off by a restart
+                  </Chip>
+                )}
+              </>}
+              onOpen={() => setProv({
+                eyebrow: "Where this number comes from", title: "Failed", value: formatCount(tiles.failed_runs),
+                window: rangeWords,
+                definition: "Runs that ended failed for a reason the agent produced. A run a server restart cut off "
+                  + "is infrastructure, and is counted apart.",
+                denominator: tiles.error_rate == null ? "no finished runs in this range" : `${pct(tiles.error_rate)} of finished runs`,
+                coverage: "every run records how it ended",
+                facts: [["Cut off by a restart", formatCount(tiles.orphaned_runs)]],
+                open: { label: "Open failed and stopped runs", hint: "failed · cancelled · cut off by a restart",
+                        onOpen: () => openRuns("failed") },
+              })} />
 
-        {/* ── 3 · the figures, each a door ────────────────────────────────────── */}
-        <section aria-label="Key figures">
-          <SectionHead title={`${windowText} · ${showRunners ? "including background runners" : "agents only"}`}
-            sub="click a tile to see where its number comes from" />
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <StatTile label="Runs" value={formatCount(tiles.runs_started)}
-              accent="var(--chart-1)" expandable onClick={() => openProv({
-                eyebrow: "Where this number comes from", title: "Runs",
-                value: formatCount(tiles.runs_started), window: windowText,
-                definition: "Jobs created in the window whose kind belongs to an agent charter. "
-                  + "Automation ticks and eval experiments are runners and are excluded unless toggled in.",
-                denominator: `${formatCount(tiles.runs_started)} agent runs · ${formatCount(tiles.runner_runs)} runner runs excluded`,
-                coverage: tiles.truncated
-                  ? "capped — this window holds more jobs than one read returns, so the "
-                    + "figure is a floor"
-                  : "100% — every job carries a kind",
-                open: { label: "Open the jobs list", hint: "the runs whose count equals this figure",
-                        onOpen: () => { setJobFilter("all"); setProv(null); } },
-                note: tiles.runner_runs > 0
-                  ? `The ${formatCount(tiles.runner_runs)} runner runs are the automation engine's evaluation tick — one job per minute, no model calls. Counted apart so this figure means agent work.`
-                  : undefined,
-              })}
-              caption={tiles.truncated
-                ? `a floor — the window holds more jobs than one read returns`
-                : tiles.runner_runs > 0
-                  ? `+${formatCount(tiles.runner_runs)} background runs excluded`
-                  : "no background runs in window"}
-              title="Agent runs started in the window" />
+            <Figure testId="ao-fig-live" label="Running now" value={formatCount(runningNow)}
+              title="Agent runs in flight now, of any age — open for where this number comes from"
+              sub={<span>{`${on} of ${countNoun(data.rows.length, "agent")} on`}{paused ? ` · ${paused} paused` : ""}</span>}
+              onOpen={() => setProv({
+                eyebrow: "Where this number comes from", title: "Running now", value: formatCount(runningNow),
+                definition: "Runs of a built-in agent's kinds that are running, waiting to start or paused right now — "
+                  + "of any age: a run started yesterday and still going counts.",
+                denominator: `${formatCount(tiles.active_jobs)} runs in flight of every kind, background checks included`,
+                facts: [["Agents on", `${on} of ${data.rows.length}`], ["Paused", formatCount(paused)]],
+                open: { label: "Open what is running", hint: "with a Kill on each", onOpen: () => openRuns("active") },
+              })} />
 
-            <StatTile label="Failures" value={formatCount(tiles.failed_runs)}
-              accent="var(--chart-5)" expandable onClick={() => openProv({
-                eyebrow: "Where this number comes from", title: "Failures",
-                value: formatCount(tiles.failed_runs), window: windowText,
-                definition: "Runs that ended FAILED for a reason the agent produced. A process "
-                  + "restart that orphaned a run is infrastructure, and is counted apart.",
-                denominator: tiles.error_rate == null ? "no finished runs in window"
-                  : `${pct(tiles.error_rate)} of finished runs`,
-                coverage: "100% — state is always recorded",
-                facts: [["Orphaned restarts", formatCount(tiles.orphaned_runs)]],
-                open: { label: "Open failed and stopped jobs", hint: "FAILED · CANCELLED · INTERRUPTED",
-                        onOpen: () => { setJobFilter("failed"); setProv(null); } },
-              })}
-              caption={tiles.orphaned_runs > 0
-                ? `+${tiles.orphaned_runs} orphaned restarts — infrastructure, counted apart`
-                : (tiles.error_rate == null ? "no finished runs yet" : `${pct(tiles.error_rate)} of finished runs`)}
-              title="Agent-produced failures" />
-
-            <StatTile label="p50 / p95"
-              value={tiles.p50_duration_ms == null ? "—"
-                : `${fmtMs(tiles.p50_duration_ms)} / ${fmtMs(tiles.p95_duration_ms ?? 0)}`}
-              accent="var(--chart-4)" expandable onClick={() => openProv({
-                eyebrow: "Where this number comes from", title: "Run duration",
-                value: tiles.p50_duration_ms == null ? "—"
-                  : `${fmtMs(tiles.p50_duration_ms)} / ${fmtMs(tiles.p95_duration_ms ?? 0)}`,
-                window: windowText,
-                definition: "Percentiles of finished_at − started_at over agent runs. p50 is what "
-                  + "a typical run takes; p95 is what a slow one takes.",
-                denominator: `${formatCount(tiles.runs_started)} runs started in window`,
-                note: "p50 has been computed by this endpoint since it shipped and was never "
-                  + "rendered — a median tells you what is normal, which a p95 alone cannot.",
-              })}
-              caption="typical / slow" title="Median and 95th-percentile run duration" />
-
-            <StatTile label="Tokens" value={compactNumber(tiles.tokens.total)}
-              accent="var(--chart-3)" expandable onClick={() => openProv({
-                eyebrow: "Where this number comes from", title: "Tokens",
-                value: compactNumber(tiles.tokens.total), window: windowText,
-                definition: "Sum of metrics.total_tokens over finished agent runs. A run whose "
-                  + "backend reported no usage is UNMETERED — unknown spend, never zero.",
-                denominator: `${formatCount(tiles.tokens.metered_runs)} metered runs`,
-                coverage: tiles.tokens.metered_runs + tiles.tokens.unmetered_runs > 0
-                  ? pct(tiles.tokens.metered_runs / (tiles.tokens.metered_runs + tiles.tokens.unmetered_runs))
-                  : "no finished runs",
-                facts: [["Unmetered runs", formatCount(tiles.tokens.unmetered_runs)]],
-              })}
-              caption={tiles.tokens.unmetered_runs > 0
-                ? `${formatCount(tiles.tokens.unmetered_runs)} unmetered — unknown, not zero`
-                : "all finished runs metered"}
-              title="Tokens spent by agent runs" />
-
-            <StatTile label="Cost"
+            <Figure testId="ao-fig-spend" label={tiles.cost && !tiles.cost.is_complete ? "Model spend · at least" : "Model spend"}
               value={formatCost(tiles.cost?.usd, tiles.cost?.calls, tiles.cost?.unpriced_calls)}
-              accent="var(--chart-2)" expandable onClick={() => openProv({
-                eyebrow: "Where this number comes from", title: "Cost",
-                value: formatCost(tiles.cost?.usd, tiles.cost?.calls, tiles.cost?.unpriced_calls),
-                window: windowText,
-                definition: "Model calls in the window priced from the provider's own published "
-                  + "catalogue — never a hardcoded rate. A model the catalogue does not price "
-                  + "contributes nothing and is counted as unpriced.",
-                denominator: `${formatCount(tiles.cost?.calls ?? 0)} model calls`,
-                coverage: tiles.cost?.calls
-                  ? pct(1 - (tiles.cost.unpriced_calls ?? 0) / tiles.cost.calls) + " priced"
-                  : "no calls in window",
+              title="What the model calls in this range cost — open for where this number comes from"
+              sub={<>
+                {unpriced > 0 && (
+                  <Chip tone="amber" testId="ao-unpriced"
+                    title={`${formatCount(unpriced)} of ${formatCount(calls)} calls ran on models nothing publishes a price for — a floor, not a total`}>
+                    {pct(pricedShare)} of calls priced
+                  </Chip>
+                )}
+                <span>{compactNumber(tiles.tokens.total)} tokens</span>
+                {unmetered > 0 && (
+                  <Chip tone="amber" title="Finished runs that reported no usage — unknown, not zero">
+                    {formatCount(unmetered)} unmetered
+                  </Chip>
+                )}
+              </>}
+              onOpen={() => setProv({
+                eyebrow: "Where this number comes from", title: "Model spend",
+                value: formatCost(tiles.cost?.usd, tiles.cost?.calls, tiles.cost?.unpriced_calls), window: rangeWords,
+                definition: "Model calls in this range, priced from each provider's published price list — never a "
+                  + "rate written into the code. A model nothing publishes a price for adds nothing and is counted as unpriced.",
+                denominator: `${formatCount(calls)} model calls`,
+                coverage: calls ? `${pct(pricedShare)} priced` : "no calls in this range",
+                facts: [
+                  ["Tokens", `${compactNumber(tiles.tokens.total)} from ${countNoun(tiles.tokens.metered_runs, "run")} that reported usage`],
+                  ["Runs that reported no usage", `${formatCount(unmetered)} — unknown, not zero`],
+                ],
                 note: tiles.cost && !tiles.cost.is_complete
-                  ? "Incomplete: some calls ran on models nothing publishes a price for. The "
-                    + "figure is a floor, not a total."
-                  : undefined,
-              })}
-              caption={tiles.cost?.unpriced_calls
-                ? `${formatCount(tiles.cost.unpriced_calls)} calls unpriced — a floor, not a total`
-                : "every call priced"}
-              title="Model spend in the window" />
-          </div>
-        </section>
+                  ? "A floor, not a total: some calls ran on models nothing publishes a price for." : undefined,
+              })} />
+          </Figures>
 
-        {/* ── 4 · activity on the shared axis ─────────────────────────────────── */}
-        <section aria-label="Activity" style={{
-          background: "var(--bg-2)", border: "1px solid var(--b1)",
-          borderRadius: "var(--r3)", padding: "12px 12px 8px",
-        }}>
-          <SectionHead title="Runs by agent" sub="hover a bar · click to filter · drag to brush" />
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-            {(chart?.series ?? []).map(s => {
-              const off = hidden.has(s.key);
-              return (
-                <Button key={s.key} variant="ghost" size="xs" aria-pressed={!off}
-                  onClick={() => setHidden(prev => {
-                    const next = new Set(prev);
-                    if (next.has(s.key)) next.delete(s.key); else next.add(s.key);
-                    return next;
-                  })}
-                  title={off ? `Show ${s.label}` : `Hide ${s.label}`}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 6, height: "auto",
-                    padding: "3px 8px", borderRadius: "var(--r-chip)",
-                    border: "1px solid var(--b2)", background: "var(--bg-3)",
-                    color: "var(--t1)", fontSize: 12, opacity: off ? 0.45 : 1,
-                    textDecoration: off ? "line-through" : "none",
-                  }}>
-                  <i aria-hidden style={{ width: 9, height: 9, borderRadius: 2,
-                    background: colorFor(s.key, order) }} />
-                  {s.label}
-                </Button>
-              );
-            })}
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 6,
-                            marginLeft: "auto", color: "var(--t2)", fontSize: 12, cursor: "pointer" }}>
-              <Checkbox checked={showRunners}
-                onChange={e => setShowRunners(e.target.checked)} />
-              include background <Term id="runner">runners</Term>
-            </label>
-      </div>
-          {chart ? (
-            <div style={{ marginTop: 8 }}>
+          {error && <ReadFailed what="the overview again — the figures below are from the last read" error={error} onRetry={load} />}
+          {actionError && <div role="alert" className="aug-fs-sm" style={{ color: "var(--red4)" }}>Not done — {actionError}</div>}
+
+          {/* ── what needs a person, oldest first ─────────────────────────────────── */}
+          <NeedsYou testId="ao-needs" waiting={attention.length > 0 || attentionError !== null} right={attention.length > 0 && (
+            <>
+              <span style={NUM}>{countNoun(attention.length, "item")} waiting</span>
+              {onOpenAttention && <Button variant="link" size="xs" onClick={onOpenAttention}>Open Attention</Button>}
+            </>
+          )}>
+            {attentionError ? (
+              <ReadFailed what="what needs a person" error={attentionError} onRetry={load} />
+            ) : attention.length === 0 ? (
+              <Empty title="Proposals, paused runs, automation approvals, agent alerts and broken automations — every source was read">
+                Nothing waits on a person.
+              </Empty>
+            ) : (
+              <div>
+                {attention.slice(0, 3).map((row, i) => {
+                  const t = needsYouTitle(row.title);
+                  const decides = row.source === PROPOSAL_SOURCE
+                    || (row.source === "automation_approval" && !!row.resolve?.proposal_id);
+                  return (
+                    <div key={`${row.source}:${row.id}`} style={{ display: "grid", alignItems: "center", gap: 12,
+                      gridTemplateColumns: "minmax(0, 1fr) auto auto", padding: "8px 0", ...(i ? RULE : {}) }}>
+                      <div style={{ minWidth: 0 }} title={row.title}>
+                        <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)", fontWeight: 500 }}>
+                          {t.subject ?? t.body}
+                        </div>
+                        <div className="aug-fs-xs" style={{ ...ONE_LINE, color: "var(--t2)" }}>
+                          {SOURCE_LABEL[row.source]}{t.subject && t.body ? ` · ${t.body}` : ""}
+                        </div>
+                      </div>
+                      <span className="aug-fs-sm" style={{ ...NUM, color: row.source === "paused_run" ? "var(--red4)" : "var(--amb4)" }}
+                        title={row.since_basis === "started_at"
+                          ? "waiting since the run started — the pause itself aged out of the journal" : "waiting for"}>
+                        {waitedFor(row.waiting_ms, tick)}{row.since_basis === "started_at" && " *"}
+                      </span>
+                      <span style={{ display: "inline-flex", gap: 6 }}>
+                        {decides ? (
+                          <>
+                            <Button size="xs" variant="secondary" disabled={busy === row.id}
+                              onClick={() => resolveProposal(row, "accept")}>Accept</Button>
+                            <Button size="xs" variant="ghost" disabled={busy === row.id}
+                              onClick={() => resolveProposal(row, "reject")}>Reject</Button>
+                          </>
+                        ) : (
+                          <Button size="xs" variant="secondary"
+                            onClick={() => {
+                              const run = row.resolve?.investigation_id;
+                              if (run && onOpenInvestigation) onOpenInvestigation(run);
+                              else onOpenAttention?.();
+                            }}>
+                            {row.source === "paused_run" ? "Open & resume" : "Open automation"}
+                          </Button>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+                {attention.length > 3 && (
+                  <div className="aug-fs-xs" style={{ ...MUTED, paddingTop: 6, ...RULE }}>
+                    +{attention.length - 3} more in Attention
+                  </div>
+                )}
+              </div>
+            )}
+          </NeedsYou>
+
+          {/* ── the picture: runs by agent on the shared axis ──────────────────────── */}
+          <Card label="Runs by agent" testId="ao-chart"
+            right={chart ? `${rangeWords} · ${perBucket(chart.window.bucket_seconds)}` : rangeWords}>
+            <div style={{ ...ROW, marginBottom: 6 }}>
+              {/* A legend only when there are two series or more; each swatch also hides its series. */}
+              {(chart?.series.length ?? 0) > 1 && chart!.series.map(s => {
+                const off = hidden.has(s.key);
+                return (
+                  <Button key={s.key} variant="ghost" size="xs" aria-pressed={!off}
+                    title={off ? `Show ${s.label}` : `Hide ${s.label}`}
+                    onClick={() => setHidden(prev => {
+                      const next = new Set(prev);
+                      if (next.has(s.key)) next.delete(s.key); else next.add(s.key);
+                      return next;
+                    })}
+                    style={{ height: "auto", padding: "1px 6px", margin: 0, color: "var(--t2)", opacity: off ? 0.45 : 1,
+                      textDecoration: off ? "line-through" : "none" }}>
+                    <i aria-hidden style={{ width: 8, height: 8, borderRadius: 2, background: colorFor(s.key, order) }} />
+                    {s.label}
+                  </Button>
+                );
+              })}
+              <label className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto",
+                color: "var(--t2)", cursor: "pointer" }}
+                title="The automation engine's per-minute check — background work, not an agent's. Counted apart unless switched in.">
+                <Checkbox checked={showRunners} onChange={e => setShowRunners(e.target.checked)} />
+                <span style={NUM}>include {formatCount(tiles.runner_runs)} background runs</span>
+              </label>
+            </div>
+            {chartError ? (
+              <ReadFailed what="the run chart" error={chartError} onRetry={load} />
+            ) : chart === null ? (
+              <Loading what="the run chart" />
+            ) : chart.series.every(s => !s.total) ? (
+              <Empty>No agent runs in this range.</Empty>
+            ) : (
               <ActivityChart window={chart.window} edges={chart.edges}
                 series={chart.series} runners={[]} showRunners={false}
                 hidden={hidden} order={order} selection={selection}
                 onBrush={onBrush} onPickBucket={onBrush} />
-              <div style={{ display: "flex", justifyContent: "space-between",
-                            marginTop: 4, color: "var(--t2)" }}>
-                <span className="aug-fs-xs">
-                  {label} · {chart.window.buckets} bins · y = runs
-                </span>
-                {range.since && (
-                  <Button variant="ghost" size="xs" onClick={onClearBrush}
-                    style={{ color: "var(--blue4)" }}>brushed — clear</Button>
-                )}
+            )}
+            {range.since && (
+              <div style={{ ...ROW, justifyContent: "flex-end", marginTop: 4 }}>
+                <Button variant="link" size="xs" onClick={onClearBrush}>Clear the brushed range</Button>
               </div>
-            </div>
-          ) : chartError ? (
-            <ReadFailed what="the run chart" error={chartError} onRetry={load}
-              style={{ margin: "10px 0 4px" }} />
-          ) : (
-            <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "10px 0 4px" }}>
-              No agent runs in this window.
-            </p>
-          )}
-        </section>
+            )}
+          </Card>
 
-        {/* ── 5 · the fleet, in two lanes ─────────────────────────────────────── */}
-        <section aria-label="All agents">
-          <SectionHead title="All agents"
-            sub="built-in and custom agents in one grammar · runners below, never summed in"
-            action={{ label: noc ? "Calm" : "NOC", onClick: () => setDensity(noc ? "calm" : "noc") }} />
-      <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)",
-                        borderRadius: "var(--r3)", overflow: "hidden" }}>
-        <Table>
-          <TableHeader>
-            <TableRow>
-                  <TableHead style={{ width: 22 }} />
-              <TableHead>Agent</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Live</TableHead>
-                  <TableHead>Activity</TableHead>
-              <TableHead>Runs</TableHead>
-                  <TableHead>Failures</TableHead>
-              {noc && <TableHead>Tokens</TableHead>}
-              {noc && <TableHead>Queries</TableHead>}
-              {noc && <TableHead>Unmetered</TableHead>}
-              <TableHead>Last run</TableHead>
-                  <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-                <LaneHead cols={noc ? 12 : 9} title="Agents"
-                  note={`${charters.length} built-in · ${personas.length} custom`} />
-                {[...charters, ...personas].map(row => (
-                  <AgentRow key={row.id} row={row} noc={noc} order={order}
-                    live={row.kind === "charter"
-                      ? row.job_kinds.reduce((n, k) => n + (liveByKind[k] || 0), 0) : 0}
-                    expanded={expanded === row.id}
-                    onToggle={() => setExpanded(expanded === row.id ? null : row.id)}
-                    onPause={() => togglePause(row)} busy={busy === row.id}
-                    onOpen={onOpenAgent} />
+          {/* ── the agents, built-in and custom in one list; background work below, never summed in ─────── */}
+          <Card label="Agents" testId="ao-agents"
+            right={`${builtIn.length} built-in · ${custom.length} custom`}>
+            {[...builtIn, ...custom].map((row, i) => (
+              <AgentRow key={row.id} row={row} first={i === 0} live={liveOf(row)} order={order}
+                expanded={expanded === row.id}
+                onToggle={() => setExpanded(expanded === row.id ? null : row.id)}
+                onPause={() => togglePause(row)} busy={busy === row.id} onOpen={onOpenAgent} />
             ))}
-                {runners.length > 0 && (
-                  <>
-                    <LaneHead cols={noc ? 12 : 9} title="Background runners"
-                      note="counted separately — never in the agents' totals" />
-                    {runners.map(r => <RunnerRow key={r.id} row={r} noc={noc} />)}
-                  </>
-                  )}
-          </TableBody>
-        </Table>
-      </div>
-        </section>
+            {runners.map(r => <RunnerRow key={r.id} row={r} />)}
+          </Card>
 
-        {/* ── 6 · jobs ────────────────────────────────────────────────────────── */}
-        <section aria-label="Jobs">
-          <SectionHead title="Jobs" sub="the runs behind the figures above" />
-          <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-        {JOB_FILTERS.map(f => (
-              <Button key={f.id} variant="ghost" size="xs"
-                onClick={() => setJobFilter(f.id)}
-                aria-pressed={jobFilter === f.id}
-                style={{
-                  background: jobFilter === f.id ? "var(--bg-4)" : "transparent",
-                  color: jobFilter === f.id ? "var(--t1)" : "var(--t2)",
-                }}>{f.label}</Button>
-        ))}
-          </div>
-          <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)",
-                        borderRadius: "var(--r3)", overflow: "hidden" }}>
-            {jobsError !== null ? (
-              <ReadFailed what="the jobs" error={jobsError} onRetry={load} style={{ padding: "12px 14px" }} />
-            ) : filteredJobs.length === 0 ? (
-              <p className="aug-fs-sm" style={{ color: "var(--t2)", padding: "12px 14px", margin: 0 }}>
-                {jobFilter === "active" ? "Nothing running right now." : "No jobs match this filter."}
-              </p>
-        ) : (
-          <Table>
-            <TableHeader>
-                  <TableRow><TableHead>Job</TableHead><TableHead>Agent</TableHead><TableHead>State</TableHead><TableHead>Started</TableHead><TableHead>Duration</TableHead><TableHead /></TableRow>
-            </TableHeader>
-            <TableBody>
-                  {filteredJobs.slice(0, 60).map(j => (
-                  <TableRow key={j.id}>
-                      <TableCell style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis",
-                                   whiteSpace: "nowrap" }} title={j.title || j.kind}>
-                        {j.title || j.kind}
-                    </TableCell>
-                      <TableCell className="aug-fs-sm" style={{ color: "var(--t2)" }}>
-                        {j.agent?.agent || j.kind}
-                    </TableCell>
-                    <TableCell>
-                        <StatusChip hue={JOB_STATE_HUE[j.state] ?? "muted"} strength="soft">
-                          {j.state.toLowerCase()}
-                        </StatusChip>
-                    </TableCell>
-                      <TableCell className="aug-fs-sm" style={{ color: "var(--t2)" }}>{relTime(j.created_at)}</TableCell>
-                      <TableCell style={{ fontVariantNumeric: "tabular-nums" }}>
-                        {j.duration_ms ? fmtMs(j.duration_ms) : "—"}
-                      </TableCell>
-                    <TableCell>
-                        {["RUNNING", "PENDING", "PAUSED"].includes(j.state) && (
-                        <Button variant="ghost" size="xs"
-                            onClick={() => cancelJob(j.id).then(load).catch(() => {})}>Kill</Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                  ))}
-            </TableBody>
-          </Table>
-        )}
-          </div>
-        </section>
+          {/* ── the runs behind the figures ───────────────────────────────────────── */}
+          <section ref={runsRef} aria-label="Runs" data-testid="ao-runs" style={CARD}>
+            <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8,
+              color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+              Runs
+              <span style={{ marginLeft: "auto", textTransform: "none", letterSpacing: 0 }}>
+                <Segmented label="Which runs" value={runFilter} onChange={setRunFilter}
+                  options={RUN_FILTERS.map(f => ({ value: f.value, label: f.label, title: f.title }))} />
+              </span>
+            </div>
+            {runFilter === "active" ? (
+              <ActiveRuns runs={active} error={activeError} onRetry={load} onKill={id => cancelJob(id).then(load).catch(() => {})} />
+            ) : (
+              <RangedRuns filter={runFilter} ranged={ranged} error={rangedError} onRetry={loadRanged}
+                rangeWords={rangeWords} />
+            )}
+          </section>
+        </div>
       </div>
 
       <ProvenanceDrawer open={prov !== null} data={prov} onClose={() => setProv(null)} />
@@ -625,196 +521,202 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
   );
 }
 
-// ── small parts ──────────────────────────────────────────────────────────────────
+// ── the agents list ─────────────────────────────────────────────────────────────────────
 
-function SectionHead({ title, sub, action }: {
-  title: string; sub?: string; action?: { label: string; onClick: () => void };
+/** One agent — built-in or custom — as one row: name and state, one muted line, its spark, its runs and its two
+ *  buttons. The rest (tokens, queries, where its spend is measured, its kinds of work) is behind the name. */
+function AgentRow({ row, first, live, expanded, onToggle, onPause, busy, onOpen, order }: {
+  row: FleetRow; first: boolean; live: number; expanded: boolean;
+  onToggle: () => void; onPause: () => void; busy: boolean;
+  onOpen?: (id: string, kind: "charter" | "persona") => void;
+  order: string[];
 }) {
+  const isBuiltIn = row.kind === BUILT_IN_AGENT_KIND;
+  const role = row.kind === BUILT_IN_AGENT_KIND ? row.role : "custom agent";
+  const kinds = row.kind === BUILT_IN_AGENT_KIND ? row.job_kinds : null;
+  const runs = row.runs ?? 0;
+  const failed = row.failed ?? 0;
+  const orphaned = isBuiltIn ? row.orphaned ?? 0 : 0;
+  const spark = row.spark ?? [];
+  const tokens = row.tokens ?? 0;
+  const unmetered = row.unmetered_runs ?? 0;
+  const noKinds = kinds !== null && kinds.length === 0;
+  const source = isBuiltIn ? "the run records" : "the session log";
+  // Colour follows the entity: an agent with a series in the chart wears that series' colour; one with none wears
+  // the de-emphasis grey rather than whatever slot comes next (that was amber — the colour that means "needs you").
+  const hue = order.includes(row.id) ? colorFor(row.id, order) : "var(--chart-deemph)";
+
   return (
-    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between",
-                  gap: 12, marginBottom: 8 }}>
-      <h4 className="aug-label" style={{ color: "var(--t2)", margin: 0 }}>{title}</h4>
-      {sub && <span className="aug-fs-sm" style={{ color: "var(--t2)", marginRight: "auto" }}>{sub}</span>}
-      {action && (
-        <Button variant="ghost" size="xs" onClick={action.onClick}
-          style={{ color: "var(--blue4)" }}>{action.label}</Button>
+    <div id={`ao-row-${row.id}`} data-testid="ao-agent-row" style={{ padding: "8px 0", ...(first ? {} : RULE) }}>
+      <div style={{ display: "grid", alignItems: "center", gap: 12,
+        gridTemplateColumns: "minmax(0, 1fr) 96px 84px 56px auto" }}>
+        <div style={{ minWidth: 0 }}>
+          <Button variant="ghost" size="xs" aria-expanded={expanded} onClick={onToggle}
+            title={expanded ? "Hide the details" : "Details"}
+            style={{ height: "auto", padding: 0, margin: 0, gap: 7, color: "var(--t1)", fontWeight: 600, maxWidth: "100%" }}>
+            <span aria-hidden style={{ width: 9, height: 9, borderRadius: 2, flex: "0 0 auto",
+              background: hue }} />
+            <span className="aug-fs-chrome" style={ONE_LINE}>{row.name}</span>
+            <Icon name={expanded ? "chevu" : "chevd"} size={12} />
+          </Button>
+          <div className="aug-fs-xs" style={{ ...ROW, gap: 6, color: "var(--t2)", marginTop: 2 }}>
+            {!row.enabled ? <Chip tone="amber">paused</Chip>
+              : live > 0 ? <Chip tone="accent"><Dot color="var(--blue4)" />{live} running</Chip> : null}
+            <span style={ONE_LINE}>{role}</span>
+            {tokens > 0 && <span style={NUM}>· {compactNumber(tokens)} tokens</span>}
+            {failed > 0 && <span style={{ ...NUM, color: "var(--red4)" }}>· {formatCount(failed)} failed</span>}
+            {orphaned > 0 && <Chip tone="amber" title="A server restart cut these off — infrastructure, not the agent">+{orphaned} cut off</Chip>}
+            {unmetered > 0 && <Chip tone="amber" title="Finished runs that reported no usage — unknown, not zero">{unmetered} unmetered</Chip>}
+            {noKinds && <Chip title="This agent owns no kind of run, so it never shows runs here">not counted as runs</Chip>}
+          </div>
+        </div>
+        <span>{spark.some(v => v > 0) && <Sparkline values={spark} width={92} height={16} color={hue} />}</span>
+        <span className="aug-fs-sm" style={{ ...NUM, textAlign: "right", color: runs ? "var(--t1)" : "var(--t3)" }}>
+          {noKinds ? "—" : <><b style={{ fontWeight: 600 }}>{formatCount(runs)}</b> {runs === 1 ? "run" : "runs"}</>}
+        </span>
+        <span className="aug-fs-xs" style={{ ...MUTED, ...NUM, textAlign: "right" }}
+          title={row.last_run_at ? `last run ${row.last_run_at.replace("T", " ").slice(0, 16)}` : "no run yet"}>
+          {row.last_run_at ? `${relTime(row.last_run_at)} ago` : "—"}
+        </span>
+        <span style={{ display: "inline-flex", gap: 4, justifyContent: "flex-end" }}>
+          <Button variant="ghost" size="xs" disabled={busy} onClick={onPause}>{row.enabled ? "Pause" : "Resume"}</Button>
+          {onOpen && <Button variant="ghost" size="xs" onClick={() => onOpen(row.id, isBuiltIn ? "charter" : row.kind)}>Open</Button>}
+        </span>
+      </div>
+      {expanded && (
+        <div className="aug-fs-xs" style={{ ...ROW, gap: 6, marginTop: 8, paddingLeft: 16, color: "var(--t2)" }}>
+          <Chip>{countNoun(runs, "run")} · {formatCount(failed)} failed{orphaned ? ` · ${orphaned} cut off` : ""}</Chip>
+          <Chip>{compactNumber(tokens)} tokens</Chip>
+          <Chip>{countNoun(row.queries ?? 0, "query", "queries")}</Chip>
+          <Chip tone={unmetered ? "amber" : "plain"}>
+            {unmetered ? `${unmetered} reported no usage — unknown, not zero` : "every finished run reported its usage"}
+          </Chip>
+          {row.avg_duration_ms != null && <Chip>about {duration(row.avg_duration_ms)} a run</Chip>}
+          <Chip>spend measured from {source}</Chip>
+          {kinds !== null && (
+            <Chip title="The kinds of run this agent owns">
+              {kinds.length ? kinds.join(", ") : "owns no kind of run"}
+            </Chip>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-function Card({ children }: { children: React.ReactNode }) {
+/** Background work: shown so its volume is visible, shaped so it can never read as an agent. */
+function RunnerRow({ row }: { row: FleetRunnerRow }) {
   return (
-    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)",
-                  borderRadius: "var(--r3)", padding: "10px 12px" }}>{children}</div>
-  );
-}
-
-function LaneHead({ title, note, cols }: { title: string; note: string; cols: number }) {
-  return (
-    <tr style={{ background: "var(--bg-1)" }}>
-      <td colSpan={cols} style={{ padding: "8px 8px 4px" }}>
-        <span className="aug-label" style={{ color: "var(--t2)" }}>{title}</span>
-        <span className="aug-fs-sm" style={{ color: "var(--t2)", marginLeft: 10 }}>{note}</span>
-      </td>
-    </tr>
-  );
-}
-
-/** One agent — charter or custom — in the SAME columns. What differs is the source line,
- *  which is stated rather than left to be inferred from a row half full of dashes. */
-function AgentRow({ row, noc, live, expanded, onToggle, onPause, busy, onOpen, order }: {
-  row: FleetRow; noc: boolean; live: number; expanded: boolean;
-  onToggle: () => void; onPause: () => void; busy: boolean;
-  onOpen?: (id: string, kind: "charter" | "persona") => void;
-  order: string[];
-}) {
-  const isCharter = row.kind === "charter";
-  const runs = row.runs ?? 0;
-  const failed = row.failed ?? 0;
-  const orphaned = isCharter ? row.orphaned ?? 0 : 0;
-  const spark = row.spark ?? [];
-  const tokens = row.tokens ?? 0;
-  const source = isCharter ? "job metering" : "session log";
-
-  return (
-    <>
-      <tr id={`ao-row-${row.id}`} onClick={onToggle} aria-expanded={expanded}
-        style={{ cursor: "pointer", background: expanded ? "var(--bg-sel)" : undefined }}>
-        <td aria-hidden style={{ color: "var(--t3)", fontSize: 12 }}>{expanded ? "▾" : "▸"}</td>
-        <td>
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <span aria-hidden style={{ width: 10, height: 10, borderRadius: 2, flex: "0 0 auto",
-              background: colorFor(row.id, order) }} />
-            <div>
-              <div style={{ fontWeight: 600 }}>{row.name}</div>
-              <div className="aug-fs-xs" style={{ color: "var(--t2)" }}>
-                {isCharter ? row.role : `custom agent · from the ${source}`}
-              </div>
-            </div>
-          </div>
-        </td>
-        <td>
-          <StatusChip hue={row.enabled ? (live > 0 ? "positive" : "muted") : "caution"} strength="soft">
-            {row.enabled ? (live > 0 ? "running" : "idle") : "paused"}
-          </StatusChip>
-        </td>
-        <td style={{ fontVariantNumeric: "tabular-nums" }}>
-          {live > 0 ? <span style={{ color: "var(--blue4)", fontWeight: 600 }}>{live}</span>
-            : <span style={{ color: "var(--t2)" }}>0</span>}
-        </td>
-        <td>
-          {spark.some(v => v > 0)
-            ? <Sparkline values={spark} width={92} height={16} color={colorFor(row.id, order)} />
-            : <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>
-                {isCharter && row.job_kinds.length === 0 ? "not metered as jobs" : "quiet"}
-              </span>}
-        </td>
-        <td style={{ fontVariantNumeric: "tabular-nums" }}>{formatCount(runs)}</td>
-        <td style={{ fontVariantNumeric: "tabular-nums" }}>
-          {failed > 0 ? <span style={{ color: "var(--red4)" }}>{failed}</span>
-            : <span style={{ color: "var(--t2)" }}>0</span>}
-          {orphaned > 0 && (
-            <span className="aug-fs-xs" style={{ color: "var(--t2)" }}
-              title="server-restart orphans — infrastructure, not agent errors">
-              {" "}+{orphaned} orphaned
-            </span>
-          )}
-        </td>
-        {noc && <td style={{ fontVariantNumeric: "tabular-nums" }}>{compactNumber(tokens)}</td>}
-        {noc && <td style={{ fontVariantNumeric: "tabular-nums" }}>{formatCount(row.queries ?? 0)}</td>}
-        {noc && <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--t2)" }}
-          title="finished runs that recorded no metrics — unknown spend, not zero">
-          {row.unmetered_runs ?? 0}</td>}
-        <td className="aug-fs-sm" style={{ color: "var(--t2)" }}>{relTime(row.last_run_at)}</td>
-        <td style={{ whiteSpace: "nowrap" }} onClick={e => e.stopPropagation()}>
-          <Button variant="ghost" size="xs" disabled={busy} onClick={onPause}>
-            {row.enabled ? "Pause" : "Resume"}
-          </Button>
-          {onOpen && (
-            <Button variant="ghost" size="xs"
-              onClick={() => onOpen(row.id, isCharter ? "charter" : "persona")}>Explore ›</Button>
-          )}
-        </td>
-      </tr>
-      {expanded && (
-        <tr>
-          <td colSpan={noc ? 12 : 9} style={{ background: "var(--bg-1)", padding: "12px 12px 14px 34px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 18 }}>
-              <div>
-                <h5 className="aug-label" style={{ color: "var(--t2)", margin: "0 0 6px" }}>In this window</h5>
-                <p className="aug-fs-sm" style={{ margin: 0, color: "var(--t1)" }}>
-                  {formatCount(runs)} run{runs === 1 ? "" : "s"} · {failed} failed
-                  {orphaned > 0 && ` · ${orphaned} orphaned`}
-                </p>
-                <p className="aug-fs-xs" style={{ margin: "4px 0 0", color: "var(--t2)" }}>
-                  Spend measured from the {source}.
-                </p>
-              </div>
-              <div>
-                <h5 className="aug-label" style={{ color: "var(--t2)", margin: "0 0 6px" }}>Tokens</h5>
-                <p className="aug-fs-sm" style={{ margin: 0, color: "var(--t1)",
-                                                  fontFamily: "var(--font-mono)" }}>
-                  {compactNumber(tokens)}
-                </p>
-                <p className="aug-fs-xs" style={{ margin: "4px 0 0", color: "var(--t2)" }}>
-                  {(row.unmetered_runs ?? 0) > 0
-                    ? `${row.unmetered_runs} finished run(s) recorded no metrics — unknown, not zero.`
-                    : "every finished run reported its usage."}
-                </p>
-              </div>
-              {isCharter && (
-                <div>
-                  <h5 className="aug-label" style={{ color: "var(--t2)", margin: "0 0 6px" }}>Job kinds</h5>
-                  <p className="aug-fs-sm" style={{ margin: 0, color: "var(--t1)" }}>
-                    {row.job_kinds.length ? row.job_kinds.join(", ")
-                      : "none — this charter owns no job kind, so it can never show runs here."}
-                  </p>
-                </div>
-              )}
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
-
-/** A runner: shown so its volume is visible, shaped so it can never read as an agent. */
-function RunnerRow({ row, noc }: { row: FleetRunnerRow; noc: boolean }) {
-  return (
-    <tr style={{ opacity: 0.75 }}>
-      <td />
-      <td>
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <span aria-hidden style={{
-            width: 10, height: 10, borderRadius: 2, flex: "0 0 auto",
-            background: "repeating-linear-gradient(135deg, var(--t3) 0 2px, transparent 2px 4px)",
-          }} />
-          <div>
-            <div style={{ fontWeight: 600, color: "var(--t2)" }}>{row.name}</div>
-            <div className="aug-fs-xs" style={{ color: "var(--t2)" }}>{row.role}</div>
-          </div>
+    <div data-testid="ao-runner-row" style={{ display: "grid", alignItems: "center", gap: 12, padding: "8px 0",
+      gridTemplateColumns: "minmax(0, 1fr) 96px 84px 56px auto", opacity: 0.8, ...RULE }} title={row.role}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <span aria-hidden style={{ width: 9, height: 9, borderRadius: 2, flex: "0 0 auto",
+            background: "repeating-linear-gradient(135deg, var(--t3) 0 2px, transparent 2px 4px)" }} />
+          <span className="aug-fs-chrome" style={{ color: "var(--t2)", fontWeight: 600 }}>{row.name}</span>
         </div>
-      </td>
-      <td><StatusChip hue="muted" strength="soft">runner</StatusChip></td>
-      <td style={{ color: "var(--t2)" }}>—</td>
-      <td>
-        {row.spark.some(v => v > 0)
-          ? <Sparkline values={row.spark} width={92} height={16} color="var(--t3)" showDot={false} />
-          : <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>quiet</span>}
-      </td>
-      <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--t2)" }}>
-        {formatCount(row.runs)} <span className="aug-fs-xs">ticks</span>
-      </td>
-      <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--t2)" }}>{row.failed}</td>
-      {noc && <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--t2)" }}>
-        {compactNumber(row.tokens)}</td>}
-      {noc && <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--t2)" }}>
-        {formatCount(row.queries)}</td>}
-      {noc && <td style={{ color: "var(--t2)" }}>{row.unmetered_runs}</td>}
-      <td className="aug-fs-sm" style={{ color: "var(--t2)" }}>{relTime(row.last_run_at)}</td>
-      <td />
-    </tr>
+        <div className="aug-fs-xs" style={{ color: "var(--t2)", marginTop: 2 }}>background · never in the agents&apos; totals</div>
+      </div>
+      <span>{row.spark.some(v => v > 0) && <Sparkline values={row.spark} width={92} height={16} color="var(--t3)" showDot={false} />}</span>
+      <span className="aug-fs-sm" style={{ ...NUM, textAlign: "right", color: "var(--t2)", whiteSpace: "nowrap" }}>
+        {compactNumber(row.runs)} <span className="aug-fs-xs">checks</span>
+      </span>
+      <span className="aug-fs-xs" style={{ ...MUTED, ...NUM, textAlign: "right" }}>
+        {row.last_run_at ? `${relTime(row.last_run_at)} ago` : "—"}
+      </span>
+      <span className="aug-fs-xs" style={{ ...NUM, textAlign: "right", color: row.failed ? "var(--red4)" : "var(--t3)" }}>
+        {row.failed ? `${formatCount(row.failed)} failed` : ""}
+      </span>
+    </div>
+  );
+}
+
+// ── the runs list ───────────────────────────────────────────────────────────────────────
+
+function StateMark({ state }: { state: string }) {
+  const m = STATE_MARK[state] ?? { word: state.toLowerCase(), color: "var(--t3)" };
+  return (
+    <span className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center", gap: 5, color: m.color }}>
+      <Dot color={m.color} />{m.word}
+    </span>
+  );
+}
+
+/** What is in flight, one row each — every one can be killed. */
+function ActiveRuns({ runs, error, onRetry, onKill }: {
+  runs: FleetJob[]; error: string | null; onRetry: () => void; onKill: (id: string) => void;
+}) {
+  if (error !== null) return <ReadFailed what="what is running" error={error} onRetry={onRetry} />;
+  const live = runs.filter(j => ACTIVE.includes(j.state));
+  if (live.length === 0) return <Empty>Nothing running right now.</Empty>;
+  return (
+    <div>
+      {live.slice(0, 60).map((j, i) => (
+        <div key={j.id} style={{ display: "grid", alignItems: "center", gap: 12, padding: "7px 0",
+          gridTemplateColumns: "minmax(0, 1fr) auto auto", ...(i ? RULE : {}) }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }} title={j.title || j.kind}>
+              {runDisplayTitle(j.title || j.kind).title}
+            </div>
+            <div className="aug-fs-xs" style={{ ...ROW, gap: 6, color: "var(--t2)" }}>
+              <StateMark state={j.state} /><span>· {j.agent?.agent || j.kind} · started {relTime(j.created_at)} ago</span>
+            </div>
+          </div>
+          <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>{j.duration_ms ? duration(j.duration_ms) : ""}</span>
+          <Button variant="ghost" size="xs" onClick={() => onKill(j.id)}>Kill</Button>
+        </div>
+      ))}
+      {live.length > 60 && <div className="aug-fs-xs" style={{ ...MUTED, paddingTop: 6, ...RULE }}>+{live.length - 60} more running</div>}
+    </div>
+  );
+}
+
+/** The range's runs, the same work ending the same way folded into one row with its count. */
+function RangedRuns({ filter, ranged, error, onRetry, rangeWords }: {
+  filter: Exclude<RunFilter, "active">; ranged: { runs: FleetJob[]; capped: string[] } | null;
+  error: string | null; onRetry: () => void; rangeWords: string;
+}) {
+  if (error !== null) return <ReadFailed what="the runs" error={error} onRetry={onRetry} />;
+  if (ranged === null) return <Loading what="the runs" />;
+  const runs = ranged.runs.filter(j => (filter === "all" ? true
+    : filter === "succeeded" ? j.state === "SUCCEEDED" : STOPPED.includes(j.state)));
+  const groups = foldRuns(runs);
+  return (
+    <div data-testid="ao-runs-list">
+      {ranged.capped.length > 0 && (
+        <div style={{ marginBottom: 6 }}>
+          <Chip tone="amber" title={`More than 200 runs of ${ranged.capped.join(", ")} in ${rangeWords}: the newest 200 of each are listed`}>
+            a floor · the newest 200 of {ranged.capped.join(", ")}
+          </Chip>
+        </div>
+      )}
+      {groups.length === 0 ? (
+        <Empty>{filter === "failed" ? `No failed or stopped runs in ${rangeWords}.`
+          : filter === "succeeded" ? `No succeeded runs in ${rangeWords}.` : `No agent runs in ${rangeWords}.`}</Empty>
+      ) : groups.slice(0, 40).map((g, i) => {
+        const latest = g.runs[0];
+        const timed = g.runs.map(j => j.duration_ms).filter((ms): ms is number => ms != null).sort((a, b) => a - b);
+        const typical = timed.length ? timed[Math.floor(timed.length / 2)] : null;
+        const errors = [...new Set(g.runs.map(j => j.error).filter(Boolean))];
+        return (
+          <div key={g.key} data-testid="ao-run-group" style={{ display: "grid", alignItems: "center", gap: 12, padding: "7px 0",
+            gridTemplateColumns: "minmax(0, 1fr) auto", ...(i ? RULE : {}) }}>
+            <div style={{ minWidth: 0 }} title={errors.length ? errors.join("\n") : g.title}>
+              <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }}>{g.title}</div>
+              <div className="aug-fs-xs" style={{ ...ROW, gap: 6, color: "var(--t2)" }}>
+                <StateMark state={g.state} />
+                <span>· {g.agent} · latest {relTime(latest.created_at)} ago{typical != null ? ` · typical ${duration(typical)}` : ""}</span>
+              </div>
+            </div>
+            <span className="aug-fs-chrome" style={{ ...NUM, color: "var(--t1)", fontWeight: 600 }}>
+              {g.runs.length > 1 ? `×${formatCount(g.runs.length)}` : ""}
+            </span>
+          </div>
+        );
+      })}
+      {groups.length > 40 && (
+        <div className="aug-fs-xs" style={{ ...MUTED, paddingTop: 6, ...RULE }}>+{groups.length - 40} more kinds of run</div>
+      )}
+    </div>
   );
 }

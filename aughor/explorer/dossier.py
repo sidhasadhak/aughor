@@ -72,6 +72,45 @@ def _key(connection_id: str, finding_id: str) -> str:
     return f"insight:{connection_id}:{finding_id}"
 
 
+#: The ledger key a finding's receipt is kept under — public, so a store that clears or reads receipts never spells the
+#: frozen prefix again. A schema's findings share ``receipt_key(conn, f"{schema}:")`` as their prefix.
+receipt_key = _key
+
+
+def rescope(connection_id: str, schema: str, state: dict) -> int:
+    """Give a schema's findings written before ids carried their schema (`store.scoped_finding_id`) the scoped id,
+    each with a receipt of its own. The receipt under the old id is carried over only when it is this finding's —
+    the same query and the same words — because another schema's run may have written over it; otherwise the
+    finding's own query is recorded as its receipt, with no derivation. Changes ``state`` in place; returns how
+    many findings were renamed."""
+    from aughor.explorer import store as _store
+    from aughor.explorer.scope import tables_in_sql
+    from aughor.kernel.ledger import Ledger
+
+    if not schema:
+        return 0
+    led = Ledger.default()
+    renamed = 0
+    for f in state.get(_store.FINDINGS) or []:
+        old = str(f.get("id") or "") if isinstance(f, dict) else ""
+        new = _store.scoped_finding_id(schema, old) if old else ""
+        if new == old:
+            continue
+        sql = str(f.get("sql") or "")
+        if sql:
+            art = led.artifact_latest(_key(connection_id, old)) or {}
+            held = art.get("payload") or {}
+            own = held.get("sql") == sql and held.get("finding") == f.get("finding")
+            lineage: list[tuple] = [("source_sql", "sql", sql)]
+            lineage += [("input", f"table:{t}", None) for t in sorted(tables_in_sql(sql))[:8]]
+            lineage.append(("derivation", "renamed", f"was {old}" + ("" if own else "; that receipt was another's")))
+            led.artifact_write("finding", _key(connection_id, new), {**(held if own else f), "id": new},
+                               conn_id=connection_id, lineage=lineage)
+        f["id"] = new
+        renamed += 1
+    return renamed
+
+
 def update_dossier(connection_id: str, insight_id: str, *, merge: dict,
                    lineage_edge: Optional[tuple] = None) -> Optional[int]:
     """Write a new version of a finding's artifact with ``merge`` folded into its

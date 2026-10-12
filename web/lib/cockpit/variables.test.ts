@@ -109,7 +109,9 @@ describe("the rules a value is held to", () => {
     expect(issues(days).join(" ")).toContain('the days "window". Days are counted back by in_last');
     const list = desk();
     list.sets!.recent.where = [{ path: "status", op: "in", value_from: "country" }];
-    expect(issues(list).join(" ")).toContain("A value is compared with =, !=, >, >=, <, <= or counted back by in_last");
+    // Arc AP-8c — "in" keeps objects among a list, and a word is not one: said once
+    expect(issues(list).join(" ")).toContain('keeps status among the value "country", which is not a list');
+    expect(issues(list).join(" ").match(/not a list/g)).toHaveLength(1);
   });
 
   it("refuses a value counted from a set that, down the sets and values it reads, reads that value back", () => {

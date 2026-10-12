@@ -35,7 +35,7 @@ def get_usage(
     reports ``cost_is_complete`` — a model with no declared price contributes nothing to
     the total rather than being counted as free.
     """
-    from aughor.obs.usage import AXES, usage_report
+    from aughor.obs.usage import AXES, ensure_catalogue_prices, usage_report
 
     axes = tuple(a.strip() for a in (by or "").split(",") if a.strip())
     if not axes:
@@ -44,6 +44,9 @@ def get_usage(
         raise HTTPException(
             status_code=400,
             detail=f"unknown axis/axes {unknown}; known: {sorted(AXES)}")
+    # Ask the provider's catalogue for rates (at most hourly) BEFORE pricing, as the obs summary does: this reader never
+    # did, so on a fresh API process Spend read "$0.00 at least" until something else loaded them (2026-10-12).
+    ensure_catalogue_prices()
     return usage_report(axes=axes, org_id=org_id, scan=scan).to_dict()
 
 

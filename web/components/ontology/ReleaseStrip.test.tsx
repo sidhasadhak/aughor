@@ -3,6 +3,9 @@
  * Arc OC-2 — the release strip: nothing while releases are off; with them on, which release everyone reads, each
  * waiting change with its class and what it touches, Publish refused while a change would break something, and a
  * discard of one change sent with its kind and id.
+ *
+ * Since the Ontology tab was laid out as its approved mockup (2026-10-10) the release is a chip in the tab's bar —
+ * "Release 2 · 9 Oct" — and, while changes wait, the chip says how many and opens them, with Publish and Discard.
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -51,9 +54,21 @@ describe("ReleaseStrip", () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it("with nothing waiting, is one chip naming the release everyone reads — and offers no publish", async () => {
+    serve(state([]));
+    render(<ReleaseStrip connectionId="c" schema="s" onChanged={() => {}} />);
+    const chip = await screen.findByTestId("release-chip");
+    expect(chip.textContent).toBe("Release 2 · 9 Oct");
+    expect(chip.getAttribute("title")).toMatch(/^Everyone reads release 2, published /);
+    expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
+  });
+
   it("says which release everyone reads and what each change touches", async () => {
     serve(state([meaning]));
     render(<ReleaseStrip connectionId="c" schema="s" onChanged={() => {}} />);
+    const chip = await screen.findByTestId("release-chip");
+    expect(chip.textContent).toBe("Release 2 · 9 Oct · 1 to publish");
+    fireEvent.click(chip);
     expect(await screen.findByText(/1 change waiting to be published/)).toBeTruthy();
     expect(screen.getByText(/still read release 2/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Review the changes" }));
@@ -67,6 +82,7 @@ describe("ReleaseStrip", () => {
     const calls = serve(state([breaking, meaning]));
     const changed = vi.fn();
     render(<ReleaseStrip connectionId="c" schema="s" onChanged={changed} />);
+    fireEvent.click(await screen.findByTestId("release-chip"));
     const publish = await screen.findByRole("button", { name: "Publish" });
     expect((publish as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Review the changes" }));
@@ -81,6 +97,7 @@ describe("ReleaseStrip", () => {
   it("publishes and says how many claims were restated", async () => {
     const calls = serve(state([meaning]));
     render(<ReleaseStrip connectionId="c" schema="s" onChanged={() => {}} />);
+    fireEvent.click(await screen.findByTestId("release-chip"));
     fireEvent.click(await screen.findByRole("button", { name: "Publish" }));
     expect(await screen.findByText("Published release 3 — 1 claim restated")).toBeTruthy();
     expect(calls.some(c => c.url.includes("/ontology/release/publish") && c.method === "POST")).toBe(true);

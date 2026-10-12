@@ -13,19 +13,21 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within, change, choose, optionsOf } from "@/lib/testing";
 import userEvent from "@testing-library/user-event";
+import { Position, ReactFlowProvider } from "@xyflow/react";
 
 import type { OntologyDraft, TypeMap } from "@/lib/objectTypes";
 
-const handoff: { nodes: any[]; edges: any[]; onNodeDragStop?: (e: unknown, n: unknown) => void } =
+const handoff: { nodes: any[]; edges: any[]; edgeTypes?: Record<string, any>; onNodeDragStop?: (e: unknown, n: unknown) => void } =
   { nodes: [], edges: [] };
 
 vi.mock("@xyflow/react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@xyflow/react")>();
   return {
     ...actual,
-    ReactFlow: ({ nodes, edges, nodeTypes, onNodeDragStop, onNodeClick, children }: any) => {
+    ReactFlow: ({ nodes, edges, nodeTypes, edgeTypes, onNodeDragStop, onNodeClick, children }: any) => {
       handoff.nodes = nodes;
       handoff.edges = edges;
+      handoff.edgeTypes = edgeTypes;
       handoff.onNodeDragStop = onNodeDragStop;
       const Card = nodeTypes.entity;
       return (
@@ -148,6 +150,25 @@ import { EntityTypeMap } from "@/components/ontology/EntityTypeMap";
 const CACHE_KEY = "ont-map-layout";
 const SCOPE = "c1:s";
 
+/** Every point a path's commands pass through, in order, and each quadratic corner as [control, end]. */
+function geometryOf(d: string): { points: [number, number][]; corners: [[number, number], [number, number]][]; curves: boolean } {
+  const tokens = d.match(/[A-Za-z]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
+  const points: [number, number][] = [];
+  const corners: [[number, number], [number, number]][] = [];
+  let curves = false;
+  for (let i = 0; i < tokens.length;) {
+    const command = tokens[i++];
+    if ("CcSsTtAa".includes(command)) curves = true;
+    const numbers: number[] = [];
+    while (i < tokens.length && !/^[A-Za-z]$/.test(tokens[i])) numbers.push(Number(tokens[i++]));
+    const pairs: [number, number][] = [];
+    for (let j = 0; j + 1 < numbers.length; j += 2) pairs.push([numbers[j], numbers[j + 1]]);
+    if (command === "Q" && pairs.length === 2) corners.push([pairs[0], pairs[1]]);
+    points.push(...pairs);
+  }
+  return { points, corners, curves };
+}
+
 describe("EntityTypeMap", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -167,6 +188,41 @@ describe("EntityTypeMap", () => {
     // drawn by the map's own edge, which lifts a sideways link's label clear of the cards it would lie under
     expect(handoff.edges.every((e) => e.type === "link")).toBe(true);
     expect(handoff.nodes.every((n) => n.draggable && n.type === "entity")).toBe(true);
+  });
+
+  it("draws every link straight, turning only at a right angle — never along a curve (the user, 2026-10-10)", async () => {
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    await waitFor(() => expect(handoff.edges.length).toBe(2));
+    // What the map HANDS the renderer: each edge's type, and the component that type names — drawn here with real
+    // handle points, since jsdom draws no edge of a real canvas.
+    expect(handoff.edges.every((e) => e.type === "link")).toBe(true);
+    const Edge = handoff.edgeTypes!.link;
+    const cases: [Position, Position, number, number][] = [
+      [Position.Right, Position.Left, 300, 120],      // sideways, offset: a step
+      [Position.Bottom, Position.Top, 180, 260],      // downwards, offset: a step
+      [Position.Right, Position.Top, 240, 200],       // round a corner
+      [Position.Left, Position.Right, -300, 0],       // level: one straight run
+    ];
+    for (const [from, to, x, y] of cases) {
+      const { container, unmount } = render(
+        <ReactFlowProvider>
+          <svg>
+            <Edge id="e" source="a" target="b" sourceX={0} sourceY={0} targetX={x} targetY={y}
+              sourcePosition={from} targetPosition={to} />
+          </svg>
+        </ReactFlowProvider>);
+      const d = container.querySelector("path.react-flow__edge-path")!.getAttribute("d")!;
+      const { points, corners, curves } = geometryOf(d);
+      expect(curves, d).toBe(false);                                      // no bezier, no arc
+      for (const [control, end] of corners) expect(control, d).toEqual(end);   // a corner with no radius is square
+      const runs = points.filter((p, i) => i === 0 || p[0] !== points[i - 1][0] || p[1] !== points[i - 1][1]);
+      expect(runs.length, d).toBeGreaterThan(1);
+      for (let i = 1; i < runs.length; i++) {
+        const [a, b] = [runs[i - 1], runs[i]];
+        expect(a[0] === b[0] || a[1] === b[1], d).toBe(true);           // every run level or upright
+      }
+      unmount();
+    }
   });
 
   it("sends each link out of the side the type it reaches actually lies on", async () => {
@@ -315,8 +371,9 @@ describe("EntityTypeMap — ON-7: parts fold into their parent, and a person dec
     await waitFor(() => expect(handoff.edges.map((e) => e.id)).toEqual(["oi_product"]));
     expect(handoff.edges[0].source).toBe("order");
     await waitFor(() => expect(handoff.edges[0].label).toBe("contains · 1:N · via order_item"));
-    // the rail lists the part under the cards, and the card says it has one
-    expect(screen.getAllByTestId("entity-rail-part").map((b) => b.textContent)).toEqual(["order_itempart of order"]);
+    // the rail lists the part under the cards — its name, its count of rows, and whose part it is — and the card says
+    // it has one
+    expect(screen.getAllByTestId("entity-rail-part").map((b) => b.textContent)).toEqual(["order_item3part of order"]);
     expect(screen.getByTestId("rf-node-order")).toHaveTextContent("1 part");
   });
 
@@ -429,6 +486,56 @@ describe("EntityTypeMap — ON-7b: the explorer's draft", () => {
     expect(handoff.edges.find((e) => e.id === "oi_product")!.style.stroke).toBe("var(--amb4)");   // refused stays refused
     await waitFor(() =>
       expect(handoff.edges.find((e) => e.id === "oi_order")!.label).toBe("belongs to · N:1 · proposed"));
+  });
+});
+
+/** The figures row above the map (the approved mockup, 2026-10-10) reads what the map holds from the map itself. */
+describe("EntityTypeMap — what the bar above it says", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    stored.value = undefined;
+    handoff.nodes = [];
+    handoff.edges = [];
+    draftState.value = emptyDraft;
+    served.map = {
+      ...map,
+      processes: [{ id: "fulfilment", display_name: "Fulfilment", entity: "order", origin: "human", verified: true,
+                    objects: 3, stages: ["placed", "shipped"], promises: [] }],
+      rules: [{ id: "done", display_name: "Done", entity: "order", kind: "value_set", origin: "human", verified: true,
+                admitted: 1, objects: 3, flags: 0 }],
+    };
+  });
+
+  it("tells the bar its entities, links, processes, rules and the explorer's proposals waiting on a person", async () => {
+    const onSummary = vi.fn();
+    render(<EntityTypeMap connectionId="c1" schema="s" onSummary={onSummary} />);
+    await waitFor(() => expect(onSummary).toHaveBeenLastCalledWith(
+      { entities: 4, links: 2, processes: 1, rules: 1, proposed: 0 }));
+    draftState.value = drafted;                                            // two proposed, one refused
+    onSummary.mockClear();
+    render(<EntityTypeMap connectionId="c1" schema="s" onSummary={onSummary} />);
+    await waitFor(() => expect(onSummary).toHaveBeenLastCalledWith(
+      { entities: 4, links: 2, processes: 1, rules: 1, proposed: 2 }));
+  });
+
+  it("opens the explorer's proposals when the bar's 'to approve' is pressed", async () => {
+    draftState.value = drafted;
+    const { rerender } = render(<EntityTypeMap connectionId="c1" schema="s" reviewDraft={0} />);
+    await screen.findByTestId("explorer-draft-counts");
+    expect(screen.queryAllByTestId("explorer-proposal")).toHaveLength(0);
+    rerender(<EntityTypeMap connectionId="c1" schema="s" reviewDraft={1} />);
+    await waitFor(() => expect(screen.getAllByTestId("explorer-proposal")).toHaveLength(3));
+  });
+
+  it("lists each entity with its count of rows and its key as a mark", async () => {
+    served.map = { ...map, object_types: map.object_types.map((t) => (
+      t.object_type === "country" ? { ...t, rows: null, key_verified: null }
+        : t.object_type === "product" ? { ...t, rows: 29120, unconfirmed: 1 } : t)) };
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    const listed = await screen.findAllByTestId("entity-rail-row");
+    const text = (name: string) => listed.find((b) => b.textContent?.startsWith(name))!.textContent;
+    expect(text("product")).toBe("product29,120✓ key · 0 links · ● 1 proposed");
+    expect(text("country")).toBe("country—● key not counted · 0 links");
   });
 });
 

@@ -675,6 +675,15 @@ const KEEP_AFTER_MS = 900;
  *  and a group or a person in none of the policy's groups. A preview says these in its banner. */
 const WITHHELD = /may see are shown|counted over only the|masked for|sees no |none of its groups/;
 
+/** Arc AP-8c — the cards of the person's own query a cockpit places, by id and title: what a value may read. */
+export function placedQueries(spec: { elements?: Record<string, { type?: string; props?: Record<string, unknown> } | undefined> } | null | undefined,
+  cards: { id: string; title?: string; sql?: string; render?: Record<string, unknown> }[]): { id: string; title: string }[] {
+  const placed = new Set(Object.values(spec?.elements ?? {}).filter(el => el?.type === "Card").map(el => String(el?.props?.card ?? "")));
+  // a query of the person's own carries how it is shown (Arc AP-7, `render.shown`)
+  return cards.filter(c => placed.has(c.id) && (c.sql ?? "").trim() && c.render?.shown != null)
+    .map(c => ({ id: c.id, title: c.title || "A query of yours" }));
+}
+
 export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidence }: {
   connectionId: string;
   schema?: string;
@@ -1132,6 +1141,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           wiringOn={wiringOn} structureOn={structureOn} onAddPiece={structureOn ? section => setAdding({ section }) : undefined}
           checks={checks} variablesOn={variablesOn && wiringOn}
           cardReads={id => valuesRead(data.cards.find(c => c.id === id)?.sql)}
+          queryCards={placedQueries(current, data.cards)}
           bar={(
             <EditBar saved={saved} canUndo={stacks.past.length > 0} canRedo={stacks.future.length > 0} onUndo={undo} onRedo={redo} onDone={done}
               picker={(

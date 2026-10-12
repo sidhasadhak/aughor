@@ -630,6 +630,32 @@ class SchemaExplorer:
             payload.update(journal_extra)
         self._journal("exploration.insight", payload)
 
+    def _finding_id(self, base: str) -> str:
+        """``base`` made unique across the connection — a run over one schema of several puts the schema in front."""
+        return _store.scoped_finding_id(None if getattr(self, "canvas_id", None) else getattr(self, "schema_name", None), base)
+
+    def _rescope_findings(self) -> None:
+        """Once per schema's state: findings kept from before ids carried their schema take it now (`dossier.rescope`),
+        and the state is saved at once, so the Briefing reads the new ids beside their receipts."""
+        if getattr(self, "canvas_id", None) or not getattr(self, "schema_name", None):
+            return
+        try:
+            from aughor.explorer.dossier import rescope
+            # A finding reading another schema's tables was read back here from that schema's receipt: it is set
+            # aside with the reason, never renamed into this schema.
+            leaked = 0
+            for f in self._state.get(_store.FINDINGS) or []:
+                if isinstance(f, dict) and not f.get("invalid") and self._leaks_schema(str(f.get("sql") or "")):
+                    f["invalid"] = True
+                    f["invalid_reason"] = "it reads another schema's tables — read back from that schema's receipt"
+                    leaked += 1
+            if rescope(self.connection_id, self.schema_name, self._state) or leaked:
+                _store.save(self._store_key, self._state)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a schema's findings could not take their schema-scoped ids; they keep the old ones this run",
+                     counter="explorer.rescope", conn_id=self.connection_id)
+
     def _read_prior_pinned(self, qi: int) -> Optional[dict]:
         """The latest stored pinned finding for slot ``qi`` from the ledger, or None.
         Lets the pinned pass REPRODUCE a finding (read) instead of re-running identical
@@ -637,7 +663,7 @@ class SchemaExplorer:
         every run' symptom while keeping the briefing reproducible."""
         try:
             from aughor.kernel.ledger import Ledger
-            rec = Ledger.default().receipt(f"insight:{self.connection_id}:pinned__{qi}")
+            rec = Ledger.default().receipt(f"insight:{self.connection_id}:{self._finding_id(f'pinned__{qi}')}")
             payload = ((rec or {}).get("artifact", {}) or {}).get("payload", {}) or {}
             if isinstance(payload, dict) and payload.get("finding") and payload.get("sql"):
                 return payload
@@ -1077,9 +1103,10 @@ class SchemaExplorer:
         self._gaps_only = bool(gaps_only)
         self._job = "structure" if structure_only else ("questions" if domain_intel_only else "full")
         self._job_reason = reason
-        self._findings_at_start = self._findings_made()
         logger.info(f"[explorer:{self.connection_id}] Starting (domain_intel_only={domain_intel_only})")
         _loop = asyncio.get_running_loop()
+        await _loop.run_in_executor(None, self._rescope_findings)
+        self._findings_at_start = self._findings_made()
         # A new run is not the stopped one: only THIS run's own budget stop may re-stamp it,
         # or a later failure of another kind would be continued as if it were a budget stop.
         self._state.pop("stopped_on_budget_at", None)
@@ -1941,7 +1968,7 @@ class SchemaExplorer:
 
             for dim_col in dim_cols:
                 for mea_col in mea_cols:
-                    insight_id = f"{t_dim}.{dim_col}×{t_fact}.{mea_col}"
+                    insight_id = self._finding_id(f"{t_dim}.{dim_col}×{t_fact}.{mea_col}")
                     if insight_id in done_ids:
                         continue
 
@@ -2099,6 +2126,9 @@ class SchemaExplorer:
                 # re-read: reading it back would carry its measureless evidence into every run.
                 if prior and self._order_keys_projected(prior.get("sql", "")):
                     prior = None
+                # Nor is one reading another schema's tables: its answer is that schema's.
+                if prior and self._leaks_schema(prior.get("sql", "")):
+                    prior = None
                 if prior:
                     _pdoss = prior.pop("dossier", None) if isinstance(prior, dict) else None
                     if not prior.get("signature"):
@@ -2236,7 +2266,7 @@ class SchemaExplorer:
 
                 _psigf = signature_fields(sql, getattr(self._conn, "dialect", "duckdb"))
                 insight = {
-                    "id": f"pinned__{qi}",
+                    "id": self._finding_id(f"pinned__{qi}"),
                     "domain": "Key Questions",
                     "angle": "pinned-question",
                     "question": q,
@@ -4225,7 +4255,7 @@ class SchemaExplorer:
                              counter="explorer.dedup_failed")
 
                 # Step 4: Store the insight
-                insight_id = _store.fresh_finding_id(self._state, f"{domain}__{nq.angle}__{used}")
+                insight_id = _store.fresh_finding_id(self._state, self._finding_id(f"{domain}__{nq.angle}__{used}"))
                 # Structured cut coordinates (measure×dimension×tables) parsed from the
                 # executed SQL — populates the hitherto-empty dimensions/measures and a
                 # `signature` block, the substrate the cut-frontier and the synthesis
@@ -4559,7 +4589,7 @@ class SchemaExplorer:
 
             _sigf = signature_fields(sql, _dialect)
             insight = {
-                "id": _store.fresh_finding_id(self._state, f"synth__{ctype}__{stored}"),
+                "id": _store.fresh_finding_id(self._state, self._finding_id(f"synth__{ctype}__{stored}")),
                 "domain": "Synthesis",
                 "angle": ctype,
                 "entities_involved": [],

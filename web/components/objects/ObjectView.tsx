@@ -181,7 +181,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
       </EmptyState>
     );
   } else if (!loaded) {
-    body = <div style={{ maxWidth: 1180, margin: "0 auto", padding: 24 }}><SkeletonRows rows={8} /></div>;
+    body = <div style={{ padding: 24 }}><SkeletonRows rows={8} /></div>;
   } else if (loaded.path === "missing") {
     body = <EmptyState icon="search" title={`No ${objectType} ${pk}`} action={toWorkbench}>{loaded.detail}</EmptyState>;
   } else if (loaded.path === "withheld") {
@@ -236,7 +236,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
 function ObjectBody({ page, scope, reload }: { page: ObjectPage; scope: Scope; reload: () => void }) {
   const { related } = page;
   return (
-    <div style={{ maxWidth: 1180, margin: "0 auto", padding: "20px 24px 40px" }}>
+    <div style={{ padding: "20px 24px 40px" }}>
       {page.caveats.length > 0 && (
         <div className="aug-fs-sm"
           style={{ marginBottom: 16, padding: "8px 12px", borderRadius: "var(--r3)", border: "1px solid var(--amb2)",

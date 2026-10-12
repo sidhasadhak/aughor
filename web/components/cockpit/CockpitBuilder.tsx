@@ -125,7 +125,7 @@ function Steps({ label, value, least, most, onStep }: { label: string; value: nu
 const Rule = () => <span aria-hidden="true" style={{ width: 1, height: 16, background: "var(--b2)", margin: "0 6px" }} />;
 
 export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, aside, above, connectionId, schema, wiringOn = false,
-  structureOn = false, onAddPiece, checks, cardSetup, variablesOn = false, cardReads, children }: {
+  structureOn = false, onAddPiece, checks, cardSetup, variablesOn = false, cardReads, queryCards, children }: {
   spec: CockpitSpec;
   /** Every change, as the next spec and the version's note. */
   onChange: (next: CockpitSpec, note: string) => void;
@@ -156,6 +156,8 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
   variablesOn?: boolean;
   /** Arc AP-8 — the cockpit's values a card of the person's own query reads, by the card's id. */
   cardReads?: (cardId: string) => string[];
+  /** Arc AP-8c — the cards of the person's own query the cockpit places: a value may read one's first value. */
+  queryCards?: { id: string; title: string }[];
   /** The cockpit, drawn with the element chosen, the door that chooses one, the handle the steps use, and — while a
    *  set, a value or a choice is chosen — the pieces that read it. */
   children: (p: { selected: string | null; onSelect: (key: string) => void; handle: { current: CockpitHandle | null }; reads: string[] }) => ReactNode;
@@ -382,7 +384,7 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
             variablesOn={variablesOn} />
             : wireKind === "value" ? <ValueSetup spec={spec} name={wireName} onChange={apply} onGone={() => setWire(null)} variablesOn={variablesOn}
               connectionId={connectionId} schema={schema} cardReads={variablesOn ? cardReads : undefined} cardTitle={cardTitle}
-              onRenamed={n => setWire(`value:${n}`)} />
+              onRenamed={n => setWire(`value:${n}`)} queryCards={variablesOn ? queryCards : undefined} />
               : wireKind === "choice" ? <ChoiceSetup spec={spec} name={wireName} />
                 : <PieceSetup spec={spec} selected={selected} onChange={apply} connectionId={connectionId} schema={schema} cardTitle={cardTitle}
                   entityTitle={entityTitle} wiringOn={wiringOn} cardSetup={cardSetup} />)}

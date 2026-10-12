@@ -555,7 +555,7 @@ function HomeScreen({
   return (
     <div className="aug-screen">
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 22px 28px", display: "flex", flexDirection: "column", gap: 14,
-        maxWidth: 1180, width: "100%" }}>
+        width: "100%" }}>
 
         {/* WP-11 — ask-on-Home hero: the composer, front and centre. Shown once a connection
             exists (before that, the first-run funnel guides connecting). Enter (or Ask) fires

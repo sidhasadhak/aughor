@@ -1114,6 +1114,11 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
     room: key => steppers.get(key)?.room() ?? null,
     step: (key, dw, dh) => steppers.get(key)?.step(dw, dh),
   }), [steppers]);
+  // Arc AP-8c — a value read from a query of the cockpit's own reads a card the cockpit places
+  const cardSql = useCallback((card: string) => {
+    const found = cards.find(c => c.card.id === card);
+    return found ? found.card.sql ?? "" : undefined;
+  }, [cards]);
   const context = useMemo<CockpitContextValue>(() => ({
     elements: check.valid ? (spec as Spec).elements : {},
     cards: new Map(cards.map(c => [c.card.id, c])),
@@ -1149,7 +1154,7 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
       <PiecesProvider connectionId={connectionId} schema={schema} elements={context.elements} onPlaceTable={doors.onPlaceTable}
         asGroup={asGroup} onSaid={onSaid}
         sets={check.valid ? (spec as WireSpec).sets : undefined} values={check.valid ? (spec as WireSpec).values : undefined}
-        cockpitId={cockpitId}>
+        cockpitId={cockpitId} cardSql={cardSql}>
         <JSONUIProvider registry={REGISTRY as ComponentRegistry} store={store}>
           <Renderer spec={spec as Spec} registry={REGISTRY as ComponentRegistry} />
         </JSONUIProvider>
