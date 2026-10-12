@@ -19,6 +19,7 @@ Two numbers, both deterministic, no model:
 """
 from __future__ import annotations
 
+import functools
 import json
 import re
 from pathlib import Path
@@ -211,21 +212,75 @@ def is_table_off(conn: str, schema: Optional[str], table: str) -> bool:
     return excluded(conn, schema, table) is not None
 
 
-def refusal_for(conn: str, sql: str, dialect: Optional[str], *, default_schema: Optional[str] = None) -> str:
-    """The sentence a statement naming an excluded table is refused with, or "" when it names none."""
-    if not connection_exclusions(conn):
-        return ""
+@functools.lru_cache(maxsize=4096)
+def _tables_read(sql: str, dialect: Optional[str]) -> tuple:
+    """The tables a statement reads, in a stable order — parsed once per statement: a Briefing's findings are read
+    on every load, and the same few hundred statements would otherwise be parsed each time."""
     from aughor.sql.tables import extract_tables
-    for ref in sorted(extract_tables(sql, dialect), key=lambda r: r.qualified()):
+    return tuple(sorted(extract_tables(sql, dialect), key=lambda r: r.qualified()))
+
+
+def off_read(conn: str, sql: str, dialect: Optional[str] = None, *,
+             default_schema: Optional[str] = None) -> Optional[tuple[str, Exclusion]]:
+    """The first table this statement reads that a person turned off — its name as the statement said it, and the
+    exclusion — or None. The one rule the SQL door refuses by and the Briefing leaves findings out by."""
+    if not sql or not connection_exclusions(conn):
+        return None
+    for ref in _tables_read(sql, dialect):
         schema = ref.schema or default_schema
         hit = excluded(conn, schema, ref.table)
         if hit is not None:
-            name = ref.qualified() if ref.schema else (f"{schema}.{ref.table}" if schema else ref.table)
-            what = "its schema is" if hit.table == SCHEMA_WIDE else "it is"
-            return (f"[EXCLUDED] {name} is turned off for analysis — {what} excluded "
-                    f"({hit.reason.replace('_', ' ')}{', by ' + hit.declared_by if hit.declared_by else ''}). "
-                    "Turn it back on in the Catalog to use it.")
-    return ""
+            return (ref.qualified() if ref.schema else (f"{schema}.{ref.table}" if schema else ref.table)), hit
+    return None
+
+
+def refusal_for(conn: str, sql: str, dialect: Optional[str], *, default_schema: Optional[str] = None) -> str:
+    """The sentence a statement naming an excluded table is refused with, or "" when it names none."""
+    found = off_read(conn, sql, dialect, default_schema=default_schema)
+    if found is None:
+        return ""
+    name, hit = found
+    what = "its schema is" if hit.table == SCHEMA_WIDE else "it is"
+    return (f"[EXCLUDED] {name} is turned off for analysis — {what} excluded "
+            f"({hit.reason.replace('_', ' ')}{', by ' + hit.declared_by if hit.declared_by else ''}). "
+            "Turn it back on in the Catalog to use it.")
+
+
+def findings_left_out(conn: str, by_domain: dict, *, default_schema: Optional[str] = None,
+                      dialect: Optional[str] = None) -> tuple[dict, list[dict]]:
+    """A table turned off works like a schema turned off: the findings that read it leave the Briefing — its story,
+    its lists, its desk — and come back when the table is turned back on (nothing is written; the store keeps them).
+    Returns the findings kept, by domain, and one row per finding left out. The same dict, untouched, when the
+    connection turned nothing off — the reads of a connection that never used the switch do not change.
+    A finding's own schema (``source_schema``, on a connection read whole) names its unqualified tables."""
+    if not connection_exclusions(conn):
+        return by_domain, []
+    kept: dict = {}
+    out: list[dict] = []
+    for domain, items in (by_domain or {}).items():
+        for f in items or []:
+            found = off_read(conn, str(f.get("sql") or ""), dialect,
+                             default_schema=f.get("source_schema") or default_schema)
+            if found is None:
+                kept.setdefault(domain, []).append(f)
+            else:
+                out.append({"id": str(f.get("id") or ""), "schema": str(f.get("source_schema") or default_schema or ""),
+                            "domain": domain, "table": found[0], "reason": found[1].reason,
+                            "declared_by": found[1].declared_by})
+    return kept, out
+
+
+def left_out_said(rows: list[dict]) -> Optional[dict]:
+    """What a Briefing says about the findings it left out because they read a table turned off, or None."""
+    if not rows:
+        return None
+    tables = sorted({r["table"] for r in rows})
+    n = len(rows)
+    named = ", ".join(tables[:3]) + (f" and {len(tables) - 3} more" if len(tables) > 3 else "")
+    return {"count": n, "tables": tables,
+            "said": f"{n} finding{'s' if n != 1 else ''} read {named}, turned off for analysis, and "
+                    f"{'are' if n != 1 else 'is'} left out. Turn {'them' if len(tables) != 1 else 'it'} back on in "
+                    f"the Catalog to bring {'it' if n == 1 else 'them'} back."}
 
 
 # ── tables: the share the ontology maps ────────────────────────────────────────

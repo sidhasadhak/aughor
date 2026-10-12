@@ -1755,95 +1755,128 @@ def query_quickfix(body: _QuickFixRequest, request: Request):
             "changed": True, "diagnosis": diagnosis}
 
 
-class _AssistRequest(BaseModel):
+class _AskRequest(BaseModel):
     conn_id: str
+    #: What the SQL should give, in the person's words — the text after `/ask`.
+    request: str
+    #: The rest of the editor, as context — a request may build on a statement already there ("by month too").
     sql: str = ""
-    instruction: str
-    error: str = ""
-    # Short prior turns [{role, content}], so a follow-up ("shorter", "and by month")
-    # lands on the conversation it continues. Capped server-side; never persisted.
-    history: list[dict] = []
+    schema_name: str = ""
 
 
-@router.post("/query/assist")
-def query_assist(body: _AssistRequest, request: Request):
-    """SE-8E — the editor's AI pane. PROPOSES, never runs.
+#: What a guard did to the statement before it was handed back, in a person's words — said above it as `-- …`.
+#: A guard that only HINTED could not repair what it saw, so it is said as something to check.
+_ASK_GUARD_WORDS: dict[tuple[str, str], str] = {
+    ("fanout_defan", "rewrote_sql"): "a join that would have double-counted was rewritten",
+    ("fanout_defan", "hinted"): "check: a join here may double-count",
+    ("count_star_entity_grain", "hinted"): "check: COUNT(*) may count rows rather than the thing asked about",
+    ("sql_lint", "rewrote_sql"): "repaired after the lint",
+    ("preflight_repair", "repaired_sql"): "names repaired against the schema",
+}
 
-    Same consent model as ``/query/quickfix``, which this generalises: any SQL the
-    model suggests comes back in ``proposed_sql`` and lands in a diff the user accepts
-    or rejects — there is no code path from this endpoint to ``execute()``, and the
-    platform's own decision (a grant authorises PROPOSE, never EXECUTE) is the reason.
-    Called only from a user's explicit message in the pane; nothing polls it.
+
+def _ask_notes(receipts: list[dict]) -> list[str]:
+    out: list[str] = []
+    for r in receipts or []:
+        guard, action = str(r.get("guard") or ""), str(r.get("action") or "")
+        words = _ASK_GUARD_WORDS.get((guard, action)) or (
+            f"check: {guard.replace('_', ' ')} flagged it" if action == "hinted" else "")
+        if words and words not in out:
+            out.append(words)
+    return out[:3]
+
+
+@router.post("/query/ask")
+async def query_ask(body: _AskRequest, request: Request):
+    """`/ask` in the SQL editor — the statement written by the platform's own question-to-SQL path, never run.
+
+    The user, 2026-10-12: "a user typing '/ask' and after that writing what is expected from the SQL … we only
+    deliver SQL". This is Quick analysis's own core (`answer_core`) — the same governed metrics, ontology, trusted
+    queries, corrections, dialect rules, lint, de-fan, preflight repair and grounded-literal guards — stopped at the
+    statement (`frame_only`): no execute, no narrative, no chat turn. It replaced `/query/assist` (the assistant pane),
+    which was one model call over the bare schema text.
+
+    The answer passes two checks that need no rows: it must not write, and it must not read a table a person turned
+    off. What the guards did to it comes back as notes. A request the path declines (an abstention, a definition
+    rather than rows) is said, as a 422 with its own words. It costs the core's model calls (1–2 typically).
     """
-    from aughor.db.connection import open_connection_for, gate_user_sql
-
     _check_conn_org(request, body.conn_id)
-    instruction = body.instruction.strip()
-    if not instruction:
-        raise HTTPException(status_code=400, detail="instruction is required")
+    text = body.request.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="say what the SQL should give you, after /ask")
 
-    # The buffer travels as context and may come back edited, so it passes the same
-    # gate a run would — advice about a statement we would refuse to run is advice
-    # about how to get around the refusal.
-    if body.sql.strip():
-        blocked = gate_user_sql(body.conn_id, "query_workbench", body.sql)
-        if blocked is not None:
-            raise HTTPException(status_code=400, detail=blocked.error)
+    from aughor.sql import readonly
+    from aughor.trust.lineage_edges import dialect_for_connection
+    dialect = dialect_for_connection(body.conn_id)
+    # The editor's statement travels as the turn a request builds on. One that would change data is refused first:
+    # a statement written on top of what the run gate would refuse is a way around the refusal.
+    if body.sql.strip() and readonly.is_mutating(body.sql, dialect or "duckdb"):
+        raise HTTPException(status_code=400, detail="the editor holds a statement that changes data — /ask won't build on it")
+
+    from aughor.routers.investigations import ChatHistoryTurn, answer_core, answer_core_pool
+
+    history = ([ChatHistoryTurn(question="(the statement already in the editor)", sql=body.sql.strip())]
+               if body.sql.strip() else [])
+
+    def _frame():
+        return answer_core(text, body.conn_id, history, emit=lambda _t, _p: None, skip_clarify=True,
+                           frame_only=True, schema_scope=body.schema_name or None, purpose="sql_editor_ask")
 
     try:
-        db = open_connection_for(body.conn_id)
+        res = await asyncio.get_running_loop().run_in_executor(answer_core_pool(), _frame)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
-    try:
-        dialect = getattr(db, "dialect", "duckdb")
-        schema = db.get_schema()
-    finally:
+    except Exception as exc:  # noqa: BLE001 — a provider or connection failure is upstream of the request
+        raise HTTPException(status_code=502, detail=f"the SQL could not be written just now: {exc}")
+
+    if res.outcome != "framed":
+        if res.outcome == "not_found":
+            raise HTTPException(status_code=404, detail=res.error or "Connection not found")
+        if res.outcome == "kb_definitional":
+            said = "that reads as a question about a definition, not rows — say what the SQL should return"
+        elif res.outcome == "connect_failed":
+            raise HTTPException(status_code=502, detail=res.error or "the connection could not be opened")
+        else:
+            said = res.headline or res.error or f"no statement was written ({res.outcome})"
+        raise HTTPException(status_code=422, detail=said)
+
+    sql = (res.sql or "").strip()
+    if not sql:
+        raise HTTPException(status_code=422, detail="no statement was written — try saying it another way")
+    from aughor.ontology.visibility import refusal_for
+    if readonly.is_mutating(sql, dialect or "duckdb"):
+        raise HTTPException(status_code=422, detail="the statement written would change data — it is not handed back")
+    refused = refusal_for(body.conn_id, sql, dialect, default_schema=body.schema_name or None)
+    if refused:
+        raise HTTPException(status_code=422, detail=refused.replace("[EXCLUDED] ", ""))
+    return {"sql": sql, "notes": _ask_notes(res.guard_receipts), "outcome": res.outcome}
+
+
+class _DescribeRequest(BaseModel):
+    conn_id: str
+    statements: list[str]
+
+
+@router.post("/query/describe")
+def query_describe(body: _DescribeRequest, request: Request):
+    """What each statement measures and how it is cut, in words (`agent.analyst.statement_title`) — the line the SQL
+    editor's recent runs print over each statement (the user, 2026-10-12). Read from the statement alone: no query,
+    no model, nothing stored. "" for one that does not say (it does not parse, or reads no table): the editor then
+    shows the statement alone, never a guess."""
+    _check_conn_org(request, body.conn_id)
+    if len(body.statements) > 20:
+        raise HTTPException(status_code=400, detail="at most 20 statements at a time")
+    from aughor.agent.analyst import statement_title
+    from aughor.trust.lineage_edges import dialect_for_connection
+    dialect = dialect_for_connection(body.conn_id) or ""
+
+    def _title(sql: str) -> str:
         try:
-            db.close()
-        except Exception as exc:
-            from aughor.kernel.errors import tolerate
-            tolerate(exc, "assist: db close", counter="query.assist.close")
+            return statement_title(sql[:20000], dialect)
+        except Exception:  # noqa: BLE001 — a statement that cannot be described is shown without words
+            return ""
 
-    from pydantic import BaseModel as _BM
-
-    class _Assist(_BM):
-        reply: str
-        proposed_sql: str = ""
-
-    from aughor.llm.provider import get_provider
-
-    turns = "\n".join(
-        f"{str(m.get('role', '?'))}: {str(m.get('content', ''))[:2000]}"
-        for m in (body.history or [])[-6:]
-    )
-    try:
-        out = get_provider("coder").complete(
-            system=(
-                "You are the SQL editor's assistant. Answer plainly and briefly. "
-                "When the user's ask calls for SQL (write, fix, optimise, extend), put the "
-                "complete statement in proposed_sql and keep reply to one or two sentences "
-                "about WHAT changed and why; otherwise leave proposed_sql empty. "
-                f"The engine dialect is {dialect}. You cannot run anything — never claim "
-                "you executed a query or saw its rows."
-            ),
-            user=(
-                f"Schema:\n{schema}\n\n"
-                + (f"Conversation so far:\n{turns}\n\n" if turns else "")
-                + (f"The editor currently contains:\n{body.sql}\n\n" if body.sql.strip() else "")
-                + (f"The last run failed with:\n{body.error}\n\n" if body.error.strip() else "")
-                + f"The user asks: {instruction}"
-            ),
-            response_model=_Assist,
-        )
-    except Exception as exc:
-        # 502 like quickfix: the provider being down is not a defect in the user's ask.
-        raise HTTPException(status_code=502, detail=f"The assistant is unavailable: {exc}")
-
-    proposed = (out.proposed_sql or "").strip()
-    if proposed == body.sql.strip():
-        proposed = ""   # an identical "proposal" is an empty diff wearing an Apply button
-    return {"reply": (out.reply or "").strip(), "proposed_sql": proposed,
-            "changed": bool(proposed)}
+    return {"titles": [_title(s) for s in body.statements]}
 
 
 # ── Saved-query versions (SE-4 J) ─────────────────────────────────────────────

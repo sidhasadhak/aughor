@@ -17,12 +17,17 @@
  * Collapsed by default: the count is the answer to "what do we have", and the list is for
  * the rarer "which ones". The count is always shown, because a reader who does not expand
  * must still learn the playbook exists and how big it is.
+ *
+ * A card (CLARITY): the count at the label's right end, the two kinds of play as chips, the list behind Show.
  */
 import { useEffect, useState } from "react";
 
 import { PlaybookPanel } from "@/components/PlaybookPanel";
+import { Card, Chip, ROW } from "@/components/clarity/kit";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { getApiBase } from "@/lib/config";
+import { formatCount } from "@/lib/format";
 
 export function OrgPlaybookSection() {
   const [open, setOpen] = useState(false);
@@ -51,36 +56,35 @@ export function OrgPlaybookSection() {
   }, []);
 
   return (
-    <section style={{ marginTop: 18 }}>
-      <button
-        onClick={() => setOpen(v => !v)}
-        aria-expanded={open}
-        data-testid="org-playbook-toggle"
-        style={{
-          display: "flex", alignItems: "center", gap: 7, width: "100%",
-          background: "none", border: "none", padding: "6px 0", cursor: "pointer",
-          textAlign: "left", color: "var(--t1)",
-        }}
-      >
-        <Icon name={open ? "chevd" : "chevr"} size={11} />
-        <span className="aug-fs-sm" style={{ fontWeight: 500 }}>Playbook</span>
-        <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: "auto" }}>
-          {total === null ? "" : `${total} plays from your installed industry packages`}
-        </span>
-      </button>
-      {!open && total !== null && ruleOuts > 0 && (
-        <div className="aug-fs-xs" style={{ color: "var(--t3)", paddingLeft: 18,
-                                            lineHeight: 1.45 }}>
-          {ruleOuts} of them are data-quality rule-outs the Verifier runs during a deep
-          report; the rest are read when a run’s numbers match their trigger.
+    <div style={{ minWidth: 0, gridColumn: open ? "1 / -1" : undefined }}>
+      <Card label="Playbook" testId="org-playbook"
+        right={total === null ? undefined : `${formatCount(total)} plays`}>
+        <div style={{ ...ROW, gap: 6 }}>
+          {total !== null && (
+            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>From your installed industry packages</span>
+          )}
+          {total !== null && ruleOuts > 0 && (
+            <Chip title="The Verifier runs these during a deep report; none is a decision a person takes.">
+              {formatCount(ruleOuts)} data-quality rule-outs, run by the Verifier
+            </Chip>
+          )}
+          {total !== null && total - ruleOuts > 0 && (
+            <Chip title="Read when a run’s numbers match their trigger">
+              {formatCount(total - ruleOuts)} read when a run’s numbers match
+            </Chip>
+          )}
         </div>
-      )}
-      {open && (
-        <div style={{ marginTop: 8, height: 460, border: "1px solid var(--b1)",
-                      borderRadius: "var(--r2)", overflow: "hidden" }}>
-          <PlaybookPanel />
-        </div>
-      )}
-    </section>
+        <Button variant="ghost" size="xs" onClick={() => setOpen(v => !v)} aria-expanded={open}
+          data-testid="org-playbook-toggle" style={{ marginTop: 8 }}>
+          {open ? "Hide the plays" : "Show the plays"} <Icon name={open ? "chevu" : "chevd"} size={12} />
+        </Button>
+        {open && (
+          <div style={{ marginTop: 8, height: 460, border: "1px solid var(--b1)",
+                        borderRadius: "var(--r2)", overflow: "hidden" }}>
+            <PlaybookPanel />
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }

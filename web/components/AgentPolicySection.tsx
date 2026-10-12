@@ -9,13 +9,19 @@
  * did, so the default `run` stands), what the ENVIRONMENT pins on the server (it can only narrow), and the
  * EFFECTIVE result the API enforces. `act` is given only by a named person: the server refuses an agent that
  * tries, and this form is disabled without `admin.manage_org`, saying so.
+ *
+ * A card (CLARITY, 2026-10-12): the policy in force at the label's right end, one line on what it governs, the three
+ * levels side by side, the two allowlists, one Save.
  */
 import { useCallback, useEffect, useState } from "react";
 import { clearAgentPolicy, getAgentPolicy, getMyAccess, updateAgentPolicy, type AgentPolicyView } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
+import { Card } from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Radio } from "@/components/ui/checkbox";
+
+import { FIELDS, Field, Note, SaveLine } from "./settings/parts";
 
 type Level = "read" | "run" | "act";
 
@@ -24,9 +30,6 @@ const LEVELS: Array<{ key: Level; label: string; hint: string }> = [
   { key: "run", label: "Run", hint: "also ask questions and start explorations, which spend model calls" },
   { key: "act", label: "Act", hint: "also cancel jobs, run automations and Spotlight's staged acts" },
 ];
-
-const hintStyle: React.CSSProperties = { color: "var(--t3)", marginTop: 4 };
-const labelStyle: React.CSSProperties = { color: "var(--t3)", marginBottom: 4, display: "block" };
 
 /** A comma list as typed → the list the API takes; blank means "all". */
 export function parseAllowlist(text: string): string[] | null {
@@ -110,20 +113,17 @@ export function AgentPolicySection() {
   const envPins = env && (env.level || env.connections || env.tools);
 
   return (
-    <div data-testid="agent-policy-section" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div className="aug-label">Outside agents (MCP)</div>
-      <div className="aug-fs-xs" style={hintStyle}>
-        What an MCP client acting for this organisation may do. Every call it makes is checked against this
-        policy by the API and written to the audit log.
-      </div>
-
-      {view && (
-        <div className="aug-fs-sm" data-testid="agent-policy-effective" style={{ color: "var(--t2)" }}>
+    <Card label="Outside agents (MCP)" testId="agent-policy-section"
+      right={view && (
+        <span className="aug-fs-xs" data-testid="agent-policy-effective" style={{ color: "var(--t2)" }}>
           In force: <strong>{describeEffective(view)}</strong>
-        </div>
-      )}
+        </span>
+      )}>
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 10 }}>
+        What an MCP client acting for this organisation may do; every call is checked and audited.
+      </div>
       {envPins && (
-        <div className="aug-fs-xs" data-testid="agent-policy-environment" style={{ ...hintStyle, color: "var(--amb4)" }}>
+        <div className="aug-fs-xs" data-testid="agent-policy-environment" style={{ color: "var(--amb4)", marginBottom: 10 }}>
           The server's environment pins {[
             env.level ? `the level at ${env.level}` : "",
             env.connections ? `${env.connections.length} connection${env.connections.length === 1 ? "" : "s"}` : "",
@@ -132,36 +132,37 @@ export function AgentPolicySection() {
         </div>
       )}
 
-      <div role="radiogroup" aria-label="Agent level" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div role="radiogroup" aria-label="Agent level" style={{ display: "grid", gap: 10, marginBottom: 12,
+        gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))" }}>
         {LEVELS.map(l => (
           <label key={l.key} className="aug-fs-sm" style={{ display: "flex", alignItems: "flex-start", gap: 8, color: "var(--t2)", cursor: canManage ? "pointer" : "default" }}>
             <Radio name="agent-level" value={l.key} checked={level === l.key}
               disabled={!canManage || saving} onChange={() => setLevel(l.key)} />
-            <span><strong>{l.label}</strong> — {l.hint}</span>
+            <span>
+              <strong style={{ color: "var(--t1)" }}>{l.label}</strong>{" "}
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>— {l.hint}</span>
+            </span>
           </label>
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div>
-          <label className="aug-fs-xs" style={labelStyle} htmlFor="agent-policy-connections">Connections the agent may touch</label>
+      <div style={FIELDS}>
+        <Field label="Connections the agent may touch" htmlFor="agent-policy-connections">
           <Input id="agent-policy-connections" value={connections} disabled={!canManage || saving}
             onChange={e => setConnections(e.target.value)} placeholder="all — or connection ids, comma-separated" />
-        </div>
-        <div>
-          <label className="aug-fs-xs" style={labelStyle} htmlFor="agent-policy-tools">Tools the agent may call</label>
+        </Field>
+        <Field label="Tools the agent may call" htmlFor="agent-policy-tools">
           <Input id="agent-policy-tools" value={tools} disabled={!canManage || saving}
             onChange={e => setTools(e.target.value)} placeholder="all — or tool names, comma-separated" />
-        </div>
+        </Field>
       </div>
 
       {!canManage && (
-        <div className="aug-fs-xs" data-testid="agent-policy-locked" style={hintStyle}>
+        <Note testId="agent-policy-locked">
           Changing this needs the <code>admin.manage_org</code> permission; the policy in force is shown above.
-        </div>
+        </Note>
       )}
-      {error && <div className="aug-fs-xs" data-testid="agent-policy-error" style={{ color: "var(--red4)" }}>{error}</div>}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <SaveLine saved={saved && !saving} error={error} errorTestId="agent-policy-error">
         <Button variant="secondary" size="sm" onClick={save} disabled={!canManage || saving} data-testid="agent-policy-save">
           {saving ? "Saving…" : "Save agent policy"}
         </Button>
@@ -170,8 +171,7 @@ export function AgentPolicySection() {
             Return to the default (run)
           </Button>
         )}
-        {saved && !saving && <span className="aug-fs-xs" style={{ color: "var(--grn4)" }}>Saved ✓</span>}
-      </div>
-    </div>
+      </SaveLine>
+    </Card>
   );
 }

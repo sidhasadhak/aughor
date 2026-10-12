@@ -58,6 +58,8 @@ export function SavedQueryBar({
   savable,
   onLoaded,
   onActiveChange,
+  onList,
+  openRequest,
 }: {
   connId: string;
   /** Which editor is up. Decides whether Save UPDATES the open query or creates a new
@@ -76,6 +78,11 @@ export function SavedQueryBar({
   onLoaded?: (q: SavedQuery) => void;
   /** The saved query now open, or null. The workbench titles the results with it. */
   onActiveChange?: (q: SavedQuery | null) => void;
+  /** The list this bar read for the connection — null when the read failed, so a starting point elsewhere on the
+   *  screen can say so rather than show "none saved". */
+  onList?: (list: SavedQuery[] | null) => void;
+  /** Open this saved query exactly as picking it from the menu does (a new nonce each time). */
+  openRequest?: { q: SavedQuery; nonce: number };
 }) {
   const [list, setList] = useState<SavedQuery[]>([]);
   // The whole record, not just its id: Save has to know which MODE the open query was
@@ -88,9 +95,11 @@ export function SavedQueryBar({
   const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
 
   const refresh = useCallback(() => {
-    if (!connId) { setList([]); return; }
-    listSavedQueries(connId).then(setList).catch(() => setList([]));
-  }, [connId]);
+    if (!connId) { setList([]); onList?.([]); return; }
+    listSavedQueries(connId)
+      .then(l => { setList(l); onList?.(l); })
+      .catch(() => { setList([]); onList?.(null); });
+  }, [connId, onList]);
 
   // One place that says what is open, so every setter cannot forget to report it.
   const setActive = useCallback((q: SavedQuery | null) => {
@@ -186,6 +195,13 @@ export function SavedQueryBar({
     onLoaded?.(q);
   };
 
+  // A saved query picked elsewhere on the screen (the empty results pane's starting point) opens through this same
+  // `load`, so it is the open query here too — Save updates it, its versions and share link follow.
+  useEffect(() => {
+    if (openRequest) load(openRequest.q);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest?.nonce]);
+
   const remove = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
@@ -210,7 +226,8 @@ export function SavedQueryBar({
       </Button>
 
       <Button
-        variant="ghost" size="xs" className="aug-fs-ui"
+        variant="secondary" size="xs" className="aug-fs-ui"
+        data-testid="saved-save"
         onClick={onSave}
         disabled={!savable || state === "saving"}
         title={updatable
@@ -239,7 +256,9 @@ export function SavedQueryBar({
                 padding: "8px 12px", borderBottom: "1px solid var(--b0)",
               }}
             >
-              <span className="aug-fs-ui" style={{ color: "var(--t3)", fontWeight: 600 }}>Saved queries</span>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+                Saved queries{list.length > 0 && <span style={{ textTransform: "none", letterSpacing: 0 }}> · {list.length}</span>}
+              </span>
               <Button
                 variant="ghost" size="xs"
                 className="aug-fs-ui h-auto p-0 font-normal hover:bg-transparent dark:hover:bg-transparent"

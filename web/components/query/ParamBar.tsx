@@ -139,7 +139,8 @@ export function ParamBar({
         padding: "6px 10px", borderTop: "1px solid var(--b0)", flexShrink: 0,
       }}
     >
-      <span className="aug-fs-ui" style={{ color: "var(--t3)", flexShrink: 0 }}>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)", flexShrink: 0, textTransform: "uppercase",
+        letterSpacing: ".06em" }}>
         Parameters
       </span>
 

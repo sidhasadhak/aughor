@@ -451,6 +451,116 @@ def _adhoc_title(columns: list, question: str, sql: str = "", rows: Any = None, 
     return title[:1].upper() + title[1:]
 
 
+#: Aliases a code generator writes (a cockpit piece's `v0`, `x`, `s`) — names nobody reads, so the expression speaks.
+_GENERATED_ALIAS = re.compile(r"^(?:[a-z]{1,2}|v\d+|col\d+|_?c\d+|f\d+)$", re.I)
+_AGG_WORDS = {"sum": "total", "avg": "average", "min": "lowest", "max": "highest"}
+
+
+def _projection_words(p: Any) -> tuple[str, bool]:
+    """``(words, is_measure)`` for one projection: its own alias when a person wrote one, else what it computes —
+    ``SUM(q.sales) AS v0`` → "total sales", ``COUNT(DISTINCT o.order_id)`` → "distinct order ID count"."""
+    from sqlglot import exp
+    alias = p.alias if isinstance(p, exp.Alias) else ""
+    node = p.this if isinstance(p, exp.Alias) else p
+    agg = node.find(exp.AggFunc)
+    if alias and not _GENERATED_ALIAS.match(alias):
+        return _words(alias), agg is not None
+    if agg is None:
+        col = node.find(exp.Column)
+        return (_words(col.name) if col is not None else ""), False
+    col = agg.find(exp.Column)
+    if isinstance(agg, exp.Count):
+        if col is None:
+            return "row count", True
+        return (f"distinct {_words(col.name)} count" if agg.find(exp.Distinct) else f"{_words(col.name)} count"), True
+    what = _words(col.name) if col is not None else "value"
+    return f"{_AGG_WORDS.get(agg.key, agg.key)} {what}", True
+
+
+def statement_title(sql: str, dialect: str = "") -> str:
+    """What a statement measures and how it is cut, in words, read from the statement alone — no rows, no model:
+    "Total sales by country where status = Complete — Jul 2026 · top 20". The SQL editor's recent runs print it over
+    each statement (the user, 2026-10-12: "describe what the SQL is doing, in natural language in a concise manner").
+
+    `_adhoc_title` names a RESULT by its columns and rows; a run in the editor's history has no rows, so here the
+    statement says it: its aggregates are what it measures, its other columns what it is cut by. The filters and the
+    dates are `_adhoc_title`'s own (`_adhoc_filters`, `_adhoc_window`). The editor's `SELECT * FROM (…) __q LIMIT n`
+    wrappers are read through to the statement the person wrote. "" when the statement does not parse or reads no
+    table — the editor then shows the statement alone, and never a guess."""
+    from sqlglot import exp, parse_one
+    text = " ".join((sql or "").split())
+    if not text:
+        return ""
+    def _read(read: Optional[str]) -> Any:
+        try:
+            return parse_one(text, read=read)
+        except Exception:                       # noqa: BLE001 — a reading that does not parse gives the next its turn
+            return None
+
+    tree = None
+    for read in dict.fromkeys([dialect or None, None]):
+        tree = _read(read)
+        if tree is not None:
+            break
+    sel = tree if isinstance(tree, exp.Select) else (tree.find(exp.Select) if tree is not None else None)
+    if sel is None:
+        return ""
+    # Through the wrappers: `SELECT * FROM (inner) alias` says nothing the inner statement does not.
+    def _source(node: Any) -> Any:
+        frm = node.args.get("from_") or node.args.get("from")      # sqlglot 30 spells it `from_`
+        return frm.this if frm is not None else None
+
+    while (len(sel.expressions) == 1 and isinstance(sel.expressions[0], exp.Star)
+           and isinstance(_source(sel), exp.Subquery)
+           and not sel.args.get("where") and not sel.args.get("group")):
+        inner = _source(sel).this
+        if not isinstance(inner, exp.Select):
+            break
+        sel = inner
+
+    measures: list[str] = []
+    cuts: list[str] = []
+    star = False
+    for p in sel.expressions:
+        if isinstance(p, exp.Star) or (isinstance(p, exp.Column) and isinstance(p.this, exp.Star)):
+            star = True
+            continue
+        words, is_measure = _projection_words(p)
+        if words and words not in (measures if is_measure else cuts):
+            (measures if is_measure else cuts).append(words)
+
+    def _listed(names: list[str]) -> str:
+        names = names[:3] + ([f"{len(names) - 3} more"] if len(names) > 3 else [])
+        return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+    table = sel.find(exp.Table)
+    tables = list(dict.fromkeys(t.name for t in sel.find_all(exp.Table) if t.name))
+    where_from = _listed([_words(t) for t in tables]) if tables else ""
+    if measures:
+        base = f"{_listed(measures)} by {_listed(cuts)}" if cuts else (
+            f"{_listed(measures)} in {where_from}" if where_from else _listed(measures))
+    elif star and table is not None:
+        base = f"every column of {where_from}"
+    elif cuts and table is not None:
+        base = f"{_listed(cuts)} from {where_from}"
+    else:
+        return ""
+    try:
+        kept = ", ".join(_adhoc_filters(text, (), dialect)[:3])
+    except Exception:                           # noqa: BLE001 — a statement that does not parse names no filter
+        kept = ""
+    title = f"{base} where {kept if len(kept) <= 60 else kept[:59] + '…'}" if kept else base
+    window = _window_words(_adhoc_window(text))
+    if window:
+        title = f"{title} — {window}"
+    limit = sel.args.get("limit")
+    order = sel.args.get("order")
+    n = limit.expression if limit is not None else None
+    if measures and order is not None and isinstance(n, exp.Literal) and str(n.this).isdigit():
+        title = f"{title} · top {n.this}" if any(o.args.get("desc") for o in order.expressions) else title
+    return title[:1].upper() + title[1:150]
+
+
 def _declared_filters(turn: "AnalystTurn", dialect: str) -> list[str]:
     """The filters the question's metrics declare — part of those measures, so no result's title
     repeats them (`_adhoc_filters`)."""

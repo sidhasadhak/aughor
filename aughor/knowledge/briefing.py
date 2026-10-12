@@ -853,6 +853,21 @@ def _brief_rebuild_decision(key: str, connection_id: str, entry: dict):
     return decision.should_rebuild, decision
 
 
+def cites_turned_off(connection_id: str, entry: dict, scope_key: str = "") -> bool:
+    """Whether a cached story cites a finding whose query reads a table (or schema) a person turned off since it was
+    written. Such a story is not served: it is rewritten from the findings that remain, as a schema turned off has
+    no Briefing at all. Each citation carries its finding's query (2026-10-11); one that carries none cannot be
+    checked and is let stand. False at once when the connection turned nothing off."""
+    from aughor.ontology.visibility import connection_exclusions, off_read
+    cites = [c for c in (entry or {}).get("citations") or [] if isinstance(c, dict) and c.get("sql")]
+    if not cites or not connection_exclusions(connection_id):
+        return False
+    from aughor.trust.lineage_edges import dialect_for_connection
+    dialect = dialect_for_connection(connection_id)
+    schema = scope_key.split("#", 1)[0].split(":", 1)[1] if ":" in scope_key.split("#", 1)[0] else None
+    return any(off_read(connection_id, str(c["sql"]), dialect, default_schema=schema) for c in cites)
+
+
 def peek_briefing(scope_key: str) -> dict[str, Any] | None:
     """The cached brief for a scope, or None — READ ONLY, never generates.
 
@@ -966,7 +981,8 @@ def get_briefing(
                         for k in ("start", "end", "lag_days")))
             if entry and same_window:
                 needs, pre_decision = _brief_rebuild_decision(key, connection_id, entry)
-                if not needs:
+                # a story citing a table turned off since it was written is rewritten without it
+                if not needs and not cites_turned_off(connection_id, entry, key):
                     return {**entry, **_kept_version(connection_id, entry, scope_key, period)}
         except Exception:
             pass

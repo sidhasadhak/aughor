@@ -18,6 +18,13 @@
  * change rather than mounted per tab: a CM6 view per tab would multiply the parser
  * worker and the linter by the tab count, and 20 tabs is an allowed state.
  *
+ * Redone to `aughor-v2/CLARITY.md` (2026-10-12): the toolbar is Run (or Cancel), the schema, the guards' verdict as
+ * a chip and ONE Tools ▾ — Explain, Run all, Format and its preferences, Open, Recent runs and the keys moved
+ * there from a row of buttons and icons, unchanged in what they do. Before anything runs, the results pane is a
+ * starting point (`QueryStart`): recent runs, saved queries, the largest tables. The assistant that sat in a pane on
+ * the right is `/ask` in the editor itself (`editor/ask.ts`): a line `/ask <what you want>` becomes the statement the
+ * platform's question-to-SQL path writes (`POST /query/ask`), never run.
+ *
  * Drafts persist per connection so a layer switch or a reload does not lose work in
  * progress. Two rules from this codebase apply and both are load-bearing: storage is
  * NEVER read in a `useState` initializer (that reads during render and breaks
@@ -27,9 +34,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlEditorPane } from "@/components/query/editor/SqlEditorPane";
+import { blankAskLines } from "@/components/query/editor/ask";
 import { ResultsPanel } from "@/components/query/ResultsPanel";
 import { HistoryRail } from "@/components/query/HistoryRail";
-import { AiPane } from "@/components/query/AiPane";
 import { Icon } from "@/components/ui/icon";
 import { ParamBar } from "@/components/query/ParamBar";
 import { type SavedQueryBinding } from "@/components/query/SavedQueryBar";
@@ -43,14 +50,17 @@ import {
   DEFAULT_FORMAT_PREFS, formatSql, readFormatPrefs, writeFormatPrefs, type FormatPrefs,
 } from "@/lib/query/format";
 import { OpenQueryDialog } from "@/components/query/OpenQueryDialog";
+import { QueryStart } from "@/components/query/QueryStart";
 import { resolveParamValue, type ParamDef, type ParamValue } from "@/lib/query/paramDefs";
 import {
-  runWorkbenchQuery, QueryCancelled, type QueryValidation, type TypedQueryResult, type TypedQueryPage,
-} from "@/lib/api";
+  runWorkbenchQuery, QueryCancelled, type QueryValidation, type SavedQuery, type TypedQueryResult, type TypedQueryPage, askForSql } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ShortcutSheet } from "@/components/query/ShortcutSheet";
+import { ToolsMenu } from "@/components/catalog/CatalogTools";
+import { Chip } from "@/components/clarity/kit";
 import { type JoinHint } from "@/components/query/editor/intentions";
 import { formatCount } from "@/lib/format";
+import { editorTools, verdictChip, type ToolSpec } from "@/lib/query/workbench";
 
 type EditorApi = { insert: (text: string) => void; focus: () => void; relint: () => void };
 
@@ -87,11 +97,16 @@ export function SqlMode({
   onSavedBinding,
   onSavableChange,
   onSchedule,
-  onShare,
   toolbar,
+  sharedTools,
   schemaControl,
   pendingInsert,
   pendingOpen,
+  startTables,
+  tablesLoading,
+  connectionName,
+  saved,
+  onOpenSaved,
 }: {
   connId: string;
   engine: EngineHint | null;
@@ -107,8 +122,17 @@ export function SqlMode({
   onSavableChange?: (savable: boolean) => void;
   /** SE-4 I — hand this result's SQL to a custom-SQL monitor. */
   onSchedule?: (sql: string) => void;
-  /** SE-4 I — copy a link that reopens this query. */
-  onShare?: () => void;
+  /** The workbench's own tools (version history, the share link, the catalog), held in this editor's Tools ▾ beside
+   *  its own — one menu, not two. */
+  sharedTools?: ToolSpec[];
+  /** The starting point the empty results pane shows: this connection's tables, the Saved menu's list. */
+  startTables?: Array<{ name: string; rowCount?: string | number | null }>;
+  tablesLoading?: boolean;
+  connectionName?: string;
+  /** The Saved menu's list; undefined while it is read, null when the read failed. */
+  saved?: SavedQuery[] | null;
+  /** Open a saved query the way the Saved menu does. */
+  onOpenSaved?: (q: SavedQuery) => void;
   /** SE-7 — text to drop into the active tab AFTER a connection switch.
    *
    *  The rail's `»` on a table belonging to another connection has to switch the
@@ -172,12 +196,13 @@ export function SqlMode({
   const [verdict, setVerdict] = useState<QueryValidation | null>(null);
   // SE-8E — ONE right rail, two occupants: history, or the assistant. Mutually
   // exclusive by construction (they share the space), sharing one persisted width.
-  const [rail, setRail] = useState<"" | "history" | "ai">("");
+  const [rail, setRail] = useState<"" | "history">("");
   const [historyKey, setHistoryKey] = useState(0);
   // SE-3 F — the in-flight run's abort handle and when it started.
   const abort = useRef<AbortController | null>(null);
   const [startedAt, setStartedAt] = useState(0);
-  const [runAllSummary, setRunAllSummary] = useState("");
+  // A finished Run all, as a chip: how many statements ran, each one's rows on hover.
+  const [runAllSummary, setRunAllSummary] = useState<{ count: number; detail: string } | null>(null);
   // SE-5a — the statement that produced the current error. NOT `sqlText`: a run can be
   // a selection, or one statement of several, and repairing the whole document would
   // hand the model a different query from the one that failed.
@@ -189,26 +214,23 @@ export function SqlMode({
   const quoteForEngine = useCallback((name: string) => quoteIdentifier(name, engine), [engine]);
   const cursor = useRef(0);
   const selection = useRef<{ from: number; to: number } | null>(null);
-  // SE-8E — the assistant reads the buffer and the last error AT SEND TIME through
-  // these, so typing never re-renders the pane and a send never sees a stale closure.
-  const sqlRef = useRef("");
-  const errorRef = useRef("");
   const editorApi = useRef<EditorApi | null>(null);
   const relint = useRef<(() => void) | null>(null);
 
   const active = tabs.find(t => t.id === activeId) ?? null;
   const sqlText = active?.sql ?? "";
-  sqlRef.current = sqlText;
-  errorRef.current = error;
+  // What a run reads: the text with every `/ask` request blanked — a request is never sent to the warehouse as SQL.
+  const runnable = useMemo(() => blankAskLines(sqlText), [sqlText]);
 
   // SE-8A — the run settings live on the TAB (see EditorTab), read with defaults here.
   const limit = active?.limit ?? 500;
   const runAllPref = !!active?.runAll;
   const [showRunMenu, setShowRunMenu] = useState(false);
 
-  // SE-8F — "+ → Open existing", and the Format button's preferences menu.
+  // SE-8F — "+ → Open existing", Format's preferences and the keyboard sheet: each opened from Tools ▾ now.
   const [showOpenDialog, setShowOpenDialog] = useState(false);
   const [showFormatMenu, setShowFormatMenu] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   // Storage read in an EFFECT, never a useState initializer (hydration rule).
   const [fmtPrefs, setFmtPrefs] = useState<FormatPrefs>(DEFAULT_FORMAT_PREFS);
   useEffect(() => { setFmtPrefs(readFormatPrefs()); }, []);
@@ -227,11 +249,11 @@ export function SqlMode({
   // whether a button is offered, never what runs.
   useEffect(() => {
     let alive = true;
-    void splitStatements(sqlText).then(r => {
+    void splitStatements(runnable).then(r => {
       if (alive) setStatementCount(r.filter(x => x.text.trim()).length || 1);
     }).catch(() => { if (alive) setStatementCount(1); });
     return () => { alive = false; };
-  }, [sqlText]);
+  }, [runnable]);
   const paramValues = active?.params ?? EMPTY_PARAMS;
   const paramDefs = active?.paramDefs ?? EMPTY_DEFS;
   // Only the names still present in the SQL, so a value left behind by a deleted
@@ -355,10 +377,10 @@ export function SqlMode({
   const statementToRun = useCallback(async (): Promise<string> => {
     const sel = selection.current;
     const text = (sel && sel.to > sel.from)
-      ? sqlText.slice(sel.from, sel.to)
-      : statementAt(await splitStatements(sqlText), cursor.current)?.text ?? sqlText;
+      ? runnable.slice(sel.from, sel.to)
+      : statementAt(await splitStatements(runnable), cursor.current)?.text ?? runnable;
     return text.trim().replace(/;\s*$/, "");
-  }, [sqlText]);
+  }, [runnable]);
 
   const run = useCallback(async (override?: string) => {
     if (!connId || running) return;
@@ -369,7 +391,7 @@ export function SqlMode({
     abort.current = ac;
     setRunning(true);
     setError("");
-    setRunAllSummary("");
+    setRunAllSummary(null);
     setFailedSql("");
     setStartedAt(Date.now());
     try {
@@ -434,7 +456,7 @@ export function SqlMode({
    *  results design that PR I revisits. */
   const runAll = useCallback(async () => {
     if (!connId || running) return;
-    const ranges = await splitStatements(sqlText);
+    const ranges = await splitStatements(runnable);
     const statements = ranges
       .map(r => r.text.trim().replace(/;\s*$/, ""))
       .filter(Boolean);
@@ -472,7 +494,7 @@ export function SqlMode({
         done.push(`${i + 1}: ${res.row_count} ${res.row_count === 1 ? "row" : "rows"}`);
         setError("");
       }
-      setRunAllSummary(`Ran ${statements.length} statements — ${done.join(" · ")}`);
+      setRunAllSummary({ count: statements.length, detail: done.join(" · ") });
       patchActive({ status: "ok" });
     } catch (e) {
       if (e instanceof QueryCancelled) {
@@ -489,7 +511,7 @@ export function SqlMode({
       setStartedAt(0);
       setHistoryKey(k => k + 1);
     }
-  }, [connId, running, sqlText, boundParams, patchActive, run, limit]);
+  }, [connId, running, runnable, boundParams, patchActive, run, limit]);
 
   /** Abort the in-flight fetch. Closing the socket is what reaches the server, which
    *  interrupts the engine — so this stops the QUERY, not just the waiting. */
@@ -563,6 +585,31 @@ export function SqlMode({
   const savable = !!sqlText.trim();
   useEffect(() => { onSavableChange?.(savable); }, [savable, onSavableChange]);
 
+  // Tools ▾ — every action that left the toolbar, then the workbench's own. Explain and Run all are offered only
+  // when they can run: a connection, no run in flight (Run is Cancel then), and — for Explain — an engine with a plan
+  // statement (`explainPrefix`; BigQuery has none, and an unconditional button returned a 400 there).
+  const tools: ToolSpec[] = [
+    ...editorTools({
+      connected: !!connId && !running,
+      explainWith: explainWith || null,
+      statementCount,
+      runAllPref,
+      hasSql: !!sqlText.trim(),
+      historyOpen: rail === "history",
+      act: {
+        explain: () => void explain(),
+        runAll: () => void runAll(),
+        format: () => setSql(formatSql(sqlText, engine, fmtPrefs)),
+        formatPrefs: () => setShowFormatMenu(true),
+        openExisting: () => setShowOpenDialog(true),
+        toggleHistory: () => setRail(r => r === "history" ? "" : "history"),
+        shortcuts: () => setShowShortcuts(true),
+      },
+    }),
+    ...(sharedTools ?? []),
+  ];
+  const verdictView = verdict ? verdictChip(verdict) : null;
+
   // The editor column — tabs, toolbar, and the editor-over-results split.
   const editorPane = (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
@@ -588,7 +635,10 @@ export function SqlMode({
           onOpen={(sql, name) => openInNewTab(sql, name)}
         />
 
+        {/* The toolbar: Run (its limit on the label, its settings on the caret) and the schema it resolves against;
+            the guards' verdict and Ask at the right, then Tools ▾ — a few primary actions and one menu. */}
         <div
+          data-testid="sql-toolbar"
           style={{
             display: "flex", alignItems: "center", gap: 6,
             padding: "5px 10px", borderBottom: "1px solid var(--b0)", flexShrink: 0,
@@ -660,53 +710,29 @@ export function SqlMode({
               )}
             </div>
           )}
-          {/* Only offered when there IS more than one statement — a "Run all" beside a
-              single statement is a second button for the thing the first one does. */}
-          {/* Offered only where the engine HAS a plan statement — see `explainPrefix`.
-              BigQuery does not, and an unconditional button returned a 400 there. */}
-          {!running && explainWith && (
-            <Button variant="ghost" size="xs" className="aug-fs-ui"
-              title={`Explain the plan for what Run would execute — the engine's own ${explainWith}`}
-              onClick={() => void explain()} disabled={!connId}
-              data-testid="sql-explain">
-              Explain
-            </Button>
-          )}
-          {/* Redundant while the tab preference already makes Run run everything. */}
-          {!running && statementCount > 1 && !runAllPref && (
-            <Button variant="ghost" size="xs" className="aug-fs-ui"
-              title={`Run all ${statementCount} statements in order, stopping at the first error`}
-              onClick={() => void runAll()} disabled={!connId}>
-              Run all ({statementCount})
-            </Button>
-          )}
           {/* SE-8A — the schema picker sits with the run cluster: it answers "against
               what", which is part of the same question as "run". */}
           {schemaControl}
-          {/* SE-8F — Format grew preferences (a caret beside the verb, not a settings
-              page). Click formats; the caret decides HOW. */}
+          {runAllSummary && !error && (
+            <Chip testId="sql-run-all-summary" title={runAllSummary.detail}>
+              {formatCount(runAllSummary.count)} statements ran
+            </Chip>
+          )}
+          <div style={{ flex: 1, minWidth: 0 }} />
+          {/* The guard battery's own verdict, as a chip: green only when every guard ran and passed. */}
+          {verdictView && (
+            <Chip tone={verdictView.tone} title={verdictView.title} testId="sql-verdict">{verdictView.text}</Chip>
+          )}
+          {/* Everything else this editor does, in ONE menu (CLARITY: "Tools in one menu", not a row of icons):
+              Explain, Run all, Format and its preferences, Open, Recent runs, the keys — and the workbench's
+              own (version history, the share link, the catalog). Format's preferences open beneath it. */}
           <div style={{ position: "relative", display: "flex", alignItems: "center", flexShrink: 0 }}>
-            <Button
-              variant="ghost"
-              size="xs"
-              className="aug-fs-ui"
-              title="Format the selection, or the whole query (⌘⇧F)"
-              onClick={() => setSql(formatSql(sqlText, engine, fmtPrefs))}
-              disabled={!sqlText.trim()}
-            >
-              <Icon name="sql" size={14} />
-            </Button>
-            <Button variant="ghost" size="xs" title="Formatting preferences"
-              aria-label="Formatting preferences"
-              onClick={() => setShowFormatMenu(v => !v)}
-              style={{ paddingLeft: 2, paddingRight: 2 }}>
-              <Icon name="chevd" size={12} />
-            </Button>
+            <ToolsMenu items={tools} testId="sql-tools" />
             {showFormatMenu && (
               <>
                 <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setShowFormatMenu(false)} />
-                <div className="aug-fs-ui" style={{
-                  position: "absolute", top: "100%", left: 0, zIndex: 41, marginTop: 4,
+                <div data-testid="sql-format-menu" className="aug-fs-ui" style={{
+                  position: "absolute", top: "100%", right: 0, zIndex: 41, marginTop: 4,
                   minWidth: 250, padding: "5px 7px 7px", background: "var(--bg-2)",
                   border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
                 }}>
@@ -740,62 +766,8 @@ export function SqlMode({
               </>
             )}
           </div>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => setRail(r => r === "history" ? "" : "history")}
-            title={rail === "history" ? "Hide recent queries" : "Recent queries run from this workbench"}
-          >
-            <Icon name="clock" size={14} />
-          </Button>
-          {/* SE-6 — the keys, listed. Ten commands were added to this editor and none
-              of them says so anywhere on screen; a verb nobody can find is a verb that
-              does not exist. */}
-          <ShortcutSheet />
-          {runAllSummary && !error && (
-            <span className="aug-fs-ui" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
-              {runAllSummary}
-            </span>
-          )}
-          <div style={{ flex: 1, minWidth: 0 }} />
-          {/* The guard battery's own verdict, stated plainly. */}
-          {verdict && (
-            <span
-              style={{
-                fontSize: 13, flexShrink: 0, whiteSpace: "nowrap",
-                color: verdict.passed ? "var(--t3)" : "var(--amb4)",
-              }}
-              title={verdict.unchecked
-                ? (verdict.note || "The guards cannot read a parameterised query without values.")
-                : verdict.passed
-                  ? "Fan-out, join and filter value-domain, grain and trust checks all passed"
-                  : [verdict.issue_count ? "Findings are shown in the editor gutter" : "",
-                     ...(verdict.unchecked_guards ?? []).map(u => `Not checked (${u.guard}): ${u.reason}`),
-                    ].filter(Boolean).join("\n")}
-            >
-              {/* "Guards clean" rather than "Checked — clean": this endpoint judges
-                  fan-out, value-domain, grain and trust — never syntax. GM-4: a guard
-                  that could not run is never counted as clean. */}
-              {verdict.unchecked
-                ? "Not checked — fill parameters"
-                : verdict.passed
-                  ? "Guards clean"
-                  : !verdict.issue_count && verdict.unchecked_guards?.length
-                    ? "Not all checked"
-                    : `Checked — ${verdict.issue_count} ${verdict.issue_count === 1 ? "note" : "notes"}`}
-            </span>
-          )}
-          {/* SE-8E — the assistant, at the toolbar's far right. Opens a pane; nothing
-              fires until a message is sent. */}
-          <Button
-            variant={rail === "ai" ? "secondary" : "ghost"}
-            size="xs"
-            onClick={() => setRail(r => r === "ai" ? "" : "ai")}
-            title={rail === "ai" ? "Close the assistant" : "Ask about this data or this SQL — proposals arrive as a diff"}
-            data-testid="sql-ai-toggle"
-          >
-            <Icon name="spark" size={14} />
-          </Button>
+          {/* SE-6 — the keys, listed: opened from Tools ▾, or by Esc then H. */}
+          <ShortcutSheet open={showShortcuts} onOpenChange={setShowShortcuts} />
         </div>
 
         <ResizableSplit
@@ -831,6 +803,8 @@ export function SqlMode({
                 quote={quoteForEngine}
                 joins={joins}
                 diagnostics={diagnostics}
+                onAsk={connId ? (request, context, signal) =>
+                  askForSql(connId, request, { sql: context, schema: defaultSchema, signal }) : undefined}
               />
               <ParamBar
                 connId={connId}
@@ -851,7 +825,20 @@ export function SqlMode({
               running={running}
               connId={connId}
               onSchedule={onSchedule}
-              onShare={onShare}
+              startingPoint={
+                <QueryStart
+                  connId={connId}
+                  connectionName={connectionName}
+                  refreshKey={historyKey}
+                  saved={saved}
+                  tables={startTables ?? []}
+                  tablesLoading={tablesLoading}
+                  onOpenRun={sql => openInNewTab(sql, "History")}
+                  onOpenSaved={q => onOpenSaved?.(q)}
+                  onInsert={name => editorApi.current?.insert(name)}
+                  onShowRuns={() => setRail("history")}
+                />
+              }
               maximized={maximizeResults}
               onToggleMaximize={() => setMaximizeResults(v => !v)}
               params={ranParams}
@@ -893,20 +880,13 @@ export function SqlMode({
       collapsed={!rail}
       style={{ flex: 1, minWidth: 0, minHeight: 0 }}
       left={editorPane}
-      right={rail === "ai" ? (
-        <AiPane
-          connId={connId}
-          getSql={() => sqlRef.current}
-          getError={() => errorRef.current}
-          onApply={fixed => setSql(fixed)}
-        />
-      ) : (
+      right={
         <HistoryRail
           connId={connId}
           refreshKey={historyKey}
           onRestore={sql => openInNewTab(sql, "History")}
         />
-      )}
+      }
     />
   );
 }

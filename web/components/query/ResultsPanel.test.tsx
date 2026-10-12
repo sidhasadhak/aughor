@@ -1,13 +1,19 @@
 // @vitest-environment jsdom
 /**
- * DE-5d (ROADMAP §3.51) — what the results footer says about a cut result, and the two things it
+ * DE-5d (ROADMAP §3.51) — what the results' figures line says about a cut result, and the two things it
  * offers next: "Count all rows" and "Load more". Both go to the server; the panel shows what came
  * back — a total with its as-of, a page handed to the owner of the results, or a refusal in the
  * server's own words. The API module is stubbed: the assertions are about what the panel asks for
  * and what it renders, never about the network.
+ *
+ * Since the editor was redone to CLARITY (2026-10-12) these sit on the figures line at the TOP of the
+ * results (rows · time · the cut), the result's Copy and CSV beside them, and the ways out that were a
+ * footer of buttons — another format, a chart, Pin, Schedule — behind one Tools ▾. An error is said once:
+ * Failed, or Refused and why, with Quick fix on its row.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Theme } from "@radix-ui/themes";
 import { ResultsPanel, cutNote } from "./ResultsPanel";
 import type { TypedQueryPage, TypedQueryResult } from "@/lib/api";
 
@@ -25,9 +31,11 @@ const api = vi.hoisted(() => ({
   loadMoreRows: vi.fn(),
   getColumnDistinct: vi.fn(),
   pinQueryToDashboard: vi.fn(),
+  // The schedule popover reads this statement's schedules as it mounts, for the menu's "Schedule (n)".
+  getMonitors: vi.fn(),
 }));
-// Partial: the panel's neighbours (the schedule popover, the quick-fix panel) import other
-// functions from the same module at load, and only the four the footer calls are stubbed.
+// Partial: the panel's neighbours (the quick-fix panel) import other functions from the same
+// module at load, and only the ones the panel calls are stubbed.
 vi.mock("@/lib/api", async (importOriginal) => ({ ...(await importOriginal<object>()), ...api }));
 
 const SQL = "SELECT id FROM t ORDER BY id";
@@ -41,8 +49,11 @@ function result(over: Partial<TypedQueryResult> = {}): TypedQueryResult {
   };
 }
 
+/** Tools ▾ is Radix Themes' own menu, which reads its Theme. */
+const renderPanel = (ui: React.ReactElement) => render(<Theme>{ui}</Theme>);
+
 function mount(r: TypedQueryResult, extra: Partial<Parameters<typeof ResultsPanel>[0]> = {}) {
-  return render(
+  return renderPanel(
     <ResultsPanel results={[r]} resultIdx={0} onResultIdx={() => {}} error="" running={false}
       connId="c1" pageSize={3} runKey={1} {...extra} />,
   );
@@ -51,6 +62,9 @@ function mount(r: TypedQueryResult, extra: Partial<Parameters<typeof ResultsPane
 beforeEach(() => {
   api.countQueryRows.mockReset();
   api.loadMoreRows.mockReset();
+  api.pinQueryToDashboard.mockReset();
+  api.getMonitors.mockReset();
+  api.getMonitors.mockResolvedValue([]);
 });
 
 describe("DE-5d — the cut is said for what it is", () => {
@@ -90,7 +104,7 @@ describe("DE-5f — a result opened from a cell is a page of its own", () => {
       label: "orders rows related to customers.id = c'1", rows: [[1], [2]], row_count: 2,
       caveats: ["Related through customers.id = orders.buyer — 100% value overlap; declared foreign key."],
     });
-    render(
+    renderPanel(
       <ResultsPanel results={[result(), related]} resultIdx={1} onResultIdx={() => {}} error="" running={false}
         connId="c1" pageSize={3} runKey={1} params={{ lo: 0 }} />,
     );
@@ -114,7 +128,7 @@ describe("DE-close — a joined statement's columns are each their own table's",
       ],
       rows: [[1, "Ada"], [2, "Bo"]], row_count: 2, truncated: true, cut_by: "limit",
     });
-    render(
+    renderPanel(
       <ResultsPanel results={[joined]} resultIdx={0} onResultIdx={() => {}} error="" running={false}
         connId="c1" pageSize={2} runKey={1} onAppendResult={() => {}} />,
     );
@@ -191,7 +205,7 @@ describe("DE-5d — Load more", () => {
     expect(onAppendRows).not.toHaveBeenCalled();
   });
 
-  it("the footer's count and the filter bar's total follow the rows the owner appended", () => {
+  it("the figures line's count follows the rows the owner appended", () => {
     // The owner (SqlMode) merges the page; the panel reads the merged result like any other.
     const merged = result({ rows: [[1], [2], [3], [4], [5]], row_count: 5, truncated: false, cut_by: null,
       caveats: ["This statement has no ORDER BY on its outermost query, so the engine may hand back its rows in another order each time — a page can repeat or skip rows. Add an ORDER BY for pages that join up exactly."] });
@@ -199,5 +213,128 @@ describe("DE-5d — Load more", () => {
     expect(screen.getByText("5 rows")).toBeInTheDocument();
     expect(screen.getByText(/no ORDER BY on its outermost query/)).toBeInTheDocument();
     expect(screen.queryByTestId("cut-note")).toBeNull();
+  });
+});
+
+describe("CLARITY — the result opens on its figures", () => {
+  it("says rows · time · the cut on one line, before the grid", () => {
+    mount(result({ duration_ms: 768.9 }), { onAppendRows: () => {} });
+    const line = screen.getByTestId("results-figures");
+    expect(screen.getByTestId("results-rows")).toHaveTextContent("3 rows");
+    expect(line).toHaveTextContent("769 ms");
+    expect(line).toHaveTextContent("cut at 3 rows — more exist beyond this limit");
+    // The figures come first: the line precedes the grid in the document.
+    const grid = screen.getByTestId("grid-rownum-header");
+    expect(line.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("a cached answer says cached, never a 0 ms run", () => {
+    mount(result({ cached: true, duration_ms: 0, truncated: false, cut_by: null }));
+    const line = screen.getByTestId("results-figures");
+    expect(line).toHaveTextContent("cached");
+    expect(line).not.toHaveTextContent("0 ms");
+  });
+
+  it("a statement that returned nothing says so once", () => {
+    mount(result({ rows: [], row_count: 0, truncated: false, cut_by: null }));
+    expect(screen.getByTestId("results-rows")).toHaveTextContent("No rows");
+    expect(screen.queryByText("No rows returned.")).toBeNull();
+  });
+
+  it("every caveat is said, each once", () => {
+    mount(result({ truncated: false, cut_by: null, caveats: ["Revenue is declared with status = 'Complete'.", "No ORDER BY."] }));
+    const box = screen.getByTestId("results-caveats");
+    expect(box).toHaveTextContent("Revenue is declared with status = 'Complete'.");
+    expect(box).toHaveTextContent("No ORDER BY.");
+    expect(box.textContent).not.toMatch(/notes:/);
+  });
+
+  it("offers Copy and CSV on the line itself", () => {
+    mount(result({ truncated: false, cut_by: null }));
+    expect(screen.getByTitle("Copy the table — pastes into a spreadsheet as cells")).toBeInTheDocument();
+    expect(screen.getByTitle("Download the table as CSV")).toBeInTheDocument();
+  });
+});
+
+describe("CLARITY — the result's ways out are one Tools ▾", () => {
+  it("holds a chart, the other formats, Pin and Schedule — each one opens what it did", async () => {
+    api.pinQueryToDashboard.mockResolvedValue({});
+    mount(result({ truncated: false, cut_by: null }));
+    // No footer of buttons any more.
+    expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+    expect(screen.queryByTestId("results-schedule")).toBeNull();
+    fireEvent.keyDown(screen.getByTestId("results-tools"), { key: "Enter" });
+    const items = (await screen.findAllByRole("menuitem")).map(i => i.textContent);
+    expect(items).toEqual(["Add a chart", "Other formats…", "Pin to the dashboard", "Schedule…"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pin to the dashboard" }));
+    await waitFor(() => expect(api.pinQueryToDashboard).toHaveBeenCalledWith("c1", SQL, "Query — t"));
+  });
+
+  it("Other formats opens every extractor, Schedule opens the schedule form", async () => {
+    mount(result({ truncated: false, cut_by: null }));
+    fireEvent.keyDown(screen.getByTestId("results-tools"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Other formats…" }));
+    expect(screen.getByTestId("results-export-menu")).toHaveTextContent("JSON");
+    expect(screen.getByTestId("results-export-menu")).toHaveTextContent("SQL INSERTs");
+    fireEvent.keyDown(screen.getByTestId("results-tools"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Schedule…" }));
+    expect(screen.getByTestId("schedule-popover")).toHaveTextContent("alerts on any change");
+  });
+
+  it("says how many schedules the statement already has", async () => {
+    api.getMonitors.mockResolvedValue([
+      { id: "m1", name: "Watch — t", custom_sql: `${SQL};`, check_cron: "0 9 * * *", enabled: true },
+    ]);
+    mount(result({ truncated: false, cut_by: null }));
+    await waitFor(() => expect(api.getMonitors).toHaveBeenCalledWith("c1"));
+    fireEvent.keyDown(screen.getByTestId("results-tools"), { key: "Enter" });
+    expect(await screen.findByRole("menuitem", { name: "Schedule (1)…" })).toBeInTheDocument();
+  });
+});
+
+describe("CLARITY — an error is said once, a refusal as a refusal", () => {
+  const failed = (error: string, failedSql = SQL) => renderPanel(
+    <ResultsPanel results={[]} resultIdx={0} onResultIdx={() => {}} error={error} running={false}
+      connId="c1" failedSql={failedSql} onApplyFix={() => {}} />,
+  );
+
+  it("a failure: the engine's words, once, with Quick fix on the same row", () => {
+    failed('Binder Error: column "region" must appear in the GROUP BY clause');
+    expect(screen.getByTestId("run-error-kind")).toHaveTextContent("Failed");
+    expect(screen.getAllByText(/must appear in the GROUP BY clause/)).toHaveLength(1);
+    const fix = screen.getByTestId("quick-fix");
+    expect(fix).toHaveTextContent("Quick fix");
+    expect(screen.getByTestId("run-error").contains(fix)).toBe(true);
+  });
+
+  it("a guard's block is a refusal, said without the platform's tag", () => {
+    failed("[BLOCKED] DROP statements are not permitted in read-only mode", "DROP SCHEMA s");
+    expect(screen.getByTestId("run-error-kind")).toHaveTextContent("Refused · blocked by a guard");
+    expect(screen.getByTestId("run-error-message")).toHaveTextContent(/^DROP statements are not permitted in read-only mode$/);
+  });
+
+  it("a table turned off for analysis is said as such", () => {
+    failed("[EXCLUDED] thelook.users is turned off for analysis — it is excluded (sensitive, by Ana). Turn it back on in the Catalog to use it.");
+    expect(screen.getByTestId("run-error-kind")).toHaveTextContent("Refused · turned off for analysis");
+    expect(screen.getByTestId("run-error-message")).toHaveTextContent("Turn it back on in the Catalog to use it.");
+  });
+
+  it("names the statement of a Run all that failed", () => {
+    failed("Statement 2 of 3 failed: Parser Error: syntax error at end of input");
+    expect(screen.getByTestId("run-error")).toHaveTextContent("statement 2 of 3");
+    expect(screen.getByTestId("run-error-message")).toHaveTextContent(/^Parser Error: syntax error at end of input$/);
+  });
+});
+
+describe("CLARITY — before anything runs, the pane is a starting point", () => {
+  it("shows what the editor hands it, and a single line when it hands nothing", () => {
+    const { unmount } = renderPanel(
+      <ResultsPanel results={[]} resultIdx={0} onResultIdx={() => {}} error="" running={false}
+        startingPoint={<div data-testid="start">start here</div>} />,
+    );
+    expect(screen.getByTestId("start")).toBeInTheDocument();
+    unmount();
+    renderPanel(<ResultsPanel results={[]} resultIdx={0} onResultIdx={() => {}} error="" running={false} />);
+    expect(screen.getByText("⌘↵ runs the statement under the cursor.")).toBeInTheDocument();
   });
 });

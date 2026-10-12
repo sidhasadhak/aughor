@@ -3,7 +3,7 @@
 // a jsdom test must never reach the live API (registry-not-test-isolated).
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { OwnersPanel } from "./OwnersPanel";
+import { OWNERS_CHANGED, OwnersPanel } from "./OwnersPanel";
 import * as api from "@/lib/api";
 
 vi.mock("@/lib/api", async importOriginal => {
@@ -28,7 +28,12 @@ describe("OwnersPanel", () => {
     expect(screen.getAllByText("1 metric")).toHaveLength(2);
     expect(screen.getAllByText("group:finance")).toHaveLength(2);   // the owner text and its principal badge
     expect(screen.getByText("as written")).toBeTruthy();
-    expect(screen.getByText(/2 owners in use · 1 unresolved/)).toBeTruthy();
+    // The count once, at the card label's right end (CLARITY, 2026-10-12); the unresolved one is marked on its row
+    // and sorted first, and Settings ▸ Organization's "Needs you" counts it.
+    expect(screen.getByText("2 owners in use")).toBeTruthy();
+    const rows = document.querySelectorAll("[data-owner-unlinked]");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("Ana (logistics)");
     expect(api.listOwners).toHaveBeenCalledWith("c1");
   });
 
@@ -36,11 +41,16 @@ describe("OwnersPanel", () => {
     vi.mocked(api.listOwners).mockResolvedValueOnce({ owners: [unresolved], links: [] })
       .mockResolvedValueOnce({ owners: [linked], links: [] });
     vi.mocked(api.linkOwner).mockResolvedValue({ owner_text: "Ana (logistics)", owner_key: "ana (logistics)", principal: "user:ana@corp", linked_by: "", linked_at: "" });
+    const announced = vi.fn();
+    window.addEventListener(OWNERS_CHANGED, announced);
     render(<OwnersPanel />);
     const box = await screen.findByLabelText("Principal for Ana (logistics)");
     fireEvent.change(box, { target: { value: "user:ana@corp" } });
     fireEvent.click(screen.getByText("Link"));
     await waitFor(() => expect(api.linkOwner).toHaveBeenCalledWith("Ana (logistics)", "user:ana@corp"));
+    // The link is announced, so the Organization figures and "Needs you" re-read the owners.
+    await waitFor(() => expect(announced).toHaveBeenCalledTimes(1));
+    window.removeEventListener(OWNERS_CHANGED, announced);
     expect(await screen.findByText("user:ana@corp")).toBeTruthy();
     expect(screen.getByText("linked by user:admin@corp")).toBeTruthy();
     expect(screen.getByText("Unlink")).toBeTruthy();

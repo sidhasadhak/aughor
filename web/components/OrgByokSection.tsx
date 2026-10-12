@@ -12,13 +12,19 @@
  * Key handling: the server never returns a key value — only which keys are set — so
  * the input is write-only. An empty input on save means "unchanged", and the
  * explicit Clear action removes the whole row (back to the deployment binding).
+ *
+ * A card (CLARITY, 2026-10-12): the binding in force at the label's right end, the key's state as a chip, the
+ * fields two to a row, one line on how the key is kept.
  */
 import { useCallback, useEffect, useState } from "react";
 import { clearOrgLLM, getOrgLLM, updateOrgLLM, type OrgLLMConfig } from "@/lib/api";
+import { Card, Chip } from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+
+import { FIELDS, Field, Note, SaveLine } from "./settings/parts";
 
 const BACKENDS = ["", "openrouter", "anthropic", "gemini", "groq", "together", "ollama", "lmstudio"];
 const KEYED = new Set(["openrouter", "anthropic", "gemini", "groq", "together"]);
@@ -27,10 +33,6 @@ const ROLES: Array<{ key: "coder" | "narrator" | "fast"; label: string; hint: st
   { key: "narrator", label: "Narrator model", hint: "report synthesis, long-form prose" },
   { key: "fast", label: "Fast model", hint: "cheap per-phase interpret calls" },
 ];
-
-const labelStyle: React.CSSProperties = { fontSize: 11, color: "var(--t3)", marginBottom: 4, display: "block" };
-const hintStyle: React.CSSProperties = { fontSize: 11, color: "var(--t3)", marginTop: 6 };
-const gridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 };
 
 export function OrgByokSection() {
   const [cfg, setCfg] = useState<OrgLLMConfig | null>(null);
@@ -93,27 +95,25 @@ export function OrgByokSection() {
   const keyUnreadable = keyState === "unreadable";
 
   return (
-    <div>
-      <div className="aug-label" style={{ marginBottom: 10 }}>Models &amp; keys (BYOK)</div>
-      <div style={gridStyle}>
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <label style={labelStyle}>Provider</label>
+    <Card label="Models & keys (BYOK)" testId="org-byok"
+      right={cfg && (cfg.configured ? `this organisation's own · ${cfg.backend || "deployment default"}` : "the deployment's binding")}>
+      <div style={FIELDS}>
+        <Field label="Provider">
           <SelectField
             value={backend}
-            style={{ cursor: "pointer" }}
+            aria-label="Organisation provider"
             onChange={(e) => { setSaved(false); setBackend(e.target.value); }}
           >
             {BACKENDS.map((b) => (
               <option key={b} value={b}>{b === "" ? "(deployment default)" : b}</option>
             ))}
           </SelectField>
-        </div>
+        </Field>
         {backend && KEYED.has(backend) && (
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <label style={labelStyle}>
-              API key {keySet ? "· set ✓" : keyUnreadable ? "· stored, unreadable" : "· not set"}
-            </label>
+          <Field label="API key" htmlFor="org-byok-key"
+            meta={<Chip tone={keySet ? "up" : "amber"}>{keySet ? "set ✓" : keyUnreadable ? "stored, unreadable" : "not set"}</Chip>}>
             <Input
+              id="org-byok-key"
               type="password"
               value={keyInput}
               placeholder={keySet ? "(unchanged)"
@@ -122,11 +122,10 @@ export function OrgByokSection() {
               onChange={(e) => { setSaved(false); setKeyInput(e.target.value); }}
               autoComplete="off"
             />
-          </div>
+          </Field>
         )}
         {backend && ROLES.map((r) => (
-          <div key={r.key} style={{ display: "flex", flexDirection: "column" }}>
-            <label style={labelStyle}>{r.label}</label>
+          <Field key={r.key} label={r.label} meta={<span>· {r.hint}</span>}>
             <Input
               value={models[r.key] ?? ""}
               placeholder="(backend default)"
@@ -136,12 +135,12 @@ export function OrgByokSection() {
                 setModels((prev) => ({ ...prev, [r.key]: v }));
               }}
             />
-            <div style={hintStyle}>{r.hint}</div>
-          </div>
+          </Field>
         ))}
       </div>
       {backend === "openrouter" && (
-        <label style={{ ...hintStyle, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+        <label className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
+          color: "var(--t3)", marginTop: 8 }}>
           <Checkbox
             checked={allowPaid}
             onChange={(e) => setAllowPaid(e.target.checked)}
@@ -149,13 +148,11 @@ export function OrgByokSection() {
           Allow paid models (off = free-tier models only)
         </label>
       )}
-      <div style={hintStyle}>
-        Your organization&apos;s own provider binding. The key is stored encrypted and never
-        shown again; leave it blank to keep the current one. “Deployment default” uses the
-        operator&apos;s configuration.
-      </div>
-      {error && <div style={{ fontSize: 11, color: "var(--red4)", marginTop: 8 }}>{error}</div>}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+      <Note>
+        The key is stored encrypted and never shown again; leave it blank to keep the current one. “Deployment default”
+        uses the operator&apos;s configuration.
+      </Note>
+      <SaveLine saved={saved && !saving} error={error}>
         <Button variant="default" size="sm" onClick={save} disabled={saving}>
           {saving ? "Saving…" : "Save models & keys"}
         </Button>
@@ -164,8 +161,7 @@ export function OrgByokSection() {
             Clear (use deployment default)
           </Button>
         )}
-        {saved && !saving && <span style={{ fontSize: 11, color: "var(--grn4)" }}>Saved ✓</span>}
-      </div>
-    </div>
+      </SaveLine>
+    </Card>
   );
 }

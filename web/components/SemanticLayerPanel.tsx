@@ -1,37 +1,43 @@
 "use client";
 
 /**
- * SemanticLayerPanel — the connection's declared meaning, in five tabs:
- *  1. Metrics     — governed KPI definitions (the landing tab)
- *  2. Annotations — table + column business descriptions injected into schema
- *  3. Knowledge   — metric definitions, synonyms, join rules (per connection)
- *  4. Benchmarks  — gold questions for SQL quality regression testing
- *  5. Import      — the intake lane (PX-3): bring knowledge in from files, sheets,
- *                   wikis or usage, review the plan, accept per object, export back
+ * The Semantic Layer — a connection's declared meaning, in five tabs, redone to `aughor-v2/CLARITY.md` (2026-10-12):
+ *  1. Metrics     — governed definitions: what is approved and measured, what waits for review (the landing tab;
+ *                   `MetricsPanel`)
+ *  2. Annotations — what a table or column means, read into every prompt
+ *  3. Knowledge   — business facts: metric definitions, synonyms, join rules, notes
+ *  4. Benchmarks  — questions with rules for the SQL they should get, run to catch a regression
+ *  5. Import      — the intake lane (PX-3): bring knowledge in from files, sheets, wikis or usage, review the plan,
+ *                   accept per object, export back
  *
- * The active tab deep-links as `?semtab=` — the shell's URL sync preserves params
- * it does not own, so this survives its rewrites (§3.14's "a door ships with its
- * deep link").
+ * One row carries the tabs and, at its right end, the scope — connection › dataset (› table, where a tab reads one);
+ * each tab is a page of cards below it. Every tab reads first: a form opens only when a person asks for one.
+ *
+ * The active tab deep-links as `?semtab=` — the shell's URL sync preserves params it does not own, so this survives
+ * its rewrites (§3.14's "a door ships with its deep link").
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { getApiBase } from "@/lib/config";
-import { type RichSchema } from "@/lib/api";
-import { useRichSchema } from "@/lib/schema-context";
-import { MetricsPanel } from "@/components/MetricsPanel";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+
+import { Card, Chip, Empty, MUTED, NUM, Page, ROW, RULE } from "@/components/clarity/kit";
 import { IntakePanel } from "@/components/intake/IntakePanel";
-import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
-import { Badge } from "@/components/ui/badge";
+import { MetricsPanel } from "@/components/MetricsPanel";
+import { FoldLine, Sql, ToolsMenu } from "@/components/semantic/parts";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-import { Loading } from "@/components/ui/states";
-import { SelectField } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Input as UiInput } from "@/components/ui/input";
+import { SelectField } from "@/components/ui/select";
+import { Loading, ReadFailed } from "@/components/ui/states";
 import { TabStrip } from "@/components/ui/tab-strip";
+import { Textarea } from "@/components/ui/textarea";
+import { type RichSchema } from "@/lib/api";
+import { getApiBase } from "@/lib/config";
+import { countNoun, formatCount } from "@/lib/format";
+import { useRichSchema } from "@/lib/schema-context";
 import { defaultSchema, rememberSchema } from "@/lib/schemaChoice";
 
-// ── Fetch helpers ──────────────────────────────────────────────────────────────
+// ── Fetch helpers ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 async function apiFetch(path: string, opts?: RequestInit) {
   const res = await fetch(`${getApiBase()}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -46,38 +52,7 @@ function put(path: string, body: unknown)    { return apiFetch(path, { method: "
 function post(path: string, body: unknown)   { return apiFetch(path, { method: "POST",   body: JSON.stringify(body) }); }
 function del(path: string)                   { return apiFetch(path, { method: "DELETE" }); }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Sub-components
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// ── Shared UI primitives ──────────────────────────────────────────────────────
-
-function TabBar({ tabs, active, onChange }: { tabs: string[]; active: string; onChange: (t: string) => void }) {
-  return (
-    <TabStrip label="Semantic layer views" size="1" value={active} onChange={onChange} style={{ marginBottom: 16 }}
-      tabs={tabs.map(t => ({ id: t, label: t }))} />
-  );
-}
-
-function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t2, #bbb)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{title}</span>
-      {action}
-    </div>
-  );
-}
-
-/** This panel's three button looks, as the shared Button draws them. */
-const BTN_LOOK = { default: "default", danger: "destructive", ghost: "outline" } as const;
-function Btn({ children, onClick, variant = "default", disabled }: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  variant?: keyof typeof BTN_LOOK;
-  disabled?: boolean;
-}) {
-  return <Button size="xs" variant={BTN_LOOK[variant]} static onClick={onClick} disabled={disabled}>{children}</Button>;
-}
+// ── Shared pieces ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 function Input({ value, onChange, placeholder, multiline, hint, mono, label }: {
   value: string; onChange: (v: string) => void; placeholder?: string;
@@ -85,21 +60,25 @@ function Input({ value, onChange, placeholder, multiline, hint, mono, label }: {
 }) {
   const mono_ = mono ? { fontFamily: "var(--font-mono)" } : undefined;
   const field = multiline
-    ? <Textarea rows={3} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={{ width: "100%", ...mono_ }} />
-    : <UiInput value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={{ width: "100%", ...mono_ }} />;
+    ? <Textarea rows={3} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} aria-label={label}
+        style={{ width: "100%", ...mono_ }} />
+    : <UiInput value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} aria-label={label}
+        style={{ width: "100%", ...mono_ }} />;
   if (!label && !hint) return field;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      {label && <label style={{ fontSize: 11, color: "var(--t3, #888)", fontWeight: 500 }}>{label}</label>}
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+      {label && <label className="aug-fs-xs" style={{ color: "var(--t2)" }}>{label}</label>}
       {field}
-      {hint && <span style={{ fontSize: 11, color: "var(--t4, #666)", lineHeight: 1.4 }}>{hint}</span>}
+      {hint && <span className="aug-fs-xs" style={MUTED}>{hint}</span>}
     </div>
   );
 }
 
-function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
+function Select({ value, onChange, options, label }: {
+  value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; label?: string;
+}) {
   return (
-    <SelectField value={value} onChange={e => onChange(e.target.value)}>
+    <SelectField value={value} onChange={e => onChange(e.target.value)} aria-label={label}>
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </SelectField>
   );
@@ -107,31 +86,51 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
 
 function ErrorMsg({ msg }: { msg: string }) {
   if (!msg) return null;
-  return <p style={{ fontSize: 11, color: "var(--red4, #f87171)", marginTop: 6 }}>{msg}</p>;
+  return <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: "6px 0 0" }}>{msg}</p>;
 }
 
-function EmptyState({ text }: { text: string }) {
-  return <SharedEmptyState variant="inline" title={text} />;
+/** The one line under a card's label that says what the tab is for. */
+function Subtitle({ children }: { children: ReactNode }) {
+  return <p className="aug-fs-sm" style={{ ...MUTED, margin: "-2px 0 10px" }}>{children}</p>;
 }
 
-function TabIntro({ text }: { text: string }) {
+/** A form a person asked for, in a dialog: its name, its fields, Save and Cancel. */
+function FormDialog({ open, title, onClose, onSave, saving, error, width = "480px", children }: {
+  open: boolean; title: string; onClose: () => void; onSave: () => void; saving: boolean; error: string;
+  width?: string; children: ReactNode;
+}) {
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 16, padding: "10px 12px", borderRadius: 8, background: "color-mix(in srgb, var(--blue4, #60a5fa) 7%, transparent)", border: "1px solid color-mix(in srgb, var(--blue4, #60a5fa) 22%, transparent)" }}>
-      <span style={{ color: "var(--blue4, #60a5fa)", marginTop: 1, flexShrink: 0, display: "inline-flex" }}>
-        <Icon name="info" size={14} />
-      </span>
-      <p style={{ fontSize: 12, color: "var(--t2, #bbb)", lineHeight: 1.55, margin: 0 }}>{text}</p>
-    </div>
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent maxWidth={width} aria-describedby={undefined}>
+        <DialogTitle>{title}</DialogTitle>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
+        <ErrorMsg msg={error} />
+        <div style={ROW}>
+          <Button size="sm" onClick={onSave} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+          <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-// ── Tag list (comma-separated) ────────────────────────────────────────────────
+/** A row's two tools: Edit, and Delete. */
+function RowTools({ onEdit, onDelete, what }: { onEdit: () => void; onDelete: () => void; what: string }) {
+  return (
+    <span style={{ ...ROW, flexWrap: "nowrap", gap: 4, flexShrink: 0 }}>
+      <Button size="xs" variant="ghost" onClick={onEdit} aria-label={`Edit ${what}`}>Edit</Button>
+      <Button size="xs" variant="ghost" onClick={onDelete} aria-label={`Delete ${what}`} style={{ color: "var(--red4)" }}>Delete</Button>
+    </span>
+  );
+}
+
+// ── Tag list (comma-separated) ─────────────────────────────────────────────────────────────────────────────────────
 
 function tagList(s: string): string[] { return s.split(",").map(t => t.trim()).filter(Boolean); }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tab 1: Annotations
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// Annotations
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 interface TableAnnotations {
   description?: string;
@@ -142,6 +141,8 @@ function AnnotationsTab({ connId, scopeTable }: { connId: string; scopeTable: st
   const [data, setData]       = useState<Record<string, TableAnnotations>>({});
   const [loading, setLoading] = useState(false);
   const [err, setErr]         = useState("");
+  /** The read failed: said, with Retry — never shown as "No annotations yet". */
+  const [readErr, setReadErr] = useState("");
 
   // Edit form state
   const [editingTable, setEditingTable]   = useState<string | null>(null);
@@ -149,7 +150,8 @@ function AnnotationsTab({ connId, scopeTable }: { connId: string; scopeTable: st
   const [editDesc, setEditDesc]           = useState("");
   const [saving, setSaving]               = useState(false);
 
-  // New annotation form
+  // New annotation form — behind "Add annotation"
+  const [adding, setAdding]       = useState(false);
   const [newTable, setNewTable]   = useState("");
   const [newCol, setNewCol]       = useState("");
   const [newDesc, setNewDesc]     = useState("");
@@ -163,9 +165,9 @@ function AnnotationsTab({ connId, scopeTable }: { connId: string; scopeTable: st
     setLoading(true);
     try {
       const d = await apiFetch(`/semantic/${connId}/annotations`);
-      setData(d);
+      setData(d); setReadErr("");
     } catch (e: unknown) {
-      setErr(String(e));
+      setReadErr(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -209,92 +211,82 @@ function AnnotationsTab({ connId, scopeTable }: { connId: string; scopeTable: st
       } else {
         await put(`/semantic/${connId}/annotations/table/${newTable.trim()}`, { description: newDesc.trim() });
       }
-      setNewTable(""); setNewCol(""); setNewDesc("");
+      setNewTable(""); setNewCol(""); setNewDesc(""); setAdding(false);
       await load();
     } catch (e: unknown) { setAddErr(String(e)); }
   }
 
   const allTables = Object.keys(data);
   const tables = scopeTable ? allTables.filter(t => t === scopeTable) : allTables;
+  const columns = tables.reduce((n, t) => n + Object.keys(data[t]?.columns ?? {}).length, 0);
 
   return (
-    <div>
-      <TabIntro
-        text="Annotations are plain-English descriptions of what a table or column means in your business. They get injected into every AI prompt so the assistant interprets your data the way your team does — e.g. that “mrr” is monthly recurring revenue, or that status='C' means cancelled."
-      />
+    <Page testId="semantic-annotations">
+      <Card label="Annotations" testId="annotations" right={<>
+        {tables.length > 0 && <span style={NUM}>{`${countNoun(tables.length, "table")} · ${countNoun(columns, "column")}`}</span>}
+        <Button size="xs" variant="ghost" onClick={() => setAdding(true)} disabled={adding}><Icon name="plus" size={12} />Add annotation</Button>
+      </>}>
+        <Subtitle>What a table or column means in your business — read into every prompt, so answers use your words.</Subtitle>
 
-      {/* Add new */}
-      <div style={{ background: "var(--bg-1, #1a1a1a)", border: "1px solid var(--b0)", borderRadius: 8, padding: 14, marginBottom: 20 }}>
-        <SectionHeader title="Add Annotation" />
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-          <Input value={newTable} onChange={setNewTable} label="Table *" placeholder="e.g. subscriptions" hint="The table this description applies to" />
-          <Input value={newCol}   onChange={setNewCol}   label="Column" placeholder="e.g. plan_type (leave blank for whole table)" hint="Optional — annotate a single column" />
-        </div>
-        <Input value={newDesc} onChange={setNewDesc} label="Business description *" multiline
-          placeholder="e.g. One row per active subscription. plan_type is one of free / pro / enterprise; cancelled rows are excluded from this table."
-          hint="Describe what it represents, the grain (one row per…), and any gotchas the AI should know." />
-        <ErrorMsg msg={addErr} />
-        <div style={{ marginTop: 8 }}>
-          <Btn onClick={addAnnotation}>Add</Btn>
-        </div>
-      </div>
-
-      {/* List */}
-      {loading && <Loading what="tables" />}
-      <ErrorMsg msg={err} />
-      {!loading && tables.length === 0 && (
-        <EmptyState text={scopeTable
-          ? `No annotations for ${scopeTable} yet. Add one above to describe it for the AI.`
-          : "No annotations yet. Add one above to enrich the schema context sent to the AI."} />
-      )}
-
-      {tables.map(table => (
-        <div key={table} style={{ marginBottom: 16, border: "1px solid var(--b0)", borderRadius: 8, overflow: "hidden" }}>
-          {/* Table row */}
-          <div style={{ padding: "8px 12px", background: "var(--bg-1, #181818)", display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "var(--t1)" }}>TABLE: {table}</span>
-            {data[table]?.description && (
-              <span style={{ fontSize: 11, color: "var(--t3)", flex: 2 }}>{data[table].description}</span>
-            )}
-            <Btn variant="ghost" onClick={() => { setEditingTable(table); setEditingColumn(null); setEditDesc(data[table]?.description ?? ""); }}>Edit</Btn>
-            <Btn variant="danger" onClick={() => deleteAnnotation(table)}>Delete</Btn>
-          </div>
-
-          {/* Column rows */}
-          {Object.entries(data[table]?.columns ?? {}).map(([col, colData]) => (
-            <div key={col} style={{ padding: "6px 12px 6px 24px", borderTop: "1px solid var(--b0)", display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 11, color: "var(--t2)", minWidth: 120 }}>{col}</span>
-              <span style={{ fontSize: 11, color: "var(--t3)", flex: 1 }}>{colData.description}</span>
-              <Btn variant="ghost" onClick={() => { setEditingTable(table); setEditingColumn(col); setEditDesc(colData.description ?? ""); }}>Edit</Btn>
-              <Btn variant="danger" onClick={() => deleteAnnotation(table, col)}>Delete</Btn>
+        {adding && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "10px 0 14px" }} data-testid="annotation-new">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
+              <Input value={newTable} onChange={setNewTable} label="Table *" placeholder="e.g. subscriptions" />
+              <Input value={newCol} onChange={setNewCol} label="Column" placeholder="e.g. plan_type — blank for the whole table" />
             </div>
-          ))}
-        </div>
-      ))}
-
-      {/* Inline edit modal */}
-      {editingTable && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
-          onClick={e => { if (e.target === e.currentTarget) { setEditingTable(null); setEditingColumn(null); } }}>
-          <div style={{ background: "var(--bg-0, #111)", border: "1px solid var(--b0)", borderRadius: 10, padding: 20, width: 420 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "var(--t1)" }}>
-              Edit {editingColumn ? `${editingTable}.${editingColumn}` : `TABLE: ${editingTable}`}
-            </p>
-            <Input value={editDesc} onChange={setEditDesc} placeholder="Business description" multiline />
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <Btn onClick={saveEdit} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn>
-              <Btn variant="ghost" onClick={() => { setEditingTable(null); setEditingColumn(null); }}>Cancel</Btn>
+            <Input value={newDesc} onChange={setNewDesc} label="Business description *" multiline
+              placeholder="e.g. One row per active subscription. plan_type is one of free / pro / enterprise; cancelled rows are excluded from this table."
+              hint="What it represents, its grain (one row per…), and any gotchas." />
+            <ErrorMsg msg={addErr} />
+            <div style={ROW}>
+              <Button size="sm" onClick={addAnnotation}>Add</Button>
+              <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setAddErr(""); }}>Cancel</Button>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+
+        {loading && <Loading what="tables" />}
+        <ErrorMsg msg={err} />
+        {readErr && <ReadFailed what="the annotations" error={readErr} onRetry={load} />}
+        {!loading && !readErr && tables.length === 0 && (
+          <Empty>{scopeTable ? `No annotations for ${scopeTable} yet.` : "No annotations yet."}</Empty>
+        )}
+
+        {tables.map((table, i) => (
+          <div key={table} data-testid="annotation-table" style={{ padding: "8px 0", ...(i ? RULE : {}) }}>
+            <div style={{ ...ROW, flexWrap: "nowrap", gap: 12 }}>
+              <span className="aug-fs-chrome" style={{ fontFamily: "var(--font-mono)", color: "var(--t1)", fontWeight: 500, flexShrink: 0 }}>{table}</span>
+              <span className="aug-fs-sm" style={{ flex: 1, minWidth: 0, color: data[table]?.description ? "var(--t2)" : "var(--t3)" }}>
+                {data[table]?.description || "no description of the table"}
+              </span>
+              <RowTools what={table}
+                onEdit={() => { setEditingTable(table); setEditingColumn(null); setEditDesc(data[table]?.description ?? ""); }}
+                onDelete={() => deleteAnnotation(table)} />
+            </div>
+            {Object.entries(data[table]?.columns ?? {}).map(([col, colData]) => (
+              <div key={col} style={{ ...ROW, flexWrap: "nowrap", gap: 12, padding: "4px 0 0 18px" }}>
+                <span className="aug-fs-sm" style={{ fontFamily: "var(--font-mono)", color: "var(--t2)", minWidth: 120, flexShrink: 0 }}>{col}</span>
+                <span className="aug-fs-sm" style={{ flex: 1, minWidth: 0, color: "var(--t2)" }}>{colData.description}</span>
+                <RowTools what={`${table}.${col}`}
+                  onEdit={() => { setEditingTable(table); setEditingColumn(col); setEditDesc(colData.description ?? ""); }}
+                  onDelete={() => deleteAnnotation(table, col)} />
+              </div>
+            ))}
+          </div>
+        ))}
+      </Card>
+
+      <FormDialog open={!!editingTable} title={`Edit ${editingColumn ? `${editingTable}.${editingColumn}` : editingTable ?? ""}`}
+        onClose={() => { setEditingTable(null); setEditingColumn(null); }} onSave={saveEdit} saving={saving} error="" width="440px">
+        <Input value={editDesc} onChange={setEditDesc} placeholder="Business description" multiline />
+      </FormDialog>
+    </Page>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tab 2: Knowledge Store
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// Knowledge
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 interface KnowledgeEntry {
   id: string;
@@ -312,11 +304,7 @@ const KNOWLEDGE_KINDS = [
   { value: "join",    label: "Join Guidance" },
   { value: "note",    label: "Note" },
 ];
-
-/** The hue names the kind of entry (INSTRUMENT.md §2). */
-const KIND_BADGE: Record<string, "default" | "violet" | "amber" | "green" | "secondary"> = {
-  metric: "default", synonym: "violet", rule: "amber", join: "green", note: "secondary",
-};
+const KIND_WORD: Record<string, string> = Object.fromEntries(KNOWLEDGE_KINDS.map(k => [k.value, k.label.toLowerCase()]));
 
 // Per-kind sample text so users see exactly what a good entry looks like.
 const KIND_HINTS: Record<string, { title: string; body: string; hint: string }> = {
@@ -347,12 +335,15 @@ function KnowledgeTab({ connId }: { connId: string }) {
   const [form, setForm]           = useState(EMPTY_ENTRY);
   const [saving, setSaving]       = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+  const [note, setNote]           = useState("");
+  /** The read failed: said, with Retry — never shown as "No knowledge entries yet". */
+  const [readErr, setReadErr]     = useState("");
 
   const load = useCallback(async () => {
     if (!connId) return;
     setLoading(true);
-    try { setEntries(await apiFetch(`/semantic/${connId}/knowledge`)); }
-    catch (e: unknown) { setErr(String(e)); }
+    try { setEntries(await apiFetch(`/semantic/${connId}/knowledge`)); setReadErr(""); }
+    catch (e: unknown) { setReadErr(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, [connId]);
 
@@ -374,7 +365,7 @@ function KnowledgeTab({ connId }: { connId: string }) {
       } else {
         await put(`/semantic/${connId}/knowledge/${editId}`, payload);
       }
-      setEditId(null); await load();
+      setEditId(null); setErr(""); await load();
     } catch (e: unknown) { setErr(String(e)); }
     finally { setSaving(false); }
   }
@@ -385,90 +376,70 @@ function KnowledgeTab({ connId }: { connId: string }) {
   }
 
   async function rebuildIndex() {
-    setRebuilding(true);
+    setRebuilding(true); setNote("");
     try {
       const r = await post(`/semantic/${connId}/knowledge/rebuild-index`, {});
-      alert(`Re-indexed ${r.indexed} entries.`);
+      setNote(`Re-indexed ${countNoun(Number(r.indexed) || 0, "entry", "entries")}.`);
     } catch (e: unknown) { setErr(String(e)); }
     finally { setRebuilding(false); }
   }
 
   return (
-    <div>
-      <TabIntro
-        text="The Knowledge Store holds reusable business facts — metric formulas, synonyms (“revenue” = “net bookings”), join rules and conventions. The most relevant entries are retrieved and injected into the AI prompt at query time, so the assistant writes SQL the way your analysts would."
-      />
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <Btn onClick={startAdd}>+ Add Entry</Btn>
-        <Btn variant="ghost" onClick={rebuildIndex} disabled={rebuilding}>{rebuilding ? "Rebuilding…" : "Rebuild Vector Index"}</Btn>
-      </div>
+    <Page testId="semantic-knowledge">
+      <Card label="Knowledge" testId="knowledge" right={<>
+        {entries.length > 0 && <span style={NUM}>{countNoun(entries.length, "entry", "entries")}</span>}
+        <Button size="xs" variant="ghost" onClick={startAdd}><Icon name="plus" size={12} />Add entry</Button>
+        <ToolsMenu testId="knowledge-tools" items={[
+          { label: rebuilding ? "Rebuilding…" : "Rebuild the search index", onSelect: rebuildIndex, disabled: rebuilding,
+            title: "Re-reads every entry into the index answers retrieve them from" },
+        ]} />
+      </>}>
+        <Subtitle>Business facts — metric definitions, synonyms, join rules — the most relevant read into each answer.</Subtitle>
+        {note && <p className="aug-fs-sm" style={{ color: "var(--grn4)", margin: "0 0 8px" }}>{note}</p>}
+        {loading && <Loading what="glossary entries" />}
+        {editId === null && <ErrorMsg msg={err} />}
+        {readErr && <ReadFailed what="the knowledge entries" error={readErr} onRetry={load} />}
+        {!loading && !readErr && entries.length === 0 && <Empty>No knowledge entries yet.</Empty>}
 
-      {loading && <Loading what="glossary entries" />}
-      <ErrorMsg msg={err} />
-      {!loading && entries.length === 0 && (
-        <EmptyState text="No knowledge entries yet. Add metric definitions, synonyms, or join rules to improve AI query quality." />
-      )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {entries.map(e => (
-          <div key={e.id} style={{ border: "1px solid var(--b0)", borderRadius: 8, padding: "10px 14px" }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-              <Badge variant={KIND_BADGE[e.kind] ?? "secondary"} style={{ marginTop: 1 }}>{e.kind}</Badge>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)", margin: 0 }}>{e.title}</p>
-                <p style={{ fontSize: 11, color: "var(--t3)", margin: "3px 0 0", lineHeight: 1.5 }}>{e.body}</p>
-                {e.tags.length > 0 && (
-                  <p style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>{e.tags.map(t => `#${t}`).join(" ")}</p>
-                )}
+        {entries.map((e, i) => (
+          <div key={e.id} data-testid="knowledge-entry" style={{ ...ROW, flexWrap: "nowrap", alignItems: "flex-start", gap: 12,
+            padding: "8px 0", ...(i ? RULE : {}) }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={ROW}>
+                <span className="aug-fs-chrome" style={{ color: "var(--t1)", fontWeight: 500 }}>{e.title}</span>
+                <Chip>{KIND_WORD[e.kind] ?? e.kind}</Chip>
+                {e.tags.map(t => <span key={t} className="aug-fs-xs" style={MUTED}>#{t}</span>)}
               </div>
-              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                <Btn variant="ghost" onClick={() => startEdit(e)}>Edit</Btn>
-                <Btn variant="danger" onClick={() => deleteEntry(e.id)}>Delete</Btn>
-              </div>
+              <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "2px 0 0", lineHeight: 1.5 }}>{e.body}</p>
             </div>
+            <RowTools what={e.title} onEdit={() => startEdit(e)} onDelete={() => deleteEntry(e.id)} />
           </div>
         ))}
-      </div>
+      </Card>
 
-      {/* Edit/Add modal */}
-      {editId !== null && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
-          onClick={e => { if (e.target === e.currentTarget) setEditId(null); }}>
-          <div style={{ background: "var(--bg-0, #111)", border: "1px solid var(--b0)", borderRadius: 10, padding: 20, width: 480 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "var(--t1)" }}>
-              {editId === "__new__" ? "New Knowledge Entry" : "Edit Entry"}
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <Input value={form.title} onChange={v => setForm(f => ({ ...f, title: v }))} label="Title / name *"
-                placeholder={KIND_HINTS[form.kind].title} hint="A short name the AI can match the user's question against" />
-              <Input value={form.body} onChange={v => setForm(f => ({ ...f, body: v }))} label="Definition or rule *" multiline
-                mono={form.kind === "metric" || form.kind === "join"}
-                placeholder={KIND_HINTS[form.kind].body} hint={KIND_HINTS[form.kind].hint} />
-              <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 8, alignItems: "start" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                  <label style={{ fontSize: 11, color: "var(--t3, #888)", fontWeight: 500 }}>Kind</label>
-                  <Select value={form.kind} onChange={v => setForm(f => ({ ...f, kind: v }))} options={KNOWLEDGE_KINDS} />
-                  <span style={{ fontSize: 11, color: "var(--t4, #666)" }}>What sort of knowledge this is</span>
-                </div>
-                <Input value={form.tags} onChange={v => setForm(f => ({ ...f, tags: v }))} label="Tags"
-                  placeholder="e.g. revenue, finance, north-star" hint="Comma-separated — helps grouping & retrieval" />
-              </div>
-            </div>
-            <ErrorMsg msg={err} />
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <Btn onClick={saveEntry} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn>
-              <Btn variant="ghost" onClick={() => setEditId(null)}>Cancel</Btn>
-            </div>
+      <FormDialog open={editId !== null} title={editId === "__new__" ? "New knowledge entry" : "Edit entry"}
+        onClose={() => { setEditId(null); setErr(""); }} onSave={saveEntry} saving={saving} error={err}>
+        <Input value={form.title} onChange={v => setForm(f => ({ ...f, title: v }))} label="Title / name *"
+          placeholder={KIND_HINTS[form.kind].title} hint="A short name the AI can match the user's question against" />
+        <Input value={form.body} onChange={v => setForm(f => ({ ...f, body: v }))} label="Definition or rule *" multiline
+          mono={form.kind === "metric" || form.kind === "join"}
+          placeholder={KIND_HINTS[form.kind].body} hint={KIND_HINTS[form.kind].hint} />
+        <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 8, alignItems: "start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label className="aug-fs-xs" style={{ color: "var(--t2)" }}>Kind</label>
+            <Select value={form.kind} onChange={v => setForm(f => ({ ...f, kind: v }))} options={KNOWLEDGE_KINDS} label="Kind" />
           </div>
+          <Input value={form.tags} onChange={v => setForm(f => ({ ...f, tags: v }))} label="Tags"
+            placeholder="e.g. revenue, finance, north-star" hint="Comma-separated — helps grouping & retrieval" />
         </div>
-      )}
-    </div>
+      </FormDialog>
+    </Page>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tab 3: Benchmarks
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// Benchmarks
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 interface BenchmarkCase {
   id: string;
@@ -509,12 +480,14 @@ function BenchmarksTab({ connId }: { connId: string }) {
   const [running, setRunning]   = useState(false);
   const [runResult, setRunResult] = useState<BenchmarkRun | null>(null);
   const [expandedResult, setExpandedResult] = useState<string | null>(null);
+  /** The read failed: said, with Retry — never shown as "No questions yet". */
+  const [readErr, setReadErr]   = useState("");
 
   const load = useCallback(async () => {
     if (!connId) return;
     setLoading(true);
-    try { setCases(await apiFetch(`/semantic/${connId}/benchmarks`)); }
-    catch (e: unknown) { setErr(String(e)); }
+    try { setCases(await apiFetch(`/semantic/${connId}/benchmarks`)); setReadErr(""); }
+    catch (e: unknown) { setReadErr(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, [connId]);
 
@@ -537,7 +510,7 @@ function BenchmarksTab({ connId }: { connId: string }) {
       } else {
         await put(`/semantic/${connId}/benchmarks/${editId}`, payload);
       }
-      setEditId(null); await load();
+      setEditId(null); setErr(""); await load();
     } catch (e: unknown) { setErr(String(e)); }
     finally { setSaving(false); }
   }
@@ -571,153 +544,114 @@ function BenchmarksTab({ connId }: { connId: string }) {
   if (runResult) for (const r of runResult.results) resultMap[r.case_id] = r;
 
   return (
-    <div>
-      <TabIntro
-        text="Benchmarks are “gold” questions with rules about what good SQL should (and shouldn't) contain. Run them any time to catch regressions — e.g. after editing a metric or annotation — and get a pass-rate score showing whether the AI still answers your key questions correctly."
-      />
-      {/* Run summary */}
-      {runResult && (
-        <div style={{ marginBottom: 20, padding: "12px 16px", borderRadius: 8, background: "var(--bg-1)", border: `1px solid ${runResult.failed === 0 ? "#10b981" : "#f59e0b"}` }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: 22, fontWeight: 700, color: runResult.failed === 0 ? "#10b981" : "#f59e0b" }}>
+    <Page testId="semantic-benchmarks">
+      <Card label="Benchmarks" testId="benchmarks" right={<>
+        {cases.length > 0 && <span style={NUM}>{countNoun(cases.length, "question")}</span>}
+        <Chip title="Each question asks the model for its SQL, then runs it on the warehouse">1 model call per question</Chip>
+        <Button size="xs" variant="ghost" onClick={() => { setEditId("__new__"); setForm(EMPTY_CASE); }}>
+          <Icon name="plus" size={12} />Add question
+        </Button>
+        <Button size="xs" variant="secondary" onClick={runBenchmarks} disabled={running || cases.length === 0}>
+          <Icon name="run" size={12} />{running ? "Running…" : "Run all"}
+        </Button>
+      </>}>
+        <Subtitle>Questions with rules for the SQL they should get — run them after a change to catch a regression.</Subtitle>
+
+        {runResult && (
+          <div style={{ ...ROW, padding: "0 0 10px" }} data-testid="benchmark-score">
+            <span className="aug-fs-display" style={{ ...NUM, fontWeight: 600, color: runResult.failed === 0 ? "var(--grn4)" : "var(--amb4)" }}>
               {runResult.score}%
             </span>
-            <span style={{ fontSize: 12, color: "var(--t2)" }}>
-              {runResult.passed}/{runResult.total} cases passed
-              {runResult.failed > 0 && <span style={{ color: "#f87171" }}> · {runResult.failed} failed</span>}
-            </span>
+            <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>{`${formatCount(runResult.passed)} of ${formatCount(runResult.total)} passed`}</span>
+            {runResult.failed > 0 && <Chip tone="down">{`${formatCount(runResult.failed)} failed`}</Chip>}
           </div>
-        </div>
-      )}
+        )}
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <Btn onClick={() => { setEditId("__new__"); setForm(EMPTY_CASE); }}>+ Add Case</Btn>
-        <Btn variant="ghost" onClick={runBenchmarks} disabled={running || cases.length === 0}>
-          {running ? "Running…" : "▶ Run All"}
-        </Btn>
-      </div>
+        {loading && <Loading what="test questions" />}
+        {editId === null && <ErrorMsg msg={err} />}
+        {readErr && <ReadFailed what="the benchmark questions" error={readErr} onRetry={load} />}
+        {!loading && !readErr && cases.length === 0 && <Empty>No questions yet.</Empty>}
 
-      {loading && <Loading what="test questions" />}
-      <ErrorMsg msg={err} />
-      {!loading && cases.length === 0 && (
-        <EmptyState text="No benchmark cases. Add gold questions to detect SQL regressions automatically." />
-      )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {cases.map(c => {
+        {cases.map((c, i) => {
           const res = resultMap[c.id];
           return (
-            <div key={c.id} style={{
-              border: `1px solid ${res ? (res.passed ? "#10b98133" : "#f87171aa") : "var(--b0)"}`,
-              borderRadius: 8, padding: "10px 14px",
-            }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                {res && (
-                  <Badge variant={res.passed ? "green" : "destructive"} style={{ marginTop: 2 }}>{res.passed ? "PASS" : "FAIL"}</Badge>
-                )}
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)", margin: 0 }}>{c.question}</p>
-                  {c.notes && <p style={{ fontSize: 11, color: "var(--t3)", margin: "3px 0 0" }}>{c.notes}</p>}
-                  {/* Failure details */}
+            <div key={c.id} data-testid="benchmark-case" style={{ padding: "8px 0", ...(i ? RULE : {}) }}>
+              <div style={{ ...ROW, flexWrap: "nowrap", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={ROW}>
+                    {res && <Chip tone={res.passed ? "up" : "down"}>{res.passed ? "✓ passed" : "✕ failed"}</Chip>}
+                    <span className="aug-fs-chrome" style={{ color: "var(--t1)", fontWeight: 500 }}>{c.question}</span>
+                  </div>
+                  {c.notes && <p className="aug-fs-sm" style={{ ...MUTED, margin: "2px 0 0" }}>{c.notes}</p>}
+                  {(c.expected_cols.length + c.must_contain.length + c.must_not_contain.length) > 0 && (
+                    <div style={{ ...ROW, gap: 4, marginTop: 6 }}>
+                      {c.expected_cols.map(col => <Chip key={`col-${col}`} tone="accent" title="A column the answer should return">{`returns ${col}`}</Chip>)}
+                      {c.must_contain.map(s => <Chip key={`has-${s}`} tone="up" title="The SQL must contain it">{`✓ ${s}`}</Chip>)}
+                      {c.must_not_contain.map(s => <Chip key={`not-${s}`} tone="down" title="The SQL must never contain it">{`✕ ${s}`}</Chip>)}
+                    </div>
+                  )}
                   {res && !res.passed && (
                     <div style={{ marginTop: 6 }}>
-                      {res.failures.map((f, i) => (
-                        <p key={i} style={{ fontSize: 11, color: "#f87171", margin: "2px 0" }}>• {f}</p>
+                      {res.failures.map((f, j) => (
+                        <p key={j} className="aug-fs-sm" style={{ color: "var(--red4)", margin: "2px 0" }}>• {f}</p>
                       ))}
-                      {res.error && <p style={{ fontSize: 11, color: "#f87171", margin: "2px 0" }}>Error: {res.error}</p>}
-                      <Button
-                        variant="ghost" size="xs"
-                        style={{ marginTop: 4 }}
-                        onClick={() => setExpandedResult(expandedResult === c.id ? null : c.id)}
-                      >
-                        {expandedResult === c.id ? "▲ hide SQL" : "▼ show generated SQL"}
-                      </Button>
-                      {expandedResult === c.id && (
-                        <pre style={{ fontSize: 11, color: "var(--t3)", marginTop: 6, background: "var(--bg-1)", padding: "8px", borderRadius: 5, overflow: "auto", maxHeight: 200 }}>
-                          {res.generated_sql}
-                        </pre>
-                      )}
+                      {res.error && <p className="aug-fs-sm" style={{ color: "var(--red4)", margin: "2px 0" }}>Error: {res.error}</p>}
+                      <FoldLine open={expandedResult === c.id} onToggle={() => setExpandedResult(expandedResult === c.id ? null : c.id)}>
+                        The SQL it got
+                      </FoldLine>
+                      {expandedResult === c.id && <div style={{ marginTop: 6 }}><Sql>{res.generated_sql}</Sql></div>}
                     </div>
                   )}
                 </div>
-                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                  <Btn variant="ghost" onClick={() => startEdit(c)}>Edit</Btn>
-                  <Btn variant="danger" onClick={() => deleteCase(c.id)}>Delete</Btn>
-                </div>
-              </div>
-              {/* Constraints badges */}
-              <div style={{ marginTop: 6, paddingLeft: res ? 0 : 0, display: "flex", flexWrap: "wrap", gap: 4 }}>
-                {c.expected_cols.map(col => (
-                  <span key={col} style={{ fontSize: 11, padding: "1px 6px", borderRadius: 8, background: "#3b82f620", color: "#60a5fa" }}>col:{col}</span>
-                ))}
-                {c.must_contain.map(s => (
-                  <span key={s} style={{ fontSize: 11, padding: "1px 6px", borderRadius: 8, background: "#10b98120", color: "#6ee7b7" }}>✓ {s}</span>
-                ))}
-                {c.must_not_contain.map(s => (
-                  <span key={s} style={{ fontSize: 11, padding: "1px 6px", borderRadius: 8, background: "#ef444420", color: "#fca5a5" }}>✗ {s}</span>
-                ))}
+                <RowTools what={c.question} onEdit={() => startEdit(c)} onDelete={() => deleteCase(c.id)} />
               </div>
             </div>
           );
         })}
-      </div>
+      </Card>
 
-      {/* Edit/Add modal */}
-      {editId !== null && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
-          onClick={e => { if (e.target === e.currentTarget) setEditId(null); }}>
-          <div style={{ background: "var(--bg-0, #111)", border: "1px solid var(--b0)", borderRadius: 10, padding: 20, width: 520 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "var(--t1)" }}>
-              {editId === "__new__" ? "New Benchmark Case" : "Edit Case"}
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <Input value={form.question} onChange={v => setForm(f => ({ ...f, question: v }))} label="Question *"
-                placeholder="e.g. What was our refund rate by month last year?"
-                hint="A real question you'd ask in chat — the AI will generate SQL for it and we check the result." />
-              <Input value={form.expected_cols}    onChange={v => setForm(f => ({ ...f, expected_cols: v }))} label="Expected columns" mono
-                placeholder="e.g. month, refund_rate"
-                hint="Comma-separated columns the answer should return. Optional." />
-              <Input value={form.must_contain}     onChange={v => setForm(f => ({ ...f, must_contain: v }))} label="SQL must contain" mono
-                placeholder="e.g. NULLIF, GROUP BY"
-                hint="Comma-separated snippets that must appear — e.g. NULLIF to guard divide-by-zero." />
-              <Input value={form.must_not_contain} onChange={v => setForm(f => ({ ...f, must_not_contain: v }))} label="SQL must NOT contain" mono
-                placeholder="e.g. is_test = true, SELECT *"
-                hint="Comma-separated snippets that should never appear — catches common mistakes." />
-              <Input value={form.notes}            onChange={v => setForm(f => ({ ...f, notes: v }))} label="Notes"
-                placeholder="e.g. Refund rate must divide refunds by paid orders, not order count."
-                hint="What this case verifies — for your team's reference." />
-            </div>
-            <ErrorMsg msg={err} />
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <Btn onClick={saveCase} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn>
-              <Btn variant="ghost" onClick={() => setEditId(null)}>Cancel</Btn>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      <FormDialog open={editId !== null} title={editId === "__new__" ? "New benchmark question" : "Edit question"} width="520px"
+        onClose={() => { setEditId(null); setErr(""); }} onSave={saveCase} saving={saving} error={err}>
+        <Input value={form.question} onChange={v => setForm(f => ({ ...f, question: v }))} label="Question *"
+          placeholder="e.g. What was our refund rate by month last year?"
+          hint="A real question you'd ask in chat — the AI will generate SQL for it and we check the result." />
+        <Input value={form.expected_cols}    onChange={v => setForm(f => ({ ...f, expected_cols: v }))} label="Expected columns" mono
+          placeholder="e.g. month, refund_rate"
+          hint="Comma-separated columns the answer should return. Optional." />
+        <Input value={form.must_contain}     onChange={v => setForm(f => ({ ...f, must_contain: v }))} label="SQL must contain" mono
+          placeholder="e.g. NULLIF, GROUP BY"
+          hint="Comma-separated snippets that must appear — e.g. NULLIF to guard divide-by-zero." />
+        <Input value={form.must_not_contain} onChange={v => setForm(f => ({ ...f, must_not_contain: v }))} label="SQL must NOT contain" mono
+          placeholder="e.g. is_test = true, SELECT *"
+          hint="Comma-separated snippets that should never appear — catches common mistakes." />
+        <Input value={form.notes}            onChange={v => setForm(f => ({ ...f, notes: v }))} label="Notes"
+          placeholder="e.g. Refund rate must divide refunds by paid orders, not order count."
+          hint="What this case verifies — for your team's reference." />
+      </FormDialog>
+    </Page>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Main Panel
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// The panel
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
-// Metrics leads: it is the governed answer to "what does this number mean", and the
-// one tab whose contents the AI reuses in every chart and answer. It was third,
-// behind two tabs of annotation, so the definitions a connection already carried
-// were the last thing anyone saw.
+// Metrics leads: it is the governed answer to "what does this number mean", and the one tab whose contents the AI
+// reuses in every chart and answer. It was third, behind two tabs of annotation, so the definitions a connection already
+// carried were the last thing anyone saw.
 const TABS = ["Metrics", "Annotations", "Knowledge", "Benchmarks", "Import"];
-//: The landing tab, and the one that carries no `?semtab=`. Derived from TABS so
-//: reordering the array cannot leave the default pointing at a tab that moved.
+//: The landing tab, and the one that carries no `?semtab=`. Derived from TABS so reordering the array cannot leave the
+//: default pointing at a tab that moved.
 const DEFAULT_TAB = TABS[0];
 
-// ── Scope selector (connection → schema → table) ───────────────────────────────
+// ── Scope (connection › dataset › table) ───────────────────────────────────────────────────────────────────────────
 
 interface ConnOption { id: string; name: string }
 
-function ScopeBar({
-  connections, activeConn, schemas, tables, scopeSchema, scopeTable, onConn, onSchema, onTable, loading,
+/** Which connection's meaning this is — any connection, not only the app's chosen one — then its dataset, and its table
+ *  where the tab reads one (Annotations). */
+function Scope({
+  connections, activeConn, schemas, tables, scopeSchema, scopeTable, onConn, onSchema, onTable, loading, withTable,
 }: {
   connections: ConnOption[];
   activeConn: string;
@@ -726,35 +660,39 @@ function ScopeBar({
   onConn: (v: string) => void;
   onSchema: (v: string) => void; onTable: (v: string) => void;
   loading: boolean;
+  withTable: boolean;
 }) {
-  const arrow = <span style={{ color: "var(--t4, #666)", fontSize: 11 }}>›</span>;
+  const arrow = <span aria-hidden className="aug-fs-sm" style={MUTED}>›</span>;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-      <span style={{ fontSize: 11, color: "var(--t4, #666)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>Scope</span>
-      <Select value={activeConn} onChange={onConn}
+    <span data-testid="semantic-scope" style={{ ...ROW, flexWrap: "nowrap", gap: 6 }}>
+      <Select value={activeConn} onChange={onConn} label="Connection"
         options={connections.length
           ? connections.map(c => ({ value: c.id, label: c.name }))
           : [{ value: activeConn, label: activeConn }]} />
       {schemas.length > 1 && (
         <>
           {arrow}
-          <Select value={scopeSchema} onChange={onSchema}
+          <Select value={scopeSchema} onChange={onSchema} label="Dataset"
             options={[{ value: "", label: "All schemas" }, ...schemas.map(s => ({ value: s, label: s }))]} />
         </>
       )}
-      {arrow}
-      <Select value={scopeTable} onChange={onTable}
-        options={[{ value: "", label: loading ? "Loading…" : tables.length ? "All tables" : "No tables loaded" }, ...tables.map(t => ({ value: t, label: t }))]} />
-    </div>
+      {withTable && (
+        <>
+          {arrow}
+          <Select value={scopeTable} onChange={onTable} label="Table"
+            options={[{ value: "", label: loading ? "Loading…" : tables.length ? "All tables" : "No tables loaded" },
+              ...tables.map(t => ({ value: t, label: t }))]} />
+        </>
+      )}
+    </span>
   );
 }
 
 export function SemanticLayerPanel({ connectionId, connName, connections = [] }: {
   connectionId: string; connName?: string; connections?: ConnOption[];
 }) {
-  // The tab deep-links as ?semtab= (lowercased). Read once at mount; written on
-  // change via replaceState — the shell's URL sync starts from location.search and
-  // only touches its own params, so semtab survives its rewrites.
+  // The tab deep-links as ?semtab= (lowercased). Read once at mount; written on change via replaceState — the shell's
+  // URL sync starts from location.search and only touches its own params, so semtab survives its rewrites.
   const [activeTab, setActiveTab] = useState<string>(() => {
     if (typeof window === "undefined") return DEFAULT_TAB;
     const want = new URLSearchParams(window.location.search).get("semtab") ?? "";
@@ -771,9 +709,8 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
   const [scopeSchema, setScopeSchema] = useState("");
   const [scopeTable, setScopeTable]   = useState("");
 
-  // The semantic layer is an ORG-level surface: the active connection here is
-  // independent of the app's globally-selected connection. It defaults to the
-  // current selection but the user can browse any connection's semantic layer.
+  // The semantic layer is an ORG-level surface: the active connection here is independent of the app's globally-
+  // selected connection. It defaults to the current selection but the user can browse any connection's semantic layer.
   const [activeConn, setActiveConn] = useState(connectionId);
   useEffect(() => { if (connectionId && !activeConn) setActiveConn(connectionId); }, [connectionId, activeConn]);
 
@@ -782,9 +719,8 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
   const [schemaLoading, setSchemaLoading] = useState(false);
   const { schema: sharedSchema, loading: sharedLoading } = useRichSchema(activeConn);
   useEffect(() => {
-    // Mirrors the shared per-connection cache into this panel's existing state, so
-    // every consumer below is untouched. The cancelled-flag dance is gone with the
-    // fetch that needed it — the cache owns request lifecycle now.
+    // Mirrors the shared per-connection cache into this panel's existing state, so every consumer below is untouched.
+    // The cancelled-flag dance is gone with the fetch that needed it — the cache owns request lifecycle now.
     setSchema(sharedSchema);
     setSchemaLoading(sharedLoading);
   }, [activeConn, sharedSchema, sharedLoading]);
@@ -792,8 +728,8 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
   // Reset table/schema scope whenever the connection changes
   useEffect(() => { setScopeSchema(""); setScopeTable(""); }, [activeConn]);
 
-  // Derive schema/table options from the live rich schema. Tables named
-  // "schema.table" are split so the schema grain is selectable.
+  // Derive schema/table options from the live rich schema. Tables named "schema.table" are split so the schema grain is
+  // selectable.
   const { schemas, tables } = useMemo(() => {
     const names = (schema?.tables ?? []).map(t => t.name);
     const schemaSet = new Set<string>();
@@ -810,31 +746,28 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
     if (scopeTable && !tables.includes(scopeTable)) setScopeTable("");
   }, [tables, scopeTable]);
 
-  // Each dataset has its own metrics. "All schemas" on a connection of several lists EVERY dataset's,
-  // each row saying which (the user, 2026-10-07: "when I select all schemas … all the metrics across
-  // all the schemas of the selected connection should be displayed") — it used to quietly show one
-  // dataset, the last one chosen, under a banner saying so.
+  // Each dataset has its own metrics. "All schemas" on a connection of several lists EVERY dataset's, each row saying
+  // which (the user, 2026-10-07: "when I select all schemas … all the metrics across all the schemas of the selected
+  // connection should be displayed") — it used to quietly show one dataset, the last one chosen, under a banner saying so.
   const metricsSchema = scopeSchema || (schemas.length > 1 ? "*" : defaultSchema(activeConn, schemas));
   useEffect(() => { if (scopeSchema) rememberSchema(activeConn, scopeSchema); }, [activeConn, scopeSchema]);
 
   if (!activeConn) {
     return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--t3)", fontSize: 13 }}>
-        No connections yet — add one to manage its semantic layer.
-      </div>
+      <Page testId="semantic-layer">
+        <Empty>No connections yet — add one to manage its semantic layer.</Empty>
+      </Page>
     );
   }
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Faded placeholder styling for all inputs in this panel */}
-      <style>{`.sl-in::placeholder{color:var(--t4,#666);opacity:1}`}</style>
-
-      {/* Scope + tabs */}
-      <div style={{ padding: "16px 24px 0", borderBottom: "1px solid var(--b0)" }}>
-        {/* Scope bar — org-level: choose ANY connection / schema / table */}
-        <div style={{ marginBottom: 12 }}>
-          <ScopeBar
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}
+      data-testid="semantic-layer">
+      <TabStrip label="Semantic layer views" value={activeTab} onChange={setActiveTab}
+        style={{ padding: "10px 22px 0", flexShrink: 0 }}
+        tabs={TABS.map(t => ({ id: t, label: t }))}
+        trailing={
+          <Scope
             connections={connections.length ? connections : (connName ? [{ id: activeConn, name: connName }] : [])}
             activeConn={activeConn}
             schemas={schemas} tables={tables}
@@ -842,26 +775,19 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
             onConn={setActiveConn}
             onSchema={setScopeSchema} onTable={setScopeTable}
             loading={schemaLoading}
+            withTable={activeTab === "Annotations"}
           />
-        </div>
+        } />
 
-        <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />
-      </div>
-
-      {/* Content — keyed on activeConn so each tab reloads when scope changes */}
-      <div style={{ flex: 1, overflow: "auto", padding: "0 24px 24px" }} key={activeConn}>
-        <div style={{ paddingTop: 16, height: activeTab === "Metrics" ? "100%" : undefined }}>
-          {activeTab === "Annotations" && <AnnotationsTab connId={activeConn} scopeTable={scopeTable} />}
-          {activeTab === "Knowledge"   && <KnowledgeTab   connId={activeConn} />}
-          {activeTab === "Metrics"     && (
-            <div style={{ height: "100%", minHeight: 420 }}>
-              <TabIntro text="Metrics are governed KPI definitions — one canonical SQL formula per metric, with targets, owners and quality tests. Once defined here, the AI reuses the exact same formula everywhere, so “revenue” means the same thing in every chart and answer." />
-              <MetricsPanel connId={activeConn} schema={metricsSchema || undefined} datasets={schemas} />
-            </div>
-          )}
-          {activeTab === "Benchmarks"  && <BenchmarksTab  connId={activeConn} />}
-          {activeTab === "Import"      && <IntakePanel    connId={activeConn} schema={scopeSchema} />}
-        </div>
+      {/* Content — keyed on activeConn so each tab reloads when the scope changes */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }} key={activeConn}>
+        {activeTab === "Metrics"     && <MetricsPanel connId={activeConn} schema={metricsSchema || undefined} datasets={schemas} />}
+        {activeTab === "Annotations" && <AnnotationsTab connId={activeConn} scopeTable={scopeTable} />}
+        {activeTab === "Knowledge"   && <KnowledgeTab   connId={activeConn} />}
+        {activeTab === "Benchmarks"  && <BenchmarksTab  connId={activeConn} />}
+        {activeTab === "Import"      && (
+          <Page testId="semantic-import"><IntakePanel connId={activeConn} schema={scopeSchema} /></Page>
+        )}
       </div>
     </div>
   );

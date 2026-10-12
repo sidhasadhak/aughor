@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Dot } from "@/components/clarity/kit";
 import { queryTabName } from "@/lib/format";
 import type { ParamDef, ParamValue } from "@/lib/query/paramDefs";
 import { Input } from "@/components/ui/input";
@@ -160,12 +161,9 @@ export function TabsBar({
                 className="aug-fs-ui"
                 style={{ color: active ? "var(--t1)" : "var(--t3)" }}
               >
-                {t.status === "error" && (
-                  <span style={{ color: "var(--red4)", marginRight: 4 }}>●</span>
-                )}
-                {t.status === "ok" && (
-                  <span style={{ color: "var(--grn4)", marginRight: 4 }}>●</span>
-                )}
+                {/* The last run's outcome as a mark — colour carries it, the title names it. */}
+                {t.status === "error" && <Dot hue="red" title="The last run failed" />}
+                {t.status === "ok" && <Dot hue="green" title="The last run succeeded" />}
                 {t.name}
               </Button>
             )}

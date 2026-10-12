@@ -222,12 +222,14 @@ export function DeskColumns({ desk, error, refs, connectionId }: {
 }
 
 /** In brief — what the platform knows, one line each, and the door to every finding. */
-export function InBrief({ items, total, onAll, allOpen, title, empty, standing }: {
+export function InBrief({ items, total, onAll, allOpen, title, empty, standing, leftOut }: {
   items: { id: string; node: ReactNode }[]; total: number; onAll: () => void; allOpen: boolean; title: string;
   /** What an empty list says (a range's: measuring, failed, or why nothing was measured). */
   empty?: string;
   /** Under a range: leads to What we know, where every finding is. */
   standing?: () => void;
+  /** The findings left out because they read a table turned off for analysis, said in one line. */
+  leftOut?: string;
 }) {
   return (
     <div data-testid="paper-brief" style={{ padding: "16px 0", borderBottom: RULE }}>
@@ -239,6 +241,7 @@ export function InBrief({ items, total, onAll, allOpen, title, empty, standing }
           </Button>
         )}
       </div>
+      {leftOut && <div className="aug-fs-xs" data-testid="paper-left-out" style={{ color: "var(--t3)", marginBottom: 6 }}>{leftOut}</div>}
       {items.length === 0
         ? <div className="aug-fs-sm" data-testid="paper-brief-empty" style={{ color: "var(--t3)" }}>
             {empty ?? "No finding to report in this edition."}

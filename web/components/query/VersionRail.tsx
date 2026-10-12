@@ -27,6 +27,8 @@ import {
   type SavedQueryVersion, type SavedQueryChange,
 } from "@/lib/api";
 import { Loading } from "@/components/ui/states";
+import { Empty, Label } from "@/components/clarity/kit";
+import { formatCount } from "@/lib/format";
 
 export function VersionRail({
   queryId,
@@ -120,16 +122,16 @@ export function VersionRail({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
-      <div className="aug-label" style={{ padding: "8px 12px 4px", color: "var(--t3)" }}>
-        Versions
+      <div style={{ padding: "10px 12px 0" }}>
+        <Label right={versions.length ? formatCount(versions.length) : null}>Versions</Label>
       </div>
 
       {loading && (
         <Loading what="versions" style={{ padding: "0 12px 8px" }} />
       )}
       {!loading && versions.length === 0 && (
-        <div style={{ padding: "0 12px 8px", fontSize: 13, color: "var(--t3)" }}>
-          No versions yet — one is recorded each time you save a change.
+        <div style={{ padding: "0 12px 8px" }}>
+          <Empty>No versions yet — one is recorded each time you save a change.</Empty>
         </div>
       )}
 

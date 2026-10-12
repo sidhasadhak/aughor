@@ -54,8 +54,11 @@ const OUT_OF_SCOPE = ["components/charts/vega"];
 const SCALE = new Set([11, 12, 13, 14, 15, 18, 22, 28]);
 
 /** One-way ratchet: raw on-scale font-size literals still awaiting an aug-fs-* class.
- *  LOWER this as they are converted; never raise it. */
-const FONT_SIZE_BASELINE = 877;
+ *  LOWER this as they are converted; never raise it. 877 → 639 (2026-10-12): it stood 196 above the count when
+ *  Settings' four sections were redone to CLARITY, and they took 42 more literals out. 639 → 554 (2026-10-12): the Data
+ *  Canvas, SQL Editor and Semantic Layer, redone the same day, took 85 more out. 554 → 576 the same day: the Data
+ *  Canvas list was kept as it was (the user), and its 22 literals came back with it. */
+const FONT_SIZE_BASELINE = 576;
 
 const RADIUS_RULES = [
   {

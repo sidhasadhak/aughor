@@ -229,14 +229,27 @@ def decide(inquiries: list[Any], metrics: list[Any]) -> list[dict]:
     return out
 
 
+def turned_off(claim: Any, left_out: list[dict], reads_off) -> bool:
+    """Whether a claim stands on a table turned off for analysis: an explorer finding the Briefing left out (matched
+    by its schema and id — per-schema runs reuse ids), or an investigation's answer whose own query reads one."""
+    ex = claim.extra or {}
+    if ex.get("writer") == "explorer" and ex.get("finding_id"):
+        fid, sch = str(ex["finding_id"]), str(ex.get("schema") or "")
+        if any(r["id"] == fid and (not sch or not r.get("schema") or r["schema"] == sch) for r in left_out):
+            return True
+    return bool(ex.get("sql")) and reads_off(str(ex["sql"]))
+
+
 def _column(items: list[dict]) -> dict:
     return {"items": items[:PER_COLUMN], "more": max(0, len(items) - PER_COLUMN)}
 
 
 def desk(connection_id: str, schema: Optional[str] = None, *, period: Optional[dict] = None,
-         now: Optional[_dt.datetime] = None) -> dict:
+         now: Optional[_dt.datetime] = None, left_out: Optional[list[dict]] = None) -> dict:
     """The three columns for one connection (and schema). Each reads its own store; a store that
-    cannot be read leaves its column `unread` with why, and the others still print."""
+    cannot be read leaves its column `unread` with why, and the others still print. ``left_out`` is the
+    findings the Briefing left out because they read a table turned off (`visibility.findings_left_out`):
+    their claims are not news either."""
     now = now or _dt.datetime.now(_dt.timezone.utc)
     unread: dict[str, str] = {}
 
@@ -259,6 +272,12 @@ def desk(connection_id: str, schema: Optional[str] = None, *, period: Optional[d
     metrics = _read("metrics", lambda: [m for m in list_metrics(connection_id=connection_id)
                                         if getattr(m, "connection", "") == connection_id
                                         and (not schema or home_schema(m) in ("", "*", schema))])
+    from aughor.ontology.visibility import connection_exclusions, off_read
+    if claims and connection_exclusions(connection_id):
+        from aughor.trust.lineage_edges import dialect_for_connection
+        dialect = dialect_for_connection(connection_id)
+        claims = [c for c in claims if not turned_off(
+            c, left_out or [], lambda sql: off_read(connection_id, sql, dialect, default_schema=schema) is not None)]
     out = {"connection_id": connection_id, "schema": schema, "as_of": now.isoformat(),
            "trends": _column(trends(claims or [], now)) if claims is not None else None,
            "gaps": _column(gaps(inquiries or [], metrics or [], period)) if inquiries is not None and metrics is not None else None,

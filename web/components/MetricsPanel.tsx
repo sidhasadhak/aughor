@@ -1,8 +1,28 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Badge } from "@/components/ui/badge";
+/**
+ * The Semantic Layer's Metrics tab: every metric that applies to one connection — its own definitions, its industry
+ * package's and the explorer's suggestions — redone to `aughor-v2/CLARITY.md` (2026-10-12).
+ *
+ * The user asked, of LuxExperience, why its metrics "had not popped up": they were suggestions until its profile was
+ * built, then proposed and approved — and four of them still had no date column. So the tab opens on what a reader
+ * came for: four figures (approved and measured · waiting for review · can't be measured · the last decision), then
+ * what needs a person (a proposal to review, an approved metric with no SQL or no date column, an industry metric not
+ * bound here), then the list, grouped by where each metric stands. A row opens in place (asked for 2026-09-18: "in a
+ * table format and expanded upon click so that it could be edited"), to read first — Overview · Approval · Dates ·
+ * Measures — with the form behind Edit and the tools in one menu. Where each row stands: `lib/semanticMetrics.ts`.
+ */
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+
+import { Card, Chip, Empty, Figure, Figures, Label, MUTED, NUM, NeedsYou, ONE_LINE, Page, ROW, RULE } from "@/components/clarity/kit";
+import { FoldLine, GroupHead, Sql, ToolsMenu, rowButtonStyle } from "@/components/semantic/parts";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
+import { SelectField } from "@/components/ui/select";
+import { Loading, ReadFailed } from "@/components/ui/states";
+import { TabStrip } from "@/components/ui/tab-strip";
+import { Textarea } from "@/components/ui/textarea";
 import {
   createMetric,
   deleteMetric,
@@ -35,30 +55,19 @@ import {
   type DefinitionReport,
   type DefinitionClaim,
 } from "@/lib/api";
-import { SelectField } from "@/components/ui/select";
-import { Table, TableHeader, TableBody, TableRow, TableHead } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { countNoun, formatCount, formatDateTime, formatTimestamp } from "@/lib/format";
+import {
+  ALL, datasetWords, datesSentence, dayWords, figures as figuresOf, grouped, homeOf, lastDecision, missingRoles,
+  needs as needsOf, packsOf, place, sameDataset, shortColumn, shortUnit, standingChip, storedFor,
+  type Need, type Placed,
+} from "@/lib/semanticMetrics";
+import { withUniqueKeys } from "@/lib/listKeys";
 import { requestTab } from "@/lib/navigate";
 import { useMe } from "@/lib/useMe";
 
-/** "*" — every dataset of the connection. */
-const ALL = "*";
-/** The dataset a definition belongs to, as the server resolved it. */
-const homeOf = (m: Metric) => m.home_schema ?? m.schema_name ?? ALL;
-const sameDataset = (a?: string | null, b?: string | null) => (a || ALL).toLowerCase() === (b || ALL).toLowerCase();
-const datasetWords = (ds?: string | null) => (!ds || ds === ALL ? "every dataset" : ds);
-/** A catalogue row's identity: two datasets may each have their own metric of one name. */
-const rowKey = (r: CatalogueMetric) => `${r.source}:${r.schema ?? ALL}:${r.name}`;
 const GRAINS = ["day", "week", "month", "quarter", "year"] as const;
 
-// ── Governance lifecycle (B-8) ──────────────────────────────────────────────────
-const STATUS_STYLE: Record<string, string> = {
-  draft:      "border-zinc-600 bg-zinc-800 text-zinc-400",
-  proposed:   "border-amber-500/40 bg-amber-500/10 text-amber-400",
-  approved:   "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-  deprecated: "border-zinc-700 bg-zinc-800/60 text-zinc-500 line-through",
-};
+// ── Governance lifecycle (B-8) ──────────────────────────────────────────────────────────────────────────────────────
 // Legal transitions per state — mirrors aughor/semantic/governance.py.
 const NEXT_ACTIONS: Record<string, string[]> = {
   draft:      ["propose"],
@@ -66,36 +75,42 @@ const NEXT_ACTIONS: Record<string, string[]> = {
   approved:   ["deprecate"],
   deprecated: ["propose"],
 };
+const ACTION_WORD: Record<string, string> = { propose: "Propose", approve: "Approve", reject: "Reject", deprecate: "Deprecate" };
+const STATUS_TONE: Record<string, "up" | "amber" | "plain"> = { approved: "up", proposed: "amber" };
+
+const TEXT: CSSProperties = { color: "var(--t1)", margin: 0 };
+const SUPPORT: CSSProperties = { color: "var(--t2)", margin: 0 };
+const ERROR: CSSProperties = { color: "var(--red4)", margin: 0 };
+const STACK: CSSProperties = { display: "flex", flexDirection: "column", gap: 10, minWidth: 0 };
+const PAIR2: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 };
 
 /** A3 — one claim, rendered so that "could not check" never reads like "nothing to report".
  *
- *  An UNAVAILABLE section is drawn in the SAME weight as one with findings, because the thing
- *  it is telling the approver — we could not answer this — is exactly as load-bearing as an
- *  answer. Greying it out would reproduce, in CSS, the collapse the server refuses to make. */
+ *  An UNAVAILABLE section wears the SAME amber as one with findings, because the thing it is telling the approver — we
+ *  could not answer this — is exactly as load-bearing as an answer. Greying it out would reproduce, in CSS, the
+ *  collapse the server refuses to make. */
 function ClaimBlock({ title, claim }: { title: string; claim: DefinitionClaim }) {
-  const tone =
-    claim.outcome === "unavailable" ? "border-amber-500/40 text-amber-300"
-    : claim.findings.some(f => f.severity === "defect") ? "border-red-500/40 text-red-300"
-    : claim.outcome === "findings" ? "border-amber-500/40 text-amber-300"
-    : "border-zinc-700 text-zinc-400";
+  const tone = claim.outcome === "unavailable" ? "amber"
+    : claim.findings.some(f => f.severity === "defect") ? "down"
+    : claim.outcome === "findings" ? "amber" : "plain";
   return (
-    <div className={`rounded border ${tone.split(" ")[0]} bg-zinc-900/40 p-2`}>
-      <div className="flex items-baseline gap-2">
-        <span className="aug-fs-xs font-medium text-zinc-300">{title}</span>
-        <span className={`aug-fs-xs ${tone.split(" ")[1]}`}>{claim.outcome.replace("_", " ")}</span>
+    <div style={{ ...RULE, padding: "8px 0" }}>
+      <div style={ROW}>
+        <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 500 }}>{title}</span>
+        <Chip tone={tone}>{claim.outcome.replace("_", " ")}</Chip>
       </div>
-      <div className="aug-fs-xs text-zinc-400 mt-1">{claim.summary}</div>
+      <p className="aug-fs-sm" style={{ ...SUPPORT, marginTop: 2 }}>{claim.summary}</p>
       {claim.findings.length > 0 && (
-        <ul className="mt-1.5 flex flex-col gap-1">
+        <ul style={{ margin: "6px 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
           {claim.findings.map(f => (
-            <li key={f.code} className="aug-fs-xs">
-              <span className={f.severity === "defect" ? "text-red-400" : "text-amber-400"}>
+            <li key={f.code} className="aug-fs-sm">
+              <span style={{ color: f.severity === "defect" ? "var(--red4)" : "var(--amb4)" }}>
                 {f.severity === "defect" ? "✕" : "!"}
               </span>{" "}
-              <span className="text-zinc-300">{f.what}</span>
-              {/* The evidence is not decoration: a finding a reader cannot check is one they
-                  must take on faith, which is what this screen exists to stop. */}
-              <div className="text-zinc-500 pl-4 font-mono">{f.evidence}</div>
+              <span style={{ color: "var(--t1)" }}>{f.what}</span>
+              {/* The evidence is not decoration: a finding a reader cannot check is one they must take on faith,
+                  which is what this screen exists to stop. */}
+              <div className="aug-fs-xs" style={{ ...MUTED, paddingLeft: 14, fontFamily: "var(--font-mono)" }}>{f.evidence}</div>
             </li>
           ))}
         </ul>
@@ -106,60 +121,41 @@ function ClaimBlock({ title, claim }: { title: string; claim: DefinitionClaim })
 
 /** A3 — the report beside the ask.
  *
- *  Deliberately renders NO recommendation and pre-selects nothing. The drafting study found
- *  jev-align placing the menu cursor on the model's own answer at exactly the screen the design
- *  insists must be human, and refused it: on an ambiguous row the pre-selection is a coin flip
- *  that one keypress records as a human judgement. The definition is the user's call, so this
- *  shows what was measured and stops. */
+ *  Deliberately renders NO recommendation and pre-selects nothing. The drafting study found jev-align placing the menu
+ *  cursor on the model's own answer at exactly the screen the design insists must be human, and refused it: on an
+ *  ambiguous row the pre-selection is a coin flip that one keypress records as a human judgement. The definition is the
+ *  user's call, so this shows what was measured and stops. */
 function DefinitionReportBlock({ report }: { report: DefinitionReport }) {
   const pop = report.population;
   return (
-    <div className="mt-2 rounded-md border border-zinc-700 bg-zinc-900/60 p-2.5 flex flex-col gap-2">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="aug-fs-xs font-medium text-zinc-300">Before you decide</span>
-        <span className="aug-fs-xs px-1.5 rounded border border-zinc-600 text-zinc-500">advisory</span>
-        {report.defects.length > 0 && (
-          <span className="aug-fs-xs px-1.5 rounded border border-red-500/40 text-red-400">
-            {report.defects.length} defect{report.defects.length > 1 ? "s" : ""}
-          </span>
-        )}
-      </div>
+    <section aria-label="Before you decide" data-testid="metric-report">
+      <Label right={<>
+        <Chip>advisory</Chip>
+        {report.defects.length > 0 && <Chip tone="down">{countNoun(report.defects.length, "defect")}</Chip>}
+      </>}>Before you decide</Label>
       <ClaimBlock title="What it changes" claim={report.predecessor} />
       <ClaimBlock title="Whether it runs" claim={report.execution} />
       <ClaimBlock title="What it declares" claim={report.declaration} />
       <ClaimBlock title="What could be compared" claim={report.segments} />
-      {/* The population line is stated LAST but never omitted. A4's lesson, applied: a caveat
-          printed after a row of green ticks reads as a footnote to reassurance — so when the
-          numbers cannot be pinned, this says so in the amber it deserves rather than in grey. */}
-      <div className={`aug-fs-xs rounded border p-2 ${
-        pop.reproducible ? "border-zinc-700 text-zinc-500"
-                         : "border-amber-500/40 text-amber-300"}`}>
-        <span className="font-medium">Population: {pop.mode}</span>
-        {pop.reason && <span className="text-zinc-400"> — {pop.reason}</span>}
-        {pop.token && <span className="text-zinc-500 font-mono"> {pop.token}</span>}
+      {/* The population line is stated LAST but never omitted. A4's lesson, applied: a caveat printed after a row of
+          green ticks reads as a footnote to reassurance — so when the numbers cannot be pinned, this says so in the
+          amber it deserves rather than in grey. */}
+      <div className="aug-fs-sm" style={{ ...RULE, padding: "8px 0", color: pop.reproducible ? "var(--t3)" : "var(--amb4)" }}>
+        <span style={{ fontWeight: 500 }}>Population: {pop.mode}</span>
+        {pop.reason && <span style={{ color: "var(--t2)" }}> — {pop.reason}</span>}
+        {pop.token && <span style={{ ...MUTED, fontFamily: "var(--font-mono)" }}> {pop.token}</span>}
       </div>
-    </div>
+    </section>
   );
 }
 
-// ── Dates (Arc BR-2) ──────────────────────────────────────────────────────────────
-// How the metric is measured for a date range. The platform sets these by rule — the user's
-// call (ROADMAP §6 item 34(b)) — and says which rule; a person confirms or corrects them here,
-// and from then on the platform leaves them alone.
+// ── Dates (Arc BR-2) ────────────────────────────────────────────────────────────────────────────────────────────────
+// How the metric is measured for a date range. The platform sets these by rule — the user's call (ROADMAP §6 item
+// 34(b)) — and says which rule; a person confirms or corrects them here, and from then on the platform leaves them alone.
 
 const KIND_WORDS: Record<string, string> = {
   flow: "adds up over a range", stock: "a level at a date", cohort: "tied to one date, completed by a later one",
 };
-
-function datesSentence(m: Metric): string {
-  if (!m.time_kind || !m.time_column) return "Not set — this metric cannot be measured for a date range yet.";
-  if (m.time_kind === "cohort") {
-    const settles = m.settles_after_days != null ? `, settles after ${m.settles_after_days} days` : ", settling time not yet measured";
-    return `Cohort — tied to ${m.time_column}, completed by ${m.outcome_column ?? "?"}${settles}.`;
-  }
-  if (m.time_kind === "stock") return `Stock — a row counts from ${m.time_column} until ${m.until_column ?? "?"}.`;
-  return `Flow — a row counts on the day of ${m.time_column}.`;
-}
 
 /** A statement begins with SELECT or WITH; anything else is an expression written before the rule. */
 const isStatement = (sql: string) => /^\s*(select|with)\b/i.test(sql);
@@ -200,14 +196,13 @@ export function EntitySection({ metric, onChanged }: { metric: Metric; onChanged
   };
 
   return (
-    <div className="rounded-md border border-zinc-700 bg-zinc-800/40 p-3" data-testid="metric-entity">
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <span className="text-xs font-medium text-zinc-300">Measures</span>
-        <span className="aug-fs-xs px-1.5 rounded border border-zinc-600 text-zinc-400">
+    <div style={STACK} data-testid="metric-entity">
+      <div style={ROW}>
+        <Chip tone={confirmed ? "up" : proposal?.entity ? "violet" : "plain"}>
           {confirmed ? `confirmed by ${metric.entity_confirmed_by ?? "a person"}` : proposal?.entity ? "proposed" : "not keyed"}
-        </span>
+        </Chip>
       </div>
-      <p className="aug-fs-xs text-zinc-300">
+      <p className="aug-fs-sm" style={TEXT}>
         {confirmed
           ? `${metric.entity} — each figure is computed over ${metric.entity} objects.`
           : proposal?.entity
@@ -216,10 +211,10 @@ export function EntitySection({ metric, onChanged }: { metric: Metric; onChanged
               : "Reading the ontology…"}
       </p>
       {confirmed && proposal?.entity && proposal.entity !== metric.entity && (
-        <p className="aug-fs-xs text-zinc-500 mt-1">Its grain proposes {proposal.entity}: {proposal.why}.</p>
+        <p className="aug-fs-sm" style={{ ...MUTED, margin: 0 }}>Its grain proposes {proposal.entity}: {proposal.why}.</p>
       )}
       {!editing ? (
-        <div className="flex items-center gap-2 mt-2 flex-wrap">
+        <div style={ROW}>
           {!confirmed && proposal?.entity && (
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => save(proposal.entity)}>Confirm</Button>
           )}
@@ -229,10 +224,10 @@ export function EntitySection({ metric, onChanged }: { metric: Metric; onChanged
             </Button>
           )}
           {confirmed && <Button size="sm" variant="ghost" disabled={busy} onClick={() => save("")}>Clear</Button>}
-          {me?.actor && <span className="aug-fs-xs text-zinc-500">as {me.actor}</span>}
+          {me?.actor && <span className="aug-fs-xs" style={MUTED}>as {me.actor}</span>}
         </div>
       ) : (
-        <div className="flex items-center gap-2 mt-2 flex-wrap">
+        <div style={ROW}>
           <SelectField value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Entity it measures">
             <option value="">— choose the entity —</option>
             {(keys?.entities ?? []).map((e) => (
@@ -243,28 +238,28 @@ export function EntitySection({ metric, onChanged }: { metric: Metric; onChanged
           <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
         </div>
       )}
-      {err && <p className="aug-fs-xs text-red-400 mt-1" role="alert">{err}</p>}
+      {err && <p className="aug-fs-sm" style={ERROR} role="alert">{err}</p>}
     </div>
   );
 }
 
-function DatesSection({ metric, proposals, onChanged }: {
+function DatesSection({ metric, proposals, onChanged, startEditing = false }: {
   metric: Metric; proposals: MetricProposals | null; onChanged: () => void;
+  /** Open straight on the form — the door from "Needs you" for a metric with no date column. */
+  startEditing?: boolean;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startEditing);
   const [kind, setKind] = useState(metric.time_kind ?? "flow");
   const [column, setColumn] = useState(metric.time_column ?? "");
-  // The platform's proposals for the grain (the user, 2026-09-26): the date or timestamp
-  // columns of the table the SQL statement reads — only those. One date is set for the
-  // person and said; several are a list beside the open input, and the person picks; none
-  // is said with the reason. The parent reads them from the SQL in the field.
+  // The platform's proposals for the grain (the user, 2026-09-26): the date or timestamp columns of the table the SQL
+  // statement reads — only those. One date is set for the person and said; several are a list beside the open input,
+  // and the person picks; none is said with the reason. The parent reads them from the SQL in the field.
   const candidates = proposals?.candidates ?? [];
   const candidatesNote = proposals?.note ?? "";
   const grainList = `metric-grain-${metric.name}`;
   const listed = candidates.length > 1;
   const tablesRead = Array.from(new Set(candidates.map((c) => c.table))).join(", ");
-  // The one date is SET for the person — derived, so it follows the proposals as they arrive
-  // and yields to anything typed.
+  // The one date is SET for the person — derived, so it follows the proposals as they arrive and yields to anything typed.
   const shownColumn = column.trim() ? column : (candidates.length === 1 ? candidates[0].grain : "");
   const [outcome, setOutcome] = useState(metric.outcome_column ?? "");
   const [until, setUntil] = useState(metric.until_column ?? "");
@@ -289,34 +284,33 @@ function DatesSection({ metric, proposals, onChanged }: {
 
   const confirmed = !!metric.time_confirmed_by;
   return (
-    <div className="rounded-md border border-zinc-700 bg-zinc-800/40 p-3" data-testid="metric-dates">
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <span className="text-xs font-medium text-zinc-300">Dates</span>
-        {metric.time_kind && (
-          <span className="aug-fs-xs px-1.5 rounded border border-zinc-600 text-zinc-400">
-            {confirmed ? `confirmed by ${metric.time_confirmed_by}` : "set automatically"}
-          </span>
-        )}
-      </div>
-      <p className="aug-fs-xs text-zinc-300">
+    <div style={STACK} data-testid="metric-dates">
+      {metric.time_kind && (
+        <div style={ROW}>
+          <Chip tone={confirmed ? "up" : "plain"}>{confirmed ? `confirmed by ${metric.time_confirmed_by}` : "set automatically"}</Chip>
+          <Chip>{`by ${metric.time_grain ?? "month"}`}</Chip>
+        </div>
+      )}
+      <p className="aug-fs-sm" style={metric.time_kind && metric.time_column ? TEXT : { ...TEXT, color: "var(--amb4)" }}>
         {datesSentence(metric)}
-        {metric.time_kind && metric.time_column && ` Reported by ${metric.time_grain ?? "month"}.`}
       </p>
       {metric.time_kind && (
-        <p className="aug-fs-xs text-zinc-500 mt-1">{KIND_WORDS[metric.time_kind] ?? ""}{metric.time_source ? ` · ${metric.time_source}` : ""}</p>
+        <p className="aug-fs-xs" style={{ ...MUTED, margin: 0 }}>{KIND_WORDS[metric.time_kind] ?? ""}{metric.time_source ? ` · ${metric.time_source}` : ""}</p>
       )}
       {!editing ? (
-        <div className="flex items-center gap-2 mt-2 flex-wrap">
+        <div style={ROW}>
           {metric.time_kind && !confirmed && (
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => save({})}>Confirm</Button>
           )}
-          <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>Correct…</Button>
-          {me?.actor && <span className="aug-fs-xs text-zinc-500">as {me.actor}</span>}
+          <Button size="sm" variant={metric.time_kind ? "ghost" : "secondary"} onClick={() => setEditing(true)}>
+            {metric.time_kind ? "Correct…" : "Set the date…"}
+          </Button>
+          {me?.actor && <span className="aug-fs-xs" style={MUTED}>as {me.actor}</span>}
         </div>
       ) : (
-        <div className="grid gap-2 mt-2">
-          <label className="aug-fs-xs text-zinc-400">Kind
-            <SelectField className="ml-2" value={kind} onChange={e => setKind(e.target.value as "flow" | "stock" | "cohort")}>
+        <div style={{ display: "grid", gap: 8, maxWidth: 720 }}>
+          <label className="aug-fs-xs" style={{ color: "var(--t2)", display: "flex", alignItems: "center", gap: 8 }}>Kind
+            <SelectField value={kind} onChange={e => setKind(e.target.value as "flow" | "stock" | "cohort")}>
               <option value="flow">Flow — adds up over a range</option>
               <option value="stock">Stock — a level at a date</option>
               <option value="cohort">Cohort — completed by a later date</option>
@@ -332,7 +326,7 @@ function DatesSection({ metric, proposals, onChanged }: {
               ))}
             </datalist>
           )}
-          <p className="aug-fs-xs text-zinc-500" data-testid="metric-date-proposals">
+          <p className="aug-fs-xs" style={{ ...MUTED, margin: 0 }} data-testid="metric-date-proposals">
             {listed
               ? `${candidates.length} dates on ${tablesRead} — pick one: ${candidates.map(c => c.grain).join(" · ")}`
               : candidates.length === 1
@@ -351,13 +345,13 @@ function DatesSection({ metric, proposals, onChanged }: {
             <Input list={listed ? grainList : undefined} placeholder="Counts until, e.g. schema.table.sold_at" value={until}
               onChange={e => setUntil(e.target.value)} aria-label="Counts until column" />
           )}
-          <label className="aug-fs-xs text-zinc-400">Reported by
-            <SelectField className="ml-2" value={grain} onChange={e => setGrain(e.target.value)} aria-label="Date grain">
+          <label className="aug-fs-xs" style={{ color: "var(--t2)", display: "flex", alignItems: "center", gap: 8 }}>Reported by
+            <SelectField value={grain} onChange={e => setGrain(e.target.value)} aria-label="Date grain">
               <option value="">month (the default)</option>
               {GRAINS.map(g => <option key={g} value={g}>{g}</option>)}
             </SelectField>
           </label>
-          <div className="flex items-center gap-2">
+          <div style={ROW}>
             <Button size="sm" variant="secondary" disabled={busy || !shownColumn.trim()}
               onClick={() => save({
                 time_kind: kind, time_column: shownColumn.trim(),
@@ -367,18 +361,17 @@ function DatesSection({ metric, proposals, onChanged }: {
                 time_grain: (grain || null) as Metric["time_grain"],
               })}>Save dates</Button>
             <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
-            {me?.actor && <span className="aug-fs-xs text-zinc-500">confirmed as {me.actor}</span>}
+            {me?.actor && <span className="aug-fs-xs" style={MUTED}>confirmed as {me.actor}</span>}
           </div>
         </div>
       )}
-      {err && <p className="aug-fs-xs text-red-400 mt-1">{err}</p>}
+      {err && <p className="aug-fs-sm" style={ERROR}>{err}</p>}
     </div>
   );
 }
 
-function GovernanceSection({ metric, datasets, onChanged }: {
-  metric: Metric; datasets: string[]; onChanged: (movedTo?: string) => void;
-}) {
+/** Its governance: where it stands, the report to read before a decision, the decisions open to a person, and its trail. */
+function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: () => void }) {
   const me = useMe();
   const home = homeOf(metric);
   const [busy, setBusy] = useState<string | null>(null);
@@ -397,11 +390,10 @@ function GovernanceSection({ metric, datasets, onChanged }: {
     return () => { alive = false; };
   }, [metric.name, metric.connection, home]);
 
-  // A3 — fetched whenever there is a decision to take. A metric with no next action has nobody
-  // to inform, so the call is not made at all rather than made and hidden. `wantReport` is
-  // DERIVED rather than pushed into state: setting state synchronously in an effect body
-  // triggers cascading renders (react-hooks/set-state-in-effect), and the render below gates on
-  // the same value, so there is nothing to reset.
+  // A3 — fetched whenever there is a decision to take. A metric with no next action has nobody to inform, so the call
+  // is not made at all rather than made and hidden. `wantReport` is DERIVED rather than pushed into state: setting
+  // state synchronously in an effect body triggers cascading renders (react-hooks/set-state-in-effect), and the render
+  // below gates on the same value, so there is nothing to reset.
   const reportConn = metric.connection;
   const wantReport = !!reportConn && reportConn !== "*" && actions.length > 0;
 
@@ -416,13 +408,14 @@ function GovernanceSection({ metric, datasets, onChanged }: {
     return () => { alive = false; };
   }, [metric.name, reportConn, home, metric.sql, status, wantReport]);
 
-  // No name is asked (the user, 2026-10-07): the server records the person signed in.
+  // No name is asked (the user, 2026-10-07): the server records the person signed in. An approval the platform's gate
+  // holds answers 428 and the app-wide approval prompt takes it (lib/approval); the refusal's words land below.
   const run = async (action: string) => {
     setErr("");
     setBusy(action);
     try {
-      // The connection and the dataset are SENT — without them the server looked for a global
-      // metric of this name, or reached another dataset's. See `transitionMetric`'s note.
+      // The connection and the dataset are SENT — without them the server looked for a global metric of this name,
+      // or reached another dataset's. See `transitionMetric`'s note.
       await transitionMetric(metric.name, action, metric.connection, home);
       setAudit(await getMetricAudit(metric.name, metric.connection, home));
       onChanged();
@@ -431,83 +424,41 @@ function GovernanceSection({ metric, datasets, onChanged }: {
     } finally { setBusy(null); }
   };
 
-  const promote = async () => {
-    if (!metric.connection) return;
-    setErr("");
-    setBusy("promote");
-    try {
-      await promoteMetric(metric.name, metric.connection, home);
-      onChanged(ALL);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not promote it");
-    } finally { setBusy(null); }
-  };
-
+  const by = status === "approved" ? metric.approved_by : status === "proposed" ? metric.proposed_by : null;
+  const at = status === "approved" ? metric.approved_at : status === "proposed" ? metric.proposed_at : null;
   return (
-    <div className="rounded-md border border-zinc-700 bg-zinc-800/40 p-3">
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <span className="text-xs font-medium text-zinc-300">Governance</span>
-        <span className={`aug-fs-xs px-1.5 rounded border ${STATUS_STYLE[status] ?? STATUS_STYLE.draft}`}>
-          {status}{metric.version ? ` v${metric.version}` : ""}
-        </span>
-        {metric.approved_by && status === "approved" && (
-          <span className="aug-fs-xs text-zinc-500">approved by {metric.approved_by}</span>
-        )}
-        {metric.proposed_by && status === "proposed" && (
-          <span className="aug-fs-xs text-zinc-500">proposed by {metric.proposed_by}</span>
-        )}
+    <div style={STACK} data-testid="metric-governance">
+      <div style={ROW}>
+        <Chip tone={STATUS_TONE[status] ?? "plain"}>{status}{metric.version ? ` v${metric.version}` : ""}</Chip>
+        {by && <span className="aug-fs-sm" style={MUTED}>{status} by {by}{at ? ` · ${dayWords(at)}` : ""}</span>}
       </div>
-      {datasets.length > 1 && (
-        <div className="flex items-center gap-2 mb-2 flex-wrap" data-testid="metric-dataset">
-          <span className="aug-fs-xs text-zinc-400">
-            {home === ALL ? "Belongs to every dataset of this connection" : <>Belongs to <strong className="text-zinc-300">{home}</strong></>}
-          </span>
-          {home !== ALL && metric.connection && metric.connection !== ALL && (
-            <Button size="xs" variant="ghost" disabled={!!busy} onClick={promote}
-              title="Every dataset of this connection reads this definition, except one that keeps its own of the same name.">
-              {busy === "promote" ? "…" : "Promote to the whole connection"}
-            </Button>
-          )}
-        </div>
-      )}
-      {/* A3 — above the buttons on purpose. A report placed after the control that acts on it
-          is read after the decision, which is the same as not being read. */}
-      {wantReport && report && <div className="mb-2"><DefinitionReportBlock report={report} /></div>}
+      {/* A3 — above the buttons on purpose. A report placed after the control that acts on it is read after the
+          decision, which is the same as not being read. */}
+      {wantReport && report && <DefinitionReportBlock report={report} />}
       {wantReport && reportErr && (
-        <div className="aug-fs-xs text-amber-400 mb-2">
-          The definition report is unavailable: {reportErr}
-        </div>
+        <p className="aug-fs-sm" style={{ color: "var(--amb4)", margin: 0 }}>The definition report is unavailable: {reportErr}</p>
       )}
       {actions.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap">
+        <div style={ROW}>
           {actions.map(a => (
-            <Button variant="ghost" size="xs"
-              key={a}
-              disabled={!!busy}
-              onClick={() => run(a)}
-              className={`text-xs px-2 py-1 rounded border capitalize disabled:opacity-50 ${
-                a === "approve" ? "border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-                : (a === "reject" || a === "deprecate") ? "border-red-500/40 text-red-400 hover:bg-red-500/10"
-                : "border-amber-500/40 text-amber-400 hover:bg-amber-500/10"}`}
-            >
-              {busy === a ? "…" : a}
+            <Button key={a} size="sm" disabled={!!busy} onClick={() => run(a)} data-testid={`metric-${a}`}
+              variant={a === "approve" ? "default" : (a === "reject" || a === "deprecate") ? "destructive" : "secondary"}>
+              {busy === a ? "…" : ACTION_WORD[a] ?? a}
             </Button>
           ))}
-          {me?.actor && <span className="aug-fs-xs text-zinc-500">as {me.actor}</span>}
+          {me?.actor && <span className="aug-fs-xs" style={MUTED}>as {me.actor}</span>}
         </div>
       )}
-      {err && <div className="aug-fs-xs text-red-400 mt-1.5">{err}</div>}
+      {err && <p className="aug-fs-sm" style={ERROR}>{err}</p>}
       {audit.length > 0 && (
-        <div className="mt-2">
-          <Button variant="ghost" size="xs" onClick={() => setShowAudit(s => !s)} className="aug-fs-xs">
-            {showAudit ? "▾" : "▸"} audit trail ({audit.length})
-          </Button>
+        <div>
+          <FoldLine open={showAudit} onToggle={() => setShowAudit(s => !s)}>{`History · ${audit.length}`}</FoldLine>
           {showAudit && (
-            <div className="mt-1 flex flex-col gap-0.5">
+            <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
               {audit.map((a, i) => (
-                <div key={i} className="aug-fs-xs text-zinc-500 font-mono">
-                  {a.at.slice(0, 19).replace("T", " ")} · <span className="text-zinc-300">{a.actor}</span>{" "}
-                  {a.action} <span className="text-zinc-600">{a.from}→{a.to}</span>{a.version ? ` v${a.version}` : ""}
+                <div key={i} className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>
+                  {formatDateTime(a.at)} · <span style={{ color: "var(--t1)" }}>{a.actor}</span>{" "}
+                  {a.action} <span style={{ fontFamily: "var(--font-mono)" }}>{a.from}→{a.to}</span>{a.version ? ` v${a.version}` : ""}
                 </div>
               ))}
             </div>
@@ -518,20 +469,7 @@ function GovernanceSection({ metric, datasets, onChanged }: {
   );
 }
 
-// ── Empty defaults ─────────────────────────────────────────────────────────────
-
-const EMPTY_METRIC: Metric = {
-  name: "", label: "", sql: "",
-  tables: [], dimensions: [], filters: [],
-  unit: null, caveats: null,
-  target_value: null, warning_threshold: null, critical_threshold: null,
-  target_period: null, benchmark_source: null,
-  owner: null, freshness_sla: null, freshness_check_sql: null,
-  quality_tests: [], lineage: [], wrong_usage_examples: [],
-  approved_by: null, approved_at: null,
-};
-
-// ── Form state ─────────────────────────────────────────────────────────────────
+// ── Form state ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 interface FormState {
   name: string; label: string; sql: string;
@@ -618,12 +556,15 @@ function formToMetric(f: FormState): Metric {
   };
 }
 
-// ── Component ──────────────────────────────────────────────────────────────────
+/** The views of one opened definition: read first, the form behind Edit. */
+type DetailTab = "overview" | "approval" | "dates" | "measures" | "edit";
+
+// ── Component ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export function MetricsPanel({ connId, schema, datasets = [] }: {
   connId?: string;
-  /** The dataset whose metrics to list; "*" — every dataset of the connection at once, each row
-   *  saying which (the user, 2026-10-07). */
+  /** The dataset whose metrics to list; "*" — every dataset of the connection at once, each row saying which (the
+   *  user, 2026-10-07). */
   schema?: string;
   /** The connection's datasets — what a definition can belong to. */
   datasets?: string[];
@@ -637,6 +578,10 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [promoting, setPromoting] = useState(false);
+  const [detailTab, setDetailTab] = useState<DetailTab>("overview");
+  /** Opened from "Needs you" to set a date: the Dates view opens on its form. */
+  const [datesEditing, setDatesEditing] = useState(false);
 
   // validation / freshness state
   const [validating, setValidating] = useState(false);
@@ -644,33 +589,25 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
   const [checkingFreshness, setCheckingFreshness] = useState(false);
   const [freshnessResult, setFreshnessResult] = useState<MetricFreshnessResult | null>(null);
 
-  // The CATALOGUE is what this tab lists: every metric that applies to this connection,
-  // not just the ones already in the registry. Most of what applies is not in the registry
-  // — an industry package's recipe is role-bound until this connection binds those roles,
-  // and the explorer's judgement lives on the business profile. Both are computed server
+  // The CATALOGUE is what this tab lists: every metric that applies to this connection, not just the ones already in
+  // the registry. Most of what applies is not in the registry — an industry package's recipe is role-bound until this
+  // connection binds those roles, and the explorer's judgement lives on the business profile. Both are computed server
   // side and materialised only when someone edits one.
   const [rows, setRows] = useState<CatalogueMetric[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [removed, setRemoved] = useState<RemovedProposal[]>([]);
   /** Whether the catalogue has answered — before it has, "nothing applies" would be a guess. */
   const [loaded, setLoaded] = useState(false);
+  /** The catalogue could not be read: said, never shown as "nothing applies". */
+  const [catalogueError, setCatalogueError] = useState<string | null>(null);
+  /** The stored definitions could not be read: an approved row's dates are then "not checked", never guessed. */
+  const [registryError, setRegistryError] = useState(false);
   /** The stored definition behind a row: same name AND dataset. */
-  const storedOf = (name: string | null, ds: string) =>
-    name === null ? undefined : metrics.find((m) => m.name === name && sameDataset(homeOf(m), ds))
-      ?? (metrics.filter((m) => m.name === name).length === 1 ? metrics.find((m) => m.name === name) : undefined);
+  const storedOf = (name: string | null, ds: string) => (name === null ? undefined : storedFor(metrics, name, ds));
 
-  // What the platform proposes for the definition being edited (the user, 2026-09-26: the
-  // SQL field holds the whole runnable statement, and the dates are those of the table it
-  // reads). Read for an EXISTING metric from the SQL in the field — so a FROM typed just now
-  // is what the dates follow — and, for a row stored as an expression, the runnable
-  // statement goes into the field and is said to be proposed until it is saved. When a
-  // column is carried by two tables the first (largest) is filled in and the others are
-  // offered as a switch — the field always holds something runnable (the user, 2026-09-26:
-  // "still cannot see the entire SQL"). Kept by metric name, so a proposal never outlives
-  // the row it was made for.
-  // The model writes the statement from the fields in the editor, on a click (the user,
-  // 2026-09-26): one model call, the result filled into the field and said to be the
-  // model's until saved. Kept apart from the platform's proposals above, which cost nothing.
+  // The model writes the statement from the fields in the editor, on a click (the user, 2026-09-26): one model call,
+  // the result filled into the field and said to be the model's until saved. Kept apart from the platform's proposals
+  // below, which cost nothing.
   const [writing, setWriting] = useState(false);
   const [written, setWritten] = useState<MetricSqlDraft | null>(null);
   const [writeError, setWriteError] = useState("");
@@ -692,6 +629,14 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
       setWriteError(e instanceof Error ? e.message : "The statement could not be written");
     } finally { setWriting(false); }
   };
+
+  // What the platform proposes for the definition opened (the user, 2026-09-26: the SQL field holds the whole runnable
+  // statement, and the dates are those of the table it reads). Read for an EXISTING metric from the SQL in the field —
+  // so a FROM typed just now is what the dates follow — and, for a row stored as an expression, the runnable statement
+  // goes into the field and is said to be proposed until it is saved. When a column is carried by two tables the first
+  // (largest) is filled in and the others are offered as a switch — the field always holds something runnable (the
+  // user, 2026-09-26: "still cannot see the entire SQL"). Kept by metric name, so a proposal never outlives the row it
+  // was made for.
   const [proposals, setProposals] = useState<MetricProposals | null>(null);
   const [proposed, setProposed] = useState<{
     metric: string; from: string; statement: string; options: MetricStatementOption[]; note: string;
@@ -720,86 +665,53 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [materialising, setMaterialising] = useState<string | null>(null);
   const [rowError, setRowError] = useState<Record<string, string>>({});
+  const [unfolded, setUnfolded] = useState<Record<string, boolean>>({});
+  /** A row opened from "Needs you" is scrolled to once it is open. */
+  const [scrollTo, setScrollTo] = useState<string | null>(null);
+  useEffect(() => {
+    if (!scrollTo) return;
+    document.getElementById(`metric-row-${scrollTo}`)?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    setScrollTo(null);
+  }, [scrollTo]);
 
-  // Only the newest load writes. The tab mounts before the scope bar knows its schema, so a
-  // read naming no schema and the schema's own read were in flight together and whichever
-  // answered LAST won: "Showing the metrics for amazon" over the two defined rows of the read
-  // that named none, until a tab switch remounted the panel with the schema known (2026-10-07).
+  // Only the newest load writes. The tab mounts before the scope bar knows its schema, so a read naming no schema and
+  // the schema's own read were in flight together and whichever answered LAST won: "Showing the metrics for amazon"
+  // over the two defined rows of the read that named none, until a tab switch remounted the panel with the schema
+  // known (2026-10-07). Returns the stored definitions it read, for a caller that reopens one.
   const loadSeq = useRef(0);
-  const load = async () => {
+  const load = async (): Promise<Metric[] | null> => {
     const seq = ++loadSeq.current;
     const stale = () => seq !== loadSeq.current;
-    // `metrics` still holds the raw registry: the governance section and the duplicate-name
-    // warning read it, and both are about what is STORED, not about what applies.
-    try { const stored = await getMetrics(connId); if (!stale()) setMetrics(stored); } catch {}
-    if (stale()) return;
-    if (!connId) { setRows([]); setCounts({}); setRemoved([]); return; }
+    // `metrics` still holds the raw registry: the governance view and the duplicate-name warning read it, and both are
+    // about what is STORED, not about what applies.
+    let stored: Metric[] | null = null;
+    try {
+      stored = await getMetrics(connId);
+      if (!stale()) { setMetrics(stored); setRegistryError(false); }
+    } catch { if (!stale()) setRegistryError(true); }
+    if (stale()) return stored;
+    if (!connId) { setRows([]); setCounts({}); setRemoved([]); setLoaded(true); return stored; }
     try {
       const cat = await getMetricCatalogue(connId, schema);
-      if (stale()) return;
-      setRows(cat.metrics); setCounts(cat.counts); setRemoved(cat.removed ?? []);
-    } catch { if (!stale()) { setRows([]); setCounts({}); setRemoved([]); } }
+      if (stale()) return stored;
+      setRows(cat.metrics); setCounts(cat.counts); setRemoved(cat.removed ?? []); setCatalogueError(null);
+    } catch (e) {
+      if (!stale()) {
+        setRows([]); setCounts({}); setRemoved([]);
+        setCatalogueError(e instanceof Error ? e.message : "The metrics that apply here could not be read");
+      }
+    }
     if (!stale()) setLoaded(true);
+    return stored;
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [connId, schema]);
-
-  // Opening a row is the edit gesture. An already-editable row opens straight into the
-  // editor; a computed one opens to its provenance with a Customise action, because a
-  // recipe is copied before it is changed — editing it in place would rewrite a definition
-  // shared by every connection that reads the same package.
-  const toggleRow = (row: CatalogueMetric) => {
-    const key = rowKey(row);
-    if (expanded === key) { setExpanded(null); cancelForm(); return; }
-    setExpanded(key);
-    setRowError((prev) => ({ ...prev, [key]: "" }));
-    const stored = storedOf(row.name, row.schema);
-    if (row.editable && stored) startEdit(stored);
-    else { setAdding(false); setSelected(null); }
-  };
-
-  const customise = async (row: CatalogueMetric) => {
-    if (!connId) return;
-    const key = rowKey(row);
-    setMaterialising(key);
-    setRowError((prev) => ({ ...prev, [key]: "" }));
-    try {
-      // The row's OWN dataset: in the every-dataset view two rows may share a name.
-      const made = await materialiseMetric(connId, row.name, row.schema || schema);
-      await load();
-      startEdit(made);
-      setExpanded(`defined:${made.home_schema ?? made.schema_name ?? row.schema}:${made.name}`);
-    } catch (e: unknown) {
-      setRowError((prev) => ({
-        ...prev,
-        [key]: e instanceof Error ? e.message : "Could not make this metric editable",
-      }));
-    } finally { setMaterialising(null); }
-  };
-
-  // Removing a PROPOSAL (the user, 2026-10-07: "the right to remove the proposed Metric"): it is
-  // recorded, never proposed here again, and listed below the table to restore.
-  const removeRow = async (row: CatalogueMetric) => {
-    if (!connId) return;
-    const key = rowKey(row);
-    setMaterialising(key);
-    try {
-      await removeProposal(connId, row.name, row.schema);
-      setExpanded(null);
-      await load();
-    } catch (e: unknown) {
-      setRowError((prev) => ({ ...prev, [key]: e instanceof Error ? e.message : "Could not remove it" }));
-    } finally { setMaterialising(null); }
-  };
-
-  const restore = async (r: RemovedProposal) => {
-    if (!connId) return;
-    try { await restoreProposal(connId, r.name, r.schema_name); await load(); }
-    catch (e: unknown) { setError(e instanceof Error ? e.message : "Could not restore it"); }
-  };
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connId, schema]);
 
   const startAdd = () => {
-    setAdding(true); setSelected(null);
+    setAdding(true); setSelected(null); setExpanded(null);
     setForm(EMPTY_FORM); setError(""); setWritten(null); setWriteError("");
     setValidationResult(null); setFreshnessResult(null);
   };
@@ -816,26 +728,95 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
     setValidationResult(null); setFreshnessResult(null);
   };
 
+  /** Open a row on one of its views. A definition opens to read; a suggestion opens to its provenance and the ways to
+   *  make it this connection's — a recipe is copied before it is changed, because editing it in place would rewrite a
+   *  definition shared by every connection that reads the same package. */
+  const open = (p: Placed, tab: DetailTab = "overview", how: { editDates?: boolean; scroll?: boolean } = {}) => {
+    setExpanded(p.key);
+    setRowError((prev) => ({ ...prev, [p.key]: "" }));
+    setDatesEditing(!!how.editDates);
+    setDeleting(null);
+    if (p.row.editable && p.stored) { startEdit(p.stored); setDetailTab(tab); }
+    else { setAdding(false); setSelected(null); }
+    if (how.scroll) setScrollTo(p.key);
+  };
+  const toggle = (p: Placed) => {
+    if (expanded === p.key) { setExpanded(null); cancelForm(); return; }
+    open(p);
+  };
+
+  /** Reopen a definition by name and dataset after a write, on its overview — or close it when it moved away. */
+  const reopen = (stored: Metric[] | null, name: string, ds: string) => {
+    const m = stored ? storedFor(stored, name, ds) : undefined;
+    if (!m) { setExpanded(null); cancelForm(); return; }
+    startEdit(m);
+    setExpanded(`defined:${homeOf(m)}:${m.name}`);
+    setDetailTab("overview");
+  };
+
+  const customise = async (row: CatalogueMetric, key: string) => {
+    if (!connId) return;
+    setMaterialising(key);
+    setRowError((prev) => ({ ...prev, [key]: "" }));
+    try {
+      // The row's OWN dataset: in the every-dataset view two rows may share a name.
+      const made = await materialiseMetric(connId, row.name, row.schema || schema);
+      await load();
+      startEdit(made);
+      setDetailTab("edit");
+      setExpanded(`defined:${made.home_schema ?? made.schema_name ?? row.schema}:${made.name}`);
+    } catch (e: unknown) {
+      setRowError((prev) => ({
+        ...prev,
+        [key]: e instanceof Error ? e.message : "Could not make this metric editable",
+      }));
+    } finally { setMaterialising(null); }
+  };
+
+  // Removing a PROPOSAL (the user, 2026-10-07: "the right to remove the proposed Metric"): it is recorded, never
+  // proposed here again, and listed at the foot of the list to restore.
+  const removeRow = async (row: CatalogueMetric, key: string) => {
+    if (!connId) return;
+    setMaterialising(key);
+    try {
+      await removeProposal(connId, row.name, row.schema);
+      setExpanded(null);
+      await load();
+    } catch (e: unknown) {
+      setRowError((prev) => ({ ...prev, [key]: e instanceof Error ? e.message : "Could not remove it" }));
+    } finally { setMaterialising(null); }
+  };
+
+  const restore = async (r: RemovedProposal) => {
+    if (!connId) return;
+    try { await restoreProposal(connId, r.name, r.schema_name); await load(); }
+    catch (e: unknown) { setError(e instanceof Error ? e.message : "Could not restore it"); }
+  };
+
   const handleSave = async () => {
     setError("");
     const metric = formToMetric(form);
     if (!metric.name) { setError("Name is required"); return; }
     if (!metric.label) { setError("Label is required"); return; }
-    // A draft may be saved without SQL — a recipe opened to be written over this connection's
-    // columns is one — but a new definition needs its statement.
+    // A draft may be saved without SQL — a recipe opened to be written over this connection's columns is one — but a
+    // new definition needs its statement.
     if (!metric.sql && adding) { setError("SQL statement is required"); return; }
     setSaving(true);
     try {
-      // Scope every write to the connection this tab is showing. Without it the request
-      // fell back to the server's "*" default, so editing theLook's metric republished
-      // its SQL — over `inventory_items` — to every connection, including ones with no
-      // such table. A metric with no connection is a house default, and that is a
-      // deliberate choice, not what an edit here means.
+      // Scope every write to the connection this tab is showing. Without it the request fell back to the server's "*"
+      // default, so editing theLook's metric republished its SQL — over `inventory_items` — to every connection,
+      // including ones with no such table. A metric with no connection is a house default, and that is a deliberate
+      // choice, not what an edit here means.
       const scoped = connId ? { ...metric, connection: connId } : metric;
-      if (adding) { await createMetric(scoped); }
-      else { await updateMetric(selected!, scoped, selectedSchema); }
-      await load();
-      cancelForm();
+      if (adding) {
+        const made = await createMetric(scoped);
+        const stored = await load();
+        reopen(stored, made?.name ?? metric.name, made ? homeOf(made) : metric.schema_name || ALL);
+      } else {
+        await updateMetric(selected!, scoped, selectedSchema);
+        const stored = await load();
+        reopen(stored, metric.name, metric.schema_name || selectedSchema);
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally { setSaving(false); }
@@ -857,8 +838,22 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
     } finally { setDeleting(null); }
   };
 
+  const promote = async (m: Metric) => {
+    if (!m.connection) return;
+    setError("");
+    setPromoting(true);
+    try {
+      await promoteMetric(m.name, m.connection, homeOf(m));
+      // A promotion moves it to every dataset — it stays open there.
+      reopen(await load(), m.name, ALL);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not promote it");
+    } finally { setPromoting(false); }
+  };
+
   const handleValidate = async () => {
     if (!connId || !selected) return;
+    setDetailTab("overview");
     setValidating(true); setValidationResult(null);
     try {
       setValidationResult(await validateMetric(selected, connId));
@@ -872,6 +867,7 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
 
   const handleFreshness = async () => {
     if (!connId || !selected) return;
+    setDetailTab("overview");
     setCheckingFreshness(true); setFreshnessResult(null);
     try {
       setFreshnessResult(await getMetricFreshness(selected, connId));
@@ -883,724 +879,653 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
     } finally { setCheckingFreshness(false); }
   };
 
-  const isEditing = adding || selected !== null;
+  // ── The form — behind Edit, or under "New metric". Every field is editable (the user, 2026-10-07) — the name too:
+  //    renaming moves the definition, its governance and its trail with it.
+  const set = (k: keyof FormState) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value });
+  const mono: CSSProperties = { fontFamily: "var(--font-mono)" };
+  const editorForm = (
+    <div style={{ ...STACK, gap: 12 }} data-testid="metric-form">
+      <div style={PAIR2}>
+        <Field label="Name (snake_case)" required hint={adding ? undefined : "renaming keeps its history"}>
+          <Input placeholder="mrr" value={form.name} onChange={set("name")} aria-label="Name" />
+        </Field>
+        <Field label="Label" required>
+          <Input placeholder="Monthly Recurring Revenue" value={form.label} onChange={set("label")} aria-label="Label" />
+        </Field>
+        {datasets.length > 1 && (
+          <Field label="Dataset" hint="which dataset's metric this is">
+            <SelectField value={form.schema_name} aria-label="Dataset"
+              onChange={(e) => setForm({ ...form, schema_name: e.target.value })}>
+              {adding && <option value="">The one its SQL reads</option>}
+              <option value={ALL}>Every dataset of this connection</option>
+              {datasets.map((d) => <option key={d} value={d}>{d}</option>)}
+            </SelectField>
+          </Field>
+        )}
+      </div>
 
-  // The editor, unchanged. It used to be the right pane of a ResizableSplit; it now renders
-  // INSIDE the expanded row, because this sub-tab is a table you open in place (asked for
-  // 2026-09-18). Same state, same fields, same governance section.
-  const editor = (
-    <div className="min-w-0">
-        {!isEditing && (
-          <div className="h-full flex items-center justify-center text-zinc-500 text-sm">
-            Select a metric to edit, or add a new one
+      <Field label="SQL statement" required hint="a whole SELECT — CTEs allowed — that returns one row with the metric's value">
+        <Textarea style={{ ...mono, minHeight: 88, resize: "vertical" }} aria-label="SQL statement"
+          placeholder="SELECT SUM(amount) AS revenue FROM orders WHERE status = 'active'"
+          value={form.sql} onChange={set("sql")} />
+        <div style={ROW} data-testid="metric-statement-write">
+          <Button size="sm" variant="secondary" disabled={writing} onClick={handleWriteSql}
+            title="One model call: the statement written from the name, label, definition, filters and tables, over this connection's schema">
+            {writing ? "Writing…" : "Generate from the definition"}
+          </Button>
+          <Chip>1 model call</Chip>
+        </div>
+        {written && form.sql === written.sql && (
+          <p className="aug-fs-xs" style={{ ...MUTED, margin: 0 }} data-testid="metric-statement-written">
+            Written by the model{written.model ? ` (${written.model})` : ""} from the definition
+            {written.note ? ` — ${written.note}` : ""} — check it, then save.
+          </p>
+        )}
+        {written && form.sql === written.sql && written.refused && (
+          <p className="aug-fs-xs" style={{ color: "var(--amb4)", margin: 0 }} data-testid="metric-statement-refused">
+            The platform could not accept it as a metric&apos;s statement: {written.refused} — fix it before saving.
+          </p>
+        )}
+        {writeError && <p className="aug-fs-xs" style={ERROR}>{writeError}</p>}
+        {!adding && proposed && proposed.metric === selected && form.sql === proposed.statement && (
+          <div style={{ ...STACK, gap: 4 }} data-testid="metric-statement-proposed">
+            <p className="aug-fs-xs" style={{ ...MUTED, margin: 0 }}>
+              {proposed.options.length > 1 ? proposed.note : "Proposed by the platform from the stored expression"}
+              {" — save to keep it."}
+            </p>
+            {proposed.options.length > 1 && (
+              <div style={ROW} data-testid="metric-statement-options">
+                <span className="aug-fs-xs" style={MUTED}>Switch to:</span>
+                {proposed.options.filter((o) => o.statement !== form.sql).map((o) => (
+                  <Button key={o.table} size="sm" variant="secondary" title={o.why}
+                    onClick={() => { setProposed({ ...proposed, statement: o.statement }); setForm({ ...form, sql: o.statement }); }}>
+                    over {o.table}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
         )}
-
-        {isEditing && (
-          <div className="aug-metric-editor pb-8">
-          <div className="flex flex-col gap-3 min-w-0">
-            <h3 className="text-sm font-semibold text-zinc-300">
-              {adding ? "New Metric" : `Edit — ${selected}`}
-            </h3>
-
-            {/* ── Core fields ─────────────────────────────────────────────── */}
-            {/* Every field is editable (the user, 2026-10-07) — the name too: renaming moves the
-                definition, its governance and its trail with it. */}
-            <div className={datasets.length > 1 ? "grid grid-cols-2 gap-3" : ""}>
-              <Field label="Name (snake_case)" required hint={adding ? undefined : "renaming keeps its history"}>
-                <Input
-                  className={inputCls}
-                  placeholder="mrr"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                />
-              </Field>
-              {datasets.length > 1 && (
-                <Field label="Dataset" hint="which dataset's metric this is">
-                  <SelectField value={form.schema_name} aria-label="Dataset"
-                    onChange={(e) => setForm({ ...form, schema_name: e.target.value })}>
-                    {adding && <option value="">The one its SQL reads</option>}
-                    <option value={ALL}>Every dataset of this connection</option>
-                    {datasets.map((d) => <option key={d} value={d}>{d}</option>)}
-                  </SelectField>
-                </Field>
-              )}
-            </div>
-
-            <Field label="Label" required>
-              <Input
-                className={inputCls}
-                placeholder="Monthly Recurring Revenue"
-                value={form.label}
-                onChange={(e) => setForm({ ...form, label: e.target.value })}
-              />
-            </Field>
-
-            <Field label="SQL statement" required hint="A whole SELECT — CTEs allowed — that returns one row with the metric's value">
-              <Textarea
-                className={`${inputCls} font-mono text-xs min-h-[72px] resize-y`}
-                placeholder="SELECT SUM(amount) AS revenue FROM orders WHERE status = 'active'"
-                value={form.sql}
-                onChange={(e) => setForm({ ...form, sql: e.target.value })}
-              />
-              <div className="flex flex-wrap items-center gap-2" data-testid="metric-statement-write">
-                <Button size="sm" variant="secondary" disabled={writing} onClick={handleWriteSql}
-                  title="One model call: the statement written from the name, label, definition, filters and tables above, over this connection's schema">
-                  {writing ? "Writing…" : "Generate from the definition"}
-                </Button>
-                <span className="aug-fs-xs text-zinc-500">one model call, from the fields above</span>
-              </div>
-              {written && form.sql === written.sql && (
-                <p className="aug-fs-xs text-zinc-500" data-testid="metric-statement-written">
-                  Written by the model{written.model ? ` (${written.model})` : ""} from the definition
-                  {written.note ? ` — ${written.note}` : ""} — check it, then save.
-                </p>
-              )}
-              {written && form.sql === written.sql && written.refused && (
-                <p className="aug-fs-xs text-amber-400" data-testid="metric-statement-refused">
-                  The platform could not accept it as a metric&apos;s statement: {written.refused} — fix it before saving.
-                </p>
-              )}
-              {writeError && <p className="aug-fs-xs text-red-400">{writeError}</p>}
-              {!adding && proposed && proposed.metric === selected && form.sql === proposed.statement && (
-                <div className="flex flex-col gap-1" data-testid="metric-statement-proposed">
-                  <p className="aug-fs-xs text-zinc-500">
-                    {proposed.options.length > 1 ? proposed.note : "Proposed by the platform from the stored expression"}
-                    {" — save to keep it."}
-                  </p>
-                  {proposed.options.length > 1 && (
-                    <div className="flex flex-wrap items-center gap-2" data-testid="metric-statement-options">
-                      <span className="aug-fs-xs text-zinc-500">Switch to:</span>
-                      {proposed.options.filter((o) => o.statement !== form.sql).map((o) => (
-                        <Button key={o.table} size="sm" variant="secondary" title={o.why}
-                          onClick={() => { setProposed({ ...proposed, statement: o.statement }); setForm({ ...form, sql: o.statement }); }}>
-                          over {o.table}
-                        </Button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              {!adding && proposals && proposals.statements.length === 0 && !isStatement(form.sql) && proposals.statement_note && (
-                <p className="aug-fs-xs text-amber-400">{proposals.statement_note}</p>
-              )}
-            </Field>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Tables" hint="Comma-separated">
-                <Input
-                  className={inputCls}
-                  placeholder="subscriptions, payments"
-                  value={form.tables}
-                  onChange={(e) => setForm({ ...form, tables: e.target.value })}
-                />
-              </Field>
-              <Field label="Unit">
-                <Input
-                  className={inputCls}
-                  placeholder="$ or % or days"
-                  value={form.unit}
-                  onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                />
-              </Field>
-            </div>
-
-            <Field label="Dimensions" hint="Columns this metric can be sliced by, comma-separated">
-              <Input
-                className={inputCls}
-                placeholder="order_date, country, plan_type"
-                value={form.dimensions}
-                onChange={(e) => setForm({ ...form, dimensions: e.target.value })}
-              />
-            </Field>
-
-            <Field label="Always-on Filters" hint="WHERE conditions always applied, comma-separated">
-              <Input
-                className={inputCls}
-                placeholder="is_test = false, deleted_at IS NULL"
-                value={form.filters}
-                onChange={(e) => setForm({ ...form, filters: e.target.value })}
-              />
-            </Field>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Caveats">
-                <Textarea
-                  className={`${inputCls} text-xs min-h-[56px] resize-y`}
-                  placeholder="Finance-approved. Excludes internal test accounts."
-                  value={form.caveats}
-                  onChange={(e) => setForm({ ...form, caveats: e.target.value })}
-                />
-              </Field>
-              <Field label="Additivity" hint="may period figures be summed">
-                <SelectField value={form.additivity} aria-label="Additivity"
-                  onChange={(e) => setForm({ ...form, additivity: e.target.value })}>
-                  <option value="">Not said</option>
-                  <option value="additive">Additive — periods sum (revenue, orders)</option>
-                  <option value="non_additive">Non-additive — they do not (a rate, an average)</option>
-                </SelectField>
-              </Field>
-            </div>
-
-            {/* ── Health Scorecard ─────────────────────────────────────────── */}
-            <SectionHeader label="Health Scorecard" />
-            <div className="grid grid-cols-3 gap-3">
-              <Field label="Target value" hint="green">
-                <Input
-                  className={inputCls} type="number" placeholder="e.g. 0.08"
-                  value={form.target_value}
-                  onChange={(e) => setForm({ ...form, target_value: e.target.value })}
-                />
-              </Field>
-              <Field label="Warning ≥" hint="yellow">
-                <Input
-                  className={inputCls} type="number" placeholder="e.g. 0.10"
-                  value={form.warning_threshold}
-                  onChange={(e) => setForm({ ...form, warning_threshold: e.target.value })}
-                />
-              </Field>
-              <Field label="Critical ≥" hint="red">
-                <Input
-                  className={inputCls} type="number" placeholder="e.g. 0.15"
-                  value={form.critical_threshold}
-                  onChange={(e) => setForm({ ...form, critical_threshold: e.target.value })}
-                />
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Target period">
-                <Input
-                  className={inputCls} placeholder="monthly, quarterly, ytd"
-                  value={form.target_period}
-                  onChange={(e) => setForm({ ...form, target_period: e.target.value })}
-                />
-              </Field>
-              <Field label="Benchmark source">
-                <Input
-                  className={inputCls} placeholder="internal: FY2025 plan"
-                  value={form.benchmark_source}
-                  onChange={(e) => setForm({ ...form, benchmark_source: e.target.value })}
-                />
-              </Field>
-            </div>
-
-            {/* ── Governance (M21) ─────────────────────────────────────────── */}
-            <SectionHeader label="Governance" />
-
-            {/* Who approved it, and when, are not typed: the approve transition stamps the person
-                signed in. The Governance panel beside the fields shows them. */}
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Owner" hint="the team or person who answers for it">
-                <Input
-                  className={inputCls} placeholder="Revenue team"
-                  value={form.owner}
-                  onChange={(e) => setForm({ ...form, owner: e.target.value })}
-                />
-              </Field>
-              <Field label="Freshness SLA" hint="human description">
-                <Input
-                  className={inputCls} placeholder="daily by 6am UTC"
-                  value={form.freshness_sla}
-                  onChange={(e) => setForm({ ...form, freshness_sla: e.target.value })}
-                />
-              </Field>
-            </div>
-
-            <Field label="Freshness check SQL" hint="must return a single timestamp">
-              <Textarea
-                className={`${inputCls} font-mono text-xs min-h-[56px] resize-y`}
-                placeholder="SELECT MAX(updated_at) FROM orders"
-                value={form.freshness_check_sql}
-                onChange={(e) => setForm({ ...form, freshness_check_sql: e.target.value })}
-              />
-            </Field>
-
-            <Field label="Lineage" hint="one source per line">
-              <Textarea
-                className={`${inputCls} text-xs min-h-[56px] resize-y`}
-                placeholder={"orders table — raw Stripe charges\nrefunds table — Stripe refund events"}
-                value={form.lineage}
-                onChange={(e) => setForm({ ...form, lineage: e.target.value })}
-              />
-            </Field>
-
-            <Field label="Quality tests" hint="one SQL assertion per line — must return a truthy scalar to pass">
-              <Textarea
-                className={`${inputCls} font-mono text-xs min-h-[80px] resize-y`}
-                placeholder={"SELECT COUNT(*) > 0 FROM orders\nSELECT SUM(amount) > 0 FROM orders WHERE status = 'paid'"}
-                value={form.quality_tests}
-                onChange={(e) => setForm({ ...form, quality_tests: e.target.value })}
-              />
-            </Field>
-
-            <Field label="Anti-patterns (NEVER rules)" hint="one per line — injected as NEVER instructions for the LLM">
-              <Textarea
-                className={`${inputCls} text-xs min-h-[56px] resize-y`}
-                placeholder={"COUNT(refunds) / COUNT(orders) — ignores refund amounts\nSUM(amount) without status filter — includes cancelled orders"}
-                value={form.wrong_usage_examples}
-                onChange={(e) => setForm({ ...form, wrong_usage_examples: e.target.value })}
-              />
-            </Field>
-
-            {/* ── Validation / freshness results ───────────────────────────── */}
-            {validationResult && (
-              <ValidationResultBlock result={validationResult} />
-            )}
-            {freshnessResult && (
-              <FreshnessResultBlock result={freshnessResult} />
-            )}
-
-            {error && <p className="text-xs text-red-400">{error}</p>}
-
-            {/* ── Action row ───────────────────────────────────────────────── */}
-            <div className="flex flex-wrap gap-2 mt-1">
-              <Button
-                size="sm"
-                onClick={handleSave}
-                disabled={saving}
-                className="bg-violet-600 hover:bg-violet-500 text-white"
-              >
-                {saving ? "Saving…" : adding ? "Create" : "Update"}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={cancelForm} className="text-zinc-400">
-                Cancel
-              </Button>
-              {!adding && connId && (
-                <>
-                  <Button
-                    size="sm" variant="ghost"
-                    onClick={handleValidate}
-                    disabled={validating}
-                    className="text-blue-400 hover:text-blue-300 border border-blue-500/30"
-                  >
-                    {validating ? "Running…" : "Validate now"}
-                  </Button>
-                  <Button
-                    size="sm" variant="ghost"
-                    onClick={handleFreshness}
-                    disabled={checkingFreshness}
-                    className="text-zinc-400 hover:text-zinc-300 border border-zinc-600"
-                  >
-                    {checkingFreshness ? "Checking…" : "Check freshness"}
-                  </Button>
-                  {(() => {
-                    const sm = storedOf(selected, selectedSchema);
-                    if (!sm) return null;
-                    // An approved definition is in use: it is retired (Deprecate, beside) first.
-                    if (sm.status === "approved") {
-                      return <span className="aug-fs-xs text-zinc-500 self-center">Deprecate it to remove it.</span>;
-                    }
-                    const confirming = deleting === `confirm:${sm.name}`;
-                    return (
-                      <Button size="sm" variant="ghost" disabled={deleting === sm.name}
-                        onClick={() => handleDelete(sm)}
-                        className="text-red-400 hover:text-red-300 border border-red-500/30"
-                        title="Removes this definition from this dataset; a proposal it came from is not proposed again.">
-                        {deleting === sm.name ? "Removing…" : confirming ? "Remove — sure?" : "Remove"}
-                      </Button>
-                    );
-                  })()}
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* ── Governance lifecycle (B-8) — existing metrics only. Its own column beside the
-                 fields (asked for 2026-09-25): the advisory reads while you edit, and the first
-                 field keeps the top of the row instead of sitting under a report. Under 1100 px
-                 it stacks back above the fields, as it always did. */}
-          {!adding && (() => {
-            const sm = storedOf(selected, selectedSchema);
-            return sm ? (
-              <div className="aug-metric-governance">
-                <GovernanceSection metric={sm} datasets={datasets} onChanged={async (movedTo) => {
-                  await load();
-                  if (movedTo) {
-                    // A promotion moves it to every dataset — the editor stays open on it there.
-                    setSelectedSchema(movedTo);
-                    setExpanded(`defined:${movedTo}:${sm.name}`);
-                  }
-                }} />
-                <DatesSection key={`${sm.name}:${sm.time_column ?? ""}:${sm.time_confirmed_by ?? ""}`}
-                  metric={sm} proposals={proposals} onChanged={load} />
-                <EntitySection key={`${sm.name}:${sm.entity ?? ""}`} metric={sm} onChanged={load} />
-              </div>
-            ) : null;
-          })()}
-          </div>
+        {!adding && proposals && proposals.statements.length === 0 && !isStatement(form.sql) && proposals.statement_note && (
+          <p className="aug-fs-xs" style={{ color: "var(--amb4)", margin: 0 }}>{proposals.statement_note}</p>
         )}
+      </Field>
+
+      <div style={PAIR2}>
+        <Field label="Tables" hint="comma-separated">
+          <Input placeholder="subscriptions, payments" value={form.tables} onChange={set("tables")} aria-label="Tables" />
+        </Field>
+        <Field label="Unit">
+          <Input placeholder="$ or % or days" value={form.unit} onChange={set("unit")} aria-label="Unit" />
+        </Field>
+        <Field label="Dimensions" hint="columns it can be sliced by">
+          <Input placeholder="order_date, country, plan_type" value={form.dimensions} onChange={set("dimensions")} aria-label="Dimensions" />
+        </Field>
+        <Field label="Always-on filters" hint="WHERE conditions, comma-separated">
+          <Input placeholder="is_test = false, deleted_at IS NULL" value={form.filters} onChange={set("filters")} aria-label="Filters" />
+        </Field>
+        <Field label="Caveats">
+          <Textarea style={{ minHeight: 56, resize: "vertical" }} placeholder="Finance-approved. Excludes internal test accounts."
+            value={form.caveats} onChange={set("caveats")} aria-label="Caveats" />
+        </Field>
+        <Field label="Additivity" hint="may period figures be summed">
+          <SelectField value={form.additivity} aria-label="Additivity"
+            onChange={(e) => setForm({ ...form, additivity: e.target.value })}>
+            <option value="">Not said</option>
+            <option value="additive">Additive — periods sum (revenue, orders)</option>
+            <option value="non_additive">Non-additive — they do not (a rate, an average)</option>
+          </SelectField>
+        </Field>
+      </div>
+
+      <Label>Health scorecard</Label>
+      <div style={PAIR2}>
+        <Field label="Target value" hint="green">
+          <Input type="number" placeholder="e.g. 0.08" value={form.target_value} onChange={set("target_value")} aria-label="Target value" />
+        </Field>
+        <Field label="Warning ≥" hint="yellow">
+          <Input type="number" placeholder="e.g. 0.10" value={form.warning_threshold} onChange={set("warning_threshold")} aria-label="Warning threshold" />
+        </Field>
+        <Field label="Critical ≥" hint="red">
+          <Input type="number" placeholder="e.g. 0.15" value={form.critical_threshold} onChange={set("critical_threshold")} aria-label="Critical threshold" />
+        </Field>
+        <Field label="Target period">
+          <Input placeholder="monthly, quarterly, ytd" value={form.target_period} onChange={set("target_period")} aria-label="Target period" />
+        </Field>
+        <Field label="Benchmark source">
+          <Input placeholder="internal: FY2025 plan" value={form.benchmark_source} onChange={set("benchmark_source")} aria-label="Benchmark source" />
+        </Field>
+      </div>
+
+      {/* Who approved it, and when, are not typed: the approve transition stamps the person signed in. */}
+      <Label>Ownership and checks</Label>
+      <div style={PAIR2}>
+        <Field label="Owner" hint="the team or person who answers for it">
+          <Input placeholder="Revenue team" value={form.owner} onChange={set("owner")} aria-label="Owner" />
+        </Field>
+        <Field label="Freshness SLA" hint="in words">
+          <Input placeholder="daily by 6am UTC" value={form.freshness_sla} onChange={set("freshness_sla")} aria-label="Freshness SLA" />
+        </Field>
+      </div>
+      <Field label="Freshness check SQL" hint="must return a single timestamp">
+        <Textarea style={{ ...mono, minHeight: 56, resize: "vertical" }} placeholder="SELECT MAX(updated_at) FROM orders"
+          value={form.freshness_check_sql} onChange={set("freshness_check_sql")} aria-label="Freshness check SQL" />
+      </Field>
+      <div style={PAIR2}>
+        <Field label="Lineage" hint="one source per line">
+          <Textarea style={{ minHeight: 56, resize: "vertical" }}
+            placeholder={"orders table — raw Stripe charges\nrefunds table — Stripe refund events"}
+            value={form.lineage} onChange={set("lineage")} aria-label="Lineage" />
+        </Field>
+        <Field label="Anti-patterns (NEVER rules)" hint="one per line — sent to the model as NEVER instructions">
+          <Textarea style={{ minHeight: 56, resize: "vertical" }}
+            placeholder={"COUNT(refunds) / COUNT(orders) — ignores refund amounts\nSUM(amount) without status filter — includes cancelled orders"}
+            value={form.wrong_usage_examples} onChange={set("wrong_usage_examples")} aria-label="Anti-patterns" />
+        </Field>
+      </div>
+      <Field label="Quality tests" hint="one SQL assertion per line — must return a truthy scalar to pass">
+        <Textarea style={{ ...mono, minHeight: 80, resize: "vertical" }}
+          placeholder={"SELECT COUNT(*) > 0 FROM orders\nSELECT SUM(amount) > 0 FROM orders WHERE status = 'paid'"}
+          value={form.quality_tests} onChange={set("quality_tests")} aria-label="Quality tests" />
+      </Field>
+
+      {error && <p className="aug-fs-sm" style={ERROR}>{error}</p>}
+      <div style={ROW}>
+        <Button size="sm" onClick={handleSave} disabled={saving}>
+          {saving ? "Saving…" : adding ? "Create" : "Save"}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => {
+          if (adding) { cancelForm(); return; }
+          const sm = storedOf(selected, selectedSchema);
+          if (sm) startEdit(sm);
+          setDetailTab("overview");
+        }}>Cancel</Button>
+      </div>
     </div>
   );
 
+  // ── One opened definition ──────────────────────────────────────────────────────────────────────────────────────────
+  const definedDetail = (p: Placed, sm: Metric) => {
+    const home = homeOf(sm);
+    const status = sm.status ?? "draft";
+    const keyed = (sm.connection ?? "*") !== "*";
+    const confirming = deleting === `confirm:${sm.name}`;
+    const tabs: { id: DetailTab; label: string; badge?: number }[] = [
+      { id: "overview", label: "Overview" },
+      { id: "approval", label: "Approval", badge: status === "proposed" ? 1 : 0 },
+      { id: "dates", label: "Dates", badge: p.standing === "no_date" ? 1 : 0 },
+      ...(keyed ? [{ id: "measures" as DetailTab, label: "Measures" }] : []),
+      { id: "edit", label: "Edit", badge: p.standing === "no_sql" ? 1 : 0 },
+    ];
+    return (
+      <div data-testid="metric-detail">
+        <TabStrip size="1" label={`${sm.label || sm.name} views`} value={detailTab} onChange={setDetailTab} tabs={tabs}
+          trailing={<ToolsMenu testId="metric-tools" items={[
+            { label: validating ? "Validating…" : "Validate now", onSelect: handleValidate, hidden: !connId,
+              title: "Runs its quality tests against the warehouse" },
+            { label: checkingFreshness ? "Checking…" : "Check freshness", onSelect: handleFreshness, hidden: !connId,
+              title: "Reads its freshness check against the warehouse" },
+            { label: promoting ? "Promoting…" : "Promote to the whole connection", onSelect: () => promote(sm),
+              hidden: datasets.length < 2 || home === ALL || !sm.connection || sm.connection === ALL,
+              title: "Every dataset of this connection reads this definition, except one that keeps its own of the same name." },
+            status === "approved"
+              ? { label: "Remove — deprecate it first", onSelect: () => {}, disabled: true, apart: true,
+                  title: "An approved definition is in use: deprecate it (Approval) to remove it." }
+              : { label: "Remove…", onSelect: () => { setDetailTab("overview"); setDeleting(`confirm:${sm.name}`); }, danger: true,
+                  apart: true, testId: "metric-remove",
+                  title: "Removes this definition from this dataset; a suggestion it came from is not proposed again." },
+          ]} />} />
+        <div style={{ paddingTop: 12 }}>
+          {detailTab === "overview" && (
+            <div style={STACK} data-testid="metric-overview">
+              <div style={ROW}>
+                <Chip tone={STATUS_TONE[status] ?? "plain"}>{status}{sm.version ? ` v${sm.version}` : ""}</Chip>
+                {status === "approved" && sm.approved_by && (
+                  <span className="aug-fs-sm" style={MUTED} title={sm.approved_at ? formatTimestamp(sm.approved_at) : undefined}>
+                    approved by {sm.approved_by}{sm.approved_at ? ` · ${dayWords(sm.approved_at)}` : ""}
+                  </span>
+                )}
+                <Chip title="Its id — what SQL, agents and the API call it">
+                  <span style={{ fontFamily: "var(--font-mono)" }}>{sm.name}</span>
+                </Chip>
+                {sm.unit && shortUnit(sm.unit) === sm.unit.trim() && <Chip title="Its unit">{sm.unit}</Chip>}
+                {sm.additivity && <Chip>{sm.additivity === "additive" ? "additive" : "non-additive"}</Chip>}
+                {sm.owner && <Chip>{`owner · ${sm.owner}`}</Chip>}
+                {sm.entity && <Chip>{`measures ${sm.entity}`}</Chip>}
+                {(datasets.length > 1 || home === ALL) && (
+                  <Chip testId="metric-dataset">{home === ALL ? "every dataset of this connection" : `belongs to ${home}`}</Chip>
+                )}
+              </div>
+              {sm.unit && shortUnit(sm.unit) !== sm.unit.trim() && <p className="aug-fs-sm" style={SUPPORT}>Unit — {sm.unit}</p>}
+              {sm.caveats && <p className="aug-fs-sm" style={SUPPORT}>{sm.caveats}</p>}
+              {sm.sql
+                ? <Sql testId="metric-sql">{sm.sql}</Sql>
+                : <p className="aug-fs-sm" style={{ color: "var(--amb4)", margin: 0 }}>No SQL yet — it can&apos;t be measured until it has one. Write it under Edit.</p>}
+              {(sm.dimensions.length > 0 || sm.filters.length > 0 || sm.tables.length > 0) && (
+                <div style={ROW}>
+                  {sm.tables.length > 0 && <Chip title="Tables it reads">{`reads ${sm.tables.join(", ")}`}</Chip>}
+                  {sm.dimensions.length > 0 && <Chip title="Columns it can be sliced by">{`by ${sm.dimensions.join(", ")}`}</Chip>}
+                  {sm.filters.length > 0 && <Chip title="Always-on filters">{`where ${sm.filters.join(" and ")}`}</Chip>}
+                </div>
+              )}
+              {validating && <Empty>Running its quality tests…</Empty>}
+              {validationResult && <ValidationResultBlock result={validationResult} />}
+              {checkingFreshness && <Empty>Checking its freshness…</Empty>}
+              {freshnessResult && <FreshnessResultBlock result={freshnessResult} />}
+              {confirming && (
+                <div style={{ ...ROW, padding: "8px 10px", borderRadius: "var(--r2)", background: "var(--amb1)" }} data-testid="metric-remove-confirm">
+                  <span className="aug-fs-sm" style={{ color: "var(--amb4)", flex: "1 1 240px" }}>
+                    Remove it from {datasetWords(home)}? A suggestion it came from is not proposed again.
+                  </span>
+                  <Button size="xs" variant="destructive" disabled={deleting === sm.name} onClick={() => handleDelete(sm)}>
+                    {deleting === sm.name ? "Removing…" : "Remove"}
+                  </Button>
+                  <Button size="xs" variant="ghost" onClick={() => setDeleting(null)}>Cancel</Button>
+                </div>
+              )}
+              {error && <p className="aug-fs-sm" style={ERROR}>{error}</p>}
+            </div>
+          )}
+          {detailTab === "approval" && <GovernanceSection metric={sm} onChanged={() => { load(); }} />}
+          {detailTab === "dates" && (
+            <DatesSection key={`${sm.name}:${sm.time_column ?? ""}:${sm.time_confirmed_by ?? ""}`}
+              metric={sm} proposals={proposals} onChanged={() => { setDatesEditing(false); load(); }} startEditing={datesEditing} />
+          )}
+          {detailTab === "measures" && <EntitySection key={`${sm.name}:${sm.entity ?? ""}`} metric={sm} onChanged={load} />}
+          {detailTab === "edit" && editorForm}
+        </div>
+      </div>
+    );
+  };
+
+  if (!connId) {
+    return <Page testId="metrics-tab"><Empty>Select a connection to see the metrics that apply to it.</Empty></Page>;
+  }
+  if (!loaded) return <Page testId="metrics-tab"><Loading what="the metrics" /></Page>;
+  if (catalogueError) {
+    return (
+      <Page testId="metrics-tab">
+        <ReadFailed what="the metrics that apply to this connection" error={catalogueError} onRetry={() => { load(); }} />
+      </Page>
+    );
+  }
+
+  const every = schema === ALL;
+  const placed = place(rows, metrics);
+  const f = figuresOf(placed);
+  const waiting = needsOf(placed);
+  const groups = grouped(placed);
+  const last = lastDecision(placed.map(p => p.stored).filter((m): m is Metric => !!m), removed);
+  const proposedAt = placed.filter(p => p.standing === "proposed").map(p => p.stored?.proposed_at).filter((a): a is string => !!a).sort();
+  const unmeasured = f.noDate + f.noSql;
+
   return (
-    <div className="flex flex-col gap-3 h-full overflow-y-auto pr-1">
-      <CatalogueHeader counts={counts} connId={connId} every={schema === ALL} onAdd={startAdd} />
+    <Page testId="metrics-tab">
+      {rows.length > 0 && (
+        <>
+          <Figures testId="metrics-figures">
+            <Figure label="Approved and measured" value={formatCount(f.measured)} testId="fig-measured"
+              title="Approved, with SQL and a date column — it has a figure for any period"
+              sub={f.approved
+                ? `of ${formatCount(f.approved)} approved${f.unchecked ? ` · ${formatCount(f.unchecked)} not checked` : ""}`
+                : "none approved yet"} />
+            <Figure label="Waiting for review" value={formatCount(f.review)} tone={f.review ? "amber" : undefined} testId="fig-review"
+              title="Proposed, not yet approved or rejected"
+              sub={f.review
+                ? (proposedAt.length ? `proposed ${dayWords(proposedAt[0])}` : "proposed")
+                : f.drafts ? `${countNoun(f.drafts, "draft")} not yet proposed` : "nothing proposed"} />
+            <Figure label="Can't be measured" value={formatCount(unmeasured)} tone={unmeasured ? "amber" : undefined} testId="fig-unmeasured"
+              title="Approved, but with no SQL, or no date column — so no figure for a period"
+              sub={registryError ? "the definitions could not be read"
+                : unmeasured === 0 ? (f.approved ? "every approved one has SQL and a date" : "nothing approved yet")
+                : [f.noDate ? `${f.noSql ? `${formatCount(f.noDate)} ` : ""}no date column` : "",
+                   f.noSql ? `${f.noDate ? `${formatCount(f.noSql)} ` : ""}no SQL` : ""].filter(Boolean).join(" · ")} />
+            <Figure label="Last decision" value={last ? dayWords(last.at) : "—"} testId="fig-last"
+              title={last ? formatTimestamp(last.at) : "Approvals, proposals and removals are dated; an edit is not"}
+              sub={last
+                ? `${last.count > 1 ? `${formatCount(last.count)} ${last.action}` : `${last.label} ${last.action}`}${last.by ? ` · ${last.by}` : ""}`
+                : "none recorded"} />
+          </Figures>
+
+          <NeedsYou testId="metrics-needs"
+            empty={`Nothing needs you${registryError ? " · the definitions could not be read, so their dates are not checked" : ""}`}>
+            {withUniqueKeys(waiting, n => n.kind).map(([key, n]) => (
+              <NeedsGroup key={key} need={n}
+                onOpen={(p, tab, editDates) => open(p, tab, { editDates, scroll: true })} />
+            ))}
+          </NeedsYou>
+        </>
+      )}
 
       {adding && (
-        <div className="rounded-md border border-violet-500/30 bg-violet-500/5 p-3">{editor}</div>
+        <Card label="New metric" testId="metric-new">{editorForm}</Card>
       )}
 
-      {rows.length === 0 && !adding && (loaded || !connId) && (
-        <p className="aug-text-ui text-zinc-500 mt-2">
-          {connId
-            ? "Nothing applies to this connection yet. The explorer proposes metrics as it profiles the data, and an industry package contributes its own once its roles are bound to this connection."
-            : "Select a connection to see the metrics that apply to it."}
-        </p>
-      )}
+      <Card label="Metrics" testId="metrics-list" right={<>
+        {rows.length > 0 && <span style={NUM}>{`${formatCount(counts.total ?? rows.length)} apply${every ? " · every dataset" : ""}`}</span>}
+        <Button size="xs" variant="ghost" onClick={startAdd} disabled={adding}><Icon name="plus" size={12} />Add metric</Button>
+      </>}>
+        {rows.length === 0 ? (
+          <Empty>
+            Nothing applies to this connection yet. The explorer proposes metrics as it profiles the data, and an industry
+            package adds its own once its roles are bound here.
+          </Empty>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <div style={{ minWidth: 620 }}>
+              <div className="aug-fs-xs" style={{ ...LIST_GRID, ...MUTED, textTransform: "uppercase", letterSpacing: ".06em", padding: "0 6px 6px" }}>
+                <span>Metric</span><span>State</span><span>Dated by</span><span />
+              </div>
+              {groups.map((g, gi) => {
+                const folded = g.folded && !unfolded[g.id] && !g.items.some(p => p.key === expanded);
+                if (folded) {
+                  return (
+                    <div key={g.id}>
+                      <FoldLine open={false} onToggle={() => setUnfolded(u => ({ ...u, [g.id]: true }))} testId={`metrics-group-${g.id}`}>
+                        {`${g.label} · ${g.items.length}`}
+                      </FoldLine>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={g.id} data-testid={`metrics-group-${g.id}`}>
+                    <GroupHead name={g.label} count={g.items.length} first={gi === 0}
+                      right={g.folded ? <Button size="xs" variant="ghost" onClick={() => setUnfolded(u => ({ ...u, [g.id]: false }))}>Fold</Button> : undefined} />
+                    {g.items.map(p => (
+                      <MetricRow key={p.key} p={p} every={every} open={expanded === p.key} onToggle={() => toggle(p)}>
+                        {expanded === p.key && (
+                          p.row.source === "defined"
+                            ? (p.stored && selected === p.row.name && sameDataset(p.row.schema, selectedSchema)
+                                ? definedDetail(p, p.stored)
+                                : <ReadFailed what="its stored definition" error="the definitions could not be read" onRetry={() => { load(); }} />)
+                            : <MetricProvenance row={p.row} onCustomise={() => customise(p.row, p.key)} onRemove={() => removeRow(p.row, p.key)}
+                                busy={materialising === p.key} error={rowError[p.key] ?? ""} />
+                        )}
+                      </MetricRow>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {removed.length > 0 && <RemovedList removed={removed} onRestore={restore} />}
+        {!adding && error && !selected && <p className="aug-fs-sm" style={{ ...ERROR, marginTop: 8 }}>{error}</p>}
+      </Card>
+    </Page>
+  );
+}
 
-      {rows.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow className="border-b border-zinc-700 text-left">
-              <Th className="w-[40%]">Metric</Th>
-              <Th className="w-[13%]">Source</Th>
-              <Th className="w-[12%]">Unit</Th>
-              <Th className="w-[21%]">State</Th>
-              <Th className="w-[14%]">Where it lives</Th>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <MetricRow
-                key={rowKey(row)}
-                row={row}
-                every={schema === ALL}
-                open={expanded === rowKey(row)}
-                onToggle={() => toggleRow(row)}
-                onCustomise={() => customise(row)}
-                onRemove={() => removeRow(row)}
-                busy={materialising === rowKey(row)}
-                error={rowError[rowKey(row)] ?? ""}
-                // A name is unique within its dataset, so two stored rows of one name in one dataset
-                // are an unresolved conflict the backend dedupes (most recent wins) — said here.
-                duplicate={metrics.filter((m) => m.name === row.name && sameDataset(homeOf(m), row.schema)).length > 1}
-                editor={row.source === "defined" && selected === row.name && sameDataset(row.schema, selectedSchema) ? editor : null}
-              />
-            ))}
-          </TableBody>
-        </Table>
-      )}
+// ── The list ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-      {removed.length > 0 && <RemovedList removed={removed} onRestore={restore} />}
+const LIST_GRID: CSSProperties = {
+  display: "grid", gridTemplateColumns: "minmax(220px, 2.2fr) minmax(170px, 1fr) minmax(150px, 1fr) 20px", columnGap: 14,
+};
+
+/** One metric: its name and a muted line (its unit; its dataset in the every-dataset view, where it tells two rows of
+ *  one name apart), where it stands, what dates it — and, open, its detail below it. Its id is said once, in the
+ *  detail: beside the name it only repeated it in snake_case. */
+function MetricRow({ p, every, open, onToggle, children }: {
+  p: Placed; every: boolean; open: boolean; onToggle: () => void; children: ReactNode;
+}) {
+  const r = p.row, m = p.stored;
+  const chip = standingChip(p);
+  const unit = shortUnit(m?.unit ?? r.unit);
+  const meta = [unit, every ? datasetWords(r.schema) : ""].filter(Boolean).join(" · ");
+  const col = m?.time_column ? shortColumn(m.time_column) : "";
+  return (
+    <div id={`metric-row-${p.key}`} data-testid="metric-row">
+      <Button variant="ghost" onClick={onToggle} aria-expanded={open} style={rowButtonStyle(open, LIST_GRID)}>
+        <span style={{ minWidth: 0 }} title={r.name}>
+          <span className="aug-fs-chrome" style={{ ...ONE_LINE, display: "block", color: "var(--t1)", fontWeight: 500 }}>{r.label}</span>
+          {meta && (
+            <span className="aug-fs-xs" style={{ ...MUTED, ...ONE_LINE, display: "block" }} title={m?.unit ?? r.unit ?? undefined}>
+              {meta}
+            </span>
+          )}
+        </span>
+        <span style={{ ...ROW, gap: 6 }}>
+          <Chip tone={chip.tone} title={chip.title}>{chip.text}</Chip>
+          {p.duplicate && <Chip tone="amber" title="Two definitions share this name in this dataset; the newer one is read.">defined twice</Chip>}
+        </span>
+        <span className="aug-fs-xs" title={m?.time_column ?? undefined} style={{ ...ONE_LINE, color: col ? "var(--t2)" : "var(--t3)" }}>
+          {col ? <><span style={{ fontFamily: "var(--font-mono)" }}>{col}</span>{` · ${m?.time_grain ?? "month"}`}</> : "—"}
+        </span>
+        <span style={{ display: "inline-flex", color: "var(--t3)" }}><Icon name={open ? "chevd" : "chevr"} size={12} /></span>
+      </Button>
+      {/* The detail hangs from the chosen row: the accent's edge says whose it is, without a box around it. */}
+      {open && <div style={{ padding: "12px 6px 18px 14px", borderLeft: "2px solid var(--blue3)" }}>{children}</div>}
     </div>
   );
 }
 
-/** The proposals a person removed — who, when, and a way back. A removal is a decision, so it is
- *  listed, never just absent. */
+/** One kind of thing that needs a person — said once, with a button for each metric it is about. */
+function NeedsGroup({ need, onOpen }: {
+  need: Need; onOpen: (p: Placed, tab: DetailTab, editDates?: boolean) => void;
+}) {
+  const n = need.items.length;
+  const one = n === 1 ? need.items[0] : null;
+  const name = (p: Placed) => p.row.label || p.row.name;
+  const SHOWN = 8;
+  const names = (verb: string, tab: DetailTab, editDates?: boolean) => [
+    ...need.items.slice(0, SHOWN).map(p => (
+      <Button key={p.key} size="xs" variant="secondary" title={`${verb} ${name(p)}`} onClick={() => onOpen(p, tab, editDates)}>
+        {name(p)}
+      </Button>
+    )),
+    ...(n > SHOWN ? [<span key="more" className="aug-fs-xs" style={MUTED}>{`+${formatCount(n - SHOWN)} more in the list`}</span>] : []),
+  ];
+
+  let title: string, detail: string, actions: ReactNode;
+  switch (need.kind) {
+    case "review": {
+      const at = one?.stored?.proposed_at;
+      title = one ? `${name(one)} is waiting for review` : `${formatCount(n)} metrics are waiting for review`;
+      detail = one
+        ? `proposed${one.stored?.proposed_by ? ` by ${one.stored.proposed_by}` : ""}${at ? ` · ${dayWords(at)}` : ""} — approve or reject it`
+        : "proposed, not yet approved — approve or reject each";
+      actions = one
+        ? <Button size="xs" variant="secondary" onClick={() => onOpen(one, "approval")}>Review</Button>
+        : names("Review", "approval");
+      break;
+    }
+    case "no_sql":
+      title = one ? `${name(one)} has no SQL` : `${formatCount(n)} approved metrics have no SQL`;
+      detail = "approved, but nothing can be measured until it has SQL";
+      actions = one
+        ? <Button size="xs" variant="secondary" onClick={() => onOpen(one, "edit")}>Write its SQL</Button>
+        : names("Write the SQL of", "edit");
+      break;
+    case "no_date":
+      title = one ? `${name(one)} can't be measured for a period` : `${formatCount(n)} approved metrics can't be measured for a period`;
+      detail = one ? "it has no date column — set one" : "none has a date column — set one on each";
+      actions = one
+        ? <Button size="xs" variant="secondary" onClick={() => onOpen(one, "dates", true)}>Set its date</Button>
+        : names("Set the date of", "dates", true);
+      break;
+    case "not_bound": {
+      const packs = packsOf(need.items);
+      const roles = missingRoles(need.items);
+      title = one ? `${name(one)} is not bound` : `${formatCount(n)} industry metrics are not bound`;
+      detail = `the ${packs.join(", ") || "industry"} package names data not bound here${roles.length ? `: ${roles.join(", ")}` : ""}`;
+      actions = <>
+        <Button size="xs" variant="secondary" onClick={() => requestTab("settings", { settings: "system" })}
+          title="Settings ▸ System ▸ Packages — bind the roles this package's SQL is written over.">Bind roles</Button>
+        {one
+          ? <Button size="xs" variant="ghost" onClick={() => onOpen(one, "overview")}>Open</Button>
+          : names("Open", "overview")}
+      </>;
+      break;
+    }
+    case "duplicate":
+      title = one ? `${name(one)} is defined twice` : `${formatCount(n)} metrics are defined twice`;
+      detail = "two definitions share a name in one dataset — the newer one is read";
+      actions = one
+        ? <Button size="xs" variant="secondary" onClick={() => onOpen(one, "edit")}>Open</Button>
+        : names("Open", "edit");
+      break;
+  }
+  return (
+    <div data-testid={`needs-${need.kind}`} style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 0", flexWrap: "wrap" }}>
+      <div style={{ flex: "1 1 280px", minWidth: 0 }}>
+        <div className="aug-fs-chrome" style={{ color: "var(--t1)", fontWeight: 500 }}>{title}</div>
+        <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>{detail}</div>
+      </div>
+      <div style={{ ...ROW, gap: 6, justifyContent: "flex-end", flex: "1 1 320px" }}>{actions}</div>
+    </div>
+  );
+}
+
+/** The proposals a person removed — who, when, and a way back. A removal is a decision, so it is listed, never just
+ *  absent; folded into one line until opened. */
 function RemovedList({ removed, onRestore }: { removed: RemovedProposal[]; onRestore: (r: RemovedProposal) => void }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mt-1" data-testid="metrics-removed">
-      <Button variant="ghost" size="xs" onClick={() => setOpen((o) => !o)} className="aug-fs-xs">
-        {open ? "▾" : "▸"} Removed here ({removed.length})
-      </Button>
+    <div data-testid="metrics-removed">
+      <FoldLine open={open} onToggle={() => setOpen((o) => !o)}>{`Removed here · ${removed.length}`}</FoldLine>
       {open && (
-        <ul className="mt-1 flex flex-col gap-1">
-          {removed.map((r) => (
-            <li key={`${r.schema_name}:${r.name}`} className="flex items-center gap-2 aug-fs-xs text-zinc-400">
-              <span className="text-zinc-300">{r.label || r.name}</span>
-              <span className="text-zinc-500">· {datasetWords(r.schema_name)} · removed by {r.by} on {r.at.slice(0, 10)}</span>
-              <Button size="xs" variant="ghost" onClick={() => onRestore(r)}>Restore</Button>
-            </li>
+        <div style={{ marginTop: 4 }}>
+          {removed.map((r, i) => (
+            <div key={`${r.schema_name}:${r.name}`} className="aug-fs-sm"
+              style={{ ...ROW, padding: "6px 6px", ...(i ? RULE : {}) }}>
+              <span style={{ color: "var(--t1)" }}>{r.label || r.name}</span>
+              <span style={MUTED}>· {datasetWords(r.schema_name)} · removed by {r.by} on {r.at.slice(0, 10)}</span>
+              <Button size="xs" variant="ghost" onClick={() => onRestore(r)} style={{ marginLeft: "auto" }}>Restore</Button>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
 }
 
-function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <th className={`aug-fs-xs font-semibold text-zinc-500 uppercase tracking-wider pb-2 pr-3 ${className}`}>
-      {children}
-    </th>
-  );
-}
-
-
-// ── Sub-components ─────────────────────────────────────────────────────────────
-
-function SectionHeader({ label }: { label: string }) {
-  return (
-    <div className="pt-2 border-t border-zinc-700/50">
-      <p className="aug-fs-xs font-semibold text-zinc-500 uppercase tracking-wider">{label}</p>
-    </div>
-  );
-}
+// ── Sub-components ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 function ValidationResultBlock({ result }: { result: MetricValidationResult }) {
   return (
-    <div className={`rounded-md border p-3 text-xs ${result.passed ? "border-emerald-500/30 bg-emerald-500/5" : "border-red-500/30 bg-red-500/5"}`}>
-      <p className={`font-semibold mb-2 ${result.passed ? "text-emerald-400" : "text-red-400"}`}>
-        {result.passed ? "✓ All tests passed" : "✗ Tests failed"} — {result.message}
-      </p>
+    <div style={{ ...STACK, gap: 4 }} data-testid="metric-validation">
+      <div style={ROW}>
+        <Chip tone={result.passed ? "up" : "down"}>{result.passed ? "✓ all tests passed" : "✕ tests failed"}</Chip>
+        <span className="aug-fs-sm" style={SUPPORT}>{result.message}</span>
+      </div>
       {result.results.map((r, i) => (
-        <div key={i} className="mb-1">
-          <span className={r.passed ? "text-emerald-400" : "text-red-400"}>{r.passed ? "✓" : "✗"}</span>
-          <span className="font-mono text-zinc-400 ml-1.5 break-all">{r.test_sql}</span>
-          {r.error && <p className="text-red-300 mt-0.5 ml-4">{r.error}</p>}
+        <div key={i} className="aug-fs-xs">
+          <span style={{ color: r.passed ? "var(--grn4)" : "var(--red4)" }}>{r.passed ? "✓" : "✕"}</span>
+          <span style={{ fontFamily: "var(--font-mono)", color: "var(--t2)", marginLeft: 6, wordBreak: "break-all" }}>{r.test_sql}</span>
+          {r.error && <p style={{ ...ERROR, margin: "2px 0 0 16px" }}>{r.error}</p>}
         </div>
       ))}
-      {result.results.length === 0 && (
-        <p className="text-zinc-500">No quality tests defined for this metric.</p>
-      )}
+      {result.results.length === 0 && <Empty>No quality tests defined for this metric.</Empty>}
     </div>
   );
 }
 
 function FreshnessResultBlock({ result }: { result: MetricFreshnessResult }) {
   return (
-    <div className={`rounded-md border p-3 text-xs ${result.ok ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
-      <p className={`font-semibold ${result.ok ? "text-emerald-400" : "text-amber-400"}`}>
-        {result.ok ? "⏱ Freshness OK" : "⚠ Freshness issue"} — {result.message}
-      </p>
-      {result.sla && (
-        <p className="text-zinc-400 mt-1">SLA: {result.sla}</p>
-      )}
+    <div style={ROW} data-testid="metric-freshness">
+      <Chip tone={result.ok ? "up" : "amber"}>{result.ok ? "fresh" : "freshness issue"}</Chip>
+      <span className="aug-fs-sm" style={SUPPORT}>{result.message}</span>
+      {result.sla && <span className="aug-fs-sm" style={MUTED}>SLA: {result.sla}</span>}
     </div>
   );
 }
 
-const inputCls =
-  "w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500 transition-colors";
-
 function Field({
   label, required, hint, children,
 }: {
-  label: string; required?: boolean; hint?: string; children: React.ReactNode;
+  label: string; required?: boolean; hint?: string; children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <label className="text-xs text-zinc-400">
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+      <label className="aug-fs-xs" style={{ color: "var(--t2)" }}>
         {label}
-        {required && <span className="text-violet-400 ml-0.5">*</span>}
-        {hint && <span className="text-zinc-500 ml-1">— {hint}</span>}
+        {required && <span style={{ color: "var(--blue4)", marginLeft: 2 }}>*</span>}
+        {hint && <span style={{ ...MUTED, marginLeft: 4 }}>— {hint}</span>}
       </label>
       {children}
     </div>
   );
 }
 
-
-// ── The catalogue table ───────────────────────────────────────────────────────
-// Three sources in one list. A row says where it came from and whether this connection can
-// actually compute it, because "applicable" and "available" are different claims and a
-// table that blurred them would be the confident-wrong report in miniature.
-
-const SOURCE_STYLE: Record<string, { label: string; cls: string; title: string }> = {
-  defined: {
-    label: "Defined", cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-    title: "A definition in your registry — edited here, and what the agents use.",
-  },
-  industry: {
-    label: "Industry", cls: "border-sky-500/40 bg-sky-500/10 text-sky-400",
-    title: "A recipe from the knowledge package for the industry set in Settings.",
-  },
-  explorer: {
-    label: "Explorer", cls: "border-violet-500/40 bg-violet-500/10 text-violet-400",
-    title: "Proposed by the explorer from this connection's own tables and columns.",
-  },
-};
-
-const STATE_TEXT: Record<string, { label: string; cls: string; title: string }> = {
-  defined: { label: "In use", cls: "text-zinc-300",
-             title: "A stored definition. Its governance status is shown when you open it." },
-  proposed: { label: "Proposed", cls: "text-zinc-400",
-              title: "Computable here, but not yet a governed definition. Open it to customise." },
-  needs_binding: { label: "Needs binding", cls: "text-amber-400",
-                   title: "This recipe names roles this connection has not bound, so it cannot be computed here yet." },
-  needs_formula: { label: "Needs a formula", cls: "text-amber-400",
-                   title: "The columns are identified but no SQL was proposed. Open it and supply one." },
-  // Distinct from "Needs a formula" on purpose. A formula WAS written and the build-time
-  // audit refused to trust it, so the work is to fix what it names — often the connection
-  // rather than the SQL. Every metric landing here is a statement about the connection.
-  formula_rejected: { label: "Formula rejected", cls: "text-amber-400",
-                      title: "A formula was proposed and the audit could not trust it, so it was dropped. Hover the row for the reason." },
-};
-
-function CatalogueHeader({ counts, connId, every, onAdd }:
-    { counts: Record<string, number>; connId?: string; every?: boolean; onAdd: () => void }) {
-  const parts: string[] = [];
-  if (counts.defined) parts.push(`${counts.defined} defined`);
-  if (counts.industry) parts.push(`${counts.industry} from your industry`);
-  if (counts.explorer) parts.push(`${counts.explorer} proposed by the explorer`);
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <div className="aug-fs-xs font-semibold text-zinc-400 uppercase tracking-wider">
-          Metrics for this connection
-        </div>
-        <p className="aug-text-ui text-zinc-500 mt-1">
-          {connId
-            ? (parts.length
-                ? `${counts.total} apply ${every ? "across every dataset of this connection" : "here"} — ${parts.join(", ")}. Open one to edit or remove it.`
-                : "")
-            : "Select a connection."}
-        </p>
-      </div>
-      <Button
-        onClick={onAdd}
-        className="shrink-0 bg-transparent text-violet-400 hover:text-violet-300 border border-transparent"
-      >
-        + Add
-      </Button>
-    </div>
-  );
-}
-
-function MetricRow({ row, every, open, onToggle, onCustomise, onRemove, busy, error, duplicate, editor }: {
-  row: CatalogueMetric;
-  /** The every-dataset view: the dataset is what tells two rows of one name apart. */
-  every: boolean;
-  open: boolean;
-  onToggle: () => void;
-  onCustomise: () => void;
-  onRemove: () => void;
-  busy: boolean;
-  error: string;
-  duplicate: boolean;
-  editor: React.ReactNode;
-}) {
-  const src = SOURCE_STYLE[row.source] ?? SOURCE_STYLE.defined;
-  const st = STATE_TEXT[row.state] ?? STATE_TEXT.proposed;
-  const tables = row.tables.length ? row.tables.join(", ") : (row.pack_id || "");
-  const dataset = datasetWords(row.schema);
-  const where = every || row.schema === ALL ? dataset : (tables || "—");
-  return (
-    <>
-      <tr
-        onClick={onToggle}
-        className={`border-b border-zinc-800 cursor-pointer transition-colors ${
-          open ? "bg-zinc-800/60" : "hover:bg-zinc-800/40"
-        }`}
-      >
-        <td className="py-2 pr-3 align-top">
-          <div className="flex items-start gap-1.5 min-w-0">
-            <span className={`text-zinc-500 shrink-0 transition-transform ${open ? "rotate-90" : ""}`}>›</span>
-            <div className="min-w-0">
-              <div className="aug-text-ui font-medium text-zinc-200 truncate">{row.label}</div>
-              <div className="aug-fs-xs text-zinc-500 font-mono truncate">{row.name}</div>
-            </div>
-            {duplicate && (
-              <span className="aug-fs-xs text-amber-400 shrink-0" title="Two definitions share this name.">
-                ⚠ dup
-              </span>
-            )}
-          </div>
-        </td>
-        <td className="py-2 pr-3 align-top">
-          <span className={`aug-fs-xs px-1 rounded border ${src.cls}`} title={src.title}>{src.label}</span>
-        </td>
-        <td className="py-2 pr-3 align-top aug-fs-xs text-zinc-400 truncate">{row.unit || "—"}</td>
-        <td className="py-2 pr-3 align-top">
-          <span className={`aug-fs-xs ${st.cls}`} title={row.reason || st.title}>{st.label}</span>
-          {row.state === "defined" && row.status ? (
-            <span className="aug-fs-xs text-zinc-500"> · {row.status}</span>
-          ) : null}
-        </td>
-        <td className="py-2 pr-3 align-top aug-fs-xs text-zinc-500 truncate"
-          title={tables ? `${dataset} · ${tables}` : dataset}>
-          <span className={every ? "text-zinc-300" : "font-mono"}>{where}</span>
-          {every && tables && <div className="font-mono truncate">{tables}</div>}
-        </td>
-      </tr>
-
-      {open && (
-        <tr className="border-b border-zinc-800 bg-zinc-900/40">
-          <td colSpan={5} className="px-3 py-3">
-            {editor ?? (
-              <MetricProvenance row={row} onCustomise={onCustomise} onRemove={onRemove} busy={busy} error={error} />
-            )}
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
-
-/** What a computed row shows before it is copied: what it means, and every way forward — make it
- *  this connection's, bind what it needs, or remove it. Never a dead end (the user, 2026-10-07: "no
- *  'this requires binding' — that's a dead end with no action possible"). */
+/** What a suggestion shows before it is copied: what it means, and every way forward — make it this connection's, bind
+ *  what it needs, or remove it. Never a dead end (the user, 2026-10-07: "no 'this requires binding' — that's a dead end
+ *  with no action possible"). */
 function MetricProvenance({ row, onCustomise, onRemove, busy, error }: {
   row: CatalogueMetric; onCustomise: () => void; onRemove: () => void; busy: boolean; error: string;
 }) {
   const unbound = row.state === "needs_binding";
   const [removing, setRemoving] = useState(false);
+  const range = row.sane_range && (row.sane_range.min != null || row.sane_range.max != null) ? row.sane_range : null;
   return (
-    <div className="flex flex-col gap-3 max-w-3xl">
-      {row.definition && <p className="aug-text-ui text-zinc-300">{row.definition}</p>}
-      {row.why_it_matters && <p className="aug-text-ui text-zinc-400">{row.why_it_matters}</p>}
+    <div style={{ ...STACK, maxWidth: 900 }} data-testid="metric-provenance">
+      <div style={ROW}>
+        <Chip title="Its id — what SQL, agents and the API call it"><span style={{ fontFamily: "var(--font-mono)" }}>{row.name}</span></Chip>
+        {row.unit && <Chip title="Its unit">{row.unit}</Chip>}
+        {row.tables.length > 0 && <Chip title="Tables it reads">{`reads ${row.tables.join(", ")}`}</Chip>}
+      </div>
+      {row.definition && <p className="aug-fs-ui" style={TEXT}>{row.definition}</p>}
+      {row.why_it_matters && <p className="aug-fs-sm" style={SUPPORT}>{row.why_it_matters}</p>}
+
+      {unbound && (
+        <p className="aug-fs-sm" style={{ color: "var(--amb4)", margin: 0 }} data-testid="metric-unbound">
+          {`Its SQL names ${row.missing_roles.join(", ") || "roles"} — data this connection has not bound to the `
+            + `${row.pack_id || "industry"} package.`}
+        </p>
+      )}
 
       {row.sql ? (
         <div>
-          <SectionHeader label={unbound ? "The package's formula" : "Formula"} />
-          <pre className="aug-fs-xs font-mono text-zinc-300 whitespace-pre-wrap bg-zinc-900 rounded p-2 border border-zinc-800">
-            {row.sql}
-          </pre>
+          <Label>{unbound ? "The package's SQL" : "SQL"}</Label>
+          <Sql>{row.sql}</Sql>
         </div>
       ) : (
-        <p className="aug-text-ui text-amber-400">
-          No formula was proposed for this one — make it this connection&apos;s and write the SQL.
+        <p className="aug-fs-sm" style={{ color: "var(--amb4)", margin: 0 }}>
+          No SQL was proposed for this one — make it this connection&apos;s and write it.
         </p>
       )}
-
-      {row.grain && <p className="aug-fs-xs text-zinc-500">Grain — {row.grain}</p>}
-
-      {unbound && (
-        <p className="aug-text-ui text-zinc-300" data-testid="metric-unbound">
-          {`Its formula names ${row.missing_roles.join(", ") || "roles"} — data this connection has not `
-            + `bound to the ${row.pack_id || "industry"} package. Write it over your own columns (the `
-            + `package's formula is kept beside it as a guide), bind those roles so the package resolves `
-            + `it, or remove it if it does not apply here.`}
-        </p>
+      {row.state === "formula_rejected" && row.reason && (
+        <p className="aug-fs-sm" style={{ color: "var(--amb4)", margin: 0 }}>Its SQL was rejected: {row.reason}</p>
       )}
 
-      {row.sane_range && (row.sane_range.min != null || row.sane_range.max != null) && (
-        <div>
-          <SectionHeader label="Published range" />
-          <p className="aug-fs-xs text-zinc-400">
-            {row.sane_range.min} – {row.sane_range.max}
-            {row.sane_range.basis ? ` · ${row.sane_range.basis}` : ""}
-          </p>
-          <p className="aug-fs-xs text-zinc-500 mt-1">
-            Published for the population above — not a measurement of your data.
-          </p>
+      {row.grain && <p className="aug-fs-xs" style={{ ...MUTED, margin: 0 }}>Grain — {row.grain}</p>}
+
+      {range && (
+        <div style={ROW}>
+          <Chip title="Published for the population named beside it">{`published range ${range.min} – ${range.max}`}</Chip>
+          {range.basis && <span className="aug-fs-xs" style={MUTED}>{range.basis}</span>}
+          <span className="aug-fs-xs" style={MUTED}>Published for the population above — not a measurement of your data.</span>
         </div>
       )}
 
       {row.anti_patterns.length > 0 && (
         <div>
-          <SectionHeader label="Never" />
-          <ul className="aug-fs-xs text-zinc-400 list-disc pl-4 flex flex-col gap-1">
+          <Label>Never</Label>
+          <ul className="aug-fs-xs" style={{ margin: 0, paddingLeft: 16, color: "var(--t2)", display: "flex", flexDirection: "column", gap: 4 }}>
             {row.anti_patterns.map((a, i) => <li key={i}>{a}</li>)}
           </ul>
         </div>
       )}
 
-      {error && <p className="aug-text-ui text-red-400">{error}</p>}
+      {error && <p className="aug-fs-sm" style={ERROR}>{error}</p>}
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button
-          onClick={onCustomise}
-          disabled={busy}
-          className="bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-40"
-        >
+      <div style={ROW}>
+        <Button onClick={onCustomise} disabled={busy}
+          title={unbound ? "Write it over your own columns — the package's SQL is kept beside it as a guide" : undefined}>
           {busy ? "Working…" : unbound ? "Write its SQL for this connection" : "Customise for this connection"}
         </Button>
         {unbound && (
-          <Button variant="ghost" onClick={() => requestTab("settings", { settings: "system" })}
-            title="Settings ▸ System ▸ Packages — bind the roles this package's formulas are written over.">
+          <Button variant="secondary" onClick={() => requestTab("settings", { settings: "system" })}
+            title="Settings ▸ System ▸ Packages — bind the roles this package's SQL is written over.">
             Bind its roles
           </Button>
         )}
         <Button variant="ghost" disabled={busy}
           onClick={() => (removing ? onRemove() : setRemoving(true))}
-          className="text-red-400 hover:text-red-300"
-          title="It is not proposed here again; it can be restored from the list below the table.">
+          style={{ color: "var(--red4)" }}
+          title="It is not proposed here again; it can be restored from the foot of the list.">
           {removing ? "Remove — sure?" : "Remove"}
         </Button>
-        <span className="aug-fs-xs text-zinc-500">
+        <span className="aug-fs-xs" style={MUTED}>
           {`A copy for ${datasetWords(row.schema)} of this connection, as a draft. The original is untouched.`}
         </span>
       </div>

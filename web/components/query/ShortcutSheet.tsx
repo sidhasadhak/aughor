@@ -86,8 +86,9 @@ function groups(mod: string): Group[] {
   ];
 }
 
-export function ShortcutSheet() {
-  const [open, setOpen] = useState(false);
+/** The sheet holds no button of its own: the editor's Tools ▾ opens it ("Keyboard shortcuts"), and so does Esc then H
+ *  (CLARITY — tools in one menu, not a row of icons). */
+export function ShortcutSheet({ open, onOpenChange: setOpen }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const mod = useModKey();
 
   // Escape closes it, like every other overlay in the app.
@@ -96,7 +97,7 @@ export function ShortcutSheet() {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, setOpen]);
 
   // SE-8F — Esc then H, the classic chord for this sheet. Only OUTSIDE an editing
   // context, because "Esc to dismiss
@@ -117,14 +118,10 @@ export function ShortcutSheet() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [setOpen]);
 
   return (
     <>
-      <Button variant="ghost" size="xs" onClick={() => setOpen(true)}
-        title="Keyboard shortcuts" data-testid="sql-shortcuts">
-        <Icon name="key" size={14} />
-      </Button>
       {open && (
         <>
           <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "var(--scrim)" }}

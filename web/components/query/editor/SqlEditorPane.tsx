@@ -47,6 +47,7 @@ import { lintGutter } from "@codemirror/lint";
 import { refreshLint } from "@/components/query/editor/diagnostics";
 import { sql, type SQLDialect } from "@codemirror/lang-sql";
 import { aughorEditorTheme, aughorSyntaxHighlighting } from "@/components/query/editor/theme";
+import { askExtension, type AskHandler } from "@/components/query/editor/ask";
 
 export interface SqlEditorPaneProps {
   value: string;
@@ -84,6 +85,9 @@ export interface SqlEditorPaneProps {
   }) => void;
   placeholder?: string;
   readOnly?: boolean;
+  /** `/ask` — writes the SQL for a request typed on a line of its own (`editor/ask.ts`). Absent: an /ask line asks
+   *  nobody and says to choose a connection. */
+  onAsk?: AskHandler;
 }
 
 /** The live templates as a completion source. Built once at module scope — the set is
@@ -108,8 +112,8 @@ function sqlWithTemplates(
 
 export function SqlEditorPane({
   value, onChange, onRun, onRunStatement, onFormat, onCursor, onReady,
-  schema, defaultSchema, dialect, diagnostics, quote, joins,
-  placeholder = "SELECT … — ⌘↵ runs the statement under the cursor",
+  schema, defaultSchema, dialect, diagnostics, quote, joins, onAsk,
+  placeholder = "SELECT … — ⌘↵ runs the statement under the cursor · /ask writes one for you",
   readOnly = false,
 }: SqlEditorPaneProps) {
   const host = useRef<HTMLDivElement | null>(null);
@@ -124,6 +128,7 @@ export function SqlEditorPane({
   const onRunStatementRef = useRef(onRunStatement);
   const onFormatRef = useRef(onFormat);
   const onCursorRef = useRef(onCursor);
+  const onAskRef = useRef(onAsk);
   // SE-6 — the intentions read the CURRENT schema through this ref. Rebuilding the
   // extension when the catalog refreshes would mean rebuilding the view, and a
   // rebuilt view has no undo history and no cursor.
@@ -135,6 +140,7 @@ export function SqlEditorPane({
   onRunStatementRef.current = onRunStatement;
   onFormatRef.current = onFormat;
   onCursorRef.current = onCursor;
+  onAskRef.current = onAsk;
 
   // Mount once. `value` is the INITIAL doc here — later changes come through the
   // reconcile effect below, never by rebuilding the view.
@@ -276,6 +282,9 @@ export function SqlEditorPane({
       languageCompartment.of(sqlWithTemplates(dialect, schema, defaultSchema)),
       sqlIntentions(() => schemaRef.current, () => quoteRef.current, () => joinsRef.current),
       cmPlaceholder(placeholder),
+      // Before the run keys: both sit at Prec.highest, and the earlier one answers first — so ↵ / ⌘↵ on an /ask line
+      // asks, and on any other line falls through to running.
+      ...(readOnly ? [] : [askExtension(() => onAskRef.current ?? null)]),
       runKeymap,
       editKeymap,
       keymap.of([

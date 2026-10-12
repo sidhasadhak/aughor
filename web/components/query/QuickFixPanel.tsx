@@ -82,12 +82,15 @@ export function QuickFixPanel({
     }
   }
 
+  // The offer sits on the error's own row (CLARITY: a button on the row it acts on); what it brings back — a diff, or
+  // why there is none — takes the row's whole width beneath it, since a diff squeezed beside a message wraps every line.
   if (state === "idle") {
     return (
       <Button
-        variant="ghost" size="xs" className="aug-fs-ui"
+        variant="secondary" size="xs" className="aug-fs-ui"
         onClick={() => void request()}
         title="Ask for a proposed repair. It is shown as a diff and never applied on its own."
+        data-testid="quick-fix"
       >
         Quick fix
       </Button>
@@ -100,7 +103,7 @@ export function QuickFixPanel({
 
   if (state === "none" || state === "failed") {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
         <span
           className="aug-fs-ui"
           style={{ color: state === "failed" ? "var(--red4)" : "var(--t3)" }}
@@ -117,12 +120,13 @@ export function QuickFixPanel({
   return (
     <div
       style={{
-        display: "flex", flexDirection: "column", gap: 6, marginTop: 10,
+        display: "flex", flexDirection: "column", gap: 6, width: "100%",
         border: "1px solid var(--b1)", borderRadius: "var(--r2)", overflow: "hidden",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px" }}>
-        <span className="aug-label" style={{ color: "var(--t3)" }}>Proposed fix</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em",
+          whiteSpace: "nowrap" }}>Proposed fix</span>
         <span className="aug-fs-ui" style={{ color: "var(--t3)" }}>{fix?.rationale}</span>
         <div style={{ flex: 1 }} />
         <Button

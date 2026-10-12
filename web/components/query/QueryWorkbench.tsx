@@ -25,6 +25,10 @@
  *
  * The mode lives in the URL (`?tab=query&mode=visual|sql`) via the History API, the
  * same contract every other tab here uses — so a mode is linkable and survives reload.
+ *
+ * Redone to `aughor-v2/CLARITY.md` (2026-10-12): the first row picks — the mode (segmented), the connection, the
+ * saved query and Save; what the workbench DOES beyond that (version history, the share link, the catalog) is one
+ * Tools ▾ — SQL mode's, beside the editor's own tools, or at the end of Visual mode's row.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -41,15 +45,17 @@ import { ResizableSplit } from "@/components/ResizableSplit";
 import { getCatalogTree, listSavedQueries, type CatalogTree, type Canvas, type Connection, type SavedQuery } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { useRichSchema } from "@/lib/schema-context";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
+import { Segmented } from "@/components/ui/segmented";
+import { Chip } from "@/components/clarity/kit";
+import { ToolsMenu } from "@/components/catalog/CatalogTools";
+import { sharedTools as workbenchTools } from "@/lib/query/workbench";
 
 export type QueryMode = "visual" | "sql";
 
-const MODES: Array<{ id: QueryMode; label: string; hint: string }> = [
-  { id: "visual", label: "Visual", hint: "Compose a query without writing SQL" },
-  { id: "sql",    label: "SQL",    hint: "Write SQL with completion and guards" },
+const MODES: Array<{ value: QueryMode; label: string; title: string }> = [
+  { value: "visual", label: "Visual", title: "Compose a query without writing SQL" },
+  { value: "sql",    label: "SQL",    title: "Write SQL with completion and guards" },
 ];
 
 /** Read/write `?mode=` without a router round-trip — matches page.tsx's tab sync. */
@@ -160,6 +166,11 @@ function WorkbenchInner({
   const [savable, setSavable] = useState<Record<QueryMode, boolean>>({ visual: false, sql: false });
   const [activeSaved, setActiveSaved] = useState<SavedQuery | null>(null);
   const [showVersions, setShowVersions] = useState(false);
+  // The Saved menu's list, lifted so the empty results pane can start from it without reading it again; undefined
+  // while it is read, null when the read failed. A saved query opened from there goes through the menu's own load.
+  const [savedList, setSavedList] = useState<SavedQuery[] | null | undefined>(undefined);
+  const [savedOpen, setSavedOpen] = useState<{ q: SavedQuery; nonce: number }>();
+  const openFromStart = useCallback((q: SavedQuery) => setSavedOpen({ q, nonce: Date.now() }), []);
 
   // Stable callbacks — a fresh identity here would re-fire each mode's publish effect
   // on every workbench render.
@@ -378,9 +389,10 @@ function WorkbenchInner({
     };
 
   // ── The controls both modes share, built once ────────────────────────────────
-  // Versions moved into the overflow: it is a property of a SAVED query and is
-  // unreachable most of the time, so a permanent button for it was a permanently
-  // disabled button. "Hide catalog" became the panel glyph every console uses.
+  // What they pick — the mode, the connection, the saved query — rides the first row; what they DO beyond Save
+  // (version history, the share link, hiding the catalog) is in Tools ▾ (`shared` below). Version history is offered
+  // only once a query is saved: it is a property of a SAVED query, and a permanent button for it was a permanently
+  // disabled button.
   /* Schema is SQL-ONLY: it sets what completes without qualifying, and Visual mode
      qualifies every name it generates, so the control would do nothing there. It used
      to sit inside `sharedControls`, which meant the shared group was one control wider
@@ -398,22 +410,23 @@ function WorkbenchInner({
     </SelectField>
   ) : null;
 
+  // The workbench's own tools — version history, the share link, the catalog — held in ONE Tools ▾: SQL mode's, beside
+  // the editor's own, or Visual mode's at the end of its row. They used to be two icons and a footer button.
+  const shared = workbenchTools({
+    saved: !!activeSaved,
+    versionsOpen: showVersions,
+    catalogOpen: showCatalog,
+    act: {
+      versions: () => setShowVersions(v => !v),
+      share: shareQuery,
+      catalog: () => setShowCatalog(s => !s),
+    },
+  });
+
   const sharedControls = (
     <>
-      {MODES.map(m => (
-        <Button
-          key={m.id}
-          variant={mode === m.id ? "secondary" : "ghost"}
-          size="xs"
-          className="aug-fs-ui"
-          title={m.hint}
-          onClick={() => chooseMode(m.id)}
-        >
-          {m.label}
-        </Button>
-      ))}
-
-      <span style={{ width: 1, height: 14, background: "var(--b1)", margin: "0 2px" }} />
+      {/* A choice between two values, so it is segmented (INSTRUMENT §5) — not two buttons. */}
+      <Segmented label="Query mode" value={mode} onChange={chooseMode} options={MODES} />
       <SelectField bespoke
         style={controlStyle}
         value={connId}
@@ -434,45 +447,20 @@ function WorkbenchInner({
         savable={savable[mode]}
         onLoaded={openSaved}
         onActiveChange={setActiveSaved}
+        onList={setSavedList}
+        openRequest={savedOpen}
       />
 
       {/* The sync state, stated rather than implied — shown only for a SAVED query,
-          because an unsaved draft has nothing yet to be ahead OF. */}
+          because an unsaved draft has nothing yet to be ahead OF. A fact, so a chip. */}
       {activeSaved && (
-        <span
-          className="aug-fs-xs"
+        <Chip testId="saved-sync"
           title={isVisualQuery(activeSaved)
             ? "Linked — the visual spec and this SQL describe the same query"
-            : "SQL-ahead — this query's SQL is the source of truth; there is no builder spec to decompile"}
-          style={{
-            padding: "1px 6px", borderRadius: "var(--r-chip)",
-            border: "1px solid var(--b1)", color: "var(--t3)",
-          }}
-        >
+            : "SQL-ahead — this query's SQL is the source of truth; there is no builder spec to decompile"}>
           {isVisualQuery(activeSaved) ? "linked" : "sql-ahead"}
-        </span>
+        </Chip>
       )}
-
-      <Button
-        variant="ghost"
-        size="xs"
-        disabled={!activeSaved}
-        onClick={() => setShowVersions(v => !v)}
-        title={activeSaved
-          ? "Version history for this saved query"
-          : "Save this query to start a version history"}
-      >
-        <Icon name="history" size={14} />
-      </Button>
-
-      <Button
-        variant="ghost"
-        size="xs"
-        onClick={() => setShowCatalog(s => !s)}
-        title={showCatalog ? "Hide the catalog" : "Show the catalog"}
-      >
-        <Icon name="panel" size={14} />
-      </Button>
     </>
   );
 
@@ -496,6 +484,7 @@ function WorkbenchInner({
         >
           <div style={{ flex: 1, minWidth: 8 }} />
           {sharedControls}
+          <ToolsMenu items={shared} testId="workbench-tools" />
         </div>
       )}
 
@@ -529,9 +518,8 @@ function WorkbenchInner({
             tables={allTables}
             connectionName={(connections ?? []).find(c => c.id === connId)?.name}
             loading={schemaLoading}
-            hint={mode === "visual"
-              ? "Click to add · drag a column onto Dimensions or Metrics"
-              : "Click to insert at the cursor"}
+            // Visual mode's drag has no other door, so it is said; SQL mode's insert is said on every row's hover.
+            hint={mode === "visual" ? "Click to add · drag a column onto Dimensions or Metrics" : undefined}
             {...railProps}
           />
         }
@@ -556,6 +544,12 @@ function WorkbenchInner({
                           flexDirection: "column" }}>
               <SqlMode
                 toolbar={sharedControls}
+                sharedTools={shared}
+                startTables={railTables}
+                tablesLoading={schemaLoading}
+                connectionName={(connections ?? []).find(c => c.id === connId)?.name}
+                saved={savedList}
+                onOpenSaved={openFromStart}
                 schemaControl={schemaControl}
                 pendingInsert={pendingInsert}
                 pendingOpen={pendingOpen}
@@ -568,7 +562,6 @@ function WorkbenchInner({
                 onSavedBinding={bindSql}
                 onSavableChange={savableSql}
                 onSchedule={scheduleQuery}
-                onShare={shareQuery}
               />
             </div>
           </>

@@ -4166,35 +4166,31 @@ export interface QuickFix {
   diagnosis: string;
 }
 
-// SE-8E — the editor's AI pane. Same consent model as Quick Fix, generalised: SQL
-// only ever comes back as a PROPOSAL for a diff; the server never executes it.
-export interface AssistReply {
-  reply: string;
-  proposed_sql: string;
-  changed: boolean;
+/** `/ask` in the SQL editor: the statement the platform's own question-to-SQL path writes (Quick analysis's core,
+ *  stopped before it runs), and what its guards did to it. Nothing is executed. A request the path declines throws
+ *  with the server's own sentence, which the editor says on the `/ask` line. */
+export interface AskedSql {
+  sql: string;
+  notes: string[];
+  outcome: string;
 }
 
-export async function assistSql(
-  connId: string,
-  instruction: string,
-  opts: {
-    sql?: string; error?: string;
-    history?: { role: "user" | "assistant"; content: string }[];
-  } = {},
-): Promise<AssistReply> {
-  const res = await fetch(`${getApiBase()}/query/assist`, {
+export async function askForSql(
+  connId: string, request: string, opts: { sql?: string; schema?: string; signal?: AbortSignal } = {},
+): Promise<AskedSql> {
+  const res = await fetch(`${getApiBase()}/query/ask`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal: opts.signal,
     body: JSON.stringify({
-      conn_id: connId, instruction,
-      ...(opts.sql ? { sql: opts.sql } : {}),
-      ...(opts.error ? { error: opts.error } : {}),
-      ...(opts.history?.length ? { history: opts.history } : {}),
+      conn_id: connId, request,
+      ...(opts.sql?.trim() ? { sql: opts.sql } : {}),
+      ...(opts.schema ? { schema_name: opts.schema } : {}),
     }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(err, "The assistant is unavailable"));
+    throw new Error(fastApiError(err, "the SQL could not be written just now"));
   }
   return res.json();
 }
@@ -4806,6 +4802,20 @@ export interface AuditRecord {
   row_count: number | null;
   duration_ms: number | null;
   error: string | null;
+}
+
+/** What each statement measures and how it is cut, in words — read from the statement alone, no query and no model
+ *  (`POST /query/describe`). "" for one that does not say; the caller then shows the statement alone. */
+export async function describeStatements(connId: string, statements: string[]): Promise<string[]> {
+  if (!statements.length) return [];
+  const res = await fetch(`${getApiBase()}/query/describe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conn_id: connId, statements: statements.slice(0, 20) }),
+  });
+  if (!res.ok) throw await refused(res, "Describing the recent runs");
+  const data = await res.json();
+  return Array.isArray(data?.titles) ? data.titles.map((t: unknown) => String(t ?? "")) : [];
 }
 
 export async function getQueryHistory(
@@ -7264,6 +7274,14 @@ export interface BriefingNarrativeResponse {
   /** Why this scope has no Briefing: its schema — or, read whole, every schema of the connection — is turned off
    *  for analysis. Nothing is written from what was found before. */
   off?: BriefingOff;
+  /** The findings left out because they read a table turned off for analysis (they come back when it is turned on). */
+  left_out?: BriefingLeftOut;
+}
+
+export interface BriefingLeftOut {
+  count: number;
+  tables: string[];
+  said: string;
 }
 
 export interface BriefingOff {

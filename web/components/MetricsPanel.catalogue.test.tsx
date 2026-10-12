@@ -15,7 +15,7 @@
  * are different claims, and a row that blurred them would be the confident-wrong report in
  * miniature.
  */
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -107,18 +107,23 @@ describe("the list is scoped to the connection", () => {
 });
 
 describe("a row says where it came from and whether it can be computed", () => {
+  // Redone to CLARITY (2026-10-12): the source is said on the row's chip — a suggestion names the explorer or its
+  // package, a definition sits in its governance group — rather than in a column of its own.
   it("shows all three sources", async () => {
     render(<MetricsPanel connId="c1" />);
     await screen.findByText("Gross Merchandise Value");
-    expect(screen.getByText("Explorer")).toBeInTheDocument();
-    expect(screen.getByText("Industry")).toBeInTheDocument();
-    expect(screen.getByText("Defined")).toBeInTheDocument();
+    expect(screen.getByText("suggested · explorer")).toBeInTheDocument();
+    expect(screen.getByText("not bound · financial_period")).toBeInTheDocument();
+    expect(screen.getByText(/the banking package names data not bound here: financial_period/)).toBeInTheDocument();
+    expect(screen.getByText("draft")).toBeInTheDocument();
   });
 
   it("marks an unbound industry recipe rather than implying it is available", async () => {
     render(<MetricsPanel connId="c1" />);
     await screen.findByText("Net interest margin");
-    expect(screen.getByText("Needs binding")).toBeInTheDocument();
+    const chip = screen.getByText("not bound · financial_period");
+    expect(chip).toHaveAttribute("title", expect.stringContaining("cannot be computed here"));
+    expect(within(screen.getByTestId("metrics-group-not_bound")).getByText("Net interest margin")).toBeInTheDocument();
   });
 });
 
@@ -162,7 +167,7 @@ describe("opening a row", () => {
     });
     await user.click(screen.getByRole("button", { name: /Remove — sure/i }));
     expect(removeProposal).toHaveBeenCalledWith("c1", "gmv", "*");
-    await user.click(await screen.findByRole("button", { name: /Removed here \(1\)/ }));
+    await user.click(await screen.findByRole("button", { name: /Removed here · 1/ }));
     expect(screen.getByText(/removed by ana@example.com on 2026-10-07/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Restore/ }));
     expect(restoreProposal).toHaveBeenCalledWith("c1", "gmv", "*");
@@ -227,15 +232,15 @@ describe("a rejected formula is not a missing one", () => {
     });
   });
 
-  it("says the formula was rejected, not that one is needed", async () => {
+  it("says the SQL was rejected, not that one is needed", async () => {
     render(<MetricsPanel connId="c1" />);
-    expect(await screen.findByText("Formula rejected")).toBeInTheDocument();
-    expect(screen.queryByText("Needs a formula")).not.toBeInTheDocument();
+    expect(await screen.findByText("SQL rejected")).toBeInTheDocument();
+    expect(screen.queryByText(/no SQL/)).not.toBeInTheDocument();
   });
 
   it("carries the audit's own reason, so the reader learns it is the connection", async () => {
     render(<MetricsPanel connId="c1" />);
-    const chip = await screen.findByText("Formula rejected");
+    const chip = await screen.findByText("SQL rejected");
     expect(chip).toHaveAttribute("title", expect.stringContaining("must be qualified"));
   });
 });
