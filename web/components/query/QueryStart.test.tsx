@@ -9,7 +9,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 
 import type { AuditRecord, SavedQuery } from "@/lib/api";
 
-const api = vi.hoisted(() => ({ getQueryHistory: vi.fn() }));
+const api = vi.hoisted(() => ({ getQueryHistory: vi.fn(), describeStatements: vi.fn() }));
 vi.mock("@/lib/api", () => api);
 
 import { QueryStart } from "./QueryStart";
@@ -36,6 +36,7 @@ function mount(over: Partial<Parameters<typeof QueryStart>[0]> = {}) {
 
 beforeEach(() => {
   api.getQueryHistory.mockReset();
+  api.describeStatements.mockReset().mockResolvedValue([]);
 });
 
 describe("the starting point", () => {
@@ -92,5 +93,31 @@ describe("the starting point", () => {
     expect(card).toHaveTextContent("2.4M");
     fireEvent.click(within(card).getByText("thelook.events"));
     expect(p.onInsert).toHaveBeenCalledWith("thelook.events");
+  });
+
+  it("prints each run on two lines — what it does in words, then the statement — and the statement alone when it does not say", async () => {
+    api.getQueryHistory.mockResolvedValue([
+      run("a", "SELECT * FROM (SELECT country, SUM(sale_price) AS sales FROM order_items GROUP BY 1) __q LIMIT 501"),
+      run("b", "SELECT 1"),
+    ]);
+    api.describeStatements.mockResolvedValue(["Sales by country", ""]);
+    mount();
+    const card = await screen.findByTestId("query-start-runs");
+    await waitFor(() => expect(within(card).getAllByTestId("query-start-run-words")[0]).toHaveTextContent("Sales by country"));
+    expect(api.describeStatements).toHaveBeenCalledWith("8233e4fd",
+      ["SELECT country, SUM(sale_price) AS sales FROM order_items GROUP BY 1", "SELECT 1"]);
+    const [described, bare] = within(card).getAllByRole("button");
+    expect(within(described).getByTestId("query-start-run-sql")).toHaveTextContent("SELECT country, SUM(sale_price)");
+    expect(within(bare).queryByTestId("query-start-run-sql")).toBeNull();       // no words: the statement alone
+    expect(within(bare).getByTestId("query-start-run-words")).toHaveTextContent("SELECT 1");
+  });
+
+  it("a description that fails leaves the statements on screen", async () => {
+    api.getQueryHistory.mockResolvedValue([run("a", "SELECT country FROM users")]);
+    api.describeStatements.mockRejectedValue(new Error("503"));
+    mount();
+    const card = await screen.findByTestId("query-start-runs");
+    await waitFor(() => expect(card).toHaveTextContent("SELECT country FROM users"));
+    expect(within(card).queryByTestId("query-start-run-sql")).toBeNull();
   });
 });

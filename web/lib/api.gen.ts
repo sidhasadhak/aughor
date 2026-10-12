@@ -13915,6 +13915,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/query/describe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Describe
+         * @description What each statement measures and how it is cut, in words (`agent.analyst.statement_title`) — the line the SQL
+         *     editor's recent runs print over each statement (the user, 2026-10-12). Read from the statement alone: no query,
+         *     no model, nothing stored. "" for one that does not say (it does not parse, or reads no table): the editor then
+         *     shows the statement alone, never a guess.
+         */
+        post: operations["query_describe_query_describe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/query/federated-answer": {
         parameters: {
             query?: never;
@@ -21803,6 +21826,13 @@ export interface components {
             dialect: string;
             /** Sql */
             sql: string;
+        };
+        /** _DescribeRequest */
+        _DescribeRequest: {
+            /** Conn Id */
+            conn_id: string;
+            /** Statements */
+            statements: string[];
         };
         /** _Dismissal */
         _Dismissal: {
@@ -46422,6 +46452,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["_DecompileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_describe_query_describe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_DescribeRequest"];
             };
         };
         responses: {

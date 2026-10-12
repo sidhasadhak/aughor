@@ -4804,6 +4804,20 @@ export interface AuditRecord {
   error: string | null;
 }
 
+/** What each statement measures and how it is cut, in words — read from the statement alone, no query and no model
+ *  (`POST /query/describe`). "" for one that does not say; the caller then shows the statement alone. */
+export async function describeStatements(connId: string, statements: string[]): Promise<string[]> {
+  if (!statements.length) return [];
+  const res = await fetch(`${getApiBase()}/query/describe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conn_id: connId, statements: statements.slice(0, 20) }),
+  });
+  if (!res.ok) throw await refused(res, "Describing the recent runs");
+  const data = await res.json();
+  return Array.isArray(data?.titles) ? data.titles.map((t: unknown) => String(t ?? "")) : [];
+}
+
 export async function getQueryHistory(
   connectionId: string, limit = 40, label = "query_workbench",
 ): Promise<AuditRecord[]> {

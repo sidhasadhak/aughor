@@ -1852,6 +1852,33 @@ async def query_ask(body: _AskRequest, request: Request):
     return {"sql": sql, "notes": _ask_notes(res.guard_receipts), "outcome": res.outcome}
 
 
+class _DescribeRequest(BaseModel):
+    conn_id: str
+    statements: list[str]
+
+
+@router.post("/query/describe")
+def query_describe(body: _DescribeRequest, request: Request):
+    """What each statement measures and how it is cut, in words (`agent.analyst.statement_title`) — the line the SQL
+    editor's recent runs print over each statement (the user, 2026-10-12). Read from the statement alone: no query,
+    no model, nothing stored. "" for one that does not say (it does not parse, or reads no table): the editor then
+    shows the statement alone, never a guess."""
+    _check_conn_org(request, body.conn_id)
+    if len(body.statements) > 20:
+        raise HTTPException(status_code=400, detail="at most 20 statements at a time")
+    from aughor.agent.analyst import statement_title
+    from aughor.trust.lineage_edges import dialect_for_connection
+    dialect = dialect_for_connection(body.conn_id) or ""
+
+    def _title(sql: str) -> str:
+        try:
+            return statement_title(sql[:20000], dialect)
+        except Exception:  # noqa: BLE001 — a statement that cannot be described is shown without words
+            return ""
+
+    return {"titles": [_title(s) for s in body.statements]}
+
+
 # ── Saved-query versions (SE-4 J) ─────────────────────────────────────────────
 # `update_saved_query` overwrites the only row, and has recorded a lifecycle revision
 # beside it since Wave V3 — but nothing could READ that history, so a saved query had a

@@ -121,3 +121,19 @@ def test_a_request_never_builds_on_an_editor_statement_that_writes(client, monke
     r = client.post("/query/ask", json={"conn_id": "fixture", "request": "only last month",
                                         "sql": "DELETE FROM orders WHERE 1=1"})
     assert r.status_code == 400 and "changes data" in r.json()["detail"]
+
+
+# ── what each recent run does, in words (`POST /query/describe`) ──────────────
+
+def test_recent_runs_are_described_in_order_and_one_that_does_not_say_gets_no_words(client):
+    r = client.post("/query/describe", json={"conn_id": "fixture", "statements": [
+        "SELECT * FROM (SELECT country, SUM(sale_price) AS sales FROM order_items GROUP BY 1) AS __q LIMIT 501",
+        "not sql",
+        "SELECT COUNT(*) FROM events"]})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"titles": ["Sales by country", "", "Row count in events"]}
+
+
+def test_describing_is_bounded(client):
+    r = client.post("/query/describe", json={"conn_id": "fixture", "statements": ["SELECT 1"] * 21})
+    assert r.status_code == 400
