@@ -374,13 +374,19 @@ def render_exploration_annotations(connection_id: str) -> str:
         sections.append("\n".join(lines))
 
     # ── Entity lifecycle ───────────────────────────────────────────────────────
-    lifecycle_maps: dict = state.get("lifecycle_maps", {})
+    # Held to the one state rule (ontology/lifecycle_states.py): a map stored before the explorer
+    # kept to it can carry a whole document as a "state", and this block is appended to every
+    # schema prompt — one such value made LuxExperience's 3.2M chars (2026-10-12).
+    from aughor.ontology.lifecycle_states import is_lifecycle_state, plausible_lifecycle_states
+    lifecycle_maps: dict = {t: lm for t, lm in state.get("lifecycle_maps", {}).items()
+                            if plausible_lifecycle_states(lm.get("states")
+                                                          or lm.get("active_states", []) + lm.get("terminal_states", []))}
     if lifecycle_maps:
         lines = ["ENTITY LIFECYCLE (verified state machines):"]
         for table, lm in lifecycle_maps.items():
             col = lm.get("status_column", "?")
-            active   = lm.get("active_states", [])
-            terminal = lm.get("terminal_states", [])
+            active   = [s for s in lm.get("active_states", []) if is_lifecycle_state(s)]
+            terminal = [s for s in lm.get("terminal_states", []) if is_lifecycle_state(s)]
             active_str   = ", ".join(active)   if active   else "—"
             terminal_str = ", ".join(terminal) if terminal else "—"
             lines.append(f"  {table}.{col}")
