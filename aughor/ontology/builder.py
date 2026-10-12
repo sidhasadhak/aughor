@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from aughor.tools.profiler import ColumnProfile, TableProfile
 
+from aughor.ontology.lifecycle_states import is_lifecycle_state, plausible_lifecycle_states
 from aughor.ontology.models import (
     ActionParameter,
     EntityProperty,
@@ -195,30 +196,13 @@ def _extract_lifecycle(
     # Pick the best candidate: prefer shorter column name (more likely to be the main status)
     cp = min(candidates, key=lambda c: len(c.column))
 
-    # Filter out values that look like geographic codes (2-letter ISO), formula
-    # strings (contain "/" or operators), or multi-word phrases — these are not
-    # lifecycle states.
-    def _is_valid_state(v: object) -> bool:
-        s = str(v).strip()
-        if not s or s == "null":
-            return False
-        if "/" in s:                              # formula strings: "Revenue / Ad Spend"
-            return False
-        if re.fullmatch(r"[A-Z]{2}", s):          # bare 2-letter ISO codes: SP, CA, NY
-            return False
-        if len(s) > 30:                           # descriptions, not state identifiers
-            return False
-        return True
+    # Values that cannot be states (ISO-2 codes, formulas, descriptions) are dropped by the
+    # one shared rule (ontology/lifecycle_states.py).
+    states: list[str] = [str(v) for v in cp.top_values if is_lifecycle_state(v)]
 
-    states: list[str] = [str(v) for v in cp.top_values if _is_valid_state(v)]
-
-    # Final column-level guard: real lifecycle states are terse (avg ≤ 15 chars,
-    # avg word count ≤ 2).  KPI names / descriptions fail both.
-    if states:
-        avg_len = sum(len(s) for s in states) / len(states)
-        avg_words = sum(len(s.split()) for s in states) / len(states)
-        if avg_len > 15 or avg_words > 2:
-            return None, [], [], None
+    # Final column-level guard: real lifecycle states are terse; KPI names / descriptions are not.
+    if states and not plausible_lifecycle_states(states):
+        return None, [], [], None
 
     # If the filter removed everything meaningful, discard this candidate entirely
     if not states:

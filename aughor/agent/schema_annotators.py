@@ -312,29 +312,7 @@ def _apply_explorer_to_ontology(graph, connection_id: str) -> None:
             return
 
         # ── Lifecycle merge ───────────────────────────────────────────────────
-        import re as _re
-
-        def _valid_lifecycle_state(s: str) -> bool:
-            """Same heuristic used by the ontology builder's _is_valid_state."""
-            s = s.strip()
-            if not s or s == "null":
-                return False
-            if "/" in s:
-                return False
-            if _re.fullmatch(r"[A-Z]{2}", s):   # bare ISO-2 codes
-                return False
-            if len(s) > 30:
-                return False
-            return True
-
-        def _plausible_lifecycle_states(states: list) -> bool:
-            """Reject columns whose states look like descriptions, not process stages."""
-            valid = [s for s in states if _valid_lifecycle_state(s)]
-            if not valid:
-                return False
-            avg_len = sum(len(s) for s in valid) / len(valid)
-            avg_words = sum(len(s.split()) for s in valid) / len(valid)
-            return avg_len <= 15 and avg_words <= 2
+        from aughor.ontology.lifecycle_states import is_lifecycle_state, plausible_lifecycle_states
 
         lifecycle_maps: dict = state.get("lifecycle_maps", {})
         if lifecycle_maps:
@@ -346,16 +324,18 @@ def _apply_explorer_to_ontology(graph, connection_id: str) -> None:
                         if not col:
                             break
                         raw_states = lm.get("states", [])
-                        if not _plausible_lifecycle_states(raw_states):
+                        if not plausible_lifecycle_states(raw_states):
                             # Explorer found something that looks like a
                             # description column (KPI names, formula strings,
                             # etc.) — skip silently.
                             break
                         entity.has_lifecycle     = True
                         entity.lifecycle_column  = col
-                        entity.lifecycle_states  = [s for s in raw_states if _valid_lifecycle_state(s)]
-                        entity.terminal_states   = lm.get("terminal_states", entity.terminal_states)
-                        terminal = lm.get("terminal_states", [])
+                        entity.lifecycle_states  = [s for s in raw_states if is_lifecycle_state(s)]
+                        # A stored terminal state is held to the same rule: one that is a document,
+                        # not a state, must not reach the entity's active filter.
+                        terminal = [s for s in lm.get("terminal_states", entity.terminal_states) if is_lifecycle_state(s)]
+                        entity.terminal_states   = terminal
                         if terminal:
                             tl = ", ".join(f"'{s}'" for s in terminal)
                             entity.active_filter = f"{col} NOT IN ({tl})"

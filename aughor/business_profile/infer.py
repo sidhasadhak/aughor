@@ -212,6 +212,11 @@ def cap_schema(schema: str, limit: int) -> str:
     if not blocks:
         return schema[:limit] + f"\n… [schema truncated at {limit:,} chars by the Curator's " \
                                 f"'{_LIMIT_LABEL}' limit]"
+    # The text around the tables (annotations appended after them, a preamble) is budgeted
+    # too: it used to be kept whole, so a 3.2M-char annotation passed a 60k cap untouched
+    # (LuxExperience, 2026-10-12). Each part gets at most a quarter of the limit, no line in
+    # it more than _LINE_MAX chars, and each cut says so.
+    pre, trailer = _bounded(pre, limit // 4), _bounded(trailer, limit // 4)
 
     def _rows(b: str) -> int:
         m = _ROWS_RE.search(b.splitlines()[0])
@@ -249,6 +254,29 @@ def cap_schema(schema: str, limit: int) -> str:
     if trailer.strip():
         parts.append(trailer.strip("\n"))
     return "\n\n".join(parts)
+
+
+#: The longest line kept whole in the text around the tables; a longer one is a value dumped
+#: into an annotation, never something the model needs in full.
+_LINE_MAX = 500
+
+
+def _bounded(text: str, budget: int) -> str:
+    """`text` with each line over `_LINE_MAX` chars cut, and the whole cut at a line boundary
+    to `budget` chars; every cut is said where it happened. Unchanged when nothing is over."""
+    cut_line = f" … [line cut at {_LINE_MAX} chars]"
+    lines = [ln if len(ln) <= _LINE_MAX else ln[:_LINE_MAX] + cut_line for ln in text.split("\n")]
+    out = "\n".join(lines)
+    if len(out) <= budget:
+        return out
+    said = f"… [annotations cut at {budget:,} chars by the Curator's '{_LIMIT_LABEL}' limit]"
+    kept, used = [], len(said) + 1
+    for ln in lines:
+        if used + len(ln) + 1 > budget:
+            break
+        kept.append(ln)
+        used += len(ln) + 1
+    return "\n".join(kept + [said])
 
 
 def infer_business_profile(connection_id: str,

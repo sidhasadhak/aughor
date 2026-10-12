@@ -39,6 +39,7 @@ from aughor.explorer.models import (
     NullMeaningResult,
 )
 from aughor.explorer import store as _store
+from aughor.ontology.lifecycle_states import is_lifecycle_state, plausible_lifecycle_states
 from aughor.explorer.frontier import signature_fields
 from aughor.util.format import rows_for_prompt, round_long_decimals
 from aughor.explorer.episodes import EpisodeCollector
@@ -1780,7 +1781,9 @@ class SchemaExplorer:
             if not rows:
                 continue
 
-            states = [str(r[0]) for r in rows]
+            states = _lifecycle_states(rows)
+            if states is None:
+                continue
             terminal, active = _classify_states(states)
 
             # Try to extract transitions via self-join if PK + timestamp exist
@@ -4691,20 +4694,31 @@ def _build_domain_passes(domain_entities, multi_dataset, entity_ds):
 
 
 def _find_status_col(col_map: dict) -> Optional[str]:
-    """Return the most likely lifecycle/status column in a table's column map."""
+    """Return the most likely lifecycle/status column in a table's column map.
+
+    Only values that can BE states are matched (ontology/lifecycle_states.py): the match is by
+    substring, and a one-row JSON column whose text contains "complete" otherwise qualifies."""
     for col_name, col_p in col_map.items():
         if (
             col_p.semantic_type == "dimension"
             and col_p.is_low_cardinality
             and col_p.top_values
+            and plausible_lifecycle_states(col_p.top_values)
             and any(
                 v.lower() in _TERMINAL | _ACTIVE
                 or any(s in v.lower() for s in _TERMINAL_SUBS + _ACTIVE_SUBS)
-                for v in col_p.top_values
+                for v in col_p.top_values if is_lifecycle_state(v)
             )
         ):
             return col_name
     return None
+
+
+def _lifecycle_states(rows) -> Optional[list[str]]:
+    """A status column's distinct values that are states, by the one state rule; None when
+    they do not read as a lifecycle (descriptions, documents) — there is then nothing to map."""
+    states = [str(r[0]) for r in rows if is_lifecycle_state(r[0])]
+    return states if plausible_lifecycle_states(states) else None
 
 
 def _classify_states(states: list[str]) -> tuple[list[str], list[str]]:

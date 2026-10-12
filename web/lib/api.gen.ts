@@ -5869,6 +5869,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/{conn_id}/briefing/desk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Briefing Desk
+         * @description The morning paper's three columns — Trends, Gaps, Decide — from what the Record and the metric
+         *     registry already hold (`briefing/desk.py`). A read: no warehouse query, no model call. With a
+         *     range named, its data lag is one of the gaps.
+         */
+        get: operations["read_briefing_desk_exploration__conn_id__briefing_desk_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/{conn_id}/briefing/expected": {
         parameters: {
             query?: never;
@@ -32700,6 +32722,44 @@ export interface operations {
         parameters: {
             query?: {
                 refresh?: boolean;
+                schema?: string | null;
+                workspace_id?: string | null;
+                period?: string | null;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_briefing_desk_exploration__conn_id__briefing_desk_get: {
+        parameters: {
+            query?: {
                 schema?: string | null;
                 workspace_id?: string | null;
                 period?: string | null;

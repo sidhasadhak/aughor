@@ -224,7 +224,7 @@ function DefineKpiCta() {
 }
 
 // ── Live container ──────────────────────────────────────────────────────────────
-export function IndustryKpiStrip({ connectionId, schema, scopeKey, rangeBlock, note }: {
+export function IndustryKpiStrip({ connectionId, schema, scopeKey, rangeBlock, note, onStanding }: {
   connectionId: string; schema?: string;
   /** Passed straight through to the view so KPI chart edits persist per scope. */
   scopeKey?: string;
@@ -234,6 +234,10 @@ export function IndustryKpiStrip({ connectionId, schema, scopeKey, rangeBlock, n
   rangeBlock?: BriefingRangeBlock | null;
   /** BR-9 — "all history, not <range>" while a range is selected; "" on the standing view. */
   note?: string;
+  /** Leads to What we know. Under a range the standing north stars are NOT drawn (the user,
+   *  2026-10-12: everything on a period's screen belongs to that period); a line counts them
+   *  and leads here instead. */
+  onStanding?: () => void;
 }) {
   const [industry, setIndustry] = useState("");
   const [period, setPeriod] = useState("");
@@ -309,6 +313,23 @@ export function IndustryKpiStrip({ connectionId, schema, scopeKey, rangeBlock, n
       </div>
     </div>
   ) : null;
+  if (note && kpis.length > 0) {
+    // A range is on screen: its own measured row only; the all-history north stars are counted.
+    return (
+      <div>
+        {measuredRow}
+        <div data-testid="kpi-strip-elsewhere" className="aug-fs-sm" style={{ color: "var(--t3)", marginBottom: 14 }}>
+          {kpis.length === 1 ? "1 key metric is" : `${kpis.length} key metrics are`} about all history
+          {onStanding ? (
+            <Button variant="ghost" size="xs" onClick={onStanding}
+              style={{ marginLeft: 6, color: "var(--blue4)", fontWeight: 500, fontSize: 12, padding: "2px 6px" }}>
+              in What we know →
+            </Button>
+          ) : " — in What we know."}
+        </div>
+      </div>
+    );
+  }
   if (kpis.length > 0) {
     return (
       <div>

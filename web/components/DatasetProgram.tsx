@@ -195,7 +195,8 @@ function OffSwitch({ connId, schema, table, off, reasons, onChanged }: {
   );
 }
 
-function programLine(ds: DatasetSchema): string[] {
+/** A schema's program in lines — held, reopened, its last run, what it watches, its health. */
+export function programLine(ds: DatasetSchema): string[] {
   const out: string[] = [];
   const p = ds.program;
   if (p.held) out.push(`Held: ${p.held.why}`);

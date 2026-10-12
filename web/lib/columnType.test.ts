@@ -172,7 +172,7 @@ describe("the types this app lets a person choose", () => {
   };
 
   it.each([
-    ["CatalogScreen.tsx", "TYPE_OPTIONS"],
+    ["catalog/CatalogTable.tsx", "TYPE_OPTIONS"],
     ["AddDataPanel.tsx", "CAST_TYPES"],
   ])("%s · %s all classify", (file, name) => {
     const types = listFrom(file, name);
