@@ -161,6 +161,35 @@ def delete_trusted(tq_id: str) -> bool:
     return True
 
 
+def reads_schema(tq: dict, schema: str) -> bool:
+    """Whether a trusted query reads a table of ``schema`` — named so in its statement or in its tables."""
+    from aughor.explorer.scope import dataset_of, tables_in_sql
+    tables = set(tq.get("tables") or [])
+    try:
+        tables |= tables_in_sql(str(tq.get("sql") or ""))
+    except Exception:  # noqa: BLE001 — an unreadable statement keeps the tables it listed
+        pass
+    want = (schema or "").lower()
+    return bool(want) and any(dataset_of(t).lower().split(".")[-1] == want for t in tables)
+
+
+def purge_scope(connection_id: str, schema: str) -> int:
+    """A removed dataset takes its trusted queries: every one of the connection that reads a table of it (the user,
+    2026-10-11: a removal takes everything but the SQL audit log and the model-call log). Measured 2026-10-12: the
+    Workspace's removed `luxexperience` left eleven, and the Briefer kept running one against a schema that was gone.
+    A query naming no schema is the connection's own default's and is kept. Returns how many went."""
+    if not connection_id or not schema:
+        return 0
+    raw = _load_raw()
+    kept = [d for d in raw if not (d.get("connection_id") == connection_id and reads_schema(d, schema))]
+    if len(kept) == len(raw):
+        return 0
+    tmp = _path().with_suffix(".tmp")
+    tmp.write_text(json.dumps(kept, indent=2))
+    tmp.replace(_path())
+    return len(raw) - len(kept)
+
+
 def retrieve_trusted(question: str, connection_id: str, top_k: int = 2,
                      min_score: float = 0.18) -> list[tuple[TrustedQuery, float]]:
     """Top trusted queries whose question overlaps the user's, by token-overlap

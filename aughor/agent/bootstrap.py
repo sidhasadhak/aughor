@@ -207,6 +207,8 @@ def _register_purge_hooks() -> None:
     # …and a removed dataset takes its own: its ontology trees, its indexed documentation, its metrics.
     ph.register_schema_purge_hook("ontology_trees", _ontology_trees_schema)
     ph.register_schema_purge_hook("metrics", _metrics_schema)
+    # …and its trusted queries: a connection's store, each read only by the tables it names (2026-10-12)
+    ph.register_schema_purge_hook("trusted_queries", _trusted_queries_schema)
 
     # investigation-keyed
     ph.register_investigations_purge_hook("evidence", _evidence_inv)
@@ -262,6 +264,11 @@ def _ontology_trees_schema(conn_id, schema):
 def _metrics_schema(conn_id, schema):
     from aughor.semantic.metrics import purge_scope
     return {"metrics": purge_scope(conn_id, schema)}
+
+
+def _trusted_queries_schema(conn_id, schema):
+    from aughor.semantic.trusted_queries import purge_scope
+    return {"trusted_queries": purge_scope(conn_id, schema)}
 
 
 def _watermark_conn(conn_id, org_id):
