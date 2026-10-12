@@ -55,8 +55,9 @@ const SCALE = new Set([11, 12, 13, 14, 15, 18, 22, 28]);
 
 /** One-way ratchet: raw on-scale font-size literals still awaiting an aug-fs-* class.
  *  LOWER this as they are converted; never raise it. 877 → 639 (2026-10-12): it stood 196 above the count when
- *  Settings' four sections were redone to CLARITY, and they took 42 more literals out. */
-const FONT_SIZE_BASELINE = 639;
+ *  Settings' four sections were redone to CLARITY, and they took 42 more literals out. 639 → 554 (2026-10-12): the Data
+ *  Canvas, SQL Editor and Semantic Layer, redone the same day, took 85 more out. */
+const FONT_SIZE_BASELINE = 554;
 
 const RADIUS_RULES = [
   {
