@@ -19,8 +19,8 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { figureNote, fmtReask, orderByReask, rangeScopeNote, rowWords, viewSql, type RangeFigure } from "@/components/BriefingPanel";
-import type { FindingReask } from "@/lib/api";
+import { figureNote, fmtReask, orderByReask, rangeLedger, rangeScopeNote, reasonWords, rowWords, runningNow, viewSql, type RangeFigure } from "@/components/BriefingPanel";
+import type { ExplorerStatus, FindingReask, FindingsReask } from "@/lib/api";
 
 describe("rangeScopeNote (BR-9)", () => {
   it("says nothing on the standing view, where nothing is withheld", () => {
@@ -41,6 +41,63 @@ describe("orderByReask (BR-7)", () => {
     const byId = new Map([r("a", 0.1), r("b", -0.5), r("c", null)]);
     expect(orderByReask([sig("x"), sig("a"), sig("c"), sig("y"), sig("b")], s => s.id, byId).map(s => s.id))
       .toEqual(["b", "a", "c", "x", "y"]);
+  });
+});
+
+describe("rangeLedger — a period lists only what was measured for it (2026-10-12)", () => {
+  const sig = (id: string) => ({ id });
+  const fr = (id: string, rel: number | null): FindingReask => ({ id, domain: "d", grain: "t.c", measure: "n", how: "value",
+    current: 1, previous: 1, rel, rows_current: 1, rows_previous: 1, sql: "" });
+  const reask = (reasked: FindingReask[], apart: { id: string; why: string }[]): FindingsReask => ({
+    covers: "the week 5–11 October", compared_with: "the week before", key: "k", reasked,
+    apart: apart.map(a => ({ ...a, domain: "d" })), capped: 0, duplicates: 0, total: 0, profiled: true, cached: false });
+
+  it("lists the measured findings by their change, and counts the rest with why — never lists them", () => {
+    const out = rangeLedger([sig("x"), sig("a"), sig("y"), sig("b"), sig("z")], s => s.id,
+      reask([fr("a", 0.1), fr("b", -0.5)], [{ id: "x", why: "it kept no SQL" }, { id: "y", why: "it kept no SQL" }]));
+    expect(out.rows.map(s => s.id)).toEqual(["b", "a"]);
+    expect(out.elsewhere).toBe(3);
+    expect(out.reasons).toEqual([["it kept no SQL", 2], ["not measured for this range", 1]]);
+  });
+
+  it("lists nothing when nothing could be measured, and says how many are about all history", () => {
+    const out = rangeLedger([sig("x"), sig("y")], s => s.id, reask([], [{ id: "x", why: "its data has no rows in this range" }]));
+    expect(out.rows).toEqual([]);
+    expect(out.elsewhere).toBe(2);
+  });
+
+  it("counts only this page's findings: another schema's set-aside ids do not inflate the count", () => {
+    const out = rangeLedger([sig("a")], s => s.id, reask([fr("a", 0)], [{ id: "elsewhere:1", why: "it kept no SQL" }]));
+    expect(out).toEqual({ rows: [sig("a")], elsewhere: 0, reasons: [] });
+  });
+});
+
+describe("reasonWords", () => {
+  it("names the two commonest reasons with their counts and counts the rest", () => {
+    expect(reasonWords([["no date on customers", 3], ["no rows in this range", 2], ["kept no SQL", 1], ["x", 1]]))
+      .toBe("3 — no date on customers · 2 — no rows in this range · 2 for other reasons");
+    expect(reasonWords([["kept no SQL", 1]])).toBe("1 — kept no SQL");
+  });
+});
+
+describe("runningNow — the Briefing knows a run before anyone clicks Start (2026-10-12)", () => {
+  const st = (phase: string, extra: Partial<ExplorerStatus> = {}) => ({ phase, paused: false, ...extra }) as ExplorerStatus;
+
+  it("sees the connection's run on ANOTHER schema while this schema reads complete", () => {
+    const run = runningNow(st("complete"), st("join_verification", { per_schema: { gold_finance: "join_verification", luxexperience: "complete" } }), "luxexperience");
+    expect(run).toEqual({ schemas: [["gold_finance", "join_verification"]], here: false });
+  });
+
+  it("marks the page's own schema as the one running", () => {
+    const run = runningNow(st("domain_intel"), st("domain_intel", { per_schema: { luxexperience: "domain_intel", gold_finance: "complete" } }), "luxexperience");
+    expect(run?.here).toBe(true);
+  });
+
+  it("is null when nothing runs, and a paused or interrupted run is not running", () => {
+    expect(runningNow(st("complete"), st("complete"), "s")).toBeNull();
+    expect(runningNow(st("pending"), null, "s")).toBeNull();
+    expect(runningNow(st("domain_intel", { paused: true }), null, "s")).toBeNull();
+    expect(runningNow(null, st("join_verification", { interrupted: true }), "s")).toBeNull();
   });
 });
 

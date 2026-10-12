@@ -19,7 +19,7 @@ import { GuardChip } from "@/components/ui/trust";
  */
 
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
-import { compactNumber, formatDateTime, formatMetricValue, formatTimestamp, formatVariance, normalizeNumberPrecision, pct } from "@/lib/format";
+import { compactNumber, countNoun, formatCount, formatDateTime, formatMetricValue, formatTimestamp, formatVariance, normalizeNumberPrecision, pct } from "@/lib/format";
 import {
   runDirectQuery,
   getDomainInsights,
@@ -855,6 +855,33 @@ export function orderByReask<T>(signals: T[], idOf: (t: T) => string, byId: Map<
   return signals.map((t, i) => ({ t, i, k: rank(t) }))
     .sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.i - b.i)
     .map(x => x.t);
+}
+
+/** Under a range the ledger lists ONLY the findings measured for it — the user, 2026-10-12: "all
+ *  that I see on the screen should belong to that particular period … if one wants to know about
+ *  everything … that person will click on What we know". The rest are not drawn; they are counted,
+ *  with why, so the page says where they went rather than implying there are none. */
+export function rangeLedger<T>(signals: T[], idOf: (t: T) => string, reask: FindingsReask):
+    { rows: T[]; elsewhere: number; reasons: [string, number][] } {
+  const byId = new Map(reask.reasked.map(r => [r.id, r] as const));
+  const rows = orderByReask(signals.filter(t => byId.has(idOf(t))), idOf, byId);
+  const why = new Map(reask.apart.map(a => [a.id, a.why] as const));
+  const counts = new Map<string, number>();
+  for (const t of signals) {
+    if (byId.has(idOf(t))) continue;
+    const w = why.get(idOf(t)) ?? "not measured for this range";
+    counts.set(w, (counts.get(w) ?? 0) + 1);
+  }
+  const reasons = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  return { rows, elsewhere: signals.length - rows.length, reasons };
+}
+
+/** Why findings were not measured for a range, in words: the two commonest reasons with their
+ *  counts ("3 — no date on customers · 2 — its data has no rows …"), the rest counted. */
+export function reasonWords(reasons: [string, number][], top = 2): string {
+  const said = reasons.slice(0, top).map(([w, n]) => `${formatCount(n)} — ${w}`);
+  const rest = reasons.slice(top).reduce((t, [, n]) => t + n, 0);
+  return [...said, ...(rest ? [`${formatCount(rest)} for other reasons`] : [])].join(" · ");
 }
 
 /** A re-asked figure, shown as the range's number: a rate-looking measure in 0..1 as a
@@ -1884,13 +1911,11 @@ export function FindingDetail({
   );
 }
 
-function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, onEvidence, rowRef, vizConfig, onVizConfigChange, range, apart }: {
+function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, onEvidence, rowRef, vizConfig, onVizConfigChange, range }: {
   signal:        SynthesisSignal;
   /** BR-7 — this finding's figure for the range on screen, when it was re-asked; its detail
    *  then opens on the rows that figure is read from. */
   range?:        RangeFigure | null;
-  /** BR-7 — why it could not be re-asked; the row then says it is about all history. */
-  apart?:        string;
   connectionId:  string;
   expanded:      boolean;
   onToggle:      () => void;
@@ -1937,11 +1962,6 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
             </div>
             {fig.sublabel && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fig.sublabel}</div>}
           </>)}
-          {apart && (
-            <div data-testid="ledger-apart" className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--amb4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={apart}>
-              about all history — {apart}
-            </div>
-          )}
         </div>
         {/* chevron */}
         <span aria-hidden style={{ color: "var(--t3)", fontSize: 12, textAlign: "center" }}>{expanded ? "▴" : "▾"}</span>
@@ -1961,13 +1981,13 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
 /** The finding's own id — the key the re-ask (BR-7) and the saved chart display are stored under. */
 const findingId = (s: SynthesisSignal) => s.insight.id;
 
-function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, onEvidence, scrollRef, vizConfigFor, onVizConfigChange, note, reask }: {
+function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, onEvidence, scrollRef, vizConfigFor, onVizConfigChange, onRange, reask }: {
   signals:        SynthesisSignal[];
-  /** BR-9 — "all history, not <range>" when the page is scoped to a range these findings are
-   *  not re-asked for; "" on the standing view. Shown only while no re-ask is on screen. */
-  note?:          string;
+  /** A range is on screen (absent on What we know): the ledger then lists only the findings
+   *  measured for it (`rangeLedger`), says the rest are in What we know, and leads there. */
+  onRange?:       { covers: string; failed: boolean; onStanding: () => void } | null;
   /** BR-7 — the findings re-asked for the range: the ledger then orders by the change and each
-   *  row shows its figure for the range; the ones apart say why, about all history. */
+   *  row shows its figure for the range. */
   reask?:         FindingsReask | null;
   /** The scope chips — drawn on the ledger's own line, after its label. */
   filter?:        ReactNode;
@@ -1984,10 +2004,10 @@ function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, o
   const reaskById  = useMemo(() => new Map((reask?.reasked ?? []).map(r => [r.id, r] as const)), [reask]);
   const rangeFigure = (r: FindingReask | undefined): RangeFigure | null =>
     r && reask ? { reask: r, covers: reask.covers, comparedWith: reask.compared_with } : null;
-  // An id two schemas share can be re-asked in one and apart in the other; the page keys by
-  // id, so the re-asked figure wins and the row never says both.
-  const apartById  = useMemo(() => new Map((reask?.apart ?? []).filter(a => !reaskById.has(a.id)).map(a => [a.id, a.why] as const)), [reask, reaskById]);
-  const signals    = useMemo(() => (reask ? orderByReask(given, findingId, reaskById) : given), [given, reask, reaskById]);
+  // Under a range: only what was measured for it, by the size of its change; nothing listed
+  // until the measuring answers. On What we know: every finding, in its standing order.
+  const ranged     = useMemo(() => (onRange && reask ? rangeLedger(given, findingId, reask) : null), [onRange, reask, given]);
+  const signals    = useMemo(() => (onRange ? (ranged?.rows ?? []) : given), [onRange, ranged, given]);
   const [shown, setShown]           = useState(LEDGER_DEFAULT);
   const [expandedId, setExpandedId] = useState<string | null>(null);   // one row open at a time
   const [jumpOpen, setJumpOpen]     = useState(false);
@@ -2019,7 +2039,7 @@ function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, o
 
   // Under a scope chip the list can be empty (its findings are the verdict and the moved
   // numbers above), and the line must still render: it carries the chip that leads back out.
-  if (signals.length === 0 && !filter) return null;
+  if (signals.length === 0 && !filter && !onRange) return null;
   const top = signals.slice(0, shown);
   const remaining = signals.length - top.length;
   const domainsInList = [...new Set(signals.map(s => s.domain))];
@@ -2037,8 +2057,19 @@ function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, o
         {filter}
       </div>
       {signals.length === 0 ? (
-        <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: "4px 2px" }}>
-          Every finding in this scope is already shown above.
+        <div data-testid="ledger-range-empty" className="aug-fs-sm" style={{ color: "var(--t3)", padding: "4px 2px" }}>
+          {!onRange ? "Every finding in this scope is already shown above."
+            : !reask && !onRange.failed ? `Measuring the findings for ${onRange.covers}…`
+            : !reask ? `The findings could not be measured for ${onRange.covers} just now. ` +
+                       `${countNoun(given.length, "finding")} about all history ${given.length === 1 ? "is" : "are"} in What we know.`
+            : `No finding could be measured for ${onRange.covers}. ` +
+              (ranged && ranged.elsewhere ? `${ranged.elsewhere === 1 ? "The 1 finding is" : `All ${formatCount(ranged.elsewhere)} are`} about all history: ${reasonWords(ranged.reasons)}.` : "")}
+          {onRange && (reask || onRange.failed) && given.length > 0 && (
+            <Button variant="ghost" size="xs" data-testid="ledger-to-standing" onClick={onRange.onStanding}
+              style={{ marginLeft: 8, color: "var(--blue4)", fontWeight: 500, fontSize: 12, padding: "2px 6px" }}>
+              What we know →
+            </Button>
+          )}
         </div>
       ) : (
         <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
@@ -2052,7 +2083,7 @@ function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, o
                 rowRef={el => { if (el) rowRefs.current.set(ident, el); else rowRefs.current.delete(ident); }}
                 vizConfig={vizConfigFor?.(findingId(sig)) ?? null}
                 onVizConfigChange={onVizConfigChange ? c => onVizConfigChange(findingId(sig), c) : undefined}
-                range={rangeFigure(reaskById.get(findingId(sig)))} apart={apartById.get(findingId(sig))} />
+                range={rangeFigure(reaskById.get(findingId(sig)))} />
             );
           })}
           {/* footer — Show next N · count · jump to domain (replaces the removed sticky nav rail) */}
@@ -2067,13 +2098,18 @@ function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, o
                 used to say "novelty" alone. */}
             <span style={{ color: "var(--t3)" }} data-testid="ledger-footer">
               · {Math.min(shown, signals.length)} of {signals.length}
-              {reask
-                ? ` · re-asked for ${reask.covers} · ranked by the change against ${reask.compared_with}` +
-                  (reask.apart.length ? ` · ${reask.apart.length} about all history` : "") +
-                  (reask.capped ? ` · ${reask.capped} not re-asked (cap)` : "")
+              {reask && onRange
+                ? ` · measured for ${reask.covers} · ranked by the change against ${reask.compared_with}` +
+                  (reask.capped ? ` · ${reask.capped} not measured (cap)` : "")
                 : " · ranked by impact, else novelty"}
-              {!reask && note ? <span style={{ color: "var(--amb4)" }}>{` · ${note}`}</span> : null}
             </span>
+            {onRange && ranged && ranged.elsewhere > 0 && (
+              <Button variant="ghost" size="xs" data-testid="ledger-to-standing" onClick={onRange.onStanding}
+                title={reasonWords(ranged.reasons, 99)}
+                style={{ color: "var(--blue4)", fontWeight: 500, fontSize: 12, padding: "2px 6px" }}>
+                {formatCount(ranged.elsewhere)} more about all history in What we know →
+              </Button>
+            )}
             <div style={{ marginLeft: "auto", position: "relative" }}>
               <Button variant="ghost" size="xs" onClick={() => setJumpOpen(o => !o)}
                 style={{ color: "var(--t3)", fontSize: 12, padding: "2px 6px" }}>
@@ -2245,6 +2281,43 @@ function emptyReason(status: ExplorerStatus | null): EmptyReason {
     return { kind: "completeEmpty", insights: status.insights_found };
   }
   return { kind: "running", queries: status.queries_executed, insights: status.insights_found, phase };
+}
+
+const IDLE_PHASES = new Set(["", "pending", "complete", "failed"]);
+
+/** What is exploring this connection now, from the schema's status and the connection's: the
+ *  schemas mid-run (with their phase words), and whether this page's own
+ *  schema is among them. Null when nothing is — paused and interrupted runs are not running. */
+export function runningNow(scoped: ExplorerStatus | null, conn: ExplorerStatus | null, schema?: string):
+    { schemas: [string, string][]; here: boolean } | null {
+  const live = (st: ExplorerStatus | null) => !!st && !st.paused && !st.interrupted && !IDLE_PHASES.has(String(st.phase ?? ""));
+  const here = live(scoped);
+  if (!here && !live(conn)) return null;
+  const per = Object.entries(conn?.per_schema ?? {}).filter(([, ph]) => !IDLE_PHASES.has(ph));
+  const schemas: [string, string][] = per.length ? per
+    : [[schema ?? "", String((here ? scoped : conn)!.phase)]];
+  return { schemas, here: here || per.some(([sch]) => sch === schema) };
+}
+
+/** The notice a running exploration puts on the Briefing — said before anyone clicks, so the
+ *  controls it makes pointless are not tried (the user, 2026-10-12: a red "already running" after
+ *  a click is the wrong way to learn it). */
+function RunningNotice({ run }: { run: NonNullable<ReturnType<typeof runningNow>> }) {
+  const where = run.schemas.map(([sch, ph]) => `${sch ? `${sch}: ` : ""}${PHASE_LABELS[ph] ?? ph.replace(/_/g, " ")}`).join(" · ");
+  return (
+    <div data-testid="briefing-running" role="status"
+      style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 16px", padding: "10px 14px",
+               background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
+      <span aria-hidden className="aug-dot aug-dot-live" style={{ width: 7, height: 7, flex: "none" }} />
+      <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 500 }}>Exploring now</span>
+      <span className="aug-fs-sm" style={{ color: "var(--t2)", minWidth: 0 }}>
+        {where}
+      </span>
+      <span className="aug-fs-sm" style={{ color: "var(--t3)", marginLeft: "auto" }}>
+        {run.here ? "This page updates as it goes. " : ""}Start and Refresh wait until it finishes.
+      </span>
+    </div>
+  );
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -2521,6 +2594,8 @@ export function BriefingPanel({
   // BR-7 — the findings re-asked for the range on screen, keyed by that range so a stale
   // answer never renders under a newer heading; null on the standing view.
   const [reaskFor, setReaskFor]             = useState<{ key: string; data: FindingsReask } | null>(null);
+  // The range whose findings could not be measured (the read failed) — said, never read as "none".
+  const [reaskFailedFor, setReaskFailedFor] = useState<string | null>(null);
   const range = useMemo<RangeChoice>(
     () => chosen ?? (rangesOn ? { preset: "yesterday" } : { preset: "standing" }), [chosen, rangesOn]);
   useEffect(() => {
@@ -2546,6 +2621,10 @@ export function BriefingPanel({
   // ahead, or a StrictMode double-invoke) resolve out of order — the stale one is discarded.
   const reqSeq = useRef(0);
   const [explorerStatus, setExplorerStatus]   = useState<ExplorerStatus | null>(null);
+  // The CONNECTION's run, read beside the schema's: a multi-schema connection explores its
+  // schemas one after another, so a schema's own status reads "complete" while the connection
+  // is busy on another — and Start then met "already running" (2026-10-12).
+  const [connStatus, setConnStatus]           = useState<ExplorerStatus | null>(null);
   const [explorerBusy, setExplorerBusy]       = useState(false);
   const [explorerError, setExplorerError]     = useState<string | null>(null);
   // The label of the action dispatched but not yet VISIBLE in the status ("Starting…").
@@ -2706,6 +2785,9 @@ export function BriefingPanel({
       if (res.ok !== false) return false;
       const failed = res.results?.find(r => !r.ok);
       const reason = res.reason ?? failed?.reason;
+      // A run is already going: nothing failed. Read the status again, and the running notice
+      // says what is going on instead of a red chip.
+      if (/already running/i.test(reason ?? "")) { setExplorerError(null); void pollRef.current(); return true; }
       const scope = failed?.schema ? `[${failed.schema}] ` : "";
       setExplorerError(reason ? `${scope}${reason}` : fallback);
       return true;
@@ -2742,6 +2824,10 @@ export function BriefingPanel({
    *  has a body of work worth extending — and "is there anything here at all" is the
    *  question these controls actually turn on. */
   const hasFindings = (explorerStatus?.facts_discovered ?? 0) > 0;
+  // Is anything exploring this connection right now — this schema or another of its schemas?
+  // While it is, Start / Trigger Intel / Refresh / Restart can only be refused, so they are not
+  // offered; the running notice says what is going on, and Stop stays.
+  const run = runningNow(explorerStatus, connStatus, schema);
 
   const runTriggerIntel = useCallback(async () => {
     if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
@@ -2828,8 +2914,13 @@ export function BriefingPanel({
     // instead of firing one poll that races the backend and loses.
     const poll = () => {
       const req = canvasId ? getCanvasExplorationStatus(canvasId) : getExplorerStatus(connectionId, schema);
+      if (!canvasId && schema) {
+        getExplorerStatus(connectionId)
+          .then(s => { if (mounted) setConnStatus(s); })
+          .catch(() => { if (mounted) setConnStatus(null); });
+      }
       return req
-        .then(s => { if (mounted) setExplorerStatus(s); return s; })
+        .then(s => { if (mounted) { setExplorerStatus(s); if (canvasId || !schema) setConnStatus(s); } return s; })
         .catch(() => { if (mounted) setExplorerStatus(null); return null; });
     };
     pollRef.current = poll;   // let the action handlers refresh status immediately
@@ -2943,16 +3034,15 @@ export function BriefingPanel({
   // headline, and unscoped — a tile stays on screen under a scope chip, so its ledger row would
   // still be the duplicate.
   const moverIdents    = useMemo(() => new Set(movers.map(m => m.ident)), [movers]);
-  const scopedSignals  = !briefing
+  // Every finding in scope, each with its identity — the pool both views' lists are cut from.
+  const scopePool      = !briefing
     ? []
     : dedupeSignals(
         scopeDomain
           ? briefing.allSignals.filter(s => s.domain === scopeDomain)
           : [...briefing.signals, ...briefing.allSignals],
-      ).filter(s => {
-        const ident = signalIdentity(s.insight);
-        return ident !== headlineIdent && !moverIdents.has(ident);
-      });
+      ).map(s => ({ s, ident: signalIdentity(s.insight) }));
+  const scopedSignals  = scopePool.filter(x => x.ident !== headlineIdent && !moverIdents.has(x.ident)).map(x => x.s);
   const scopedPatterns = !briefing
     ? []
     : scopeDomain
@@ -2980,7 +3070,7 @@ export function BriefingPanel({
     let alive = true;
     getFindingsReask(connectionId, range, schema, workspaceId)
       .then(data => { if (alive) setReaskFor({ key: rangeKey, data }); })
-      .catch(() => { /* the ledger then stays in its standing order, under the scope note */ });
+      .catch(() => { if (alive) setReaskFailedFor(rangeKey); });
     return () => { alive = false; };
   }, [rangeSelected, connectionId, schema, range, rangeKey]);
   const reask          = rangeSelected && reaskFor && reaskFor.key === rangeKey ? reaskFor.data : null;
@@ -3026,6 +3116,14 @@ export function BriefingPanel({
     scored.sort((a, b) => b.size - a.size);
     return scored.slice(0, 6).map(x => x.tile);
   }, [movers, reask]);
+
+  // The ledger's pool. On What we know: every finding but the headline and the moved numbers
+  // shown above it. Under a range those two are NOT on screen — the range's own re-asked tiles
+  // are — so the pool is every finding but those tiles; leaving the standing exclusion in place
+  // dropped the headline and the movers from the range's page and from its count (2026-10-12).
+  const rangeTileIdents = new Set(rangeMovers.map(m => m.ident));
+  const ledgerSignals   = !rangeSelected ? scopedSignals
+    : scopePool.filter(x => !rangeTileIdents.has(x.ident)).map(x => x.s);
 
   // Saved chart display per finding, for every card-less chart in the brief (ledger rows and
   // moved-number tile details). Scoped exactly like the narrative, so one schema's edits never show
@@ -3102,7 +3200,7 @@ export function BriefingPanel({
           </span>
         )}
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          {(!explorerStatus || explorerStatus.phase === "complete" || explorerStatus.phase === "pending" || explorerStatus.phase === "failed") ? (
+          {!run && (!explorerStatus || explorerStatus.phase === "complete" || explorerStatus.phase === "pending" || explorerStatus.phase === "failed") ? (
             <>
               {/* "Start" only when starting is the honest verb — nothing has run yet.
                   A completed run already has findings on screen behind these controls,
@@ -3148,16 +3246,10 @@ export function BriefingPanel({
               )}
             </>
           ) : (
-            <>
-              <Button
-                variant="secondary" size="xs"
-                disabled={controlsLocked} onClick={runStop}
-              >{explorerPending === "Stopping…" ? "Stopping…" : "Stop"}</Button>
-              <Button
-                variant="secondary" size="xs"
-                disabled={controlsLocked} onClick={runRefresh}
-              >{explorerPending === "Refreshing…" ? "Refreshing…" : "Restart"}</Button>
-            </>
+            <Button
+              variant="secondary" size="xs"
+              disabled={controlsLocked} onClick={runStop}
+            >{explorerPending === "Stopping…" ? "Stopping…" : "Stop"}</Button>
           )}
           {!rangesOn && periodsOn && !canvasId && (
             <PeriodSwitch value={period} onChange={setPeriod} disabled={narrativeLoading} />
@@ -3171,6 +3263,7 @@ export function BriefingPanel({
         </div>
       </div>
 
+      {run && !canvasId && <RunningNotice run={run} />}
       {showSchedule && <BriefSchedule connId={connectionId} />}
       {sectionsOpen && (
         <BriefingSections pref={sections} onChange={(next, said) => void saveSections(next, said)}
@@ -3287,11 +3380,6 @@ export function BriefingPanel({
         </div>
       )}
 
-      {rangeBlock && (
-        <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>
-          Below: what we know — every finding the platform has recorded, not only {rangeBlock.covers}.
-        </div>
-      )}
         </>
       );
       case "key_metrics": return (
@@ -3299,13 +3387,16 @@ export function BriefingPanel({
               card to expand its trend. Under the brief and above its findings. Renders a
               define-CTA (not nothing) when none are set. */
         <IndustryKpiStrip connectionId={connectionId} schema={schema} scopeKey={narrativeScope}
-          rangeBlock={rangeBlock} note={scopeNote} />
+          rangeBlock={rangeBlock} note={scopeNote} onStanding={() => setRange({ preset: "standing" })} />
       );
       case "findings": return (
         /* ── Findings ── the bulletin ledger: one scannable row per finding, chart on expand,
             impact-ordered; the scope chips (focus signals + patterns on one domain) share its
             line. Keyed by scope so it resets on a scope change. */
-        <FindingsLedger key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId} note={scopeNote} reask={reask}
+        <FindingsLedger key={scopeDomain ?? "all"} signals={ledgerSignals} connectionId={connectionId} reask={reask}
+          onRange={rangeSelected ? { covers: rangeBlock?.covers ?? reask?.covers ?? "this range",
+                                     failed: reaskFailedFor === rangeKey && !reask,
+                                     onStanding: () => setRange({ preset: "standing" }) } : null}
           // Nothing to scope when the brief spans a single domain.
           filter={briefing!.domains.length > 1
             ? <ScopeChips domains={briefing!.domains} total={briefing!.totalInsights} active={scopeDomain} onChange={setScope} />

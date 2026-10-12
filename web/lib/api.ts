@@ -8011,6 +8011,8 @@ export interface ExplorerStatus {
   domain_intel_note?: string | null;
   /** {schema: phase} for the 'All schemas' aggregate of a multi-schema connection. */
   per_schema?: Record<string, string> | null;
+  /** The run stopped mid-phase and nothing is running it: its phase is where it stopped. */
+  interrupted?: boolean;
 }
 
 export async function getExplorerStatus(connectionId: string, schema?: string): Promise<ExplorerStatus> {
