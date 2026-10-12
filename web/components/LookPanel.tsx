@@ -9,9 +9,14 @@
  * page paints as it was left, and in the person's settings so it follows them.
  *
  * The chart palette does not move: a chart's colours are data.
+ *
+ * Drawn as one card (Settings ▸ Appearance, redone to `aughor-v2/CLARITY.md`): a row per knob, the way back to the
+ * default at the label's right end, and the one line that says where the choice is kept.
  */
 import { SegmentedControl } from "@radix-ui/themes";
+import type { ReactNode } from "react";
 
+import { Card } from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { putMyPreference } from "@/lib/api";
@@ -55,39 +60,45 @@ function Swatches<T extends string>({ label, values, chosen, onChoose, neutral }
   );
 }
 
+/** One knob: its name in the left column, its control beside it. */
+function Knob({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "72px minmax(0, 1fr)", gap: 12, alignItems: "center" }}>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{name}</span>
+      <div style={{ minWidth: 0 }}>{children}</div>
+    </div>
+  );
+}
+
 export function LookPanel() {
   const look = useLook();
   const isDefault = LOOK_KEYS.every(key => look[key] === DEFAULT_LOOK[key]);
   return (
-    <div data-testid="look-panel" style={{ display: "grid", gap: 20 }}>
-      <div>
-        <div className="aug-label" style={{ marginBottom: 10 }}>Accent</div>
-        <Swatches label="Accent" values={ACCENTS} chosen={look.accent} onChoose={accent => chooseLook({ accent })} />
+    <Card label="Look" testId="look-panel"
+      right={!isDefault && <Button variant="outline" size="xs" onClick={() => chooseLook(DEFAULT_LOOK)}>Back to the default</Button>}>
+      <div style={{ display: "grid", gap: 14 }}>
+        <Knob name="Accent">
+          <Swatches label="Accent" values={ACCENTS} chosen={look.accent} onChoose={accent => chooseLook({ accent })} />
+        </Knob>
+        <Knob name="Grey">
+          <Swatches label="Grey" values={GREYS} chosen={look.grey} onChoose={grey => chooseLook({ grey })} neutral="gray" />
+        </Knob>
+        <Knob name="Corners">
+          <SegmentedControl.Root size="1" value={look.radius} aria-label="Corners"
+            onValueChange={value => chooseLook({ radius: value as Radius })}>
+            {RADII.map(value => <SegmentedControl.Item key={value} value={value}>{RADIUS_WORD[value]}</SegmentedControl.Item>)}
+          </SegmentedControl.Root>
+        </Knob>
+        <Knob name="Scaling">
+          <SegmentedControl.Root size="1" value={look.scaling} aria-label="Scaling"
+            onValueChange={value => chooseLook({ scaling: value as Look["scaling"] })}>
+            {SCALINGS.map(value => <SegmentedControl.Item key={value} value={value}>{value}</SegmentedControl.Item>)}
+          </SegmentedControl.Root>
+        </Knob>
       </div>
-      <div>
-        <div className="aug-label" style={{ marginBottom: 10 }}>Grey</div>
-        <Swatches label="Grey" values={GREYS} chosen={look.grey} onChoose={grey => chooseLook({ grey })} neutral="gray" />
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 12 }}>
+        Kept for you, in this browser and wherever you sign in. Charts keep their own colours.
       </div>
-      <div>
-        <div className="aug-label" style={{ marginBottom: 10 }}>Corners</div>
-        <SegmentedControl.Root size="1" value={look.radius} aria-label="Corners"
-          onValueChange={value => chooseLook({ radius: value as Radius })}>
-          {RADII.map(value => <SegmentedControl.Item key={value} value={value}>{RADIUS_WORD[value]}</SegmentedControl.Item>)}
-        </SegmentedControl.Root>
-      </div>
-      <div>
-        <div className="aug-label" style={{ marginBottom: 10 }}>Scaling</div>
-        <SegmentedControl.Root size="1" value={look.scaling} aria-label="Scaling"
-          onValueChange={value => chooseLook({ scaling: value as Look["scaling"] })}>
-          {SCALINGS.map(value => <SegmentedControl.Item key={value} value={value}>{value}</SegmentedControl.Item>)}
-        </SegmentedControl.Root>
-      </div>
-      <div className="aug-fs-sm" style={{ color: "var(--t3)", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <span>Kept for you, in this browser and wherever you sign in. Charts keep their own colours.</span>
-        {!isDefault && (
-          <Button variant="outline" size="sm" onClick={() => chooseLook(DEFAULT_LOOK)}>Back to the default</Button>
-        )}
-      </div>
-    </div>
+    </Card>
   );
 }

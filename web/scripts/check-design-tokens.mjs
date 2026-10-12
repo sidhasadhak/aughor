@@ -54,8 +54,9 @@ const OUT_OF_SCOPE = ["components/charts/vega"];
 const SCALE = new Set([11, 12, 13, 14, 15, 18, 22, 28]);
 
 /** One-way ratchet: raw on-scale font-size literals still awaiting an aug-fs-* class.
- *  LOWER this as they are converted; never raise it. */
-const FONT_SIZE_BASELINE = 877;
+ *  LOWER this as they are converted; never raise it. 877 → 639 (2026-10-12): it stood 196 above the count when
+ *  Settings' four sections were redone to CLARITY, and they took 42 more literals out. */
+const FONT_SIZE_BASELINE = 639;
 
 const RADIUS_RULES = [
   {

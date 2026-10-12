@@ -11,20 +11,24 @@
  *
  * Saving can drop stored business profiles whose industry now resolves differently; each is rebuilt,
  * with a model call, the next time its data is used, and the section says how many.
+ *
+ * A card on the ground (CLARITY): the choice, and one line on what it means. `onChoice` hands the saved choice up,
+ * so the Organization figures say what is read without reading it twice.
  */
 import { useEffect, useState } from "react";
 import { getIndustryChoice, updateIndustryChoice, type IndustryChoice } from "@/lib/api";
+import { Card } from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Radio } from "@/components/ui/checkbox";
 
-// Sizes come from the aug-fs-* classes (the design-token gate holds raw font sizes where they are).
-const hintStyle: React.CSSProperties = { color: "var(--t3)", marginTop: 6 };
+import { Note, SaveLine } from "./settings/parts";
+
 const optionStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, cursor: "pointer" };
 
 const sameIds = (a: string[] | null, b: string[] | null) =>
   a === null || b === null ? a === b : [...a].sort().join(",") === [...b].sort().join(",");
 
-export function OrgIndustriesSection() {
+export function OrgIndustriesSection({ onChoice, id }: { onChoice?: (c: IndustryChoice) => void; id?: string }) {
   const [choice, setChoice] = useState<IndustryChoice | null>(null);
   const [every, setEvery] = useState(true);
   const [kept, setKept] = useState<string[]>([]);
@@ -36,6 +40,7 @@ export function OrgIndustriesSection() {
     setChoice(c);
     setEvery(c.industries === null);
     setKept(c.industries ?? c.shipped.map((i) => i.id));
+    onChoice?.(c);
   };
 
   useEffect(() => {
@@ -73,50 +78,50 @@ export function OrgIndustriesSection() {
   };
 
   return (
-    <div>
-      <div className="aug-label" style={{ marginBottom: 10 }}>Industries</div>
-      <div role="radiogroup" aria-label="Industries" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <label className="aug-fs-sm" style={optionStyle}>
-          <Radio name="industries" checked={every} onChange={() => pick(true)} style={{ cursor: "pointer" }} />
-          Every industry
-        </label>
-        <label className="aug-fs-sm" style={optionStyle}>
-          <Radio name="industries" checked={!every} onChange={() => pick(false)} style={{ cursor: "pointer" }} />
-          Only these
-        </label>
-      </div>
-      {!every && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 10, paddingLeft: 22 }}>
-          {choice.shipped.map((industry) => (
-            <label key={industry.id} className="aug-fs-sm" style={optionStyle} title={industry.description || undefined}>
-              <Checkbox
-                checked={kept.includes(industry.id)}
-                onChange={(e) => toggle(industry.id, e.target.checked)}
-                style={{ cursor: "pointer" }}
-              />
-              {industry.name}
-            </label>
-          ))}
+    <div id={id} style={{ minWidth: 0 }}>
+      <Card label="Industries" testId="org-industries">
+        <div role="radiogroup" aria-label="Industries" style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+          <label className="aug-fs-sm" style={optionStyle}>
+            <Radio name="industries" checked={every} onChange={() => pick(true)} style={{ cursor: "pointer" }} />
+            Every industry
+          </label>
+          <label className="aug-fs-sm" style={optionStyle}>
+            <Radio name="industries" checked={!every} onChange={() => pick(false)} style={{ cursor: "pointer" }} />
+            Only these
+          </label>
         </div>
-      )}
-      <div className="aug-fs-xs" style={hintStyle}>
-        {every
-          ? "Aughor reads every industry package and works out each connection's industry from its data."
-          : kept.length === 0
-            ? "No industry package: every connection uses only the knowledge all industries share."
-            : "A connection whose industry is not ticked uses only the knowledge all industries share."}
-      </div>
-      {choice.ignored.length > 0 && (
-        <div className="aug-fs-xs" style={hintStyle}>Ignored, because no package carries it: {choice.ignored.join(", ")}</div>
-      )}
-      {choice.problem && <div className="aug-fs-xs" style={hintStyle}>{choice.problem}</div>}
-      {error && <div className="aug-fs-xs" style={{ ...hintStyle, color: "var(--red4)" }}>{error}</div>}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
-        <Button variant="secondary" size="sm" onClick={save} disabled={saving || !changed}>
-          {saving ? "Saving…" : "Save industries"}
-        </Button>
-        {note && !saving && <span className="aug-fs-xs" style={{ color: "var(--grn4)" }}>{note}</span>}
-      </div>
+        {!every && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, marginTop: 10 }}>
+            {choice.shipped.map((industry) => (
+              <label key={industry.id} className="aug-fs-sm" style={optionStyle} title={industry.description || undefined}>
+                <Checkbox
+                  checked={kept.includes(industry.id)}
+                  onChange={(e) => toggle(industry.id, e.target.checked)}
+                  style={{ cursor: "pointer" }}
+                />
+                {industry.name}
+              </label>
+            ))}
+          </div>
+        )}
+        <Note>
+          {every
+            ? "Aughor reads every industry package and works out each connection's industry from its data."
+            : kept.length === 0
+              ? "No industry package: every connection uses only the knowledge all industries share."
+              : "A connection whose industry is not ticked uses only the knowledge all industries share."}
+        </Note>
+        {choice.ignored.length > 0 && (
+          <Note tone="amber">Ignored, because no package carries it: {choice.ignored.join(", ")}</Note>
+        )}
+        {choice.problem && <Note tone="amber">{choice.problem}</Note>}
+        <SaveLine error={error}>
+          <Button variant="secondary" size="sm" onClick={save} disabled={saving || !changed}>
+            {saving ? "Saving…" : "Save industries"}
+          </Button>
+          {note && !saving && <span className="aug-fs-xs" style={{ color: "var(--grn4)" }}>{note}</span>}
+        </SaveLine>
+      </Card>
     </div>
   );
 }

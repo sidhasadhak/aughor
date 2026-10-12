@@ -8,6 +8,12 @@
  * value wins over the app default; a blank field inherits it). A set currency/industry
  * is in turn authoritative over what Aughor infers per connection (override-wins),
  * which is why blank = "use the inferred value".
+ *
+ * Redone to `aughor-v2/CLARITY.md` (2026-10-12): four figures first — the industries read, this quarter's
+ * priorities, the owners the platform can reach, the Explorer's monthly budget — then what needs a person (an owner
+ * nobody can reach), then the form as cards: what the one Save below them writes, then the sections that save
+ * themselves (industries, the playbook, the agent policy, the organisation's own keys). The owners' list is its own
+ * panel under this one (`OwnersPanel`); a link there is announced, and the figure and "Needs you" follow it.
  */
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -15,22 +21,30 @@ import {
   getEffectiveSettings,
   getOrgSettings,
   getWorkspace,
+  listOwners,
   updateOrgSettings,
   updateWorkspace,
+  type IndustryChoice,
   type OrgSettings,
+  type OwnerEntry,
 } from "@/lib/api";
 import { setOrgSettingsCache } from "@/lib/orgSettings";
 import { CHART_PALETTE_NAMES, chartPaletteLabel } from "@/lib/chartPalettes";
+import { compactNumber, formatCount } from "@/lib/format";
+import { Card, Chip, Figure, Figures, NeedsRow, NeedsYou, ONE_LINE, ROW } from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
 import { OrgByokSection } from "@/components/OrgByokSection";
 import { AgentPolicySection } from "@/components/AgentPolicySection";
 import { OrgIndustriesSection } from "@/components/OrgIndustriesSection";
 import { OrgPlaybookSection } from "@/components/OrgPlaybookSection";
 import { OrgPrioritiesSection } from "@/components/OrgPrioritiesSection";
+import { OWNERS_CHANGED, usesLabel } from "@/components/OwnersPanel";
 import { Loading } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+
+import { Details, FIELDS, Field, Note, Pair, SaveLine, Stack, goTo, plural } from "./settings/parts";
 
 const EMPTY: OrgSettings = {
   company_name: "", website: "", hq_location: "", industry: "",
@@ -50,13 +64,13 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const labelStyle: React.CSSProperties = { fontSize: 11, color: "var(--t3)", marginBottom: 4, display: "block" };
-const hintStyle: React.CSSProperties = { fontSize: 11, color: "var(--t3)", marginTop: 6 };
-const gridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 };
+const same = (a: OrgSettings, b: OrgSettings) => JSON.stringify(a) === JSON.stringify(b);
 
 export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?: string; workspaceName?: string }) {
   const [scope, setScope] = useState<"app" | "workspace">("app");
   const [s, setS] = useState<OrgSettings>(EMPTY);
+  // What the form was loaded with — so the Save line can say an edit is not saved yet.
+  const [loaded, setLoaded] = useState<OrgSettings>(EMPTY);
   const [appDefaults, setAppDefaults] = useState<OrgSettings>(EMPTY);
   const [loading, setLoading] = useState(true);
   // BYOK is a per-ORG override. With a single tenant it can only restate the
@@ -66,6 +80,11 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  // What the figures say, handed up by the section that reads it (the industries), or read here (the owners — their
+  // list is its own panel, and announces a change).
+  const [industries, setIndustries] = useState<IndustryChoice | null>(null);
+  const [owners, setOwners] = useState<OwnerEntry[] | null>(null);
+  const [ownersFailed, setOwnersFailed] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -74,9 +93,10 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
       setAppDefaults(app);
       if (scope === "workspace" && workspaceId) {
         const ws = await getWorkspace(workspaceId);
-        setS({ ...EMPTY, ...((ws.settings_override ?? {}) as Partial<OrgSettings>) });
+        const over = { ...EMPTY, ...((ws.settings_override ?? {}) as Partial<OrgSettings>) };
+        setS(over); setLoaded(over);
       } else {
-        setS(app);
+        setS(app); setLoaded(app);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load settings");
@@ -92,6 +112,17 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
       .then(c => setMultiTenant(!!c.multi_tenant))
       .catch(() => setMultiTenant(false));   // unknown ⇒ hide, never offer a dead control
   }, []);
+
+  const readOwners = useCallback(() => {
+    listOwners()
+      .then(d => { setOwners(d.owners); setOwnersFailed(false); })
+      .catch(() => setOwnersFailed(true));
+  }, []);
+  useEffect(() => {
+    readOwners();
+    window.addEventListener(OWNERS_CHANGED, readOwners);
+    return () => window.removeEventListener(OWNERS_CHANGED, readOwners);
+  }, [readOwners]);
 
   const save = async () => {
     setSaving(true); setError(""); setSaved(false);
@@ -130,26 +161,24 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
     scope === "workspace" && appDefaults[k] ? `Inherits: ${appDefaults[k]}` : "";
 
   const TextField = (k: keyof OrgSettings, label: string) => (
-    <div style={{ display: "flex", flexDirection: "column" }}>
-      <label style={labelStyle}>{label}</label>
-      <Input value={String(s[k] ?? "")} onChange={onChange(k)} placeholder={inheritPh(k)} />
-    </div>
+    <Field label={label} htmlFor={`org-${k}`}>
+      <Input id={`org-${k}`} value={String(s[k] ?? "")} onChange={onChange(k)} placeholder={inheritPh(k)} />
+    </Field>
   );
 
   const SettingSelect = (
     k: keyof OrgSettings, label: string, opts: Array<string | number>,
     render?: (o: string | number) => string,
   ) => (
-    <div style={{ display: "flex", flexDirection: "column" }}>
-      <label style={labelStyle}>{label}</label>
-      <SelectField value={String(s[k] ?? "")} onChange={onChange(k)} style={{ cursor: "pointer" }}>
+    <Field label={label}>
+      <SelectField value={String(s[k] ?? "")} onChange={onChange(k)} aria-label={label} style={{ cursor: "pointer" }}>
         {opts.map((o) => (
           <option key={String(o)} value={String(o)}>
             {render ? render(o) : (o === "" ? (scope === "workspace" ? "(inherit)" : "(none)") : String(o))}
           </option>
         ))}
       </SelectField>
-    </div>
+    </Field>
   );
 
   /** A yes/no setting. Its own helper because `onChange` reads `value`, and a
@@ -162,7 +191,7 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
         style={{ marginTop: 2, cursor: "pointer" }}
       />
       <span style={{ display: "flex", flexDirection: "column" }}>
-        <span style={labelStyle}>{label}</span>
+        <span className="aug-fs-sm" style={{ color: "var(--t1)" }}>{label}</span>
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{hint}</span>
       </span>
     </label>
@@ -170,11 +199,58 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
 
   if (loading) return <Loading what="settings" />;
 
+  const app = scope === "app";
+  const dirty = !same(s, loaded);
+
+  // ── The figures, and what needs a person ─────────────────────────────────────────────────────────────────────
+  const unresolved = (owners ?? []).filter(o => !o.resolved);
+  const reachable = (owners ?? []).length - unresolved.length;
+  const priorities = (appDefaults.priorities ?? []).filter(p => p.metric.trim());
+  const kept = industries?.industries ?? null;
+  const shippedName = (id: string) => industries?.shipped.find(i => i.id === id)?.name ?? id;
+  const savedBudget = appDefaults.exploration_monthly_tokens ?? 0;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 560 }}>
+    <Stack testId="org-settings">
+      <Figures testId="org-figures">
+        <Figure label="Industries" testId="fig-industries"
+          value={!industries ? "—" : !industries.shipped.length ? "None" : kept === null ? "Every" : `${kept.length} of ${industries.shipped.length}`}
+          sub={!industries ? "not read"
+            : !industries.shipped.length ? "no industry package ships"
+            : kept === null ? "each connection's, detected from its data"
+            : kept.length ? <span style={ONE_LINE} title={kept.map(shippedName).join(", ")}>{kept.map(shippedName).join(" · ")}</span>
+            : "none — shared knowledge only"} />
+        <Figure label="Priorities" testId="fig-priorities" value={formatCount(priorities.length)}
+          sub={priorities.length
+            ? <span style={ONE_LINE} title={priorities.map(p => p.metric).join(", ")}>{priorities.map(p => p.metric).join(" · ")}</span>
+            : "none set this quarter"} />
+        <Figure label="Owners reachable" testId="fig-owners" tone={unresolved.length ? "amber" : undefined}
+          value={owners === null ? "—" : `${reachable} of ${owners.length}`}
+          sub={ownersFailed && owners === null ? "could not be read"
+            : owners === null ? "reading…"
+            : unresolved.length ? `${unresolved.length} unresolved`
+            : owners.length ? "every owner reachable" : "no declaration names an owner"} />
+        <Figure label="Exploration budget" testId="fig-budget"
+          value={savedBudget > 0 ? compactNumber(savedBudget) : "None"}
+          title={savedBudget > 0 ? `${formatCount(savedBudget)} model tokens a month` : undefined}
+          sub={savedBudget > 0 ? "model tokens a month, every connection" : "the Explorer's own runs have no monthly cap"} />
+      </Figures>
+
+      <NeedsYou testId="org-needs"
+        empty={ownersFailed && owners === null ? "Nothing needs you that could be read · the owners could not be read"
+          : "Nothing needs you · every owner the declarations name is reachable"}>
+        {unresolved.length > 0 && (
+          <NeedsRow key="owners" testId="needs-owners"
+            title={`${plural(unresolved.length, "owner")} ${unresolved.length === 1 ? "is" : "are"} unresolved`}
+            detail={`${unresolved.map(o => `${o.owner_text} · ${usesLabel(o)}`).join("  ·  ")} — a question for ${unresolved.length === 1 ? "it" : "them"} has nowhere to go`}
+            actions={<Button size="xs" variant="secondary"
+              onClick={() => goTo("settings-owners", "[data-owner-unlinked] input")}>Link</Button>} />
+        )}
+      </NeedsYou>
+
       {workspaceId && (
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <span style={{ fontSize: 11, color: "var(--t3)", marginRight: 2 }}>Scope</span>
+        <div style={{ ...ROW, gap: 6 }}>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", marginRight: 2 }}>Scope</span>
           {(["app", "workspace"] as const).map((sc) => (
             <Button
               key={sc}
@@ -185,117 +261,113 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
               {sc === "app" ? "App default" : (workspaceName || "This workspace")}
             </Button>
           ))}
-        </div>
-      )}
-      {scope === "workspace" && (
-        <div style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.5 }}>
-          Overrides for <b>{workspaceName}</b>. Blank fields inherit the app default; a set value also
-          wins over what Aughor infers from the data.
-        </div>
-      )}
-
-      {/* Identity */}
-      <div>
-        <div className="aug-label" style={{ marginBottom: 10 }}>Organization</div>
-        <div style={gridStyle}>
-          {TextField("company_name", "Company name")}
-          {TextField("website", "Website")}
-          {TextField("hq_location", "HQ location")}
-          {TextField("industry", "Industry")}
-        </div>
-        <div style={hintStyle}>
-          Industry &amp; company context steer the intelligence (briefings, metric recipes, exploration).
-          A set industry overrides what Aughor infers.
-        </div>
-      </div>
-
-      {/* Industries (IP-2) — the installer's question, deployment-wide, so app scope only. It saves on
-          its own: the choice is a server file, not a field of the settings row. */}
-      {scope === "app" && <OrgIndustriesSection />}
-      {/* The playbook sits BESIDE the industries because that is the only lever a person
-          has over it: its 878 entries arrive from the industry packages this org installs,
-          not from anything typed here. It used to be a top-level nav door of its own, which
-          promised a screen people would browse — measured 2026-09-19, 55% of its rows were
-          Verifier rule-outs and 0 of 878 carried the success rate that would make browsing
-          worth it. The user's call, and the right one: this is org configuration, not a
-          plane of the product. */}
-      {scope === "app" && <OrgPlaybookSection />}
-      {/* CB-6 — the quarter's priorities, written by people; saved with the organisation settings. */}
-      {scope === "app" && (
-        <OrgPrioritiesSection value={s.priorities ?? []} onChange={(next) => setS((prev) => ({ ...prev, priorities: next }))} />
-      )}
-
-      {/* Localization */}
-      <div>
-        <div className="aug-label" style={{ marginBottom: 10 }}>Localization</div>
-        <div style={gridStyle}>
-          {SettingSelect("currency_code", "Reporting currency", CURRENCIES)}
-          {SettingSelect("timezone", "Timezone", TIMEZONES)}
-          {SettingSelect("date_format", "Date format", DATE_FORMATS)}
-          {SettingSelect("fiscal_year_start_month", "Fiscal year starts", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (m) => MONTHS[(m as number) - 1])}
-        </div>
-        <div style={hintStyle}>
-          A set currency renders all figures in that currency (briefings, metrics, tables). Empty = inferred from the data.
-        </div>
-      </div>
-
-      {/* Appearance */}
-      <div>
-        <div className="aug-label" style={{ marginBottom: 10 }}>Appearance</div>
-        <div style={gridStyle}>
-          {SettingSelect("chart_palette", "Chart palette", ["", ...CHART_PALETTE_NAMES], (p) => chartPaletteLabel(String(p)))}
-        </div>
-        <div style={hintStyle}>Colour scheme for charts. “Default” uses the app theme palette (adapts to light/dark).</div>
-        <div style={{ marginTop: 12 }}>
-          {BoolField(
-            "chat_first_home",
-            "Open on the conversation",
-            "Land on the chat instead of the workbench. The workbench stays one click away.",
+          {scope === "workspace" && (
+            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+              Overrides for <b>{workspaceName}</b>. Blank fields inherit the app default; a set value also
+              wins over what Aughor infers from the data.
+            </span>
           )}
         </div>
-      </div>
+      )}
 
-      {/* Models & keys (CI-5b) — org scope AND multi-tenant only. Single-tenant
-          deployments configure models in Settings ▸ Models; showing this there would
-          be two places to set the same three fields, one of which cannot differ. */}
-      {scope === "app" && multiTenant && <OrgByokSection />}
+      {/* Identity · Localization */}
+      <Pair>
+        <Card label="Organization">
+          <div style={FIELDS}>
+            {TextField("company_name", "Company name")}
+            {TextField("website", "Website")}
+            {TextField("hq_location", "HQ location")}
+            {TextField("industry", "Industry")}
+          </div>
+          <Note>Steers briefings, metric recipes and exploration. A set industry overrides what Aughor infers.</Note>
+        </Card>
+        <Card label="Localization">
+          <div style={FIELDS}>
+            {SettingSelect("currency_code", "Reporting currency", CURRENCIES)}
+            {SettingSelect("timezone", "Timezone", TIMEZONES)}
+            {SettingSelect("date_format", "Date format", DATE_FORMATS)}
+            {SettingSelect("fiscal_year_start_month", "Fiscal year starts", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], (m) => MONTHS[(m as number) - 1])}
+          </div>
+          <Note>Empty = inferred from the data; a set currency renders every figure in it.</Note>
+        </Card>
+      </Pair>
 
-      {/* The exploration principles §7 — the organisation's monthly budget for what the Explorer spends on its
-          own initiative. A connection may set its own in the Catalog; the tighter holds. */}
-      {scope === "app" && (
-        <div>
-          <div className="aug-label" style={{ marginBottom: 10 }}>Exploration</div>
-          <div style={gridStyle}>
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              <label style={labelStyle} htmlFor="org-exploration-budget">Monthly budget (model tokens)</label>
-              <Input id="org-exploration-budget" inputMode="numeric" placeholder="none"
-                value={s.exploration_monthly_tokens ? String(s.exploration_monthly_tokens) : ""}
-                onChange={(e) => {
-                  setSaved(false);
-                  const n = Number(e.target.value.replace(/[, ]/g, ""));
-                  setS((prev) => ({ ...prev, exploration_monthly_tokens: Number.isFinite(n) && n > 0 ? Math.round(n) : 0 }));
-                }} />
+      {/* CB-6 — the quarter's priorities, written by people; saved with the organisation settings. */}
+      {app && (
+        <OrgPrioritiesSection value={s.priorities ?? []} onChange={(next) => { setSaved(false); setS((prev) => ({ ...prev, priorities: next })); }} />
+      )}
+
+      <Pair>
+        <Card label="Display">
+          <div style={FIELDS}>
+            {SettingSelect("chart_palette", "Chart palette", ["", ...CHART_PALETTE_NAMES], (p) => chartPaletteLabel(String(p)))}
+          </div>
+          <Note>“Default” follows the light or dark theme.</Note>
+          <div style={{ marginTop: 12 }}>
+            {BoolField(
+              "chat_first_home",
+              "Open on the conversation",
+              "Land on the chat; the workbench stays one click away.",
+            )}
+          </div>
+        </Card>
+
+        {/* The exploration principles §7 — the organisation's monthly budget for what the Explorer spends on its
+            own initiative. A connection may set its own in the Catalog; the tighter holds. */}
+        {app && (
+          <Card label="Exploration budget">
+            <div style={FIELDS}>
+              <Field label="Monthly budget (model tokens)" htmlFor="org-exploration-budget">
+                <Input id="org-exploration-budget" inputMode="numeric" placeholder="none"
+                  value={s.exploration_monthly_tokens ? String(s.exploration_monthly_tokens) : ""}
+                  onChange={(e) => {
+                    setSaved(false);
+                    const n = Number(e.target.value.replace(/[, ]/g, ""));
+                    setS((prev) => ({ ...prev, exploration_monthly_tokens: Number.isFinite(n) && n > 0 ? Math.round(n) : 0 }));
+                  }} />
+              </Field>
             </div>
-          </div>
-          <div style={hintStyle}>
-            What the Explorer spends on its own initiative each month, across every connection. A connection may
-            set its own in the Catalog; the tighter holds, and a held run says so. A person&apos;s own Start is capped
-            at what is left, and once it is spent asks before it runs. Empty = no budget.
-          </div>
-        </div>
+            <Note>What the Explorer spends on its own each month, across every connection. Empty = no budget.</Note>
+            <Details>
+              A connection may set its own in the Catalog; the tighter holds, and a held run says so. A person&apos;s own
+              Start is capped at what is left, and once it is spent asks before it runs.
+            </Details>
+          </Card>
+        )}
+      </Pair>
+
+      <SaveLine saved={saved && !saving} error={error} testId="org-save">
+        <Button variant="default" size="sm" onClick={save} disabled={saving}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+        {dirty && !saving && <Chip tone="amber">unsaved changes</Chip>}
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+          {app ? "Saves everything above" : `Saves ${workspaceName || "this workspace"}'s overrides above`}
+        </span>
+      </SaveLine>
+
+      {/* Industries (IP-2) — the installer's question, deployment-wide, so app scope only. It saves on
+          its own: the choice is a server file, not a field of the settings row. The playbook sits BESIDE
+          the industries because that is the only lever a person has over it: its entries arrive from the
+          industry packages this org installs, not from anything typed here. It used to be a top-level nav
+          door of its own, which promised a screen people would browse — measured 2026-09-19, 55% of its
+          rows were Verifier rule-outs and 0 of 878 carried the success rate that would make browsing worth
+          it. The user's call, and the right one: this is org configuration, not a plane of the product. */}
+      {app && (
+        <Pair>
+          <OrgIndustriesSection onChoice={setIndustries} />
+          <OrgPlaybookSection />
+        </Pair>
       )}
 
       {/* DE-2b — what an outside agent (MCP) may do here. Every install has the policy, so it is not
           gated on multi-tenancy; it saves itself, like the BYOK block, because it is its own row. */}
-      {scope === "app" && <AgentPolicySection />}
+      {app && <AgentPolicySection />}
 
-      {error && <div style={{ fontSize: 11, color: "var(--red4)" }}>{error}</div>}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <Button variant="default" size="sm" onClick={save} disabled={saving}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
-        {saved && !saving && <span style={{ fontSize: 11, color: "var(--grn4)" }}>Saved ✓</span>}
-      </div>
-    </div>
+      {/* Models & keys (CI-5b) — org scope AND multi-tenant only. Single-tenant
+          deployments configure models in Settings ▸ Models; showing this there would
+          be two places to set the same three fields, one of which cannot differ. */}
+      {app && multiTenant && <OrgByokSection />}
+    </Stack>
   );
 }

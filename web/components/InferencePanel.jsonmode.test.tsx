@@ -14,7 +14,7 @@
  *   * ticking it sends `json_mode` for that backend;
  *   * an existing pin loads back in as ticked.
  */
-import { fireEvent, render, screen, waitFor, change } from "@/lib/testing";
+import { fireEvent, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeEach, expect, it, vi } from "vitest";
 
 import { InferencePanel } from "@/components/InferencePanel";
@@ -22,6 +22,7 @@ import { InferencePanel } from "@/components/InferencePanel";
 const api = vi.hoisted(() => ({
   getLlmConfig: vi.fn(), setLlmConfig: vi.fn(), getLlmModels: vi.fn(),
   testLlmConfig: vi.fn(), cacheProbe: vi.fn(), addLlmModel: vi.fn(), removeLlmModel: vi.fn(),
+  getUsageReport: vi.fn(),
 }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
@@ -48,6 +49,7 @@ function config(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   api.getLlmModels.mockResolvedValue({ models: [], source: "live" });
+  api.getUsageReport.mockResolvedValue({ axes: ["provider", "model"], total_calls: 0, rows: [] });
   api.getLlmConfig.mockResolvedValue(config());
   api.setLlmConfig.mockImplementation(async () => config());
 });
@@ -56,7 +58,8 @@ it("offers the pin where the server says it is honoured", async () => {
   render(<InferencePanel />);
   const label = await screen.findByText(/Use JSON structured output for/i);
   expect(label).toBeTruthy();
-  expect(screen.getByText(MODEL)).toBeTruthy();     // named, not generic
+  // Named, not generic — the pin's own line names the model (the figures above name it too).
+  expect(within(label).getByText(MODEL)).toBeTruthy();
 });
 
 it("does NOT offer it where the server says it does nothing", async () => {

@@ -13,7 +13,7 @@ import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { AuthControl } from "@/components/AuthControl";
 import { applyTheme, THEME_KEY } from "@/lib/themeSwitch";
 import { cleanLook, getLook, setLook } from "@/lib/look";
-import { LookPanel } from "@/components/LookPanel";
+import { AppearancePanel } from "@/components/settings/AppearancePanel";
 import { useNavCollapsed } from "@/components/shell/useNavCollapsed";
 import { Tooltip } from "@/components/ui/tooltip";
 import { installAuthFetch } from "@/lib/auth";
@@ -751,11 +751,6 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, wor
 // ── Settings screen ────────────────────────────────────────────────────────────
 
 function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme: Theme; setTheme: (t: Theme) => void; workspaceId?: string; workspaceName?: string }) {
-  const modes: Array<{ id: Theme; icon: string; label: string; desc: string }> = [
-    { id: "dark",  icon: "moon", label: "Dark",  desc: "Dark backgrounds, light text" },
-    { id: "light", icon: "sun",  label: "Light", desc: "White backgrounds, dark text" },
-  ];
-
   type SettingsTab = "organization" | "access" | "appearance" | "models" | "system";
   // `?settings=` opens a section — another screen links straight to one (the Metrics tab's "Bind its
   // roles" opens System, where the packages are bound).
@@ -788,43 +783,7 @@ function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme
           </>
         )}
 
-        {sub === "appearance" && (
-          <div>
-            <div className="aug-label" style={{ marginBottom: 12 }}>Theme</div>
-            <div style={{ display: "flex", gap: 10 }}>
-              {modes.map(m => (
-                <button key={m.id} onClick={() => setTheme(m.id)} style={{
-                  flex: 1, display: "flex", alignItems: "center", gap: 12,
-                  padding: "12px 14px", borderRadius: "var(--r3)", cursor: "pointer",
-                  background: theme === m.id ? "var(--bg-sel)" : "var(--bg-2)",
-                  border: `1px solid ${theme === m.id ? "var(--blue3)" : "var(--b1)"}`,
-                  transition: "background-color .14s, border-color .14s", textAlign: "left",
-                }}>
-                  <div style={{
-                    width: 36, height: 28, borderRadius: "var(--r2)", flexShrink: 0,
-                    background: m.id === "dark" ? "#111821" : "#FFFFFF",
-                    border: `1px solid ${m.id === "dark" ? "#253552" : "#D2DCEB"}`,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
-                    <NavIcon name={m.icon} size={14} color={m.id === "dark" ? "#4C8EEE" : "#C08A00"} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: theme === m.id ? "var(--blue5)" : "var(--t1)", marginBottom: 2 }}>{m.label}</div>
-                    <div style={{ fontSize: 11, color: "var(--t3)" }}>{m.desc}</div>
-                  </div>
-                  {theme === m.id && (
-                    <div style={{ marginLeft: "auto", flexShrink: 0 }}>
-                      <NavIcon name="check" size={13} color="var(--blue3)" />
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-            <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--b0)" }}>
-              <LookPanel />
-            </div>
-          </div>
-        )}
+        {sub === "appearance" && <AppearancePanel theme={theme} setTheme={setTheme} />}
 
         {sub === "models" && <InferencePanel />}
 
