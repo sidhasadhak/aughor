@@ -224,3 +224,12 @@ def test_a_definition_is_listed_under_the_dataset_its_tables_are_in(monkeypatch,
     assert names("main") == ["Daily Sales", "orders"]
     assert names(None) == ["ride_completion_rate", "Daily Sales", "orders"]
     assert [e.schema for e in MC._defined_entries("ws", None)] == ["uber_ncr", "main", "*"]
+
+
+def test_a_bound_recipe_reads_the_table_its_role_was_bound_to(wired):
+    """2026-10-13: a bound recipe carried no table, so its copy was `SELECT <expression>` with no FROM."""
+    from aughor.semantic.metric_statement import as_statement
+    by = {r.name: r for r in MC.catalogue_for("c1")}
+    assert by["gross_margin_rate"].tables == ["order_items"]
+    assert by["net_interest_margin"].tables == []                    # its role is not bound: nothing to read yet
+    assert "FROM order_items" in as_statement("SUM(margin)", by["gross_margin_rate"].tables, [], "gross_margin_rate")

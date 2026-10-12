@@ -1231,6 +1231,19 @@ export interface MetricDateCandidate {
   column: string;
   type: string;
   primary: boolean;
+  /** A day kept as TEXT, offered by its name — the period filter reads it as a date. */
+  text?: boolean;
+}
+
+/** A date one join away from a statement whose own tables have none — where it is, and the key that reaches it. Not a
+ *  grain the statement can take as written: the definition must read that table first. */
+export interface MetricDateReachable {
+  grain: string;
+  table: string;
+  column: string;
+  via: string;
+  from: string;
+  type: string;
 }
 
 /** One runnable statement the platform proposes for a definition written as an expression:
@@ -1249,6 +1262,8 @@ export interface MetricProposals {
   statements: MetricStatementOption[];
   statement_note: string;
   candidates: MetricDateCandidate[];
+  /** When the statement's own tables hold no date: the dates one join away. */
+  reachable?: MetricDateReachable[];
   note: string;
 }
 
@@ -8973,6 +8988,35 @@ export async function getPacks(): Promise<{ enabled: boolean; packs: PackSummary
 export interface BindingCandidateDTO {
   role: string; table?: string | null; column?: string | null;
   value?: string | null; confidence: number; evidence: string; bound: boolean;
+}
+
+/** A package's roles and recipes, as the binding dialog reads them: each role's attributes with their types, and each
+ *  recipe's formula (`{{role.<role>.<attribute>}}` tokens). */
+export interface PackRoleAttribute { type: string; description: string }
+export interface PackRoleSpec { description: string; expects: Record<string, unknown>; attributes: Record<string, PackRoleAttribute> }
+export interface PackDetail {
+  manifest: { id?: string; name?: string };
+  entities: Record<string, PackRoleSpec>;
+  metrics: { name: string; title?: string; formula?: string; binds?: { required?: string[] } }[];
+}
+
+export async function getPackDetail(packId: string): Promise<PackDetail> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The package could not be read"));
+  return res.json();
+}
+
+/** What a role is bound to on one connection: its table, and the column each attribute is read from. */
+export interface RoleBinding { table?: string | null; column?: string | null; columns?: Record<string, string>; [k: string]: unknown }
+
+/** The binding this connection has pinned for a package, or null when it has none. */
+export async function getPackBinding(
+  packId: string, connectionId: string, schema?: string,
+): Promise<{ bindings: Record<string, RoleBinding>; verified?: boolean } | null> {
+  const q = new URLSearchParams({ connection_id: connectionId, ...(schema ? { schema } : {}) });
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/binding?${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The binding could not be read"));
+  return res.json();
 }
 
 export async function proposePackBindings(

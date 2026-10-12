@@ -24,10 +24,14 @@ def dry_run_binding(conn, binding: dict) -> tuple[bool, list[str]]:
         if not isinstance(b, dict):
             continue
         table = _safe_ident(b.get("table") or "")
-        col = _safe_ident(b.get("column") or "")
+        # The role's own column and every attribute's column (`columns`, IP-3): a recipe reads the
+        # attributes, so an attribute bound to a column that is not there is the failure that matters.
+        cols = [c for c in dict.fromkeys(
+            [_safe_ident(b.get("column") or "")]
+            + [_safe_ident(str(v)) for v in (b.get("columns") or {}).values()]) if c]
         if not table:
             continue
-        sql = f"SELECT {col} FROM {table} LIMIT 0" if col else f"SELECT * FROM {table} LIMIT 0"
+        sql = f"SELECT {', '.join(cols)} FROM {table} LIMIT 0" if cols else f"SELECT * FROM {table} LIMIT 0"
         try:
             ok, err = conn.dry_run(sql)
         except Exception as e:
