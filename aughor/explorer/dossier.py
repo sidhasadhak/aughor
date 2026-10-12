@@ -72,6 +72,11 @@ def _key(connection_id: str, finding_id: str) -> str:
     return f"insight:{connection_id}:{finding_id}"
 
 
+#: The ledger key a finding's receipt is kept under — public, so a store that clears or reads receipts never spells the
+#: frozen prefix again. A schema's findings share ``receipt_key(conn, f"{schema}:")`` as their prefix.
+receipt_key = _key
+
+
 def rescope(connection_id: str, schema: str, state: dict) -> int:
     """Give a schema's findings written before ids carried their schema (`store.scoped_finding_id`) the scoped id,
     each with a receipt of its own. The receipt under the old id is carried over only when it is this finding's —

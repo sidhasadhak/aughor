@@ -1560,8 +1560,8 @@ class Ledger:
 
     def purge_key_prefix(self, prefix: str) -> dict[str, int]:
         """Delete every artifact whose natural key starts with ``prefix`` (matched as text, never as a LIKE
-        pattern — a schema's name holds ``_``), with its lineage. A removed schema's findings are
-        ``insight:{connection}:{schema}:…`` (`explorer.store.scoped_finding_id`)."""
+        pattern — a schema's name holds ``_``), with its lineage. A removed schema's findings' receipts share one
+        (`explorer.dossier.receipt_key`, `explorer.store.scoped_finding_id`)."""
         if not prefix:
             return {}
         out: dict[str, int] = {}

@@ -73,7 +73,6 @@ def briefing_route(monkeypatch):
 
     monkeypatch.setattr("aughor.knowledge.briefing.get_briefing", _never)
     monkeypatch.setattr("aughor.explorer.revalidate_live.revalidate_for_briefing", _never)
-    monkeypatch.setattr(ex, "_domain_insights_for", lambda c, s: {"Key Questions": [{"id": "x", "finding": "left"}]})
     return ex
 
 

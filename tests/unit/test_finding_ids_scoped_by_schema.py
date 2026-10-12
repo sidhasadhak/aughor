@@ -13,6 +13,7 @@ import asyncio
 from types import SimpleNamespace
 
 from aughor.explorer import dossier, store
+from aughor.explorer.dossier import receipt_key as K
 from aughor.explorer.agent import SchemaExplorer
 from aughor.kernel.ledger import Ledger
 
@@ -42,10 +43,10 @@ def test_an_id_takes_its_schema_once_and_a_whole_connection_keeps_its_ids():
 
 def test_each_schema_reads_back_its_own_pinned_answer():
     led = Ledger.default()
-    led.artifact_write("finding", "insight:lux:gold_finance:pinned__0",
+    led.artifact_write("finding", K("lux", "gold_finance:pinned__0"),
                        _f("gold_finance:pinned__0", "12 loads failed", "SELECT 12 FROM gold_finance.etl_load_log"),
                        conn_id="lux")
-    led.artifact_write("finding", "insight:lux:luxexperience:pinned__0",
+    led.artifact_write("finding", K("lux", "luxexperience:pinned__0"),
                        _f("luxexperience:pinned__0", "Conversion is 31%", "SELECT 0.31"), conn_id="lux")
     assert _explorer("luxexperience")._read_prior_pinned(0)["finding"] == "Conversion is 31%"
     assert _explorer("gold_finance")._read_prior_pinned(0)["finding"] == "12 loads failed"
@@ -55,25 +56,25 @@ def test_each_schema_reads_back_its_own_pinned_answer():
 def test_kept_findings_take_their_schema_with_a_receipt_of_their_own():
     led = Ledger.default()
     mine = _f("pinned__1", "Conversion is 31%", "SELECT 0.31")
-    led.artifact_write("finding", "insight:lux2:pinned__1", {**mine, "dossier": {"question": "conversion?"}},
+    led.artifact_write("finding", K("lux2", "pinned__1"), {**mine, "dossier": {"question": "conversion?"}},
                        conn_id="lux2")
     theirs = _f("pinned__2", "Bookings fell 4%", "SELECT -0.04")
-    led.artifact_write("finding", "insight:lux2:pinned__2",                   # gold_finance's run wrote over it
+    led.artifact_write("finding", K("lux2", "pinned__2"),                   # gold_finance's run wrote over it
                        _f("pinned__2", "12 loads failed", "SELECT 12 FROM gold_finance.etl_load_log"), conn_id="lux2")
     alike = _f("pinned__4", "Orders rose 3%", "SELECT COUNT(*) FROM orders")    # the same query in two schemas
-    led.artifact_write("finding", "insight:lux2:pinned__4", {**alike, "finding": "Orders fell 9%", "dossier": {"q": 1}},
+    led.artifact_write("finding", K("lux2", "pinned__4"), {**alike, "finding": "Orders fell 9%", "dossier": {"q": 1}},
                        conn_id="lux2")
     state = {store.FINDINGS: [dict(mine), dict(theirs), _f("luxexperience:pinned__3", "x", "SELECT 1"), dict(alike)]}
 
     assert dossier.rescope("lux2", "luxexperience", state) == 3
     assert [f["id"] for f in state[store.FINDINGS]] == [
         "luxexperience:pinned__1", "luxexperience:pinned__2", "luxexperience:pinned__3", "luxexperience:pinned__4"]
-    same_query = led.receipt("insight:lux2:luxexperience:pinned__4")["artifact"]["payload"]
+    same_query = led.receipt(K("lux2", "luxexperience:pinned__4"))["artifact"]["payload"]
     assert (same_query["finding"], same_query.get("dossier")) == ("Orders rose 3%", None)    # its words, not theirs
-    own = led.receipt("insight:lux2:luxexperience:pinned__1")
+    own = led.receipt(K("lux2", "luxexperience:pinned__1"))
     assert own["artifact"]["payload"]["dossier"] == {"question": "conversion?"}            # its derivation carried over
     assert own["artifact"]["payload"]["id"] == "luxexperience:pinned__1"
-    other = led.receipt("insight:lux2:luxexperience:pinned__2")["artifact"]["payload"]
+    other = led.receipt(K("lux2", "luxexperience:pinned__2"))["artifact"]["payload"]
     assert (other["finding"], other["sql"], other.get("dossier")) == ("Bookings fell 4%", "SELECT -0.04", None)
     assert dossier.rescope("lux2", "luxexperience", state) == 0                              # once
     assert dossier.rescope("lux2", "", state) == 0
@@ -125,16 +126,16 @@ def test_a_pinned_answer_reading_another_schema_is_not_reproduced(monkeypatch):
 def test_removing_a_schema_takes_its_findings_receipts_and_leaves_its_siblings():
     from aughor.db import purge
     led = Ledger.default()
-    led.artifact_write("finding", "insight:lux3:gold_finance:pinned__0", {"f": 1}, conn_id="lux3")
-    led.artifact_write("finding", "insight:lux3:gold_finance:synth__share__1", {"f": 2}, conn_id="lux3")
-    led.artifact_write("finding", "insight:lux3:goldXfinance:pinned__0", {"f": 3}, conn_id="lux3")  # `_` is no wildcard
-    led.artifact_write("finding", "insight:lux3:gold_finance_2:pinned__0", {"f": 4}, conn_id="lux3")
-    led.artifact_write("finding", "insight:lux3:pinned__0", {"f": 5}, conn_id="lux3")
+    led.artifact_write("finding", K("lux3", "gold_finance:pinned__0"), {"f": 1}, conn_id="lux3")
+    led.artifact_write("finding", K("lux3", "gold_finance:synth__share__1"), {"f": 2}, conn_id="lux3")
+    led.artifact_write("finding", K("lux3", "goldXfinance:pinned__0"), {"f": 3}, conn_id="lux3")  # `_` is no wildcard
+    led.artifact_write("finding", K("lux3", "gold_finance_2:pinned__0"), {"f": 4}, conn_id="lux3")
+    led.artifact_write("finding", K("lux3", "pinned__0"), {"f": 5}, conn_id="lux3")
     counts = purge.purge_schema_artifacts("lux3", "gold_finance")
     assert counts["finding_receipts"] == 2
-    assert led.artifact_latest("insight:lux3:gold_finance:pinned__0") is None
+    assert led.artifact_latest(K("lux3", "gold_finance:pinned__0")) is None
     for kept in ("goldXfinance:pinned__0", "gold_finance_2:pinned__0", "pinned__0"):
-        assert led.artifact_latest(f"insight:lux3:{kept}") is not None
+        assert led.artifact_latest(K("lux3", f"{kept}")) is not None
 
 
 def test_every_id_the_explorer_mints_goes_through_the_schema():
@@ -145,4 +146,4 @@ def test_every_id_the_explorer_mints_goes_through_the_schema():
     minted = re.findall(r"fresh_finding_id\(self\._state,\s*([^\n]+)", src)
     assert len(minted) >= 2 and all(m.startswith("self._finding_id(") for m in minted), minted
     assert not re.search(r'"id":\s*f"', src)                    # no id written as a bare literal
-    assert re.search(r"insight_id = self\._finding_id\(", src)  # the cross-table pass
+    assert re.search(r"_id = self\._finding_id\(f\"\{t_dim\}", src)  # the cross-table pass
