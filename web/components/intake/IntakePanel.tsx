@@ -579,18 +579,12 @@ export function IntakePanel({ connId, schema }: { connId: string; schema?: strin
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div className="aug-fs-sm" style={{ display: "flex", gap: 8, alignItems: "flex-start",
-        padding: "10px 12px", borderRadius: "var(--r3)",
-        background: "color-mix(in srgb, var(--blue4) 7%, transparent)",
-        border: "1px solid color-mix(in srgb, var(--blue4) 22%, transparent)", color: "var(--t2)" }}>
-        <span style={{ color: "var(--blue4)", display: "inline-flex", marginTop: 1 }}><Icon name="info" size={14} /></span>
-        <p style={{ margin: 0, lineHeight: 1.55 }}>
-          Bring declared knowledge in from files, sheets, wikis or this platform&rsquo;s own usage.
-          Every object is diffed against what&rsquo;s already declared and waits for your verdict —
-          nothing lands until you accept it, and each accept goes through the target store&rsquo;s
-          own governance.
-        </p>
-      </div>
+      {/* One line, not a paragraph (CLARITY §2): what the lane does and the one promise that matters — nothing lands
+          until a person accepts it. */}
+      <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: 0 }}>
+        Bring knowledge in from files, sheets, wikis or usage. Nothing lands until you accept it, and each accept goes
+        through its store&rsquo;s own governance.
+      </p>
 
       <Doors connId={connId} schema={schema} onStaged={onStaged} knowledgeConns={knowledgeConns} />
 
