@@ -2774,6 +2774,8 @@ export function BriefingPanel({
       if (result.off) setOffScope(result.off);
       else if (result.available) setNarrative(result);
       else if (result.period) setPeriodNote(periodUnavailable(result.period));
+      // every finding here reads a table turned off: that is why there is no story, not a missing exploration
+      else if (result.left_out) setPeriodNote(`No story to write: ${result.left_out.said}`);
       else setNarrativeError("No domain intelligence available — run an exploration first.");
     } catch (e) {
       if (myReq === reqSeq.current) setNarrativeError(e instanceof Error ? e.message : "Failed to generate narrative");
@@ -3485,7 +3487,8 @@ export function BriefingPanel({
           total={rangeSelected ? (ranged?.rows.length ?? 0) : findingsTotal}
           empty={briefEmpty}
           onAll={() => setAllFindings(o => !o)} allOpen={allFindings}
-          standing={rangeSelected ? () => setRange({ preset: "standing" }) : undefined} />}
+          standing={rangeSelected ? () => setRange({ preset: "standing" }) : undefined}
+          leftOut={narrative?.left_out?.said} />}
         {allFindings && <div style={{ padding: "14px 0" }}>{section("findings")}</div>}
         <PaperSources refs={paperRefs} />
         {!askOpen && <AskBar onOpen={() => setAskOpen(true)} />}

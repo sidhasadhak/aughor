@@ -237,14 +237,27 @@ def _load_state(conn_id: str, schema: str | None) -> dict:
     return _s.load(conn_id)
 
 
-def domain_findings_for(conn_id: str, schema: str | None) -> dict:
-    """by_domain findings for a (connection, schema) — per-schema, aggregate, or conn-level."""
+def findings_and_left_out(conn_id: str, schema: str | None) -> tuple[dict, list[dict]]:
+    """by_domain findings for a (connection, schema) — per-schema, aggregate, or conn-level — without the ones that
+    read a table turned off for analysis, and those left out (`ontology.visibility.findings_left_out`)."""
     from aughor.explorer import store as _s
     if schema:
-        return _s.get_domain_findings(_store_key(conn_id, schema))
-    if _s.schema_run_keys(conn_id):
-        return _s.get_aggregate_domain_findings(conn_id)
-    return _s.get_domain_findings(conn_id)
+        found = _s.get_domain_findings(_store_key(conn_id, schema))
+    elif _s.schema_run_keys(conn_id):
+        found = _s.get_aggregate_domain_findings(conn_id)
+    else:
+        found = _s.get_domain_findings(conn_id)
+    from aughor.ontology.visibility import connection_exclusions, findings_left_out
+    if not connection_exclusions(conn_id):
+        return found, []
+    from aughor.trust.lineage_edges import dialect_for_connection
+    return findings_left_out(conn_id, found, default_schema=schema, dialect=dialect_for_connection(conn_id))
+
+
+def domain_findings_for(conn_id: str, schema: str | None) -> dict:
+    """by_domain findings for a (connection, schema) — per-schema, aggregate, or conn-level. A finding that reads a
+    table turned off for analysis is not among them."""
+    return findings_and_left_out(conn_id, schema)[0]
 
 
 #: The name before the glossary settled on 'finding'; existing callers still read it.
@@ -916,6 +929,11 @@ def read_briefing(conn_id: str, schema: str | None = None, workspace_id: str | N
         (entry.get("period") or {}).get(k) == block.get(k) for k in ("start", "end", "lag_days"))
     if not same:
         return {"available": False, "built": False, "period": block, "scope_key": scope_key}
+    from aughor.knowledge.briefing import cites_turned_off
+    if cites_turned_off(conn_id, entry, f"{scope_key}#{spec.key}"):
+        # a read never builds: a story citing a table turned off since is not shown, and Build rewrites it
+        return {"available": False, "built": False, "period": block, "scope_key": scope_key,
+                "stale": "it cites a table turned off for analysis since it was written"}
     return {**entry, "available": bool(entry.get("narrative")), "built": True, "scope_key": scope_key}
 
 
@@ -937,7 +955,8 @@ def read_briefing_desk(conn_id: str, schema: str | None = None, workspace_id: st
             from aughor.briefing import ranges
             block = ranges.range_block(spec)
     from aughor.briefing.desk import desk
-    return {**desk(conn_id, schema, period=block), "scope_key": scope_key}
+    return {**desk(conn_id, schema, period=block, left_out=findings_and_left_out(conn_id, schema)[1]),
+            "scope_key": scope_key}
 
 
 @router.post("/exploration/{conn_id}/briefing/measures")
@@ -1076,6 +1095,11 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     scope_key = f"{conn_id}:{requested_schema}" if requested_schema else conn_id
 
     by_domain = _domain_insights_for(conn_id, schema)
+    # A finding that reads a table turned off is left out like an off schema's (the read above), and the Briefing
+    # says so. Read again only when the connection turned something off.
+    from aughor.ontology.visibility import connection_exclusions, left_out_said
+    said = left_out_said(findings_and_left_out(conn_id, schema)[1]) if connection_exclusions(conn_id) else None
+    told = {"left_out": said} if said else {}
     if _needs_filter(conn_id, schema):
         try:
             by_domain = _filter_by_schema(by_domain, conn_id, schema)
@@ -1088,13 +1112,13 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     if spec is not None:
         # Arc BR-3: the Briefing of a range, measured from the approved metrics — before the
         # "no findings" return, like a period brief
-        return _range_briefing(conn_id, spec, schema=schema, requested_schema=requested_schema,
-                               refresh=refresh, workspace_id=workspace_id, by_domain=by_domain)
+        return {**_range_briefing(conn_id, spec, schema=schema, requested_schema=requested_schema,
+                                  refresh=refresh, workspace_id=workspace_id, by_domain=by_domain), **told}
     if period and period != "history":
         # before the "no findings" return: a period brief measures its metrics even when the
         # scope has no stored findings at all
-        return _period_briefing(conn_id, period, schema=schema, requested_schema=requested_schema,
-                                refresh=refresh, workspace_id=workspace_id, by_domain=by_domain)
+        return {**_period_briefing(conn_id, period, schema=schema, requested_schema=requested_schema,
+                                   refresh=refresh, workspace_id=workspace_id, by_domain=by_domain), **told}
     if not by_domain:
         return {
             "narrative": "",
@@ -1103,6 +1127,7 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
             "generated_at": None,
             "available": False,
             "scope_key": scope_key,
+            **told,
         }
 
     patterns = get_patterns(conn_id, by_domain, force_refresh=False)
@@ -1131,6 +1156,7 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
         "macro_context": macro,
         "available": bool(result.get("narrative")),
         "scope_key": scope_key,
+        **told,
     }
 
 

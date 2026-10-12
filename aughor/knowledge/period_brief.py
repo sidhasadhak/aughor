@@ -485,6 +485,11 @@ def connection_inputs(conn_id: str) -> tuple[dict, Any]:
     from aughor.explorer import store as _s
     domain_data = (_s.get_aggregate_domain_findings(conn_id) if _s.schema_run_keys(conn_id)
                    else _s.get_domain_findings(conn_id))
+    # a finding that reads a table turned off for analysis is left out, as the Briefing route leaves it out
+    from aughor.ontology.visibility import connection_exclusions, findings_left_out
+    if connection_exclusions(conn_id):
+        from aughor.trust.lineage_edges import dialect_for_connection
+        domain_data = findings_left_out(conn_id, domain_data, dialect=dialect_for_connection(conn_id))[0]
     profile = None
     try:
         from aughor.business_profile import store as _pstore

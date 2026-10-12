@@ -7264,6 +7264,14 @@ export interface BriefingNarrativeResponse {
   /** Why this scope has no Briefing: its schema — or, read whole, every schema of the connection — is turned off
    *  for analysis. Nothing is written from what was found before. */
   off?: BriefingOff;
+  /** The findings left out because they read a table turned off for analysis (they come back when it is turned on). */
+  left_out?: BriefingLeftOut;
+}
+
+export interface BriefingLeftOut {
+  count: number;
+  tables: string[];
+  said: string;
 }
 
 export interface BriefingOff {

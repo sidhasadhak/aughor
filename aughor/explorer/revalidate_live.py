@@ -39,6 +39,14 @@ def _revalidate_one_run(conn_id: str, store_key: str, schema: Optional[str], lim
         for ins in (items or []):
             if (ins.get("sql") or "").strip():
                 flat.append(ins)
+    # A finding that reads a table turned off for analysis is left out, not wrong: the door would refuse its re-run,
+    # and marking it invalid for that would keep it out after the table is turned back on.
+    from aughor.ontology.visibility import connection_exclusions, off_read
+    if flat and connection_exclusions(conn_id):
+        from aughor.trust.lineage_edges import dialect_for_connection
+        dialect = dialect_for_connection(conn_id)
+        flat = [i for i in flat if off_read(conn_id, i["sql"], dialect,
+                                            default_schema=i.get("source_schema") or schema) is None]
     if not flat:
         return []
     flat.sort(key=lambda i: i.get("novelty", 0) or 0, reverse=True)

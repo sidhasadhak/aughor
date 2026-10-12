@@ -94,6 +94,15 @@ describe("InBrief", () => {
     fireEvent.click(screen.getByRole("button", { name: "What we know →" }));
     expect(standing).toHaveBeenCalled();
   });
+
+  it("says the findings it left out because they read a table turned off, and nothing when none were", () => {
+    const said = "2 findings read luxexperience.orders_archive, turned off for analysis, and are left out.";
+    const { rerender } = render(<InBrief title="In brief" items={[{ id: "a", node: "One line." }]} total={5}
+      onAll={() => {}} allOpen={false} leftOut={said} />);
+    expect(screen.getByTestId("paper-left-out")).toHaveTextContent(said);
+    rerender(<InBrief title="In brief" items={[{ id: "a", node: "One line." }]} total={5} onAll={() => {}} allOpen={false} />);
+    expect(screen.queryByTestId("paper-left-out")).toBeNull();
+  });
 });
 
 describe("PaperSources", () => {
