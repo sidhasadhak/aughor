@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ExecuteRecommendation as ExecuteButton } from "@/components/actions/ExecuteRecommendation";
 import {
   Bar, CARD, Card, Chip, Dot, Empty, Figure, Figures, MUTED, NUM, NeedsYou, ONE_LINE, ROW, RULE, type Tone,
-} from "@/components/clarity/parts";
+} from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Segmented } from "@/components/ui/segmented";

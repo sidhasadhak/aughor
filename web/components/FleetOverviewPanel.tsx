@@ -27,7 +27,7 @@ import { RANGE_LABELS, rangeParams, type TimeRange } from "@/components/agentops
 import { Sparkline } from "@/components/brief/Sparkline";
 import {
   CARD, Card, Chip, Dot, Empty, Figure, Figures, MUTED, NUM, NeedsYou, ONE_LINE, ROW, RULE,
-} from "@/components/clarity/parts";
+} from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";

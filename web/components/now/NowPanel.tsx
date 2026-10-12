@@ -31,8 +31,8 @@ import { ActorField, Gate, day, dayDistance, useActor, useLoad, type Actor, type
 import { ProposalCardById } from "@/components/ProposalCard";
 import { InspectorHost, type Inspect, type InspectLayer } from "@/components/record/Inspector";
 import {
-  Bar, CARD, Card, Chip, Desk, Empty, Figure, Figures, MUTED, NUM, NeedsYou, ONE_LINE, ROW, RULE,
-} from "@/components/clarity/parts";
+  Bar, CARD, Card, Chip, Page, Empty, Figure, Figures, MUTED, NUM, NeedsYou, ONE_LINE, ROW, RULE,
+} from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -168,7 +168,7 @@ export function NowPanel({ connections, contextReady, doors }: {
   return (
     <InspectorHost connections={connections} pageKey="now" onOpenFull={doors.onOpenRecord}>
       {inspect => (
-        <Desk testId="now">
+        <Page testId="now">
           <Figures testId="now-figures">
             <Figure testId="now-fig-sent" label="Sent this week" value={week.data ? formatCount(week.data.sent.length) : "—"}
               title={week.data ? `Everything that left the platform since ${dayWords(week.data.weekStart)}` : undefined}
@@ -249,7 +249,7 @@ export function NowPanel({ connections, contextReady, doors }: {
               </div>
             )}
           </div>
-        </Desk>
+        </Page>
       )}
     </InspectorHost>
   );
@@ -867,7 +867,7 @@ function BriefingLines({ fold, doors }: { fold: OrgBriefing; doors: NowDoors }) 
  *  what it will hold once there is something to hold. */
 function FirstRun({ doors }: { doors: NowDoors }) {
   return (
-    <Desk testId="now-first-run">
+    <Page testId="now-first-run">
       <section aria-label="Now" style={CARD}>
         <div className="aug-fs-chrome" style={{ color: "var(--t1)", fontWeight: 500 }}>Nothing has been sent, held or asked yet.</div>
         <div className="aug-fs-sm" style={{ ...MUTED, margin: "2px 0 10px" }}
@@ -879,6 +879,6 @@ function FirstRun({ doors }: { doors: NowDoors }) {
           <Button size="sm" variant="outline" onClick={doors.onOpenMissions}>Write a mission</Button>
         </div>
       </section>
-    </Desk>
+    </Page>
   );
 }
