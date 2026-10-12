@@ -124,9 +124,12 @@ def trends(claims: list[Any], now: _dt.datetime) -> list[dict]:
         # An observation booked from an investigation's report carries the investigation and its question.
         answer = c.kind == "observation" and bool((c.extra or {}).get("investigation_id")) and bool((c.extra or {}).get("question"))
         title, body = _split(text)
-        # An investigation's answer that says a measure moved or held; a finding only when it is
-        # labelled a trend (an investigation's sub-findings are its evidence, not news of their own).
-        if not ((answer and _CHANGE.search(text)) or (c.kind == "finding" and re.search(r"\btrend\b", title, re.I))):
+        # An investigation's answer that says a measure moved or held; a finding only when its LABEL
+        # names a trend ("Inventory Sell-Through Rate Trend: …") — an investigation's sub-findings are
+        # its evidence, and an unlabelled finding that merely says "trend" (LuxExperience: "… should
+        # not be read as a like-for-like performance trend") is not one.
+        labelled_trend = c.kind == "finding" and bool(body) and re.search(r"\btrend\b", title, re.I)
+        if not ((answer and _CHANGE.search(text)) or labelled_trend):
             continue
         years = [int(y) for y in _YEAR.findall(text)]
         if years and max(years) < now.year - 1:
@@ -173,6 +176,16 @@ def gaps(inquiries: list[Any], metrics: list[Any], period: Optional[dict]) -> li
                         "text": "The metric is approved but has no formula, so every Briefing leaves it out.",
                         "action": {"verb": "Add a formula", "kind": "metric", "ref": m.name},
                         "source": _source("metric", m.name, f"Metric · {label}")})
+    undated = [m for m in metrics if getattr(m, "status", "") == "approved" and (getattr(m, "sql", "") or "").strip()
+               and not (getattr(m, "time_column", "") or "").strip()]
+    if undated:                                           # approved, but no date to cut a period by
+        names = [getattr(m, "label", "") or m.name.replace("_", " ") for m in undated]
+        out.append({"kind": "undated",
+                    "title": f"{len(undated)} approved metric{'s' if len(undated) != 1 else ''} can't be measured for a period",
+                    "text": f"{', '.join(names[:4])}{f' and {len(names) - 4} more' if len(names) > 4 else ''}: "
+                            f"no date column is set, so every Day, Week and Month edition leaves {'them' if len(undated) != 1 else 'it'} out.",
+                    "action": {"verb": "Set dates", "kind": "metric", "ref": undated[0].name},
+                    "source": _source("metric", undated[0].name, f"Metrics · {len(undated)} without a date column")})
     for q in inquiries:                                   # parked, waiting for data
         if q.id in said or q.state != "waiting" or not q.open:
             continue
