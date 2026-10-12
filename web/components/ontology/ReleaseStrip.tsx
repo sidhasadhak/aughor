@@ -14,6 +14,7 @@ import React, { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { countNoun, formatTimestamp } from "@/lib/format";
+import { dayMonth } from "@/lib/home";
 import {
   discardDraft,
   getRelease,
@@ -92,6 +93,8 @@ export function ReleaseStrip({ connectionId, schema, onChanged, version = 0 }: {
   version?: number;
 }) {
   const [state, setState] = useState<ReleaseState | null>(null);
+  /** The changes, opened from the chip. */
+  const [shown, setShown] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,38 +137,58 @@ export function ReleaseStrip({ connectionId, schema, onChanged, version = 0 }: {
     return `Discarded the change to ${c.target_id}`;
   });
 
+  // The release as a chip in the ontology's bar (the approved mockup, 2026-10-10): which one everyone reads, and — in
+  // amber, because a person publishes — how many changes wait. The chip opens the changes, with Publish and Discard.
+  const readsWords = changes.length === 0
+    ? `Everyone reads ${reads}${published?.at && published.number > 1 ? `, published ${formatTimestamp(published.at, "short")}` : ""}.`
+    : `${countNoun(changes.length, "change")} waiting to be published — the agent, the Briefing and automations still read ${reads}.`;
+  const name = published ? `Release ${published.number}${published.at ? ` · ${dayMonth(published.at)}` : ""}` : "No release yet";
   return (
-    <section style={{ padding: "8px 16px", borderBottom: RULE }} aria-label="Ontology release" data-testid="release-strip">
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>
-          {changes.length === 0
-            ? <>Everyone reads {reads}{published?.at && published.number > 1 ? `, published ${formatTimestamp(published.at, "short")}` : ""}.</>
-            : <>{countNoun(changes.length, "change")} waiting to be published — the agent, the Briefing and
-              automations still read {reads}.</>}
-        </span>
-        <span style={{ flex: 1 }} />
-        {changes.length > 0 && (
-          <>
-            <Button variant="ghost" size="xs" onClick={() => setOpen(v => !v)} aria-expanded={open}>
-              {open ? "Hide the changes" : "Review the changes"}
-            </Button>
-            <Button variant="outline" size="xs" disabled={busy} onClick={discardAll}>Discard all</Button>
-            <Button size="xs" disabled={busy || breaking > 0} onClick={publish}
-              title={breaking ? `${countNoun(breaking, "change")} would break something — discard or fix first` : undefined}>
-              Publish
-            </Button>
-          </>
-        )}
-      </div>
-      {said && <p className="aug-fs-xs" role="status" style={{ margin: "4px 0 0", color: "var(--t2)" }}>{said}</p>}
-      {error && <p className="aug-fs-xs" role="alert" style={{ margin: "4px 0 0", color: "var(--red5)" }}>{error}</p>}
-      {open && changes.length > 0 && (
-        <ul style={{ margin: "8px 0 0", padding: 0 }}>
-          {changes.map(c => (
-            <ChangeRow key={c.element} change={c} busy={busy} onDiscard={() => discardOne(c)} />
-          ))}
-        </ul>
+    <>
+      {changes.length === 0 ? (
+        <span className="aug-tag aug-tag-gray" data-testid="release-chip" title={readsWords}>{name}</span>
+      ) : (
+        <Button variant="ghost" size="xs" data-testid="release-chip" aria-expanded={shown} onClick={() => setShown(v => !v)}
+          style={{ background: "var(--amb1)", color: "var(--amb4)" }} title={readsWords}>
+          {name} · {changes.length} to publish
+        </Button>
       )}
-    </section>
+      {said && !shown && <span className="aug-fs-xs" role="status" style={{ color: "var(--t2)" }}>{said}</span>}
+      {shown && (
+        // Its own line under the bar's row: the changes are read, not squeezed between chips.
+        <section style={{ flexBasis: "100%", padding: "8px 0 4px", borderTop: RULE }} aria-label="Ontology release"
+          data-testid="release-strip">
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>{readsWords}</span>
+            <span style={{ flex: 1 }} />
+            {changes.length > 0 && (
+              <>
+                <Button variant="ghost" size="xs" onClick={() => setOpen(v => !v)} aria-expanded={open}>
+                  {open ? "Hide the changes" : "Review the changes"}
+                </Button>
+                <Button variant="outline" size="xs" disabled={busy} onClick={discardAll}>Discard all</Button>
+                <Button size="xs" disabled={busy || breaking > 0} onClick={publish}
+                  title={breaking ? `${countNoun(breaking, "change")} would break something — discard or fix first` : undefined}>
+                  Publish
+                </Button>
+              </>
+            )}
+            {changes.length === 0 && (
+              <Button variant="ghost" size="xs" onClick={() => setShown(false)}>Close</Button>
+            )}
+          </div>
+          {said && <p className="aug-fs-xs" role="status" style={{ margin: "4px 0 0", color: "var(--t2)" }}>{said}</p>}
+          {error && <p className="aug-fs-xs" role="alert" style={{ margin: "4px 0 0", color: "var(--red5)" }}>{error}</p>}
+          {open && changes.length > 0 && (
+            <ul style={{ margin: "8px 0 0", padding: 0 }}>
+              {changes.map(c => (
+                <ChangeRow key={c.element} change={c} busy={busy} onDiscard={() => discardOne(c)} />
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+      {error && !shown && <span className="aug-fs-xs" role="alert" style={{ color: "var(--red5)" }}>{error}</span>}
+    </>
   );
 }

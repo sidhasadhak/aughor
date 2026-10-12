@@ -10,16 +10,23 @@
  * proposes (ON-1b); its links, each followed by the compiler or refused with the reason;
  * the declared actions that take it; its verified metrics; and a path finder that answers "how does this reach
  * that?" hop by hop. Nothing is inferred on the way to the screen — an unmeasured fact says so.
+ *
+ * Laid out as the approved mockup lays it out (`design-mockups/ontology-tab.html`, 2026-10-10 — "one panel that did not
+ * end" became one panel and six tabs): the name, its four figures, then Overview · Properties · Links · Actions ·
+ * Sources · History, each holding the sections that belong to it. Read first: every door that writes is behind Edit,
+ * except a person's yes to what was proposed — a Confirm, a Bind, a Key — which waits on them and stays on its row.
  */
-import React, { useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import Link from "next/link";
 
 import { MakeCockpit } from "@/components/cockpit/MakeCockpit";
 import { DerivedList } from "@/components/ontology/ProcessPanel";
+import { Label, NeedsRow, ProcessFlow, SetChips, TypeFigures, UsedBy } from "@/components/ontology/TypeOverview";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
+import { TabStrip } from "@/components/ui/tab-strip";
 import { countNoun, formatCount } from "@/lib/format";
 import { getOntologyKeys, keyVocabularyEntry, type VocabularyKey } from "@/lib/api";
 import { declaredActionsHref } from "@/lib/objectLinks";
@@ -33,6 +40,7 @@ import {
   deleteEntity,
   deleteLink,
   getObjectType,
+  getProcesses,
   getTypePaths,
   measureOntology,
   nameLink,
@@ -50,6 +58,7 @@ import {
   type DeclaredRuleSpec,
   type FrameSpec,
   type ObjectTypeDetail,
+  type ProcessesAndRules,
   type PropertySource,
   type ProposedBinding,
   type RollupSpec,
@@ -149,12 +158,26 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   }
   return (
     <aside aria-label="Entity type" data-testid="entity-type-panel"
-      style={{ width: 360, flexShrink: 0, borderLeft: RULE, display: "flex", flexDirection: "column", minHeight: 0,
+      style={{ width: PANEL_WIDTH, flexShrink: 0, borderLeft: RULE, display: "flex", flexDirection: "column", minHeight: 0,
                background: "var(--bg-0)" }}>
       <div style={{ flex: 1, overflowY: "auto" }}>{body}</div>
     </aside>
   );
 }
+
+/** The panel's width — the approved mockup's, near enough for its four figures to sit on one row. */
+export const PANEL_WIDTH = 440;
+
+/** Read first: a door that writes shows only while a person is editing (the Edit button in the panel's header). A yes to
+ *  what was proposed — a Confirm, a Bind, a Key — is not behind it: it waits on a person and stays on its row. */
+const Editing = createContext(false);
+const useEditing = () => useContext(Editing);
+
+/** The six tabs, in the mockup's order. */
+type PanelTab = "overview" | "properties" | "links" | "actions" | "sources" | "history";
+const TAB_NAME: Record<PanelTab, string> = {
+  overview: "Overview", properties: "Properties", links: "Links", actions: "Actions", sources: "Sources", history: "History",
+};
 
 function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess, onChanged, onDesignProcess, onDesignAction,
   sources }: {
@@ -173,13 +196,111 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
   // ON-8 — in an organisation's ontology the doors that read one connection's graph (a display property, a part mark, a
   // link's name, an explorer's proposal, declared actions) are not offered: they would read a connection nobody holds.
   const inDomain = !!scopeDomain(connectionId);
+  const [tab, setTab] = useState<PanelTab>("overview");
+  const [editing, setEditing] = useState(false);
+  // ON-9 — the processes and rules, read as the process panel reads them: the funnel, the promises and the sets' counts.
+  const [scope, setScope] = useState<ProcessesAndRules | null>(null);
+  const reads = (detail.processes?.length ?? 0) > 0 || (detail.derived?.segments.length ?? 0) > 0;
+  useEffect(() => {
+    if (!reads) { setScope(null); return; }
+    let live = true;
+    getProcesses(connectionId, schema)
+      .then((next) => { if (live) setScope(next); })
+      .catch(() => { if (live) setScope(null); });
+    return () => { live = false; };
+  }, [connectionId, schema, detail, reads]);
+
+  const editTab = (next: PanelTab) => { setTab(next); setEditing(true); };
+  const needs = needsOf(detail, { connectionId, schema, inDomain, onChanged, onTab: setTab, onEdit: editTab });
+  const counts = detail.counts;
+  const tabs = [
+    { id: "overview" as const, label: "Overview", badge: needs.length,
+      title: needs.length ? `${countNoun(needs.length, "thing")} here wait on a person` : undefined },
+    { id: "properties" as const, label: <Counted label="Properties" n={counts.properties} /> },
+    { id: "links" as const, label: <Counted label="Links" n={counts.links} /> },
+    { id: "actions" as const, label: <Counted label="Actions" n={counts.actions} /> },
+    { id: "sources" as const, label: <Counted label="Sources" n={counts.bindings} /> },
+    { id: "history" as const, label: "History" },
+  ];
+  let body: React.ReactNode;
+  if (tab === "overview") {
+    const flows = (scope?.processes ?? []).filter((p) => p.entity === detail.object_type || p.entity_id === detail.id);
+    const sets = <SetChips detail={detail} scope={scope} />;
+    const used = <UsedBy detail={detail} onMetric={() => setTab("properties")} onAction={() => setTab("actions")} />;
+    const quiet = !needs.length && !flows.length && !detail.segments.length && !detail.derived?.segments.length
+      && !detail.metrics.length && !detail.actions.length;
+    body = (
+      <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 16 }} data-testid="entity-overview">
+        {needs.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <Label>Needs you</Label>
+            {needs}
+          </div>
+        )}
+        {flows.map((p) => <ProcessFlow key={p.id} process={p} onOpenProcess={onOpenProcess} />)}
+        {sets}
+        {used}
+        {quiet && (
+          <p className="aug-fs-sm" style={{ margin: 0, color: "var(--t3)" }}>
+            Nothing waits on a person here, and no process, set, metric or action reads {detail.display_name} yet.
+          </p>
+        )}
+      </div>
+    );
+  } else if (tab === "properties") {
+    body = (
+      <>
+        <KeySection detail={detail} />
+        {!detail.platform && (
+          <DisplaySection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} readOnly={inDomain} />
+        )}
+        <PropertiesSection detail={detail} />
+        {!inDomain && <ExpressionsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
+        <ProcessesSection detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
+          onChanged={onChanged} onDesignProcess={onDesignProcess} />
+        <MetricsSection detail={detail} />
+        {!inDomain && <WordsSection detail={detail} connectionId={connectionId} schema={schema} />}
+      </>
+    );
+  } else if (tab === "links") {
+    body = (
+      <>
+        <PartsSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
+        <LinksSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged}
+          inDomain={inDomain} />
+        <PathFinder detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} />
+      </>
+    );
+  } else if (tab === "actions") {
+    body = inDomain ? (
+      <Section title="Declared actions">
+        <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)" }}>
+          Actions are declared, and their moves kept, on each connection&rsquo;s own ontology.
+        </p>
+      </Section>
+    ) : (
+      <>
+        <ActionsSection detail={detail} connectionId={connectionId} onDesignAction={onDesignAction} />
+        <EditStatesSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
+      </>
+    );
+  } else if (tab === "sources") {
+    body = <BindingsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} sources={sources} />;
+  } else {
+    body = (
+      <>
+        <OriginSection detail={detail} />
+        <WithdrawnSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
+      </>
+    );
+  }
   return (
-    <>
+    <Editing.Provider value={editing}>
       <header style={{ padding: "14px 16px 12px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <h2 className="aug-fs-h2" style={{ margin: 0, color: "var(--t1)" }}>{detail.display_name}</h2>
+          <h2 className="aug-fs-h1" style={{ margin: 0, color: "var(--t1)" }} title={detail.object_type}>{detail.display_name}</h2>
+          {detail.domain && <span className="aug-tag aug-tag-gray">{detail.domain}</span>}
           <span className="aug-tag aug-tag-gray">{ROLE[detail.role] ?? detail.role}</span>
-          {detail.domain && <span className="aug-tag aug-tag-violet">{detail.domain}</span>}
           {declared && (
             <span className={`aug-tag ${detail.origin === "model" ? "aug-tag-violet" : "aug-tag-blue"}`}
               title={detail.origin === "model" ? `proposed by ${detail.provenance || "an explorer"}, not yet confirmed`
@@ -187,49 +308,155 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
               {detail.origin === "model" ? "proposed" : "declared"}
             </span>
           )}
-          {/* a cockpit started from this object — not for one the platform holds, nor across an organisation's connections */}
-          {!detail.platform && !inDomain && (
-            <MakeCockpit connectionId={connectionId} schema={schema} entity={detail.object_type} name={detail.display_name} />
-          )}
+          <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            {/* a cockpit started from this object — not for one the platform holds, nor across an organisation's connections */}
+            {!detail.platform && !inDomain && (
+              <MakeCockpit connectionId={connectionId} schema={schema} entity={detail.object_type} name={detail.display_name} />
+            )}
+            <Button variant={editing ? "secondary" : "ghost"} size="xs" aria-pressed={editing} data-testid="entity-edit"
+              onClick={() => setEditing((v) => !v)}
+              title={editing ? "Stop editing — the doors that write fold away" : "Show the doors that declare, change and withdraw"}>
+              <Icon name="edit" size={12} /> {editing ? "Done" : "Edit"}
+            </Button>
+          </span>
         </div>
-        <div className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)", marginTop: 2 }}>{detail.object_type}</div>
         {sources && detail.connection_id && (
           <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2 }} data-testid="entity-connection">
             read from {sources[detail.connection_id] ?? detail.connection_id}
           </div>
         )}
         {detail.description && (
-          <p className="aug-fs-sm" style={{ margin: "8px 0 0", color: "var(--t2)", lineHeight: 1.5 }}>{detail.description}</p>
+          <p className="aug-fs-sm" title={detail.description}
+            style={{ margin: "6px 0 0", color: "var(--t2)", lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2,
+                     WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            {detail.description}
+          </p>
         )}
         <PartOfLine detail={detail} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
-        {detail.origin === "model" && !inDomain && (
-          <div className="aug-fs-xs" style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <span style={{ ...MONO, color: "var(--t3)" }}>{detail.provenance || "proposed by a model"}</span>
-            <ConfirmProposal target={{ kind: "entity", entity: detail.id }} connectionId={connectionId} schema={schema}
-              onChanged={onChanged} />
-          </div>
-        )}
-        {declared && <WithdrawEntity detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
+        {editing && declared && <WithdrawEntity detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
+        <TypeFigures detail={detail} />
       </header>
-      <KeySection detail={detail} />
-      {!detail.platform && (
-        <DisplaySection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} readOnly={inDomain} />
-      )}
-      <PropertiesSection detail={detail} />
-      {!inDomain && <ExpressionsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
-      <BindingsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} sources={sources} />
-      <PartsSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
-      <LinksSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged}
-        inDomain={inDomain} />
-      <WithdrawnSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
-      {!inDomain && <ActionsSection detail={detail} connectionId={connectionId} onDesignAction={onDesignAction} />}
-      {!inDomain && <EditStatesSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
-      {!inDomain && <WordsSection detail={detail} connectionId={connectionId} schema={schema} />}
-      <MetricsSection detail={detail} />
-      <ProcessesSection detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
-        onChanged={onChanged} onDesignProcess={onDesignProcess} />
-      <PathFinder detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} />
+      <TabStrip<PanelTab> label={`About ${detail.display_name}`} size="1" value={tab} onChange={setTab} tabs={tabs}
+        style={{ padding: "0 8px" }} />
+      <div role="tabpanel" aria-label={TAB_NAME[tab]} data-testid={`entity-tab-${tab}`}>{body}</div>
+    </Editing.Provider>
+  );
+}
+
+/** A tab's name and, muted beside it, how many it holds. */
+function Counted({ label, n }: { label: string; n: number }) {
+  return (
+    <>
+      {label}
+      <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: 4, fontVariantNumeric: "tabular-nums" }}>{formatCount(n)}</span>
     </>
+  );
+}
+
+/** What on this entity waits on a person, each on its own amber row with its buttons: a type an explorer proposed, a
+ *  title nobody has checked names one object, a key the data did not prove unique, and the proposals waiting in its
+ *  other tabs — which a tab alone would hide. */
+function needsOf(detail: ObjectTypeDetail, { connectionId, schema, inDomain, onChanged, onTab, onEdit }: {
+  connectionId: string;
+  schema?: string;
+  inDomain: boolean;
+  onChanged: () => void;
+  onTab: (tab: PanelTab) => void;
+  onEdit: (tab: PanelTab) => void;
+}): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  const noun = detail.display_name.toLowerCase();
+  if (detail.origin === "model" && !inDomain) {
+    out.push(
+      <NeedsRow key="type" testid="entity-needs-proposed" title={`${detail.display_name} was proposed — not confirmed yet`}
+        detail={<span style={MONO}>{detail.provenance || "proposed by a model"}</span>}>
+        <ConfirmProposal target={{ kind: "entity", entity: detail.id }} connectionId={connectionId} schema={schema}
+          onChanged={onChanged} />
+      </NeedsRow>,
+    );
+  }
+  const shown = detail.display_property;
+  if (!detail.platform && shown.source !== "key" && shown.verified !== true) {
+    const said = shown.source === "human" ? "Declared" : "Proposed";
+    out.push(
+      <NeedsRow key="title" testid="entity-needs-title" title={`How is one ${noun} named?`}
+        detail={<>{said}: <span style={MONO}>{shown.property}</span> · {shown.verified === false ? "does not name objects" : "not checked yet"}</>}>
+        <MeasureButton connectionId={connectionId} schema={schema} onChanged={onChanged} label="Check" />
+        {!inDomain && <Button variant="ghost" size="xs" onClick={() => onEdit("properties")}>Change</Button>}
+      </NeedsRow>,
+    );
+  }
+  if (!detail.platform && detail.key.verified !== true && detail.key.property) {
+    out.push(
+      <NeedsRow key="key" testid="entity-needs-key"
+        title={detail.key.verified === false ? `Its key is not unique per ${noun}` : "Its key is not counted yet"}
+        detail={<><span style={MONO}>{detail.key.property}</span>{detail.key.note ? ` · ${detail.key.note}` : ""}</>}>
+        <MeasureButton connectionId={connectionId} schema={schema} onChanged={onChanged} label="Check" />
+      </NeedsRow>,
+    );
+  }
+  const sourcesWaiting = detail.bindings.filter((b) => b.source === "model").length + (detail.proposed_bindings ?? []).length;
+  const linksWaiting = detail.links.filter((l) => l.origin === "model").length
+    + (detail.parts ?? []).filter((p) => p.origin === "model").length;
+  if (sourcesWaiting + linksWaiting > 0) {
+    const what = [sourcesWaiting ? countNoun(sourcesWaiting, "source") : "", linksWaiting ? countNoun(linksWaiting, "link or part", "links and parts") : ""]
+      .filter(Boolean).join(" · ");
+    out.push(
+      <NeedsRow key="proposals" testid="entity-needs-proposals"
+        title={`${countNoun(sourcesWaiting + linksWaiting, "proposal")} here wait for a person`} detail={`proposed, not confirmed · ${what}`}>
+        {sourcesWaiting > 0 && <Button variant="outline" size="xs" onClick={() => onTab("sources")}>Sources</Button>}
+        {linksWaiting > 0 && <Button variant="outline" size="xs" onClick={() => onTab("links")}>Links</Button>}
+      </NeedsRow>,
+    );
+  }
+  return out;
+}
+
+/** Count what was declared against the data — keys, link cardinalities, lifecycles, display properties. No model call. */
+function MeasureButton({ connectionId, schema, onChanged, label }: {
+  connectionId: string; schema?: string; onChanged: () => void; label: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const run = async () => {
+    setBusy(true);
+    setProblem("");
+    try {
+      await measureOntology(connectionId, schema);
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <Button variant="outline" size="xs" disabled={busy} onClick={run} data-testid="entity-measure"
+        title="Count keys, link cardinalities, lifecycles and display properties against the data — no model call">
+        {busy ? "Checking…" : label}
+      </Button>
+      {problem && <span className="aug-fs-xs" style={{ color: "var(--red5)", flexBasis: "100%" }}>{problem}</span>}
+    </>
+  );
+}
+
+/** Where an entity came from: the builder found it in a table, a person declared it, or an explorer proposed it — and
+ *  the id the agent and the API name it by. */
+function OriginSection({ detail }: { detail: ObjectTypeDetail }) {
+  const backing = detail.bindings.find((b) => b.primary);
+  const from = backing ? (backing.reads === "table" ? backing.table : "a keyed SELECT") : "";
+  const said = detail.origin === "model"
+    ? `Proposed by ${detail.provenance || "an explorer"} — not confirmed yet.`
+    : detail.origin === "human"
+      ? `Declared by a person${detail.provenance ? ` — first proposed by ${detail.provenance}` : ""}.`
+      : detail.platform ? "Kept by Aughor: its objects live in the edit layer, set by actions."
+        : `Found by the builder${from ? ` in ${from}` : ""}.`;
+  return (
+    <Section title="Where it comes from">
+      <p className="aug-fs-sm" style={{ margin: 0, color: "var(--t2)" }} data-testid="entity-origin">{said}</p>
+      <div className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)", marginTop: 4 }}>{detail.object_type} · {detail.id}</div>
+    </Section>
   );
 }
 
@@ -245,6 +472,7 @@ function ProcessesSection({ detail, connectionId, schema, onOpenProcess, onChang
   onChanged: () => void;
   onDesignProcess?: (entity: string) => void;
 }) {
+  const editing = useEditing();
   const processes = detail.processes ?? [];
   const derived = detail.derived ? [...detail.derived.segments, ...detail.derived.metrics, ...detail.derived.properties] : [];
   return (
@@ -265,18 +493,20 @@ function ProcessesSection({ detail, connectionId, schema, onOpenProcess, onChang
           No declared process or rule touches this type yet.
         </p>
       )}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-        {onDesignProcess ? (
-          <Button variant="outline" size="xs" data-testid="type-design-process" onClick={() => onDesignProcess(detail.id)}
-            title={`Design a process ${detail.display_name} goes through, on a page of its own — counted on the data as you build it`}>
-            <Icon name="plus" size={12} /> Declare a process
-          </Button>
-        ) : (
-          <DeclareProcess detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
-            onChanged={onChanged} />
-        )}
-        <DeclareRule detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
-      </div>
+      {editing && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+          {onDesignProcess ? (
+            <Button variant="outline" size="xs" data-testid="type-design-process" onClick={() => onDesignProcess(detail.id)}
+              title={`Design a process ${detail.display_name} goes through, on a page of its own — counted on the data as you build it`}>
+              <Icon name="plus" size={12} /> Declare a process
+            </Button>
+          ) : (
+            <DeclareProcess detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
+              onChanged={onChanged} />
+          )}
+          <DeclareRule detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
+        </div>
+      )}
     </Section>
   );
 }
@@ -546,6 +776,7 @@ function PartOfLine({ detail, connectionId, schema, onOpen, onChanged }: {
   onOpen: (objectType: string) => void;
   onChanged: () => void;
 }) {
+  const editing = useEditing();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const part = detail.part_of;
@@ -569,10 +800,12 @@ function PartOfLine({ detail, connectionId, schema, onOpen, onChanged }: {
       {part.holds
         ? <Button variant="ghost" size="xs" onClick={() => onOpen(part.object_type)} title={`Open ${part.display_name}`}>{part.display_name}</Button>
         : <span style={{ color: "var(--t2)" }}>{part.display_name}</span>}
-      <Button variant="minimal" size="xs" disabled={busy} onClick={release}
-        title="Stand this type on its own again — its binding on the parent stays">
-        {busy ? "Releasing…" : "Release"}
-      </Button>
+      {editing && (
+        <Button variant="minimal" size="xs" disabled={busy} onClick={release}
+          title="Stand this type on its own again — its binding on the parent stays">
+          {busy ? "Releasing…" : "Release"}
+        </Button>
+      )}
       {!part.holds && <span style={{ color: "var(--t3)", flexBasis: "100%", lineHeight: 1.45 }}>{part.note}</span>}
       {problem && <span style={{ color: "var(--red5)", flexBasis: "100%" }}>{problem}</span>}
     </div>
@@ -669,6 +902,7 @@ function PartsSection({ detail, types, connectionId, schema, onOpen, onChanged }
   onOpen: (objectType: string) => void;
   onChanged: () => void;
 }) {
+  const editing = useEditing();
   const [busy, setBusy] = useState("");
   const [problem, setProblem] = useState("");
   const parts = detail.parts ?? [];
@@ -705,11 +939,13 @@ function PartsSection({ detail, types, connectionId, schema, onOpen, onChanged }
                 connectionId={connectionId} schema={schema} onChanged={onChanged} />
             </>
           )}
-          <Button variant="minimal" size="xs" disabled={busy === part.object_type} style={{ marginLeft: "auto" }}
-            onClick={() => release(part.object_type, partId(part.object_type))}
-            title="Stand this type on its own again — the binding stays">
-            {busy === part.object_type ? "Releasing…" : "Release"}
-          </Button>
+          {editing && (
+            <Button variant="minimal" size="xs" disabled={busy === part.object_type} style={{ marginLeft: "auto" }}
+              onClick={() => release(part.object_type, partId(part.object_type))}
+              title="Stand this type on its own again — the binding stays">
+              {busy === part.object_type ? "Releasing…" : "Release"}
+            </Button>
+          )}
         </div>
       ))}
       {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
@@ -726,6 +962,7 @@ function DisplaySection({ detail, connectionId, schema, onChanged, readOnly }: {
   readOnly?: boolean;
 }) {
   const shown = detail.display_property;
+  const editing = useEditing();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   // A display property is measured over the backing, so only a property the backing supplies can be declared.
@@ -761,7 +998,7 @@ function DisplaySection({ detail, connectionId, schema, onChanged, readOnly }: {
       </div>
       {shown.note && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--t3)", lineHeight: 1.45 }}>{shown.note}</p>}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-        {!readOnly && (
+        {!readOnly && editing && (
           <>
             <label className="aug-fs-xs" htmlFor={`display-${detail.object_type}`} style={{ color: "var(--t3)" }}>Declare</label>
             <SelectField id={`display-${detail.object_type}`} style={SELECT} value={shown.property}
@@ -819,6 +1056,7 @@ function ExpressionsSection({ detail, connectionId, schema, onChanged }: {
   const [expression, setExpression] = useState("");
   const [role, setRole] = useState<"measure" | "dimension">("measure");
   const [unit, setUnit] = useState("");
+  const editing = useEditing();
   const [busy, setBusy] = useState("");
   const [problem, setProblem] = useState("");
   const rows = detail.expressions ?? [];
@@ -836,6 +1074,8 @@ function ExpressionsSection({ detail, connectionId, schema, onChanged }: {
       setBusy("");
     }
   };
+  // Read first: with none declared, the section is only its door — which is behind Edit.
+  if (!rows.length && !editing && !problem) return null;
   return (
     <Section title="Expressions" aside="properties computed from the row, in SQL a person wrote">
       {rows.map((e) => (
@@ -847,13 +1087,15 @@ function ExpressionsSection({ detail, connectionId, schema, onChanged }: {
           {e.verified === true
             ? <span className="aug-tag aug-tag-green">runs</span>
             : <span className="aug-tag aug-tag-amber" title={e.note}>did not bind</span>}
-          <Button variant="minimal" size="xs" disabled={busy === e.name} style={{ marginLeft: "auto" }}
-            onClick={() => act(e.name, () => removeExpression(connectionId, detail.id, e.name, schema))}>
-            Remove
-          </Button>
+          {editing && (
+            <Button variant="minimal" size="xs" disabled={busy === e.name} style={{ marginLeft: "auto" }}
+              onClick={() => act(e.name, () => removeExpression(connectionId, detail.id, e.name, schema))}>
+              Remove
+            </Button>
+          )}
         </div>
       ))}
-      {!open ? (
+      {!editing ? null : !open ? (
         <Button variant="ghost" size="xs" onClick={() => setOpen(true)} style={{ marginTop: 4 }}>Declare an expression</Button>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }} data-testid="declare-expression">
@@ -1189,6 +1431,7 @@ function BindingsSection({ detail, connectionId, schema, onChanged, sources }: {
   /** ON-8 — set in an organisation's ontology: each binding names its connection, and a new one may pick another. */
   sources?: Record<string, string>;
 }) {
+  const editing = useEditing();
   const [busy, setBusy] = useState("");
   const [problem, setProblem] = useState("");
   const sourceOf = (b: TypeBinding) => {
@@ -1213,7 +1456,7 @@ function BindingsSection({ detail, connectionId, schema, onChanged, sources }: {
     <Section title="Bindings" aside="where its properties are read from">
       {detail.bindings.map((b, i) => (
         <BindingRow key={b.name} binding={b} first={i === 0} busy={busy === b.name} source={sourceOf(b)}
-          onRemove={!b.primary
+          onRemove={!b.primary && editing
             ? () => act(b.name, () => removeBinding(connectionId, detail.id, b.name, schema)) : undefined}
           confirm={b.source === "model" && !sources ? (
             <ConfirmProposal target={{ kind: "binding", entity: detail.id, binding: b.name }} connectionId={connectionId}
@@ -1232,9 +1475,11 @@ function BindingsSection({ detail, connectionId, schema, onChanged, sources }: {
           ))}
         </div>
       )}
-      <DeclareBinding detail={detail} busy={!!busy} sources={sources} onDeclare={(name, spec) =>
-        act(name, () => addBinding(connectionId, detail.id, name, spec, schema))} />
-      {!sources && (
+      {editing && (
+        <DeclareBinding detail={detail} busy={!!busy} sources={sources} onDeclare={(name, spec) =>
+          act(name, () => addBinding(connectionId, detail.id, name, spec, schema))} />
+      )}
+      {!sources && editing && (
         <BackingEditor detail={detail} busy={busy === "backing"}
           onPreview={(sql, key) => previewBacking(connectionId, detail.id, sql, key, schema)}
           onSet={(sql, key) => act("backing", () => setQueryBacking(connectionId, detail.id, sql, key, schema))}
@@ -1500,6 +1745,7 @@ function NameLink({ link, connectionId, schema, onChanged }: {
   schema?: string;
   onChanged: () => void;
 }) {
+  const editing = useEditing();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(link.business_name || "");
   const [busy, setBusy] = useState(false);
@@ -1517,19 +1763,21 @@ function NameLink({ link, connectionId, schema, onChanged }: {
       setBusy(false);
     }
   };
-  if (!open) {
+  if (!open || !editing) {
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
         {link.business_name_source === "model" && (
-          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}
+          <span className="aug-fs-xs" style={{ color: "var(--vio4)" }}
             title="The explorer proposed this name — confirm it in the draft rail, or rename it here">
-            proposed by the explorer
+            name proposed by the explorer
           </span>
         )}
-        <Button variant="ghost" size="xs" onClick={() => setOpen(true)}
-          title="Name this link the way the business says it — the mechanical name keeps working beside it">
-          {link.business_name_source === "human" || link.business_name_source === "model" ? "Rename" : "Name it"}
-        </Button>
+        {editing && (
+          <Button variant="ghost" size="xs" onClick={() => setOpen(true)}
+            title="Name this link the way the business says it — the mechanical name keeps working beside it">
+            {link.business_name_source === "human" || link.business_name_source === "model" ? "Rename" : "Name it"}
+          </Button>
+        )}
       </span>
     );
   }
@@ -1623,17 +1871,26 @@ function AddRelationship({ detail, types, connectionId, schema, onChanged }: {
 
 /** 2026-09-22 — what a person withdrew on this type, and the door back: a builder-found binding or a found link
  *  the builder guessed wrong leaves the served graph on withdrawal (the compiler stops following it) and returns on
- *  Restore. Rendered only when something was withdrawn, so an untouched type's panel is unchanged. */
+ *  Restore. In the History tab; with nothing withdrawn it is one muted line. */
 function WithdrawnSection({ detail, connectionId, schema, onChanged }: {
   detail: ObjectTypeDetail;
   connectionId: string;
   schema?: string;
   onChanged: () => void;
 }) {
+  const editing = useEditing();
   const [busy, setBusy] = useState("");
   const [problem, setProblem] = useState("");
   const gone = detail.withdrawn;
-  if (!gone || (gone.bindings.length === 0 && gone.links.length === 0)) return null;
+  if (!gone || (gone.bindings.length === 0 && gone.links.length === 0)) {
+    return (
+      <Section title="Withdrawn">
+        <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)" }}>
+          Nothing on {detail.display_name} has been withdrawn.
+        </p>
+      </Section>
+    );
+  }
   const act = async (key: string, write: () => Promise<void>) => {
     setBusy(key);
     setProblem("");
@@ -1653,10 +1910,12 @@ function WithdrawnSection({ detail, connectionId, schema, onChanged }: {
           style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
           <span style={{ ...MONO, color: "var(--t2)" }}>{name}</span>
           <span style={{ color: "var(--t3)" }}>binding</span>
-          <Button variant="ghost" size="xs" disabled={busy === `b:${name}`} style={{ marginLeft: "auto" }}
-            onClick={() => act(`b:${name}`, () => restoreBinding(connectionId, detail.id, name, schema))}>
-            Restore
-          </Button>
+          {editing && (
+            <Button variant="ghost" size="xs" disabled={busy === `b:${name}`} style={{ marginLeft: "auto" }}
+              onClick={() => act(`b:${name}`, () => restoreBinding(connectionId, detail.id, name, schema))}>
+              Restore
+            </Button>
+          )}
         </div>
       ))}
       {gone.links.map((l) => (
@@ -1664,10 +1923,12 @@ function WithdrawnSection({ detail, connectionId, schema, onChanged }: {
           style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
           <span style={{ ...MONO, color: "var(--t2)" }}>{l.relationship}</span>
           <span style={{ color: "var(--t3)" }}>link · {l.from_entity} → {l.to_entity}</span>
-          <Button variant="ghost" size="xs" disabled={busy === `l:${l.relationship}`} style={{ marginLeft: "auto" }}
-            onClick={() => act(`l:${l.relationship}`, () => restoreLink(connectionId, l.relationship, schema))}>
-            Restore
-          </Button>
+          {editing && (
+            <Button variant="ghost" size="xs" disabled={busy === `l:${l.relationship}`} style={{ marginLeft: "auto" }}
+              onClick={() => act(`l:${l.relationship}`, () => restoreLink(connectionId, l.relationship, schema))}>
+              Restore
+            </Button>
+          )}
         </div>
       ))}
       {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
@@ -1718,6 +1979,7 @@ function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged, 
    *  home-only); naming a link is declarative and opens there (2026-09-22). */
   inDomain?: boolean;
 }) {
+  const editing = useEditing();
   return (
     <Section title="Links" aside={`${detail.counts.traversable_links} of ${detail.counts.links} followed by the compiler`}>
       {detail.links.length === 0 && <EmptyState variant="inline" title={`No link reaches out from ${detail.display_name}.`} />}
@@ -1752,7 +2014,7 @@ function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged, 
               </>
             )}
             <NameLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />
-            {(link.origin === "human" || link.origin === "model" || !inDomain) && (
+            {editing && (link.origin === "human" || link.origin === "model" || !inDomain) && (
               <WithdrawLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />
             )}
           </div>
@@ -1773,7 +2035,9 @@ function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged, 
           )}
         </div>
       ))}
-      <AddRelationship detail={detail} types={types} connectionId={connectionId} schema={schema} onChanged={onChanged} />
+      {editing && (
+        <AddRelationship detail={detail} types={types} connectionId={connectionId} schema={schema} onChanged={onChanged} />
+      )}
     </Section>
   );
 }
@@ -1785,7 +2049,8 @@ function ActionsSection({ detail, connectionId, onDesignAction }: {
   onDesignAction?: (entity: string) => void;
 }) {
   const href = declaredActionsHref(connectionId);
-  const design = onDesignAction && (
+  const editing = useEditing();
+  const design = editing && onDesignAction && (
     <Button variant="outline" size="xs" data-testid="type-design-action" onClick={() => onDesignAction(detail.id)}>
       Declare an action
     </Button>
@@ -1794,7 +2059,7 @@ function ActionsSection({ detail, connectionId, onDesignAction }: {
     return (
       <Section title="Declared actions">
         <EmptyState variant="inline" title={`No declared action takes a ${detail.display_name.toLowerCase()}.`}
-          action={design ?? <Link href={href}><Button variant="outline" size="xs">Open Actions</Button></Link>} />
+          action={design || <Link href={href}><Button variant="outline" size="xs">Open Actions</Button></Link>} />
       </Section>
     );
   }
@@ -1836,6 +2101,7 @@ function EditStatesSection({ detail, connectionId, schema, onChanged }: {
 }) {
   const declared = Object.entries(detail.edit_states ?? {});
   const held = detail.properties.filter((p) => p.role === "overlay").map((p) => p.name);
+  const editing = useEditing();
   const [open, setOpen] = useState(false);
   const [property, setProperty] = useState("");
   const [states, setStates] = useState("");
@@ -1863,17 +2129,19 @@ function EditStatesSection({ detail, connectionId, schema, onChanged }: {
         <div key={prop} data-testid="edit-states-row" className="aug-fs-xs" style={{ padding: "4px 0", color: "var(--t2)" }}>
           <span style={{ color: "var(--t1)", fontWeight: 600 }}>{prop}</span>
           {": "}{spec.moves.map(([a, b]) => `${word(a)} → ${b}`).join(" · ")}
-          <Button variant="minimal" size="xs" onClick={() => void withdrawEditStates(connectionId, detail.id, prop, schema).then(onChanged)}>
-            Withdraw
-          </Button>
+          {editing && (
+            <Button variant="minimal" size="xs" onClick={() => void withdrawEditStates(connectionId, detail.id, prop, schema).then(onChanged)}>
+              Withdraw
+            </Button>
+          )}
         </div>
       ))}
-      {!declared.length && !open && (
+      {!declared.length && !(open && editing) && (
         <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)" }}>
           None declared — an action may set {held.length ? held.join(", ") : "what it sets"} to any value.
         </p>
       )}
-      {open ? (
+      {!editing ? null : open ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }} data-testid="edit-states-form">
           <Input value={property} aria-label="Property the edit layer holds" placeholder={held[0] ?? "review_status"}
             onChange={(e) => setProperty(e.target.value)} />

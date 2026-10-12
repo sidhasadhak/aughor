@@ -11,10 +11,10 @@
  * column is refused by the server, silently, one round trip later.
  */
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within, change, choose, valueOf } from "@/lib/testing";
+import { render, screen, waitFor, within, change, choose, valueOf, fireEvent } from "@/lib/testing";
 import userEvent from "@testing-library/user-event";
 
-import type { BackingPreview, ObjectTypeDetail } from "@/lib/objectTypes";
+import type { BackingPreview, ObjectTypeDetail, ProcessDetail } from "@/lib/objectTypes";
 
 const addBinding = vi.fn(async (..._args: unknown[]) => undefined);
 const deleteLink = vi.fn(async (..._args: unknown[]) => undefined);
@@ -29,6 +29,10 @@ const previewBacking = vi.fn(async (..._args: unknown[]): Promise<unknown> => un
 const setQueryBacking = vi.fn(async (..._args: unknown[]) => undefined);
 const withdrawBacking = vi.fn(async (..._args: unknown[]) => undefined);
 const declareEditStates = vi.fn(async (..._args: unknown[]) => undefined);
+const measureOntology = vi.fn(async (..._args: unknown[]) => undefined);
+/** The processes and rules the Overview reads for its funnel and its sets' counts — none, unless a test serves some. */
+const served = vi.hoisted(() => ({ scope: { processes: [] as unknown[], rules: [] as unknown[] } }));
+const getProcesses = vi.fn(async (..._args: unknown[]) => served.scope);
 /** The type the panel reads — the fixture below, unless a test shows another. */
 const shown: { detail?: ObjectTypeDetail } = {};
 // The words section reads the scope's keys on every panel — mocked, so no test here reaches a running API.
@@ -56,6 +60,8 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   restoreLink: (...a: unknown[]) => restoreLink(...a),
   declareExpression: (...a: unknown[]) => declareExpression(...a),
   declareEditStates: (...a: unknown[]) => declareEditStates(...a),
+  measureOntology: (...a: unknown[]) => measureOntology(...a),
+  getProcesses: (...a: unknown[]) => getProcesses(...a),
 }));
 
 import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
@@ -111,6 +117,17 @@ function panel() {
       onOpen={() => {}} onChanged={() => {}} />);
 }
 
+/** The panel reads first (the approved mockup, 2026-10-10): each section sits under its tab, and a door that writes
+ *  shows behind Edit. A Radix tab opens on mouseDown. */
+async function openTab(name: string) {
+  fireEvent.mouseDown(await screen.findByRole("tab", { name: new RegExp(`^${name}`) }));
+}
+async function editIn(name: string) {
+  await openTab(name);
+  const edit = await screen.findByTestId("entity-edit");
+  if (edit.getAttribute("aria-pressed") !== "true") fireEvent.click(edit);
+}
+
 describe("EntityTypePanel — declaring what the builder cannot propose", () => {
   beforeEach(() => {
     addBinding.mockClear();
@@ -120,6 +137,7 @@ describe("EntityTypePanel — declaring what the builder cannot propose", () => 
   it("declares a TIMESERIES binding with its time column — the kind no proposal ever offers", async () => {
     const user = userEvent.setup();
     panel();
+    await editIn("Sources");
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
 
     await user.type(screen.getByLabelText("Binding name"), "price_history");
@@ -138,6 +156,7 @@ describe("EntityTypePanel — declaring what the builder cannot propose", () => 
   it("will not bind a timeseries source with no time column, and sends a SELECT as `sql`", async () => {
     const user = userEvent.setup();
     panel();
+    await editIn("Sources");
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
     await user.type(screen.getByLabelText("Binding name"), "paid");
     await choose(screen.getByLabelText("Source kind"), "query");
@@ -157,6 +176,7 @@ describe("EntityTypePanel — declaring what the builder cannot propose", () => 
   it("names a link by its business verb, sending the RELATIONSHIP id rather than the link's own name", async () => {
     const user = userEvent.setup();
     panel();
+    await editIn("Links");
     await user.click(await screen.findByRole("button", { name: "Name it" }));
     const field = screen.getByLabelText("Business name for product_to_order_item");
     await user.type(field, "sold_as");
@@ -173,6 +193,7 @@ describe("EntityTypePanel — frames over a timeseries binding's readings", () =
   it("declares the frames beside the binding, in the algebra the API takes", async () => {
     const user = userEvent.setup();
     panel();
+    await editIn("Sources");
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
     await user.type(screen.getByLabelText("Binding name"), "price_history");
     await user.type(screen.getByLabelText("Table"), "price_history");
@@ -205,6 +226,7 @@ describe("EntityTypePanel — frames over a timeseries binding's readings", () =
   it("sends no frames on a static binding — a frame over one row is that row", async () => {
     const user = userEvent.setup();
     panel();
+    await editIn("Sources");
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
     await user.type(screen.getByLabelText("Binding name"), "flags");
     await user.type(screen.getByLabelText("Table"), "order_flags");
@@ -225,6 +247,7 @@ describe("EntityTypePanel — ON-7: a part, and a link the builder did not find"
   it("declares a DETAIL binding with its rollups, and folds the table's type in as a part", async () => {
     const user = userEvent.setup();
     panel();
+    await editIn("Sources");
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
     await user.type(screen.getByLabelText("Binding name"), "lines");
     await user.type(screen.getByLabelText("Table"), "order_items");
@@ -252,6 +275,7 @@ describe("EntityTypePanel — ON-7: a part, and a link the builder did not find"
   it("sends no absorb on a keyed SELECT — there is no table whose type could fold in", async () => {
     const user = userEvent.setup();
     panel();
+    await editIn("Sources");
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
     await user.type(screen.getByLabelText("Binding name"), "lines");
     await choose(screen.getByLabelText("Source kind"), "query");
@@ -271,6 +295,7 @@ describe("EntityTypePanel — ON-7: a part, and a link the builder did not find"
   it("declares a relationship by ENTITY ids, with the verb and the column on each side", async () => {
     const user = userEvent.setup();
     panel();
+    await editIn("Links");
     await user.click(await screen.findByRole("button", { name: "Add a relationship" }));
     await user.type(screen.getByLabelText("Link verb"), "made_by");
     await choose(screen.getByLabelText("Link target type"), "brand");
@@ -307,10 +332,19 @@ describe("EntityTypePanel — ON-7b: what an explorer proposed, and a person's c
     render(
       <EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
         onOpen={() => {}} onChanged={changed} />);
-    const confirms = await screen.findAllByTestId("proposal-confirm");
-    expect(confirms).toHaveLength(3);                                      // the type, its binding, its link
+    // The type waits on a person on the Overview, under Needs you, with who proposed it; its binding and its link wait
+    // under their own tabs, and the Overview says how many do — a proposal behind a tab still reads as one.
+    const [type] = await screen.findAllByTestId("proposal-confirm");
+    expect(screen.getAllByTestId("proposal-confirm")).toHaveLength(1);
     expect(screen.getByText("model:m@1")).toBeInTheDocument();
-    for (const button of confirms) await user.click(button);
+    expect(screen.getByTestId("entity-needs-proposals")).toHaveTextContent("2 proposals here wait for a person");
+    await user.click(type);
+    await openTab("Sources");
+    expect(screen.getAllByTestId("proposal-confirm")).toHaveLength(1);
+    await user.click(screen.getByTestId("proposal-confirm"));
+    await openTab("Links");
+    expect(screen.getAllByTestId("proposal-confirm")).toHaveLength(1);
+    await user.click(screen.getByTestId("proposal-confirm"));
     await waitFor(() => expect(confirmProposals).toHaveBeenCalledTimes(3));
     expect(confirmProposals.mock.calls.map((call) => call[1])).toEqual([
       { targets: [{ kind: "entity", entity: "products" }] },
@@ -363,10 +397,14 @@ describe("EntityTypePanel — ON-8: a type of the organisation's ontology", () =
   it("says where the type and each binding are read from, marks a cross-source link, and offers no one-connection door", async () => {
     inDomain();
     expect(await screen.findByTestId("entity-connection")).toHaveTextContent("read from Shop");
+    await openTab("Sources");
     expect(screen.getAllByTestId("entity-binding-connection").map((n) => n.textContent)).toEqual(["Shop", "CRM"]);
+    await editIn("Links");
     expect(screen.getByTestId("entity-link-cross-source")).toHaveTextContent("cross-source");
-    // 2026-09-22 — naming is declarative and opens on a far link; the explorer's confirm and the SQL-bound doors do not.
+    // 2026-09-22 — naming is declarative and opens on a far link; the explorer's confirm and the SQL-bound doors do not,
+    // even while editing.
     expect(screen.getByRole("button", { name: /Name it|Rename/ })).toBeInTheDocument();
+    await openTab("Properties");
     expect(screen.queryByLabelText("Declare")).toBeNull();
     expect(screen.getByRole("button", { name: "Measure" })).toBeInTheDocument();
   });
@@ -374,6 +412,7 @@ describe("EntityTypePanel — ON-8: a type of the organisation's ontology", () =
   it("binds from another connection only as a static binding, naming that connection and its schema in the spec", async () => {
     const user = userEvent.setup();
     inDomain();
+    await editIn("Sources");
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
     await choose(screen.getByTestId("declare-binding-connection"), "crm1");
     expect(screen.getByTestId("declare-binding-crosses")).toBeInTheDocument();
@@ -394,6 +433,7 @@ describe("EntityTypePanel — ON-8: a type of the organisation's ontology", () =
   it("sends no connection when the source is on the type's own connection", async () => {
     const user = userEvent.setup();
     inDomain();
+    await editIn("Sources");
     await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
     expect(valueOf(screen.getByTestId("declare-binding-connection"))).toBe("shop1");
     expect(screen.queryByTestId("declare-binding-crosses")).toBeNull();
@@ -427,6 +467,7 @@ describe("EntityTypePanel — ON-9: a process and a rule declared from the type 
     const onOpenProcess = vi.fn();
     render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
       onOpen={() => {}} onChanged={() => {}} onOpenProcess={onOpenProcess} />);
+    await editIn("Properties");
     await user.click(await screen.findByRole("button", { name: "Declare a process" }));
     const declare = screen.getByRole("button", { name: "Declare the process" });
     await user.type(screen.getByLabelText("Process id"), "order_fulfilment");
@@ -449,6 +490,7 @@ describe("EntityTypePanel — ON-9: a process and a rule declared from the type 
   it("declares a condition rule that scopes a metric, and a value set by its values", async () => {
     const user = userEvent.setup();
     panel();
+    await editIn("Properties");
     await user.click(await screen.findByRole("button", { name: "Declare a rule" }));
     await user.type(screen.getByLabelText("Rule id"), "shipped_orders");
     await choose(screen.getByLabelText("Rule property"), "status");
@@ -474,6 +516,7 @@ describe("EntityTypePanel — ON-9: a process and a rule declared from the type 
   it("offers no process on a type with fewer than two moments to run between", async () => {
     shown.detail = undefined;
     panel();
+    await editIn("Properties");
     expect(await screen.findByRole("button", { name: "Declare a process" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Declare a rule" })).toBeEnabled();
   });
@@ -499,6 +542,7 @@ describe("EntityTypePanel — reading a type from a keyed SELECT", () => {
       .mockResolvedValueOnce(preview({ added: ["avg_rating"] }));
     render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
       onOpen={() => {}} onChanged={() => {}} onOpenProcess={() => {}} />);
+    await editIn("Sources");
     await user.click(await screen.findByRole("button", { name: "Read from a SELECT" }));
     await user.type(screen.getByLabelText("Backing SELECT"), "SELECT product_id, name FROM products");
     await user.clear(screen.getByLabelText("Backing key"));
@@ -528,10 +572,12 @@ describe("withdrawing what the builder found (2026-09-22)", () => {
       withdrawn: { bindings: ["lines"], links: [{ relationship: "product_to_supplier", from_entity: "Product", to_entity: "Supplier" }] },
     };
     render(<EntityTypePanel connectionId="c1" objectType="product" types={rows} version={0} onOpen={() => {}} onChanged={() => {}} />);
+    await editIn("Links");
     const link = await screen.findByTestId("entity-link");
     await user.click(within(link).getByRole("button", { name: "Withdraw" }));
     await user.click(within(link).getByRole("button", { name: /Withdraw/ }));
     await waitFor(() => expect(deleteLink).toHaveBeenCalled());
+    await openTab("History");
     const rows_ = screen.getAllByTestId("entity-withdrawn");
     expect(rows_).toHaveLength(2);
     expect(rows_[1]).toHaveTextContent("product_to_supplier");
@@ -547,6 +593,7 @@ describe("expression properties (2026-09-22)", () => {
     const user = userEvent.setup();
     declareExpression.mockClear();
     render(<EntityTypePanel connectionId="c1" objectType="product" types={rows} version={0} onOpen={() => {}} onChanged={() => {}} />);
+    await editIn("Properties");
     await user.click(await screen.findByRole("button", { name: "Declare an expression" }));
     await user.type(screen.getByLabelText("Expression name"), "days_listed");
     await user.type(screen.getByLabelText("Expression SQL"), "date_diff('day', listed_at, now())");
@@ -573,6 +620,7 @@ describe("EntityTypePanel — the words people use for a type (Arc OC-3, 2026-10
         keyed: false, proposal: { kind: "entity", subject: "orders", why: "its table, orders, backs orders" }, reads: null },
     ];
     panel();
+    await openTab("Properties");                          // keying a proposed word is a yes, not an edit: no Edit needed
     const listed = await screen.findAllByTestId("type-word");
     expect(listed.map(w => w.textContent)).toEqual([
       "“list price”means products · retail_price — read from products.retail_price",
@@ -596,6 +644,7 @@ describe("the moves the edit layer allows", () => {
     shown.detail = { ...detail, edit_states: { review_status: { states: ["flagged", "reviewed"],
       moves: [["", "flagged"], ["flagged", "reviewed"]], initial: "" } } };
     panel();
+    await editIn("Actions");
     const row = await screen.findByTestId("edit-states-row");
     expect(row.textContent).toContain("review_status: unset → flagged · flagged → reviewed");
     await user.click(screen.getByTestId("edit-states-new"));
@@ -612,8 +661,200 @@ describe("the moves the edit layer allows", () => {
   it("asks nothing a warehouse answers of a platform-owned type — no title to measure", async () => {
     shown.detail = { ...detail, platform: true };
     panel();
+    await editIn("Actions");
     await screen.findByTestId("edit-states-new");
+    await openTab("Properties");
+    expect(screen.getByTestId("entity-properties")).toBeInTheDocument();
     expect(screen.queryByTestId("entity-display-property")).toBeNull();
     shown.detail = { ...detail };
+  });
+});
+
+
+// ── The approved mockup (design-mockups/ontology-tab.html, 2026-10-10): one panel, six tabs, read first ──────────────
+
+describe("EntityTypePanel — the name, four figures and six tabs", () => {
+  afterEach(() => { shown.detail = undefined; });
+
+  it("says the entity's objects, its key, its properties and its links as four figures under its name", async () => {
+    shown.detail = { ...detail, parts: [{ object_type: "order_item", display_name: "Order Line", binding: "lines", kind: "detail" }],
+                     counts: { ...detail.counts, parts: 1 } };
+    panel();
+    expect(await screen.findByTestId("entity-figure-objects")).toHaveTextContent("1,000products");
+    expect(screen.getByTestId("entity-figure-key")).toHaveTextContent("✓ product_idkey, unique");
+    expect(screen.getByTestId("entity-figure-properties")).toHaveTextContent("2properties");
+    expect(screen.getByTestId("entity-figure-links")).toHaveTextContent("1link · 1 part");
+  });
+
+  it("says a key the data did not prove, and a platform-held entity, without a number it does not have", async () => {
+    shown.detail = { ...detail, key: { ...detail.key, verified: false, rows: null } };
+    const { unmount } = panel();
+    expect(await screen.findByTestId("entity-figure-key")).toHaveTextContent("product_idkey, not unique");
+    expect(screen.getByTestId("entity-figure-objects")).toHaveTextContent("—products, not counted");
+    unmount();
+    shown.detail = { ...detail, platform: true };
+    panel();
+    expect(await screen.findByTestId("entity-figure-objects")).toHaveTextContent("in Aughorkept by actions");
+  });
+
+  it("holds every section under its tab — none dropped, each where it belongs", async () => {
+    shown.detail = { ...detail, expressions: [{ name: "days_listed", expression: "date_diff('day', listed_at, now())",
+      role: "dimension", unit: "days", description: "", verified: true, note: "" }] };
+    panel();
+    // each tab says how many it holds, as the mockup's tabs do
+    expect(await screen.findAllByRole("tab")).toHaveLength(6);
+    for (const name of ["Overview", "Properties 2", "Links 1", "Actions 0", "Sources 1", "History"]) {
+      expect(screen.getByRole("tab", { name })).toBeInTheDocument();
+    }
+    const headings = () => screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+    await openTab("Properties");
+    await screen.findByRole("heading", { name: "Words people use" });             // read on opening the tab
+    expect(headings()).toEqual(["Key", "Named by", "Properties", "Expressions", "Processes and rules", "Verified metrics",
+                                "Words people use"]);
+    await openTab("Links");
+    expect(headings()).toEqual(["Links", "Path to"]);
+    await openTab("Actions");
+    expect(headings()).toEqual(["Declared actions", "Moves the edit layer allows"]);
+    await openTab("Sources");
+    expect(headings()).toEqual(["Bindings"]);
+    await openTab("History");
+    expect(headings()).toEqual(["Where it comes from", "Withdrawn"]);
+    expect(screen.getByTestId("entity-origin")).toHaveTextContent("Found by the builder in products.");
+    expect(screen.getByText("Nothing on Product has been withdrawn.")).toBeInTheDocument();
+  });
+
+  it("reads first: no door that writes shows until Edit, and Done folds them away", async () => {
+    panel();
+    await openTab("Sources");
+    await screen.findByTestId("entity-binding");
+    expect(screen.queryByRole("button", { name: "Declare a binding" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Read from a SELECT" })).toBeNull();
+    await openTab("Links");
+    expect(screen.queryByRole("button", { name: "Name it" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Withdraw" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add a relationship" })).toBeNull();
+    await openTab("Properties");
+    expect(screen.queryByRole("button", { name: "Declare a process" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Expressions" })).toBeNull();      // none declared: only a door, behind Edit
+    fireEvent.click(screen.getByTestId("entity-edit"));
+    expect(screen.getByTestId("entity-edit")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Declare a process" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Declare an expression" })).toBeInTheDocument();
+    await openTab("Links");
+    expect(screen.getByRole("button", { name: "Name it" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add a relationship" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("entity-edit"));                            // Done
+    expect(screen.queryByRole("button", { name: "Add a relationship" })).toBeNull();
+  });
+});
+
+describe("EntityTypePanel — the Overview: what needs a person, the flow, the sets, what uses it", () => {
+  const promise = (over: Partial<NonNullable<ProcessDetail["stages"][number]["promise"]>>) => ({
+    name: "dispatch", kind: "within_days" as const, deadline: "", within_days: 2, within_hours: null, grain: "product",
+    grain_id: "products", via: "", target: null, objects: 1000, reached: 650, breached: 108, kept: 542, open: 200,
+    open_overdue: 190, breach_rate: 0.166154, as_of: "2026-10-13", verified: true, flags: [], note: "",
+    segment: "late_dispatch", metric: "dispatch_breach_rate", overdue_segment: "overdue_dispatch", ...over });
+  const stage = (name: string, reached: number | null, share: number | null, p: ReturnType<typeof promise> | null = null) => ({
+    name, display_name: name, anchor: { timestamp: `${name}_at` }, reached, share, verified: true, note: "",
+    transition: null, promise: p });
+  const fulfilment: ProcessDetail = {
+    id: "order_fulfilment", display_name: "Order Fulfilment", description: "", entity: "product", entity_id: "products",
+    owner: "", origin: "human", provenance: "", objects: 1000, verified: true, note: "", measured_at: "",
+    stages: [
+      stage("placed", 1000, 1),
+      stage("shipped", 650, 0.65, promise({})),
+      stage("delivered", null, null, promise({ name: "delivery", within_days: 4, verified: null, breach_rate: null,
+        open_overdue: null, segment: "late_delivery", overdue_segment: "" })),
+    ],
+    derived: { segments: [], properties: [], metrics: [] },
+    leaves: { property: "status", values: ["Cancelled"], left: 150, missing: [], unknown: 0, note: "150 left the process" },
+  };
+  const flowing: ObjectTypeDetail = {
+    ...detail,
+    display_property: { ...detail.display_property, verified: null },
+    segments: ["active_products"],
+    processes: [{ id: "order_fulfilment", display_name: "Order Fulfilment", roles: ["goes through it"], verified: true,
+                  stages: ["placed", "shipped", "delivered"] }],
+    derived: {
+      segments: [
+        { name: "late_dispatch", kind: "segment", source: "the dispatch promise", description: "broke the dispatch promise", usable: true },
+        { name: "completed", kind: "segment", source: "rule completed", description: "status is Complete", usable: true },
+        { name: "late_delivery", kind: "segment", source: "the delivery promise", description: "", usable: false,
+          why_not: "the delivery promise is not counted yet" },
+      ],
+      properties: [], metrics: [],
+    },
+    metrics: [{ id: "average_delivery_time", display_name: "average_delivery_time", unit: "days", formula_sql: "AVG(x)" }],
+    actions: [{ id: "flag_for_review", display_name: "Flag for review", description: "", kind: "annotate", risk: "low",
+                why: "takes product", params: [], edits: [] }],
+    counts: { ...detail.counts, actions: 1, metrics: 1 },
+  };
+
+  beforeEach(() => {
+    shown.detail = flowing;
+    served.scope = { processes: [fulfilment], rules: [{ id: "completed", segment: "completed", admitted: 400 }] };
+    getProcesses.mockClear();
+    measureOntology.mockClear();
+  });
+  afterEach(() => {
+    shown.detail = undefined;
+    served.scope = { processes: [], rules: [] };
+  });
+
+  it("draws each process the entity goes through as a funnel — stage, bar, count — read from the processes door", async () => {
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} onOpenProcess={() => {}} />);
+    const flow = await screen.findByTestId("process-flow");
+    expect(getProcesses).toHaveBeenCalledWith("c1", "s");
+    expect(flow).toHaveTextContent("Order Fulfilment150 left · cancelled");
+    expect(within(flow).getAllByTestId("process-flow-count").map((c) => c.textContent)).toEqual(["1,000", "650", "—"]);
+    // a stage the data did not count has no bar — never a bar of zero
+    expect(within(flow).getAllByTestId("process-flow-bar").map((b) => (b as HTMLElement).style.width)).toEqual(["100%", "65%"]);
+  });
+
+  it("puts each promise on one line, and its overdue count is a button that opens the process", async () => {
+    const onOpenProcess = vi.fn();
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} onOpenProcess={onOpenProcess} />);
+    const [dispatch, delivery] = await screen.findAllByTestId("process-flow-promise");
+    expect(dispatch).toHaveTextContent("Dispatch within 2 daysbroken 16.6%190 overdue");
+    expect(delivery).toHaveTextContent("Delivery within 4 daysnot counted yet");          // never a rate it does not have
+    fireEvent.click(within(dispatch).getByTestId("process-flow-overdue"));
+    expect(onOpenProcess).toHaveBeenCalledWith("order_fulfilment");
+  });
+
+  it("asks how one object is named while nobody has checked it — Check measures, Change opens the door", async () => {
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} />);
+    const ask = await screen.findByTestId("entity-needs-title");
+    expect(ask).toHaveTextContent("How is one product named?Proposed: product_name · not checked yet");
+    expect(screen.getByRole("tab", { name: /^Overview/ })).toHaveTextContent("Overview1");   // the amber count waits on its tab
+    fireEvent.click(within(ask).getByRole("button", { name: "Check" }));
+    await waitFor(() => expect(measureOntology).toHaveBeenCalledWith("c1", "s"));
+    fireEvent.click(within(ask).getByRole("button", { name: "Change" }));
+    expect(await screen.findByTestId("entity-tab-properties")).toBeInTheDocument();
+    expect(screen.getByLabelText("Declare")).toBeInTheDocument();                         // the door, open
+  });
+
+  it("lists the sets it is read in with the counts the data gave, a refused one as refused, and what uses it", async () => {
+    const user = userEvent.setup();
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} />);
+    await screen.findByTestId("process-flow");
+    expect(screen.getAllByTestId("entity-set").map((s) => s.textContent))
+      .toEqual(["Late dispatch108", "Completed400", "Late deliveryrefused", "Active products"]);
+    const used = screen.getByTestId("entity-used-by");
+    expect(used).toHaveTextContent("Metric · Average delivery time");
+    await user.click(within(used).getByRole("button", { name: /Flag for review/ }));
+    expect(await screen.findByTestId("entity-tab-actions")).toBeInTheDocument();
+  });
+
+  it("reads no processes door for an entity no process or rule touches", async () => {
+    shown.detail = undefined;
+    panel();
+    await screen.findByTestId("entity-overview");
+    expect(getProcesses).not.toHaveBeenCalled();
+    expect(screen.getByTestId("entity-overview"))
+      .toHaveTextContent("Nothing waits on a person here, and no process, set, metric or action reads Product yet.");
   });
 });

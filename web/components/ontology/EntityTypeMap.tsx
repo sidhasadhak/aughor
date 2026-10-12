@@ -15,12 +15,15 @@
  * Every fact on a card is measured, not a paragraph (`GET /object-types`): whether the key is unique, and how many
  * of its links the compiler follows. The rest is the panel's, which is open beside it. A link the compiler refuses
  * is drawn dashed and says why on hover.
+ *
+ * A link is drawn straight, bending only at a right angle (the user, 2026-10-10: no curves) — React Flow's step path
+ * with no rounding on its corners (`LinkEdge`).
  */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BaseEdge,
   Controls,
-  getBezierPath,
+  getSmoothStepPath,
   Handle,
   MarkerType,
   Panel,
@@ -138,11 +141,25 @@ function nameOf(sources: Record<string, string>, connectionId: string | undefine
   return connectionId ? sources[connectionId] ?? connectionId : "";
 }
 
-export function EntityTypeMap({ connectionId, schema, onReleaseChanged }: {
+/** What the map holds, for the figures row above it: every entity it reads (parts included), its links, its declared
+ *  processes and rules, and how many of an explorer's proposals wait for a person to confirm them. */
+export interface MapSummary {
+  entities: number;
+  links: number;
+  processes: number;
+  rules: number;
+  proposed: number;
+}
+
+export function EntityTypeMap({ connectionId, schema, onReleaseChanged, onSummary, reviewDraft = 0 }: {
   connectionId: string;
   schema?: string;
   /** Something here declared or published — the release strip above re-reads. */
   onReleaseChanged?: () => void;
+  /** Told what the map holds each time it is read — the figures row above the map says it. */
+  onSummary?: (summary: MapSummary) => void;
+  /** Bumped by the figures row's "to approve": the explorer draft opens its proposals for review. */
+  reviewDraft?: number;
 }) {
   const [map, setMap] = useState<TypeMap | null>(null);
   const [error, setError] = useState("");
@@ -202,6 +219,14 @@ export function EntityTypeMap({ connectionId, schema, onReleaseChanged }: {
   // ON-7 — a part is not a card: it is folded into its parent. Memoised on the map itself, so a render that changes nothing
   // the map draws — the draft arriving, a search in the rail — hands the canvas the same map and re-lays nothing.
   const drawn = useMemo(() => (map ? collapseParts(map) : null), [map]);
+
+  useEffect(() => {
+    if (!map || !onSummary) return;
+    onSummary({
+      entities: map.object_types.length, links: map.links.length, processes: (map.processes ?? []).length,
+      rules: (map.rules ?? []).length, proposed: draft?.counts.proposed ?? 0,
+    });
+  }, [map, draft, onSummary]);
 
   if (error) {
     return (
@@ -266,6 +291,7 @@ export function EntityTypeMap({ connectionId, schema, onReleaseChanged }: {
         onNewAction={domain ? undefined : () => setDesigning({ kind: "action" })}
         sources={domain ? sources : undefined}
         draft={draft}
+        reviewDraft={reviewDraft}
         explore={() => exploreOntology(connectionId, schema).then((next) => {
           setDraft(next);
           setVersion((v) => v + 1);
@@ -292,12 +318,19 @@ export function EntityTypeMap({ connectionId, schema, onReleaseChanged }: {
   );
 }
 
+/** A key as a mark: ✓ when the data proved it unique, and a dot that says what is wrong when it did not. */
+function KeyMark({ verified }: { verified: boolean | null }) {
+  if (verified === true) return <span style={{ color: "var(--grn4)" }} title="key unique">✓ key</span>;
+  if (verified === false) return <span style={{ color: "var(--red4)" }}>● key not unique</span>;
+  return <span style={{ color: "var(--amb4)" }}>● key not counted</span>;
+}
+
 function matches(t: TypeMapRow, wanted: string): boolean {
   return [t.display_name, t.object_type, t.id, t.table].some((s) => s.toLowerCase().includes(wanted));
 }
 
 function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, rules, openProcess, onPickProcess, declare,
-  onNewProcess, onNewAction, sources, draft, explore, confirm }: {
+  onNewProcess, onNewAction, sources, draft, reviewDraft, explore, confirm }: {
   types: TypeMapRow[];
   /** ON-7 — the types folded into a parent: listed under the cards, still openable by name. */
   parts: TypeMapRow[];
@@ -319,6 +352,8 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, r
   sources?: Record<string, string>;
   /** ON-7b — the explorer's draft, and the two doors it offers: a draft, and a confirmation. */
   draft: OntologyDraft | null;
+  /** Bumped from the figures row: open the draft's proposals for review. */
+  reviewDraft: number;
   explore: () => Promise<void>;
   confirm: (request: { all?: boolean; targets?: ConfirmTarget[] }) => Promise<void>;
 }) {
@@ -332,23 +367,39 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, r
         aria-current={current ? "true" : undefined} data-testid={part ? "entity-rail-part" : "entity-rail-row"}
         title={part ? `Open ${t.display_name}, a part of ${t.absorbed_into}` : `Light ${t.display_name} up on the map and open it here`}
         className="h-auto w-full justify-start py-1.5"
-        style={current ? { background: "var(--bg-hover)" } : undefined}>
-        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, gap: 1 }}>
-          <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: current ? 600 : 500 }}>
+        style={current ? { background: "var(--bg-sel)" } : undefined}>
+        {/* A row is a name, its count of objects, and one line of marks — the approved mockup's rail (2026-10-10). */}
+        <span style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", columnGap: 8, rowGap: 1, width: "100%",
+                       textAlign: "left" }}>
+          <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: current ? 600 : 500, overflow: "hidden",
+                                                textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {t.display_name}
+          </span>
+          <span className="aug-fs-xs" style={{ color: "var(--t2)", fontVariantNumeric: "tabular-nums", textAlign: "right" }}
+            title={t.rows == null ? "its rows are not counted" : `${formatCount(t.rows)} rows`}>
+            {t.rows == null ? "—" : formatCount(t.rows)}
           </span>
           {/* ON-8 — the connection on a line of its own: a name like "LuxExperience (explorer draft)" would push the key
               and the links off the rail's edge. */}
           {sources && t.connection_id && (
             <span className="aug-fs-xs" data-testid="entity-rail-connection" title={`read from ${nameOf(sources, t.connection_id)}`}
-              style={{ color: "var(--t3)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              style={{ gridColumn: "1 / -1", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               on {nameOf(sources, t.connection_id)}
             </span>
           )}
-          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-            {part ? `part of ${t.absorbed_into}` : `${keyWords(t.key_verified)} · ${t.links} ${t.links === 1 ? "link" : "links"}`}
-            {!part && t.parts?.length ? ` · ${t.parts.length} ${t.parts.length === 1 ? "part" : "parts"}` : ""}
-            {t.unconfirmed ? ` · ${t.unconfirmed} proposed` : ""}
+          <span className="aug-fs-xs" style={{ gridColumn: "1 / -1", color: "var(--t3)" }}>
+            {part ? `part of ${t.absorbed_into}` : (
+              <>
+                <KeyMark verified={t.key_verified} />
+                {` · ${t.links} ${t.links === 1 ? "link" : "links"}`}
+                {t.parts?.length ? ` · ${t.parts.length} ${t.parts.length === 1 ? "part" : "parts"}` : ""}
+              </>
+            )}
+            {t.unconfirmed ? (
+              <span style={{ color: "var(--vio4)" }} title="an explorer proposed this, and no person has confirmed it yet">
+                {` · ● ${t.unconfirmed} proposed`}
+              </span>
+            ) : null}
           </span>
         </span>
       </Button>
@@ -379,7 +430,7 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, r
         <DeclarationRows processes={processes} rules={rules} openProcess={openProcess} onPickProcess={onPickProcess}
           onPickType={onPick} onNewProcess={onNewProcess} onNewAction={onNewAction} />
       </div>
-      {!sources && <ExplorerDraft draft={draft} explore={explore} confirm={confirm} onOpen={onPick} />}
+      {!sources && <ExplorerDraft draft={draft} explore={explore} confirm={confirm} onOpen={onPick} reviewSignal={reviewDraft} />}
       <DeclareEntity declare={declare} sources={sources} />
     </nav>
   );
@@ -474,15 +525,23 @@ function targetOf(p: DraftProposal): ConfirmTarget {
 /** ON-7b — the explorer's draft, from the rail. A person asks an explorer to map the business — one model call, and the
  *  button says so — then reads what it proposed and what the data refused, and confirms. What the explorer proposed
  *  already reads on the map, marked proposed, until a person confirms it or withdraws it where it lives. */
-function ExplorerDraft({ draft, explore, confirm, onOpen }: {
+function ExplorerDraft({ draft, explore, confirm, onOpen, reviewSignal = 0 }: {
   draft: OntologyDraft | null;
   explore: () => Promise<void>;
   confirm: (request: { all?: boolean; targets?: ConfirmTarget[] }) => Promise<void>;
   onOpen: (objectType: string) => void;
+  /** Bumped from the figures row's "to approve": the proposals open here, in view. */
+  reviewSignal?: number;
 }) {
   const [busy, setBusy] = useState<"" | "explore" | "confirm">("");
   const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState("");
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!reviewSignal) return;
+    setOpen(true);
+    box.current?.scrollIntoView?.({ block: "nearest" });
+  }, [reviewSignal]);
   const run = draft?.runs[0];
   const counts = draft?.counts;
   const act = async (what: "explore" | "confirm", write: () => Promise<void>) => {
@@ -498,7 +557,7 @@ function ExplorerDraft({ draft, explore, confirm, onOpen }: {
   };
   const gone = counts ? counts.withdrawn + counts.released : 0;
   return (
-    <div style={{ padding: "8px 10px", borderTop: RULE, display: "flex", flexDirection: "column", gap: 6 }}
+    <div ref={box} style={{ padding: "8px 10px", borderTop: RULE, display: "flex", flexDirection: "column", gap: 6 }}
       data-testid="explorer-draft">
       <div className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>
         Explorer draft
@@ -720,11 +779,16 @@ const SIDES = { t: Position.Top, r: Position.Right, b: Position.Bottom, l: Posit
 const HANDLE: React.CSSProperties = { opacity: 0, width: 1, height: 1, minWidth: 1, minHeight: 1, border: "none" };
 const NODE_TYPES = { entity: EntityCard };
 
-/** A link between two cards, drawn as React Flow's default edge draws it — except where its label goes: on a sideways
- *  link the label is lifted clear above its two cards, which would otherwise clip it (`linkLabelY`). */
-function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, markerEnd, label,
+/** How round a link's corner is: not at all. A link runs straight and turns at a right angle, never along a curve. */
+export const LINK_CORNER_RADIUS = 0;
+
+/** A link between two cards: straight runs that turn only at a right angle — React Flow's step path with square
+ *  corners — and its label lifted clear above its two cards on a sideways link, which would otherwise clip it
+ *  (`linkLabelY`). */
+export function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, markerEnd, label,
   labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, interactionWidth }: EdgeProps) {
-  const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const [path, labelX, labelY] = getSmoothStepPath({
+    sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, borderRadius: LINK_CORNER_RADIUS });
   return (
     <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} interactionWidth={interactionWidth}
       label={label} labelX={labelX} labelY={linkLabelY(sourcePosition, sourceY, targetY, labelY)} labelStyle={labelStyle}

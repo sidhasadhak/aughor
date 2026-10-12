@@ -3,8 +3,11 @@ import { Pending } from "@/components/ui/motion";
 
 import { useCallback, useEffect, useState } from "react";
 
-import { EntityTypeMap } from "@/components/ontology/EntityTypeMap";
+import { DropdownMenu } from "@radix-ui/themes";
+
+import { EntityTypeMap, type MapSummary } from "@/components/ontology/EntityTypeMap";
 import { ReleaseStrip } from "@/components/ontology/ReleaseStrip";
+import { Segmented } from "@/components/ui/segmented";
 import { domainScope } from "@/lib/objectTypes";
 import { OverridesDrawer } from "@/components/ontology/OverridesDrawer";
 import {
@@ -32,7 +35,7 @@ import {
 } from "@/lib/api";
 import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
 import { cn } from "@/lib/utils";
-import { formatTimestamp, countNoun } from "@/lib/format";
+import { formatTimestamp, countNoun, formatCount } from "@/lib/format";
 import { Icon } from "@/components/ui/icon";
 import { VisibilityLine } from "@/components/VisibilityLine";
 import { Button } from "@/components/ui/button";
@@ -49,6 +52,9 @@ interface Props {
    *  ARBITRARY cached schema on multi-schema connections. */
   schema?: string;
 }
+
+/** The tools the bar's menu opens beside the map, one at a time. */
+type Drawer = "settings" | "duplicates" | "skills" | "proposals" | "overrides";
 
 const REFRESH_OPTIONS: { label: string; value: number | null }[] = [
   { label: "Off",      value: null },
@@ -541,12 +547,14 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   const [loading,           setLoading]          = useState(false);
   const [error,             setError]            = useState<string | null>(null);
   const [selectedConnId,    setSelectedConnId]   = useState(connectionId);
-  const [showSettings,      setShowSettings]     = useState(false);
-  const [showDuplicates,    setShowDuplicates]   = useState(false);
-  const [showSkills,        setShowSkills]        = useState(false);
-  const [showProposals,     setShowProposals]     = useState(false);
-  // PX-6 — the human-edit ledger: overrides list/revert, routing proposals, export/import.
-  const [showOverrides,     setShowOverrides]     = useState(false);
+  // The one tool open beside the map, from the Tools menu: settings, duplicates, learned skills, proposals, or PX-6's
+  // human-edit ledger (overrides list/revert, routing proposals, export/import).
+  const [drawer,            setDrawer]           = useState<Drawer | null>(null);
+  const showSettings = drawer === "settings";
+  const setShowSettings = (on: boolean) => setDrawer(on ? "settings" : null);
+  // What the map holds, for the figures in the bar; and a bump that opens the explorer's proposals for review.
+  const [summary,           setSummary]          = useState<MapSummary | null>(null);
+  const [reviewDraft,       setReviewDraft]      = useState(0);
   // Arc OC-2 — bumped by a publish or a discard so the map re-reads the draft it shows.
   const [mapVersion,        setMapVersion]        = useState(0);
   // The release the strip shows, re-read when the process designer declares or publishes — without re-mounting the map,
@@ -563,14 +571,15 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   const [builtSchemas,      setBuiltSchemas]      = useState<string[]>([]);
 
   useEffect(() => { setSelectedConnId(connectionId); }, [connectionId]);
+  // The figures belong to the map on screen: a new scope reads its own.
+  useEffect(() => { setSummary(null); }, [selectedConnId, schema, orgMode, domainMode]);
 
   useEffect(() => {
     if (!selectedConnId) return;
     setLoading(true);
     setError(null);
     setGraph(null);
-    setShowSettings(false);
-    setShowDuplicates(false);
+    setDrawer(open => (open === "settings" || open === "duplicates" ? null : open));
     getOntology(selectedConnId, schema)
       .then(setGraph)
       .catch((e: unknown) => {
@@ -589,137 +598,106 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
 
 
   // ── Header bar ──────────────────────────────────────────────────────────────
+  // Laid out as the approved mockup lays it out (design-mockups/ontology-tab.html, 2026-10-10; the law is
+  // aughor-v2/CLARITY.md): the scope, the figures the map holds, the release everyone reads, what waits on a person,
+  // and every tool in one menu. No title — the rail and the tab already name the screen.
+  const tool = (which: Drawer) => setDrawer(open => (open === which ? null : which));
+  const facts = !orgMode ? summary : null;
   const headerBar = (
     // It wraps: on a narrower window its controls used to overflow a container that hides overflow, and focusing a
     // field in the type panel scrolled the whole layer sideways with no way back (seen at 1440px, 2026-10-10).
-    <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-zinc-700/70 shrink-0 bg-zinc-900/40">
-      <p className="text-xs font-semibold text-zinc-300">Business Ontology</p>
+    <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b shrink-0" style={{ borderColor: "var(--b1)" }}
+      data-testid="ontology-bar">
+      {/* Org ⟷ Domain ⟷ Connection. ON-8 — Domain is the organisation's ontology: types declared on any connection, and
+          the links between them, read by key where they cross two. */}
+      <Segmented<"org" | "domain" | "connection"> label="Which ontology"
+        value={orgMode ? "org" : domainMode ? "domain" : "connection"}
+        onChange={next => { setOrgMode(next === "org"); setDomainMode(next === "domain"); }}
+        options={[
+          { value: "org", label: "Org" },
+          { value: "domain", label: <span data-testid="ontology-domain-toggle">Domain</span>,
+            title: "The organisation's ontology — types declared on any connection, and the links between them" },
+          { value: "connection", label: "Connection" },
+        ]} />
 
       {/* The scope, stated. Everything on this screen — entities, relationships,
           duplicates, proposals, skills, and every edit made here — belongs to this
           schema and no other. It used to be possible to be looking at a neighbour's
           graph with nothing on screen saying so. */}
       {!orgMode && !domainMode && schema && (
-        <span
-          className="aug-fs-xs text-zinc-400 border border-zinc-700 rounded-[var(--r-chip)] px-2 py-0.5 font-code"
+        <span className="aug-tag aug-tag-gray font-code"
           title="This ontology is scoped to one schema. Switch schemas with the workspace scope picker above."
-          data-testid="ontology-schema-scope"
-        >
+          data-testid="ontology-schema-scope">
           {schema}
         </span>
       )}
+
+      {facts && (
+        <span className="aug-fs-sm flex flex-wrap items-center gap-4" style={{ color: "var(--t2)" }} data-testid="ontology-facts"
+          title={graph && !domainMode ? (graph.enriched ? "described in business terms" : "not yet described in business terms") : undefined}>
+          <Fact n={facts.entities} one="entity" many="entities" />
+          <Fact n={facts.links} one="link" many="links" />
+          <Fact n={facts.processes} one="process" many="processes" />
+          <Fact n={facts.rules} one="rule" many="rules" />
+        </span>
+      )}
+
+      {/* Arc OC-2 — which release everyone reads, and what waits to be published: a chip, which opens the changes when
+          any wait. Renders nothing while releases are off. A publish or a discard re-reads the map, which shows the draft. */}
+      {!orgMode && !domainMode && graph && (
+        <ReleaseStrip connectionId={selectedConnId} schema={schema} version={releaseVersion} onChanged={() => {
+          setMapVersion(v => v + 1);
+          getOntology(selectedConnId, schema).then(setGraph).catch(() => {});
+        }} />
+      )}
+
+      {!orgMode && !domainMode && graph && !graph.enriched && (
+        <span className="aug-tag aug-tag-gray">not yet described in business terms</span>
+      )}
+
       {/* CB-5 — how much of the business the platform can see here, and the one definition holding sends back. */}
       {!orgMode && !domainMode && selectedConnId && (
         <VisibilityLine connectionId={selectedConnId} schema={schema} />
       )}
 
-      {/* Org ⟷ Domain ⟷ Connection view toggle. ON-8 — Domain is the organisation's ontology: types declared on any
-          connection, and the links between them, read by key where they cross two. */}
-      <div className="flex shrink-0 items-center rounded-md border border-zinc-700 overflow-hidden aug-fs-xs">
-        <Button variant="ghost" size="xs"
-          onClick={() => { setOrgMode(true); setDomainMode(false); }}
-          className={cn(
-            "px-2.5 py-1",
-            orgMode ? "bg-violet-500/15 text-violet-300" : "",
-          )}
-        >Org</Button>
-        <Button variant="ghost" size="xs"
-          onClick={() => { setDomainMode(true); setOrgMode(false); }}
-          className={cn(
-            "px-2.5 py-1 transition border-l border-zinc-700",
-            domainMode ? "bg-violet-500/15 text-violet-300" : "",
-          )}
-          title="The organisation's ontology — types declared on any connection, and the links between them"
-          data-testid="ontology-domain-toggle"
-        >Domain</Button>
-        <Button variant="ghost" size="xs"
-          onClick={() => { setOrgMode(false); setDomainMode(false); }}
-          className={cn(
-            "px-2.5 py-1 transition border-l border-zinc-700",
-            !orgMode && !domainMode ? "bg-violet-500/15 text-violet-300" : "",
-          )}
-        >Connection</Button>
-      </div>
-
-      {!orgMode && !domainMode && graph && (
-        <div className="flex flex-wrap items-center gap-2 ml-auto">
-          {graph.enriched ? (
-            <span className="aug-fs-xs text-emerald-400 border border-emerald-500/20 bg-emerald-500/8 rounded-[var(--r-chip)] px-2 py-0.5">
-              described in business terms
-            </span>
-          ) : (
-            <span className="aug-fs-xs text-zinc-500 border border-zinc-700 rounded-[var(--r-chip)] px-2 py-0.5">
-              not yet described in business terms
-            </span>
-          )}
-          <span className="aug-fs-xs text-zinc-500">
-            {countNoun(Object.keys(graph.entities).length, "entity", "entities")}
-            {" · "}{countNoun(Object.keys(graph.relationships).length, "relationship")}
-          </span>
-          <Button variant="ghost" size="xs"
-            onClick={() => { setShowDuplicates(v => !v); setShowSettings(false); setShowSkills(false); setShowProposals(false); }}
-            className={cn(
-              "aug-fs-xs px-2 py-0.5 rounded border",
-              showDuplicates
-                ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
-                : "border-zinc-700 hover:border-zinc-500",
-            )}
-            title="Find near-duplicate entities to merge"
-          >
-            Find duplicates
+      <span className="flex items-center gap-2" style={{ marginLeft: "auto" }}>
+        {facts && facts.proposed > 0 && (
+          <Button variant="ghost" size="xs" data-testid="ontology-to-approve" onClick={() => setReviewDraft(n => n + 1)}
+            style={{ background: "var(--amb1)", color: "var(--amb4)" }}
+            title={`${countNoun(facts.proposed, "proposal")} an explorer made wait for a person to confirm — open them in the explorer draft`}>
+            {facts.proposed} to approve
           </Button>
-          <Button
-            variant="outline" size="xs"
-            onClick={() => { setShowOverrides(v => !v); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); setShowProposals(false); }}
-            className={cn(
-              "aug-fs-xs",
-              showOverrides
-                ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
-                : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500",
-            )}
-            title="Human overrides on this scope — list them, revert them; routing proposals; export/import"
-            data-testid="ontology-overrides-toggle"
-          >
-            Human edits
-          </Button>
-          <Button
-            variant="outline" size="xs"
-            onClick={() => { setShowProposals(v => !v); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); setShowOverrides(false); }}
-            className={cn(
-              "aug-fs-xs",
-              showProposals
-                ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
-                : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500",
-            )}
-            title="Proposed context awaiting your review — metric gaps and notes the conversation staged"
-            data-testid="ontology-proposals-toggle"
-          >
-            Proposals
-          </Button>
-          <Button variant="ghost" size="xs"
-            onClick={() => { setShowSkills(v => !v); setShowSettings(false); setShowDuplicates(false); setShowProposals(false); }}
-            className={cn(
-              "aug-fs-xs px-2 py-0.5 rounded border",
-              showSkills
-                ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
-                : "border-zinc-700 hover:border-zinc-500",
-            )}
-            title="Learned skills crystallized from deep analyses"
-          >
-            Learned skills
-          </Button>
-          <Button variant="ghost" size="xs"
-            onClick={() => { setShowSettings(v => !v); setShowDuplicates(false); setShowSkills(false); setShowProposals(false); }}
-            className={cn(
-              " transition ml-1",
-              showSettings && "text-violet-400",
-            )}
-            title="Ontology settings"
-          >
-            <Icon name="settings" size={16} label="Settings" />
-          </Button>
-        </div>
-      )}
+        )}
+        {!orgMode && !domainMode && graph && (
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger>
+              <Button variant="ghost" size="xs" data-testid="ontology-tools">
+                Tools <Icon name="chevd" size={12} />
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content size="1" align="end">
+              <DropdownMenu.Item onSelect={() => tool("duplicates")} title="Find near-duplicate entities to merge">
+                Find duplicates
+              </DropdownMenu.Item>
+              <DropdownMenu.Item onSelect={() => tool("overrides")} data-testid="ontology-overrides-toggle"
+                title="Human overrides on this scope — list them, revert them; routing proposals; export/import">
+                Human edits
+              </DropdownMenu.Item>
+              <DropdownMenu.Item onSelect={() => tool("proposals")} data-testid="ontology-proposals-toggle"
+                title="Proposed context awaiting your review — metric gaps and notes the conversation staged">
+                Proposals
+              </DropdownMenu.Item>
+              <DropdownMenu.Item onSelect={() => tool("skills")} title="Learned skills crystallized from deep analyses">
+                Learned skills
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator />
+              <DropdownMenu.Item onSelect={() => tool("settings")} title="Ontology settings">
+                Settings
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
+        )}
+      </span>
     </div>
   );
 
@@ -729,7 +707,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
       <div className="flex-1 flex flex-col overflow-hidden">
         {headerBar}
         <div className="flex-1 flex overflow-hidden">
-          <EntityTypeMap connectionId={domainScope()} />
+          <EntityTypeMap connectionId={domainScope()} onSummary={setSummary} />
         </div>
       </div>
     );
@@ -826,55 +804,60 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   }
 
   // ── Main: canvas + optional detail drawer ──────────────────────────────────
+  const close = () => setDrawer(null);
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {headerBar}
-      {/* Arc OC-2 — which release everyone reads, and what waits to be published. Renders nothing while releases are
-          off. A publish or a discard re-reads the map, which shows the draft. */}
-      <ReleaseStrip connectionId={selectedConnId} schema={schema} version={releaseVersion} onChanged={() => {
-        setMapVersion(v => v + 1);
-        getOntology(selectedConnId, schema).then(setGraph).catch(() => {});
-      }} />
 
       <div className="flex-1 flex overflow-hidden">
         {/* ON-3b — the entity-type map brings its own rail and entity-type panel. */}
         <EntityTypeMap key={mapVersion} connectionId={selectedConnId} schema={schema}
-          onReleaseChanged={() => setReleaseVersion(v => v + 1)} />
+          onReleaseChanged={() => setReleaseVersion(v => v + 1)} onSummary={setSummary} reviewDraft={reviewDraft} />
 
         {/* Settings panel */}
-        {showSettings && (
+        {drawer === "settings" && (
           <OntologySettings
             connectionId={selectedConnId}
             schema={schema}
             graph={graph}
-            onClose={() => setShowSettings(false)}
+            onClose={close}
             onRebuilt={(g) => setGraph(g)}
           />
         )}
 
         {/* Duplicate-entity suggestions */}
-        {showDuplicates && (
+        {drawer === "duplicates" && (
           <DuplicatesDrawer
             connId={selectedConnId}
             schema={schema}
-            onClose={() => setShowDuplicates(false)}
+            onClose={close}
             onMerged={() => { getOntology(selectedConnId, schema).then(setGraph).catch(() => {}); }}
           />
         )}
 
         {/* Learned skills (agent procedural memory) */}
-        {showSkills && (
-          <SkillsDrawer connId={selectedConnId} schema={schema} onClose={() => setShowSkills(false)} />
+        {drawer === "skills" && (
+          <SkillsDrawer connId={selectedConnId} schema={schema} onClose={close} />
         )}
-        {showProposals && (
-          <ProposalsDrawer connId={selectedConnId} schema={schema} onClose={() => setShowProposals(false)} />
+        {drawer === "proposals" && (
+          <ProposalsDrawer connId={selectedConnId} schema={schema} onClose={close} />
         )}
-        {showOverrides && (
+        {drawer === "overrides" && (
           <OverridesDrawer connId={selectedConnId} schema={schema}
-            onClose={() => setShowOverrides(false)}
+            onClose={close}
             onChanged={() => { getOntology(selectedConnId, schema).then(setGraph).catch(() => {}); }} />
         )}
       </div>
     </div>
+  );
+}
+
+/** One figure in the bar: the number first, then what it counts. */
+function Fact({ n, one, many }: { n: number; one: string; many: string }) {
+  return (
+    <span>
+      <b style={{ color: "var(--t1)", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCount(n)}</b>
+      {` ${n === 1 ? one : many}`}
+    </span>
   );
 }
