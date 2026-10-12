@@ -10368,6 +10368,30 @@ export interface UsageSummary {
   roles: Array<{ role: string; calls: number; total_tokens: number }>;
 }
 
+/** What a model call was for, read off the `caller` the provider stamps on every call
+ *  (`<module>:<function>`, served as `UsageSummary.sites`). The prefixes are the backend's own
+ *  module names, spelled verbatim like every other wire value in this file. A caller no prefix
+ *  names is `null`, and the Spend screen folds it into "Other" — counted, never dropped. The
+ *  first matching prefix wins, so the narrower one comes first. */
+export type CallerFeature = "deep_analysis" | "conversation" | "survey" | "exploration"
+  | "sql_repair" | "sql_writing" | "business_profile" | "semantic_layer" | "ontology";
+
+export const CALLER_FEATURES: ReadonlyArray<readonly [string, CallerFeature]> = [
+  ["aughor.agent.investigate:", "deep_analysis"],
+  ["aughor.agent.tool_loop:", "conversation"],
+  ["aughor.agent.explore:", "survey"],
+  ["aughor.explorer.", "exploration"],
+  ["aughor.sql.writer:fix", "sql_repair"],
+  ["aughor.sql.writer:", "sql_writing"],
+  ["aughor.business_profile.", "business_profile"],
+  ["aughor.semantic.", "semantic_layer"],
+  ["aughor.ontology.", "ontology"],
+];
+
+export function callerFeature(caller: string): CallerFeature | null {
+  return CALLER_FEATURES.find(([prefix]) => caller.startsWith(prefix))?.[1] ?? null;
+}
+
 export async function getUsageSummary(params?: {
   range?: string; since?: string; until?: string;
 }): Promise<UsageSummary> {

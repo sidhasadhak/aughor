@@ -1,54 +1,310 @@
 "use client";
 
 /**
- * SpendPanel — PX-2 (§3.14): the governed-spend cockpit.
+ * Spend — what model calls cost, what is unknown, and what to fix.
  *
- * Everything here existed and nothing was visible: the G4 caps store shipped with a
- * write door and no form ("caps could be read by the enforcement path and set by
- * nobody"), the usage rollup, per-model health and the cross-cutting audit feed were
- * folds with no route to an eye. This layer is those endpoints given one screen.
+ * Laid out as the approved mockup lays it out (`design-mockups/spend.html`, 2026-10-10; the law is
+ * `aughor-v2/CLARITY.md`): four figures, then what needs a person in amber, then two pictures side
+ * by side (tokens by model · where tokens go), then the governance window said once per kind of
+ * thing that happened. 5,257 words a reader faced became about two hundred; nothing left the screen
+ * that a person could act on — the caps editor opens from "Set a cap" or "Edit", the full feed with
+ * its filters, sort, per-event detail and CSV from "Full feed", the cost query and the route mix
+ * from "Details".
  *
- * Honesty rules carried from the endpoints themselves:
- *  - Cost is a FLOOR whenever any call is unpriced — never presented as a total.
- *  - A cap row shows the OBSERVED value of its own metric over its own window,
- *    because a cap without its measurement is just a wish.
- *  - `block` refuses new work with a sentence that names the number; `alert` records
- *    the breach. The form says so before the operator picks one.
+ * Honesty rules carried from the endpoints themselves, and drawn rather than written:
+ *  - Cost is a FLOOR whenever any call is unpriced ("Spent · at least", and the share priced as an
+ *    amber chip); with no priced call it is not a number at all. An unpriced model's bar is
+ *    hatched grey — unknown, not zero.
+ *  - A cap row shows the OBSERVED value of its own metric over its own window: a cap without its
+ *    measurement is a wish. No cap is said in amber: nothing stops a runaway run.
+ *  - `block` refuses new work with a sentence that names the number; `alert` records the breach.
+ *    The form says so before the operator picks one.
+ *  - The governance window says how far back it reaches, and a flag the platform raised on its own
+ *    reads is named as that, not counted as an alarm.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import {
-  deleteUsageCap, getAuditFeed, getCostSql, getModelUsage, getRouteMix,
-  getUsageCaps, getUsageReport, putUsageCap,
-  type AuditFeedEvent, type ModelUsageRow, type UsageCap, type UsageReport,
+  deleteUsageCap, getAuditFeed, getConnections, getCostSql, getRouteMix, getUsageCaps, getUsageReport,
+  getUsageSummary, putUsageCap,
+  type AuditFeedEvent, type UsageCap, type UsageCapsResponse, type UsageReport, type UsageSummary,
 } from "@/lib/api";
-import { compactNumber, countNoun, formatTimestamp, pct, formatCount } from "@/lib/format";
+import { compactNumber, countNoun, formatCount, formatTimestamp, pct } from "@/lib/format";
+import {
+  capAmount, eventKey, failedLine, foldFeed, modelBars, money, sinceWords, spendTotals, spentFigure,
+  tightestCap, tokens, unpricedModels, whereTokensGo,
+  type FeedFold, type FoldTone,
+} from "@/lib/spend";
 import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
+import { Icon, type IconName } from "@/components/ui/icon";
 import { EmptyState } from "@/components/ui/empty-state";
-import { csvFilename, downloadCsv, toCsv } from "@/lib/query/csv";
-import { PartialState } from "@/components/ui/states";
+import { Loading, ReadFailed } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Table, TableHeader, TableBody, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { csvFilename, downloadCsv, toCsv } from "@/lib/query/csv";
 
-const cell: React.CSSProperties = { padding: "6px 10px", whiteSpace: "nowrap" };
-const num: React.CSSProperties = { ...cell, textAlign: "right", fontFamily: "var(--font-mono)" };
+const card: CSSProperties = {
+  background: "var(--bg-2)", border: "1px solid var(--card-edge)", borderRadius: "var(--r3)", padding: "12px 14px", minWidth: 0,
+};
+const muted: CSSProperties = { color: "var(--t3)" };
+const oneLine: CSSProperties = { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 };
+const tabular: CSSProperties = { fontVariantNumeric: "tabular-nums" };
+const row: CSSProperties = { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" };
+/** Unknown, not zero: the de-emphasis grey, hatched (CLARITY §4). */
+const HATCH = "repeating-linear-gradient(135deg, var(--chart-deemph) 0 4px, color-mix(in srgb, var(--chart-deemph) 45%, transparent) 4px 7px)";
 /** The form-control look, shared by the caps form and the feed's filter bar. */
-const feedSel: React.CSSProperties = { background: "var(--bg-1)", border: "1px solid var(--b1)",
+const field: CSSProperties = { background: "var(--bg-1)", border: "1px solid var(--b1)",
   borderRadius: "var(--r2)", color: "var(--t1)", padding: "5px 8px" };
+/** How many events one read pulls. The server filters by CATEGORY only, so every other control
+ *  narrows this window in memory — and the screen says how far back it reaches. */
+const FEED_WINDOW = 500;
+/** `/usage` reads the newest this-many calls by default; past it, "all time" would be a lie. */
+const USAGE_SCAN = 5000;
 
-function SectionTitle({ children, sub }: { children: React.ReactNode; sub?: string }) {
+const say = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** A section's small uppercase label, with what it says at its right end. */
+function Label({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 10, margin: "22px 0 8px" }}>
-      <span className="aug-fs-sm" style={{ fontWeight: 600, color: "var(--t1)" }}>{children}</span>
-      {sub && <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{sub}</span>}
+    <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, color: "var(--t3)",
+      textTransform: "uppercase", letterSpacing: ".06em" }}>
+      {children}
+      {right && <span style={{ marginLeft: "auto", textTransform: "none", letterSpacing: 0 }}>{right}</span>}
     </div>
   );
 }
 
-function money(v: number): string {
-  return `$${v.toFixed(v >= 100 ? 0 : 2)}`;
+/** A caveat as an amber chip. */
+function AmberChip({ children }: { children: ReactNode }) {
+  return (
+    <span className="aug-fs-xs" style={{ background: "var(--amb1)", color: "var(--amb4)", padding: "2px 8px",
+      borderRadius: "var(--r-pill)", whiteSpace: "nowrap", ...tabular }}>{children}</span>
+  );
+}
+
+function Figure({ label, value, tone, testId, right, children }: {
+  label: string; value: string; tone?: string; testId: string; right?: ReactNode; children?: ReactNode;
+}) {
+  return (
+    <section aria-label={label} data-testid={testId} style={card}>
+      <div className="aug-fs-sm" style={{ ...muted, display: "flex", alignItems: "center", gap: 8 }}>
+        {label}{right && <span style={{ marginLeft: "auto" }}>{right}</span>}
+      </div>
+      <div className="aug-fs-display" style={{ fontWeight: 600, margin: "4px 0", color: tone ?? "var(--t1)", ...tabular }}>{value}</div>
+      <div className="aug-fs-sm" style={{ ...muted, ...oneLine }}>{children}</div>
+    </section>
+  );
+}
+
+/** One row of a horizontal bar picture: name and a muted line · the bar · the figure. */
+function Bar({ name, sub, value, share, fill, title }: {
+  name: string; sub: string; value: string; share: number; fill: string; title: string;
+}) {
+  return (
+    <>
+      <span style={oneLine} title={title}>
+        <span className="aug-fs-sm" style={{ color: "var(--t1)" }}>{name}</span>
+        <span className="aug-fs-xs" style={{ ...muted, ...oneLine, display: "block" }}>{sub}</span>
+      </span>
+      <span title={title} style={{ height: 10, borderRadius: "var(--r-pill)", background: "var(--bg-3)", overflow: "hidden" }}>
+        <i data-unknown={fill === HATCH ? "true" : undefined}
+          style={{ display: "block", height: "100%", borderRadius: "var(--r-pill)", background: fill,
+            width: share > 0 ? `${Math.max(0.6, share * 100)}%` : 0 }} />
+      </span>
+      <span className="aug-fs-sm" title={title} style={{ textAlign: "right", color: "var(--t2)", ...tabular }}>{value}</span>
+    </>
+  );
+}
+
+const bars: CSSProperties = {
+  display: "grid", gridTemplateColumns: "150px minmax(0, 1fr) 64px", gap: "7px 10px", alignItems: "center",
+};
+
+function Swatch({ fill }: { fill: string }) {
+  return <i style={{ display: "inline-block", width: 12, height: 8, borderRadius: "var(--r1)", background: fill, marginRight: 5, verticalAlign: "middle" }} />;
+}
+
+// ── The page ─────────────────────────────────────────────────────────────────
+
+export function SpendPanel() {
+  const [report, setReport] = useState<UsageReport | null>(null);
+  const [reportErr, setReportErr] = useState<string | null>(null);
+  const [day, setDay] = useState<UsageSummary | null>(null);
+  const [dayErr, setDayErr] = useState<string | null>(null);
+  const [week, setWeek] = useState<UsageSummary | null>(null);
+  const [caps, setCaps] = useState<UsageCapsResponse | null>(null);
+  const [capsErr, setCapsErr] = useState<string | null>(null);
+  const [capsOpen, setCapsOpen] = useState(false);
+  const [details, setDetails] = useState(false);
+
+  const readUsage = useCallback(() => {
+    setReportErr(null);
+    getUsageReport("provider,model").then(setReport).catch(e => setReportErr(say(e)));
+  }, []);
+  const readDay = useCallback(() => {
+    setDayErr(null);
+    getUsageSummary({ range: "24h" }).then(setDay).catch(e => setDayErr(say(e)));
+  }, []);
+  const readCaps = useCallback(async () => {
+    try { setCaps(await getUsageCaps()); setCapsErr(null); } catch (e) { setCapsErr(say(e)); }
+  }, []);
+  useEffect(() => {
+    readUsage();
+    readDay();
+    readCaps();
+    // The week only feeds one muted line under the call count; a failed read leaves the line out.
+    getUsageSummary({ range: "7d" }).then(setWeek).catch(() => setWeek(null));
+  }, [readUsage, readDay, readCaps]);
+
+  const totals = useMemo(() => (report ? spendTotals(report) : null), [report]);
+  const spent = totals ? spentFigure(totals) : null;
+  const unpriced = report ? unpricedModels(report) : [];
+  const noCap = caps !== null && caps.caps.length === 0;
+  const cap = caps ? tightestCap(caps.caps) : null;
+  const capOver = cap?.observed != null && cap.limit > 0 && cap.observed >= cap.limit;
+
+  return (
+    <div style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
+      <div style={{ padding: "14px 22px 28px", display: "flex", flexDirection: "column", gap: 14, maxWidth: 1180 }}>
+        <div data-testid="spend-figures" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14 }}>
+          <Figure testId="spend-spent" label={spent?.label ?? "Spent"} value={spent?.value ?? "—"}
+            tone={spent?.unknown ? "var(--t3)" : undefined}>
+            {reportErr ? "could not be read"
+              : spent?.caveat ? <AmberChip>{spent.caveat}</AmberChip> : spent?.note}
+          </Figure>
+          <Figure testId="spend-calls" label="Model calls" value={totals ? formatCount(totals.calls) : "—"}>
+            {week ? `${formatCount(week.calls)} in the last 7 days` : null}
+          </Figure>
+          <Figure testId="spend-failed" label="Failed" value={totals ? formatCount(totals.failures) : "—"}>
+            {totals ? failedLine(totals) : null}
+          </Figure>
+          <Figure testId="spend-cap" label="Spend cap"
+            value={capsErr ? "—" : caps === null ? "—" : cap ? capAmount(cap.metric, cap.limit) : "None"}
+            tone={noCap ? "var(--amb4)" : capOver ? "var(--red4)" : undefined}
+            right={cap && !capsOpen ? <Button size="xs" variant="ghost" onClick={() => setCapsOpen(true)}>Edit</Button> : null}>
+            {capsErr ? "could not be read"
+              : noCap ? "nothing stops a runaway run"
+              : cap ? [
+                cap.observed != null ? `${capAmount(cap.metric, cap.observed)} so far` : "",
+                `per ${cap.window_hours}h`,
+                cap.action === "block" ? "blocks new work" : "alerts",
+                caps && caps.caps.length > 1 ? `+${caps.caps.length - 1} more` : "",
+              ].filter(Boolean).join(" · ") : null}
+          </Figure>
+        </div>
+
+        {capsErr && <ReadFailed what="the spend caps" error={capsErr} onRetry={readCaps} />}
+
+        {(unpriced.length > 0 || noCap) && (
+          <section aria-label="Needs you" data-testid="spend-needs"
+            style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 14px",
+              borderRadius: "var(--r3)", background: "var(--amb1)" }}>
+            <span style={{ flex: "1 1 320px", minWidth: 0 }}>
+              {totals && unpriced.length > 0 ? (
+                <>
+                  <span className="aug-fs-chrome" style={{ fontWeight: 500, color: "var(--t1)", display: "block" }}
+                    title="A price is declared by the operator (AUGHOR_MODEL_PRICES) or published in the provider's catalogue; a model with neither stays unpriced.">
+                    {totals.unpriced === 1 ? "1 call has no price" : `${formatCount(totals.unpriced)} calls have no price`}, so the real spend is unknown
+                  </span>
+                  <span className="aug-fs-sm" style={{ color: "var(--t2)", display: "block", ...oneLine }}>
+                    {unpriced.slice(0, 3).map(m => `${m.name} · ${countNoun(m.calls, "call")}`).join("  ·  ")}
+                    {unpriced.length > 3 ? `  ·  +${unpriced.length - 3} more` : ""}
+                  </span>
+                </>
+              ) : (
+                <span className="aug-fs-chrome" style={{ fontWeight: 500, color: "var(--t1)" }}>
+                  No spend cap is set — nothing stops a runaway run
+                </span>
+              )}
+            </span>
+            {noCap && !capsOpen && <Button size="sm" variant="secondary" onClick={() => setCapsOpen(true)}>Set a cap</Button>}
+          </section>
+        )}
+
+        {capsOpen && caps && <CapsEditor data={caps} onChanged={readCaps} onClose={() => setCapsOpen(false)} />}
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 14 }}>
+          <ModelsCard report={report} error={reportErr} onRetry={readUsage} />
+          <WhereCard day={day} error={dayErr} onRetry={readDay} />
+        </div>
+
+        <GovernanceCard />
+
+        <div>
+          <Button size="xs" variant="ghost" aria-expanded={details} onClick={() => setDetails(o => !o)}>
+            Details <Icon name={details ? "chevu" : "chevd"} size={12} />
+          </Button>
+          {details && <Details />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Tokens by model · where tokens go ────────────────────────────────────────
+
+function ModelsCard({ report, error, onRetry }: { report: UsageReport | null; error: string | null; onRetry: () => void }) {
+  const rows = report ? modelBars(report) : [];
+  const top = Math.max(1, ...rows.map(r => r.tokens));
+  const anyUnknown = rows.some(r => r.unpriced);
+  const anyPriced = rows.some(r => !r.unpriced && !r.folded);
+  const scope = report && report.total_calls >= USAGE_SCAN ? `newest ${formatCount(USAGE_SCAN)} calls` : "all time";
+  return (
+    <section aria-label="Tokens by model" data-testid="spend-models" style={card}>
+      <Label right={<span className="aug-fs-xs" style={muted}>{scope}</span>}>Tokens by model</Label>
+      {error ? <ReadFailed what="the usage rollup" error={error} onRetry={onRetry} />
+        : !report ? <Loading what="the usage rollup" />
+        : rows.length === 0 ? <div className="aug-fs-sm" style={muted}>No model calls recorded yet.</div>
+        : (
+          <>
+            <div style={bars}>
+              {rows.map(r => (
+                <Bar key={r.key} name={r.name} sub={r.sub} value={tokens(r.tokens)} share={r.tokens / top} title={r.title}
+                  fill={r.unpriced ? HATCH : r.folded ? "var(--chart-deemph)" : "var(--chart-1)"} />
+              ))}
+            </div>
+            {anyUnknown && (
+              <div className="aug-fs-xs" style={{ ...muted, display: "flex", gap: 12, marginTop: 10 }}>
+                {anyPriced && <span><Swatch fill="var(--chart-1)" />priced</span>}
+                <span><Swatch fill={HATCH} />no price</span>
+              </div>
+            )}
+          </>
+        )}
+    </section>
+  );
+}
+
+function WhereCard({ day, error, onRetry }: { day: UsageSummary | null; error: string | null; onRetry: () => void }) {
+  const rows = day ? whereTokensGo(day) : [];
+  const top = Math.max(1, ...rows.map(r => r.tokens));
+  return (
+    <section aria-label="Where tokens go" data-testid="spend-where" style={card}>
+      <Label right={<span className="aug-fs-xs" style={muted}>last 24 hours{day ? ` · ${tokens(day.tokens)}` : ""}</span>}>
+        Where tokens go
+      </Label>
+      {error ? <ReadFailed what="the last 24 hours" error={error} onRetry={onRetry} />
+        : !day ? <Loading what="the last 24 hours" />
+        : rows.length === 0 ? <div className="aug-fs-sm" style={muted}>No model calls in the last 24 hours.</div>
+        : (
+          <>
+            <div style={bars}>
+              {rows.map(r => (
+                <Bar key={r.key} name={r.label} sub={countNoun(r.calls, "call")} value={tokens(r.tokens)} share={r.tokens / top}
+                  title={`${r.label} · ${countNoun(r.calls, "call")} · ${tokens(r.tokens)} tokens${r.sites.length ? `\n${r.sites.join("\n")}` : ""}`}
+                  fill={r.other ? "var(--chart-deemph)" : "var(--chart-1)"} />
+              ))}
+            </div>
+            {day.calls_without_usage > 0 && (
+              <div className="aug-fs-xs" style={{ ...muted, marginTop: 10 }}>
+                {countNoun(day.calls_without_usage, "call")} reported no token count
+              </div>
+            )}
+          </>
+        )}
+    </section>
+  );
 }
 
 // ── Caps ─────────────────────────────────────────────────────────────────────
@@ -58,38 +314,26 @@ function CapMeter({ cap }: { cap: UsageCap }) {
   const ratio = Math.min(1, cap.observed / cap.limit);
   const over = cap.observed >= cap.limit;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 140 }}>
-      <div style={{ flex: 1, height: 4, borderRadius: "var(--r-pill)", background: "var(--bg-3)", overflow: "hidden" }}>
-        <div style={{ width: `${Math.round(ratio * 100)}%`, height: "100%",
+    <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 140 }}
+      title={`${capAmount(cap.metric, cap.observed)} of ${capAmount(cap.metric, cap.limit)} in the last ${cap.window_hours}h`}>
+      <span style={{ flex: 1, height: 4, borderRadius: "var(--r-pill)", background: "var(--bg-3)", overflow: "hidden" }}>
+        <span style={{ display: "block", width: `${Math.round(ratio * 100)}%`, height: "100%",
           background: over ? "var(--red4)" : ratio > 0.8 ? "var(--amb4)" : "var(--grn4)" }} />
-      </div>
-      <span className="aug-fs-xs" style={{ color: over ? "var(--red4)" : "var(--t3)", fontFamily: "var(--font-mono)" }}>
+      </span>
+      <span className="aug-fs-xs" style={{ color: over ? "var(--red4)" : "var(--t3)", ...tabular }}>
         {cap.metric === "cost_usd" ? money(cap.observed) : compactNumber(cap.observed)}
       </span>
-    </div>
+    </span>
   );
 }
 
-function CapsSection({ onCount }: { onCount: (n: number) => void }) {
-  const [caps, setCaps] = useState<UsageCap[]>([]);
-  const [vocab, setVocab] = useState<{ scopes: string[]; metrics: string[]; actions: string[] }>({ scopes: [], metrics: [], actions: [] });
-  const [loaded, setLoaded] = useState(false);
+function CapsEditor({ data, onChanged, onClose }: {
+  data: UsageCapsResponse; onChanged: () => Promise<void>; onClose: () => void;
+}) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ scope: "org", subject: "*", metric: "cost_usd",
     limit: "", window_hours: "24", action: "alert" });
-
-  const load = useCallback(async () => {
-    try {
-      const r = await getUsageCaps();
-      setCaps(r.caps);
-      setVocab({ scopes: r.scopes, metrics: r.metrics, actions: r.actions });
-      onCount(r.caps.length);
-      setErr("");
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-    finally { setLoaded(true); }
-  }, [onCount]);
-  useEffect(() => { load(); }, [load]);
 
   async function declare() {
     const limit = parseFloat(form.limit);
@@ -100,173 +344,150 @@ function CapsSection({ onCount }: { onCount: (n: number) => void }) {
         metric: form.metric, limit, window_hours: Math.max(1, parseInt(form.window_hours) || 24),
         action: form.action });
       setForm(f => ({ ...f, limit: "" }));
-      await load();
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+      await onChanged();
+    } catch (e) { setErr(say(e)); }
     finally { setBusy(false); }
   }
 
   async function remove(cap: UsageCap) {
     setBusy(true); setErr("");
     try {
-      await deleteUsageCap({ scope: cap.scope, metric: cap.metric,
-        subject: cap.subject, window_hours: cap.window_hours });
-      await load();
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+      await deleteUsageCap({ scope: cap.scope, metric: cap.metric, subject: cap.subject, window_hours: cap.window_hours });
+      await onChanged();
+    } catch (e) { setErr(say(e)); }
     finally { setBusy(false); }
   }
 
-  const sel = feedSel;
-
   return (
-    <>
-      {/* The headline already says how many caps there are; this says what a row of
-          one means. The empty state moved into the form's own line below — a centred
-          block of prose above an empty list was two paragraphs to say "none". */}
-      <SectionTitle sub="each row shows its metric, observed over its own window">
-        Usage caps
-      </SectionTitle>
-      {caps.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {caps.map((c, i) => (
-            <div key={i} className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 12,
-              padding: "8px 12px", border: "1px solid var(--b0)", borderRadius: "var(--r2)", background: "var(--bg-2)" }}>
-              <span style={{ color: "var(--t1)", fontWeight: 500 }}>
-                {c.metric === "cost_usd" ? money(c.limit) : compactNumber(c.limit)}{" "}
-                <span style={{ color: "var(--t3)", fontWeight: 400 }}>{c.metric.replace(/_/g, " ")}</span>
-              </span>
-              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-                per {c.window_hours}h · {c.scope === "user" ? `user ${c.subject}` : "whole org"}
-              </span>
-              <span className="aug-fs-xs" style={{
-                color: c.action === "block" ? "var(--red4)" : "var(--amb4)",
-                border: `1px solid color-mix(in srgb, ${c.action === "block" ? "var(--red4)" : "var(--amb4)"} 45%, transparent)`,
-                borderRadius: "var(--r-chip)", padding: "1px 8px" }}>
-                {c.action === "block" ? "blocks new work" : "alerts"}
-              </span>
-              <span style={{ flex: 1 }} />
-              <CapMeter cap={c} />
-              {c.set_by && <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>set by {c.set_by}</span>}
-              <Button size="xs" variant="ghost" disabled={busy} onClick={() => remove(c)}
-                data-testid={`cap-remove-${c.scope}-${c.metric}`}>
-                <Icon name="trash" size={12} /> Remove
-              </Button>
-            </div>
-          ))}
+    <section aria-label="Spend caps" data-testid="spend-caps" style={card}>
+      <Label right={<Button size="xs" variant="ghost" onClick={onClose}>Close</Button>}>Spend caps</Label>
+      {data.caps.map((c, i) => (
+        <div key={`${c.scope}:${c.subject}:${c.metric}:${c.window_hours}`} className="aug-fs-sm"
+          style={{ ...row, flexWrap: "nowrap", gap: 12, padding: "8px 2px", borderTop: i ? "1px solid var(--b1)" : undefined }}>
+          <span style={{ color: "var(--t1)", fontWeight: 500, ...tabular }}>{capAmount(c.metric, c.limit)}</span>
+          <span className="aug-fs-xs" style={muted}>per {c.window_hours}h · {c.scope === "user" ? `user ${c.subject}` : "whole org"}</span>
+          <span className="aug-fs-xs" style={{ color: c.action === "block" ? "var(--red4)" : "var(--amb4)" }}>
+            {c.action === "block" ? "blocks new work" : "alerts"}
+          </span>
+          <span style={{ flex: 1 }} />
+          <CapMeter cap={c} />
+          {c.set_by && <span className="aug-fs-xs" style={muted}>set by {c.set_by}</span>}
+          <Button size="xs" variant="ghost" disabled={busy} onClick={() => remove(c)} data-testid={`cap-remove-${c.scope}-${c.metric}`}>
+            <Icon name="trash" size={12} /> Remove
+          </Button>
         </div>
-      )}
-      <div className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
-        marginTop: 10, padding: "10px 12px", border: "1px solid var(--b0)", borderRadius: "var(--r3)", background: "var(--bg-2)" }}>
-        <SelectField style={sel} value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value }))}>
-          {(vocab.scopes.length ? vocab.scopes : ["org", "user"]).map(s =>
+      ))}
+      <div className="aug-fs-sm" style={{ ...row, marginTop: data.caps.length ? 10 : 0 }}>
+        <SelectField style={field} value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value }))}>
+          {(data.scopes.length ? data.scopes : ["org", "user"]).map(s =>
             <option key={s} value={s}>{s === "org" ? "whole org" : "one user"}</option>)}
         </SelectField>
         {form.scope === "user" && (
-          <Input style={{ ...sel, width: 150 }} placeholder="user id" value={form.subject}
+          <Input style={{ ...field, width: 150 }} placeholder="user id" value={form.subject}
             onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} />
         )}
-        <SelectField style={sel} value={form.metric} onChange={e => setForm(f => ({ ...f, metric: e.target.value }))}>
-          {(vocab.metrics.length ? vocab.metrics : ["calls", "total_tokens", "cost_usd"]).map(m =>
+        <SelectField style={field} value={form.metric} onChange={e => setForm(f => ({ ...f, metric: e.target.value }))}>
+          {(data.metrics.length ? data.metrics : ["calls", "total_tokens", "cost_usd"]).map(m =>
             <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}
         </SelectField>
-        <Input style={{ ...sel, width: 110 }} placeholder="limit" inputMode="decimal"
-          value={form.limit} onChange={e => setForm(f => ({ ...f, limit: e.target.value }))}
-          data-testid="cap-limit" />
-        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>per</span>
-        <Input style={{ ...sel, width: 60 }} inputMode="numeric" value={form.window_hours}
+        <Input style={{ ...field, width: 110 }} placeholder="limit" inputMode="decimal"
+          value={form.limit} onChange={e => setForm(f => ({ ...f, limit: e.target.value }))} data-testid="cap-limit" />
+        <span className="aug-fs-xs" style={muted}>per</span>
+        <Input style={{ ...field, width: 60 }} inputMode="numeric" value={form.window_hours}
           onChange={e => setForm(f => ({ ...f, window_hours: e.target.value }))} />
-        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>hours ·</span>
-        <SelectField style={sel} value={form.action} onChange={e => setForm(f => ({ ...f, action: e.target.value }))}>
-          {(vocab.actions.length ? vocab.actions : ["alert", "block"]).map(a =>
+        <span className="aug-fs-xs" style={muted}>hours ·</span>
+        <SelectField style={field} value={form.action} onChange={e => setForm(f => ({ ...f, action: e.target.value }))}>
+          {(data.actions.length ? data.actions : ["alert", "block"]).map(a =>
             <option key={a} value={a}>{a === "block" ? "block new work" : "alert only"}</option>)}
         </SelectField>
-        <Button size="sm" disabled={busy || !form.limit.trim()} onClick={declare} data-testid="cap-declare">
-          Declare the cap
-        </Button>
-        {loaded && caps.length === 0 && (
-          <span className="aug-fs-xs" style={{ color: "var(--t3)", flexBasis: "100%" }}>
-            “alert” records a breach in the governance feed; “block” refuses new work with
-            a sentence that names the number.
-          </span>
-        )}
+        <Button size="sm" disabled={busy || !form.limit.trim()} onClick={declare} data-testid="cap-declare">Declare the cap</Button>
       </div>
-      {err && <p className="aug-fs-xs" style={{ color: "var(--red4)", margin: "6px 0 0" }}>{err}</p>}
-    </>
+      <div className="aug-fs-xs" style={{ ...muted, marginTop: 8 }}>
+        Alert records a breach in the governance feed · block refuses new work and names the number
+      </div>
+      {err && <div className="aug-fs-xs" style={{ color: "var(--red4)", marginTop: 6 }}>{err}</div>}
+    </section>
   );
 }
 
-// ── Usage & model health ─────────────────────────────────────────────────────
+// ── Governance ───────────────────────────────────────────────────────────────
 
-function UsageSection({ report, models }: { report: UsageReport | null; models: ModelUsageRow[] }) {
-  const [share, setShare] = useState<number | null | undefined>(undefined);
+const FOLD_ICON: Record<FoldTone, { name: IconName; color: string }> = {
+  amber: { name: "warning", color: "var(--amb4)" },
+  accent: { name: "bolt", color: "var(--accent-text)" },
+  green: { name: "check", color: "var(--grn4)" },
+  plain: { name: "dot", color: "var(--t3)" },
+};
 
-  useEffect(() => {
-    getRouteMix().then(r => setShare((r as { converse_share?: number | null }).converse_share))
-      .catch(() => setShare(undefined));
+type Focus = { label: string; keys: ReadonlySet<string> };
+
+function GovernanceCard() {
+  const [feed, setFeed] = useState<{ events: AuditFeedEvent[]; categories: string[] } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
+  const [full, setFull] = useState(false);
+  const [focus, setFocus] = useState<Focus | null>(null);
+  const [shown, setShown] = useState<AuditFeedEvent[] | null>(null);
+
+  const read = useCallback(() => {
+    setErr(null);
+    getAuditFeed("", FEED_WINDOW).then(r => setFeed({ events: r.events, categories: r.categories })).catch(e => setErr(say(e)));
   }, []);
+  useEffect(() => {
+    read();
+    // Names a connection on a folded row; a read that fails leaves the name out, never the row.
+    getConnections().then(cs => setNames(new Map(cs.map(c => [c.id, c.name])))).catch(() => setNames(new Map()));
+  }, [read]);
 
-  if (!report) return <p className="aug-fs-sm" style={{ color: "var(--t3)" }}>Reading the usage rollup…</p>;
+  const events = useMemo(() => feed?.events ?? [], [feed]);
+  const folds = useMemo(() => foldFeed(events, id => names.get(id)), [events, names]);
+  const span = sinceWords(events);
 
-  const rows = [...report.rows].sort((a, b) => b.total_tokens - a.total_tokens).slice(0, 20);
+  const view = (f: FeedFold) => { setFocus({ label: f.title, keys: new Set(f.events.map(eventKey)) }); setFull(true); };
+  const exportCsv = () => {
+    const rows = full && shown ? shown : events;
+    downloadCsv(csvFilename("governance-feed"),
+      toCsv(["at", "category", "kind", "actor", "org_id", "conn_id", "summary"],
+        rows.map(e => [e.at, e.category, e.kind, e.actor, e.org_id, e.conn_id, e.summary])));
+  };
+
   return (
-    <>
-      {/* The totals moved up into the headline — repeating them here was the same
-          sentence twice on one screen. */}
-      <SectionTitle sub="the twenty models that moved the most tokens">
-        Usage by provider &amp; model
-      </SectionTitle>
-      {typeof share === "number" && (
-        <p className="aug-fs-xs" style={{ color: "var(--t3)", margin: "0 0 8px" }}>
-          Route mix: {pct(share)} of finished ask turns were served conversationally.
-        </p>
+    <section aria-label="Governance" data-testid="spend-governance" style={card}>
+      <Label right={
+        <span style={row}>
+          {feed && <span className="aug-fs-xs" style={muted}>{countNoun(events.length, "event")}</span>}
+          <Button size="xs" variant="ghost" aria-expanded={full} disabled={!feed}
+            onClick={() => { setFull(o => !o); setFocus(null); }}>{full ? "Hide feed" : "Full feed"}</Button>
+          <Button size="xs" variant="ghost" disabled={!events.length} onClick={exportCsv}>
+            <Icon name="download" size={12} /> CSV
+          </Button>
+        </span>
+      }>
+        {span ? `Governance · ${span}` : "Governance"}
+      </Label>
+      {err ? <ReadFailed what="the governance feed" error={err} onRetry={read} />
+        : !feed ? <Loading what="the governance feed" />
+        : folds.length === 0 ? <div className="aug-fs-sm" style={muted}>Nothing recorded yet.</div>
+        : folds.map((f, i) => (
+          <div key={f.key} data-testid="governance-fold" className="aug-fs-sm"
+            style={{ display: "grid", gridTemplateColumns: "18px minmax(0, 1fr) auto auto", gap: 10, alignItems: "center",
+              padding: "8px 2px", borderTop: i ? "1px solid var(--b1)" : undefined }}>
+            <span style={{ display: "inline-flex", color: FOLD_ICON[f.tone].color }}><Icon name={FOLD_ICON[f.tone].name} size={14} /></span>
+            <span style={oneLine} title={f.sub ? `${f.title} · ${f.sub}` : f.title}>
+              <span style={{ color: "var(--t1)" }}>{f.title}</span>
+              {f.sub && <span style={{ ...muted, marginLeft: 6 }}>{f.sub}</span>}
+            </span>
+            <span style={{ color: "var(--t2)", textAlign: "right", minWidth: 36, ...tabular }}>{formatCount(f.count)}</span>
+            {f.tone === "amber" ? <Button size="xs" variant="secondary" onClick={() => view(f)}>View</Button> : <span />}
+          </div>
+        ))}
+      {full && feed && (
+        <FullFeed base={events} categories={feed.categories} focus={focus}
+          onClearFocus={() => setFocus(null)} onRows={setShown} />
       )}
-      {rows.length === 0 ? (
-        <EmptyState variant="inline" title="No model calls recorded yet." />
-      ) : (
-        <div style={{ overflowX: "auto", border: "1px solid var(--b0)", borderRadius: "var(--r3)" }}>
-          <Table className="aug-fs-sm" style={{ color: "var(--t2)" }}>
-            <TableHeader>
-              <TableRow className="aug-fs-xs" style={{ color: "var(--t3)", textAlign: "left", borderBottom: "1px solid var(--b0)" }}>
-                <TableHead style={cell}>Provider</TableHead><TableHead style={cell}>Model</TableHead>
-                <TableHead style={{ ...num }}>Calls</TableHead><TableHead style={{ ...num }}>Tokens</TableHead>
-                <TableHead style={{ ...num }}>Cost</TableHead><TableHead style={{ ...num }}>Failure rate</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((r, i) => (
-                <TableRow key={i} style={{ borderBottom: "1px solid var(--b0)" }}>
-                  <TableCell style={cell}>{String(r.provider ?? "")}</TableCell>
-                  <TableCell style={{ ...cell, fontFamily: "var(--font-mono)" }}>{String(r.model ?? "")}</TableCell>
-                  <TableCell style={num}>{compactNumber(r.calls)}</TableCell>
-                  <TableCell style={num}>{compactNumber(r.total_tokens)}</TableCell>
-                  <TableCell style={num}>{r.cost_is_complete ? money(r.cost_usd) : `≥ ${money(r.cost_usd)}`}</TableCell>
-                  <TableCell style={{ ...num, color: r.failure_rate > 0.05 ? "var(--red4)" : undefined }}>
-                    {pct(r.failure_rate)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-      {models.some(m => m.failures > 0) && (
-        <p className="aug-fs-xs" style={{ color: "var(--amb4)", margin: "6px 0 0" }}>
-          {countNoun(models.reduce((n, m) => n + m.failures, 0), "model call")} failed in the
-          scanned window — the worst offender is{" "}
-          <span style={{ fontFamily: "var(--font-mono)" }}>
-            {[...models].sort((a, b) => b.failures - a.failures)[0]?.model}
-          </span>.
-        </p>
-      )}
-    </>
+    </section>
   );
 }
-
-// ── The governance feed ──────────────────────────────────────────────────────
-
-/** How many events one fetch pulls. The server filters by CATEGORY only, so every
- *  other control here narrows this window in memory. The header says so: a filter
- *  that silently searches a slice is a filter that lies. */
-const FEED_WINDOW = 500;
 
 type FeedSort = { key: "at" | "category" | "kind" | "actor"; desc: boolean };
 
@@ -278,15 +499,15 @@ const FEED_COLUMNS: { key: FeedSort["key"] | "summary"; label: string; width?: n
   { key: "summary",  label: "What happened" },
 ];
 
+const cell: CSSProperties = { padding: "6px 10px", whiteSpace: "nowrap" };
+
 function SortHeader({ label, active, desc, onClick, width }: {
   label: string; active: boolean; desc: boolean; onClick?: () => void; width?: number;
 }) {
   return (
-    <th style={{ ...cell, width, position: "sticky", top: 0, zIndex: 1,
-      background: "var(--bg-2)", borderBottom: "1px solid var(--b1)" }}>
+    <th style={{ ...cell, width, position: "sticky", top: 0, zIndex: 1, background: "var(--bg-2)", borderBottom: "1px solid var(--b1)" }}>
       {onClick ? (
-        <Button variant="ghost" size="xs" onClick={onClick}
-          className="aug-fs-xs h-auto p-0 font-normal"
+        <Button variant="ghost" size="xs" onClick={onClick} className="aug-fs-xs h-auto p-0 font-normal"
           style={{ color: active ? "var(--t1)" : "var(--t3)" }}>
           {label}
           {active && <Icon name={desc ? "chevd" : "chevu"} size={10} />}
@@ -298,23 +519,14 @@ function SortHeader({ label, active, desc, onClick, width }: {
 
 function FeedRow({ ev }: { ev: AuditFeedEvent }) {
   const [open, setOpen] = useState(false);
-  // Only offer the disclosure when there is something under it. A chevron that
-  // expands to an empty box is worse than no chevron.
+  // Only offer the disclosure when there is something under it.
   const hasDetail = ev.detail && Object.keys(ev.detail).length > 0;
   return (
     <>
       <tr style={{ borderBottom: "1px solid var(--b0)", cursor: hasDetail ? "pointer" : "default" }}
-        onClick={() => hasDetail && setOpen(o => !o)}
-        data-testid="governance-feed-row">
-        <td style={{ ...cell, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>
-          {formatTimestamp(ev.at, "short")}
-        </td>
-        <td style={cell}>
-          <span className="aug-fs-xs" style={{ color: "var(--t3)", border: "1px solid var(--b1)",
-            borderRadius: "var(--r-chip)", padding: "1px 7px", whiteSpace: "nowrap" }}>
-            {ev.category.replace(/_/g, " ")}
-          </span>
-        </td>
+        onClick={() => hasDetail && setOpen(o => !o)} data-testid="governance-feed-row">
+        <td style={{ ...cell, color: "var(--t3)", ...tabular }}>{formatTimestamp(ev.at, "short")}</td>
+        <td style={{ ...cell, color: "var(--t3)" }}>{ev.category.replace(/_/g, " ")}</td>
         <td style={{ ...cell, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{ev.kind}</td>
         <td style={{ ...cell, color: "var(--t3)" }}>{ev.actor || "—"}</td>
         <td style={{ ...cell, color: "var(--t2)", whiteSpace: "normal" }}>
@@ -340,39 +552,41 @@ function FeedRow({ ev }: { ev: AuditFeedEvent }) {
   );
 }
 
-function FeedSection() {
-  const [events, setEvents] = useState<AuditFeedEvent[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
+/** Every event in the window, filterable and sortable, each opening its detail. Category is a
+ *  SERVER filter (the endpoint rejects an unknown one rather than answering empty); event, actor
+ *  and search narrow the fetched window in memory — which is why the count says how many of how
+ *  many, rather than presenting a slice as the whole. */
+function FullFeed({ base, categories, focus, onClearFocus, onRows }: {
+  base: AuditFeedEvent[]; categories: string[]; focus: Focus | null;
+  onClearFocus: () => void; onRows: (rows: AuditFeedEvent[]) => void;
+}) {
   const [category, setCategory] = useState("");
+  const [byCategory, setByCategory] = useState<AuditFeedEvent[] | null>(null);
   const [actor, setActor] = useState("");
   const [kind, setKind] = useState("");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<FeedSort>({ key: "at", desc: true });
   const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    setLoading(true);
-    getAuditFeed(category, FEED_WINDOW)
-      .then(r => { setEvents(r.events); setCategories(r.categories); setErr(""); })
-      .catch(e => setErr(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
-  }, [category]);
+    setByCategory(null);
+    setErr("");
+    if (!category) return;
+    getAuditFeed(category, FEED_WINDOW).then(r => setByCategory(r.events)).catch(e => setErr(say(e)));
+  }, [category, attempt]);
 
-  // The vocabularies come from the rows themselves, never a hand-written list: a
-  // hard-coded kind list goes stale the moment a sink emits a new one, and the
-  // filter would then hide events it has no name for.
-  const actors = useMemo(
-    () => [...new Set(events.map(e => e.actor).filter(Boolean))].sort(),
-    [events]);
-  const kinds = useMemo(
-    () => [...new Set(events.map(e => e.kind).filter(Boolean))].sort(),
-    [events]);
+  const events = useMemo(() => (category ? byCategory ?? [] : base), [category, byCategory, base]);
+  // The vocabularies come from the rows themselves, never a hand-written list: a hard-coded kind
+  // list goes stale the moment a sink emits a new one, and the filter would then hide events.
+  const actors = useMemo(() => [...new Set(events.map(e => e.actor).filter(Boolean))].sort(), [events]);
+  const kinds = useMemo(() => [...new Set(events.map(e => e.kind).filter(Boolean))].sort(), [events]);
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const out = events.filter(e =>
-      (!actor || e.actor === actor)
+      (!focus || focus.keys.has(eventKey(e)))
+      && (!actor || e.actor === actor)
       && (!kind || e.kind === kind)
       && (!needle
         || e.summary?.toLowerCase().includes(needle)
@@ -384,86 +598,61 @@ function FeedSection() {
       const av = String(a[sort.key] ?? ""), bv = String(b[sort.key] ?? "");
       return av === bv ? 0 : (av < bv ? -1 : 1) * dir;
     });
-  }, [events, actor, kind, q, sort]);
+  }, [events, focus, actor, kind, q, sort]);
+  useEffect(() => { onRows(rows); }, [rows, onRows]);
 
-  const filtered = rows.length !== events.length;
-
-  function toggleSort(key: FeedSort["key"]) {
-    setSort(s => s.key === key ? { key, desc: !s.desc } : { key, desc: true });
-  }
-
-  function exportCsv() {
-    downloadCsv(
-      csvFilename("governance-feed"),
-      toCsv(["at", "category", "kind", "actor", "org_id", "conn_id", "summary"],
-        rows.map(e => [e.at, e.category, e.kind, e.actor, e.org_id, e.conn_id, e.summary])),
-    );
-  }
+  const loading = Boolean(category) && byCategory === null && !err;
+  const toggleSort = (key: FeedSort["key"]) => setSort(s => (s.key === key ? { key, desc: !s.desc } : { key, desc: true }));
 
   return (
-    <>
-      <SectionTitle sub={`every governance-relevant event, across all five audit sinks, newest first — the ${FEED_WINDOW} most recent`}>
-        Governance feed
-      </SectionTitle>
-
-      {/* ── Filters ──────────────────────────────────────────────────────────
-          Category is a SERVER filter (the endpoint takes it, and rejects an unknown
-          one rather than answering empty). Actor, event and search narrow the
-          fetched window in memory — which is why the count line below says how many
-          of how many, rather than presenting a slice as the whole. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        <SelectField style={feedSel} value={category} onChange={e => setCategory(e.target.value)}
+    <div style={{ marginTop: 10, borderTop: "1px solid var(--b1)", paddingTop: 10 }}>
+      <div style={{ ...row, marginBottom: 8 }}>
+        <SelectField style={field} value={category} onChange={e => setCategory(e.target.value)}
           aria-label="Category" data-testid="feed-category">
           <option value="">All categories</option>
           {categories.map(c => <option key={c} value={c}>{c.replace(/_/g, " ")}</option>)}
         </SelectField>
-        <SelectField style={feedSel} value={kind} onChange={e => setKind(e.target.value)}
-          aria-label="Event" data-testid="feed-kind">
+        <SelectField style={field} value={kind} onChange={e => setKind(e.target.value)} aria-label="Event" data-testid="feed-kind">
           <option value="">All events</option>
           {kinds.map(k => <option key={k} value={k}>{k}</option>)}
         </SelectField>
-        <SelectField style={feedSel} value={actor} onChange={e => setActor(e.target.value)}
-          aria-label="Actor" data-testid="feed-actor">
+        <SelectField style={field} value={actor} onChange={e => setActor(e.target.value)} aria-label="Actor" data-testid="feed-actor">
           <option value="">All actors</option>
           {actors.map(a => <option key={a} value={a}>{a}</option>)}
         </SelectField>
-        <Input style={{ ...feedSel, width: 220 }} value={q} onChange={e => setQ(e.target.value)}
-          placeholder="Search summary, event, actor…" aria-label="Search the feed"
-          data-testid="feed-search" />
+        <Input style={{ ...field, width: 220 }} value={q} onChange={e => setQ(e.target.value)}
+          placeholder="Search summary, event, actor…" aria-label="Search the feed" data-testid="feed-search" />
         {(category || kind || actor || q) && (
-          <Button size="xs" variant="ghost"
-            onClick={() => { setCategory(""); setKind(""); setActor(""); setQ(""); }}>
+          <Button size="xs" variant="ghost" onClick={() => { setCategory(""); setKind(""); setActor(""); setQ(""); }}>
             Clear filters
           </Button>
         )}
         <span style={{ flex: 1 }} />
-        <span className="aug-fs-xs" style={{ color: "var(--t3)" }} data-testid="feed-count">
-          {filtered
-            ? `${compactNumber(rows.length)} of ${compactNumber(events.length)} events`
+        <span className="aug-fs-xs" style={muted} data-testid="feed-count">
+          {rows.length !== events.length
+            ? `${formatCount(rows.length)} of ${formatCount(events.length)} events`
             : countNoun(rows.length, "event")}
         </span>
-        <Button size="xs" variant="ghost" onClick={exportCsv} disabled={rows.length === 0}>
-          <Icon name="download" size={12} /> CSV
-        </Button>
       </div>
-
-      {err && <p className="aug-fs-sm" style={{ color: "var(--red4)" }}>{err}</p>}
-      {!err && loading && <p className="aug-fs-sm" style={{ color: "var(--t3)" }}>Reading the audit sinks…</p>}
+      {focus && (
+        <div className="aug-fs-xs" style={{ ...row, ...muted, marginBottom: 8 }} data-testid="feed-focus">
+          {`Showing the ${focus.keys.size === 1 ? "event" : `${formatCount(focus.keys.size)} events`} behind “${focus.label}”`}
+          <Button size="xs" variant="ghost" onClick={onClearFocus}>Show all</Button>
+        </div>
+      )}
+      {err && <ReadFailed what="this category" error={err} onRetry={() => setAttempt(n => n + 1)} />}
+      {!err && loading && <Loading what="this category" />}
       {!err && !loading && rows.length === 0 && (
         <EmptyState variant="inline"
-          title={events.length === 0
-            ? "Nothing recorded in this category yet."
-            : "No event in the window matches these filters."} />
+          title={events.length === 0 ? "Nothing recorded in this category yet." : "No event in the window matches these filters."} />
       )}
       {!err && rows.length > 0 && (
-        <div style={{ overflow: "auto", maxHeight: "58vh",
-          border: "1px solid var(--b0)", borderRadius: "var(--r3)" }}>
+        <div style={{ overflow: "auto", maxHeight: "58vh", border: "1px solid var(--b0)", borderRadius: "var(--r3)" }}>
           <Table className="aug-fs-sm" style={{ color: "var(--t2)" }}>
             <TableHeader>
               <TableRow className="aug-fs-xs" style={{ textAlign: "left" }}>
                 {FEED_COLUMNS.map(c => (
-                  <SortHeader key={c.key} label={c.label} width={c.width}
-                    active={sort.key === c.key} desc={sort.desc}
+                  <SortHeader key={c.key} label={c.label} width={c.width} active={sort.key === c.key} desc={sort.desc}
                     onClick={c.key === "summary" ? undefined : () => toggleSort(c.key as FeedSort["key"])} />
                 ))}
               </TableRow>
@@ -474,137 +663,38 @@ function FeedSection() {
           </Table>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
-// ── Cost SQL disclosure ──────────────────────────────────────────────────────
+// ── Details ──────────────────────────────────────────────────────────────────
 
-function CostSqlSection() {
-  const [open, setOpen] = useState(false);
+/** What the page does not lead with: how ask turns were served, and the SQL behind the cost
+ *  figures — read only when a person opens it. */
+function Details() {
+  const [share, setShare] = useState<number | null | undefined>(undefined);
   const [sql, setSql] = useState("");
   useEffect(() => {
-    if (open && !sql) getCostSql().then(r => setSql(r.sql)).catch(() => setSql("-- unavailable"));
-  }, [open, sql]);
-  return (
-    <div style={{ marginTop: 18 }}>
-      <Button size="xs" variant="ghost" onClick={() => setOpen(o => !o)}>
-        <Icon name={open ? "chevd" : "chevr"} size={12} />
-        The cost query — the same SQL this page&rsquo;s numbers come from
-      </Button>
-      {open && (
-        <div style={{ marginTop: 6 }}>
-          <pre className="aug-fs-xs" style={{ margin: 0, maxHeight: 220, overflow: "auto",
-            fontFamily: "var(--font-mono)", color: "var(--t2)", background: "var(--bg-1)",
-            border: "1px solid var(--b0)", borderRadius: "var(--r2)", padding: 10 }}>{sql || "…"}</pre>
-          <Button size="xs" variant="ghost" onClick={() => { navigator.clipboard?.writeText(sql).catch(() => {}); }}>
-            <Icon name="copy" size={12} /> Copy
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** One figure and what it means. The headline is numbers, not prose. */
-function Headline({ value, label, tone }: { value: string; label: string; tone?: string }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
-      <span className="aug-fs-h1" style={{ fontWeight: 600, color: tone ?? "var(--t1)",
-        fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{value}</span>
-      <span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>{label}</span>
-    </div>
-  );
-}
-
-/** The top of the page: the four numbers the screen exists to report.
- *
- *  It used to be a repeated page title plus a sentence of description — roughly a
- *  fifth of the viewport spent restating the tab name above a paragraph explaining
- *  what the sections below would say. The workspace header already says "Spend"; this
- *  says what the spend IS. Every figure keeps its own honesty caveat: cost is a FLOOR
- *  whenever any call is unpriced, and it is written as such rather than rounded into a
- *  total nobody can defend.
- */
-function costTotals(report: UsageReport | null): { cost: number; unpriced: number } | null {
-  if (!report) return null;
-  let cost = 0, unpriced = 0;
-  for (const r of report.rows) { cost += r.cost_usd; unpriced += r.unpriced_calls; }
-  return { cost, unpriced };
-}
-
-function HeadlineStrip({ report, models, capCount }: {
-  report: UsageReport | null; models: ModelUsageRow[]; capCount: number | null;
-}) {
-  const totals = useMemo(() => costTotals(report), [report]);
-  const failures = models.reduce((n, m) => n + m.failures, 0);
-  const failRate = report && report.total_calls ? failures / report.total_calls : 0;
-
-  return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: 34, flexWrap: "wrap",
-      padding: "2px 0 16px" }} data-testid="spend-headline">
-      <Headline
-        value={totals ? `${totals.unpriced > 0 ? "≥ " : ""}${money(totals.cost)}` : "—"}
-        label={totals && totals.unpriced > 0
-          ? `a floor — ${countNoun(totals.unpriced, "call")} carry no declared price`
-          : "spent on model calls"} />
-      <Headline value={report ? compactNumber(report.total_calls) : "—"} label="model calls" />
-      <Headline value={report ? pct(failRate) : "—"} label="failed"
-        tone={failRate > 0.05 ? "var(--amb4)" : undefined} />
-      <Headline
-        value={capCount === null ? "—" : capCount === 0 ? "None" : String(capCount)}
-        label={capCount === 0 ? "caps declared — spend is uncapped" : "caps in force"}
-        tone={capCount === 0 ? "var(--amb4)" : undefined} />
-    </div>
-  );
-}
-
-/** When any call is unpriced the cost is a floor. The partial state names the hole and draws it: priced
- *  calls against unpriced ones, the unknown share hatched — unknown, never zero (INSTRUMENT.md §5). */
-function CostFloor({ report }: { report: UsageReport | null }) {
-  const totals = useMemo(() => costTotals(report), [report]);
-  const total = report?.total_calls ?? 0;
-  if (!totals || totals.unpriced <= 0 || total <= 0) return null;
-  const priced = Math.max(0, total - totals.unpriced);
-  return (
-    <PartialState
-      kind="Partial · cost is a floor"
-      meta={`${pct(priced / total)} of calls priced`}
-      claim={totals.cost > 0
-        ? <>At least <span className="aug-mono">{money(totals.cost)}</span> spent on model calls.</>
-        : <>The {formatCount(priced)} priced calls came to <span className="aug-mono">{money(0)}</span>; what the other {formatCount(totals.unpriced)} cost is unknown.</>}
-      detail={totals.cost > 0
-        ? `${countNoun(totals.unpriced, "call")} carry no declared price, so their cost is unknown — not zero.`
-        : "No published rate covers them, so no total can be stated: unknown, not zero."}
-      bars={[
-        { label: "priced", share: priced / total, value: formatCount(priced), color: "var(--chart-2)" },
-        { label: "unpriced", share: totals.unpriced / total, unknown: true },
-      ]}
-      style={{ marginBottom: 16 }}
-    />
-  );
-}
-
-export function SpendPanel() {
-  // Hoisted so the headline and the sections below read ONE fetch each rather than
-  // two of the same — and so declaring a cap moves the headline, which it must.
-  const [report, setReport] = useState<UsageReport | null>(null);
-  const [models, setModels] = useState<ModelUsageRow[]>([]);
-  const [capCount, setCapCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    getUsageReport("provider,model").then(setReport).catch(() => setReport(null));
-    getModelUsage().then(r => setModels(r.models)).catch(() => setModels([]));
+    getRouteMix().then(r => setShare((r as { converse_share?: number | null }).converse_share ?? null)).catch(() => setShare(null));
+    getCostSql().then(r => setSql(r.sql)).catch(() => setSql("-- the cost query could not be read"));
   }, []);
-
   return (
-    <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "14px 24px 18px" }}>
-      <HeadlineStrip report={report} models={models} capCount={capCount} />
-      <CostFloor report={report} />
-      <CapsSection onCount={setCapCount} />
-      <UsageSection report={report} models={models} />
-      <FeedSection />
-      <CostSqlSection />
+    <div style={{ ...card, marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }} data-testid="spend-details">
+      <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+        {share === undefined ? <Loading what="the route mix" inline />
+          : share === null ? "Route mix: not measured yet."
+          : `Route mix: ${pct(share)} of finished ask turns were answered by the conversation agent.`}
+      </div>
+      <div>
+        <Label right={<Button size="xs" variant="ghost" disabled={!sql}
+          onClick={() => { navigator.clipboard?.writeText(sql).catch(() => {}); }}><Icon name="copy" size={12} /> Copy</Button>}>
+          The cost query
+        </Label>
+        <pre className="aug-fs-xs" style={{ margin: 0, maxHeight: 220, overflow: "auto", fontFamily: "var(--font-mono)",
+          color: "var(--t2)", background: "var(--bg-1)", border: "1px solid var(--b0)", borderRadius: "var(--r2)", padding: 10 }}>
+          {sql || "…"}
+        </pre>
+      </div>
     </div>
   );
 }
