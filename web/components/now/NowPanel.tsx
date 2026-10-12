@@ -1,45 +1,65 @@
 "use client";
 
 /**
- * Now — "what needs me, this week?" (the 2027 study §V, screen 2).
+ * Now — "what needs me, this week?" (the 2027 study §V, screen 2), laid out to CLARITY (`aughor-v2/CLARITY.md`).
  *
- * It is bounded and it ends: the few things that used one of the week's slots, each saying why
- * it won; what is addressed to a person; what was restated since they were last here; what
- * competed and lost, with why; and the Briefing in one line. A first run gets one sentence and
- * the way to Home, where a first run starts. There is no tile here and nothing to arrange.
+ * Four figures (sent this week, waiting on you, held, corrected), then what waits on a person in amber with its
+ * buttons on the row, then the week's slots as bars beside what lost one, then what was sent — the same send to
+ * the same place folded into one row with its count — and what was corrected beside the Briefing. It is bounded
+ * and it ends; a first run gets one line and the way to Home.
  *
- * Every row is a ledger entry read back — the departure gate's triage ranked it (code), and the
- * hold is as much a row as the send.
+ * Every row is a ledger entry read back — the departure gate's triage ranked it (code), and the hold is as much a
+ * row as the send. Nothing is dropped to make it short: a fold says its count, the rest is behind Details, and a
+ * read that failed says so where its rows would be.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { getDepartures, getNeedsHuman, type Connection, type Departure, type NeedsHuman } from "@/lib/api";
 import { approverName } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
-import { owes, summaryLine, whenText } from "@/lib/departures";
-import { countNoun } from "@/lib/format";
+import { owes, sourceName, summaryLine, whenText } from "@/lib/departures";
+import { countNoun, formatCount, normalizeNumberPrecision } from "@/lib/format";
+import { dayWords } from "@/lib/home";
 import { connectionLabel, destinationLabel, needsYouTitle } from "@/lib/names";
 import {
   WAITING_CHANGED_EVENT, getAttentionBudget, getAttentionHeld, getCorrections, getSetAside, listDecisions,
   listInquiries, listMissions, restoreItem, setAttentionSlots, setItemAside, whoLabel,
-  type AttentionBudget, type CorrectionEntry, type Decision, type HeldItem, type Inquiry, type Mission,
-  type SetAside, type SetAsideKind,
+  type AttentionBudget, type CorrectionEntry, type Corrections, type Decision, type HeldItem, type Inquiry,
+  type Mission, type SetAside, type SetAsideKind,
 } from "@/lib/record";
-import {
-  Absent, ActorField, Gate, Page, Section, day, dayDistance, useActor, useLoad, type Actor,
-} from "@/components/record/kit";
+import { ActorField, Gate, day, dayDistance, useActor, useLoad, type Actor, type Load } from "@/components/record/kit";
 import { ProposalCardById } from "@/components/ProposalCard";
 import { InspectorHost, type Inspect, type InspectLayer } from "@/components/record/Inspector";
+import {
+  Bar, CARD, Card, Chip, Desk, Empty, Figure, Figures, MUTED, NUM, NeedsYou, ONE_LINE, ROW, RULE,
+} from "@/components/clarity/parts";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 
 const LAST_SEEN_KEY = "aughor_now_last_seen";
+const DEPARTURES_READ = 200;
 
-interface OrgBriefing {
-  briefings: { connection_id: string; connection_name: string; note?: string;
-    briefing: null | { as_of?: string; version?: number; headline?: string; theme?: string; lede?: string } }[];
-  with_briefing: number;
-  connections: number;
+/** One connection's row of the organisation's Briefing. The API puts a kept Briefing's fields on the row itself
+ *  (`as_of`, `headline_theme`, `lede`) and `briefing: null` on a connection with none; an older shape nested them
+ *  under `briefing`. Both are read — reading only the nested one said "no Briefing kept" over two kept ones. */
+interface OrgBriefingRow {
+  connection_id: string;
+  connection_name: string;
+  note?: string;
+  briefing?: null | { as_of?: string; headline?: string; theme?: string; lede?: string };
+  as_of?: string;
+  headline_theme?: string;
+  lede?: string;
+}
+interface OrgBriefing { briefings: OrgBriefingRow[]; with_briefing: number; connections: number }
+
+export function keptBriefing(r: OrgBriefingRow): { as_of: string; headline: string; lede: string } | null {
+  if (r.briefing === null) return null;
+  const as_of = r.briefing?.as_of ?? r.as_of ?? "";
+  const headline = r.briefing?.headline ?? r.briefing?.theme ?? r.headline_theme ?? "";
+  const lede = r.briefing?.lede ?? r.lede ?? "";
+  return as_of || headline || lede ? { as_of, headline, lede } : null;
 }
 
 interface Week {
@@ -47,15 +67,21 @@ interface Week {
   sent: Departure[];
   budgets: AttentionBudget[];
   held: HeldItem[];
+  /** The ledger read filled its page and its oldest row is still this week: more may have left. */
+  capped: boolean;
+  /** This API serves no departures ledger at all — said, never read as "nothing left". */
+  noLedger: boolean;
 }
 
 async function readWeek(): Promise<Week> {
-  const [rows, heldView] = await Promise.all([getDepartures({ limit: 200 }), getAttentionHeld()]);
+  const [rows, heldView] = await Promise.all([getDepartures({ limit: DEPARTURES_READ }), getAttentionHeld()]);
   const weekStart = heldView.week_start;
-  const sent = (rows ?? []).filter(d => d.state === "departed" && d.ts.slice(0, 10) >= weekStart);
+  const all = rows ?? [];
+  const sent = all.filter(d => d.state === "departed" && d.ts.slice(0, 10) >= weekStart);
   const places = [...new Set([...sent.map(d => d.target), ...heldView.held.map(h => h.target)].filter(Boolean))];
   const budgets = await Promise.all(places.map(p => getAttentionBudget(p)));
-  return { weekStart, sent, budgets, held: heldView.held };
+  const capped = all.length >= DEPARTURES_READ && (all[all.length - 1]?.ts ?? "").slice(0, 10) >= weekStart;
+  return { weekStart, sent, budgets, held: heldView.held, capped, noLedger: rows === null };
 }
 
 interface Waiting {
@@ -92,6 +118,13 @@ export interface NowDoors {
   onOpenHome: () => void;
 }
 
+/** A figure whose read is in flight or failed says that, in its own line — never a 0. */
+function readState<T>(load: Load<T>, what: string): ReactNode | null {
+  if (load.error) return <Chip tone="amber" title={load.error}>{what} could not be read</Chip>;
+  if (load.data === null) return "reading…";
+  return null;
+}
+
 export function NowPanel({ connections, contextReady, doors }: {
   connections: Connection[];
   /** False while the shell is still finding the workspace and its connections. */
@@ -114,62 +147,115 @@ export function NowPanel({ connections, contextReady, doors }: {
     const arrived = new Date().toISOString();
     return () => { try { localStorage.setItem(LAST_SEEN_KEY, arrived); } catch { /* a private window keeps no visit */ } };
   }, []);
+  // A first visit reads the last seven days; the floor is fixed as the page arrives.
+  const [weekAgo] = useState(() => new Date(Date.now() - 7 * 86_400_000).toISOString());
+  const floor = since ?? weekAgo;
 
   const firstRun = contextReady && connections.filter(c => !c.builtin).length === 0
     && week.data !== null && week.data.sent.length === 0 && week.data.held.length === 0
     && waiting.data !== null && waiting.data.decisions.length + waiting.data.inquiries.length === 0;
 
+  const restated = useMemo(() => (corrections.data ? splitCorrections(corrections.data, floor) : null),
+    [corrections.data, floor]);
+
   if (firstRun) return <FirstRun doors={doors} />;
+
+  const used = week.data?.budgets.reduce((n, b) => n + b.used, 0) ?? 0;
+  const slots = week.data?.budgets.reduce((n, b) => n + b.slots, 0) ?? 0;
+  const waitingCount = waiting.data ? waitingTotals(waiting.data, aside.data?.active ?? []) : null;
+  const sinceWords = since ? `since your last visit, ${dayWords(since)}` : "in the last seven days";
 
   return (
     <InspectorHost connections={connections} pageKey="now" onOpenFull={doors.onOpenRecord}>
       {inspect => (
-    <Page>
-      <Section label="This week's slots" meta={week.data ? slotsMeta(week.data) : undefined}>
-        <Gate load={week} what="this week's sends">
-          {w => <Slots week={w} missions={missions.data ?? []} connections={connections} doors={doors} onChanged={week.reload} />}
-        </Gate>
-      </Section>
+        <Desk testId="now">
+          <Figures testId="now-figures">
+            <Figure testId="now-fig-sent" label="Sent this week" value={week.data ? formatCount(week.data.sent.length) : "—"}
+              title={week.data ? `Everything that left the platform since ${dayWords(week.data.weekStart)}` : undefined}
+              sub={readState(week, "the ledger") ?? (week.data!.noLedger
+                ? <Chip tone="amber">this API serves no departures ledger</Chip>
+                : <>
+                    <span style={NUM}>{slots ? `${used} of ${slots} slots used` : "no place has slots yet"}</span>
+                    {week.data!.capped && <Chip tone="amber" title={`The newest ${DEPARTURES_READ} departures are all this week's — more may have left`}>a floor</Chip>}
+                  </>)} />
+            <Figure testId="now-fig-waiting" label="Waiting on you"
+              value={waitingCount ? formatCount(waitingCount.shown) : "—"}
+              tone={waitingCount && waitingCount.shown > 0 ? "amber" : undefined}
+              sub={readState(waiting, "what waits") ?? ([waitingCount!.shown ? waitingCount!.kinds : "nothing is due",
+                waitingCount!.aside ? `${waitingCount!.aside} set aside` : ""].filter(Boolean).join(" · "))} />
+            <Figure testId="now-fig-held" label="Held this week"
+              title="What competed for a place's slot and lost — listed below with its score when there is any, never dropped silently"
+              value={week.data ? formatCount(week.data.held.length) : "—"}
+              sub={readState(week, "the holds") ?? (week.data!.held.length ? "lost a slot to something stronger" : "nothing lost a slot")} />
+            <Figure testId="now-fig-corrected" label="Corrected" value={restated ? formatCount(restated.shown.length) : "—"}
+              title="Restated, refuted, missed or outside its band — what you were told that changed"
+              sub={readState(corrections, "the corrections") ?? sinceWords} />
+          </Figures>
 
-      <Section label="Waiting on you" meta={waiting.data ? waitingMeta(waiting.data, aside.data?.active ?? []) : undefined}>
-        <Gate load={waiting} what="what waits on a person">
-          {w => <WaitingList waiting={w} aside={aside.data?.active ?? []} returned={aside.data?.returned ?? []}
-            connections={connections} doors={doors} inspect={inspect} onResolved={waiting.reload}
-            onAsideChanged={() => { aside.reload(); window.dispatchEvent(new Event(WAITING_CHANGED_EVENT)); }} />}
-        </Gate>
-      </Section>
+          <NeedsYou testId="now-needs" waiting={(waitingCount?.shown ?? 0) > 0 || !!waiting.error} right={waitingCount && waitingCount.shown > 0 ? `${countNoun(waitingCount.shown, "item")} · oldest first` : undefined}>
+            <Gate load={waiting} what="what waits on a person">
+              {w => <WaitingList waiting={w} aside={aside.data?.active ?? []} returned={aside.data?.returned ?? []}
+                connections={connections} doors={doors} inspect={inspect} onResolved={waiting.reload}
+                onAsideChanged={() => { aside.reload(); window.dispatchEvent(new Event(WAITING_CHANGED_EVENT)); }} />}
+            </Gate>
+          </NeedsYou>
 
-      <Section label="Since you were here" meta={since ? `last visit ${whenText(since)}` : "your first visit in this browser — the last seven days"}
-        action={<Button variant="ghost" size="xs" onClick={doors.onOpenCorrections}>All corrections</Button>}>
-        <Gate load={corrections} what="what was restated">
-          {c => <Restated entries={c.entries} since={since} labels={c.labels} inspect={inspect} />}
-        </Gate>
-      </Section>
+          {/* The picture — the week's slots, place by place — beside the Briefing in a line each. */}
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div style={{ flex: "1.4 1 420px", minWidth: 0 }}>
+              <Card label="Slots this week" testId="now-slots"
+                right={week.data ? `since ${dayWords(week.data.weekStart)}` : undefined}>
+                <Gate load={week} what="this week's slots">
+                  {w => <Slots week={w} onChanged={week.reload} />}
+                </Gate>
+              </Card>
+            </div>
+            <div style={{ flex: "1 1 300px", minWidth: 0 }}>
+              <Card label="The Briefing" testId="now-briefing">
+                <Gate load={briefing} what="the Briefing">
+                  {b => <BriefingLines fold={b} doors={doors} />}
+                </Gate>
+              </Card>
+            </div>
+          </div>
 
-      <Section label="Held this week" meta={week.data ? countNoun(week.data.held.length, "item") : undefined}
-        action={<Button variant="ghost" size="xs" onClick={() => doors.onOpenDepartures()}>Every departure</Button>}>
-        <Gate load={week} what="what was held">
-          {w => <Held held={w.held} doors={doors} />}
-        </Gate>
-      </Section>
+          <Card label="Sent this week" testId="now-sent"
+            right={<>
+              {week.data && week.data.sent.length > 0 && <span>newest first</span>}
+              <Button variant="link" size="xs" onClick={() => doors.onOpenDepartures()}>Every departure</Button>
+            </>}>
+            <Gate load={week} what="this week's sends">
+              {w => <Sent week={w} missions={missions.data ?? []} connections={connections} doors={doors} />}
+            </Gate>
+          </Card>
 
-      <Section label="The Briefing">
-        <Gate load={briefing} what="the Briefing">
-          {b => <BriefingLine fold={b} doors={doors} />}
-        </Gate>
-      </Section>
-    </Page>
+          {/* What was held earns a card only when something was: with none, its figure above already says so. */}
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div style={{ flex: "1.4 1 420px", minWidth: 0 }}>
+              <Card label="Since you were here" testId="now-restated"
+                right={<Button variant="link" size="xs" onClick={doors.onOpenCorrections}>All corrections</Button>}>
+                <Gate load={corrections} what="what was restated">
+                  {c => <Restated split={restated ?? splitCorrections(c, floor)} labels={c.labels} inspect={inspect} />}
+                </Gate>
+              </Card>
+            </div>
+            {(week.error || (week.data?.held.length ?? 0) > 0) && (
+              <div style={{ flex: "1 1 300px", minWidth: 0 }}>
+                <Card label="Held this week" testId="now-held">
+                  <Gate load={week} what="what was held">
+                    {w => <Held held={w.held} doors={doors} />}
+                  </Gate>
+                </Card>
+              </div>
+            )}
+          </div>
+        </Desk>
       )}
     </InspectorHost>
   );
 }
 
-function slotsMeta(w: Week): string {
-  if (w.budgets.length === 0) return "nothing was sent to a place this week";
-  const used = w.budgets.reduce((n, b) => n + b.used, 0);
-  const slots = w.budgets.reduce((n, b) => n + b.slots, 0);
-  return `${used} of ${slots} used across ${countNoun(w.budgets.length, "place")}`;
-}
+// ── what waits on a person ───────────────────────────────────────────────────────────────
 
 /** One row of "Waiting on you", whatever it is about, with the name a set-aside knows it by. */
 interface WaitingRow {
@@ -192,131 +278,21 @@ function rowsOf(w: Waiting): WaitingRow[] {
 
 const asideKey = (kind: string, ref: string) => `${kind}:${ref}`;
 
-function waitingMeta(w: Waiting, active: SetAside[]): string {
-  const hidden = new Set(active.map(a => asideKey(a.item_kind, a.ref)));
-  const rows = rowsOf(w);
-  const aside = rows.filter(r => hidden.has(asideKey(r.kind, r.ref))).length;
-  const n = rows.length - aside;
-  return `${n === 0 ? "nothing" : countNoun(n, "thing")}${aside ? ` · ${aside} set aside` : ""}`;
-}
-
-
-// ── 1 · the week's slots ─────────────────────────────────────────────────────────────────
-
-function Slots({ week, missions, connections, doors, onChanged }: {
-  week: Week; missions: Mission[]; connections: Connection[]; doors: NowDoors; onChanged: () => void;
-}) {
-  if (week.budgets.length === 0) {
-    return (
-      <Absent>
-        Nothing left the platform for a channel or a person since {week.weekStart}. A send that passes the
-        departure gate uses one of its place&apos;s slots and is listed here with why it won.
-      </Absent>
-    );
-  }
-  return (
-    <div style={{ display: "grid", gap: 16 }}>
-      {week.budgets.map(b => (
-        <Place key={b.addressee} budget={b} sent={week.sent.filter(d => d.target === b.addressee)}
-          missions={missions} connections={connections} doors={doors} onChanged={onChanged} />
-      ))}
-    </div>
-  );
-}
-
-function Place({ budget, sent, missions, connections, doors, onChanged }: {
-  budget: AttentionBudget; sent: Departure[]; missions: Mission[]; connections: Connection[];
-  doors: NowDoors; onChanged: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [slots, setSlots] = useState(String(budget.slots));
-  const [error, setError] = useState("");
-  const save = async () => {
-    const n = Number(slots);
-    if (!Number.isInteger(n) || n < 0) { setError("Slots are a whole number, 0 or more."); return; }
-    try {
-      await setAttentionSlots(budget.addressee, n);
-      setEditing(false);
-      setError("");
-      onChanged();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  };
-  return (
-    <div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <span className="aug-fs-h2" style={{ fontWeight: 600, color: "var(--t1)" }}>{destinationLabel(budget.addressee).label}</span>
-        <span className="aug-fs-ui aug-num" style={{ color: budget.left === 0 ? "var(--amb4)" : "var(--t2)" }}>
-          {budget.used} of {budget.slots} slots used
-        </span>
-        {budget.held_count > 0 && (
-          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{countNoun(budget.held_count, "item")} held</span>
-        )}
-        <span style={{ flex: 1 }} />
-        {editing ? (
-          <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-            <Input aria-label={`Slots a week for ${budget.addressee}`} value={slots} inputMode="numeric"
-              onChange={e => setSlots(e.target.value)} style={{ width: 64 }} />
-            <Button size="xs" onClick={() => void save()}>Save</Button>
-            <Button size="xs" variant="ghost" onClick={() => { setEditing(false); setError(""); }}>Cancel</Button>
-          </span>
-        ) : (
-          <Button size="xs" variant="ghost" onClick={() => setEditing(true)}
-            title="How many sends a week this place takes; 0 holds everything unattended">Set slots</Button>
-        )}
-      </div>
-      {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: "4px 0 0" }}>{error}</p>}
-      {sent.length === 0 ? (
-        <Absent>No send used a slot here this week.</Absent>
-      ) : sent.map(d => <SentItem key={d.id} d={d} missions={missions} connections={connections} doors={doors} />)}
-    </div>
-  );
-}
-
-const TERM_WORDS: Record<string, string> = {
-  mission: "its bearing on a mission", size: "its size against normal", waiting: "the cost of waiting", novelty: "its novelty",
+const KIND_NOUN: Record<SetAsideKind, [string, string]> = {
+  decision: ["review", "reviews"], inquiry: ["inquiry", "inquiries"], departure: ["send", "sends"],
+  approval: ["approval", "approvals"],
 };
 
-/** The gate's triage line (`mission 1.00 · size 0.00 · … → score 0.65`) as what it was ranked on,
- *  strongest term first. A line that does not parse is shown as the gate wrote it. */
-export function triageWords(triage: string): string {
-  const score = /score\s+([\d.]+)/.exec(triage)?.[1];
-  const terms = [...triage.matchAll(/(mission|size|waiting|novelty)\s+([\d.]+)/g)]
-    .map(m => [m[1], Number(m[2])] as const).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-  if (terms.length === 0) return triage;
-  return `ranked on ${terms.map(([t]) => TERM_WORDS[t]).join(", ")}${score ? ` — score ${score}` : ""}`;
+/** How many wait, how many were set aside, and what the waiting ones are: "1 review · 2 approvals". */
+export function waitingTotals(w: Waiting, active: SetAside[]): { shown: number; aside: number; kinds: string } {
+  const hidden = new Set(active.map(a => asideKey(a.item_kind, a.ref)));
+  const rows = rowsOf(w);
+  const waitingRows = rows.filter(r => !hidden.has(asideKey(r.kind, r.ref)));
+  const counts = new Map<SetAsideKind, number>();
+  for (const r of waitingRows) counts.set(r.kind, (counts.get(r.kind) ?? 0) + 1);
+  const kinds = [...counts.entries()].map(([k, n]) => countNoun(n, KIND_NOUN[k][0], KIND_NOUN[k][1])).join(" · ");
+  return { shown: waitingRows.length, aside: rows.length - waitingRows.length, kinds };
 }
-
-/** The mission a departure bore on, by name — the gate writes the ids it charged on the row. */
-function bearingText(d: Departure, missions: Mission[]): string {
-  const noted = d.checks.mission ?? "";
-  if (!noted) return "bears on no mission";
-  const named = missions.filter(m => noted.includes(m.id) || noted.includes(m.key) || noted.includes(m.name));
-  return named.length ? `bears on ${named.map(m => m.name).join(", ")}` : noted;
-}
-
-function SentItem({ d, missions, connections, doors }: {
-  d: Departure; missions: Mission[]; connections: Connection[]; doors: NowDoors;
-}) {
-  return (
-    <div className="aug-item">
-      <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{d.text_preview}</div>
-      <div className="aug-item-foot aug-fs-sm">
-        <span>{bearingText(d, missions)}</span>
-        {d.checks.triage && <span title={`Why it won a slot — ${d.checks.triage}`}>{triageWords(d.checks.triage)}</span>}
-        <span>{summaryLine(d)}</span>
-        {d.conn_id && <span>{connectionLabel(d.conn_id, connections)}</span>}
-        <span>{whenText(d.ts)}</span>
-        <span style={{ flex: 1 }} />
-        {/* Its row in Departures: every check it passed, and the analysis behind it when there is one. */}
-        <Button size="xs" variant="outline" onClick={() => doors.onOpenDepartures(d.id)}>Open its receipt</Button>
-      </div>
-    </div>
-  );
-}
-
-// ── 2 · waiting on a person ──────────────────────────────────────────────────────────────
 
 const tomorrow = () => new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
 
@@ -346,16 +322,47 @@ function NotNow({ row, actor, onDone, onCancel }: {
   };
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
-      <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>Not until</span>
+      <span className="aug-fs-sm" style={MUTED}>Not until</span>
       <Input type="date" aria-label="Set aside until" min={tomorrow()} value={until} onChange={e => setUntil(e.target.value)} style={{ width: 160 }} />
       <Input aria-label="Why it is set aside" value={why} onChange={e => setWhy(e.target.value)} placeholder="Why — what it waits for" style={{ flex: "1 1 240px" }} />
       <ActorField actor={actor} id={`aside-by-${row.kind}-${row.id}`} />
-      <Button size="xs" disabled={busy || !until || !why.trim()} onClick={() => void submit()}>Set aside</Button>
+      <Button size="xs" disabled={busy || !until || !why.trim()} onClick={() => void submit()}
+        title="It comes back on that day, or sooner if what it rests on changes. Nothing is recorded on the item itself.">
+        Set aside
+      </Button>
       <Button size="xs" variant="ghost" onClick={onCancel}>Cancel</Button>
-      <span className="aug-fs-sm" style={{ color: "var(--t3)", flexBasis: "100%" }}>
-        It comes back on that day, or sooner if what it rests on changes. Nothing is recorded on the item itself.
-      </span>
       {error && <span className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", flexBasis: "100%" }}>{error}</span>}
+    </div>
+  );
+}
+
+/** Why a row waits, by its source. The one source not named here is the inbox of proposed actions. */
+const NEEDS_WORDS: Record<string, string> = {
+  paused_run: "a run is paused for a person",
+  automation_approval: "an automation waits for approval",
+  agent_alert: "an agent raised an alert",
+  automation_broken: "an automation is failing",
+};
+
+/** One waiting row: what it is (the full text on hover), one muted line, and its buttons on the row. */
+function WaitRow({ testId, title, onTitle, meta, buttons, below, first }: {
+  testId?: string; title: string; onTitle?: () => void; meta: ReactNode; buttons: ReactNode; below?: ReactNode; first: boolean;
+}) {
+  return (
+    <div data-testid={testId} style={{ padding: "8px 0", ...(first ? {} : RULE) }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12, alignItems: "center" }}>
+        <div style={{ minWidth: 0 }} title={title}>
+          {onTitle ? (
+            <Button variant="link" size="xs" className="aug-ledger-open" onClick={onTitle}
+              style={{ ...ONE_LINE, display: "block", maxWidth: "100%", color: "var(--t1)" }}>{title}</Button>
+          ) : (
+            <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)", fontWeight: 500 }}>{title}</div>
+          )}
+          <div className="aug-fs-xs" style={{ ...ROW, gap: 6, color: "var(--t2)" }}>{meta}</div>
+        </div>
+        <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>{buttons}</span>
+      </div>
+      {below}
     </div>
   );
 }
@@ -387,11 +394,14 @@ function WaitingList({ waiting, aside, returned, connections, doors, inspect, on
   // Only what still waits can be set aside: one dealt with on its own page has left both lists.
   const asideRows = rows.filter(r => isHidden(r.kind, r.ref)).map(r => ({ row: r, a: hidden.get(asideKey(r.kind, r.ref))! }));
   const shown = rows.length - asideRows.length;
+  let n = 0;
+  const first = () => n++ === 0;
 
-  /** The buttons every row ends with, and — when open — the form under it. */
+  /** The "Not now" button every row carries, the form it opens, and — for a row that came back — why. */
   const notNow = (kind: SetAsideKind, ref: string) => {
     const row = rowFor(kind, ref);
     const key = asideKey(kind, ref);
+    const b = back.get(key);
     return {
       button: <Button size="xs" variant="ghost" aria-expanded={deferring === key} onClick={() => setDeferring(x => (x === key ? "" : key))}>Not now</Button>,
       form: deferring === key && (
@@ -399,11 +409,10 @@ function WaitingList({ waiting, aside, returned, connections, doors, inspect, on
           onDone={() => { setDeferring(""); setDecided("Set aside. It is listed below until its day."); onAsideChanged(); }} />
       ),
       // It was set aside and is here again: say so, and why.
-      note: back.has(key) && (
-        <span style={{ color: "var(--amb4)" }}>
-          back {back.get(key)!.back_because.startsWith("its day came") ? "on its day" : `early: ${back.get(key)!.back_because}`}
-          {" — set aside by "}{whoLabel(back.get(key)!.by)}: {back.get(key)!.why}
-        </span>
+      note: b && (
+        <Chip tone="amber" title={`Set aside by ${whoLabel(b.by)}: ${b.why}`}>
+          back {b.back_because.startsWith("its day came") ? "on its day" : `early: ${b.back_because}`}
+        </Chip>
       ),
     };
   };
@@ -417,117 +426,82 @@ function WaitingList({ waiting, aside, returned, connections, doors, inspect, on
       {decided && <p className="aug-fs-sm" role="status" style={{ color: "var(--t2)", margin: "0 0 8px" }}>{decided}</p>}
       {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: "0 0 8px" }}>{error}</p>}
       {shown === 0 && (
-        <Absent>
-          {asideRows.length
-            ? "Nothing else is addressed to a person right now."
-            : "Nothing is addressed to a person: no review date has come, no inquiry is due, no send is waiting on an answer and no approval is open."}
-        </Absent>
+        <Empty title="Checked: review dates that have come, inquiries due, sends waiting on an answer, and open approvals">
+          {asideRows.length ? "Nothing else waits on you." : "Nothing waits on you."}
+        </Empty>
       )}
       {waiting.decisions.filter(d => !isHidden("decision", d.key)).map(d => {
-        const n = notNow("decision", d.key);
+        const x = notNow("decision", d.key);
         return (
-          <div className="aug-item" key={`decision:${d.id}`}>
-            <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
-              <Button variant="link" size="xs" className="aug-ledger-open" onClick={() => inspect("decisions", d.id)}>
-                What became of &ldquo;{d.chosen}&rdquo;?
-              </Button>
-            </div>
-            <div className="aug-item-foot aug-fs-sm">
-              <span>review date {day(d.review_on)} · {dayDistance(d.review_on)}</span>
-              <span>decided by {whoLabel(d.decided_by)}</span>
-              {n.note}
-              <span style={{ flex: 1 }} />
-              {n.button}
-              <Button size="xs" variant="outline" onClick={() => doors.onOpenDecision(d.id)}>Open the decision</Button>
-            </div>
-            {n.form}
-          </div>
+          <WaitRow key={`decision:${d.id}`} first={first()} title={`What became of “${d.chosen}”?`}
+            onTitle={() => inspect("decisions", d.id)}
+            meta={<><span>decision · review {dayWords(d.review_on)}{dayDistance(d.review_on) ? ` · ${dayDistance(d.review_on)}` : ""} · by {whoLabel(d.decided_by)}</span>{x.note}</>}
+            buttons={<>{x.button}<Button size="xs" variant="secondary" onClick={() => doors.onOpenDecision(d.id)}>Open the decision</Button></>}
+            below={x.form} />
         );
       })}
       {waiting.inquiries.filter(q => !isHidden("inquiry", q.key)).map(q => {
-        const n = notNow("inquiry", q.key);
+        const x = notNow("inquiry", q.key);
         return (
-          <div className="aug-item" key={`inquiry:${q.id}`}>
-            <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
-              <Button variant="link" size="xs" className="aug-ledger-open" onClick={() => inspect("inquiries", q.id)}>{q.question}</Button>
-            </div>
-            <div className="aug-item-foot aug-fs-sm">
-              <span>its check date has come ({day(q.next_check)}){q.waiting_for ? ` — it was waiting for ${q.waiting_for}` : ""}</span>
-              {n.note}
-              <span style={{ flex: 1 }} />
-              {n.button}
-              <Button size="xs" variant="outline" onClick={() => doors.onOpenInquiry(q.id)}>Open the inquiry</Button>
-            </div>
-            {n.form}
-          </div>
+          <WaitRow key={`inquiry:${q.id}`} first={first()} title={q.question} onTitle={() => inspect("inquiries", q.id)}
+            meta={<><span>inquiry · check date {day(q.next_check)}{q.waiting_for ? ` · was waiting for ${q.waiting_for}` : ""}</span>{x.note}</>}
+            buttons={<>{x.button}<Button size="xs" variant="secondary" onClick={() => doors.onOpenInquiry(q.id)}>Open the inquiry</Button></>}
+            below={x.form} />
         );
       })}
       {waiting.departures.filter(d => !isHidden("departure", d.id)).map(d => {
-        const n = notNow("departure", d.id);
+        const x = notNow("departure", d.id);
+        const answer = owes(d) === "answer";
         return (
-          <div className="aug-item" key={`departure:${d.id}`}>
-            <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{summaryLine(d)}</div>
-            <div className="aug-item-foot aug-fs-sm">
-              <span>{owes(d) === "answer" ? "an owner's answer is needed" : "its declarer marks it right or wrong"}</span>
-              <span>{destinationLabel(d.target).label}</span>
-              {n.note}
-              <span style={{ flex: 1 }} />
-              {n.button}
-              <Button size="xs" variant="outline" onClick={() => doors.onOpenDepartures(d.id)}>
-                {owes(d) === "answer" ? "Answer" : "Mark it"}
-              </Button>
-            </div>
-            {n.form}
-          </div>
+          <WaitRow key={`departure:${d.id}`} first={first()} title={summaryLine(d)}
+            meta={<><span>{answer ? "an owner's answer is needed" : "its declarer marks it right or wrong"}{d.target ? ` · ${destinationLabel(d.target).label}` : ""}</span>{x.note}</>}
+            buttons={<>{x.button}<Button size="xs" variant="secondary" onClick={() => doors.onOpenDepartures(d.id)}>{answer ? "Answer" : "Mark it"}</Button></>}
+            below={x.form} />
         );
       })}
       {waiting.needs.rows.filter(r => !isHidden("approval", `${r.source}:${r.id}`)).map(r => {
         const t = needsYouTitle(r.title);
-        const n = notNow("approval", `${r.source}:${r.id}`);
+        const x = notNow("approval", `${r.source}:${r.id}`);
+        const proposal = r.source === "kinetic_inbox";
         return (
-          <div className="aug-item" key={`needs:${r.source}:${r.id}`}>
-            <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{t.display}</div>
-            <div className="aug-item-foot aug-fs-sm">
-              <span>{NEEDS_WORDS[r.source] ?? "an action waits for approval"}</span>
-              {r.connection_id && <span>{connectionLabel(r.connection_id, connections)}</span>}
-              {r.since && <span>since {whenText(r.since)}</span>}
-              {n.note}
-              <span style={{ flex: 1 }} />
-              {n.button}
-              {r.source === "kinetic_inbox"
-                ? <Button size="xs" variant="outline" aria-expanded={deciding === r.id}
-                    onClick={() => setDeciding(x => (x === r.id ? "" : r.id))}>{deciding === r.id ? "Close" : "Review and decide"}</Button>
-                : <Button size="xs" variant="outline" onClick={doors.onOpenAttention}>Resolve</Button>}
-            </div>
-            {n.form}
-            {deciding === r.id && (
-              <div style={{ marginTop: 8 }}>
-                <ProposalCardById proposalId={r.id} actor={approverName("now")}
-                  onResolved={(status, message) => { setDecided(message); if (status === "ok") { setDeciding(""); onResolved(); } }} />
-              </div>
-            )}
-          </div>
+          <WaitRow key={`needs:${r.source}:${r.id}`} first={first()} title={t.display}
+            meta={<>
+              <span>{NEEDS_WORDS[r.source] ?? "an action waits for approval"}
+                {r.connection_id ? ` · ${connectionLabel(r.connection_id, connections)}` : ""}
+                {r.since ? ` · since ${whenText(r.since)}` : ""}</span>
+              {x.note}
+            </>}
+            buttons={<>
+              {x.button}
+              {proposal
+                ? <Button size="xs" variant="secondary" aria-expanded={deciding === r.id}
+                    onClick={() => setDeciding(v => (v === r.id ? "" : r.id))}>{deciding === r.id ? "Close" : "Review and decide"}</Button>
+                : <Button size="xs" variant="secondary" onClick={doors.onOpenAttention}>Resolve</Button>}
+            </>}
+            below={<>
+              {x.form}
+              {deciding === r.id && (
+                <div style={{ marginTop: 8 }}>
+                  <ProposalCardById proposalId={r.id} actor={approverName("now")}
+                    onResolved={(status, message) => { setDecided(message); if (status === "ok") { setDeciding(""); onResolved(); } }} />
+                </div>
+              )}
+            </>} />
         );
       })}
       {asideRows.length > 0 && (
-        <div className="aug-item" data-testid="now-set-aside">
-          <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
-            <span className="aug-fs-ui" style={{ color: "var(--t2)" }}>
-              Set aside: {countNoun(asideRows.length, "item")}, the next back on {day(asideRows.map(x => x.a.until).sort()[0])}
+        <div data-testid="now-set-aside" style={{ paddingTop: 8, ...RULE }}>
+          <div style={{ ...ROW, gap: 10 }}>
+            <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+              {countNoun(asideRows.length, "item")} set aside · the next back {dayWords(asideRows.map(x => x.a.until).sort()[0])}
             </span>
             <span style={{ flex: 1 }} />
             <Button size="xs" variant="ghost" aria-expanded={showAside} onClick={() => setShowAside(v => !v)}>{showAside ? "Hide" : "Show"}</Button>
           </div>
           {showAside && asideRows.map(({ row, a }) => (
-            <div key={asideKey(row.kind, row.ref)} style={{ marginTop: 10 }}>
-              <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{row.title}</div>
-              <div className="aug-item-foot aug-fs-sm">
-                <span>set aside by {whoLabel(a.by)} until {day(a.until)} · {dayDistance(a.until)}</span>
-                <span>{a.why}</span>
-                <span style={{ flex: 1 }} />
-                <Button size="xs" variant="outline" onClick={() => void restore(a)}>Restore</Button>
-              </div>
-            </div>
+            <WaitRow key={asideKey(row.kind, row.ref)} first={false} title={row.title}
+              meta={<span title={a.why}>{`by ${whoLabel(a.by)} until ${dayWords(a.until)} · ${dayDistance(a.until)} · ${a.why}`}</span>}
+              buttons={<Button size="xs" variant="outline" onClick={() => void restore(a)}>Restore</Button>} />
           ))}
         </div>
       )}
@@ -535,101 +509,354 @@ function WaitingList({ waiting, aside, returned, connections, doors, inspect, on
   );
 }
 
-/** Why a row waits, by its source. The one source not named here is the inbox of proposed actions. */
-const NEEDS_WORDS: Record<string, string> = {
-  paused_run: "a run is paused for a person",
-  automation_approval: "an automation waits for approval",
-  agent_alert: "an agent raised an alert",
-  automation_broken: "an automation is failing",
+// ── the week's slots, as bars ────────────────────────────────────────────────────────────
+
+function Slots({ week, onChanged }: { week: Week; onChanged: () => void }) {
+  if (week.budgets.length === 0) {
+    return (
+      <Empty title="A send that passes the departure gate uses one of its place's slots and is listed with why it won.">
+        Nothing used a slot since {dayWords(week.weekStart)}.
+      </Empty>
+    );
+  }
+  return (
+    <div>
+      {week.budgets.map((b, i) => <Place key={b.addressee} budget={b} first={i === 0} onChanged={onChanged} />)}
+    </div>
+  );
+}
+
+function Place({ budget, first, onChanged }: { budget: AttentionBudget; first: boolean; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [slots, setSlots] = useState(String(budget.slots));
+  const [error, setError] = useState("");
+  const save = async () => {
+    const n = Number(slots);
+    if (!Number.isInteger(n) || n < 0) { setError("Slots are a whole number, 0 or more."); return; }
+    try {
+      await setAttentionSlots(budget.addressee, n);
+      setEditing(false);
+      setError("");
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const full = budget.left === 0;
+  return (
+    <div data-testid="now-place" style={{ padding: "8px 0", ...(first ? {} : RULE) }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(90px, 160px) minmax(0, 1fr) auto auto", gap: 12, alignItems: "center" }}>
+        <span className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }} title={budget.addressee}>
+          {destinationLabel(budget.addressee).label}
+        </span>
+        <Bar value={budget.used} max={budget.slots} color={full ? "var(--amb3)" : "var(--chart-1)"} />
+        <span className="aug-fs-sm" style={{ ...NUM, color: full ? "var(--amb4)" : "var(--t2)", whiteSpace: "nowrap" }}>
+          {budget.used} of {budget.slots}
+          {budget.held_count > 0 && <span style={MUTED}> · {budget.held_count} held</span>}
+        </span>
+        {editing ? (
+          <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+            <Input aria-label={`Slots a week for ${budget.addressee}`} value={slots} inputMode="numeric"
+              onChange={e => setSlots(e.target.value)} style={{ width: 64 }} />
+            <Button size="xs" onClick={() => void save()}>Save</Button>
+            <Button size="xs" variant="ghost" onClick={() => { setEditing(false); setError(""); }}>Cancel</Button>
+          </span>
+        ) : (
+          <Button size="xs" variant="ghost" onClick={() => setEditing(true)}
+            title="How many sends a week this place takes; 0 holds everything unattended">Set slots</Button>
+        )}
+      </div>
+      {error && <p className="aug-fs-sm" role="alert" style={{ color: "var(--red4)", margin: "4px 0 0" }}>{error}</p>}
+    </div>
+  );
+}
+
+// ── what was held ────────────────────────────────────────────────────────────────────────
+
+const TERM_WORDS: Record<string, string> = {
+  mission: "its bearing on a mission", size: "its size against normal", waiting: "the cost of waiting", novelty: "its novelty",
 };
 
-// ── 3 · since you were here ──────────────────────────────────────────────────────────────
+/** The gate's triage line (`mission 1.00 · size 0.00 · … → score 0.65`) as what it was ranked on,
+ *  strongest term first. A line that does not parse is shown as the gate wrote it. */
+export function triageWords(triage: string): string {
+  const score = /score\s+([\d.]+)/.exec(triage)?.[1];
+  const terms = [...triage.matchAll(/(mission|size|waiting|novelty)\s+([\d.]+)/g)]
+    .map(m => [m[1], Number(m[2])] as const).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  if (terms.length === 0) return triage;
+  return `ranked on ${terms.map(([t]) => TERM_WORDS[t]).join(", ")}${score ? ` — score ${score}` : ""}`;
+}
 
-function Restated({ entries, since, labels, inspect }: {
-  entries: CorrectionEntry[]; since: string | null; labels: Record<string, string>; inspect: Inspect;
+function Held({ held, doors }: { held: HeldItem[]; doors: NowDoors }) {
+  if (held.length === 0) {
+    return (
+      <Empty title="When a place's slots are used, what is held is listed here with its score — never dropped silently.">
+        Nothing lost a slot this week.
+      </Empty>
+    );
+  }
+  return (
+    <div>
+      {held.map((h, i) => (
+        <div key={h.departure_id} data-testid="now-held-row" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto",
+          gap: 12, alignItems: "center", padding: "8px 0", ...(i ? RULE : {}) }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }} title={h.text}>{firstLine(h.text)}</div>
+            <div className="aug-fs-xs" style={{ ...ONE_LINE, color: "var(--t2)" }} title={`${h.why} — ${h.triage}`}>
+              {h.why} · {triageWords(h.triage)} · from {h.by || "an automation"}
+            </div>
+          </div>
+          <Button size="xs" variant="ghost" onClick={() => doors.onOpenDepartures(h.departure_id)}>Open</Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── what was sent, folded ────────────────────────────────────────────────────────────────
+
+/** The first line of a send, without Markdown's heading marks: a short label; the whole text is on hover. */
+function firstLine(text: string): string {
+  return (text || "").split("\n").map(l => l.replace(/^#+\s*/, "").trim()).find(Boolean) ?? "";
+}
+
+/** The mission a departure bore on, by name — the gate writes the ids it charged on the row. */
+function bearingText(d: Departure, missions: Mission[]): string {
+  const noted = d.checks.mission ?? "";
+  if (!noted) return "no mission";
+  const named = missions.filter(m => noted.includes(m.id) || noted.includes(m.key) || noted.includes(m.name));
+  return named.length ? `bears on ${named.map(m => m.name).join(", ")}` : noted;
+}
+
+export interface SendGroup { key: string; source: string; target: string; sends: Departure[] }
+
+/** The same source sending to the same place, folded into one row (CLARITY: say a thing once). Newest first. */
+export function foldSends(sent: Departure[]): SendGroup[] {
+  const groups = new Map<string, SendGroup>();
+  for (const d of [...sent].sort((a, b) => b.ts.localeCompare(a.ts))) {
+    const source = sourceName(d);
+    const key = `${source}\u0000${d.target}`;
+    const g = groups.get(key) ?? { key, source, target: d.target, sends: [] };
+    g.sends.push(d);
+    groups.set(key, g);
+  }
+  return [...groups.values()];
+}
+
+/** A fact the rows of a fold share, said once; when they differ, say that they do. */
+function shared(values: string[], differ: string): string {
+  const set = [...new Set(values.filter(Boolean))];
+  return set.length <= 1 ? (set[0] ?? "") : differ;
+}
+
+function Sent({ week, missions, connections, doors }: {
+  week: Week; missions: Mission[]; connections: Connection[]; doors: NowDoors;
 }) {
+  const [open, setOpen] = useState<string | null>(null);
+  if (week.noLedger) return <Empty>This API serves no departures ledger, so what left is not known here.</Empty>;
+  if (week.sent.length === 0) return <Empty>Nothing left the platform since {dayWords(week.weekStart)}.</Empty>;
+  const groups = foldSends(week.sent);
+  return (
+    <div>
+      {groups.map((g, i) => {
+        const latest = g.sends[0];
+        const place = g.target ? destinationLabel(g.target).label : "";
+        const bearing = shared(g.sends.map(d => bearingText(d, missions)), "bears on more than one mission");
+        const ranked = shared(g.sends.map(d => (d.checks.triage ? triageWords(d.checks.triage) : "")), "ranked differently each time");
+        const expanded = open === g.key;
+        return (
+          <div key={g.key} data-testid="now-send-group" style={{ padding: "8px 0", ...(i ? RULE : {}) }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto", gap: 12, alignItems: "center" }}>
+              <div style={{ minWidth: 0 }}>
+                <Button variant="ghost" size="xs" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : g.key)}
+                  title={expanded ? "Hide each send" : "Each send"}
+                  style={{ height: "auto", padding: 0, margin: 0, gap: 6, color: "var(--t1)", fontWeight: 500, maxWidth: "100%" }}>
+                  <span className="aug-fs-chrome" style={ONE_LINE}>{g.source}</span>
+                  <Icon name={expanded ? "chevu" : "chevd"} size={12} />
+                </Button>
+                <div className="aug-fs-xs" style={{ ...ROW, gap: 6, color: "var(--t2)" }}>
+                  {place ? <span>→ {place}</span>
+                    : <Chip title="It left without a place recorded, so it used no place's slot">no place · used no slot</Chip>}
+                  {bearing && <span>· {bearing}</span>}
+                  {ranked && <span title={latest.checks.triage}>· {ranked}</span>}
+                  <span>· latest {dayWords(latest.ts)} {whenText(latest.ts).slice(11)}</span>
+                </div>
+              </div>
+              <span className="aug-fs-chrome" style={{ ...NUM, color: "var(--t1)", fontWeight: 600 }}>
+                {g.sends.length > 1 ? `×${g.sends.length}` : ""}
+              </span>
+              <Button size="xs" variant="secondary" onClick={() => doors.onOpenDepartures(latest.id)}
+                title="Every check it passed, and the analysis behind it">Receipt</Button>
+            </div>
+            {expanded && (
+              <div style={{ marginTop: 6, paddingLeft: 12, borderLeft: "2px solid var(--b1)" }}>
+                {g.sends.map(d => (
+                  <div key={d.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 10, alignItems: "center",
+                    padding: "4px 0" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="aug-fs-sm" style={{ ...ONE_LINE, color: "var(--t1)" }} title={d.text_preview}>
+                        {firstLine(d.text_preview)}
+                      </div>
+                      <div className="aug-fs-xs" style={{ ...ONE_LINE, color: "var(--t3)" }}>
+                        {whenText(d.ts)}{d.conn_id ? ` · ${connectionLabel(d.conn_id, connections)}` : ""} · {summaryLine(d)}
+                      </div>
+                    </div>
+                    <Button size="xs" variant="ghost" onClick={() => doors.onOpenDepartures(d.id)}>Open its receipt</Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {week.capped && (
+        <div className="aug-fs-xs" style={{ ...MUTED, paddingTop: 6, ...RULE }}>
+          The newest {DEPARTURES_READ} departures are all this week&apos;s — earlier sends this week are not read here.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── since you were here ──────────────────────────────────────────────────────────────────
+
+interface Split {
+  /** What changed in what you were told, since the floor — newest first. */
+  shown: CorrectionEntry[];
+  /** Restated with the same words: re-issued, nothing said differently. Counted, not listed. */
+  unchanged: number;
+  /** The read held its whole page inside the floor: there may be more. */
+  capped: boolean;
+}
+
+export function splitCorrections(c: Corrections, floor: string): Split {
+  const recent = c.entries.filter(e => e.at >= floor);
+  return {
+    shown: recent.filter(e => e.believed !== e.replaced_by),
+    unchanged: recent.filter(e => e.believed === e.replaced_by).length,
+    capped: c.entries.length >= 60 && recent.length === c.entries.length,
+  };
+}
+
+/** The metric a prediction named — `expected: Revenue $11,330 to …` reads "Revenue". */
+function metricOf(e: CorrectionEntry): string {
+  const m = /^expected:\s*(.+?)\s+(?:[$€£¥]|-?\d)/.exec(e.believed);
+  return m?.[1] ?? e.metric ?? "";
+}
+
+function Restated({ split, labels, inspect }: {
+  split: Split; labels: Record<string, string>; inspect: Inspect;
+}) {
+  const [details, setDetails] = useState(false);
   // What a correction is about, when it is a record the drawer can read.
   const target = (e: CorrectionEntry): [InspectLayer, string] | null =>
     e.kind === "decision_worse_than_expected" && e.decision ? ["decisions", e.decision]
       : e.kind !== "missed_move" && e.ref ? ["claims", e.ref] : null;
-  // A first visit reads the last seven days; the floor is fixed as the section arrives.
-  const [weekAgo] = useState(() => new Date(Date.now() - 7 * 86_400_000).toISOString());
-  const shown = useMemo(() => {
-    const floor = since ?? weekAgo;
-    return entries.filter(e => e.at >= floor && e.believed !== e.replaced_by).slice(0, 8);
-  }, [entries, since, weekAgo]);
-  if (shown.length === 0) {
-    return <Absent>Nothing you were told has been restated, refuted or missed since then.</Absent>;
+  const byKind = new Map<string, CorrectionEntry[]>();
+  for (const e of split.shown) byKind.set(e.kind, [...(byKind.get(e.kind) ?? []), e]);
+
+  const noise = split.unchanged > 0 && (
+    <div className="aug-fs-xs" style={{ ...MUTED, paddingTop: split.shown.length ? 6 : 2 }}
+      title="Restated with the same words as before — nothing you were told changed">
+      {countNoun(split.unchanged, "more was", "more were")} re-issued with the same words
+    </div>
+  );
+  if (split.shown.length === 0) {
+    return (
+      <>
+        <Empty>Nothing you were told has been restated, refuted or missed since then.</Empty>
+        {noise}
+      </>
+    );
   }
   return (
     <div>
-      {shown.map(e => (
-        <div className="aug-item" key={`${e.kind}:${e.ref}:${e.at}`}>
-          <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>
-            {target(e)
-              ? <Button variant="link" size="xs" className="aug-ledger-open" onClick={() => inspect(...target(e)!)}>{e.replaced_by}</Button>
-              : e.replaced_by}
+      {[...byKind.entries()].map(([kind, entries], i) => {
+        const metrics = [...new Set(entries.map(metricOf).filter(Boolean))];
+        return (
+          <div key={kind} data-testid="now-correction-kind" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto",
+            gap: 12, alignItems: "center", padding: "8px 0", ...(i ? RULE : {}) }}>
+            <div style={{ minWidth: 0 }}>
+              <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }}>{labels[kind] ?? kind}</div>
+              <div className="aug-fs-xs" style={{ ...ROW, gap: 5, color: "var(--t2)", marginTop: 2 }}>
+                {metrics.slice(0, 4).map(m => <Chip key={m}>{m}</Chip>)}
+                {metrics.length > 4 && <Chip title={metrics.slice(4).join(", ")}>+{metrics.length - 4}</Chip>}
+                <span>{metrics.length ? "· " : ""}latest {dayWords(entries[0].at)}</span>
+              </div>
+            </div>
+            <span className="aug-fs-chrome" style={{ ...NUM, color: "var(--t1)", fontWeight: 600 }}>{formatCount(entries.length)}</span>
           </div>
-          <div className="aug-item-foot aug-fs-sm">
-            <span>{labels[e.kind] ?? e.kind}</span>
-            <span>was: {e.believed}</span>
-            <span>{whenText(e.at)}</span>
+        );
+      })}
+      {noise}
+      {split.capped && (
+        <div className="aug-fs-xs" style={MUTED}>a floor · the read held its newest 60, all since then</div>
+      )}
+      <div style={{ paddingTop: 6, ...RULE }}>
+        <Button variant="ghost" size="xs" aria-expanded={details} onClick={() => setDetails(v => !v)}
+          style={{ margin: 0, padding: 0, height: "auto", color: "var(--t2)" }}>
+          Details <Icon name={details ? "chevu" : "chevd"} size={12} />
+        </Button>
+        {details && (
+          <div style={{ marginTop: 4 }}>
+            {split.shown.slice(0, 8).map(e => {
+              const t = target(e);
+              const what = `${metricOf(e) ? `${metricOf(e)}: ` : ""}${normalizeNumberPrecision(e.replaced_by)}`;
+              return (
+                <div key={`${e.kind}:${e.ref}:${e.at}`} style={{ padding: "4px 0" }}>
+                  <div className="aug-fs-sm" style={{ ...ONE_LINE, color: "var(--t1)" }} title={what}>
+                    {t ? <Button variant="link" size="xs" className="aug-ledger-open" onClick={() => inspect(...t)}>{what}</Button> : what}
+                  </div>
+                  <div className="aug-fs-xs" style={{ ...ONE_LINE, color: "var(--t3)" }} title={e.believed}>
+                    was: {normalizeNumberPrecision(e.believed)} · {whenText(e.at)}
+                  </div>
+                </div>
+              );
+            })}
+            {split.shown.length > 8 && (
+              <div className="aug-fs-xs" style={MUTED}>+{split.shown.length - 8} more in All corrections</div>
+            )}
           </div>
-        </div>
-      ))}
+        )}
+      </div>
     </div>
   );
 }
 
-// ── 4 · the held list ────────────────────────────────────────────────────────────────────
+// ── the Briefing, a line each ────────────────────────────────────────────────────────────
 
-function Held({ held, doors }: { held: HeldItem[]; doors: NowDoors }) {
-  if (held.length === 0) {
-    return <Absent>Nothing competed for a slot and lost this week. When a place&apos;s slots are used, what is held is listed here with its score — never dropped silently.</Absent>;
-  }
-  return (
-    <div>
-      {held.map(h => (
-        <div className="aug-item" key={h.departure_id}>
-          <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{h.text}</div>
-          <div className="aug-item-foot aug-fs-sm">
-            <span>{h.why}</span>
-            <span title={`What it was held on — ${h.triage}`}>{triageWords(h.triage)}</span>
-            <span>from {h.by || "an automation"}</span>
-            <span style={{ flex: 1 }} />
-            <Button size="xs" variant="ghost" onClick={() => doors.onOpenDepartures(h.departure_id)}>Open</Button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── 5 · the Briefing, one line ───────────────────────────────────────────────────────────
-
-function BriefingLine({ fold, doors }: { fold: OrgBriefing; doors: NowDoors }) {
-  const kept = fold.briefings.filter(b => b.briefing);
+function BriefingLines({ fold, doors }: { fold: OrgBriefing; doors: NowDoors }) {
+  const kept = fold.briefings.map(b => ({ b, k: keptBriefing(b) })).filter(x => x.k !== null);
+  const none = fold.briefings.filter(b => keptBriefing(b) === null);
   if (kept.length === 0) {
     return (
-      <div className="aug-item">
-        <Absent>No Briefing has been kept for any of the {countNoun(fold.connections, "connection")} yet — one is kept the first time a Briefing is built.</Absent>
-        <div className="aug-item-foot"><Button size="xs" variant="outline" onClick={() => doors.onOpenBriefing()}>Open the Briefing</Button></div>
+      <div style={{ ...ROW, justifyContent: "space-between" }}>
+        <Empty title="One is kept the first time a Briefing is built.">
+          No Briefing kept yet for any of the {countNoun(fold.connections, "connection")}.
+        </Empty>
+        <Button size="xs" variant="secondary" onClick={() => doors.onOpenBriefing()}>Open the Briefing</Button>
       </div>
     );
   }
   return (
     <div>
-      {kept.map(b => (
-        <div className="aug-item" key={b.connection_id}>
-          <div className="aug-fs-ui" style={{ color: "var(--t1)" }}>{b.briefing!.lede || b.briefing!.headline || b.briefing!.theme}</div>
-          <div className="aug-item-foot aug-fs-sm">
-            <span>{b.connection_name}</span>
-            {b.briefing!.as_of && <span>as of {day(b.briefing!.as_of)}</span>}
-            <span style={{ flex: 1 }} />
-            <Button size="xs" variant="outline" onClick={() => doors.onOpenBriefing(b.connection_id)}>Read the Briefing</Button>
+      {kept.map(({ b, k }, i) => (
+        <div key={b.connection_id} data-testid="now-briefing-row" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto",
+          gap: 12, alignItems: "center", padding: "8px 0", ...(i ? RULE : {}) }}>
+          <div style={{ minWidth: 0 }} title={k!.lede || k!.headline}>
+            <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)", fontWeight: 500 }}>{k!.headline || firstLine(k!.lede)}</div>
+            <div className="aug-fs-xs" style={{ ...ONE_LINE, color: "var(--t2)" }}>
+              {b.connection_name}{k!.as_of ? ` · as of ${dayWords(k!.as_of)}` : ""}
+            </div>
           </div>
+          <Button size="xs" variant="secondary" onClick={() => doors.onOpenBriefing(b.connection_id)}>Read</Button>
         </div>
       ))}
+      {none.length > 0 && (
+        <div className="aug-fs-xs" style={{ ...MUTED, paddingTop: 6, ...RULE }} title={none.map(b => b.connection_name).join(", ")}>
+          {countNoun(none.length, "connection")} {none.length === 1 ? "has" : "have"} no Briefing kept yet
+        </div>
+      )}
     </div>
   );
 }
@@ -640,20 +867,18 @@ function BriefingLine({ fold, doors }: { fold: OrgBriefing; doors: NowDoors }) {
  *  what it will hold once there is something to hold. */
 function FirstRun({ doors }: { doors: NowDoors }) {
   return (
-    <Page>
-      <p className="aug-fs-h1 aug-lede">
-        This page will hold the few things that need you each week, and say what it kept from you.
-      </p>
-      <div className="aug-item" style={{ marginTop: 16 }}>
-        <div className="aug-fs-ui" style={{ color: "var(--t2)" }}>
-          Nothing has been sent, held or asked yet. It fills once data is connected and a mission is written —
-          what leaves the platform is then ranked by what bears on that mission.
+    <Desk testId="now-first-run">
+      <section aria-label="Now" style={CARD}>
+        <div className="aug-fs-chrome" style={{ color: "var(--t1)", fontWeight: 500 }}>Nothing has been sent, held or asked yet.</div>
+        <div className="aug-fs-sm" style={{ ...MUTED, margin: "2px 0 10px" }}
+          title="What leaves the platform is then ranked by what bears on that mission.">
+          It fills once data is connected and a mission is written.
         </div>
-        <div className="aug-item-foot">
+        <div style={ROW}>
           <Button size="sm" onClick={doors.onOpenHome}>Start from Home</Button>
           <Button size="sm" variant="outline" onClick={doors.onOpenMissions}>Write a mission</Button>
         </div>
-      </div>
-    </Page>
+      </section>
+    </Desk>
   );
 }

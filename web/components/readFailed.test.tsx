@@ -121,15 +121,28 @@ describe("a rejected read is said, never rendered as the empty state", () => {
     await screen.findByText(/Could not read the roster's run figures/);
   });
 
-  it("the Overview's run chart and what needs a human", async () => {
+  it("the Overview's run chart and what needs a person", async () => {
     stubs.getFleetOverview = () => Promise.resolve(overviewFixture());
     stubs.getObsTimeseries = boom;
     stubs.getNeedsHuman = boom;
     render(<FleetOverviewPanel range={range} onBrush={() => {}} onClearBrush={() => {}} />);
     await screen.findByText(/Could not read the run chart/);
-    await screen.findByText(/Could not read what needs a human/);
-    expect(screen.queryByText(/No agent runs in this window/)).toBeNull();
-    expect(screen.queryByText(/Nothing needs a human/)).toBeNull();
+    await screen.findByText(/Could not read what needs a person/);
+    // The empty states these two sections draw (CLARITY's one muted line) — absent when the read failed.
+    expect(screen.queryByText(/No agent runs in this range/)).toBeNull();
+    expect(screen.queryByText(/Nothing waits on a person/)).toBeNull();
+  });
+
+  it("the Overview's empty states are what the two-sided check above looks for", async () => {
+    // Guards the guard: if the copy above drifted from the panel's, its `toBeNull` would pass on any page.
+    const fixture = overviewFixture();
+    stubs.getFleetOverview = () => Promise.resolve(fixture);
+    stubs.getObsTimeseries = () => Promise.resolve({ measured: true, window: fixture.window, edges: [], group: "agent",
+      measure: "runs", series: [], scanned: 0, attributed: 0, coverage: null });
+    stubs.getNeedsHuman = () => Promise.resolve({ count: 0, sources: {}, rows: [] });
+    render(<FleetOverviewPanel range={range} onBrush={() => {}} onClearBrush={() => {}} />);
+    await screen.findByText(/No agent runs in this range/);
+    await screen.findByText(/Nothing waits on a person/);
   });
 
   it("the Automations list", async () => {

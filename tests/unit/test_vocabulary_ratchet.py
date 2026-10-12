@@ -391,7 +391,10 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # names — the same reason the route tests above may spell `control-room`. The
          # word reaches no reader from a test. The rename to `OverviewPanel` is a PENDING
          # hygiene line; when it lands, this entry and the test's imports go with it.
-         "web/components/readFailed.test.tsx"),
+         "web/components/readFailed.test.tsx",
+         # The Overview's own component test (its CLARITY figures row and folds), for the same reason: it
+         # imports the frozen component and types its fixtures by the client's frozen `Fleet*` names.
+         "web/components/FleetOverviewPanel.test.tsx"),
         "retired from the UI; the layer is 'Overview'",
     ),
     "charter": (

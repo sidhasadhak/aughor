@@ -225,15 +225,16 @@ export function AgenticOpsWorkspace({
       // what each number means, what to do here. Deterministic platform help, not a model call.
       help={() => askSpotlight("help ao")}
       headerControls={onSelectConnection && connections && connections.length > 0 ? (
+        // What the picker scopes is said on hover, not as a sentence beside it on every layer (CLARITY).
         <label className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center", gap: 6,
-          color: "var(--t2)" }}>
+          color: "var(--t2)" }}
+          title="Scopes Automations and the Action centre; the Hub and Departures stay hub-wide">
           Connection
           <SelectField value={connId ?? ""} aria-label="Connection"
             onChange={e => onSelectConnection(e.target.value)}>
             {!connId && <option value="">choose…</option>}
             {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </SelectField>
-          <span style={{ color: "var(--t3)" }}>scopes Automations and the Action centre; the Hub and Departures stay hub-wide</span>
         </label>
       ) : undefined}
       toolbar={<>
