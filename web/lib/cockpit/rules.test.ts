@@ -46,7 +46,7 @@ describe("the catalog", () => {
       card_statuses: ["within", "over", "unmeasured", "withheld"],
       limits: { elements: MAX_ELEMENTS, tabs: MAX_TABS, cards: MAX_CARDS },
     });
-    expect(COCKPIT_VOCABULARY_VERSION).toBe(9);         // 5: sizes one grade at a time (Arc AP-1); 6: the wiring (AP-2, AP-3); 7: the structure (AP-4); 8: variables (AP-8); 9: sets read whole (AP-8b)
+    expect(COCKPIT_VOCABULARY_VERSION).toBe(10);        // 5: sizes one grade at a time (Arc AP-1); 6: the wiring (AP-2, AP-3); 7: the structure (AP-4); 8: variables (AP-8); 9: sets read whole (AP-8b); 10: yes-no, lists, sums, queries (AP-8c)
   });
 });
 

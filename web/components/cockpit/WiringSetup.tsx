@@ -15,6 +15,7 @@ import { entityFields, isNumber, isTime, type EntityField, type EntityFields } f
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 import { SelectField } from "@/components/ui/select";
 import {
   MAX_LABEL, MAX_SETS, MAX_VALUE_OPTIONS, MAX_VALUES, MAX_WHERE, SET_COMBINES, SET_OPS, VALUE_KINDS, VALUE_OPS, type CockpitSetDef, type CockpitValueDef,
@@ -23,7 +24,7 @@ import {
 import { dropWire, freshWireName, putSet, putValue, renameValue, type CockpitSpec } from "@/lib/cockpit/edit";
 import { lineOf, setTitles, wireWords } from "@/lib/cockpit/names";
 import { choicesOf, doorConditions, isRefused, readSet, readersOf } from "@/lib/cockpit/sets";
-import { typedValue } from "@/lib/cockpit/values";
+import { typedValue, valueFits, valueWords } from "@/lib/cockpit/values";
 import { formatCount, formatSeconds } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { cachedObjectCatalog, queryObjects } from "@/lib/objects";
@@ -70,7 +71,7 @@ async function timed<T>(read: () => Promise<T>): Promise<{ out: T; ms: number }>
 
 /** How many objects a set holds now, read through the object door — or the choice it waits on — and how long the door
  *  took to count them (Arc AP-6: each set says its read time). */
-function useSetCount(spec: CockpitSpec, name: string, connectionId: string, schema?: string): { text: string; ms: number | null } {
+function useSetCount(spec: CockpitSpec, name: string, connectionId: string, schema?: string, sum?: string): { text: string; ms: number | null } {
   // Arc AP-8 — in the builder a value is what it starts from; one counted, or read off a chosen object, waits on the page
   const r = readSet(spec, name, v => {
     const def = spec.values?.[v];
@@ -80,7 +81,8 @@ function useSetCount(spec: CockpitSpec, name: string, connectionId: string, sche
   });
   const read = isRefused(r) ? null : doorConditions(r, () => null);
   const body = !isRefused(r) && read && "filters" in read
-    ? { object_type: r.entity, measures: [{ name: "n", agg: "count" }], ...(r.segment ? { segment: r.segment } : {}), ...(read.filters.length ? { filters: read.filters } : {}) }
+    ? { object_type: r.entity, measures: [sum ? { name: "n", agg: "sum", path: sum } : { name: "n", agg: "count" }],
+      ...(r.segment ? { segment: r.segment } : {}), ...(read.filters.length ? { filters: read.filters } : {}) }
     : null;
   const asked = JSON.stringify(body);
   const [said, setSaid] = useState<{ asked: string; text: string; ms: number | null } | null>(null);
@@ -91,7 +93,11 @@ function useSetCount(spec: CockpitSpec, name: string, connectionId: string, sche
       .then(({ out, ms }) => {
         if (!alive) return;
         const read = out.path !== "refused" && !out.error;
-        setSaid({ asked, text: read ? formatCount(Number(out.rows?.[0]?.[0] ?? 0)) : "cannot be read", ms: read ? ms : null });
+        const raw = out.path === "refused" ? null : out.rows?.[0]?.[0];
+        // a sum over no objects is none, said — never a zero it did not add up
+        const text = !read ? "cannot be read" : sum && (raw === null || raw === undefined) ? "nothing to add up"
+          : formatCount(Number(raw ?? 0));
+        setSaid({ asked, text, ms: read ? ms : null });
       })
       .catch(() => { if (alive) setSaid({ asked, text: "cannot be read", ms: null }); });
     return () => { alive = false; };
@@ -159,20 +165,24 @@ export function valueLine(spec: CockpitSpec, v: CockpitValueDef): string {
   if (!from || from.by === "author") return `${kind} · set by you`;
   if (from.by === "reader") return `${kind} · set by the reader`;
   if (from.by === "count") return `${kind} · counted from ${spec.sets?.[from.set]?.label ?? words(from.set)}`;
+  if (from.by === "sum") return `${kind} · ${words(from.path).toLowerCase()} summed over ${spec.sets?.[from.set]?.label ?? words(from.set)}`;
+  if (from.by === "query") return `${kind} · read from a query`;
   return `${kind} · read from the ${words(from.choice)}`;
 }
-const KIND_SAID: Record<string, string> = { days: "days", number: "a number", text: "words", date: "a day" };
-const KIND_MARK: Record<string, string> = { days: "#", number: "#", text: "Aa", date: "◷" };
+const KIND_SAID: Record<string, string> = { days: "days", number: "a number", text: "words", date: "a day", yesno: "yes or no", list: "a list" };
+const KIND_MARK: Record<string, string> = { days: "#", number: "#", text: "Aa", date: "◷", yesno: "✓", list: "≡" };
 
 /** What a value holds now, in the builder: what it starts from; a count, read; a chosen object's, once one is chosen. */
 function ValueNowText({ spec, v, connectionId, schema }: { spec: CockpitSpec; v: CockpitValueDef; connectionId: string; schema?: string }) {
   const from = v.from;
   if (from?.by === "count") return <CountOf spec={spec} set={from.set} connectionId={connectionId} schema={schema} />;
+  if (from?.by === "sum") return <CountOf spec={spec} set={from.set} sum={from.path} connectionId={connectionId} schema={schema} />;
   if (from?.by === "chosen") return <>once one is chosen</>;
-  return <>{String(v.value ?? "")}{v.kind === "days" ? " days" : ""}</>;
+  if (from?.by === "query") return <>read on the page</>;
+  return <>{valueWords(v.kind, v.value)}{v.kind === "days" ? " days" : ""}</>;
 }
-function CountOf({ spec, set, connectionId, schema }: { spec: CockpitSpec; set: string; connectionId: string; schema?: string }) {
-  return <>{useSetCount(spec, set, connectionId, schema).text}</>;
+function CountOf({ spec, set, sum, connectionId, schema }: { spec: CockpitSpec; set: string; sum?: string; connectionId: string; schema?: string }) {
+  return <>{useSetCount(spec, set, connectionId, schema, sum).text}</>;
 }
 
 /** The Data tab: the sets, the choices and the values, and the doors to new ones. Arc AP-8 — while variables are on,
@@ -348,6 +358,18 @@ function useFields(entity: string, connectionId: string, schema?: string): Entit
   return got && got.entity === entity ? got.fields : null;
 }
 
+/** Arc AP-8c — the column a value reads off a query's first row: none, its first. */
+function QueryColumn({ column, onSet }: { column: string; onSet: (column: string) => void }) {
+  const [text, setText] = useState(column);
+  const [shown, setShown] = useState(column);
+  if (shown !== column) { setShown(column); setText(column); }
+  return (
+    <Input aria-label="The column it reads" value={text} placeholder="Its first column" maxLength={128}
+      onChange={e => setText(e.target.value)} onBlur={() => { if (text.trim() !== column) onSet(text.trim()); }}
+      onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+  );
+}
+
 function Pick({ label, value, options, onPick, none }: { label: string; value: string; options: { value: string; label: string }[]; onPick: (v: string) => void; none?: string }) {
   return (
     <SelectField aria-label={label} value={value} onChange={e => onPick(e.target.value)}>
@@ -487,10 +509,18 @@ function Condition({ spec, c, fields, onChange, onDrop, variablesOn = false }: {
   const number = !!f && isNumber(f);
   const ops = SET_OPS.filter(o => (o === "in_last" ? time : true));
   const days = Object.entries(spec.values ?? {}).filter(([, v]) => v.kind === "days");
+  const yesno = !!f && /BOOL/i.test(f.type);
   // Arc AP-8 — the values this condition may compare with, as their kinds allow: days counted back by "in the last";
-  // a day for a moment, a number for a number, words for anything else — words only by "is" and "is not"
-  const comparable = (o: SetOp) => Object.entries(spec.values ?? {}).filter(([, v]) => (o === "in_last" ? v.kind === "days"
-    : (VALUE_OPS as readonly string[]).includes(o) && (time ? v.kind === "date" : number ? v.kind === "number" : v.kind === "text" && (o === "=" || o === "!="))));
+  // a day for a moment, a number for a number, words for anything else — words only by "is" and "is not". Arc AP-8c — a
+  // list by "is one of" and "is none of", and yes or no for a property that is yes or no, by "is" and "is not"
+  const comparable = (o: SetOp) => Object.entries(spec.values ?? {}).filter(([, v]) => {
+    if (o === "in_last") return v.kind === "days";
+    if (!(VALUE_OPS as readonly string[]).includes(o)) return false;
+    if (o === "in" || o === "not_in") return v.kind === "list";
+    if (v.kind === "list") return false;
+    if (v.kind === "yesno") return yesno && (o === "=" || o === "!=");
+    return time ? v.kind === "date" : number ? v.kind === "number" : v.kind === "text" && (o === "=" || o === "!=");
+  });
   // an operator chosen that needs something to compare with waits here until it is given one: a comparison with nothing
   // is refused by the rules, so changing "is not empty" to "is over" kept nothing (scenario on theLook, 2026-10-11)
   const [draft, setDraft] = useState<SetOp | null>(null);
@@ -564,17 +594,20 @@ function Condition({ spec, c, fields, onChange, onDrop, variablesOn = false }: {
 /** A value's setup: its name, its kind and the value sets read. Arc AP-8 — while variables are on: its name, what it
  *  holds (days, a number, words, a day), where it comes from (you; the reader on the page, from choices you offer or as
  *  they type; a set's count; the chosen object's property), what it holds now, and everything that reads it. */
-export function ValueSetup({ spec, name, onChange, onGone, variablesOn = false, connectionId = "", schema, cardReads, cardTitle, onRenamed }: {
+export function ValueSetup({ spec, name, onChange, onGone, variablesOn = false, connectionId = "", schema, cardReads, cardTitle, onRenamed, queryCards = [] }: {
   spec: CockpitSpec; name: string; onChange: Change; onGone: () => void;
   variablesOn?: boolean; connectionId?: string; schema?: string;
   cardReads?: (cardId: string) => string[]; cardTitle?: (cardId: string) => string | undefined;
+  /** Arc AP-8c — the cards of the person's own query the cockpit places, a value may read the first value of. */
+  queryCards?: { id: string; title: string }[];
   /** The name a value has after a rename moved it — the setup follows it. */
   onRenamed?: (name: string) => void;
 }) {
   const v = spec.values?.[name];
-  const [text, setText] = useState(String(v?.value ?? ""));
-  const [shown, setShown] = useState(String(v?.value ?? ""));
-  if (shown !== String(v?.value ?? "")) { setShown(String(v?.value ?? "")); setText(String(v?.value ?? "")); }
+  const boxed = Array.isArray(v?.value) ? v.value.join(", ") : typeof v?.value === "boolean" ? (v.value ? "yes" : "no") : String(v?.value ?? "");
+  const [text, setText] = useState(boxed);
+  const [shown, setShown] = useState(boxed);
+  if (shown !== boxed) { setShown(boxed); setText(boxed); }
   const [label, setLabel] = useState(v?.label ?? "");
   const [shownLabel, setShownLabel] = useState(v?.label ?? "");
   if (shownLabel !== (v?.label ?? "")) { setShownLabel(v?.label ?? ""); setLabel(v?.label ?? ""); }
@@ -585,34 +618,51 @@ export function ValueSetup({ spec, name, onChange, onGone, variablesOn = false, 
   const [said, setSaid] = useState("");
   const chosen = [...choicesOf(spec).values()].filter(c => c.kind === "chosen");
   const chosenEntity = v?.from?.by === "chosen" ? chosen.find(c => c.name === (v.from as { choice: string }).choice)?.entity ?? "" : "";
-  const fields = useFields(variablesOn ? chosenEntity : "", connectionId, schema);
+  // Arc AP-8c — a sum's property is one of its set's entity
+  const summed = v?.from?.by === "sum" ? readSet(spec, v.from.set) : null;
+  const sumEntity = summed && !isRefused(summed) ? summed.entity : "";
+  const fields = useFields(variablesOn ? chosenEntity || sumEntity : "", connectionId, schema);
   if (!v) return null;
   const put = (def: CockpitValueDef, note: string) => onChange(putValue(spec, name, def), note);
   const by = v.from?.by ?? "author";
   // off, a value is what it was before AP-8: days, a number or a word, set by its author
-  const kinds = VALUE_KINDS.filter(k => variablesOn || k !== "date");
-  const kindLabel = (k: string) => (k === "days" ? "A number of days" : k === "number" ? "A number" : k === "date" ? "A day" : "A word");
-  const startFor = (k: string): string | number => (k === "text" ? String(v.value ?? "") || "words"
-    : k === "date" ? new Date().toISOString().slice(0, 10) : k === "days" ? Math.max(1, Math.round(Number(v.value) || 1)) : Number(v.value) || 1);
+  const kinds = VALUE_KINDS.filter(k => variablesOn || !["date", "yesno", "list"].includes(k));
+  const kindLabel = (k: string) => (k === "days" ? "A number of days" : k === "number" ? "A number" : k === "date" ? "A day"
+    : k === "yesno" ? "Yes or no" : k === "list" ? "A list" : "A word");
+  const startFor = (k: string): CockpitValueDef["value"] => (k === "text" ? (typeof v.value === "string" && v.value) || "words"
+    : k === "date" ? new Date().toISOString().slice(0, 10) : k === "yesno" ? true
+      : k === "list" ? (Array.isArray(v.value) && v.value.length ? v.value : [typeof v.value === "string" && v.value ? v.value : "words"])
+        : k === "days" ? Math.max(1, Math.round(Number(v.value) || 1)) : Number(v.value) || 1);
+  const inOptions = (x: unknown) => !options.length || (Array.isArray(x) ? x.every(i => options.some(o => o === i)) : options.some(o => o === x));
   const commitValue = () => {
     const next = typedValue(v.kind, text);
-    if (next === null || (options.length && !options.some(o => o === next))) {
-      setSaid(next === null ? `${kindLabel(v.kind)} — ${v.kind === "days" ? "a whole number, one or more" : v.kind === "date" ? "written 2026-10-11" : "as it reads"}.`
-        : "It starts from one of the choices offered.");
-      setText(String(v.value ?? ""));
+    if (next === null || !inOptions(next)) {
+      setSaid(next === null ? `${kindLabel(v.kind)} — ${v.kind === "days" ? "a whole number, one or more" : v.kind === "date" ? "written 2026-10-11"
+        : v.kind === "list" ? "items with a comma between, at most 30, each once" : "as it reads"}.`
+        : v.kind === "list" ? "It starts from some of the choices offered." : "It starts from one of the choices offered.");
+      setText(boxed);
       return;
     }
     setSaid("");
-    if (next !== v.value) put({ ...v, value: next as string | number }, "a value changed by hand");
+    if (JSON.stringify(next) !== JSON.stringify(v.value)) put({ ...v, value: next as CockpitValueDef["value"] }, "a value changed by hand");
   };
   const commitChoices = () => {
-    const list = choicesText.split(",").map(x => x.trim()).filter(Boolean).map(x => typedValue(v.kind, x));
-    if (list.some(x => x === null)) { setSaid(`Each choice is ${kindLabel(v.kind).toLowerCase()}.`); setChoicesText(options.join(", ")); return; }
+    // a list's choices are its items: each a number or words
+    const itemKind = v.kind === "list" ? "list" : v.kind;
+    const list = choicesText.split(",").map(x => x.trim()).filter(Boolean).map(x => {
+      const t = typedValue(itemKind, x);
+      return itemKind === "list" ? (Array.isArray(t) ? t[0] : null) : t;
+    });
+    if (list.some(x => x === null)) { setSaid(`Each choice is ${v.kind === "list" ? "a number or words" : kindLabel(v.kind).toLowerCase()}.`); setChoicesText(options.join(", ")); return; }
     const unique = [...new Set(list as (string | number)[])].slice(0, MAX_VALUE_OPTIONS);
     setSaid("");
     if (JSON.stringify(unique) === JSON.stringify(options)) return;
-    // the value it starts from is one of the choices, the first when it was not
-    const start = unique.length && !unique.some(o => o === v.value) ? unique[0] : v.value;
+    // the value it starts from is among the choices: a list, the ones it held that are offered (else the first); any
+    // other value, one of them (else the first)
+    const kept = Array.isArray(v.value) ? v.value.filter(x => unique.some(o => o === x)) : [];
+    const start: CockpitValueDef["value"] = !unique.length ? v.value
+      : v.kind === "list" ? (kept.length ? kept : [unique[0]])
+        : !unique.some(o => o === v.value) ? unique[0] : v.value;
     put({ ...v, value: start, from: { by: "reader", ...(unique.length ? { options: unique } : {}) } }, "a value's choices changed by hand");
   };
   const comesFrom = (next: string) => {
@@ -624,6 +674,18 @@ export function ValueSetup({ spec, name, onChange, onGone, variablesOn = false, 
     else if (next === "count") {
       const set = Object.keys(spec.sets ?? {})[0];
       if (set) put({ ...rest, kind: "number", from: { by: "count", set } }, "a value counted from a set");
+    } else if (next === "sum") {
+      // Arc AP-8c — the first number of the first set's objects, until another is picked
+      const set = Object.keys(spec.sets ?? {})[0];
+      const r = set ? readSet(spec, set) : null;
+      if (!set || !r || isRefused(r)) return;
+      void entityFields(r.entity, connectionId, schema).then(f => {
+        const first = f.fields.find(x => isNumber(x) && /^[A-Za-z_][A-Za-z0-9_.]*$/.test(x.path));
+        if (!first) { setSaid(`A ${words(r.entity).toLowerCase()} has no number to add up.`); return; }
+        put({ ...rest, kind: "number", from: { by: "sum", set, path: first.path } }, "a value summed from a set");
+      }).catch(e => setSaid(`The set's properties could not be read: ${(e as Error).message}`));
+    } else if (next === "query" && queryCards[0]) {
+      put({ ...rest, kind: v.kind === "days" ? "number" : v.kind, from: { by: "query", card: queryCards[0].id } }, "a value read from a query");
     } else if (next === "chosen" && chosen[0]) {
       // the first property of the chosen object's own, as words, until another is picked
       const c = chosen[0];
@@ -664,13 +726,35 @@ export function ValueSetup({ spec, name, onChange, onGone, variablesOn = false, 
         <Row label="Comes from" testid="value-comes-from"
           hint={by === "reader" ? "A control on the page. Each reader's own, kept in their browser — never in the cockpit."
             : by === "count" ? "How many objects the set holds as the page reads it — each reader's row policies hold."
-              : by === "chosen" ? "A property of the object a reader chose — nothing until one is chosen."
-                : "Set once, here, for every reader."}>
+              : by === "sum" ? "A number added up over the set's objects as the page reads them — each reader's row policies hold."
+                : by === "query" ? "The query's first value — every row's, for a list — run as written, never cut to the page's range."
+                  : by === "chosen" ? "A property of the object a reader chose — nothing until one is chosen."
+                    : "Set once, here, for every reader."}>
           <Pick label="Comes from" value={by} onPick={comesFrom} options={[
             { value: "author", label: "Set by you" }, { value: "reader", label: "Set by the reader on the page" },
-            ...(setNames.length ? [{ value: "count", label: "Counted from a set" }] : []),
+            ...(setNames.length ? [{ value: "count", label: "Counted from a set" }, { value: "sum", label: "Summed over a set" }] : []),
+            ...(queryCards.length ? [{ value: "query", label: "Read from a query of yours" }] : []),
             ...(chosen.length ? [{ value: "chosen", label: "Read from the chosen object" }] : []),
           ]} />
+          {v.from?.by === "sum" && (
+            <>
+              <Pick label="The set it sums over" value={v.from.set} options={setNames.map(n => ({ value: n, label: `The set ${spec.sets?.[n]?.label ?? n}` }))}
+                onPick={set => put({ ...v, from: { by: "sum", set, path: (v.from as { path: string }).path } }, "a value's set chosen by hand")} />
+              <Pick label="The number it adds up" value={v.from.path}
+                options={[...(fields?.fields ?? []).filter(f => isNumber(f)).map(f => ({ value: f.path, label: f.label })),
+                  ...((fields?.fields ?? []).some(f => f.path === (v.from as { path: string }).path) ? [] : [{ value: v.from.path, label: words(v.from.path) }])]}
+                onPick={path => put({ ...v, from: { by: "sum", set: (v.from as { set: string }).set, path } }, "a value's number chosen by hand")} />
+            </>
+          )}
+          {v.from?.by === "query" && (
+            <>
+              <Pick label="The query it reads" value={v.from.card}
+                options={[...queryCards.map(c => ({ value: c.id, label: c.title })),
+                  ...(queryCards.some(c => c.id === (v.from as { card: string }).card) ? [] : [{ value: v.from.card, label: "A query no longer placed" }])]}
+                onPick={card => put({ ...v, from: { by: "query", card, ...((v.from as { column?: string | null }).column ? { column: (v.from as { column: string }).column } : {}) } }, "a value's query chosen by hand")} />
+              <QueryColumn column={v.from.column ?? ""} onSet={column => put({ ...v, from: { by: "query", card: (v.from as { card: string }).card, ...(column ? { column } : {}) } }, "a value's column chosen by hand")} />
+            </>
+          )}
           {v.from?.by === "count" && (
             <Pick label="The set it counts" value={v.from.set} options={setNames.map(n => ({ value: n, label: `The set ${spec.sets?.[n]?.label ?? n}` }))}
               onPick={set => put({ ...v, from: { by: "count", set } }, "a value's set chosen by hand")} />
@@ -690,20 +774,32 @@ export function ValueSetup({ spec, name, onChange, onGone, variablesOn = false, 
           )}
         </Row>
       )}
+      {variablesOn && by === "query" && (
+        <Row label="Is" hint="What its first value is read as; a list reads every row's.">
+          <Pick label="Kind" value={v.kind} options={kinds.filter(k => k !== "days").map(k => ({ value: k, label: kindLabel(k) }))}
+            onPick={k => put({ ...v, kind: k as CockpitValueDef["kind"] }, "a value's kind chosen by hand")} />
+        </Row>
+      )}
       {(by === "author" || by === "reader" || !variablesOn) && (
         <Row label={variablesOn && by === "reader" ? "Starts from" : "Is"}>
-          {(!variablesOn || by !== "count") && (
+          {(!variablesOn || (by !== "count" && by !== "sum")) && (
             <Pick label="Kind" value={v.kind} options={kinds.map(k => ({ value: k, label: kindLabel(k) }))}
               onPick={k => {
                 const start = startFor(k);
                 put({ ...v, kind: k as CockpitValueDef["kind"], value: start, ...(v.from?.by === "reader" ? { from: { by: "reader" as const } } : {}) }, "a value's kind chosen by hand");
               }} />
           )}
-          <Input aria-label="The value" value={text} type={v.kind === "text" ? "text" : v.kind === "date" ? "date" : "number"} onChange={e => setText(e.target.value)}
-            onBlur={commitValue} onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+          {v.kind === "yesno" ? (
+            <Segmented label="The value" value={v.value === false ? "no" : "yes"} options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]}
+              onChange={x => { if ((x === "yes") !== v.value) put({ ...v, value: x === "yes" }, "a value changed by hand"); }} />
+          ) : (
+            <Input aria-label="The value" value={text} type={v.kind === "text" || v.kind === "list" ? "text" : v.kind === "date" ? "date" : "number"}
+              placeholder={v.kind === "list" ? "China, Brasil, Japan" : undefined} onChange={e => setText(e.target.value)}
+              onBlur={commitValue} onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+          )}
         </Row>
       )}
-      {variablesOn && by === "reader" && (
+      {variablesOn && by === "reader" && v.kind !== "yesno" && (
         <Row label="The reader chooses from" hint={`Choices with a comma between — ${v.kind === "days" ? "7, 14, 30, 90" : v.kind === "text" ? "China, Brasil, Japan" : "the values offered"}; none, the reader types their own. At most ${MAX_VALUE_OPTIONS}.`}>
           <Input aria-label="The choices offered" value={choicesText} placeholder="Any the reader types" onChange={e => setChoicesText(e.target.value)}
             onBlur={commitChoices} onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />

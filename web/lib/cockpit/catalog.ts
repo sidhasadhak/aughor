@@ -45,8 +45,9 @@ import { z } from "zod";
  *  `w` in twelfths), a section that holds nothing yet, and one that goes untitled. 8: variables (Arc AP-8, 2026-10-11) — a
  *  value of a day, a value that comes from the reader, a set's count or the object a reader chose (`from`), and a set's
  *  condition comparing any value as its kind allows. 9: a set's linked objects (`traverse`) and a set combined with
- *  another — either, both, but not (`combine`; Arc AP-8b, 2026-10-11). */
-export const COCKPIT_VOCABULARY_VERSION = 9;
+ *  another — either, both, but not (`combine`; Arc AP-8b, 2026-10-11). 10: a value of yes or no and a list, and a value
+ *  summed from a set or read from a query of the cockpit's own (`sum`, `query`; Arc AP-8c, 2026-10-12). */
+export const COCKPIT_VOCABULARY_VERSION = 10;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
 export const TONES = ["good", "warn", "bad", "info", "neutral"] as const;
@@ -144,16 +145,20 @@ export const MAX_SET_DEPTH = 4;
 /** What a set's condition may say: the object door's own operators, and `in_last` — the last N days, today included. */
 export const SET_OPS = ["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "is_null", "not_null", "in_last"] as const;
 export type SetOp = (typeof SET_OPS)[number];
-/** What a value is: a number of days a condition counts back, a number, a word — or a day (Arc AP-8, "2026-10-11"). */
-export const VALUE_KINDS = ["days", "number", "text", "date"] as const;
+/** What a value is: a number of days a condition counts back, a number, a word — or a day (Arc AP-8, "2026-10-11"); and
+ *  (Arc AP-8c) yes or no, or a list of words or numbers a set keeps objects among. */
+export const VALUE_KINDS = ["days", "number", "text", "date", "yesno", "list"] as const;
 /** Arc AP-8 — where a value comes from: the author, who sets it once; the reader, on the page, from the choices the
- *  author offers or as they type; how many objects a set holds; or a property of the object a reader chose. */
-export const VALUE_SOURCES = ["author", "reader", "count", "chosen"] as const;
+ *  author offers or as they type; how many objects a set holds; or a property of the object a reader chose. Arc AP-8c —
+ *  a property summed over a set's objects; or the first value of a query of the cockpit's own (each row's, for a list). */
+export const VALUE_SOURCES = ["author", "reader", "count", "chosen", "sum", "query"] as const;
+/** Arc AP-8c — the most items a list holds: as many as a set's condition lists. */
+export const MAX_LIST = 30;
 /** The most choices a reader's value offers. */
 export const MAX_VALUE_OPTIONS = 12;
 /** What a set's condition may compare with a value: an equality for a word, any comparison for a number or a day, and
  *  the last days for a number of days. */
-export const VALUE_OPS = ["=", "!=", ">", ">=", "<", "<=", "in_last"] as const;
+export const VALUE_OPS = ["=", "!=", ">", ">=", "<", "<=", "in_last", "in", "not_in"] as const;
 /** A day, as a value holds it. */
 export const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -193,6 +198,8 @@ export const valueSource = z.union([
   z.object({ by: z.literal("reader"), options: z.array(z.union([z.number().finite(), z.string().max(120)])).max(MAX_VALUE_OPTIONS).nullable().optional() }).strict(),
   z.object({ by: z.literal("count"), set: z.string().regex(WIRE_NAME) }).strict(),
   z.object({ by: z.literal("chosen"), choice: z.string().regex(WIRE_NAME), path: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/) }).strict(),
+  z.object({ by: z.literal("sum"), set: z.string().regex(WIRE_NAME), path: z.string().regex(PROPERTY_PATH) }).strict(),
+  z.object({ by: z.literal("query"), card: z.string().min(1).max(64), column: z.string().min(1).max(128).nullable().optional() }).strict(),
 ]);
 export type ValueSource = z.infer<typeof valueSource>;
 
@@ -201,7 +208,8 @@ export type ValueSource = z.infer<typeof valueSource>;
 export const cockpitValue = z.object({
   label: z.string().min(1).max(MAX_LABEL),
   kind: z.enum(VALUE_KINDS),
-  value: z.union([z.number().finite(), z.string().max(120)]).nullable().optional(),
+  value: z.union([z.number().finite(), z.string().max(120), z.boolean(),
+    z.array(z.union([z.number().finite(), z.string().max(120)])).max(MAX_LIST)]).nullable().optional(),
   from: valueSource.nullable().optional(),
 }).strict();
 export type CockpitValueDef = z.infer<typeof cockpitValue>;

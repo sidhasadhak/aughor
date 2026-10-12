@@ -37,7 +37,7 @@ def uses(spec: Any) -> list[str]:
         if not isinstance(v, dict):
             continue
         by = str((v.get("from") or {}).get("by") or "author") if isinstance(v.get("from"), dict) else "author"
-        if v.get("kind") == "date" or by != "author":
+        if v.get("kind") in ("date", "yesno", "list") or by != "author":
             out.append(f"the value {name!r}")
     for name, s in _named(spec, "sets").items():
         where = s.get("where") if isinstance(s, dict) else None
@@ -83,24 +83,67 @@ def unheld(spec: Any, card_ids: Any) -> list[str]:
 
 
 def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None, wiring: Optional[dict] = None) -> list[str]:
-    """A sentence for each value read off a chosen object whose property that object's entity does not have."""
-    chosen = {name: v for name, v in ((wiring or {}).get("values") or {}).items() if isinstance(v, dict) and v.get("by") == "chosen"}
+    """A sentence for each value read off a chosen object whose property that object's entity does not have; (Arc AP-8c)
+    for each value summed over a set by a property its objects do not have, or have as something other than a number;
+    and for each value read from a query that is not a query of the person's own the cockpit places, or reads itself."""
+    wired = {name: v for name, v in ((wiring or {}).get("values") or {}).items() if isinstance(v, dict)}
+    said = _queries_unread(spec, {n: v for n, v in wired.items() if v.get("by") == "query"})
+    chosen = {name: v for name, v in wired.items() if v.get("by") in ("chosen", "sum")}
     if not chosen:
-        return []
+        return said
     from aughor.cockpit.pieces import served_graph
     from aughor.semantic.object_query import ObjectQueryRefused, find_computed, find_object_type, find_property
     graph = graph if graph is not None else served_graph(connection_id)
     if graph is None:
-        return ["The cockpit reads a chosen object's property, and no ontology is built for this connection."]
-    said: list[str] = []
+        return said + ["The cockpit reads a property of its objects, and no ontology is built for this connection."]
     for name, v in chosen.items():
         path, entity_name = str(v.get("path") or ""), str(v.get("entity") or "")
+        summed = v.get("by") == "sum"
         try:
             entity = find_object_type(graph, entity_name)
         except ObjectQueryRefused:
             said.append(f'The value "{name}" reads {path} of an object of {entity_name or "no entity"}, which this connection '
                         "does not serve.")
             continue
-        if find_property(entity, path) is None and find_computed(entity, path) is None:
+        if summed:
+            # the door compiles the sum it would read — a property it cannot reach, or cannot add up, is said its way
+            why = _sum_refused(connection_id, graph, entity.id, path)
+            if why:
+                said.append(f'The value "{name}" sums {path} over the set "{v.get("set")}": {why}')
+        elif find_property(entity, path) is None and find_computed(entity, path) is None:
             said.append(f'The value "{name}" reads {path} of the chosen {entity.id}, and {entity.id} has no property {path}.')
+    return said
+
+
+def _sum_refused(connection_id: str, graph: Any, entity: str, path: str) -> str:
+    """Why the object door would not add ``path`` up over objects of ``entity``, or "" — the check every piece's read gets."""
+    from aughor.cockpit.pieces import check_query
+    from aughor.semantic.object_query import ObjectQueryRefused
+    try:
+        check_query({"object_type": entity, "measures": [{"name": "n", "agg": "sum", "path": path}]}, graph, connection_id)
+    except ObjectQueryRefused as exc:
+        return str(exc)
+    except Exception as exc:  # noqa: BLE001 — a compile that breaks says so; it never passes unread
+        return f"it could not be read ({str(exc)[:120]})"
+    return ""
+
+
+def _queries_unread(spec: Any, queried: dict) -> list[str]:
+    """Arc AP-8c — a sentence for each value read from a query that is not a card of the person's own query the cockpit
+    places, or whose query reads that value back: it would wait on itself."""
+    from aughor.cockpit.queries import params_of
+    from aughor.dashboard.store import get_card
+    placed = {str((el or {}).get("props", {}).get("card") or "") for el in _named(spec, "elements").values()
+              if isinstance(el, dict) and el.get("type") == "Card"}
+    said: list[str] = []
+    for name, v in queried.items():
+        cid = str(v.get("card") or "")
+        card = get_card(cid) if cid else None
+        render = getattr(card, "render", None) if card is not None else None
+        if card is None or cid not in placed or not (getattr(card, "sql", "") or "").strip() \
+                or not (isinstance(render, dict) and render.get("shown")):
+            said.append(f'The value "{name}" reads the first value of a query, and that is not a query of yours this cockpit '
+                        "places.")
+        elif name in params_of(card.sql):
+            said.append(f'The value "{name}" reads a query that reads {{{{{name}}}}} itself: it would wait on itself.')
     return said

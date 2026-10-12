@@ -40,9 +40,10 @@ import {
   ticks, toggled, topValues, windowEnd, type Filters,
 } from "@/lib/cockpit/objectView";
 import { CHOOSERS, MAX_TICKED_RUNS, SWITCHED, rowsTall, type PieceName } from "@/lib/cockpit/catalog";
-import { choicesOf, doorConditions, isRefused, pieceSet, readSet, type DoorCondition, type ValueNow, type WireSpec } from "@/lib/cockpit/sets";
+import { choicesOf, doorConditions, isRefused, pieceSet, readSet, readsItself, type DoorCondition, type ValueNow, type WireSpec } from "@/lib/cockpit/sets";
 import { useMarkRead } from "@/components/cockpit/readSlot";
-import { typedValue, valueFits } from "@/lib/cockpit/values";
+import { queryValue, typedValue, valueFits, valueWords, valuesFor, valuesRead } from "@/lib/cockpit/values";
+import { runDashboardCard } from "@/lib/api";
 import { formatCount, formatDateTime, isNumericType, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { objectHref } from "@/lib/objectLinks";
@@ -51,6 +52,9 @@ import {
   type ActionCheck, type DeclaredAction, type ObjectListingPage, type ObjectPage, type ObjectQueryRequest,
 } from "@/lib/objects";
 import { getProcesses, type ProcessDetail, type ProcessesAndRules } from "@/lib/objectTypes";
+
+/** A value read, or why it cannot be, as the provider keeps it. */
+const withValue = (got: { value: unknown } | { refused: string }) => ("refused" in got ? { value: null, refused: got.refused } : { value: got.value });
 
 /** The object a reader chose in a table. */
 export interface Picked { objectType: string; typeId: string; pk: string }
@@ -130,7 +134,7 @@ function remembered(cockpit?: string): Filters {
   } catch { return {}; }
 }
 
-export function PiecesProvider({ connectionId, schema, elements, sets, values, onPlaceTable, cockpitId, asGroup = "", onSaid, children }: {
+export function PiecesProvider({ connectionId, schema, elements, sets, values, onPlaceTable, cockpitId, asGroup = "", onSaid, cardSql, children }: {
   connectionId?: string;
   schema?: string;
   /** Arc AP-6 — preview every read as the person and a member of this group. */
@@ -144,6 +148,8 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
   onPlaceTable?: (entity: string, segment: string) => void;
   /** The cockpit drawn — the key a reader's filters are remembered under; none, and they last while it is open. */
   cockpitId?: string;
+  /** Arc AP-8c — the statement of a card the cockpit places, for a value read from a query of its own. */
+  cardSql?: (card: string) => string | undefined;
   children: ReactNode;
 }) {
   const [picked, setPicked] = useState<Record<string, Picked>>({});
@@ -257,6 +263,9 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
   }, [cockpitId]);
   const [counted, setCounted] = useState<Record<string, { asked: string; n: number; refused?: string }>>({});
   const [readOff, setReadOff] = useState<Record<string, { pk: string; value: unknown; refused?: string }>>({});
+  const [queried, setQueried] = useState<Record<string, { asked: string; value: unknown; refused?: string }>>({});
+  // the choice each query value's own values wait on, as this render reads them (Arc AP-8c)
+  const waitsRef = useRef<Record<string, string>>({});
   const valueOf = useCallback((name: string): ValueNow => {
     const def = values?.[name];
     if (!def) return { value: null };
@@ -266,7 +275,9 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
       // the reader's own while it is still one the author offers, of the value's kind — else the author's
       const mine = readerValues[name];
       const offered = from.options ?? [];
-      const ok = name in readerValues && valueFits(def.kind, mine) && (!offered.length || offered.some(o => o === mine));
+      const among = (x: unknown) => offered.some(o => o === x);
+      const ok = name in readerValues && valueFits(def.kind, mine)
+        && (!offered.length || (Array.isArray(mine) ? mine.every(among) : among(mine)));
       return { value: ok ? mine : def.value ?? null };
     }
     if (from.by === "chosen") {
@@ -276,18 +287,31 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
       if (!got || got.pk !== p.pk) return { reading: true };
       return got.refused ? { refused: got.refused } : { value: got.value };
     }
+    if (from.by === "query") {
+      // Arc AP-8c — the query's first value, as last read; one that reads itself back waits on nothing, and says so
+      const ring = readsItself(wire, name, cardSql);
+      if (ring) return { refused: `${ring.map(n => values?.[n]?.label ?? n).join(" → ")} read each other in a ring.` };
+      // a query that reads a value read off a chosen object waits on that choice, and says which
+      const waits = waitsRef.current[name];
+      if (waits) return { waiting: waits };
+      const got = queried[name];
+      if (!got) return { reading: true };
+      return got.refused ? { refused: got.refused } : { value: got.value };
+    }
     const got = counted[name];
     if (!got) return { reading: true };
     return got.refused ? { refused: got.refused } : { value: got.n };
-  }, [values, readerValues, picked, readOff, counted]);
-  // what each counted value asks the object door — its set, read with the values as they stand now
+  }, [values, readerValues, picked, readOff, counted, queried, wire, cardSql]);
+  // what each counted (or, AP-8c, summed) value asks the object door — its set, read with the values as they stand now
   const countAsks = useMemo(() => Object.fromEntries(Object.entries(values ?? {}).flatMap(([name, def]): [string, ObjectQueryRequest][] => {
-    if (def.from?.by !== "count") return [];
-    const r = readSet(wire, def.from.set, valueOf);
+    const from = def.from;
+    if (from?.by !== "count" && from?.by !== "sum") return [];
+    const r = readSet(wire, from.set, valueOf);
     if (isRefused(r)) return [];
     const read = doorConditions(r, c => picked[c]?.pk ?? null);
     if (!("filters" in read)) return [];
-    return [[name, { object_type: r.entity, measures: [{ name: "n", agg: "count" }], ...(r.segment ? { segment: r.segment } : {}),
+    const measure = from.by === "sum" ? { name: "n", agg: "sum", path: from.path } : { name: "n", agg: "count" };
+    return [[name, { object_type: r.entity, measures: [measure], ...(r.segment ? { segment: r.segment } : {}),
       ...(read.filters.length ? { filters: read.filters } : {}) } as ObjectQueryRequest]];
   })), [values, wire, valueOf, picked]);
   const countKey = JSON.stringify(countAsks);
@@ -303,8 +327,11 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
           if (!alive) return;
           // a count that cannot be read says why to what reads it — never a zero, never reading for ever
           const refused = out.path === "refused" ? out.refused : out.error ?? "";
-          const n = out.path === "refused" ? 0 : Number(out.rows?.[0]?.[0] ?? 0);
-          setCounted(prev => ({ ...prev, [name]: refused ? { asked: at, n: 0, refused } : { asked: at, n } }));
+          // a sum over no objects is none, never a zero it did not add up
+          const raw = out.path === "refused" ? 0 : out.rows?.[0]?.[0];
+          const n = Number(raw ?? (body.measures[0]?.agg === "sum" ? Number.NaN : 0));
+          const why = refused || (Number.isNaN(n) ? "The set holds no objects to add up." : "");
+          setCounted(prev => ({ ...prev, [name]: why ? { asked: at, n: 0, refused: why } : { asked: at, n } }));
         })
         .catch(e => { if (alive) setCounted(prev => ({ ...prev, [name]: { asked: at, n: 0, refused: (e as Error).message || "The count could not be read." } })); });
     }
@@ -337,6 +364,42 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the objects chosen
   }, [chosenKey, connectionId, schema, asGroup]);
+  // Arc AP-8c — a value read from a query of the cockpit's own: the card run as written, never cut to the page's range,
+  // with the values it reads as the page holds them now; again whenever one of them changes
+  const queryAsks = useMemo(() => Object.fromEntries(Object.entries(values ?? {}).flatMap(([name, def]): [string, string][] => {
+    if (def.from?.by !== "query") return [];
+    const sql = cardSql?.(def.from.card);
+    const names = valuesRead(sql);
+    const now = names.length ? valuesFor(names, values, valueOf) : { values: {} };
+    return [[name, JSON.stringify({ card: def.from.card, column: def.from.column ?? null, kind: def.kind, placed: sql !== undefined,
+      ...("values" in now ? { sent: now.values } : "refused" in now ? { refused: now.refused }
+        : "waiting" in now ? { pending: true, waiting: now.waiting } : { pending: true }) })]];
+  })), [values, cardSql, valueOf]);
+  waitsRef.current = Object.fromEntries(Object.entries(queryAsks).flatMap(([name, asked]) => {
+    const w = (JSON.parse(asked) as { waiting?: string }).waiting;
+    return w ? [[name, w]] : [];
+  }));
+  const queryKey = JSON.stringify(queryAsks);
+  useEffect(() => {
+    let alive = true;
+    for (const [name, asked] of Object.entries(queryAsks)) {
+      const at = `${asked}|${tick}`;
+      if (queried[name]?.asked === at) continue;
+      const ask = JSON.parse(asked) as { card: string; column: string | null; kind: string; placed: boolean;
+        sent?: Record<string, { kind: string; value: unknown }>; refused?: string; pending?: boolean };
+      if (ask.pending) continue;
+      if (!ask.placed || ask.refused) {
+        const refused = ask.refused ?? "The query it reads is not a card this cockpit places.";
+        setQueried(prev => ({ ...prev, [name]: { asked: at, value: null, refused } }));
+        continue;
+      }
+      runDashboardCard(ask.card, null, Object.keys(ask.sent ?? {}).length ? { values: ask.sent } : {})
+        .then(run => { if (alive) setQueried(prev => ({ ...prev, [name]: { asked: at, ...withValue(queryValue(ask.kind, ask.column, run)) } })); })
+        .catch(e => { if (alive) setQueried(prev => ({ ...prev, [name]: { asked: at, value: null, refused: (e as Error).message || "The query could not be run." } })); });
+    }
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what each query is asked
+  }, [queryKey, tick]);
   const value = useMemo<PiecesValue>(() => ({
     connectionId, schema, picked, pick, ticked, tickOne, tickNone, shown, show, wire, followable, tick, bump, tables, onPlaceTable,
     processes, actions, filters, toggle, clear, search, asGroup, say, valueOf, readerValues, setValue,
@@ -1045,9 +1108,10 @@ function Facet({ entity, prop, set }: { entity: string; prop: FilterProperty; se
 
 /** The most choices drawn side by side; more are a list to pick from. */
 const SIDE_BY_SIDE = 6;
-const valueText = (kind: string, v: unknown) => (v === null || v === undefined ? "" : kind === "number" && typeof v === "number" ? formatCount(v) : String(v));
-/** A value as a box to type in holds it: never grouped, so it reads back as typed. */
-const boxText = (v: unknown) => (v === null || v === undefined ? "" : String(v));
+const valueText = (kind: string, v: unknown) => (v === null || v === undefined ? "" : kind === "number" && typeof v === "number" ? formatCount(v)
+  : valueWords(kind, v));
+/** A value as a box to type in holds it: never grouped, so it reads back as typed; a list with a comma between. */
+const boxText = (v: unknown) => (v === null || v === undefined ? "" : Array.isArray(v) ? v.join(", ") : String(v));
 
 /** The values a reader sets on the page, above its pieces: each a control of its own — the choices its author offers,
  *  or a box to type in — remembered in the reader's browser, never in the cockpit. Nothing when it offers none. */
@@ -1064,7 +1128,7 @@ export function ValuesBar({ spaced = true }: { spaced?: boolean }) {
         return (
           <ReaderValue key={name} name={name} label={def.label} kind={def.kind} value={value}
             options={def.from?.by === "reader" ? def.from.options ?? [] : []}
-            changed={name in readerValues && value !== (def.value ?? null)} start={def.value ?? null}
+            changed={name in readerValues && JSON.stringify(value) !== JSON.stringify(def.value ?? null)} start={def.value ?? null}
             onSet={v => setValue(name, v)} onReset={() => setValue(name, undefined)} />
         );
       })}
@@ -1084,10 +1148,27 @@ function ReaderValue({ name, label, kind, value, options, changed, start, onSet,
     const v = typedValue(kind, text);
     if (v === null) { setWrong(true); return; }
     setWrong(false);
-    if (v !== value) onSet(v);
+    if (JSON.stringify(v) !== JSON.stringify(value)) onSet(v);
   };
   const unit = kind === "days" ? "days" : "";
-  const control = options.length && options.length <= SIDE_BY_SIDE ? (
+  // Arc AP-8c — yes or no is a switch of two; a list, the choices offered, any number of them ticked (one at least)
+  const held = Array.isArray(value) ? value : [];
+  const flip = (o: string | number) => {
+    const next = held.some(x => x === o) ? held.filter(x => x !== o) : [...held, o];
+    if (next.length) onSet(options.filter(x => next.some(n => n === x)));
+  };
+  const control = kind === "yesno" ? (
+    <Segmented label={label} value={value === true ? "yes" : value === false ? "no" : ""}
+      options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]} onChange={v => onSet(v === "yes")} />
+  ) : kind === "list" && options.length ? (
+    <span role="group" aria-label={label} style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+      {options.map(o => (
+        <Button key={String(o)} size="xs" variant={held.some(x => x === o) ? "secondary" : "ghost"} aria-pressed={held.some(x => x === o)}
+          disabled={held.length === 1 && held[0] === o} title={held.length === 1 && held[0] === o ? "A list holds one at least" : undefined}
+          onClick={() => flip(o)}>{valueText("text", o)}</Button>
+      ))}
+    </span>
+  ) : options.length && options.length <= SIDE_BY_SIDE ? (
     <Segmented label={label} value={options.some(o => o === value) ? String(value) : ""}
       options={options.map(o => ({ value: String(o), label: valueText(kind, o) }))}
       onChange={v => onSet(options.find(o => String(o) === v))} />
@@ -1097,9 +1178,9 @@ function ReaderValue({ name, label, kind, value, options, changed, start, onSet,
     </SelectField>
   ) : (
     <Input aria-label={label} aria-invalid={wrong || undefined} value={text} onChange={e => { setText(e.target.value); setWrong(false); }}
-      type={kind === "date" ? "date" : kind === "text" ? "text" : "number"} inputMode={kind === "days" || kind === "number" ? "decimal" : undefined}
+      type={kind === "date" ? "date" : kind === "text" || kind === "list" ? "text" : "number"} inputMode={kind === "days" || kind === "number" ? "decimal" : undefined}
       onBlur={commit} onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setText(boxText(value)); setWrong(false); } }}
-      style={{ width: kind === "text" ? 160 : kind === "date" ? 150 : 90 }} />
+      style={{ width: kind === "text" || kind === "list" ? 160 : kind === "date" ? 150 : 90 }} />
   );
   return (
     <span data-testid="cockpit-value" data-name={name} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
@@ -1108,7 +1189,8 @@ function ReaderValue({ name, label, kind, value, options, changed, start, onSet,
       {unit && <span style={{ color: "var(--t3)" }}>{unit}</span>}
       {wrong && (
         <span className="aug-fs-xs" data-testid="cockpit-value-wrong" style={{ color: "var(--t2)" }}>
-          {kind === "days" ? "A whole number of days, one or more." : kind === "number" ? "A number." : kind === "date" ? "A day." : "Some words, at most 120."}
+          {kind === "days" ? "A whole number of days, one or more." : kind === "number" ? "A number." : kind === "date" ? "A day."
+            : kind === "list" ? "Items with a comma between, at most 30." : "Some words, at most 120."}
         </span>
       )}
       {changed && (

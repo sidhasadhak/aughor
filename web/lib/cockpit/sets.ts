@@ -14,6 +14,7 @@
 import {
   CHOOSERS, MAX_SET_DEPTH, TICKERS, type ActionButtonDef, type CockpitSetDef, type CockpitValueDef, type PieceName, type SetOp,
 } from "@/lib/cockpit/catalog";
+import { valuesRead } from "@/lib/cockpit/values";
 
 type El = { type?: string; props?: Record<string, unknown>; children?: string[] };
 export interface WireSpec {
@@ -138,11 +139,19 @@ function walkSet(spec: WireSpec, name: string, valueOf: ((value: string) => Valu
         if (c.op === "in_last" && v.kind !== "days") {
           return { refused: `The set ${q(at)} counts the last days by the value ${q(c.value_from)}, which is a ${v.kind}, not a number of days.` };
         }
+        // Arc AP-8c — a list keeps objects among it, and only a list does
+        const among = c.op === "in" || c.op === "not_in";
+        if (among !== (v.kind === "list")) {
+          return { refused: among ? `The set ${q(at)} keeps ${c.path} among the value ${q(c.value_from)}, which is not a list.`
+            : `The set ${q(at)} compares ${c.path} with the list ${q(c.value_from)}. A list keeps objects among it: in or not_in.` };
+        }
         // the value as the page holds it now — the reader's, a count, the chosen object's — else the one the author set
         const now: ValueNow = valueOf ? valueOf(c.value_from) : { value: v.value ?? null };
         if ("refused" in now) return { refused: `The set ${q(at)} reads the value ${q(c.value_from)}, which cannot be read: ${now.refused}` };
-        if ("value" in now) cond.value = now.value;
-        else pending = pending ?? now;
+        if ("value" in now) {
+          if (among) cond.values = Array.isArray(now.value) ? now.value : now.value === null || now.value === undefined ? [] : [now.value];
+          else cond.value = now.value;
+        } else pending = pending ?? now;
       } else if (c.op === "in" || c.op === "not_in") {
         cond.values = c.values ?? [];
       } else if (c.op !== "is_null" && c.op !== "not_null") {
@@ -163,22 +172,22 @@ function walkSet(spec: WireSpec, name: string, valueOf: ((value: string) => Valu
 /** The names of the sets a cockpit holds. */
 export const setNamesOf = (spec: WireSpec): string[] => Object.keys(spec.sets ?? {});
 
-/** Arc AP-8 — a value counted from a set that, down the sets it starts from and the values they read, reads that value
- *  again: the names round the ring, or null. */
+/** Arc AP-8 — a value counted (or, AP-8c, summed) from a set that, down the sets it starts from and the values they
+ *  read, reads that value again: the names round the ring, or null. */
 export function valueRing(spec: WireSpec): string[] | null {
   const values = spec.values ?? {};
   const sets = spec.sets ?? {};
   const next = (node: string): string[] => {
     if (node.startsWith("v:")) {
       const v = values[node.slice(2)];
-      return v?.from?.by === "count" ? [`s:${v.from.set}`] : [];
+      return v?.from?.by === "count" || v?.from?.by === "sum" ? [`s:${v.from.set}`] : [];
     }
     const set = sets[node.slice(2)];
     return set ? [...(set.from ? [`s:${set.from}`] : []), ...(set.combine ? [`s:${set.combine.set}`] : []),
       ...(set.where ?? []).filter(c => c.value_from).map(c => `v:${c.value_from}`)] : [];
   };
   for (const name of Object.keys(values)) {
-    if (values[name]?.from?.by !== "count") continue;
+    if (values[name]?.from?.by !== "count" && values[name]?.from?.by !== "sum") continue;
     const start = `v:${name}`;
     const path: string[] = [];
     const seen = new Set<string>();
@@ -200,9 +209,49 @@ export function valueRing(spec: WireSpec): string[] | null {
   return null;
 }
 
+/** Arc AP-8c — the values a set reads, down the sets it starts from, reads whole and is combined with — each once. */
+function valuesOfSet(spec: WireSpec, name: string, seen: Set<string> = new Set()): string[] {
+  if (seen.has(name)) return [];
+  seen.add(name);
+  const set = spec.sets?.[name];
+  if (!set) return [];
+  const own = (set.where ?? []).flatMap(c => (c.value_from ? [c.value_from] : []));
+  const more = [set.from, set.combine?.set].filter((x): x is string => !!x).flatMap(n => valuesOfSet(spec, n, seen));
+  return [...new Set([...own, ...more])];
+}
+
+/** Arc AP-8c — the values a value reads to be read: a count's or a sum's set's, and a query's (`cardSql` says the
+ *  statement of a card the cockpit places). */
+export function valueReads(spec: WireSpec, name: string, cardSql?: (card: string) => string | undefined): string[] {
+  const from = spec.values?.[name]?.from;
+  if (from?.by === "count" || from?.by === "sum") return valuesOfSet(spec, from.set);
+  if (from?.by === "query") return valuesRead(cardSql?.(from.card));
+  return [];
+}
+
+/** Arc AP-8c — the values round a ring that `name` starts — it reads a value that, down what each reads, reads it back —
+ *  or null. A value read from a query that reads it would wait on itself for ever. */
+export function readsItself(spec: WireSpec, name: string, cardSql?: (card: string) => string | undefined): string[] | null {
+  const path: string[] = [];
+  const seen = new Set<string>();
+  const walk = (n: string): string[] | null => {
+    if (n === name && path.length) return [...path, n];
+    if (seen.has(n)) return null;
+    seen.add(n);
+    path.push(n);
+    for (const next of valueReads(spec, n, cardSql)) {
+      const found = walk(next);
+      if (found) return found;
+    }
+    path.pop();
+    return null;
+  };
+  return walk(name);
+}
+
 /** A value of `kind` that stands for one the page has not read yet, for the server's compile of every set (Arc AP-8). */
 export function probeValue(kind: string): unknown {
-  return kind === "text" ? "probe" : kind === "date" ? "2026-01-01" : 1;
+  return kind === "text" ? "probe" : kind === "date" ? "2026-01-01" : kind === "yesno" ? true : kind === "list" ? ["probe"] : 1;
 }
 
 /** Every object of `entity` — the set a piece that names an entity reads, as every piece did before sets. */
@@ -265,9 +314,9 @@ export function readersOf(spec: WireSpec, name: string): { elements: string[]; s
   }
   const sets = Object.entries(spec.sets ?? {}).filter(([, s]) =>
     s.from === name || s.linked_to?.choice === name || s.combine?.set === name || (s.where ?? []).some(c => c.value_from === name)).map(([k]) => k);
-  // Arc AP-8 — a value counted from a set reads it; one read from a chosen object reads the choice
+  // Arc AP-8 — a value counted or summed from a set reads it; one read from a chosen object reads the choice
   const values = Object.entries(spec.values ?? {}).filter(([, v]) =>
-    (v.from?.by === "count" && v.from.set === name) || (v.from?.by === "chosen" && v.from.choice === name)).map(([k]) => k);
+    ((v.from?.by === "count" || v.from?.by === "sum") && v.from.set === name) || (v.from?.by === "chosen" && v.from.choice === name)).map(([k]) => k);
   return { elements, sets, values };
 }
 
@@ -304,7 +353,7 @@ export function wiring(spec: WireSpec): {
   buttons: { element: string; index: number; action: string; params: Record<string, { source: string; entity: string }> }[];
   /** Arc AP-8 — each value that is not the author's: where it comes from, and for one read off a chosen object, the
    *  entity that object is and the property read. */
-  values: Record<string, { by: string; set?: string; choice?: string; entity?: string; path?: string }>;
+  values: Record<string, { by: string; set?: string; choice?: string; entity?: string; path?: string; card?: string; kind?: string }>;
 } {
   const sets: ReturnType<typeof wiring>["sets"] = {};
   for (const name of Object.keys(spec.sets ?? {})) {
@@ -341,8 +390,15 @@ export function wiring(spec: WireSpec): {
   for (const [name, v] of Object.entries(spec.values ?? {})) {
     const from = v.from;
     if (!from || from.by === "author") continue;
+    if (from.by === "sum") {
+      // Arc AP-8c — the property summed, on the entity the set's objects are
+      const r = readSet(spec, from.set);
+      values[name] = { by: "sum", set: from.set, path: from.path, entity: isRefused(r) ? "" : r.entity };
+      continue;
+    }
     values[name] = from.by === "chosen" ? { by: "chosen", choice: from.choice, path: from.path, entity: choices.get(from.choice)?.entity ?? "" }
-      : from.by === "count" ? { by: "count", set: from.set } : { by: from.by };
+      : from.by === "count" ? { by: "count", set: from.set }
+        : from.by === "query" ? { by: "query", card: from.card, kind: v.kind } : { by: from.by };
   }
   return { sets, buttons, values };
 }

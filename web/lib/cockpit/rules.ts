@@ -20,11 +20,17 @@ import type { z } from "zod";
 
 import {
   CHOOSERS, COCKPIT_VOCABULARY_VERSION, COMPONENT_NAMES, GRADE, GRID, LIMITS, MAX_DEPTH, MAX_SETS, MAX_VALUES, MAY_BE_CONDITIONAL, MAY_HOLD,
-  ISO_DAY, PLACED, READER_TEXT, SET_READERS, SPLIT_AGGS, SIZES, SWITCHED, TONES, VALUE_OPS, cockpitCatalog, cockpitSet, cockpitValue,
+  ISO_DAY, MAX_LIST, PLACED, READER_TEXT, SET_READERS, SPLIT_AGGS, SIZES, SWITCHED, TONES, VALUE_OPS, cockpitCatalog, cockpitSet, cockpitValue,
   type ActionButtonDef,
   type ComponentName, type GridKind, type Layout, type PieceName,
 } from "@/lib/cockpit/catalog";
 import { choicesOf, isRefused, readSet, setNamesOf, valueRing, type WireSpec } from "@/lib/cockpit/sets";
+import { valueFits } from "@/lib/cockpit/values";
+
+/** A value's kind in words, as a sentence says what a value is. */
+const KIND_WORDS: Record<string, string> = {
+  days: "days", number: "a number", text: "words", date: "a day", yesno: "yes or no", list: "a list",
+};
 import { CARD_STATUSES, RANGE_STATUSES, TAB_PATH, publishedPath } from "@/lib/cockpit/hostState";
 
 export const MAX_ELEMENTS = 200;
@@ -200,11 +206,26 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
     const v = parsed.data;
     const by = v.from?.by ?? "author";
     // a value the author or the reader sets holds one of its own — the reader's first; a value counted or read holds none
-    const held = by === "author" || by === "reader" ? [v.value, ...(v.from?.by === "reader" ? v.from.options ?? [] : [])] : [];
-    if ((by === "author" || by === "reader") && (v.value === undefined || v.value === null)) {
+    const set_ = by === "author" || by === "reader";
+    // a list's own is one value (the list), and the choices a reader offers are its items
+    const held = set_ ? (v.kind === "list" ? [...(v.from?.by === "reader" ? v.from.options ?? [] : [])]
+      : [v.value, ...(v.from?.by === "reader" ? v.from.options ?? [] : [])]) : [];
+    if (set_ && (v.value === undefined || v.value === null)) {
       issues.push({ code: "bad_prop", message: `The value ${q(name)} holds nothing. A value ${by === "author" ? "you set" : "the reader sets"} holds one to start from.` });
-    } else if ((by === "count" || by === "chosen") && v.value !== undefined && v.value !== null) {
-      issues.push({ code: "bad_prop", message: `The value ${q(name)} is ${by === "count" ? "counted" : "read from the object chosen"} and holds one of its own. It holds none.` });
+    } else if (!set_ && v.value !== undefined && v.value !== null) {
+      const how = by === "count" ? "counted" : by === "sum" ? "summed from a set" : by === "query" ? "read from a query" : "read from the object chosen";
+      issues.push({ code: "bad_prop", message: `The value ${q(name)} is ${how} and holds one of its own. It holds none.` });
+    } else if (set_ && v.kind === "yesno" && typeof v.value !== "boolean") {
+      issues.push({ code: "bad_prop", message: `The value ${q(name)} is yes or no and holds ${JSON.stringify(v.value)}.` });
+    } else if (set_ && v.kind === "list" && !valueFits("list", v.value)) {
+      issues.push({ code: "bad_prop", message: `The value ${q(name)} is a list and holds ${JSON.stringify(v.value)}. A list holds 1 to ${MAX_LIST} numbers or words, each once.` });
+    } else if (set_ && v.kind !== "list" && Array.isArray(v.value)) {
+      issues.push({ code: "bad_prop", message: `The value ${q(name)} is ${KIND_WORDS[v.kind]} and holds a list.` });
+    } else if (set_ && v.kind !== "yesno" && typeof v.value === "boolean") {
+      issues.push({ code: "bad_prop", message: `The value ${q(name)} is ${KIND_WORDS[v.kind]} and holds ${v.value ? "yes" : "no"}.` });
+    }
+    if (v.from?.by === "reader" && v.kind === "yesno" && v.from.options?.length) {
+      issues.push({ code: "bad_prop", message: `The value ${q(name)} is yes or no: the reader chooses Yes or No, and it offers no other choices.` });
     }
     for (const h of held) {
       if (h === undefined || h === null) continue;
@@ -220,21 +241,37 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
     }
     if (v.from?.by === "reader" && v.from.options?.length) {
       const opts = v.from.options;
+      // a list starts from some of the choices; any other value from one of them
+      const starts = v.kind === "list" ? (Array.isArray(v.value) ? v.value : []) : v.value === undefined || v.value === null ? [] : [v.value];
+      const strays = starts.filter(x => !opts.some(o => o === x));
       if (new Set(opts.map(o => JSON.stringify(o))).size !== opts.length) {
         issues.push({ code: "bad_prop", message: `The value ${q(name)} offers the same choice twice.` });
-      } else if (v.value !== undefined && v.value !== null && !opts.some(o => o === v.value)) {
-        issues.push({ code: "bad_prop", message: `The value ${q(name)} starts from ${JSON.stringify(v.value)}, which is not one of the choices it offers.` });
+      } else if (strays.length) {
+        issues.push({ code: "bad_prop", message: `The value ${q(name)} starts from ${JSON.stringify(v.kind === "list" ? strays : strays[0])}, which is not one of the choices it offers.` });
       }
     }
-    if (v.from?.by === "count") {
-      if (v.kind !== "number") issues.push({ code: "bad_prop", message: `The value ${q(name)} counts a set, so it holds a number — not ${v.kind === "text" ? "words" : v.kind === "date" ? "a day" : "days"}.` });
-      if (!setNamesOf(spec).includes(v.from.set)) issues.push({ code: "bad_prop", message: `The value ${q(name)} counts the set ${q(v.from.set)}, which this cockpit does not hold.` });
-    } else if (v.from?.by === "chosen" && choices.get(v.from.choice)?.kind !== "chosen") {
-      issues.push({ code: "bad_prop", message: `The value ${q(name)} reads ${v.from.path} of ${q(v.from.choice)}, and no click chooses ${q(v.from.choice)}.` });
+    if (v.from?.by === "count" || v.from?.by === "sum") {
+      const verb = v.from.by === "count" ? "counts" : "sums";
+      if (v.kind !== "number") issues.push({ code: "bad_prop", message: `The value ${q(name)} ${verb} a set, so it holds a number — not ${KIND_WORDS[v.kind]}.` });
+      if (!setNamesOf(spec).includes(v.from.set)) issues.push({ code: "bad_prop", message: `The value ${q(name)} ${verb} the set ${q(v.from.set)}, which this cockpit does not hold.` });
+    } else if (v.from?.by === "query") {
+      // Arc AP-8c — a query of the cockpit's own: a card it places
+      const card = v.from.card;
+      if (!Object.values(spec.elements).some(el => el?.type === "Card" && el.props?.card === card)) {
+        issues.push({ code: "bad_prop", message: `The value ${q(name)} reads the query ${q(card)}, which this cockpit does not place.` });
+      }
+      if (v.kind === "days") issues.push({ code: "bad_prop", message: `The value ${q(name)} reads a query, and a query's value is a number, not days. Make it a number.` });
+    } else if (v.from?.by === "chosen") {
+      if (choices.get(v.from.choice)?.kind !== "chosen") {
+        issues.push({ code: "bad_prop", message: `The value ${q(name)} reads ${v.from.path} of ${q(v.from.choice)}, and no click chooses ${q(v.from.choice)}.` });
+      }
+      if (v.kind === "list" || v.kind === "days") {
+        issues.push({ code: "bad_prop", message: `The value ${q(name)} reads one property of one object, so it is not ${KIND_WORDS[v.kind]}.` });
+      }
     }
   }
   const ring = valueRing(spec);
-  if (ring) issues.push({ code: "bad_prop", message: `${ring.map(q).join(" → ")} read each other in a ring: a value counted from a set that reads it.` });
+  if (ring) issues.push({ code: "bad_prop", message: `${ring.map(q).join(" → ")} read each other in a ring: a value counted or summed from a set that reads it.` });
   for (const [name, raw] of Object.entries(sets ?? {})) {
     const parsed = cockpitSet.safeParse(raw);
     if (!parsed.success) {
@@ -249,9 +286,11 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
       // Arc AP-8 — a value compares as its kind allows: a word for equality, a number or a day for any comparison
       const v = c.value_from && isObj(values?.[c.value_from]) ? values?.[c.value_from] as { kind?: string } : null;
       if (c.value_from && v && !(VALUE_OPS as readonly string[]).includes(c.op)) {
-        issues.push({ code: "bad_prop", message: `${said} the value ${q(c.value_from)}. A value is compared with =, !=, >, >=, <, <= or counted back by in_last.` });
-      } else if (c.value_from && v?.kind === "text" && !["=", "!="].includes(c.op)) {
-        issues.push({ code: "bad_prop", message: `${said} the word ${q(c.value_from)}. A word is compared with = or !=.` });
+        issues.push({ code: "bad_prop", message: `${said} the value ${q(c.value_from)}. A value is compared with =, !=, >, >=, <, <=, counted back by in_last, or kept among by in or not_in.` });
+      } else if (c.value_from && (v?.kind === "list") !== (c.op === "in" || c.op === "not_in")) {
+        // a list with any other comparison, or "in" with a value that is not a list: the set's reading says it, once
+      } else if (c.value_from && (v?.kind === "text" || v?.kind === "yesno") && !["=", "!="].includes(c.op)) {
+        issues.push({ code: "bad_prop", message: `${said} the ${v.kind === "text" ? "word" : "yes or no"} ${q(c.value_from)}. ${v.kind === "text" ? "A word" : "Yes or no"} is compared with = or !=.` });
       } else if (c.value_from && v && c.op !== "in_last" && v.kind === "days") {
         issues.push({ code: "bad_prop", message: `${said} the days ${q(c.value_from)}. Days are counted back by in_last.` });
       }
@@ -271,7 +310,8 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
   }
   for (const name of sound_) {
     const r = readSet(spec, name);
-    if (isRefused(r)) issues.push({ code: "bad_prop", message: r.refused });
+    // a set others start from is read once more for each: what it says is said once
+    if (isRefused(r) && !issues.some(i => i.message === r.refused)) issues.push({ code: "bad_prop", message: r.refused });
   }
   // one name, one thing: a set, a value and a choice never share a name, and an object is chosen by one table
   for (const [name, c] of choices) {
