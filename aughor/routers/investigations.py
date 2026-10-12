@@ -1612,6 +1612,12 @@ _ANSWER_CORE_POOL = ContextThreadPoolExecutor(
     max_workers=_answer_core_workers(), thread_name_prefix="answer-core")
 
 
+def answer_core_pool() -> ContextThreadPoolExecutor:
+    """The answer core's own pool, for a caller outside this module that runs the core — the SQL editor's `/ask`
+    (`routers/query.py`). Public so that caller does not reach for this module's internals."""
+    return _ANSWER_CORE_POOL
+
+
 class _CoreCancelled(BaseException):
     """The client went away; stop paying for the rest of the turn.
 

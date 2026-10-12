@@ -1813,7 +1813,7 @@ async def query_ask(body: _AskRequest, request: Request):
     if body.sql.strip() and readonly.is_mutating(body.sql, dialect or "duckdb"):
         raise HTTPException(status_code=400, detail="the editor holds a statement that changes data — /ask won't build on it")
 
-    from aughor.routers.investigations import _ANSWER_CORE_POOL, ChatHistoryTurn, answer_core
+    from aughor.routers.investigations import ChatHistoryTurn, answer_core, answer_core_pool
 
     history = ([ChatHistoryTurn(question="(the statement already in the editor)", sql=body.sql.strip())]
                if body.sql.strip() else [])
@@ -1823,7 +1823,7 @@ async def query_ask(body: _AskRequest, request: Request):
                            frame_only=True, schema_scope=body.schema_name or None, purpose="sql_editor_ask")
 
     try:
-        res = await asyncio.get_running_loop().run_in_executor(_ANSWER_CORE_POOL, _frame)
+        res = await asyncio.get_running_loop().run_in_executor(answer_core_pool(), _frame)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     except Exception as exc:  # noqa: BLE001 — a provider or connection failure is upstream of the request

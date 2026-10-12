@@ -491,13 +491,17 @@ def statement_title(sql: str, dialect: str = "") -> str:
     text = " ".join((sql or "").split())
     if not text:
         return ""
+    def _read(read: Optional[str]) -> Any:
+        try:
+            return parse_one(text, read=read)
+        except Exception:                       # noqa: BLE001 — a reading that does not parse gives the next its turn
+            return None
+
     tree = None
     for read in dict.fromkeys([dialect or None, None]):
-        try:
-            tree = parse_one(text, read=read)
+        tree = _read(read)
+        if tree is not None:
             break
-        except Exception:                       # noqa: BLE001 — another reading, then nothing
-            continue
     sel = tree if isinstance(tree, exp.Select) else (tree.find(exp.Select) if tree is not None else None)
     if sel is None:
         return ""
