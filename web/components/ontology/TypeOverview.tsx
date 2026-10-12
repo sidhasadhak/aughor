@@ -47,13 +47,16 @@ export function humanName(id: string): string {
   return words ? words[0].toUpperCase() + words.slice(1) : id;
 }
 
-function Figure({ value, label, tone, title, testid }: {
+function Figure({ value, label, tone, title, testid, word = false }: {
   value: React.ReactNode; label: string; tone?: string; title?: string; testid?: string;
+  /** A name rather than a number (the key's column): set smaller, so a name like order_id is read whole. */
+  word?: boolean;
 }) {
   return (
     <div style={{ background: "var(--bg-2)", borderRadius: "var(--r2)", padding: "7px 10px", minWidth: 0 }} title={title}
       data-testid={testid}>
-      <div className="aug-fs-h2" style={{ ...tabular, color: tone ?? "var(--t1)", fontWeight: 600, overflow: "hidden",
+      <div className={word ? "aug-fs-sm" : "aug-fs-h2"} style={{ ...tabular, color: tone ?? "var(--t1)", fontWeight: 600, overflow: "hidden",
+                                          lineHeight: word ? "22px" : undefined,
                                           textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {value}
       </div>
@@ -81,7 +84,7 @@ export function TypeFigures({ detail }: { detail: ObjectTypeDetail }) {
       data-testid="entity-figures">
       <Figure value={objects.value} label={objects.label} title={objects.title} testid="entity-figure-objects" />
       <Figure value={<span style={{ fontFamily: "var(--font-mono)" }}>{keyFig.mark}{key.property}</span>} label={keyFig.label}
-        tone={keyFig.tone} title={key.note || undefined} testid="entity-figure-key" />
+        tone={keyFig.tone} title={key.note || key.property} testid="entity-figure-key" word />
       <Figure value={formatCount(counts.properties)} label={counts.properties === 1 ? "property" : "properties"}
         testid="entity-figure-properties" />
       <Figure value={formatCount(counts.links)}

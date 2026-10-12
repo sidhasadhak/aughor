@@ -165,8 +165,8 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   );
 }
 
-/** The panel's width — the approved mockup's, near enough for its four figures to sit on one row. */
-export const PANEL_WIDTH = 440;
+/** The panel's width — the approved mockup's 470, so its six tabs and four figures sit on one row each (the process panel matches). */
+export const PANEL_WIDTH = 470;
 
 /** Read first: a door that writes shows only while a person is editing (the Edit button in the panel's header). A yes to
  *  what was proposed — a Confirm, a Bind, a Key — is not behind it: it waits on a person and stays on its row. */
@@ -337,7 +337,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
         <TypeFigures detail={detail} />
       </header>
       <TabStrip<PanelTab> label={`About ${detail.display_name}`} size="1" value={tab} onChange={setTab} tabs={tabs}
-        style={{ padding: "0 8px" }} />
+        style={{ padding: "0 2px" }} />
       <div role="tabpanel" aria-label={TAB_NAME[tab]} data-testid={`entity-tab-${tab}`}>{body}</div>
     </Editing.Provider>
   );
