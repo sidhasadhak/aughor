@@ -7,11 +7,11 @@
  * recorded —". The move had its query and a confidence of 0.8; the citation dropped both. A citation now carries
  * them, and a figure it does not carry (a brief built before) reads "—", never an invented 0.
  */
-import { render, screen } from "@/lib/testing";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@/lib/testing";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DossierTrace, EvidenceDrawer, findingOfCitation } from "@/components/BriefingPanel";
-import type { BriefingCitation, FindingDossier } from "@/lib/api";
+import { DossierTrace, EvidenceDrawer, NarrativeCard, findingOfCitation } from "@/components/BriefingPanel";
+import type { BriefingCitation, BriefingNarrativeResponse, FindingDossier } from "@/lib/api";
 
 const SQL = "SELECT day, SUM(converted) * 1.0 / COUNT(*) AS rate FROM web_sessions GROUP BY day ORDER BY day";
 const MOVE: BriefingCitation = {
@@ -62,5 +62,37 @@ describe("a derivation's question", () => {
     unmount();
     render(<DossierTrace dossier={base} />);
     expect(screen.getByText("Question the explorer asked")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The morning paper's lead holds blocks inside its paragraphs: a citation's hover card and a figure's receipt.
+ * 2026-10-12, luxexperience: each paragraph was a <p>, and hovering a citation printed React's "In HTML, <div>
+ * cannot be a descendant of <p>" — a hydration error — over the Briefing.
+ */
+describe("the paper's lead", () => {
+  const NARRATIVE: BriefingNarrativeResponse = {
+    narrative: "Conversion fell to 31% over the period [1].\n\nSessions held level.",
+    headline_theme: "Conversion fell", citations: [MOVE], generated_at: null, available: true,
+  };
+  const CTX = {
+    insightById: new Map(), connectionId: "c1", schema: "luxexperience", triggers: [],
+    onEvidence: () => {}, onTriggersHint: () => {}, onDismissed: () => {}, onInvestigate: () => {},
+  };
+  const errors = vi.spyOn(console, "error");
+  afterEach(() => errors.mockClear());
+
+  it("shows a citation's hover card without a block inside a paragraph", () => {
+    const { container } = render(<NarrativeCard narrative={NARRATIVE} ctx={CTX} paper body />);
+    fireEvent.mouseEnter(screen.getByText("1"));
+    expect(screen.getByText(MOVE.finding)).toBeInTheDocument();
+    expect(container.querySelector("p div, p p, p pre")).toBeNull();
+    expect(errors.mock.calls.map(c => String(c[0])).filter(m => /descendant of <p>|cannot contain a nested/.test(m))).toEqual([]);
+  });
+
+  it("prints the standfirst alone when the story is switched off", () => {
+    render(<NarrativeCard narrative={NARRATIVE} ctx={CTX} paper body={false} />);
+    expect(screen.getByTestId("paper-lead-body").children).toHaveLength(1);
+    expect(screen.queryByText(/Sessions held level/)).toBeNull();
   });
 });

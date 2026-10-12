@@ -287,7 +287,7 @@ interface CitationActionContext {
   onInvestigate:  (q: string, insightId?: string) => void;
 }
 
-function NarrativeCard({
+export function NarrativeCard({
   narrative,
   ctx,
   hideHeadline = false,
@@ -324,13 +324,15 @@ function NarrativeCard({
     <div style={paper ? undefined : { background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 22px" }}>
       {paper && (
         <div data-testid="paper-lead-body">
+          {/* Each paragraph is a <div>, never a <p>: a citation's hover card and a figure's receipt are blocks,
+              and a <p> may hold no block (2026-10-12: React's "<div> cannot be a descendant of <p>" on hover). */}
           {paras.map((p, i) => (i === 0 || body) && (
-            <p key={i} style={i === 0
+            <div key={i} style={i === 0
               ? { fontSize: 18, lineHeight: 1.5, color: "var(--t1)", margin: "0 0 12px", maxWidth: "70ch" }
               : { fontSize: 15, lineHeight: 1.6, color: "var(--t2)", margin: "0 0 10px", maxWidth: "70ch" }}>
               <NarrativeText text={p} citations={narrative.citations} onCitationClick={onCitationClick}
                 connectionId={ctx.connectionId} schema={ctx.schema} />
-            </p>
+            </div>
           ))}
         </div>
       )}
