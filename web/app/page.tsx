@@ -2042,7 +2042,6 @@ export default function Home() {
             {tab === "canvases" && (
               <CanvasBrowser
                 connections={wsConnections}
-                allConnections={connections}
                 workspaceId={selectedWorkspace}
                 onSelect={handleCanvasSelect}
                 onNew={() => setShowCanvasCreator(true)}
@@ -2055,6 +2054,7 @@ export default function Home() {
                 <CanvasWorkspace
                   canvas={activeCanvas}
                   connections={wsConnections}
+                  allConnections={connections}
                   onOpenDocuments={() => handleNavigate("documents")}
                   onClose={() => { setActiveCanvas(null); setTab("canvases"); setInitialCanvasInvId(null); setInitialCanvasChatId(null); }}
                   onCanvasUpdate={updated => setActiveCanvas(updated)}

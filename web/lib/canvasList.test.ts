@@ -1,15 +1,12 @@
 /**
- * What the Data Canvas screens say (`lib/canvasList.ts`): the list's figures, what needs a person, the order and the
- * filter, and an open canvas's history with a repeated question said once. The fixtures are the live install's four
+ * What an open Data Canvas says (`lib/canvasList.ts`): its connection gone or not, and its history with a repeated
+ * question said once. The fixtures are the live install's four
  * canvases and its history's shape on 2026-10-12 — 30 runs that were three questions.
  */
 import { describe, expect, it } from "vitest";
 
 import type { Canvas, CanvasHistoryItem, Connection } from "@/lib/api";
-import {
-  agoWords, canvasFigures, canvasNeeds, connectionGone, filterCanvases, foldHistory, runStateWord, scopeWords, sortCanvases,
-  tablesTitle,
-} from "@/lib/canvasList";
+import { agoWords, connectionGone, foldHistory, runStateWord, scopeWords, tablesTitle } from "@/lib/canvasList";
 
 const NOW = Date.parse("2026-10-12T12:00:00Z");
 
@@ -32,71 +29,20 @@ const CONNS = [
   { id: "workspace", name: "Workspace", conn_type: "local_upload" },
 ] as unknown as Connection[];
 
-describe("the list's figures", () => {
-  it("counts the canvases and their connections once each, and names the one used last", () => {
-    const f = canvasFigures(LIVE, NOW);
-    expect(f.total).toBe(4);
-    expect(f.connections).toBe(3);
-    expect(f.auto).toBe(0);
-    expect(f.lastUsed?.canvas.name).toBe("E-Commerce Operations Overview");
-    expect(agoWords(f.lastUsed!.at, NOW)).toBe("8 days ago");
+describe("a canvas's connection", () => {
+  it("is there for every live canvas when every connection the install has is read", () => {
+    expect(LIVE.filter(c => connectionGone(c, CONNS))).toEqual([]);
   });
 
-  it("counts a canvas not asked anything in 30 days as not used — the never-used among them too", () => {
-    const f = canvasFigures(LIVE, NOW);
-    expect(f.idle).toBe(3);     // never, 57 days, 51 days
-    expect(f.never).toBe(1);
-  });
-
-  it("says no canvas was used when none was, rather than inventing a last one", () => {
-    const f = canvasFigures([canvas("a"), canvas("b")], NOW);
-    expect(f.lastUsed).toBeNull();
-    expect(f.never).toBe(2);
-  });
-
-  it("counts the auto-generated canvases", () => {
-    expect(canvasFigures([canvas("a", { is_legacy: true }), canvas("b")], NOW).auto).toBe(1);
-  });
-});
-
-describe("what needs a person", () => {
-  it("is nothing on the live install — every canvas's connection is there", () => {
-    expect(canvasNeeds(LIVE, CONNS)).toEqual([]);
-  });
-
-  it("is a canvas whose connection is gone", () => {
+  it("is gone only when the install has no such connection — another workspace's is not gone", () => {
     const orphan = canvas("lux", { scopes: [{ connection_id: "removed", schema_name: null, tables: [] }] });
-    expect(canvasNeeds([...LIVE, orphan], CONNS).map(c => c.id)).toEqual(["lux"]);
+    expect([...LIVE, orphan].filter(c => connectionGone(c, CONNS)).map(c => c.id)).toEqual(["lux"]);
+    expect(LIVE.filter(c => connectionGone(c, [CONNS[0]])).map(c => c.id)).toEqual(["superstore", "airline"]);
   });
 
-  it("never calls a connection gone before the connections are read", () => {
+  it("is never called gone before the connections are read", () => {
     // An empty list is one not read yet: saying every canvas lost its connection would be false.
     expect(connectionGone(LIVE[0], [])).toBe(false);
-    expect(canvasNeeds(LIVE, [])).toEqual([]);
-  });
-});
-
-describe("the order and the filter", () => {
-  it("sorts by last used, a never-used canvas last, and by the other three orders", () => {
-    expect(sortCanvases(LIVE, "activity").map(c => c.id)).toEqual(["ops", "airline", "superstore", "analytics"]);
-    expect(sortCanvases(LIVE, "modified")[0].id).toBe("analytics");
-    expect(sortCanvases(LIVE, "name").map(c => c.name)[0]).toBe("Airline And Sales Operations");
-    expect(sortCanvases(LIVE, "tables")[0].id).toBe("airline");
-  });
-
-  it("finds words in the name, the description or the connection's name, and can hide the auto-generated", () => {
-    const name = (c: Canvas) => CONNS.find(x => x.id === c.scopes[0].connection_id)?.name ?? "";
-    expect(filterCanvases(LIVE, { query: "duckdb", hideAuto: false, connectionName: name }).map(c => c.id)).toEqual(["superstore"]);
-    expect(filterCanvases(LIVE, { query: "ANALYTICS", hideAuto: false, connectionName: name })).toHaveLength(2);
-    const withAuto = [...LIVE, canvas("auto", { is_legacy: true })];
-    expect(filterCanvases(withAuto, { query: "", hideAuto: true, connectionName: name })).toHaveLength(4);
-  });
-
-  it("says a canvas's tables in a few words, all of them on hover", () => {
-    expect(scopeWords(LIVE[0])).toBe("All tables");
-    expect(scopeWords(LIVE[2])).toBe("1 table");
-    expect(scopeWords(LIVE[3])).toBe("24 tables");
-    expect(tablesTitle(LIVE[3])).toMatch(/and 12 more$/);
   });
 });
 

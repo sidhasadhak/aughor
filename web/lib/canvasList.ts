@@ -1,16 +1,13 @@
 /**
- * What the Data Canvas screens say, decided here and laid out by `components/CanvasBrowser.tsx` (the list) and
- * `components/CanvasWorkspace.tsx` (an open canvas), to `aughor-v2/CLARITY.md`: the list's figures, what needs a
- * person, the facts each canvas wears as chips, its sort and filter, and an open canvas's history with a question
- * asked eleven times said once. Pure: nothing here fetches.
+ * What an open Data Canvas says, decided here and laid out by `components/CanvasWorkspace.tsx`, to
+ * `aughor-v2/CLARITY.md`: the facts a canvas wears as chips, and its history with a question asked eleven times said
+ * once. (The list of canvases, `CanvasBrowser.tsx`, is kept as it was — the user, 2026-10-12.) Pure: nothing here
+ * fetches.
  */
 import type { Canvas, CanvasHistoryItem, Connection } from "@/lib/api";
 import { countNoun, formatCount, MONTHS_SHORT } from "@/lib/format";
 
 const DAY = 86_400_000;
-
-/** How long a canvas may go unasked before the list counts it as not used. */
-export const IDLE_DAYS = 30;
 
 /** Whole days from an instant to `now`; null for a missing or unreadable one. */
 export function daysSince(iso: string | null | undefined, now: number): number | null {
@@ -70,80 +67,6 @@ export function connectionGone(c: Canvas, connections: readonly Connection[]): b
   if (!connections.length) return false;
   const id = connectionIdOf(c);
   return !id || !connections.some(x => x.id === id);
-}
-
-// ── The list's figures and what needs a person ────────────────────────────────────────────────────────────────────
-
-export interface CanvasFigures {
-  total: number;
-  /** Connections the canvases read, each once. */
-  connections: number;
-  /** Made automatically from a connection, not by a person. */
-  auto: number;
-  /** The canvas asked something most recently, and when. */
-  lastUsed: { canvas: Canvas; at: string } | null;
-  /** Not asked anything in `IDLE_DAYS` — the never-used among them. */
-  idle: number;
-  never: number;
-}
-
-export function canvasFigures(canvases: readonly Canvas[], now: number): CanvasFigures {
-  let lastUsed: CanvasFigures["lastUsed"] = null;
-  let idle = 0;
-  let never = 0;
-  for (const c of canvases) {
-    const d = daysSince(c.last_activity, now);
-    if (d == null) { never += 1; idle += 1; continue; }
-    if (d >= IDLE_DAYS) idle += 1;
-    if (!lastUsed || Date.parse(c.last_activity!) > Date.parse(lastUsed.at)) lastUsed = { canvas: c, at: c.last_activity! };
-  }
-  return {
-    total: canvases.length,
-    connections: new Set(canvases.map(connectionIdOf).filter(Boolean)).size,
-    auto: canvases.filter(c => c.is_legacy).length,
-    lastUsed, idle, never,
-  };
-}
-
-/** The canvases that need a person: each whose connection is gone, so a question there has nothing to read. */
-export function canvasNeeds(canvases: readonly Canvas[], connections: readonly Connection[]): Canvas[] {
-  return canvases.filter(c => connectionGone(c, connections));
-}
-
-// ── Sort and filter ───────────────────────────────────────────────────────────────────────────────────────────────
-
-export type CanvasSort = "activity" | "modified" | "name" | "tables";
-
-/** How the list says its order: "sorted by last used". */
-export const SORT_WORDS: Record<CanvasSort, string> = {
-  activity: "last used", modified: "last edited", name: "name", tables: "table count",
-};
-
-const edited = (c: Canvas) => Date.parse(c.updated_at || c.created_at) || 0;
-const used = (c: Canvas) => (c.last_activity ? Date.parse(c.last_activity) || 0 : 0);
-
-export function sortCanvases(canvases: readonly Canvas[], sort: CanvasSort): Canvas[] {
-  const cmp: Record<CanvasSort, (a: Canvas, b: Canvas) => number> = {
-    activity: (a, b) => used(b) - used(a) || edited(b) - edited(a),
-    modified: (a, b) => edited(b) - edited(a),
-    name: (a, b) => a.name.localeCompare(b.name),
-    tables: (a, b) => tablesOf(b).length - tablesOf(a).length,
-  };
-  return [...canvases].sort(cmp[sort]);
-}
-
-/** The canvases a filter keeps: words found in the name, the description or the connection's name; and, when asked,
- *  none made automatically. */
-export function filterCanvases(canvases: readonly Canvas[], opts: {
-  query: string; hideAuto: boolean; connectionName: (c: Canvas) => string;
-}): Canvas[] {
-  const q = opts.query.trim().toLowerCase();
-  return canvases.filter(c => {
-    if (opts.hideAuto && c.is_legacy) return false;
-    if (!q) return true;
-    return c.name.toLowerCase().includes(q) || (c.description ?? "").toLowerCase().includes(q)
-      || opts.connectionName(c).toLowerCase().includes(q);
-  });
 }
 
 // ── An open canvas's history, a question said once ────────────────────────────────────────────────────────────────

@@ -498,6 +498,9 @@ function SettingsPopover({ canvas, onClose, onSaved }: {
 interface Props {
   canvas: Canvas;
   connections: Connection[];
+  /** Every connection the install has — for the connection's chip and "connection gone"; Configure keeps this
+   *  workspace's own. */
+  allConnections?: Connection[];
   onClose: () => void;
   onCanvasUpdate: (canvas: Canvas) => void;
   initialOpenInvId?: string | null;
@@ -510,7 +513,10 @@ const VIEWS: { id: WsTab; label: string }[] = [
   { id: "chat", label: "Chat" }, { id: "history", label: "History" }, { id: "artifacts", label: "Artifacts" },
 ];
 
-export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, initialOpenInvId, initialRestoreSessionId, onOpenDocuments }: Props) {
+export function CanvasWorkspace({ canvas, connections, allConnections, onClose, onCanvasUpdate, initialOpenInvId, initialRestoreSessionId, onOpenDocuments }: Props) {
+  // A canvas reading another workspace's connection still has it: the chip and "connection gone" read every connection
+  // the install has (2026-10-12, judged against this workspace's alone two live canvases read "gone").
+  const known = allConnections?.length ? allConnections : connections;
   const [wsTab, setWsTab] = useState<WsTab>("chat");
   const [chatKey, setChatKey] = useState(0);
   const [openInvId, setOpenInvId] = useState<string | null>(null);
@@ -524,8 +530,8 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
   const [showConfigure, setShowConfigure] = useState(false);
 
   const connectionId = canvas.scopes[0]?.connection_id ?? "";
-  const connection = connections.find(c => c.id === connectionId);
-  const gone = connectionGone(canvas, connections);
+  const connection = known.find(c => c.id === connectionId);
+  const gone = connectionGone(canvas, known);
   const pinned = usePinnedState(canvas);
 
   // When canvas changes, reset to chat tab, but honour initial props

@@ -104,6 +104,15 @@ describe("the header, when the row is short of room", () => {
     expect(screen.getByTestId("canvas-connection-gone")).toHaveTextContent("connection gone");
   });
 
+  it("reads a connection of another workspace as there, not gone, and names it", () => {
+    // 2026-10-12: judged against this workspace's connections alone, two live canvases read "connection gone".
+    const other = { ...CONNECTIONS[0], id: "duck", name: "DuckDB", conn_type: "duckdb" } as Connection;
+    render(<Theme><CanvasWorkspace canvas={{ ...CANVAS, scopes: [{ connection_id: "duck", schema_name: "main", tables: [] }] }}
+      connections={CONNECTIONS} allConnections={[...CONNECTIONS, other]} onClose={vi.fn()} onCanvasUpdate={vi.fn()} /></Theme>);
+    expect(screen.queryByTestId("canvas-connection-gone")).toBeNull();
+    expect(screen.getByTestId("canvas-head")).toHaveTextContent("DuckDB");
+  });
+
   it("says nothing is gone while the connections are not read yet", () => {
     show(CANVAS, []);
     expect(screen.queryByTestId("canvas-connection-gone")).toBeNull();
