@@ -1909,7 +1909,9 @@ export default function Home() {
                   onLayerChange={l => { setOpenId(null); setRecordLayer(l); }}
                   openId={openId}
                   onOpenRecord={openRecord}
-                  connections={wsConnections}
+                  // Every connection, not the workspace's: the Record uses the list only to NAME a connection, and
+                  // its ledgers span every connection — a claim about one outside this workspace read "connection dcc63d83".
+                  connections={connections}
                   selectedConn={selectedConn}
                   onOpenRun={openRun}
                   onAsk={() => goToChat()}
