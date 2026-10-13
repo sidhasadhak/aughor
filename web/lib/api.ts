@@ -3331,7 +3331,8 @@ export async function getCanvasExplorationEpisodes(canvasId: string, phase = "",
   const params = new URLSearchParams({ limit: String(limit) });
   if (phase) params.set("phase", phase);
   const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/episodes?${params}`);
-  if (!res.ok) return [];
+  // A failed read is said, never handed back as an empty log (Activity read this [] as "nothing has run").
+  if (!res.ok) throw await refused(res, "Reading the log");
   const data = await res.json();
   return Array.isArray(data) ? data : [];
 }
@@ -3483,7 +3484,8 @@ export async function getExplorationEpisodes(
   const res = await fetch(
     `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/episodes?phase=${encodeURIComponent(phase)}&limit=${limit}`,
   );
-  if (!res.ok) return [];
+  // A failed read is said, never handed back as an empty log (Activity read this [] as "nothing has run").
+  if (!res.ok) throw await refused(res, "Reading the log");
   return res.json();
 }
 
