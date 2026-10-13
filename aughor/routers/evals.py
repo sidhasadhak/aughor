@@ -142,6 +142,21 @@ def get_suite(suite_id: str):
     return {**suite, "cases": store.list_cases(suite_id)}
 
 
+class SuiteRename(BaseModel):
+    name: str
+
+
+@router.patch("/evals/suites/{suite_id}", dependencies=[gate(Capability.EVAL_SUITE)])
+def rename_suite(suite_id: str, body: SuiteRename):
+    """A suite's title, changed in place — its runs and the receipts that cite them stay attached."""
+    if not body.name.strip():
+        raise HTTPException(status_code=422, detail="A suite's title can't be empty")
+    suite = store.rename_suite(suite_id, body.name)
+    if suite is None:
+        raise HTTPException(status_code=404, detail="Suite not found")
+    return suite
+
+
 @router.delete("/evals/suites/{suite_id}", dependencies=[gate(Capability.EVAL_SUITE)])
 def delete_suite(suite_id: str):
     if not store.delete_suite(suite_id):

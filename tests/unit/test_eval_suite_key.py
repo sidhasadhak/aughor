@@ -35,3 +35,23 @@ def test_a_keyed_suite_is_never_adopted_by_another_key():
     a, _ = store.ensure_suite("kt3a", "Shared title [kt3]")
     b, created = store.ensure_suite("kt3b", "Shared title [kt3]")
     assert created and b["id"] != a["id"]
+
+
+def test_a_person_renames_a_suite_in_place_and_its_runs_stay():
+    """The live install kept wave codes in its suite titles ("… (Wave H)", "(CR0)", "(L4)") because only a receipt run
+    re-titled a suite — and three of them have no receipt. A rename is the title alone: the id, key and runs stay."""
+    import pytest
+    from fastapi import HTTPException
+
+    from aughor.routers.evals import SuiteRename, rename_suite
+    old = store.create_suite("user-defined agents — data-gated on the answer path (Wave H) [kt5]")
+    run_id = store.start_run(old["id"])
+    out = rename_suite(old["id"], SuiteRename(name="  User-defined agents — data-gated on the answer path [kt5] "))
+    assert out["id"] == old["id"] and out["name"] == "User-defined agents — data-gated on the answer path [kt5]"
+    assert [r["id"] for r in store.list_runs(old["id"])] == [run_id]
+    with pytest.raises(HTTPException) as gone:
+        rename_suite("no-such-suite", SuiteRename(name="x"))
+    assert gone.value.status_code == 404
+    with pytest.raises(HTTPException) as blank:
+        rename_suite(old["id"], SuiteRename(name="   "))
+    assert blank.value.status_code == 422 and store.get_suite(old["id"])["name"].startswith("User-defined")

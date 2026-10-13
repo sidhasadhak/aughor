@@ -5395,7 +5395,11 @@ export interface paths {
         delete: operations["delete_suite_evals_suites__suite_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Rename Suite
+         * @description A suite's title, changed in place — its runs and the receipts that cite them stay attached.
+         */
+        patch: operations["rename_suite_evals_suites__suite_id__patch"];
         trace?: never;
     };
     "/evals/suites/{suite_id}/cases": {
@@ -20598,6 +20602,11 @@ export interface components {
              */
             target: string;
         };
+        /** SuiteRename */
+        SuiteRename: {
+            /** Name */
+            name: string;
+        };
         /** SupersedeRequest */
         SupersedeRequest: {
             /**
@@ -31951,6 +31960,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_suite_evals_suites__suite_id__patch: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                suite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuiteRename"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
