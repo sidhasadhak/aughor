@@ -1,34 +1,47 @@
 "use client";
-import React, { useEffect, useState, useCallback } from "react";
+/**
+ * Evals ▸ Suites — redone to `aughor-v2/CLARITY.md` (2026-10-13): four figures (suites, cases, how many passed in full
+ * at their last run, how many never ran), then what needs a person — a suite whose last run fell or failed, a suite
+ * never run — with Run on the row, then the suites as one line each (name · cases · what it runs as and where · its
+ * last result). Authoring sits behind *New suite*, and a suite's cases, its run settings and Delete behind *Open*.
+ */
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  EvalSuite,
-  EvalCase,
-  EvalRunSummary,
-  EvalEvaluator,
   Connection,
-  getEvalSuites,
-  getEvalSuite,
-  createEvalSuite,
-  deleteEvalSuite,
+  EvalCase,
+  EvalEvaluator,
+  EvalRun,
+  EvalRunSummary,
+  EvalSuite,
   addEvalCases,
+  createEvalSuite,
   deleteEvalCase,
-  runEvalSuite,
-  getEvaluators,
+  deleteEvalSuite,
   getConnections,
+  getEvalRuns,
+  getEvalSuite,
+  getEvalSuites,
+  getEvaluators,
+  runEvalSuite,
 } from "@/lib/api";
-import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
-import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
-import { Button } from "@/components/ui/button";
-import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import type { EvalsLayer } from "@/components/EvalsWorkspace";
-import { Loading } from "@/components/ui/states";
-import { SelectField } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { SelectField } from "@/components/ui/select";
+import { Loading, ReadFailed } from "@/components/ui/states";
 import { Textarea } from "@/components/ui/textarea";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
+import {
+  CARD, Chip, Empty, Figure, Figures, Label, MUTED, NeedsRow, NeedsYou, NUM, ONE_LINE, Page, ROW, RULE, type Tone,
+} from "@/components/clarity/kit";
+import { formatCount } from "@/lib/format";
+import {
+  bandOf, bandText, cellOf, day, floorOf, measuresConsistency, noteOf, passRate, plural, rate, runBlock, suiteState,
+  targetWords, type RunState, type SuiteState,
+} from "@/lib/evalSummary";
 
 type View = "list" | "detail" | "form";
+type Detail = EvalSuite & { cases: EvalCase[] };
 
 interface Props {
   connId?: string;
@@ -36,42 +49,71 @@ interface Props {
   onLayerChange?: (l: EvalsLayer) => void;
 }
 
+/** How many runs the page reads to find each suite's last result. A suite with no run among them reads as never run,
+ *  so the page says when the read was cut at this. */
+const RUN_LIMIT = 500;
+
+/** Cases a suite shows before "Show all". */
+const CASES_SHOWN = 25;
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function EvalSuitesPanel({ connId, onLayerChange }: Props) {
-  const [view, setView]         = useState<View>("list");
-  const [suites, setSuites]     = useState<EvalSuite[]>([]);
+  const [view, setView] = useState<View>("list");
+  const [suites, setSuites] = useState<EvalSuite[]>([]);
+  const [runs, setRuns] = useState<EvalRun[] | null>([]);
+  /** Each suite's cases — null where the read failed, absent while it is being read. */
+  const [cases, setCases] = useState<Record<string, EvalCase[] | null>>({});
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [evaluators, setEvaluators]   = useState<EvalEvaluator[]>([]);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState<string | null>(null);
-
-  // Create-suite form
+  const [evaluators, setEvaluators] = useState<EvalEvaluator[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [readFailed, setReadFailed] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", description: "", connection_id: connId ?? "" });
   const [saving, setSaving] = useState(false);
+  const [detail, setDetail] = useState<Detail | null>(null);
+  /** The suite a row's Run is running, and what each finished run said. */
+  const [running, setRunning] = useState<string | null>(null);
+  const [ran, setRan] = useState<Record<string, string>>({});
 
-  // Detail view
-  const [detail, setDetail] = useState<(EvalSuite & { cases: EvalCase[] }) | null>(null);
+  const readRuns = useCallback(async () => {
+    setRuns(await getEvalRuns(undefined, RUN_LIMIT).catch(() => null));
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [ss, cs, evs] = await Promise.all([
         getEvalSuites(),
-        getConnections().catch(() => []),
-        getEvaluators().then(r => r.evaluators).catch(() => []),
+        getConnections().catch(() => [] as Connection[]),
+        getEvaluators().then(r => r.evaluators).catch(() => [] as EvalEvaluator[]),
+        readRuns(),
       ]);
       setSuites(ss);
       setConnections(cs);
       setEvaluators(evs);
+      setReadFailed(null);
+      setLoaded(true);
+      // The case counts come from each suite's own read — the list carries none.
+      const reads = await Promise.allSettled(ss.map(s => getEvalSuite(s.id)));
+      setCases(Object.fromEntries(ss.map((s, i) => {
+        const r = reads[i];
+        return [s.id, r.status === "fulfilled" ? r.value.cases : null];
+      })));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load");
+      setReadFailed(e instanceof Error ? e.message : "the read failed");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [readRuns]);
 
   useEffect(() => { load(); }, [load]);
+
+  const connName = useCallback((id: string) => {
+    if (!id) return "no connection";
+    return connections.find(c => c.id === id)?.name ?? "a connection no longer listed";
+  }, [connections]);
 
   // ── Actions ──────────────────────────────────────────────────────────────────
 
@@ -86,14 +128,15 @@ export function EvalSuitesPanel({ connId, onLayerChange }: Props) {
     try {
       const d = await getEvalSuite(suiteId);
       setDetail(d);
+      setCases(p => ({ ...p, [suiteId]: d.cases }));
       setView("detail");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to open suite");
+      setError(e instanceof Error ? e.message : "Could not open the suite");
     }
   }
 
   async function saveSuite() {
-    if (!form.name.trim()) { setError("Name is required"); return; }
+    if (!form.name.trim()) { setError("A suite needs a name"); return; }
     setSaving(true);
     setError(null);
     try {
@@ -106,7 +149,7 @@ export function EvalSuitesPanel({ connId, onLayerChange }: Props) {
       await load();
       await openDetail(created.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create suite");
+      setError(e instanceof Error ? e.message : "Could not create the suite");
     } finally {
       setSaving(false);
     }
@@ -125,197 +168,434 @@ export function EvalSuitesPanel({ connId, onLayerChange }: Props) {
 
   async function refreshDetail() {
     if (!detail) return;
-    try { setDetail(await getEvalSuite(detail.id)); } catch { /* keep prior */ }
+    try {
+      const d = await getEvalSuite(detail.id);
+      setDetail(d);
+      setCases(p => ({ ...p, [d.id]: d.cases }));
+    } catch { /* keep the prior read */ }
+  }
+
+  /** Run a suite once from its row; the row's result chip reads the new run when it lands. */
+  async function runFromRow(s: EvalSuite) {
+    setRunning(s.id);
+    setRan(p => ({ ...p, [s.id]: "" }));
+    try {
+      const sum = await runEvalSuite(s.id, { iterations: 1 });
+      setRan(p => ({ ...p, [s.id]: `Finished · ${rate(sum.pass_rate)} · ${sum.stable_pass} of ${sum.total} stable` }));
+    } catch (e) {
+      setRan(p => ({ ...p, [s.id]: e instanceof Error ? e.message : "The run failed" }));
+    } finally {
+      setRunning(null);
+      await readRuns();
+    }
   }
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
-  const totalCases = suites.reduce((n, s) => n + (s.config?.case_count as number ?? 0), 0);
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-0)", color: "var(--t1)" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px 12px", borderBottom: "1px solid var(--bg-3)" }}>
-        {view !== "list" && (
-          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t3)" }}>
-            {view === "form" ? "New suite" : detail?.name ?? "Suite"}
-          </div>
-        )}
-        <div style={{ flex: 1 }} />
-        {view === "list" && (
-          <Button variant="ghost" className="h-auto" onClick={openCreate} style={{ fontSize: 12, padding: "5px 12px" }}>
-            + New suite
-          </Button>
-        )}
-        {view !== "list" && (
-          <Button variant="ghost" onClick={() => { setView("list"); load(); }} className="h-auto p-0 font-normal" style={{ background: "none", border: "none", color: "var(--t3)", cursor: "pointer", fontSize: 12 }}>
-            ← All suites
-          </Button>
-        )}
-      </div>
+    <Page testId={view === "list" ? "eval-suites" : view === "form" ? "eval-suite-new" : "eval-suite-detail"}>
+      {error && <div role="alert" className="aug-fs-sm" style={{ color: "var(--red4)" }}>{error}</div>}
+      {readFailed && <ReadFailed what="the eval suites" error={readFailed} onRetry={load} />}
+      {!loaded && loading && <Loading what="eval suites" />}
 
-      {/* Body */}
-      <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-        {loading && <Loading what="eval suites" />}
-        {error && <p style={{ color: "var(--red4, #ef4444)", fontSize: 13, marginBottom: 12 }}>{error}</p>}
+      {view === "list" && loaded && !readFailed && (suites.length === 0
+        ? <NoSuites onNew={openCreate} />
+        : <Overview suites={suites} runs={runs} cases={cases} connName={connName} running={running} ran={ran}
+            onNew={openCreate} onOpen={openDetail} onRun={runFromRow} />)}
 
-        {/* ── LIST ── */}
-        {view === "list" && !loading && (
-          <>
-            {suites.length > 0 && (
-              <MiniStatRow>
-                <MiniStat value={suites.length} label="Suites" />
-                <MiniStat value={totalCases || "—"} label="Cases" />
-                <MiniStat value={evaluators.length} label="Evaluators" tone="var(--blue4)" />
-              </MiniStatRow>
-            )}
-            {suites.length === 0
-              ? <EmptyState onAdd={openCreate} />
-              : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {suites.map(s => (
-                    <SuiteCard
-                      key={s.id}
-                      suite={s}
-                      connName={connections.find(c => c.id === s.connection_id)?.name}
-                      onOpen={() => openDetail(s.id)}
-                      onDelete={() => removeSuite(s.id)}
-                    />
-                  ))}
-                </div>}
-          </>
-        )}
+      {view === "form" && (
+        <SuiteForm form={form} setForm={setForm} connections={connections} saving={saving}
+          onSave={saveSuite} onCancel={() => setView("list")} />
+      )}
 
-        {/* ── CREATE FORM ── */}
-        {view === "form" && (
-          <SuiteForm
-            form={form}
-            setForm={setForm}
-            connections={connections}
-            saving={saving}
-            error={error}
-            onSave={saveSuite}
-            onCancel={() => setView("list")}
-          />
-        )}
-
-        {/* ── DETAIL ── */}
-        {view === "detail" && detail && (
-          <SuiteDetail
-            suite={detail}
-            evaluators={evaluators}
-            onChanged={refreshDetail}
-            onDelete={() => removeSuite(detail.id)}
-            onViewRuns={() => onLayerChange?.("runs")}
-            setError={setError}
-          />
-        )}
-      </div>
-    </div>
+      {view === "detail" && detail && (
+        <SuiteDetail suite={detail} runs={runs} connName={connName(detail.connection_id)} evaluators={evaluators}
+          onBack={() => { setView("list"); load(); }} onChanged={refreshDetail} onRan={readRuns}
+          onDelete={() => removeSuite(detail.id)} onViewRuns={() => onLayerChange?.("runs")} setError={setError} />
+      )}
+    </Page>
   );
 }
 
-// ── Suite card ────────────────────────────────────────────────────────────────
+// ── The overview: figures, Needs you, the list ───────────────────────────────────
 
-function SuiteCard({ suite, connName, onOpen, onDelete }: {
-  suite: EvalSuite; connName?: string; onOpen: () => void; onDelete: () => void;
+function Overview({ suites, runs, cases, connName, running, ran, onNew, onOpen, onRun }: {
+  suites: EvalSuite[];
+  runs: EvalRun[] | null;
+  cases: Record<string, EvalCase[] | null>;
+  connName: (id: string) => string;
+  running: string | null;
+  ran: Record<string, string>;
+  onNew: () => void;
+  onOpen: (id: string) => void;
+  onRun: (s: EvalSuite) => void;
 }) {
+  const state = useMemo(() => Object.fromEntries(suites.map(s => [s.id, suiteState(s.id, runs ?? [])])) as
+    Record<string, SuiteState>, [suites, runs]);
+  const runsRead = runs !== null;
+  const cut = runsRead && runs.length >= RUN_LIMIT;
+  const ranOnce = suites.filter(s => state[s.id].last);
+  const never = suites.filter(s => !state[s.id].last);
+  const measured = suites.filter(s => state[s.id].lastRate != null);
+  const full = measured.filter(s => (state[s.id].lastRate as number) >= 0.9995);
+  const caseReads = suites.map(s => cases[s.id]);
+  const casesPending = caseReads.some(c => c === undefined);
+  const casesFailed = caseReads.filter(c => c === null).length;
+  const totalCases = caseReads.reduce((n, c) => n + (c?.length ?? 0), 0);
+  const count = (s: EvalSuite) => {
+    const c = cases[s.id];
+    return c === undefined ? "… cases" : c === null ? "cases unread" : plural(c.length, "case");
+  };
+
+  const runButton = (s: EvalSuite, variant: "secondary" | "outline") => {
+    const block = runBlock(s);
+    const n = cases[s.id]?.length;
+    return block ? null : (
+      <Button size="xs" variant={variant} disabled={running !== null} onClick={() => onRun(s)}
+        title={`Replays ${n != null ? plural(n, "query", "queries") : "each case's SQL"} on ${connName(s.connection_id)} once — no model calls`}>
+        {running === s.id ? "Running…" : "Run"}
+      </Button>
+    );
+  };
+  const openButton = (s: EvalSuite) => <Button size="xs" variant="ghost" onClick={() => onOpen(s.id)}>Open</Button>;
+
+  const needs = runsRead ? suites.flatMap(s => {
+    const st = state[s.id];
+    const block = runBlock(s);
+    const where = [count(s), targetWords(s.target), s.connection_id ? connName(s.connection_id) : ""].filter(Boolean).join(" · ");
+    const actions = <>{block && <Chip title={block.why}>{block.chip}</Chip>}{runButton(s, "secondary")}{openButton(s)}</>;
+    if (!st.last) {
+      return [<NeedsRow key={`never-${s.id}`} testId="needs-never" title={`${s.name} has never run`}
+        detail={cut ? `${where} · no run among the latest ${formatCount(RUN_LIMIT)}` : where} actions={actions} />];
+    }
+    if (st.regressed) {
+      return [<NeedsRow key={`fell-${s.id}`} testId="needs-fell"
+        title={`${s.name} fell to ${rate(st.regressed.to)}`}
+        detail={`from ${rate(st.regressed.from)} the run before, same set-up · ${day(st.last.started_at)}`} actions={actions} />];
+    }
+    if (st.lastState === "failed") {
+      return [<NeedsRow key={`failed-${s.id}`} testId="needs-failed" title={`${s.name}: its last run failed`}
+        detail={`${day(st.last.started_at)}${noteOf(st.last) ? ` · ${noteOf(st.last)}` : " · no result came back"}`}
+        actions={actions} />];
+    }
+    if (st.lastState === "unfinished") {
+      return [<NeedsRow key={`stuck-${s.id}`} testId="needs-unfinished" title={`${s.name}: its last run never finished`}
+        detail={`marked running since ${day(st.last.started_at)}`} actions={actions} />];
+    }
+    return [];
+  }) : [];
+
   return (
-    <div style={{ background: "var(--bg-1)", border: "1px solid var(--bg-3)", borderRadius: 6, padding: "12px 16px", cursor: "pointer" }}
-      onClick={onOpen}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontWeight: 600, fontSize: 13, color: "var(--t1)" }}>{suite.name}</span>
-            <StatusChip hue="info" strength="soft">{suite.target}</StatusChip>
+    <>
+      <Figures testId="suite-figures">
+        <Figure label="Suites" value={formatCount(suites.length)} testId="fig-suites"
+          sub={runsRead ? `${ranOnce.length} have run · ${never.length} never` : "runs could not be read"} />
+        <Figure label="Cases" testId="fig-cases" value={casesPending || casesFailed ? "—" : formatCount(totalCases)}
+          sub={casesPending ? "reading each suite…"
+            : casesFailed ? `${plural(casesFailed, "suite")} could not be read` : `across ${plural(suites.length, "suite")}`} />
+        <Figure label="Passed in full" testId="fig-full" value={runsRead ? `${full.length} of ${measured.length}` : "—"}
+          title="Every case passed in every iteration of the suite's last run"
+          sub={!runsRead ? "runs could not be read" : measured.length === full.length
+            ? "every last run passed every case" : `${measured.length - full.length} below 100% at their last run`} />
+        <Figure label="Never run" testId="fig-never" value={runsRead ? formatCount(never.length) : "—"}
+          tone={runsRead && never.length ? "amber" : undefined}
+          sub={!runsRead ? "runs could not be read" : never.length ? "no measurement yet" : "every suite has a result"} />
+      </Figures>
+
+      {runsRead ? (
+        <NeedsYou testId="suite-needs" empty="Nothing needs you · every suite has run, and none fell or failed at its last run">
+          {needs}
+        </NeedsYou>
+      ) : <Empty>{"Could not read the runs, so no suite's last result is known."}</Empty>}
+
+      <section aria-label="Suites" data-testid="suite-list" style={CARD}>
+        <Label right={<>
+          <Chip title="A run replays each case's own SQL on the suite's connection and scores it — no model is called">
+            a run replays SQL · no model calls
+          </Chip>
+          <Button size="xs" variant="outline" onClick={onNew}><Icon name="plus" size={12} />New suite</Button>
+        </>}>Suites</Label>
+        {suites.map((s, i) => (
+          <SuiteRow key={s.id} suite={s} first={i === 0} state={state[s.id]} runsRead={runsRead} cases={count(s)}
+            conn={connName(s.connection_id)} ran={ran[s.id]} runButton={runButton(s, "outline")}
+            onOpen={() => onOpen(s.id)} />
+        ))}
+      </section>
+    </>
+  );
+}
+
+/** The last result as a chip: green at 100%, amber where it fell, red where it failed, plain otherwise. */
+function resultChip(st: SuiteState, runsRead: boolean): { tone: Tone; text: string; title?: string } {
+  if (!runsRead) return { tone: "plain", text: "result unread" };
+  if (!st.last) return { tone: "amber", text: "never run" };
+  if (st.lastState === "failed") return { tone: "down", text: "last run failed", title: noteOf(st.last) || undefined };
+  if (st.lastState === "unfinished") return { tone: "plain", text: "never finished", title: `Marked running since ${day(st.last.started_at)}` };
+  if (st.lastState === "running") return { tone: "accent", text: "running" };
+  if (st.lastRate == null) return { tone: "plain", text: "no result" };
+  const s = st.last.summary;
+  const of = s?.total != null ? ` · ${s.stable_pass ?? 0}/${s.total}` : "";
+  if (st.regressed) return { tone: "amber", text: `${rate(st.lastRate)}${of}`, title: `Fell from ${rate(st.regressed.from)}` };
+  return { tone: st.lastRate >= 0.9995 ? "up" : "plain", text: `${rate(st.lastRate)}${of}`,
+    title: "The share of cases that passed in every iteration of the last run" };
+}
+
+function SuiteRow({ suite, first, state, runsRead, cases, conn, ran, runButton, onOpen }: {
+  suite: EvalSuite;
+  first: boolean;
+  state: SuiteState;
+  runsRead: boolean;
+  cases: string;
+  conn: string;
+  ran?: string;
+  runButton: React.ReactNode;
+  onOpen: () => void;
+}) {
+  const chip = resultChip(state, runsRead);
+  const block = runBlock(suite);
+  // The connection is named where there is one; a suite without one says why it cannot run in its chip instead.
+  const meta = [cases, targetWords(suite.target), suite.connection_id ? conn : "",
+    state.runs.length ? `×${state.runs.length} ${state.runs.length === 1 ? "run" : "runs"} · last ${day(state.last?.started_at)}` : "",
+  ].filter(Boolean).join(" · ");
+  return (
+    <div data-testid="suite-row" style={{ ...(first ? {} : RULE), padding: "9px 2px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto auto auto", gap: 12, alignItems: "center" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <span className="aug-fs-chrome" title={suite.description || suite.name}
+              style={{ ...ONE_LINE, fontWeight: 600, color: "var(--t1)" }}>{suite.name}</span>
+            {measuresConsistency(suite) && (
+              <Chip title={suite.description}>consistency, not correctness</Chip>
+            )}
           </div>
-          <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3 }}>
-            {suite.description || "No description"}
-            {connName && <> · <span style={{ color: "var(--t2)" }}>{connName}</span></>}
-          </div>
+          <div className="aug-fs-xs" title={meta} style={{ ...MUTED, ...ONE_LINE }}>{meta}</div>
         </div>
-        <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
-          <Button variant="ghost" onClick={onOpen} className="h-auto p-0 font-normal" style={ghostBtn}>Open</Button>
-          <Button variant="ghost" onClick={onDelete} className="h-auto p-0 font-normal" style={{ ...ghostBtn, color: "var(--red4, #ef4444)" }}>Delete</Button>
-        </div>
+        <Chip tone={chip.tone} title={chip.title} testId="suite-result">{chip.text}</Chip>
+        {block ? <Chip title={block.why}>{block.chip}</Chip> : runButton}
+        <Button size="xs" variant="ghost" onClick={onOpen}>Open</Button>
       </div>
+      {ran && <div role="status" className="aug-fs-xs" style={{ ...MUTED, marginTop: 4 }}>{ran}</div>}
     </div>
   );
 }
 
-// ── Suite form ────────────────────────────────────────────────────────────────
+function NoSuites({ onNew }: { onNew: () => void }) {
+  return (
+    <section aria-label="Suites" style={CARD}>
+      <Label right={<Button size="xs" variant="outline" onClick={onNew}><Icon name="plus" size={12} />New suite</Button>}>
+        Suites
+      </Label>
+      <Empty>No eval suites yet — a suite replays the same cases and reports its score as a band, never a single run.</Empty>
+    </section>
+  );
+}
 
-function SuiteForm({ form, setForm, connections, saving, error, onSave, onCancel }: {
+// ── New suite ─────────────────────────────────────────────────────────────────
+
+function SuiteForm({ form, setForm, connections, saving, onSave, onCancel }: {
   form: { name: string; description: string; connection_id: string };
   setForm: React.Dispatch<React.SetStateAction<{ name: string; description: string; connection_id: string }>>;
   connections: Connection[];
   saving: boolean;
-  error: string | null;
   onSave: () => void;
   onCancel: () => void;
 }) {
   return (
-    <div style={{ maxWidth: 560, display: "flex", flexDirection: "column", gap: 20 }}>
-      <Field label="Name">
-        <Input value={form.name}
-          onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-          placeholder="e.g. Golden SQL — revenue questions" style={{ width: "100%" }} />
-      </Field>
-      <Field label="Description">
-        <Textarea rows={2} value={form.description}
-          onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-          placeholder="What this suite measures" style={{ width: "100%", resize: "vertical" }} />
-      </Field>
-      <Field label="Connection">
-        <SelectField value={form.connection_id}
-          onChange={e => setForm(f => ({ ...f, connection_id: e.target.value }))} style={{ width: "100%" }}>
-          <option value="">Select a connection…</option>
-          {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </SelectField>
-        <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>
-          A <code style={{ fontFamily: "var(--font-code)" }}>reference</code> suite replays each case&apos;s own SQL against this connection and
-          scores the result against itself — a no-model harness check that should score ~100%.
+    <section aria-label="New suite" style={CARD}>
+      <Label right={<Button size="xs" variant="ghost" onClick={onCancel}><Icon name="back" size={12} />All suites</Button>}>
+        New suite
+      </Label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 560 }}>
+        <Field label="Name">
+          <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            placeholder="e.g. Golden SQL — revenue questions" style={{ width: "100%" }} />
+        </Field>
+        <Field label="Description">
+          <Textarea rows={2} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+            placeholder="What this suite measures" style={{ width: "100%", resize: "vertical" }} />
+        </Field>
+        <Field label="Connection" hint="Each case's SQL is replayed here and scored against itself — no model; expect about 100%.">
+          <SelectField value={form.connection_id} onChange={e => setForm(f => ({ ...f, connection_id: e.target.value }))}
+            style={{ width: "100%" }}>
+            <option value="">Select a connection…</option>
+            {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </SelectField>
+        </Field>
+        <div style={ROW}>
+          <Button size="xs" onClick={onSave} disabled={saving}>{saving ? "Creating…" : "Create suite"}</Button>
+          <Button size="xs" variant="ghost" onClick={onCancel}>Cancel</Button>
         </div>
-      </Field>
-      {error && <p style={{ color: "var(--red4, #ef4444)", fontSize: 12, margin: 0 }}>{error}</p>}
-      <div style={{ display: "flex", gap: 8 }}>
-        <Button variant="ghost" className="h-auto" onClick={onSave} disabled={saving} style={{ minWidth: 100 }}>
-          {saving ? "Creating…" : "Create suite"}
-        </Button>
-        <Button variant="ghost" onClick={onCancel} className="h-auto p-0 font-normal" style={{ ...ghostBtn, padding: "6px 14px" }}>Cancel</Button>
+      </div>
+    </section>
+  );
+}
+
+// ── A suite, opened ──────────────────────────────────────────────────────────────
+
+const STATE_WORDS: Record<RunState, string> = {
+  measured: "finished", "no-result": "no result", failed: "failed", running: "running", unfinished: "never finished",
+};
+
+function SuiteDetail({ suite, runs, connName, evaluators, onBack, onChanged, onRan, onDelete, onViewRuns, setError }: {
+  suite: Detail;
+  /** Null when the runs could not be read — the figures then say so rather than "never run". */
+  runs: EvalRun[] | null;
+  connName: string;
+  evaluators: EvalEvaluator[];
+  onBack: () => void;
+  onChanged: () => void;
+  onRan: () => void;
+  onDelete: () => void;
+  onViewRuns: () => void;
+  setError: (s: string | null) => void;
+}) {
+  const [iterations, setIterations] = useState(1);
+  const [running, setRunning] = useState(false);
+  const [summary, setSummary] = useState<EvalRunSummary | null>(null);
+  const st = suiteState(suite.id, runs ?? []);
+  const block = runBlock(suite);
+  const det = evaluators.filter(e => e.deterministic).length;
+  const lastCell = st.last ? cellOf(st.last) : null;
+  const band = bandOf(st.runs.filter(r => cellOf(r) === lastCell).map(passRate).filter((v): v is number => v != null));
+  const floor = floorOf(band);
+
+  async function run() {
+    setRunning(true);
+    setError(null);
+    setSummary(null);
+    try {
+      setSummary(await runEvalSuite(suite.id, { iterations }));
+      onRan();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The run failed");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const s = st.last?.summary;
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Button size="xs" variant="ghost" onClick={onBack}><Icon name="back" size={12} />All suites</Button>
+        <span className="aug-fs-h2" style={{ fontWeight: 600, color: "var(--t1)" }}>{suite.name}</span>
+        <Chip>{targetWords(suite.target)}</Chip>
+        <Chip>{connName}</Chip>
+        {measuresConsistency(suite) && <Chip title={suite.description}>consistency, not correctness</Chip>}
+      </div>
+      {suite.description && (
+        <div className="aug-fs-sm" title={suite.description} style={{ ...MUTED, ...ONE_LINE, marginTop: -6 }}>
+          {suite.description}
+        </div>
+      )}
+
+      <Figures testId="suite-detail-figures">
+        <Figure label="Cases" value={formatCount(suite.cases.length)}
+          sub={suite.target === "reference"
+            ? `${suite.cases.filter(c => c.artifact.trim()).length} with SQL to replay` : "each checks one claim"} />
+        <Figure label="Last result" testId="fig-last"
+          value={runs && st.lastRate != null ? rate(st.lastRate) : !runs || st.last ? "—" : "never run"}
+          tone={st.regressed ? "amber" : st.lastState === "failed" ? "red" : undefined}
+          sub={!runs ? "runs could not be read" : !st.last ? "no measurement yet"
+            : st.lastRate == null ? `${STATE_WORDS[st.lastState ?? "no-result"]} · ${day(st.last.started_at)}`
+            : `${s?.stable_pass ?? 0} of ${s?.total ?? 0} stable · ${day(st.last.started_at)}${st.regressed ? ` · fell from ${rate(st.regressed.from)}` : ""}`} />
+        <Figure label="Runs" value={runs ? formatCount(st.runs.length) : "—"}
+          title="Runs of the last run's set-up are its replicates; their spread is its band"
+          sub={!runs ? "runs could not be read" : floor === "none" ? "nothing measured yet" : floor === "single" ? "1 replicate — no band"
+            : `${bandText(band)} over ${band?.n} replicates`} />
+      </Figures>
+
+      <section aria-label="Run" style={CARD}>
+        <Label right={block ? undefined : <>
+          <Chip>no model calls</Chip>
+          <Chip title="Each iteration replays every case once">
+            {`replays ${formatCount(suite.cases.length * iterations)} ${suite.cases.length * iterations === 1 ? "query" : "queries"} on ${connName}`}
+          </Chip>
+          {det > 0 && <Chip title="Checks that read the SQL itself, the same way every time">{`${det} deterministic checks`}</Chip>}
+        </>}>Run</Label>
+        {block ? <Empty title={block.why}>{`${block.why}.`}</Empty> : (
+          <>
+            <div style={ROW}>
+              <span className="aug-fs-xs" style={MUTED}>Iterations</span>
+              <Input type="number" min={1} max={10} value={iterations} aria-label="Iterations"
+                onChange={e => setIterations(Math.max(1, Math.min(10, Number(e.target.value) || 1)))} style={{ width: 64 }}
+                title="Repeat each case this many times — a case that passes some but not all is flaky, not rounded to a pass" />
+              <Button size="xs" onClick={run} disabled={running || suite.cases.length === 0}>
+                {running ? "Running…" : "Run suite"}
+              </Button>
+              {!summary && <span className="aug-fs-xs" style={MUTED}>
+                A case that passes only some iterations counts as flaky — never rounded into the pass rate.
+              </span>}
+            </div>
+            {summary && <RunSummaryView summary={summary} onViewRuns={onViewRuns} />}
+          </>
+        )}
+      </section>
+
+      <CasesCard suite={suite} onChanged={onChanged} setError={setError} />
+
+      <div>
+        <Button size="xs" variant="destructive" onClick={onDelete}><Icon name="trash" size={12} />Delete suite</Button>
+      </div>
+    </>
+  );
+}
+
+function RunSummaryView({ summary, onViewRuns }: { summary: EvalRunSummary; onViewRuns: () => void }) {
+  const fired = Object.entries(summary.fired_counts || {}).sort((a, b) => b[1] - a[1]);
+  return (
+    <div data-testid="run-summary" style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+      <Figures>
+        <Figure label="Pass rate (stable)" value={rate(summary.pass_rate)}
+          sub={`${summary.stable_pass} of ${summary.total} · ${plural(summary.iterations, "iteration")}`} />
+        <Figure label="Flaky" value={formatCount(summary.flaky)} tone={summary.flaky ? "amber" : undefined}
+          sub="passed some iterations, not all" />
+        <Figure label="Errors" value={formatCount(summary.errors)} tone={summary.errors ? "red" : undefined}
+          sub={`${summary.stable_fail} failed every iteration`} />
+        {(summary.accuracy != null || summary.robustness != null) && (
+          <Figure label={summary.accuracy != null ? "Accuracy" : "Robustness"}
+            value={rate(summary.accuracy ?? summary.robustness)}
+            sub={summary.accuracy != null && summary.robustness != null ? `robustness ${rate(summary.robustness)}`
+              : summary.accuracy != null ? `${summary.correct} of ${summary.correctness_known} declared an answer` : undefined} />
+        )}
+      </Figures>
+      <div style={ROW}>
+        {fired.map(([name, n]) => (
+          <Chip key={name} title="A check that failed on at least one case">
+            <code style={{ fontFamily: "var(--font-code)" }}>{name}</code> ×{n}
+          </Chip>
+        ))}
+        <span style={{ flex: 1 }} />
+        <Button size="xs" variant="ghost" onClick={onViewRuns}>See runs</Button>
       </div>
     </div>
   );
 }
 
-// ── Suite detail (cases + run) ──────────────────────────────────────────────────
-
-function SuiteDetail({ suite, evaluators, onChanged, onDelete, onViewRuns, setError }: {
-  suite: EvalSuite & { cases: EvalCase[] };
-  evaluators: EvalEvaluator[];
+function CasesCard({ suite, onChanged, setError }: {
+  suite: Detail;
   onChanged: () => void;
-  onDelete: () => void;
-  onViewRuns: () => void;
   setError: (s: string | null) => void;
 }) {
+  const [adding, setAdding] = useState(false);
   const [question, setQuestion] = useState("");
   const [artifact, setArtifact] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [iterations, setIterations] = useState(1);
-  const [running, setRunning] = useState(false);
-  const [summary, setSummary] = useState<EvalRunSummary | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [all, setAll] = useState(false);
+  const shown = all ? suite.cases : suite.cases.slice(0, CASES_SHOWN);
 
   async function addCase() {
-    if (!artifact.trim()) { setError("A case needs SQL to replay (the artifact)"); return; }
-    setAdding(true);
+    if (!artifact.trim()) { setError("A case needs SQL to replay"); return; }
+    setSaving(true);
     setError(null);
     try {
       await addEvalCases(suite.id, [{ question: question.trim(), artifact: artifact.trim() }]);
-      setQuestion(""); setArtifact("");
+      setQuestion(""); setArtifact(""); setAdding(false);
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add case");
+      setError(e instanceof Error ? e.message : "Could not add the case");
     } finally {
-      setAdding(false);
+      setSaving(false);
     }
   }
 
@@ -324,153 +604,62 @@ function SuiteDetail({ suite, evaluators, onChanged, onDelete, onViewRuns, setEr
     catch (e) { setError(e instanceof Error ? e.message : "Delete failed"); }
   }
 
-  async function run() {
-    setRunning(true);
-    setError(null);
-    setSummary(null);
-    try {
-      const s = await runEvalSuite(suite.id, { iterations });
-      setSummary(s);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Run failed");
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  const detCount = evaluators.filter(e => e.deterministic).length;
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 720 }}>
-      {/* Meta */}
-      <div style={{ fontSize: 12, color: "var(--t3)" }}>
-        {suite.description && <div style={{ marginBottom: 4, color: "var(--t2)" }}>{suite.description}</div>}
-        <StatusChip hue="info" strength="soft">{suite.target}</StatusChip>
-        <span style={{ marginLeft: 8 }}>{suite.cases.length} case{suite.cases.length === 1 ? "" : "s"}</span>
-        {!suite.connection_id && <span style={{ marginLeft: 8, color: "var(--amb4, #f59e0b)" }}>· no connection — not runnable</span>}
-      </div>
+    <section aria-label="Cases" data-testid="suite-cases" style={CARD}>
+      <Label right={<>
+        <span style={NUM}>{formatCount(suite.cases.length)}</span>
+        {!adding && <Button size="xs" variant="outline" onClick={() => setAdding(true)}><Icon name="plus" size={12} />Add case</Button>}
+      </>}>Cases</Label>
 
-      {/* Run section */}
-      <section style={{ background: "var(--bg-1)", border: "1px solid var(--bg-3)", borderRadius: 8, padding: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>Run</span>
-          <span style={{ fontSize: 11, color: "var(--t3)" }}>{detCount} deterministic evaluators</span>
-          <div style={{ flex: 1 }} />
-          <label style={{ fontSize: 11, color: "var(--t3)" }}>iterations</label>
-          <Input type="number" min={1} max={10} value={iterations}
-            onChange={e => setIterations(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
-            style={{ width: 56 }} title="Repeat each case N times — a case that passes some but not all is FLAKY, not rounded to pass/fail" />
-          <Button variant="ghost" className="h-auto" onClick={run} disabled={running || suite.cases.length === 0}
-            style={{ minWidth: 90 }}>
-            {running ? "Running…" : "Run suite"}
-          </Button>
-        </div>
-        {summary
-          ? <RunSummaryView summary={summary} onViewRuns={onViewRuns} />
-          : <div style={{ fontSize: 11, color: "var(--t3)" }}>
-              A run is a <em>band</em>, not a point: with {iterations} iteration{iterations === 1 ? "" : "s"}, a case that passes
-              only some of them is reported as <strong>flaky</strong>, never rounded into the pass rate.
-            </div>}
-      </section>
-
-      {/* Cases */}
-      <section>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--t2)", marginBottom: 8 }}>Cases</div>
-        {suite.cases.length === 0
-          ? <p style={{ fontSize: 12, color: "var(--t3)" }}>No cases yet. Add one below — the SQL is what gets replayed and scored.</p>
-          : <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-              {suite.cases.map(cs => (
-                <div key={cs.id} style={{ background: "var(--bg-1)", border: "1px solid var(--bg-3)", borderRadius: 6, padding: "9px 12px", display: "flex", gap: 10, alignItems: "flex-start" }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {cs.question && <div style={{ fontSize: 12, color: "var(--t1)", marginBottom: 3 }}>{cs.question}</div>}
-                    <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t3)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{cs.artifact || "(no SQL)"}</code>
-                  </div>
-                  <Button variant="ghost" onClick={() => removeCase(cs.id)} className="h-auto p-0 font-normal" style={{ ...ghostBtn, color: "var(--red4, #ef4444)" }}>Remove</Button>
-                </div>
-              ))}
-            </div>}
-
-        {/* Add case */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-1)", border: "1px solid var(--bg-3)", borderRadius: 6, padding: 12 }}>
-          <Input value={question} onChange={e => setQuestion(e.target.value)}
-            placeholder="Question (optional label, e.g. 'Total revenue by month')" style={{ width: "100%" }} />
-          <Textarea rows={2} value={artifact} onChange={e => setArtifact(e.target.value)}
-            placeholder="SELECT ... — the SQL this case replays" style={{ width: "100%", resize: "vertical" }} />
-          <div>
-            <Button variant="ghost" className="h-auto" onClick={addCase} disabled={adding} style={{ fontSize: 12 }}>
-              {adding ? "Adding…" : "+ Add case"}
-            </Button>
+      {adding && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10, maxWidth: 720 }}>
+          <Input value={question} onChange={e => setQuestion(e.target.value)} aria-label="Question"
+            placeholder="Question (a label, e.g. 'Total revenue by month')" style={{ width: "100%" }} />
+          <Textarea rows={3} value={artifact} onChange={e => setArtifact(e.target.value)} aria-label="SQL"
+            placeholder="SELECT … — the SQL this case replays" style={{ width: "100%", resize: "vertical" }} />
+          <div style={ROW}>
+            <Button size="xs" onClick={addCase} disabled={saving}>{saving ? "Adding…" : "Add case"}</Button>
+            <Button size="xs" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
           </div>
         </div>
-      </section>
-
-      {/* Danger */}
-      <div>
-        <Button variant="ghost" onClick={onDelete} className="h-auto p-0 font-normal" style={{ ...ghostBtn, color: "var(--red4, #ef4444)" }}>Delete suite</Button>
-      </div>
-    </div>
-  );
-}
-
-// ── Run summary view ────────────────────────────────────────────────────────────
-
-function RunSummaryView({ summary, onViewRuns }: { summary: EvalRunSummary; onViewRuns: () => void }) {
-  const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
-  const passHue: ChipHue = summary.pass_rate >= 0.999 ? "positive" : summary.pass_rate >= 0.8 ? "caution" : "negative";
-  const fired = Object.entries(summary.fired_counts || {}).sort((a, b) => b[1] - a[1]);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <MiniStatRow style={{ marginBottom: 0 }}>
-        <MiniStat value={pct(summary.pass_rate)} label="Pass rate (stable)" tone={summary.pass_rate >= 0.999 ? "var(--grn4)" : "var(--t1)"} />
-        <MiniStat value={`${summary.stable_pass}/${summary.total}`} label="Stable pass" />
-        <MiniStat value={summary.flaky} label="Flaky" tone={summary.flaky > 0 ? "var(--amb4, #f59e0b)" : "var(--t1)"} />
-        <MiniStat value={summary.errors} label="Errors" tone={summary.errors > 0 ? "var(--red4, #ef4444)" : "var(--t1)"} />
-        {summary.robustness != null && <MiniStat value={pct(summary.robustness)} label="Robustness" />}
-        {summary.accuracy != null && <MiniStat value={pct(summary.accuracy)} label="Accuracy" />}
-      </MiniStatRow>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <StatusChip hue={passHue}>{summary.stable_pass === summary.total ? "all stable" : `${summary.flaky} flaky · ${summary.stable_fail} fail`}</StatusChip>
-        <span style={{ fontSize: 11, color: "var(--t3)" }}>{summary.iterations} iteration{summary.iterations === 1 ? "" : "s"} · run {summary.run_id}</span>
-        <div style={{ flex: 1 }} />
-        <Button variant="ghost" onClick={onViewRuns} className="h-auto p-0 font-normal" style={ghostBtn}>View run history →</Button>
-      </div>
-      {fired.length > 0 && (
-        <div style={{ fontSize: 11, color: "var(--t3)" }}>
-          Evaluators fired:{" "}
-          {fired.map(([name, n]) => (
-            <span key={name} style={{ marginRight: 10 }}>
-              <code style={{ fontFamily: "var(--font-code)", color: "var(--t2)" }}>{name}</code> ×{n}
-            </span>
-          ))}
-        </div>
       )}
-    </div>
+
+      {suite.cases.length === 0 ? <Empty>No cases yet — a case is a question and the SQL it replays.</Empty> : (
+        <>
+          {shown.map((c, i) => (
+            <div key={c.id} data-testid="case-row" style={{ ...(i === 0 ? {} : RULE), padding: "7px 2px",
+              display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12, alignItems: "center" }}>
+              <div style={{ minWidth: 0 }}>
+                <div className="aug-fs-sm" title={c.question} style={{ ...ONE_LINE, color: "var(--t1)" }}>
+                  {c.question || <span style={MUTED}>No question</span>}
+                </div>
+                {c.artifact.trim() ? (
+                  <code className="aug-fs-xs" title={c.artifact} style={{ ...ONE_LINE, display: "block", ...MUTED,
+                    fontFamily: "var(--font-code)" }}>{c.artifact.replace(/\s+/g, " ")}</code>
+                ) : suite.target === "reference" && <Chip>no SQL</Chip>}
+              </div>
+              <Button size="xs" variant="ghost" onClick={() => removeCase(c.id)}>Remove</Button>
+            </div>
+          ))}
+          {suite.cases.length > CASES_SHOWN && (
+            <Button size="xs" variant="ghost" onClick={() => setAll(a => !a)} style={{ marginTop: 6 }}>
+              {all ? "Show fewer" : `Show all ${formatCount(suite.cases.length)}`}
+            </Button>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-      <label className="aug-label" style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</label>
+      <span className="aug-fs-xs" style={MUTED}>{label}</span>
       {children}
+      {hint && <span className="aug-fs-xs" style={MUTED}>{hint}</span>}
     </div>
   );
 }
-
-function EmptyState({ onAdd }: { onAdd: () => void }) {
-  return (
-    <SharedEmptyState icon="flask" title="No eval suites yet"
-      action={<Button variant="ghost" className="h-auto" onClick={onAdd}>Create first suite</Button>}>
-      A suite runs the same cases under a target and reports a measurement as a band —
-      replicated, never a single-run point.
-    </SharedEmptyState>
-  );
-}
-
-const ghostBtn: React.CSSProperties = {
-  background: "none", border: "1px solid var(--bg-3)",
-  color: "var(--t2)", borderRadius: 4, cursor: "pointer",
-  fontSize: 11, padding: "3px 9px",
-};

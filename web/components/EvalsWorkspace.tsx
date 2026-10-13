@@ -42,9 +42,9 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
 export type EvalsLayer = "suites" | "runs" | "experiments";
 
 const LAYERS: WorkspaceLayer<EvalsLayer>[] = [
-  { id: "suites",      icon: "check",    label: "Suites",      blurb: "Cases, targets & evaluators" },
-  { id: "runs",        icon: "activity", label: "Runs",        blurb: "Results, replication & the noise floor" },
-  { id: "experiments", icon: "compare",  label: "Experiments", blurb: "A/B pairs & the per-case diff" },
+  { id: "suites",      icon: "check",    label: "Suites",      blurb: "What is measured, and how each suite last did" },
+  { id: "runs",        icon: "activity", label: "Runs",        blurb: "Each set-up's score as a band, with its trend" },
+  { id: "experiments", icon: "compare",  label: "Experiments", blurb: "A against B, and whether the gap clears the noise" },
 ];
 
 type Props = {
