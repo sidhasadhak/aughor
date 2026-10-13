@@ -50,14 +50,15 @@ const SOURCE_CHIP: Record<NeedsHumanRow["source"], ChipSpec> = {
   automation_broken: { hue: "negative", label: "broken" },
 };
 
-/** A source by the words its count says beside it, for naming one that could not be read. */
-const SOURCE_WORDS: Record<keyof NeedsHuman["sources"], string> = {
-  kinetic_inbox: "inbox proposals",
-  paused_runs: "paused deep runs",
-  automation_approvals: "automation approvals",
-  agent_alerts: "agent alerts",
-  broken_automations: "broken automations",
-};
+/** Each source by its key on the wire and the words its count says beside it — a source that could not be read is
+ *  named by the same words. */
+const SOURCES: { key: keyof NeedsHuman["sources"]; label: string }[] = [
+  { key: "kinetic_inbox", label: "Inbox proposals" },
+  { key: "paused_runs", label: "Paused deep runs" },
+  { key: "automation_approvals", label: "Automation approvals" },
+  { key: "agent_alerts", label: "Agent alerts" },
+  { key: "broken_automations", label: "Broken automations" },
+];
 
 /** An alert's own severity outranks the source chip: three rows can wait the same
  *  number of minutes and not be equally urgent. */
@@ -150,15 +151,13 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
       <MiniStatRow>
         <MiniStat value={data.count} label="Waiting on a human"
           tone={data.count > 0 ? "var(--amb4)" : "var(--t1)"} />
-        <MiniStat value={n("kinetic_inbox")} label="Inbox proposals" />
-        <MiniStat value={n("paused_runs")} label="Paused deep runs" />
-        <MiniStat value={n("automation_approvals")} label="Automation approvals" />
-        {/* `?? 0` because this source is newer than the panel: an API that predates
-            VA-6 omits the key, and rendering `undefined` where a count belongs is a
-            worse answer than zero. */}
-        <MiniStat value={n("agent_alerts")} label="Agent alerts" />
-        <MiniStat value={n("broken_automations")} label="Broken automations"
-          tone={(data.sources.broken_automations ?? 0) > 0 ? "var(--red4)" : undefined} />
+        {/* `?? 0` (in `n`) because a source can be newer than the API: one that predates VA-6 omits the key, and
+            rendering `undefined` where a count belongs is a worse answer than zero. */}
+        {SOURCES.map(({ key, label }) => (
+          <MiniStat key={key} value={n(key)} label={label}
+            tone={key === "broken_automations" && (data.sources.broken_automations ?? 0) > 0 && !unread.includes(key)
+              ? "var(--red4)" : undefined} />
+        ))}
         {/* The leading indicator. A count says how many are waiting; the OLDEST says
             whether anything has been abandoned — three items waiting a minute and three
             waiting since Tuesday are the same count and a different situation. */}
@@ -169,7 +168,8 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
 
       {unread.length > 0 && (
         <div role="alert" data-testid="needs-unread" className="aug-fs-sm" style={{ color: "var(--amb4)", marginBottom: 12 }}>
-          {`Could not read ${unread.map(k => SOURCE_WORDS[k]).join(", ")} — anything waiting there is not shown.`}
+          {`Could not read ${unread.map(k => (SOURCES.find(s => s.key === k)?.label ?? k).toLowerCase()).join(", ")}`
+            + " — anything waiting there is not shown."}
         </div>
       )}
 

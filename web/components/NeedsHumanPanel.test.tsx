@@ -85,10 +85,10 @@ describe("Attention", () => {
   });
 
   it("names a source the route could not read, its count a dash — never 'every source is empty'", async () => {
-    stubs.getNeedsHuman = () => Promise.resolve({ ...answer([]), unread: ["agent_alerts", "kinetic_inbox"] });
+    stubs.getNeedsHuman = () => Promise.resolve({ ...answer([]), unread: ["agent_alerts", "paused_runs"] });
     render(<NeedsHumanPanel />);
     expect(await screen.findByTestId("needs-unread"))
-      .toHaveTextContent("Could not read agent alerts, inbox proposals — anything waiting there is not shown.");
+      .toHaveTextContent("Could not read agent alerts, paused deep runs — anything waiting there is not shown.");
     expect(screen.queryByText(NOTHING)).toBeNull();
     expect(screen.getByText("Nothing waits in the sources that could be read.")).toBeInTheDocument();
   });

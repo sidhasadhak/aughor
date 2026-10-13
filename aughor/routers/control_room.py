@@ -415,6 +415,10 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
 
 # ── CR4: needs a human ───────────────────────────────────────────────────────────
 
+#: The inbox's key on the needs-human wire — a row's `source` and its count's key, spelled once (a frozen name).
+_INBOX = "kinetic_inbox"
+
+
 @router.get("/control-room/needs-human")
 def needs_human(limit: int = 100):
     """One derived list over the four real sources — a VIEW, never a queue.
@@ -486,7 +490,7 @@ def needs_human(limit: int = 100):
                 continue
             inbox_count += 1
             rows.append({
-                "source": "kinetic_inbox", "id": p.id,
+                "source": _INBOX, "id": p.id,
                 "title": f"{p.action_id}: {p.reasoning[:140]}" if p.reasoning
                 else p.action_id,
                 "connection_id": p.connection_id,
@@ -497,7 +501,7 @@ def needs_human(limit: int = 100):
             })
     except Exception:
         logger.warning("needs-human: inbox read failed", exc_info=True)
-        unread.append("kinetic_inbox")
+        unread.append(_INBOX)
 
     # Source B — deep runs paused at a gate, resumable via feedback.
     # `investigations` has no paused_at column; the honest timestamp is the
@@ -648,7 +652,7 @@ def needs_human(limit: int = 100):
     return {
         "count": (inbox_count + paused_count + approval_count + alert_count
                   + broken_count),
-        "sources": {"kinetic_inbox": inbox_count, "paused_runs": paused_count,
+        "sources": {_INBOX: inbox_count, "paused_runs": paused_count,
                     "automation_approvals": approval_count,
                     "agent_alerts": alert_count,
                     "broken_automations": broken_count},
