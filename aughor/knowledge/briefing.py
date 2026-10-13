@@ -473,14 +473,11 @@ def _figures(text: str) -> set[float]:
     or "12 orders" sit in half the findings of any brief, so they never decide which one a sentence cites."""
     out: set[float] = set()
     for m in _FIGURE.finditer(text or ""):
-        raw = m.group(0).replace(",", "").rstrip(".")
+        raw = m.group(0).replace(",", "")          # digits, and a decimal part only with digits after it
         whole = raw.split(".")[0]
         if len(whole) < 3 or (len(whole) == 4 and "." not in raw and 1900 <= int(whole) <= 2100):
             continue
-        try:
-            out.add(float(raw))
-        except ValueError:
-            continue
+        out.add(float(raw))
     return out
 
 
