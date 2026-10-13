@@ -44,7 +44,10 @@ def dialect_for_connection(connection_id: str | None) -> Optional[str]:
                 break
         if not row:
             return None
-        return connection_traits(str(row.get("type") or ""))["dialect"]
+        # The registry's column is `conn_type`. This read `type`, which no row carries, so every connection parsed
+        # generically: a BigQuery statement's backticks failed, and the SQL editor's recent runs got no words
+        # (2026-10-13, all seven of theLook's).
+        return connection_traits(str(row.get("conn_type") or row.get("type") or ""))["dialect"]
     except Exception:
         return None
 
