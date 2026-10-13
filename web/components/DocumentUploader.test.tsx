@@ -179,12 +179,19 @@ describe("what the screen says about the numbers", () => {
                      orphans: ["ghost"], mismatched_documents: {},
                      listed_chunks_present: 5 },
     }));
-    purgeOrphanChunks.mockResolvedValue({ orphans_purged: 41 });
+    purgeOrphanChunks.mockImplementation(async (dryRun: boolean) => (dryRun
+      ? { dry_run: true, ok: true, orphan_chunks: 41, orphan_documents: ["g1", "g2", "g3", "g4", "g5"] }
+      : { orphans_purged: 41 }));
 
     page();
 
     expect(await screen.findByText(/41 chunks across 5 documents are in the index but not listed/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Purge orphans \(no re-embed\)/ }));
+    // A delete is read first: the dry run says what it would remove, and nothing is deleted until the person confirms.
+    fireEvent.click(screen.getByRole("button", { name: /Purge orphans…/ }));
+    expect(await screen.findByText(/Purging deletes 41 chunks across 5 documents from the index · nothing is re-embedded/)).toBeTruthy();
+    expect(purgeOrphanChunks).toHaveBeenCalledWith(true);
+    expect(purgeOrphanChunks).not.toHaveBeenCalledWith(false);
+    fireEvent.click(screen.getByRole("button", { name: "Purge" }));
     await waitFor(() => expect(purgeOrphanChunks).toHaveBeenCalledWith(false));
     expect(await screen.findByText(/Purged 41/)).toBeTruthy();
   });

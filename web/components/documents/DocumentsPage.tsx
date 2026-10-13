@@ -15,7 +15,7 @@
  * held 5). The figure is the index's; a row whose index disagrees shows both, the index's first.
  */
 import { DropdownMenu } from "@radix-ui/themes";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Bar, CARD, Chip, Empty, Figure, Figures, Label, MUTED, NUM, NeedsRow, NeedsYou, ONE_LINE, Page, ROW, RULE }
   from "@/components/clarity/kit";
@@ -37,12 +37,16 @@ import {
   getKnowledgeStatus,
   listDocuments,
   purgeOrphanChunks,
+  reindexDocuments,
+  restoreDocTrees,
   type ConvertFormat,
+  type DocTreePlan,
   type DocumentEntry,
   type DocumentFormats,
   type KnowledgeSource,
   type KnowledgeSourceType,
   type KnowledgeStatus,
+  type ReindexPlan,
 } from "@/lib/api";
 import {
   addedWords, chunksOf, chunkWords, dateWords, documentFigures, documentName, driftedDocuments, formatLabel,
@@ -89,6 +93,8 @@ export function DocumentsPage({ connectionId, connections = [] }: {
   const [deleteFailed, setDeleteFailed] = useState<{ docId: string; error: string } | null>(null);
   const [purging, setPurging] = useState(false);
   const [purgeNote, setPurgeNote] = useState("");
+  // The purge is read first, as a dry run, and runs only when the person confirms what it will delete.
+  const [purgePlan, setPurgePlan] = useState<{ chunks: number; documents: number } | null>(null);
   const [showSchemaDocs, setShowSchemaDocs] = useState(false);
   const [now] = useState(() => Date.now());
 
@@ -135,7 +141,21 @@ export function DocumentsPage({ connectionId, connections = [] }: {
     }
   };
 
-  // The purge endpoint deletes index orphans WITHOUT the re-embed a full re-index forces.
+  // The purge endpoint deletes index orphans WITHOUT the re-embed a full re-index forces. It is a delete, so it is
+  // read first as a dry run — what it would remove — and runs only on the person's confirm.
+  const planPurge = async () => {
+    setPurging(true);
+    setPurgeNote("");
+    try {
+      const r = await purgeOrphanChunks(true);
+      if (r.ok === false) { setPurgeNote(String(r.error ?? "The index could not be read whole, so nothing was planned.")); return; }
+      setPurgePlan({ chunks: Number(r.orphan_chunks ?? 0), documents: (r.orphan_documents as unknown[] | undefined)?.length ?? 0 });
+    } catch (e) {
+      setPurgeNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPurging(false);
+    }
+  };
   const purge = async () => {
     setPurging(true);
     try {
@@ -146,6 +166,7 @@ export function DocumentsPage({ connectionId, connections = [] }: {
       setPurgeNote(e instanceof Error ? e.message : String(e));
     } finally {
       setPurging(false);
+      setPurgePlan(null);
     }
   };
 
@@ -155,6 +176,7 @@ export function DocumentsPage({ connectionId, connections = [] }: {
   const schemaDocs = all.filter(d => d.generated);
   const maxChunks = Math.max(1, ...all.map(d => chunksOf(d, status).claimed));
   const drifted = driftedDocuments(all, status, connections);
+  const fix = useDriftFix(drifted, refresh);
   const consistency = status?.consistency;
   const consistencyError = (consistency as { error?: string } | undefined)?.error;
   const emb = status?.embedder;
@@ -229,20 +251,28 @@ export function DocumentsPage({ connectionId, connections = [] }: {
           drifted.length > 0 && (
             <NeedsRow key="drift" testId="needs-drift"
               title={`The index and this list disagree on ${countNoun(drifted.length, "document")}`}
-              detail={<span title={LISTED_IS_A_CLAIM}>
+              detail={fix.detail ?? <span title={LISTED_IS_A_CLAIM}>
                 {`${drifted.map(d => d.name).join(", ")} — the index holds ${formatCount(drifted.reduce((n, d) => n + d.indexed, 0))} `
                   + `of their ${countNoun(drifted.reduce((n, d) => n + d.claimed, 0), "listed chunk")}; search sees the index`}
-              </span>} />
+              </span>}
+              actions={fix.actions} />
           ),
           consistency && consistency.orphan_chunks > 0 && (
             <NeedsRow key="orphans" testId="needs-orphans"
               title={`${countNoun(consistency.orphan_chunks, "chunk")} across ${countNoun(consistency.orphan_documents, "document")} `
                 + "are in the index but not listed"}
-              detail={purgeNote || "Search still finds them; no document here owns them."}
-              actions={<Button size="xs" variant="secondary" disabled={purging} onClick={purge}
-                title="Deletes them from the index without re-embedding anything">
-                {purging ? "Purging…" : "Purge orphans (no re-embed)"}
-              </Button>} />
+              detail={purgePlan
+                ? `Purging deletes ${countNoun(purgePlan.chunks, "chunk")} across ${countNoun(purgePlan.documents, "document")} from the index · nothing is re-embedded`
+                : purgeNote || "Search still finds them; no document here owns them."}
+              actions={purgePlan ? <>
+                <Button size="xs" variant="destructive" disabled={purging} onClick={purge}>{purging ? "Purging…" : "Purge"}</Button>
+                <Button size="xs" variant="ghost" disabled={purging} onClick={() => setPurgePlan(null)}>Cancel</Button>
+              </> : (
+                <Button size="xs" variant="secondary" disabled={purging} onClick={planPurge}
+                  title="Reads what a purge would delete first — nothing is deleted until you confirm">
+                  {purging ? "Reading…" : "Purge orphans…"}
+                </Button>
+              )} />
           ),
           consistencyError && (
             <NeedsRow key="unchecked" testId="needs-unchecked" title="The index was not compared with this list"
@@ -317,6 +347,124 @@ export function DocumentsPage({ connectionId, connections = [] }: {
 
 // ── A document, one row ─────────────────────────────────────────────────────────────────────────────────────────────
 
+// ── the index and the list disagreeing: what can fix it, read first ─────────────────────────────────────────────────
+
+type Drifted = ReturnType<typeof driftedDocuments>[number];
+type Fix =
+  | { at: "idle" }
+  | { at: "reading" }
+  | { at: "restore"; conns: string[]; adds: number; reembeds: number }
+  | { at: "reindex"; plan: ReindexPlan; why: string }
+  | { at: "running"; what: string }
+  | { at: "done"; text: string }
+  | { at: "failed"; text: string };
+
+/** The connection a compiled schema document documents — `doctree::<connection>::<schema>` read backwards (the server's
+ *  `doctree_connection`) — or null for an upload. */
+export function doctreeConnection(docId: string): string | null {
+  if (!docId.startsWith("doctree::")) return null;
+  const rest = docId.slice("doctree::".length);
+  const cut = rest.lastIndexOf("::");
+  return cut > 0 ? rest.slice(0, cut) : null;
+}
+
+/** An embedder named for a person deciding whether to spend it: the model, and whether it runs here. */
+function embedderWords(plan: ReindexPlan): string {
+  const local = plan.backend === "ollama";
+  return `${plan.model ?? "the active model"}${local ? " (local — no charge)" : plan.backend ? " (hosted — billed per chunk)" : ""}`;
+}
+
+/**
+ * The way back for documents whose index and list disagree, read as a dry run before anything is written. A compiled
+ * schema document's source is the artifact the ontology wrote, so RESTORING puts its lost chunks back; where that
+ * artifact is gone (measured 2026-10-13: DuckDB's two documents had none), restore has nothing to restore from and the
+ * honest fix is CORRECTING THE LIST — a re-index that re-embeds what the index holds and sets each listed count to it.
+ * Each is shown with what it would do and runs only on the person's confirm.
+ */
+function useDriftFix(drifted: Drifted[], onChanged: () => void): { detail: ReactNode | null; actions: ReactNode } {
+  const [fix, setFix] = useState<Fix>({ at: "idle" });
+  const names = drifted.map(d => d.name).join(", ");
+  const failed = (e: unknown) => setFix({ at: "failed", text: e instanceof Error ? e.message : String(e) });
+
+  const plan = async () => {
+    setFix({ at: "reading" });
+    try {
+      const ids = new Set(drifted.map(d => d.docId));
+      const conns = [...new Set(drifted.map(d => doctreeConnection(d.docId)).filter((c): c is string => !!c))];
+      const plans: DocTreePlan[] = await Promise.all(conns.map(c => restoreDocTrees(true, c)));
+      const docs = plans.flatMap(p => p.documents);
+      const adds = docs.filter(d => ids.has(d.doc_id)).reduce((n, d) => n + d.adds, 0);
+      if (adds > 0) {
+        setFix({ at: "restore", conns, adds, reembeds: docs.reduce((n, d) => n + d.in_artifact, 0) });
+        return;
+      }
+      const why = conns.length
+        ? `No compiled documentation is kept for ${names}, so there is nothing to restore from.`
+        : `${names} ${drifted.length === 1 ? "is an upload" : "are uploads"}: chunks come back only by adding the file again.`;
+      const r = await reindexDocuments(true);
+      if (r.ok === false) { setFix({ at: "failed", text: `${why} ${r.error ?? "The index could not be read whole."}` }); return; }
+      setFix({ at: "reindex", plan: r, why });
+    } catch (e) { failed(e); }
+  };
+
+  const restore = async (conns: string[]) => {
+    setFix({ at: "running", what: "Restoring…" });
+    try {
+      const out = await Promise.all(conns.map(c => restoreDocTrees(false, c)));
+      const broke = out.flatMap(o => o.failed ?? []);
+      setFix(broke.length
+        ? { at: "failed", text: `Not restored: ${broke.map(b => `${b.doc_id} (${b.error})`).join("; ")}` }
+        : { at: "done", text: "Restored from the compiled documentation — re-reading the index." });
+      onChanged();
+    } catch (e) { failed(e); }
+  };
+
+  const reindex = async () => {
+    setFix({ at: "running", what: "Re-indexing…" });
+    try {
+      const r = await reindexDocuments(false);
+      setFix(r.ok === false
+        ? { at: "failed", text: r.error ?? "The re-index did not run; the corpus is unchanged." }
+        : { at: "done", text: "Re-indexed — the list now says what the index holds." });
+      onChanged();
+    } catch (e) { failed(e); }
+  };
+
+  const cancel = <Button size="xs" variant="ghost" onClick={() => setFix({ at: "idle" })}>Cancel</Button>;
+  switch (fix.at) {
+    case "idle":
+      return { detail: null, actions: (
+        <Button size="xs" variant="secondary" onClick={plan}
+          title="Reads what a restore — or else a re-index — would do first; nothing is written until you confirm">Restore…</Button>
+      ) };
+    case "reading":
+      return { detail: "Reading what a restore would do…", actions: <Button size="xs" variant="secondary" disabled>Reading…</Button> };
+    case "restore":
+      return {
+        detail: <span title={`Restoring re-embeds every compiled document of ${countNoun(fix.conns.length, "connection")} — ${countNoun(fix.reembeds, "chunk")}.`}>
+          {`Restoring puts back ${countNoun(fix.adds, "chunk")} from the compiled documentation · re-embeds ${countNoun(fix.reembeds, "chunk")}`}
+        </span>,
+        actions: <><Button size="xs" variant="secondary" onClick={() => restore(fix.conns)}>Restore</Button>{cancel}</>,
+      };
+    case "reindex": {
+      const corrected = Object.keys(fix.plan.registry_corrections ?? {}).length;
+      const text = `${fix.why} Correcting the list re-embeds ${countNoun(fix.plan.chunks_to_re_embed ?? 0, "chunk")} with `
+        + `${embedderWords(fix.plan)} and sets ${countNoun(corrected, "document")} to what the index holds.`;
+      return {
+        detail: <span title={text}>{text}</span>,
+        actions: <><Button size="xs" variant="secondary" onClick={reindex}>Correct the list</Button>{cancel}</>,
+      };
+    }
+    case "running":
+      return { detail: fix.what, actions: <Button size="xs" variant="secondary" disabled>{fix.what}</Button> };
+    case "done":
+      return { detail: fix.text, actions: null };
+    case "failed":
+      return { detail: <span style={{ color: "var(--red4)" }} title={fix.text}>{fix.text}</span>,
+        actions: <Button size="xs" variant="ghost" onClick={plan}>Try again</Button> };
+  }
+}
+
 /** format · name · bar · chunks · added · tools; a compiled schema document has neither a format chip nor tools. */
 const ROW_GRID = "64px minmax(0, 1fr) minmax(48px, 140px) 128px 92px 76px";
 const SCHEMA_ROW_GRID = "minmax(0, 1fr) minmax(48px, 140px) 128px 92px";
@@ -325,6 +473,8 @@ function DocumentRow({ doc, first, status, connections, now, maxChunks, open, re
   doc: DocumentEntry; first: boolean; status: KnowledgeStatus | null; connections: ReadonlyArray<Conn>; now: number;
   maxChunks: number; open: boolean; removing: boolean; removeFailed: string | null; onView: () => void; onRemove: () => void;
 }) {
+  // Remove deletes the row, its chunks and the original file — asked once more on the row before it runs.
+  const [asking, setAsking] = useState(false);
   const c = chunksOf(doc, status);
   const name = documentName(doc, connections);
   const meta = doc.generated ? "" : [doc.filename !== doc.title ? doc.filename : "", doc.has_original === false ? "original not kept" : ""]
@@ -350,10 +500,19 @@ function DocumentRow({ doc, first, status, connections, now, maxChunks, open, re
         {!doc.generated && (
           <span style={{ ...ROW, flexWrap: "nowrap", gap: 2, justifyContent: "flex-end" }}>
             <Button size="xs" variant="ghost" aria-expanded={open} onClick={onView}>{open ? "Close" : "View"}</Button>
-            <RowMenu doc={doc} name={name} removing={removing} onRemove={onRemove} />
+            <RowMenu doc={doc} name={name} removing={removing} onRemove={() => setAsking(true)} />
           </span>
         )}
       </div>
+      {asking && (
+        <div data-testid="remove-confirm" style={{ ...ROW, padding: "6px 0 0 76px" }}>
+          <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+            {`Remove ${name}? ${countNoun(c.indexed, "chunk")} leave search${doc.has_original ? " and the original file is deleted" : ""}.`}
+          </span>
+          <Button size="xs" variant="destructive" disabled={removing} onClick={() => { setAsking(false); onRemove(); }}>Remove</Button>
+          <Button size="xs" variant="ghost" onClick={() => setAsking(false)}>Keep it</Button>
+        </div>
+      )}
       {removeFailed && <div role="alert" className="aug-fs-xs" style={{ color: "var(--red4)", paddingLeft: 76 }}>Could not remove it — {removeFailed}</div>}
       {open && <StoredDocument doc={doc} />}
     </div>

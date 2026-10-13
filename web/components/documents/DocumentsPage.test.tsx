@@ -15,6 +15,8 @@ const getKnowledgeStatus = vi.fn();
 const getKnowledgeSources = vi.fn();
 const getDocumentConvertFormats = vi.fn();
 const deleteDocument = vi.fn();
+const restoreDocTrees = vi.fn();
+const reindexDocuments = vi.fn();
 
 vi.mock("@/lib/api", async importOriginal => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -23,6 +25,8 @@ vi.mock("@/lib/api", async importOriginal => ({
   getKnowledgeSources: (...a: unknown[]) => getKnowledgeSources(...a),
   getDocumentConvertFormats: (...a: unknown[]) => getDocumentConvertFormats(...a),
   deleteDocument: (...a: unknown[]) => deleteDocument(...a),
+  restoreDocTrees: (...a: unknown[]) => restoreDocTrees(...a),
+  reindexDocuments: (...a: unknown[]) => reindexDocuments(...a),
   getDocumentFormats: async () => null,
 }));
 
@@ -169,6 +173,11 @@ describe("an upload's actions, on its row", () => {
     expect(screen.getByRole("menuitem", { name: "Open the original file" })).toHaveAttribute("href",
       expect.stringContaining("/documents/u1/original"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Remove" }));
+    // Remove deletes the row, its chunks and the original file — the row asks once more before it runs.
+    const confirm = await screen.findByTestId("remove-confirm");
+    expect(confirm).toHaveTextContent("Remove Refund policy? 12 chunks leave search and the original file is deleted.");
+    expect(deleteDocument).not.toHaveBeenCalled();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(deleteDocument).toHaveBeenCalledWith("u1"));
     await waitFor(() => expect(within(list).queryByText("Refund policy")).toBeNull());
   });
@@ -192,5 +201,45 @@ describe("read first — the tools open on demand", () => {
     expect(screen.getByRole("region", { name: "Add a document" })).toBeInTheDocument();
     // one tool open at a time; the closed one keeps its state, hidden
     expect(screen.queryByRole("region", { name: "Check a document's numbers" })).toBeNull();
+  });
+});
+
+describe("the index and the list disagreeing — fixed only after the plan is read", () => {
+  it("restores from the compiled documentation when it is kept, and only on confirm", async () => {
+    restoreDocTrees.mockImplementation(async (dryRun: boolean, conn: string) => ({
+      dry_run: dryRun, skipped: [], restorable_chunks: 10, failed: [], connection: conn,
+      documents: [{ doc_id: "doctree::baef6c3e::ecommerce", in_store: 0, in_artifact: 9, adds: 9 },
+                  { doc_id: "doctree::baef6c3e::main", in_store: 0, in_artifact: 1, adds: 1 }] }));
+    page();
+    const needs = await screen.findByTestId("needs-drift");
+    fireEvent.click(within(needs).getByRole("button", { name: "Restore…" }));
+    expect(await within(needs).findByText(/Restoring puts back 10 chunks from the compiled documentation · re-embeds 10 chunks/))
+      .toBeInTheDocument();
+    expect(restoreDocTrees).toHaveBeenCalledWith(true, "baef6c3e");
+    expect(restoreDocTrees).not.toHaveBeenCalledWith(false, expect.anything());
+    expect(reindexDocuments).not.toHaveBeenCalled();
+    fireEvent.click(within(needs).getByRole("button", { name: "Restore" }));
+    await waitFor(() => expect(restoreDocTrees).toHaveBeenCalledWith(false, "baef6c3e"));
+    expect(await within(needs).findByText(/Restored from the compiled documentation/)).toBeInTheDocument();
+  });
+
+  it("says when there is nothing to restore from, and offers correcting the list with what it re-embeds", async () => {
+    // Measured on the live install 2026-10-13: DuckDB's compiled documentation is not kept, so the restore plans nothing.
+    restoreDocTrees.mockResolvedValue({ dry_run: true, documents: [], restorable_chunks: 0, skipped: [] });
+    reindexDocuments.mockImplementation(async (dryRun: boolean) => (dryRun
+      ? { dry_run: true, ok: true, chunks_to_re_embed: 51, backend: "ollama", model: "nomic-embed-text",
+          registry_corrections: { "doctree::baef6c3e::ecommerce": { from: 9, to: 0 }, "doctree::baef6c3e::main": { from: 1, to: 0 } } }
+      : { dry_run: false, ok: true }));
+    page();
+    const needs = await screen.findByTestId("needs-drift");
+    fireEvent.click(within(needs).getByRole("button", { name: "Restore…" }));
+    expect(await within(needs).findByText(/No compiled documentation is kept for DuckDB · ecommerce, DuckDB · main/)).toBeInTheDocument();
+    expect(within(needs).getByText(/re-embeds 51 chunks with nomic-embed-text \(local — no charge\) and sets 2 documents to what the index holds/))
+      .toBeInTheDocument();
+    expect(reindexDocuments).toHaveBeenCalledWith(true);
+    expect(reindexDocuments).not.toHaveBeenCalledWith(false);
+    fireEvent.click(within(needs).getByRole("button", { name: "Correct the list" }));
+    await waitFor(() => expect(reindexDocuments).toHaveBeenCalledWith(false));
+    expect(await within(needs).findByText(/the list now says what the index holds/)).toBeInTheDocument();
   });
 });

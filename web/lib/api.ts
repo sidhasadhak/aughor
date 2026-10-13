@@ -3732,6 +3732,47 @@ export async function convertDocument(
   return res.json();
 }
 
+/** What restoring a connection's compiled schema documentation would add — or added. The artifact on disk, not the
+ *  index, is a schema document's source, so this can put back chunks the index lost; a connection whose artifact is
+ *  gone plans nothing. Every call is a dry run unless `dryRun` is false. */
+export interface DocTreePlan {
+  dry_run: boolean;
+  documents: { doc_id: string; in_store: number; in_artifact: number; adds: number }[];
+  restorable_chunks: number;
+  skipped: unknown[];
+  restored?: unknown[];
+  failed?: { doc_id: string; error: string }[];
+}
+export async function restoreDocTrees(dryRun = true, connectionId?: string): Promise<DocTreePlan> {
+  const res = await fetch(`${getApiBase()}/documents/restore-doctrees`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dry_run: dryRun, ...(connectionId ? { connection_id: connectionId } : {}) }),
+  });
+  if (!res.ok) throw await documentError(res, "Restore failed");
+  return res.json();
+}
+
+/** What a re-index would do (dry run) or did: it re-embeds every chunk the index holds with the active model and sets
+ *  each document's listed count to what the index holds (`registry_corrections`). */
+export interface ReindexPlan {
+  dry_run: boolean;
+  ok?: boolean;
+  error?: string;
+  chunks_to_re_embed?: number;
+  registry_corrections?: Record<string, { from: number; to: number }>;
+  unrecoverable_chunks?: number;
+  backend?: string;
+  model?: string;
+}
+export async function reindexDocuments(dryRun = true): Promise<ReindexPlan> {
+  const res = await fetch(`${getApiBase()}/documents/reindex`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dry_run: dryRun, purge_orphans: false }),
+  });
+  if (!res.ok) throw await documentError(res, "Re-index failed");
+  return res.json();
+}
+
 /** Chunks with no document — usually schema docs whose connection was deleted.
  *  Separate from re-index because that one re-embeds the whole corpus on its way past
  *  them; deleting an orphan needs no vector computed. */
