@@ -22,6 +22,11 @@ describe("an inquiry's question as a row label", () => {
     expect(inquiryLabel(kept).text).toBe("What changed in theLook in the last day?");
   });
 
+  it("says scheduled when the Record stored only what was asked and flagged the inquiry", () => {
+    expect(inquiryLabel("What changed in theLook in the last day?", true))
+      .toEqual({ text: "What changed in theLook in the last day?", full: "What changed in theLook in the last day?", scheduled: true });
+  });
+
   it("keeps an ordinary question whole, its snake_case read as words", () => {
     expect(inquiryLabel("Why did the delivered stage of order_fulfilment slowed: p90 4.0 → 5.0 days?").text)
       .toBe("Why did the delivered stage of order fulfilment slowed: p90 4.0 → 5.0 days?");

@@ -101,10 +101,11 @@ export interface RowLabel {
 /**
  * An inquiry's question as a row label. A scheduled run's question opens with the grounding code wrote for the model
  * (`aughor/automations/temporal.py`); the person's own question follows it. The Record keeps the first 500 characters
- * of a question, which a grounding block alone outruns — so the person's words are often not in the record at all, and
- * the row says what it is ("Scheduled daily run") rather than print the plumbing.
+ * of a question, which a grounding block alone outruns — so the person's words are not in an inquiry opened before
+ * 2026-10-13, and its row says what it is ("Scheduled daily run") rather than print the plumbing. Since then the Record
+ * stores what was asked and marks the inquiry `scheduled` (`aughor/record/inquiry.py`): pass that flag.
  */
-export function inquiryLabel(question: string): RowLabel {
+export function inquiryLabel(question: string, scheduled = false): RowLabel {
   const full = (question ?? "").trim();
   if (full.startsWith(SCHEDULED_HEADER) || full.startsWith("[Previous scheduled report")) {
     const t = runDisplayTitle(full);
@@ -114,7 +115,7 @@ export function inquiryLabel(question: string): RowLabel {
     const cadence = /This is a scheduled (\w+) run/.exec(full)?.[1];
     return { text: cadence ? `Scheduled ${cadence} run` : "Scheduled run", full, scheduled: true };
   }
-  return { text: readable(firstSentence(full)), full, scheduled: false };
+  return { text: readable(firstSentence(full)), full, scheduled };
 }
 
 /** "data that would settle the open items" → "data"; a reason short enough to read stays whole. */

@@ -147,7 +147,7 @@ function InquiryOverview({ all, connections, onOpen, onAsk }: {
         {[
           ...due.map(q => (
             <NeedsRow key={`due-${q.id}`} testId="needs-inq-due"
-              title={`${inquiryLabel(q.question).text} · its check was due ${dateWords(q.next_check)}`}
+              title={`${inquiryLabel(q.question, q.extra?.scheduled === true).text} · its check was due ${dateWords(q.next_check)}`}
               detail={q.waiting_for ? `waiting for ${q.waiting_for}` : undefined}
               actions={<Button size="xs" variant="secondary" onClick={() => onOpen(q.id)}>Open</Button>} />
           )),
@@ -155,7 +155,7 @@ function InquiryOverview({ all, connections, onOpen, onAsk }: {
             const cost = (q.extra.proposed_run as ProposedRun | undefined)?.cost;
             return (
               <NeedsRow key={`norun-${q.id}`} testId="needs-inq-norun"
-                title={inquiryLabel(q.question).text}
+                title={inquiryLabel(q.question, q.extra?.scheduled === true).text}
                 detail={`open, with no run yet${cost?.tokens != null ? ` · a deep analysis would take about ${compactNumber(cost.tokens)} tokens here` : ""}`}
                 actions={<Button size="xs" variant="secondary" onClick={() => onOpen(q.id)}>Open</Button>} />
             );
@@ -179,7 +179,7 @@ function InquiryOverview({ all, connections, onOpen, onAsk }: {
           ? "No inquiry has been opened yet. A deep analysis opens one, and so does an alert that fires."
           : `No inquiry is ${filter} right now.`}
         renderRow={(q, first) => {
-          const label = inquiryLabel(q.question);
+          const label = inquiryLabel(q.question, q.extra?.scheduled === true);
           const owner = ownerOf(q);
           const latest = q.runs[q.runs.length - 1];
           // The reason every waiting inquiry shares is said once, in the figure above; a row names only its own.
@@ -195,7 +195,10 @@ function InquiryOverview({ all, connections, onOpen, onAsk }: {
           return (
             <ListRow first={first} testId="inquiry-row" title={label.text} full={label.full} onOpen={() => onOpen(q.id)}
               mark={<Dot hue={q.state === "closed" && q.closed_as === "answered" ? "green" : STATE_DOT[q.state] ?? "grey"} title={inquiryState(q)} />}
-              chips={q.hypotheses.length > 0 && <Chip>{countNoun(q.hypotheses.length, "hypothesis", "hypotheses")}</Chip>}
+              chips={<>
+                {label.scheduled && <Chip title="Opened by a scheduled run">scheduled</Chip>}
+                {q.hypotheses.length > 0 && <Chip>{countNoun(q.hypotheses.length, "hypothesis", "hypotheses")}</Chip>}
+              </>}
               figure={q.open.length > 0 ? `${formatCount(q.open.length)} still open` : undefined}
               figureTitle={q.open.length ? q.open.map(o => `· ${o.what}`).join("\n") : undefined}
               meta={meta} metaTitle={inquiryState(q)} />
