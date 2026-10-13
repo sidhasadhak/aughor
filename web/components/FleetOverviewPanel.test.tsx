@@ -72,8 +72,8 @@ const job = (over: Partial<FleetJob>): FleetJob => ({
 });
 
 const range = { key: "24h" as const, since: null, until: null };
-const mount = () => render(<Theme><FleetOverviewPanel range={range} onBrush={() => {}} onClearBrush={() => {}}
-  onOpenAttention={() => {}} /></Theme>);
+const mount = (connections: { id: string; name: string }[] = []) => render(<Theme><FleetOverviewPanel range={range}
+  onBrush={() => {}} onClearBrush={() => {}} onOpenAttention={() => {}} connections={connections} /></Theme>);
 
 beforeEach(() => {
   for (const k of Object.keys(calls)) delete calls[k];
@@ -135,9 +135,38 @@ describe("needs you", () => {
     // the action key's name leads; its sentence is the muted line under it
     expect(within(card).getAllByText("Units Sold watch")).toHaveLength(3);
   });
+
+  it("accepts and rejects an automation's approval by its proposal id, never the row's own id", async () => {
+    stubs.getNeedsHuman = () => Promise.resolve({ count: 1, sources: {}, rows: needs(1) });
+    stubs.acceptProposal = () => Promise.resolve({});
+    stubs.rejectProposal = () => Promise.resolve(true);
+    mount();
+    const card = await screen.findByTestId("ao-needs");
+    fireEvent.click(await within(card).findByRole("button", { name: "Accept" }));
+    await vi.waitFor(() => expect(calls.acceptProposal).toHaveLength(1));
+    fireEvent.click(await within(card).findByRole("button", { name: "Reject" }));
+    await vi.waitFor(() => expect(calls.rejectProposal).toHaveLength(1));
+    // the row is "r0"; the inbox resolves the proposal it carries, "p1"
+    expect(calls.acceptProposal[0][0]).toBe("p1");
+    expect(calls.rejectProposal[0][0]).toBe("p1");
+  });
 });
 
 describe("the runs list", () => {
+  it("names a run in words — its kind as a phrase, its connection by name — with the raw title on hover", async () => {
+    stubs.getJobs = (...a: unknown[]) => Promise.resolve((a[0] as { state?: string }).state === "active" ? [
+      job({ id: "w", kind: "alert_proposals", title: "alert_proposals", state: "RUNNING", conn_id: "c0ffee12" }),
+      job({ id: "x", kind: "exploration", title: "Exploring c0ffee12", state: "RUNNING", conn_id: "c0ffee12" }),
+    ] : []);
+    mount([{ id: "c0ffee12", name: "LuxExperience" }]);
+    const rows = await screen.findAllByTestId("ao-active-run");
+    expect(rows.map(r => r.firstElementChild?.firstElementChild?.textContent)).toEqual(["Proposing alerts", "Exploring LuxExperience"]);
+    expect(within(rows[0]).getByTitle("alert_proposals")).toHaveTextContent("Proposing alerts");
+    expect(within(rows[1]).getByTitle("Exploring c0ffee12")).toHaveTextContent("Exploring LuxExperience");
+    expect(screen.queryByText("alert_proposals")).toBeNull();
+    expect(screen.queryByText(/c0ffee12/)).toBeNull();
+  });
+
   it("reads the range one kind of agent work at a time, and folds the same run ending the same way", async () => {
     stubs.getJobs = (...a: unknown[]) => {
       const p = a[0] as { kind?: string; state?: string };

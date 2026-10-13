@@ -458,7 +458,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # for the second and nothing else. The file spells it ONCE, as a typed constant
          # every fixture takes; what a reader is shown says "Thinking…", "Thought process"
          # and "Agent".
-         "web/components/ChatMessage.trace.test.tsx"),
+         "web/components/ChatMessage.trace.test.tsx",
+         # The job-kind names (2026-10-13): Agent Ops' run lists printed a run's kind as the
+         # slug the API sent. This module maps each frozen job kind to the words a reader
+         # sees, so two of its keys are the wire's `investigation` kinds; the words they map
+         # to say "deep analysis". The one file, exactly — no prefix, so no test rides on it.
+         "web/lib/jobKinds.ts"),
         "the user-visible word is 'deep analysis'. `investigation` stays as the BACKEND "
         "spelling only (frozen table/route/job-kind); web/lib/api.ts is exempt because it "
         "must mirror the backend contract field-for-field, and the SSE→UIMessage seam is "

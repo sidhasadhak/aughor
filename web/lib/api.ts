@@ -3654,9 +3654,11 @@ export async function logOutcome(
   return res.json();
 }
 
+/** Where an analysis's recommendations stand. Throws on a refused read: `[]` would say nothing
+ *  was ever marked, and every recommendation would read as still open. */
 export async function getInvestigationOutcomes(invId: string): Promise<RecOutcome[]> {
   const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/outcomes`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the outcomes");
   return res.json();
 }
 

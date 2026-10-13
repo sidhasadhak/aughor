@@ -36,13 +36,17 @@ import { Loading, ReadFailed } from "@/components/ui/states";
 import {
   BUILT_IN_AGENT_KIND, acceptProposal, cancelJob, getFleetOverview, getJobs, getNeedsHuman, getObsTimeseries,
   patchAgent, patchUserAgent, rejectProposal,
-  type FleetJob, type FleetOverview, type FleetRow, type FleetRunnerRow, type NeedsHumanRow, type TimeSeriesResponse,
+  type Connection, type FleetJob, type FleetOverview, type FleetRow, type FleetRunnerRow, type NeedsHumanRow,
+  type TimeSeriesResponse,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
 import { compactNumber, countNoun, formatCost, formatCount, pct, relTime } from "@/lib/format";
+import { jobKindLabel, jobTitle } from "@/lib/jobKinds";
 import { needsYouTitle } from "@/lib/names";
-import { runDisplayTitle } from "@/lib/runTitle";
 import { useVisiblePoll } from "@/lib/useVisiblePoll";
+
+/** A connection as a run list names it. */
+type ConnectionName = Pick<Connection, "id" | "name">;
 
 type RunFilter = "active" | "failed" | "succeeded" | "all";
 
@@ -63,6 +67,15 @@ const SOURCE_LABEL: Record<NeedsHumanRow["source"], string> = {
   [PROPOSAL_SOURCE]: "proposal", paused_run: "paused run", automation_approval: "automation",
   agent_alert: "alert", automation_broken: "broken automation",
 };
+
+/** The proposal a row decides, by the id the inbox's accept and reject take: a proposal row IS one; an automation's
+ *  approval names its own in `resolve.proposal_id` — its row id is the row's, which the API composes from the run
+ *  when there is no proposal. "" when the row decides nothing. */
+function proposalOf(row: NeedsHumanRow): string {
+  if (row.source === PROPOSAL_SOURCE) return row.id;
+  if (row.source === "automation_approval") return row.resolve?.proposal_id ?? "";
+  return "";
+}
 
 /** How a run's state reads as a mark, and its colour. */
 const STATE_MARK: Record<string, { word: string; color: string }> = {
@@ -102,15 +115,15 @@ function perBucket(seconds: number): string {
 }
 
 /** Runs that are the same work ending the same way, folded into one row with a count (CLARITY: say a thing once). */
-export interface RunGroup { key: string; title: string; agent: string; state: string; runs: FleetJob[] }
+export interface RunGroup { key: string; title: string; raw: string; agent: string; state: string; runs: FleetJob[] }
 
-export function foldRuns(runs: FleetJob[]): RunGroup[] {
+export function foldRuns(runs: FleetJob[], connections: ReadonlyArray<ConnectionName> = []): RunGroup[] {
   const groups = new Map<string, RunGroup>();
   for (const j of runs) {
-    const title = runDisplayTitle(j.title || j.kind).title;
+    const { title, raw } = jobTitle(j, connections);
     const agent = j.agent?.agent || j.kind;
     const key = `${agent}\u0000${title}\u0000${j.state}`;
-    const g = groups.get(key) ?? { key, title, agent, state: j.state, runs: [] };
+    const g = groups.get(key) ?? { key, title, raw, agent, state: j.state, runs: [] };
     g.runs.push(j);
     groups.set(key, g);
   }
@@ -118,7 +131,9 @@ export function foldRuns(runs: FleetJob[]): RunGroup[] {
 }
 
 export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvestigation, range,
-  onBrush, onClearBrush }: {
+  onBrush, onClearBrush, connections = [] }: {
+  /** The workspace's connections, so a run on one is named by its name rather than its id. */
+  connections?: ReadonlyArray<ConnectionName>;
   onOpenAgent?: (id: string, kind: "charter" | "persona") => void;
   onOpenAttention?: () => void;
   onOpenInvestigation?: (id: string) => void;
@@ -225,8 +240,8 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
     setBusy(row.id);
     setActionError(null);
     try {
-      if (action === "accept") await acceptProposal(row.id, "agent-ops");
-      else await rejectProposal(row.id, "agent-ops");
+      if (action === "accept") await acceptProposal(proposalOf(row), "agent-ops");
+      else await rejectProposal(proposalOf(row), "agent-ops");
       load();
     } catch (e) {
       setActionError(String((e as Error)?.message || e));
@@ -387,8 +402,7 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
               <div>
                 {attention.slice(0, 3).map((row, i) => {
                   const t = needsYouTitle(row.title);
-                  const decides = row.source === PROPOSAL_SOURCE
-                    || (row.source === "automation_approval" && !!row.resolve?.proposal_id);
+                  const decides = proposalOf(row) !== "";
                   return (
                     <div key={`${row.source}:${row.id}`} style={{ display: "grid", alignItems: "center", gap: 12,
                       gridTemplateColumns: "minmax(0, 1fr) auto auto", padding: "8px 0", ...(i ? RULE : {}) }}>
@@ -507,10 +521,11 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
               </span>
             </div>
             {runFilter === "active" ? (
-              <ActiveRuns runs={active} error={activeError} onRetry={load} onKill={id => cancelJob(id).then(load).catch(() => {})} />
+              <ActiveRuns runs={active} error={activeError} onRetry={load} connections={connections}
+                onKill={id => cancelJob(id).then(load).catch(() => {})} />
             ) : (
               <RangedRuns filter={runFilter} ranged={ranged} error={rangedError} onRetry={loadRanged}
-                rangeWords={rangeWords} />
+                rangeWords={rangeWords} connections={connections} />
             )}
           </section>
         </div>
@@ -643,50 +658,56 @@ function StateMark({ state }: { state: string }) {
 }
 
 /** What is in flight, one row each — every one can be killed. */
-function ActiveRuns({ runs, error, onRetry, onKill }: {
+function ActiveRuns({ runs, error, onRetry, onKill, connections }: {
   runs: FleetJob[]; error: string | null; onRetry: () => void; onKill: (id: string) => void;
+  connections: ReadonlyArray<ConnectionName>;
 }) {
   if (error !== null) return <ReadFailed what="what is running" error={error} onRetry={onRetry} />;
   const live = runs.filter(j => ACTIVE.includes(j.state));
   if (live.length === 0) return <Empty>Nothing running right now.</Empty>;
   return (
     <div>
-      {live.slice(0, 60).map((j, i) => (
-        <div key={j.id} style={{ display: "grid", alignItems: "center", gap: 12, padding: "7px 0",
-          gridTemplateColumns: "minmax(0, 1fr) auto auto", ...(i ? RULE : {}) }}>
-          <div style={{ minWidth: 0 }}>
-            <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }} title={j.title || j.kind}>
-              {runDisplayTitle(j.title || j.kind).title}
+      {live.slice(0, 60).map((j, i) => {
+        const t = jobTitle(j, connections);
+        return (
+          <div key={j.id} data-testid="ao-active-run" style={{ display: "grid", alignItems: "center", gap: 12,
+            padding: "7px 0", gridTemplateColumns: "minmax(0, 1fr) auto auto", ...(i ? RULE : {}) }}>
+            <div style={{ minWidth: 0 }}>
+              <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }} title={t.raw}>
+                {t.title}
+              </div>
+              <div className="aug-fs-xs" style={{ ...ROW, gap: 6, color: "var(--t2)" }}>
+                <StateMark state={j.state} /><span>· {j.agent?.agent || j.kind} · started {relTime(j.created_at)} ago</span>
+              </div>
             </div>
-            <div className="aug-fs-xs" style={{ ...ROW, gap: 6, color: "var(--t2)" }}>
-              <StateMark state={j.state} /><span>· {j.agent?.agent || j.kind} · started {relTime(j.created_at)} ago</span>
-            </div>
+            <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>{j.duration_ms ? duration(j.duration_ms) : ""}</span>
+            <Button variant="ghost" size="xs" onClick={() => onKill(j.id)}>Kill</Button>
           </div>
-          <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>{j.duration_ms ? duration(j.duration_ms) : ""}</span>
-          <Button variant="ghost" size="xs" onClick={() => onKill(j.id)}>Kill</Button>
-        </div>
-      ))}
+        );
+      })}
       {live.length > 60 && <div className="aug-fs-xs" style={{ ...MUTED, paddingTop: 6, ...RULE }}>+{live.length - 60} more running</div>}
     </div>
   );
 }
 
 /** The range's runs, the same work ending the same way folded into one row with its count. */
-function RangedRuns({ filter, ranged, error, onRetry, rangeWords }: {
+function RangedRuns({ filter, ranged, error, onRetry, rangeWords, connections }: {
   filter: Exclude<RunFilter, "active">; ranged: { runs: FleetJob[]; capped: string[] } | null;
   error: string | null; onRetry: () => void; rangeWords: string;
+  connections: ReadonlyArray<ConnectionName>;
 }) {
   if (error !== null) return <ReadFailed what="the runs" error={error} onRetry={onRetry} />;
   if (ranged === null) return <Loading what="the runs" />;
   const runs = ranged.runs.filter(j => (filter === "all" ? true
     : filter === "succeeded" ? j.state === "SUCCEEDED" : STOPPED.includes(j.state)));
-  const groups = foldRuns(runs);
+  const groups = foldRuns(runs, connections);
+  const capped = ranged.capped.map(jobKindLabel).join(", ");
   return (
     <div data-testid="ao-runs-list">
       {ranged.capped.length > 0 && (
         <div style={{ marginBottom: 6 }}>
-          <Chip tone="amber" title={`More than 200 runs of ${ranged.capped.join(", ")} in ${rangeWords}: the newest 200 of each are listed`}>
-            a floor · the newest 200 of {ranged.capped.join(", ")}
+          <Chip tone="amber" title={`More than 200 runs of ${capped} in ${rangeWords}: the newest 200 of each are listed`}>
+            a floor · the newest 200 of {capped}
           </Chip>
         </div>
       )}
@@ -701,7 +722,7 @@ function RangedRuns({ filter, ranged, error, onRetry, rangeWords }: {
         return (
           <div key={g.key} data-testid="ao-run-group" style={{ display: "grid", alignItems: "center", gap: 12, padding: "7px 0",
             gridTemplateColumns: "minmax(0, 1fr) auto", ...(i ? RULE : {}) }}>
-            <div style={{ minWidth: 0 }} title={errors.length ? errors.join("\n") : g.title}>
+            <div style={{ minWidth: 0 }} title={errors.length ? errors.join("\n") : g.raw}>
               <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }}>{g.title}</div>
               <div className="aug-fs-xs" style={{ ...ROW, gap: 6, color: "var(--t2)" }}>
                 <StateMark state={g.state} />

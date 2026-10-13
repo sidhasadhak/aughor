@@ -14,7 +14,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const HIDES = /if \(!res\.ok\) return (?:\[\]|null|\{\}|false);/g;
-const BASELINE = 31;   // 32 → 31, Arc OC-4 (2026-10-09): the roster reads through getDeclaredActions, which says a refusal
+const BASELINE = 30;   // 31 → 30 (2026-10-13): the outcomes read says a refusal; the report and the Inbox say so
+                       // 32 → 31, Arc OC-4 (2026-10-09): the roster reads through getDeclaredActions, which says a refusal
 
 function hidden(text: string): number {
   return (text.match(HIDES) ?? []).length;

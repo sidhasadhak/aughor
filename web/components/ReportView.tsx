@@ -20,6 +20,7 @@ import { SHARE_COL_PATTERN, buildColumnFormatter, compactNumber, pct } from "@/l
 import { H_PALETTES } from "@/lib/palette";
 import { StatusChip, chipTone, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
+import { ReadFailed } from "@/components/ui/states";
 
 interface Props {
   report: Report;
@@ -506,10 +507,17 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
   const isDirect = queryMode === "direct";
 
   const [outcomes, setOutcomes] = useState<RecOutcome[]>([]);
+  // A read of where the recommendations stand that failed is said under them — swallowed, every one read as unmarked.
+  const [outcomesError, setOutcomesError] = useState<string | null>(null);
+  const [outcomesRead, setOutcomesRead] = useState(0);
   useEffect(() => {
     if (!invId) return;
-    getInvestigationOutcomes(invId).then(setOutcomes).catch(() => {});
-  }, [invId]);
+    let alive = true;
+    getInvestigationOutcomes(invId)
+      .then(o => { if (alive) { setOutcomes(o); setOutcomesError(null); } })
+      .catch(e => { if (alive) setOutcomesError(String(e?.message || e)); });
+    return () => { alive = false; };
+  }, [invId, outcomesRead]);
   const isQueryFailure = isDirect && !report.verdict && report.headline === "Query execution failed";
 
   const directTable = isDirect
@@ -610,6 +618,9 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
       {(report.recommended_actions ?? []).length > 0 && (
         <CollapsibleSection title="Recommended Actions">
           <div className="space-y-2">
+            {invId && outcomesError && (
+              <ReadFailed what="where these stand" error={outcomesError} onRetry={() => setOutcomesRead(n => n + 1)} />
+            )}
             {(report.recommended_actions ?? []).map((action, i) => (
               invId ? (
                 <RecommendationCard

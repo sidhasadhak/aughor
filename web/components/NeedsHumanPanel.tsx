@@ -13,7 +13,7 @@
  */
 import { connectionLabel, needsYouTitle } from "@/lib/names";
 import { getConnections as listConnectionsForNames, type Connection as ConnectionForNames } from "@/lib/api";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useVisiblePoll } from "@/lib/useVisiblePoll";
 
@@ -71,11 +71,26 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
   useEffect(() => { listConnectionsForNames().then(setConns).catch(() => {}); }, []);
   const [data, setData] = useState<NeedsHuman | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // A read that failed, and an acknowledge the server refused — two different things to say.
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
+  // Reads overlap: the poll fires every 10 s and this route runs its sweeps before it answers.
+  // Only an answer newer than the one on screen may replace it, so a slow read that started
+  // before something arrived cannot put "nothing" back over what a later read found.
+  const issued = useRef(0);
+  const shown = useRef(0);
   const load = useCallback(() => {
-    getNeedsHuman().then(d => { setData(d); setError(null); })
-      .catch(e => setError(String(e?.message || e)));
+    const n = ++issued.current;
+    getNeedsHuman().then(d => {
+      if (n < shown.current) return;
+      shown.current = n;
+      setData(d); setError(null);
+    }).catch(e => {
+      if (n < shown.current) return;
+      shown.current = n;
+      setError(String(e?.message || e));
+    });
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -84,17 +99,20 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
 
   const resolveAlert = async (row: NeedsHumanRow) => {
     setBusy(row.id);
+    setActionError(null);
     try {
       await acknowledgeAgentAlert(row.id);
       load();
     } catch (e) {
-      setError(String((e as Error)?.message || e));
+      setActionError(String((e as Error)?.message || e));
     } finally {
       setBusy(null);
     }
   };
 
-  if (error && !data) {
+  // A failed read is said whenever it happens, not only before the first answer. Kept behind an
+  // earlier empty answer, it printed "Nothing needs a human … right now" over a read that never came back.
+  if (error && (!data || data.rows.length === 0)) {
     return <ReadFailed what="what needs a person" error={error} onRetry={load} style={{ padding: 24 }} />;
   }
   if (!data) {
@@ -113,6 +131,10 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
           decided was worth being told about, and an empty Attention page with no rules
           reads as "all clear" when it means "nothing is watching". */}
       <AgentAlertRulesPanel />
+      {error && <ReadFailed what="what needs a person again — the list below is from the last read"
+        error={error} onRetry={load} style={{ marginBottom: 12 }} />}
+      {actionError && <div role="alert" className="aug-fs-sm" style={{ color: "var(--red4)", marginBottom: 12 }}>
+        Not done — {actionError}</div>}
       <MiniStatRow>
         <MiniStat value={data.count} label="Waiting on a human"
           tone={data.count > 0 ? "var(--amb4)" : "var(--t1)"} />

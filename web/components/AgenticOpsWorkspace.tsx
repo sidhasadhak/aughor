@@ -165,15 +165,15 @@ export function AgenticOpsWorkspace({
     setAgentFocus({ id, kind });
     onLayerChange("agents");
   }, [onLayerChange]);
-  // The connection picker's options — read once; a failure leaves the picker absent
-  // rather than empty, and the rail still works.
+  // The connections — read once: the picker's options, and the names the Overview's run lists
+  // say instead of an id. A failure leaves the picker absent rather than empty, and a run on a
+  // connection then reads "connection 8233e4fd" (lib/names.ts), never the bare id.
   const [connections, setConnections] = useState<Connection[] | null>(null);
   useEffect(() => {
-    if (!onSelectConnection) return;
     let alive = true;
     getConnections().then(c => { if (alive) setConnections(c); }).catch(() => {});
     return () => { alive = false; };
-  }, [onSelectConnection]);
+  }, []);
   const [attention, setAttention] = useState(0);
   const [departuresOwed, setDeparturesOwed] = useState(0);
   // Creating an agent is reachable from EVERY layer, not just the one whose sidebar happens
@@ -310,7 +310,7 @@ export function AgenticOpsWorkspace({
         );
         return (
           <FleetOverviewPanel
-            range={range} onBrush={setBrush} onClearBrush={clearBrush}
+            range={range} onBrush={setBrush} onClearBrush={clearBrush} connections={connections ?? []}
             onOpenAttention={() => onLayerChange("attention")}
             onOpenInvestigation={onOpenInvestigation}
             onOpenAgent={(id, kind) => openAgent(id, kind)} /> // "fleet"
