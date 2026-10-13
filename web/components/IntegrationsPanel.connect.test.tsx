@@ -6,6 +6,7 @@
  * opens, so the blocked-pop-up fallback (`window.location.href = url`) always ran as well — the
  * person saw Google's page in a new window AND in the app's own tab.
  */
+import { Theme } from "@radix-ui/themes";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
@@ -39,7 +40,8 @@ it("opens the consent in one new tab and leaves this one where it is", async () 
   const open = vi.spyOn(window, "open").mockReturnValue(tab as unknown as Window);
   const here = window.location.href;
 
-  render(<IntegrationsPanel />);
+  // The Themes provider the app mounts at its root: the "Needs you" row's Connect menu reads it.
+  render(<Theme><IntegrationsPanel /></Theme>);
   fireEvent.click(within(await screen.findByTestId("integration-product-gmail"))
     .getByRole("button", { name: /^connect$/i }));
 

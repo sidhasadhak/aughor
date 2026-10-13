@@ -23,10 +23,25 @@ from aughor.security.authz import connection_owner_guard, get_principal
 router = APIRouter(tags=["record"], dependencies=[Depends(connection_owner_guard)])
 
 
-def _visible(conn_id: str) -> bool:
+def _gate():
+    """Whether an entry about a connection may be shown to this request: the connection is in the caller's org AND in
+    the workspace the reader is in (`accessible_catalog_ids`, read ambiently from the ``X-Aughor-Workspace`` header).
+    The Record's ledgers span every connection, so without the workspace half a claim about LuxExperience was listed
+    to a reader in theLook's workspace (2026-10-13). An unscoped entry (no connection) is an organisation-wide fact and
+    stays visible in every workspace. Read once per request: a list checks every row."""
+    from aughor.metastore import accessible_catalog_ids
     from aughor.security.authz import org_visible_conn_ids
-    visible = org_visible_conn_ids()
-    return visible is None or not conn_id or conn_id in visible
+    org, workspace = org_visible_conn_ids(), accessible_catalog_ids(None)
+
+    def ok(conn_id: str) -> bool:
+        if not conn_id:
+            return True
+        return (org is None or conn_id in org) and (workspace is None or conn_id in workspace)
+    return ok
+
+
+def _visible(conn_id: str) -> bool:
+    return _gate()(conn_id)
 
 
 def _claim_view(c: C.Claim) -> dict:
@@ -75,7 +90,8 @@ def list_record_claims(kind: Optional[str] = None, about_kind: Optional[str] = N
         rows = C.as_recorded(as_of, **filters) if as_of else C.list_claims(**filters)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    return [_claim_view(c) for c in rows if _visible(c.about.key if c.about.kind == "connection" else "")]
+    ok = _gate()
+    return [_claim_view(c) for c in rows if ok(c.about.key if c.about.kind == "connection" else "")]
 
 
 @router.get("/record/claims/{claim_id}")
@@ -235,7 +251,8 @@ def list_record_decisions(connection_id: Optional[str] = None, due: bool = False
     rows = D.due_for_review() if due else D.list_decisions(conn_id=connection_id, limit=limit)
     if due and connection_id:
         rows = [d for d in rows if d.connection_id == connection_id]
-    return [_decision_view(d) for d in rows[:limit] if _visible(d.connection_id)]
+    ok = _gate()
+    return [_decision_view(d) for d in rows if ok(d.connection_id)][:limit]
 
 
 @router.get("/record/decisions/{decision_id}")
@@ -362,7 +379,8 @@ def list_record_inquiries(connection_id: Optional[str] = None, state: Optional[s
     rows = I.due() if due else I.list_inquiries(conn_id=connection_id, state=state, limit=limit)
     if due and connection_id:
         rows = [q for q in rows if q.connection_id == connection_id]
-    return [q.model_dump() for q in rows[:limit] if _visible(q.connection_id)]
+    ok = _gate()
+    return [q.model_dump() for q in rows if ok(q.connection_id)][:limit]
 
 
 @router.get("/record/inquiries/verdicts")
@@ -684,11 +702,9 @@ def record_corrections(connection_id: Optional[str] = None, kind: Optional[str] 
     if connection_id and not _visible(connection_id):
         raise HTTPException(status_code=404, detail="No such connection")
     try:
-        out = corrections(conn_id=connection_id, kind=kind, limit=max(1, min(int(limit), 500)))
+        return corrections(conn_id=connection_id, kind=kind, limit=max(1, min(int(limit), 500)), visible=_gate())
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    out["entries"] = [e for e in out["entries"] if _visible(str(e.get("connection_id") or ""))]
-    return out
 
 
 # ── missions (phase 5) ─────────────────────────────────────────────────────────────────────
@@ -764,7 +780,8 @@ def list_record_missions(connection_id: Optional[str] = None, state: Optional[st
     """The missions people wrote, newest first — each with whether it runs and what it has cost this week."""
     from aughor.record.mission import list_missions
     rows = list_missions(conn_id=connection_id, state=state, owner=owner, limit=max(1, min(int(limit), 500)))
-    return [_mission_view(m) for m in rows if all(_visible(c) for c in m.scope.connections)]
+    ok = _gate()
+    return [_mission_view(m) for m in rows if all(ok(c) for c in m.scope.connections)]
 
 
 @router.post("/record/missions", status_code=201)

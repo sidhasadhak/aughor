@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * KB-3 — the panel showed a corpus and never said whether it worked.
+ * KB-3 — the Documents screen showed a corpus and never said whether it worked.
  *
  * Two things were invisible from here:
  *
@@ -9,27 +9,31 @@
  *    documents renders exactly as it does on a healthy machine.
  *  - **That `chunk_count` is a CLAIM.** It comes from the registry, not the index. Measured
  *    on a real install, one document claimed 59 chunks where the store held 5, and this
- *    panel reported 59 with no hint that most of it is unsearchable.
+ *    screen reported 59 with no hint that most of it is unsearchable.
  *
  * The status call is allowed to fail — the API serving this UI may predate the endpoint —
  * so the third property held here is that an absent status changes nothing.
+ *
+ * Since the screen was redone to CLARITY (2026-10-13) the plane's state is a row under "Needs you", and the add-a-
+ * document wizard opens from its button instead of standing open; the curation tests open it first. What they hold is
+ * unchanged: nothing is read until step 3, nothing is stored until step 5, and moving the settings stales a review.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DocumentEntry, KnowledgeStatus } from "@/lib/api";
 
 const listDocuments = vi.fn();
-// The panel renders KnowledgeSourcesSection beside the corpus, which loads the connected wikis on
-// mount. Unmocked, that call reached the developer's running platform for real (the setup file's
-// network guard turned it into 15 unhandled rejections, one per test in this file, and the whole
-// web suite exited non-zero while every test passed). Nothing here asserts on that section, so it
-// answers what a fresh install answers: the endpoint is there, nothing is connected.
+// The screen renders KnowledgeSourcesSection beside the corpus, which loads the connected wikis on mount. Unmocked,
+// that call reached the developer's running platform for real (the setup file's network guard turned it into
+// unhandled rejections and the whole web suite exited non-zero while every test passed). Nothing here asserts on that
+// section, so it answers what a fresh install answers: the endpoint is there, nothing is connected.
 const getKnowledgeSources = vi.fn(async (..._a: unknown[]) => ({ types: [], sources: [] }));
 const getKnowledgeStatus = vi.fn();
 const previewDocumentChunks = vi.fn();
 const convertDocument = vi.fn();
 const uploadDocument = vi.fn();
+const purgeOrphanChunks = vi.fn();
 
 vi.mock("@/lib/api", async importOriginal => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -41,11 +45,13 @@ vi.mock("@/lib/api", async importOriginal => {
     previewDocumentChunks: (...a: unknown[]) => previewDocumentChunks(...a),
     convertDocument: (...a: unknown[]) => convertDocument(...a),
     uploadDocument: (...a: unknown[]) => uploadDocument(...a),
+    purgeOrphanChunks: (...a: unknown[]) => purgeOrphanChunks(...a),
+    getDocumentFormats: async () => null,
     deleteDocument: vi.fn(),
   };
 });
 
-const { DocumentUploader } = await import("@/components/DocumentUploader");
+const { DocumentsPage } = await import("@/components/documents/DocumentsPage");
 
 const doc = (over: Partial<DocumentEntry> = {}): DocumentEntry => ({
   doc_id: "d1", filename: "handbook.pdf", title: "Handbook", chunk_count: 59,
@@ -77,7 +83,19 @@ const chunkPreview = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-/** ① — choosing a file. The panel makes no request for this, by design. */
+const page = () => render(<DocumentsPage connectionId="c1" connections={[]} />);
+
+/** A document in the list (the newest is also named on the "Last added" figure). */
+const listed = async (text: string) => within(await screen.findByTestId("documents-list")).findByText(text);
+
+/** The wizard is a tool now — opened from the list's label, never standing open. */
+const openAdd = async () => {
+  await listed("Handbook");
+  fireEvent.click(screen.getByRole("button", { name: "Add a document" }));
+  return screen.getByRole("region", { name: "Add a document" });
+};
+
+/** ① — choosing a file. The wizard makes no request for this, by design. */
 const choose = (name = "policy.md") => {
   const picker = document.querySelector('input[type="file"][multiple]');
   fireEvent.change(picker!, { target: { files: [new File(["body"], name)] } });
@@ -91,11 +109,13 @@ beforeEach(() => {
   previewDocumentChunks.mockResolvedValue(chunkPreview());
 });
 
-describe("what the panel says about the plane", () => {
-  it("says nothing when everything is healthy", async () => {
-    render(<DocumentUploader />);
-    await screen.findByText("Handbook");
+describe("what the screen says about the plane", () => {
+  it("says nothing needs you when everything is healthy", async () => {
+    page();
+    await listed("Handbook");
 
+    const needs = await screen.findByRole("region", { name: "Needs you" });
+    await waitFor(() => expect(needs).toHaveAttribute("data-waiting", "false"));
     expect(screen.queryByText(/Search is unavailable/)).toBeNull();
     expect(screen.queryByText(/disagree/)).toBeNull();
   });
@@ -107,108 +127,124 @@ describe("what the panel says about the plane", () => {
                   ok: false, error: "ConnectionError: connection refused" },
     }));
 
-    render(<DocumentUploader />);
+    page();
 
     expect(await screen.findByText(/Search is unavailable/)).toBeTruthy();
-    expect(screen.getByText(/LOCAL model/)).toBeTruthy();
+    expect(screen.getByText(/A local model/)).toBeTruthy();
     expect(screen.getByText(/localhost:11434/)).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Needs you" })).toHaveAttribute("data-waiting", "true");
   });
 
   it("reassures that uploaded documents survive an outage", async () => {
     getKnowledgeStatus.mockResolvedValue(status({ ready: false, reason: "no documents are indexed" }));
 
-    render(<DocumentUploader />);
+    page();
 
     expect(await screen.findByText(/Documents already uploaded are unaffected/)).toBeTruthy();
   });
 });
 
-describe("what the panel says about the numbers", () => {
+describe("what the screen says about the numbers", () => {
   it("shows the registry's claim when the index agrees with it", async () => {
     listDocuments.mockResolvedValue([doc({ chunk_count: 5 })]);
 
-    render(<DocumentUploader />);
+    page();
 
-    expect(await screen.findByText(/5 chunks/)).toBeTruthy();
+    expect(await screen.findByText("5 chunks")).toBeTruthy();
   });
 
   it("puts the INDEXED count in front when the two disagree", async () => {
     /** The defect this exists for: 59 rendered as fact while 54 of those passages are not
-     *  searchable. Both numbers, store first. */
+     *  searchable. Both numbers, the index's first — on the row and under "Needs you". */
     getKnowledgeStatus.mockResolvedValue(status({
       consistency: { ok: false, orphan_documents: 0, orphan_chunks: 0, orphans: [],
                      mismatched_documents: { d1: { registry: 59, store: 5 } },
                      listed_chunks_present: 5 },
     }));
 
-    render(<DocumentUploader />);
+    page();
 
-    expect(await screen.findByText(/5 chunks indexed of 59 claimed/)).toBeTruthy();
+    expect(await screen.findByText("5 of 59 indexed")).toBeTruthy();
+    const needs = screen.getByRole("region", { name: "Needs you" });
+    expect(within(needs).getByText(/index and this list disagree on 1 document/)).toBeTruthy();
+    expect(within(needs).getByText(/the index holds 5 of their 59 listed chunks/)).toBeTruthy();
   });
 
   it("reports orphan chunks and offers the purge door (PX-6)", async () => {
-    /** Orphans are found by search; the panel used to say they "cannot be removed
-     *  from here" — true until the purge endpoint got its button. Now the sentence
-     *  names the fact and the door sits beside it, no re-embed implied. */
+    /** Orphans are found by search; the screen used to say they "cannot be removed from here" — true until the purge
+     *  endpoint got its button. Now the row names the fact and the door sits on it, no re-embed implied. */
     getKnowledgeStatus.mockResolvedValue(status({
       chunks: 46,
       consistency: { ok: false, orphan_documents: 5, orphan_chunks: 41,
                      orphans: ["ghost"], mismatched_documents: {},
                      listed_chunks_present: 5 },
     }));
+    purgeOrphanChunks.mockImplementation(async (dryRun: boolean) => (dryRun
+      ? { dry_run: true, ok: true, orphan_chunks: 41, orphan_documents: ["g1", "g2", "g3", "g4", "g5"] }
+      : { orphans_purged: 41 }));
 
-    render(<DocumentUploader />);
+    page();
 
-    expect(await screen.findByText(/index and this list disagree/)).toBeTruthy();
-    expect(screen.getByText(/41 chunks across 5 documents are in the index but not listed/)).toBeTruthy();
-    expect(screen.getByText(/Purge orphans \(no re-embed\)/)).toBeTruthy();
+    expect(await screen.findByText(/41 chunks across 5 documents are in the index but not listed/)).toBeTruthy();
+    // A delete is read first: the dry run says what it would remove, and nothing is deleted until the person confirms.
+    fireEvent.click(screen.getByRole("button", { name: /Purge orphans…/ }));
+    expect(await screen.findByText(/Purging deletes 41 chunks across 5 documents from the index · nothing is re-embedded/)).toBeTruthy();
+    expect(purgeOrphanChunks).toHaveBeenCalledWith(true);
+    expect(purgeOrphanChunks).not.toHaveBeenCalledWith(false);
+    fireEvent.click(screen.getByRole("button", { name: "Purge" }));
+    await waitFor(() => expect(purgeOrphanChunks).toHaveBeenCalledWith(false));
+    expect(await screen.findByText(/Purged 41/)).toBeTruthy();
   });
 });
 
 describe("degradation", () => {
   it("renders unchanged when the status endpoint is absent", async () => {
-    /** The API serving this UI may predate `/knowledge/status` — it does right now, and it
-     *  404s. A panel that broke on that would be a regression shipped to every user whose
-     *  server is one deploy behind. */
+    /** The API serving this UI may predate `/knowledge/status` — and then it 404s. A screen that broke on that would
+     *  be a regression shipped to every user whose server is one deploy behind. */
     getKnowledgeStatus.mockResolvedValue(null);
 
-    render(<DocumentUploader />);
+    page();
 
-    expect(await screen.findByText("Handbook")).toBeTruthy();
-    expect(screen.getByText(/59 chunks/)).toBeTruthy();
+    expect(await listed("Handbook")).toBeTruthy();
+    expect(screen.getByText("59 chunks")).toBeTruthy();
     expect(screen.queryByText(/Search is unavailable/)).toBeNull();
+    // the figure cannot say what the index holds, and says so rather than showing the claim as the index's
+    expect(screen.getByTestId("fig-chunks-value")).toHaveTextContent("—");
   });
 
   it("still lists documents when the status call throws", async () => {
     getKnowledgeStatus.mockRejectedValue(new Error("network"));
 
-    render(<DocumentUploader />);
+    page();
 
-    await waitFor(() => expect(screen.getByText("Handbook")).toBeTruthy());
+    expect(await listed("Handbook")).toBeTruthy();
   });
 });
 
 
 describe("curation — settings that were only reachable through the API", () => {
-  it("starts at the defaults the corpus was indexed under", async () => {
-    render(<DocumentUploader />);
-    await screen.findByText("Handbook");
+  it("keeps the wizard behind its button, and opens it at the defaults the corpus was indexed under", async () => {
+    page();
+    await listed("Handbook");
+    // read first: the five steps are a tool, not a form standing open on every visit
+    expect(screen.queryByLabelText(/Maximum chunk length/)).toBeNull();
 
-    // Not "0 changed": a person who never touches this gets the previous behaviour, and
-    // the label has to say so rather than imply an empty configuration.
-    expect(screen.getByText(/defaults/)).toBeTruthy();
-    // The fields are in front of the reader, not behind a disclosure. A setting you have
-    // to go looking for is the reason none of this was reachable in the first place.
+    const add = await openAdd();
+
+    // Not "0 changed": a person who never touches this gets the previous behaviour, and the label has to say so
+    // rather than imply an empty configuration.
+    expect(within(add).getByText("defaults")).toBeTruthy();
+    // Once open, the fields are in front of the reader, not behind a second disclosure.
     expect(screen.getByLabelText(/Maximum chunk length/)).toBeTruthy();
     expect(screen.getByLabelText(/Chunk overlap/)).toBeTruthy();
   });
 
   it("makes no request at all when a file is merely chosen", async () => {
-    // ① is a choice, not a commitment. Dropping a file used to convert it on the spot,
-    // under whatever was in the settings fields — which put ② after the conversion it
-    // was supposed to govern, and spent a conversion on every misdrop.
-    render(<DocumentUploader />);
-    await screen.findByText("Handbook");
+    // ① is a choice, not a commitment. Dropping a file used to convert it on the spot, under whatever was in the
+    // settings fields — which put ② after the conversion it was supposed to govern, and spent a conversion on every
+    // misdrop.
+    page();
+    await openAdd();
 
     choose();
 
@@ -220,16 +256,16 @@ describe("curation — settings that were only reachable through the API", () =>
   });
 
   it("reads the file at step 3 and indexes nothing", async () => {
-    render(<DocumentUploader />);
-    await screen.findByText("Handbook");
+    page();
+    await openAdd();
     choose();
 
     fireEvent.click(screen.getByRole("button", { name: /Convert & review/ }));
 
     // The Markdown is the decision — it is literally what every agent will read.
     expect(await screen.findByText(/body text/)).toBeTruthy();
-    // …and the same press answers what ② does to it, from the SAME file. That used to
-    // need a second picker and a second choice of the same document.
+    // …and the same press answers what ② does to it, from the SAME file. That used to need a second picker and a
+    // second choice of the same document.
     fireEvent.click(screen.getByRole("radio", { name: "Chunks" }));
     expect(await screen.findByText(/Showing 2 of 3 chunks/)).toBeTruthy();
     expect(screen.getByText(/first chunk/)).toBeTruthy();
@@ -238,8 +274,8 @@ describe("curation — settings that were only reachable through the API", () =>
   });
 
   it("carries changed settings into both calls", async () => {
-    render(<DocumentUploader />);
-    await screen.findByText("Handbook");
+    page();
+    await openAdd();
     fireEvent.change(screen.getByLabelText(/Maximum chunk length/), { target: { value: "400" } });
     choose();
     fireEvent.click(screen.getByRole("button", { name: /Convert & review/ }));
@@ -249,11 +285,11 @@ describe("curation — settings that were only reachable through the API", () =>
     expect(previewDocumentChunks.mock.calls[0][1]).toMatchObject({ max_chars: 400 });
   });
 
-  it("will not index anything that has not been read", async () => {
-    // ⑤ is the only call on the panel that writes. It stays shut until ③ has produced a
-    // review, because "confirm" has no meaning if there is nothing to have looked at.
-    render(<DocumentUploader />);
-    await screen.findByText("Handbook");
+  it("will not index anything that has not been read, and lists what landed", async () => {
+    // ⑤ is the only call in the wizard that writes. It stays shut until ③ has produced a review, because "confirm"
+    // has no meaning if there is nothing to have looked at.
+    page();
+    await openAdd();
     choose();
 
     const add = screen.getByRole("button", { name: /Add to knowledge/ });
@@ -263,17 +299,19 @@ describe("curation — settings that were only reachable through the API", () =>
     await screen.findByText(/body text/);
     await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false));
 
-    uploadDocument.mockResolvedValue(doc({ doc_id: "d2", filename: "policy.md" }));
+    uploadDocument.mockResolvedValue(doc({ doc_id: "d2", filename: "policy.md", title: "Policy", chunk_count: 3 }));
     fireEvent.click(add);
     await waitFor(() => expect(uploadDocument).toHaveBeenCalled());
+    // the screen's list takes in what landed, and its status is read again
+    expect(await listed("Policy")).toBeTruthy();
+    expect(screen.getByTestId("fig-documents-value")).toHaveTextContent("2");
   });
 
   it("marks a review stale when the settings move under it", async () => {
-    // A review describes a document AS CUT BY settings. Change them and it is no longer
-    // a description of what would be indexed — so it stops counting as one, rather than
-    // standing there looking approved.
-    render(<DocumentUploader />);
-    await screen.findByText("Handbook");
+    // A review describes a document AS CUT BY settings. Change them and it is no longer a description of what would
+    // be indexed — so it stops counting as one, rather than standing there looking approved.
+    page();
+    await openAdd();
     choose();
     fireEvent.click(screen.getByRole("button", { name: /Convert & review/ }));
     await screen.findByText(/body text/);
@@ -288,16 +326,17 @@ describe("curation — settings that were only reachable through the API", () =>
   });
 
   it("names the embedder in force even when everything is healthy", async () => {
-    // A corpus is only comparable with itself under ONE model, so which model produced it
-    // is part of reading the list — not an error state.
+    // A corpus is only comparable with itself under ONE model, so which model produced it is part of reading the
+    // screen — not an error state. It is a fact on the chunks figure now, its width on hover.
     getKnowledgeStatus.mockResolvedValue(status({
       embedder: { model: "some-embedder", endpoint: "http://x/v1", ok: true, dim: 3072 },
     }));
 
-    render(<DocumentUploader />);
+    page();
 
-    expect(await screen.findByText(/3072 dimensions/)).toBeTruthy();
-    expect(screen.getByText("some-embedder")).toBeTruthy();
+    const chip = await screen.findByTestId("embedder-chip");
+    expect(chip).toHaveTextContent("some-embedder");
+    expect(chip.getAttribute("title")).toMatch(/3072 dimensions/);
   });
 });
 
@@ -307,7 +346,7 @@ describe("a failed read is said, never shown as an empty corpus", () => {
     listDocuments.mockRejectedValue(new Error("Reading the documents failed (502)"));
     getKnowledgeStatus.mockRejectedValue(new Error("Reading the search status failed (502)"));
 
-    render(<DocumentUploader />);
+    page();
 
     expect(await screen.findByText(/Could not read the documents/)).toBeInTheDocument();
     expect(screen.getByText(/Could not read the search status/)).toBeInTheDocument();

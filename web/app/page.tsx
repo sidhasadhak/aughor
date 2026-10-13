@@ -1,5 +1,4 @@
 "use client";
-import { connectionLabel } from "@/lib/names";
 import { CONNECTORS } from "@/lib/connectors.gen";
 import { ErrorState } from "@/components/ui/states";
 
@@ -21,15 +20,13 @@ import { installWorkspaceHeader, setActiveWorkspace } from "@/lib/workspace";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { OwnersPanel } from "@/components/OwnersPanel";
-import { setOrgSettingsCache, localizeCurrency } from "@/lib/orgSettings";
-import { runDisplayTitle } from "@/lib/runTitle";
+import { setOrgSettingsCache } from "@/lib/orgSettings";
 import { formatCount } from "@/lib/format";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInQueryProvider, type OpenInQueryRequest } from "@/lib/openInQuery";
 import { getCanvases } from "@/lib/api";
 import { CommandPalette, GlobalCommands } from "@/components/CommandPalette";
-import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
@@ -71,8 +68,7 @@ const RolesPanel        = dynamic(() => import("@/components/RolesPanel").then(m
 const ProcessHealthPanel= dynamic(() => import("@/components/ProcessHealthPanel").then(m => ({ default: m.ProcessHealthPanel })), { ssr: false, loading });
 const PlaybookPanel     = dynamic(() => import("@/components/PlaybookPanel").then(m => ({ default: m.PlaybookPanel })),      { ssr: false, loading });
 const RecommendationInbox= dynamic(() => import("@/components/RecommendationInbox").then(m => ({ default: m.RecommendationInbox })), { ssr: false, loading });
-const DocumentUploader  = dynamic(() => import("@/components/DocumentUploader").then(m => ({ default: m.DocumentUploader })),{ ssr: false, loading });
-const FactCheckPanel    = dynamic(() => import("@/components/FactCheckPanel").then(m => ({ default: m.FactCheckPanel })),{ ssr: false, loading });
+const DocumentsPage     = dynamic(() => import("@/components/documents/DocumentsPage").then(m => ({ default: m.DocumentsPage })),{ ssr: false, loading });
 const CatalogScreen     = dynamic(() => import("@/components/CatalogScreen").then(m => ({ default: m.CatalogScreen })),      { ssr: false, loading });
 const CanvasBrowser     = dynamic(() => import("@/components/CanvasBrowser").then(m => ({ default: m.CanvasBrowser })),      { ssr: false, loading });
 const CanvasCreator     = dynamic(() => import("@/components/CanvasCreator").then(m => ({ default: m.CanvasCreator })),      { ssr: false, loading });
@@ -127,7 +123,6 @@ import {
   type AgentRosterEntry,
 } from "@/lib/api";
 import { costSummary, fmtCompact, fmtMs } from "@/lib/cost";
-import { subscribeKernelEvents } from "@/lib/events";
 import { Segmented } from "@/components/ui/segmented";
 import { TabStrip } from "@/components/ui/tab-strip";
 import { Input } from "@/components/ui/input";
@@ -202,25 +197,6 @@ function NavIcon({ name, size = 14, color = "currentColor" }: { name: string; si
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-/** A finding headline shown as a plain one-line list subtitle: strip markdown emphasis (no bold
- *  rendering here, so `**…**` would otherwise leak literal asterisks) and honour the currency. */
-function plainSubtitle(text: string): string {
-  // PX-1 — a scheduled run's stored question leads with a code-written grounding
-  // block; that text is for the model, and rendering it as a title put
-  // "[Scheduled-run context — …]" on five cards of one screen. Derive, display-side.
-  return localizeCurrency(runDisplayTitle(text).title).replace(/\*+/g, "");
-}
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
 
 function freshnessLabel(ts: string | null): string | null {
   if (!ts) return null;
@@ -627,124 +603,8 @@ function HomeScreen({
 
 // ── Recents screen ─────────────────────────────────────────────────────────────
 
-function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, workspaceId }: { onGoToChat: (q?: string) => void; onOpenInvestigation: (id: string, kind: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void; onOpenMachineView?: () => void; workspaceId?: string }) {
-  const [activities, setActivities] = useState<Array<{ id: string; question: string; started_at: string; status: string; headline: string | null; kind?: string; connection_id?: string; canvas_id?: string | null }>>([]);
-  const [filter, setFilter] = useState<"all" | "investigation" | "chat">("all");
-  // A run card names its connection, never its id (the study §2.6: `Agentic · 8233e4fd`).
-  const [conns, setConns] = useState<Connection[]>([]);
-  useEffect(() => { getConnections().then(setConns).catch(() => {}); }, []);
-
-  useEffect(() => {
-    let alive = true;
-    const load = () => {
-      const ctrl = new AbortController();
-      const to = setTimeout(() => ctrl.abort(), 8_000);
-      fetch(`${getApiBase()}/investigations${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`, { signal: ctrl.signal })
-        .then(r => r.json())
-        .then(d => { if (alive) setActivities(Array.isArray(d) ? d : []); })
-        .catch(() => {})
-        .finally(() => clearTimeout(to));
-    };
-    load();
-    // Live refresh on investigation lifecycle events — this screen previously
-    // fetched ONCE on mount, so runs started elsewhere (another tab, the API)
-    // never appeared until a full page reload. Mirrors HistoryPanel's wiring.
-    const unsub = subscribeKernelEvents(() => load(), { kinds: ["investigation."] });
-    return () => { alive = false; unsub(); };
-  }, [workspaceId]);
-
-  const shown = filter === "all" ? activities : activities.filter(a => (filter === "chat" ? a.kind === "chat" : a.kind !== "chat"));
-
-  return (
-    <div className="aug-screen">
-      <div className="aug-toolbar">
-        <Segmented label="Filter runs" value={filter} onChange={setFilter}
-          options={[{ value: "all", label: "All" }, { value: "investigation", label: "Agent" }, { value: "chat", label: "Chat" }]} />
-        {/* PX-6 — the seven-surfaces audit measured these as views over DIFFERENT data
-            planes, not duplicates: this list is the person's run history
-            (/investigations); the machine view (event stream, traces, spans) lives in
-            Agent Ops ▸ Activity. One cross-link instead of a merge that would have
-            fused two planes. */}
-        {onOpenMachineView && (
-          <Button variant="ghost" size="xs" className="ml-auto" onClick={onOpenMachineView}>
-            Machine view: traces &amp; spans →
-          </Button>
-        )}
-      </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
-        {activities.length > 0 && (
-          <MiniStatRow>
-            <MiniStat value={activities.length} label="Total" />
-            <MiniStat value={activities.filter(a => a.kind !== "chat").length} label="Agent runs" tone="var(--blue4)" />
-            <MiniStat value={activities.filter(a => a.status === "complete").length} label="Completed" tone="var(--grn4)" />
-          </MiniStatRow>
-        )}
-        {shown.length === 0 ? (
-          <div style={{ padding: "40px 0", textAlign: "center" }}>
-            <p style={{ fontSize: 12, color: "var(--t3)" }}>No activity yet — start by asking a question.</p>
-          </div>
-        ) : (
-          /* Card grid — each run reads as a tile: question + the answer headline + status */
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>
-            {shown.map(a => {
-              const isChat = a.kind === "chat";
-              const st: [string, string] | null =
-                a.status === "complete"  ? ["aug-tag-green", "Completed"] :
-                a.status === "timed_out" ? ["aug-tag-amber", "Timed out"] :
-                a.status === "running"   ? ["aug-tag-blue",  "Running"]   :
-                a.status === "failed"    ? ["aug-tag-red",   "Failed"]    : null;
-              const open = () => onOpenInvestigation(a.id, isChat ? "chat" : "investigation", a.connection_id, a.canvas_id);
-              return (
-                <div key={a.id} role="button" tabIndex={0} onClick={open}
-                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}
-                  style={{
-                    display: "flex", flexDirection: "column", gap: 10, padding: 16, minHeight: 128, cursor: "pointer",
-                    background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
-                    transition: "border-color .12s, background .12s",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b3)"; e.currentTarget.style.background = "var(--bg-3)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-2)"; }}
-                >
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 11 }}>
-                    <div style={{
-                      width: 32, height: 32, borderRadius: "var(--r2)", flexShrink: 0,
-                      background: isChat ? "color-mix(in srgb, var(--blue3) 15%, transparent)" : "color-mix(in srgb, var(--vio3) 18%, transparent)",
-                      border: `1px solid ${isChat ? "color-mix(in srgb, var(--blue3) 30%, transparent)" : "color-mix(in srgb, var(--vio3) 32%, transparent)"}`,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>
-                      <NavIcon name={isChat ? "chat" : "spark"} size={15} color={isChat ? "var(--blue4)" : "var(--vio4)"} />
-                    </div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{
-                        fontSize: 13, fontWeight: 600, color: "var(--t1)", lineHeight: 1.35,
-                        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
-                      }}>
-                        {plainSubtitle(a.question)}
-                      </div>
-                      <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
-                        {isChat ? "Chat" : "Agentic"}{a.connection_id ? ` · ${connectionLabel(a.connection_id, conns)}` : ""}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{
-                    flex: 1, fontSize: 12, color: "var(--t3)", lineHeight: 1.5,
-                    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
-                  }}>
-                    {a.headline ? plainSubtitle(a.headline) : "—"}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    {st && <span className={`aug-tag ${st[0]}`}>{st[1]}</span>}
-                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t3)" }}>{timeAgo(a.started_at)}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+// Agent runs, redone to CLARITY, is its own file: one row per question, repeats folded into ×N.
+const RecentsScreen = dynamic(() => import("@/components/runs/AgentRuns").then(m => ({ default: m.AgentRuns })), { ssr: false, loading });
 
 // ── Fleet screen — the agents working your data (R2) ────────────────────────────
 
@@ -2026,7 +1886,9 @@ export default function Home() {
                   onLayerChange={l => { setOpenId(null); setRecordLayer(l); }}
                   openId={openId}
                   onOpenRecord={openRecord}
-                  connections={wsConnections}
+                  // Every connection, not the workspace's: the Record uses the list only to NAME a connection, and
+                  // its ledgers span every connection — a claim about one outside this workspace read "connection dcc63d83".
+                  connections={connections}
                   selectedConn={selectedConn}
                   onOpenRun={openRun}
                   onAsk={() => goToChat()}
@@ -2183,7 +2045,7 @@ export default function Home() {
             {/* ── RECENTS ── */}
             {tab === "recents" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <RecentsScreen onGoToChat={goToChat} onOpenInvestigation={openInvestigation}
+                <RecentsScreen onGoToChat={goToChat} onOpenRun={openInvestigation}
                   onOpenMachineView={() => { setAgentsLayer("activity"); setTab("agentic-ops"); }}
                   workspaceId={selectedWorkspace} />
               </div>
@@ -2284,10 +2146,7 @@ export default function Home() {
 
             {tab === "documents" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 24px" }}>
-                  <FactCheckPanel connectionId={selectedConn} />
-                  <DocumentUploader />
-                </div>
+                <DocumentsPage connectionId={selectedConn} connections={connections} />
               </div>
             )}
 
@@ -2303,9 +2162,15 @@ export default function Home() {
             {/* ── HEALTH SCORECARD ── */}
             {tab === "health" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
-                  <ProcessHealthPanel connectionId={selectedConn} onInvestigate={goToChat} />
-                </div>
+                <ProcessHealthPanel connectionId={selectedConn} onAsk={goToChat}
+                  onOpenMetrics={() => {
+                    // A target is set on a metric's Edit tab, in the Semantic Layer's Metrics — its landing tab. A
+                    // `?semtab=` left from an earlier visit would open another tab, so it is cleared first.
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete("semtab");
+                    window.history.replaceState(window.history.state, "", url);
+                    handleNavigate("semantic");
+                  }} />
               </div>
             )}
 

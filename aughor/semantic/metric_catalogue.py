@@ -192,10 +192,10 @@ def _industry_packages(connection_id: str, schema_name: Optional[str]) -> list:
     return out
 
 
-def _bound_roles(pack_id: str, connection_id: str, schema_name: Optional[str]) -> set[str]:
-    """The roles this connection has bound for a package. Empty on any trouble, which
-    reads as 'nothing bound' — the honest answer, and the one that keeps an unbindable
-    recipe out of the computable list."""
+def _binding_of(pack_id: str, connection_id: str, schema_name: Optional[str]) -> dict:
+    """The roles this connection has bound for a package, each with what it is bound to. Empty on any trouble, which
+    reads as 'nothing bound' — the honest answer, and the one that keeps an unbindable recipe out of the computable
+    list."""
     from aughor.packs.bindings import load_binding
 
     try:
@@ -204,8 +204,13 @@ def _bound_roles(pack_id: str, connection_id: str, schema_name: Optional[str]) -
         from aughor.kernel.errors import tolerate
         tolerate(exc, "binding lookup is best-effort; the recipe is reported as needing a "
                       "binding", counter="metric_catalogue.binding")
-        return set()
-    return set((rec or {}).get("bindings") or {})
+        return {}
+    return dict((rec or {}).get("bindings") or {})
+
+
+def _bound_roles(pack_id: str, connection_id: str, schema_name: Optional[str]) -> set[str]:
+    """The roles this connection has bound for a package."""
+    return set(_binding_of(pack_id, connection_id, schema_name))
 
 
 def _industry_entries(connection_id: str, schema_name: Optional[str]) -> list[CatalogueEntry]:
@@ -223,10 +228,14 @@ def _industry_entries(connection_id: str, schema_name: Optional[str]) -> list[Ca
         metrics = list(getattr(pack, "metrics", None) or [])
         if not metrics:
             continue
-        bound = _bound_roles(pkg.pack_id, connection_id, schema_name)
+        binding = _binding_of(pkg.pack_id, connection_id, schema_name)
         for pm in metrics:
             required = list(getattr(pm.binds, "required", None) or [])
-            missing = [r for r in required if r not in bound]
+            missing = [r for r in required if r not in binding]
+            # A recipe is an expression over its roles; once they are bound, the tables they were bound to are what it
+            # reads — without them a copy of it was `SELECT <expression>` with no FROM (2026-10-13).
+            tables = [] if missing else [t for t in dict.fromkeys(
+                str((binding.get(r) or {}).get("table") or "") for r in required) if t]
             sr = getattr(pm, "sane_range", None)
             out.append(CatalogueEntry(
                 name=pm.name, label=pm.title or pm.name, source=SOURCE_INDUSTRY,
@@ -238,7 +247,7 @@ def _industry_entries(connection_id: str, schema_name: Optional[str]) -> list[Ca
                 anti_patterns=list(pm.anti_patterns or []),
                 pack_id=pkg.pack_id, required_roles=required, missing_roles=missing,
                 sane_range=(sr.model_dump() if hasattr(sr, "model_dump") else sr),
-                editable=False, schema=schema_name or "*",
+                editable=False, schema=schema_name or "*", tables=tables,
             ))
     return out
 
@@ -541,7 +550,7 @@ def materialise(connection_id: str, name: str, schema_name: Optional[str] = None
             needs = sorted(set(unresolved)) or [f"{r}.*" for r in entry.missing_roles]
             to_write = (f"Write this over this connection's own columns. The {entry.pack_id} package's "
                         f"formula is {entry.sql.strip()} — it needs {', '.join(needs)}; binding those "
-                        f"roles under Settings ▸ System ▸ Packages lets the package resolve it instead.")
+                        f"roles (Semantic Layer ▸ Metrics ▸ Bind roles) lets the package resolve it instead.")
             sql = ""
 
     from aughor.semantic.metric_statement import as_statement

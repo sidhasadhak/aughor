@@ -180,7 +180,12 @@ class ProposeIn(BaseModel):
 
 def _facts_for_connection(connection_id: str, schema: Optional[str], business_model: str):
     """Build dtype-aware SchemaFacts from a live connection's schema context (the introspection
-    glue). Best-effort: returns None on any failure so the caller can ask for a posted map."""
+    glue). Best-effort: returns None on any failure so the caller can ask for a posted map.
+
+    The schema context reads a DuckDB handle; any other engine raised here and answered None, so
+    a package could be proposed only on DuckDB — LuxExperience's Postgres answered "provide
+    table_cols or a reachable connection_id" (2026-10-13). Then the engine's own schema text is
+    read instead: every connector writes it, with each column's type."""
     try:
         from aughor.routers.connections import open_connection_for
         from aughor.tools.schema import build_schema_context
@@ -189,7 +194,39 @@ def _facts_for_connection(connection_id: str, schema: Optional[str], business_mo
         raw = getattr(conn, "raw", None) or getattr(conn, "_conn", None) or conn
         ctx = build_schema_context(raw, schema_name=schema, connection_id=connection_id)
         return schema_facts_from_schema_context(ctx, business_model=business_model)
-    except Exception:
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the DuckDB schema context could not be read; the engine's schema text is read instead",
+                 counter="packs.facts_context")
+    return _facts_from_schema_text(connection_id, schema, business_model)
+
+
+def _facts_from_schema_text(connection_id: str, schema: Optional[str], business_model: str):
+    """SchemaFacts from the engine-neutral schema text (`get_schema`) — tables, columns and their
+    types — kept to `schema` when one is named. None when it cannot be read."""
+    try:
+        from aughor.db.connection import open_connection_for, open_connection_for_with_schema
+        from aughor.db.schema_render import parse_schema_column_types, parse_schema_tables
+        from aughor.packs.adapter import schema_facts_from_table_cols
+        db = (open_connection_for_with_schema(connection_id, schema_name=schema) if schema
+              else open_connection_for(connection_id))
+        try:
+            text = db.get_schema()
+        finally:
+            db.close()
+        cols = parse_schema_tables(text)
+        if schema:
+            mine = {t: c for t, c in cols.items() if "." not in t or t.split(".")[-2] == schema}
+            cols = mine or cols
+        if not cols:
+            return None
+        types = parse_schema_column_types(text)
+        return schema_facts_from_table_cols(cols, business_model=business_model,
+                                            col_types={t: types.get(t, {}) for t in cols})
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the connection's schema could not be read for a package proposal",
+                 counter="packs.facts_text")
         return None
 
 

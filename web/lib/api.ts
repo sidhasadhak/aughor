@@ -1231,6 +1231,19 @@ export interface MetricDateCandidate {
   column: string;
   type: string;
   primary: boolean;
+  /** A day kept as TEXT, offered by its name — the period filter reads it as a date. */
+  text?: boolean;
+}
+
+/** A date one join away from a statement whose own tables have none — where it is, and the key that reaches it. Not a
+ *  grain the statement can take as written: the definition must read that table first. */
+export interface MetricDateReachable {
+  grain: string;
+  table: string;
+  column: string;
+  via: string;
+  from: string;
+  type: string;
 }
 
 /** One runnable statement the platform proposes for a definition written as an expression:
@@ -1249,6 +1262,8 @@ export interface MetricProposals {
   statements: MetricStatementOption[];
   statement_note: string;
   candidates: MetricDateCandidate[];
+  /** When the statement's own tables hold no date: the dates one join away. */
+  reachable?: MetricDateReachable[];
   note: string;
 }
 
@@ -3714,6 +3729,47 @@ export async function convertDocument(
   if (settings && Object.keys(settings).length) form.append("chunk_settings", JSON.stringify(settings));
   const res = await fetch(`${getApiBase()}/documents/convert`, { method: "POST", body: form });
   if (!res.ok) throw await documentError(res, "Could not read that document");
+  return res.json();
+}
+
+/** What restoring a connection's compiled schema documentation would add — or added. The artifact on disk, not the
+ *  index, is a schema document's source, so this can put back chunks the index lost; a connection whose artifact is
+ *  gone plans nothing. Every call is a dry run unless `dryRun` is false. */
+export interface DocTreePlan {
+  dry_run: boolean;
+  documents: { doc_id: string; in_store: number; in_artifact: number; adds: number }[];
+  restorable_chunks: number;
+  skipped: unknown[];
+  restored?: unknown[];
+  failed?: { doc_id: string; error: string }[];
+}
+export async function restoreDocTrees(dryRun = true, connectionId?: string): Promise<DocTreePlan> {
+  const res = await fetch(`${getApiBase()}/documents/restore-doctrees`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dry_run: dryRun, ...(connectionId ? { connection_id: connectionId } : {}) }),
+  });
+  if (!res.ok) throw await documentError(res, "Restore failed");
+  return res.json();
+}
+
+/** What a re-index would do (dry run) or did: it re-embeds every chunk the index holds with the active model and sets
+ *  each document's listed count to what the index holds (`registry_corrections`). */
+export interface ReindexPlan {
+  dry_run: boolean;
+  ok?: boolean;
+  error?: string;
+  chunks_to_re_embed?: number;
+  registry_corrections?: Record<string, { from: number; to: number }>;
+  unrecoverable_chunks?: number;
+  backend?: string;
+  model?: string;
+}
+export async function reindexDocuments(dryRun = true): Promise<ReindexPlan> {
+  const res = await fetch(`${getApiBase()}/documents/reindex`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dry_run: dryRun, purge_orphans: false }),
+  });
+  if (!res.ok) throw await documentError(res, "Re-index failed");
   return res.json();
 }
 
@@ -8973,6 +9029,35 @@ export async function getPacks(): Promise<{ enabled: boolean; packs: PackSummary
 export interface BindingCandidateDTO {
   role: string; table?: string | null; column?: string | null;
   value?: string | null; confidence: number; evidence: string; bound: boolean;
+}
+
+/** A package's roles and recipes, as the binding dialog reads them: each role's attributes with their types, and each
+ *  recipe's formula (`{{role.<role>.<attribute>}}` tokens). */
+export interface PackRoleAttribute { type: string; description: string }
+export interface PackRoleSpec { description: string; expects: Record<string, unknown>; attributes: Record<string, PackRoleAttribute> }
+export interface PackDetail {
+  manifest: { id?: string; name?: string };
+  entities: Record<string, PackRoleSpec>;
+  metrics: { name: string; title?: string; formula?: string; binds?: { required?: string[] } }[];
+}
+
+export async function getPackDetail(packId: string): Promise<PackDetail> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The package could not be read"));
+  return res.json();
+}
+
+/** What a role is bound to on one connection: its table, and the column each attribute is read from. */
+export interface RoleBinding { table?: string | null; column?: string | null; columns?: Record<string, string>; [k: string]: unknown }
+
+/** The binding this connection has pinned for a package, or null when it has none. */
+export async function getPackBinding(
+  packId: string, connectionId: string, schema?: string,
+): Promise<{ bindings: Record<string, RoleBinding>; verified?: boolean } | null> {
+  const q = new URLSearchParams({ connection_id: connectionId, ...(schema ? { schema } : {}) });
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/binding?${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The binding could not be read"));
+  return res.json();
 }
 
 export async function proposePackBindings(

@@ -25,6 +25,7 @@ Everything here is pure: sqlglot in, sqlglot out, no store, no model.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 #: How a statement begins. ``WITH`` is a statement too — the multi-CTE case the user named.
@@ -158,7 +159,83 @@ def date_candidates(sql: str, tables: Optional[list], profile_entry: dict,
         for column, dtype in rows:
             out.append({"grain": f"{table}.{column}", "table": table, "column": column,
                         "type": dtype, "primary": column == primary})
+        # Dates kept as TEXT, after the typed ones: the profiler counts only date- and time-typed columns, and
+        # LuxExperience keeps its sessions' day as ISO text (`web_sessions.session_start` = '2020-07-01', 2026-10-13).
+        # Offered by NAME and said to be text; the period filter casts it, and a text that is not a date fails there,
+        # said — never silently.
+        for column, dtype in sorted(columns.items()):
+            if is_text(dtype) and DATEY_NAME.search(column) and not _NOT_A_DATE.search(column):
+                out.append({"grain": f"{table}.{column}", "table": table, "column": column,
+                            "type": dtype, "primary": False, "text": True})
     return out
+
+
+#: A column NAME that says it holds a date or a time — `session_start`, `signup_date`, `created_at`, `order_day`.
+DATEY_NAME = re.compile(r"(?:^|_)(?:date|day|dt|time|timestamp|ts|at|on|start|started|end|ended|created|updated|"
+                        r"opened|closed|period)(?:_|$)", re.I)
+#: …and the names that look like one and are not.
+_NOT_A_DATE = re.compile(r"zone|type|kind|count|duration|seconds|minutes|hours|days|of_week|status", re.I)
+
+
+def is_text(dtype: str) -> bool:
+    d = str(dtype or "").lower()
+    return any(t in d for t in ("char", "text", "string"))
+
+
+def _profiled_tables(profile_entry: dict) -> list[str]:
+    """Every table the profile entry describes, by bare name, once each."""
+    names = {bare(str(k)) for k in ((profile_entry or {}).get("tables") or {})}
+    for key, prof in ((profile_entry or {}).get("columns") or {}).items():
+        owner = (prof or {}).get("table") if isinstance(prof, dict) else None
+        names.add(bare(str(owner or str(key).split(".", 1)[0])))
+    return sorted(n for n in names if n)
+
+
+def dates_one_join_away(sql: str, tables: Optional[list], profile_entry: dict,
+                        *, dialect: str = "duckdb") -> list[dict]:
+    """Dates on the table a statement's key points at — `order_items.order_id` → `orders.order_date` — for a statement
+    whose own tables have none. NOT a grain it can take as written: a period filters the date's own table inside the
+    statement (`scoped_statement`), so the statement must read that table first. Said so the person knows where the
+    date is and what to change (Gross Margin %, LuxExperience, 2026-10-13: `order_items` has no date; `orders` has).
+    A key is followed only to the table it names (`order_id` → `orders`), never to another table that merely carries
+    it (`returns.order_id`), whose dates belong to something else."""
+    from aughor.semantic.metric_time import is_time, primary_date, table_columns
+
+    own = [t for t in statement_tables(sql, dialect) + [str(x).strip() for x in (tables or []) if str(x).strip()]]
+    own_bare = {bare(t) for t in own}
+    known = _profiled_tables(profile_entry)
+    out: list[dict] = []
+    for table in dict.fromkeys(own):
+        prefix = table.rsplit(".", 1)[0] + "." if "." in table else ""
+        for column in table_columns(profile_entry or {}, bare(table)):
+            if not column.endswith("_id"):
+                continue
+            stem = column[:-3]
+            names = {stem, f"{stem}s", f"{stem}es", f"{stem[:-1]}ies" if stem.endswith("y") else ""}
+            target = next((t for t in known if t in names and t not in own_bare), None)
+            if not target:
+                continue
+            cols = table_columns(profile_entry or {}, target)
+            primary = primary_date(profile_entry or {}, target)
+            dates = sorted((c for c, d in cols.items() if is_time(d)), key=lambda c: (c != primary, c))
+            for date_col in dates[:3]:
+                grain = f"{prefix}{target}.{date_col}"
+                if grain not in {o["grain"] for o in out}:
+                    out.append({"grain": grain, "table": f"{prefix}{target}", "column": date_col,
+                                "via": column, "from": table, "type": cols.get(date_col, "")})
+    return out
+
+
+def year_only(tables: list[str], profile_entry: dict) -> str:
+    """'marketing_campaigns has no date — only fiscal_year, a year number, which cannot be cut to a month', or ""."""
+    from aughor.semantic.metric_time import table_columns
+    for table in tables:
+        cols = table_columns(profile_entry or {}, bare(table))
+        years = [c for c, d in cols.items() if re.search(r"(?:^|_)year$", c) and not is_text(d)]
+        if years:
+            return (f"{table} has no date — only {years[0]}, a year number, which cannot be cut to a month; the "
+                    "definition must read a table with a date")
+    return ""
 
 
 def expression_columns(sql: str, dialect: str = "duckdb") -> list[str]:

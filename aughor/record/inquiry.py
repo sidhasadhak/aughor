@@ -199,6 +199,14 @@ def open_inquiry(*, question: str, connection_id: str, opened_by: str, run_id: s
     ``review`` · ``mission:<id>``. ``mission`` (phase 5) is the mission the question bears on,
     when the door read one — kept on the inquiry so the mission's report can count what it opened."""
     now = now or _now()
+    # A scheduled run's question arrives with the code-written grounding in front of it (`automations/temporal.py`).
+    # That is context for the model, not the question: kept, it filled the 500 characters stored below — the person's
+    # question never reached the Record — and every scheduled run's subject came out of the same header words, so
+    # different questions woke one inquiry (2026-10-13). What was ASKED is stored and keyed on; the flag keeps the fact.
+    from aughor.automations.temporal import OBSERVATION_HEADER, PREVIOUS_REPORT_HEADER, ask_of
+    scheduled = (question or "").lstrip().startswith((OBSERVATION_HEADER, PREVIOUS_REPORT_HEADER))
+    if scheduled:
+        question = ask_of(question) or "Scheduled run"
     subject = subject or subject_of(question)
     since = (now - _dt.timedelta(days=REOPEN_WITHIN_DAYS)).isoformat()
     for q in list_inquiries(conn_id=connection_id or None, subject=subject, limit=50):
@@ -213,7 +221,8 @@ def open_inquiry(*, question: str, connection_id: str, opened_by: str, run_id: s
             return _book(q)
     q = Inquiry(question=(question or "").strip()[:500], subject=subject, connection_id=connection_id or "",
                 opened_by=opened_by or "unidentified", state="open", opened_at=now.isoformat(),
-                extra={**({"first_run": run_id} if run_id else {}), **({"mission": mission} if mission else {})})
+                extra={**({"first_run": run_id} if run_id else {}), **({"mission": mission} if mission else {}),
+                       **({"scheduled": True} if scheduled else {})})
     q.key = inquiry_key(connection_id or "-", subject, (run_id or now.strftime("%Y%m%dT%H%M%S%f")))
     if not run_id:
         # opened by a signal, not an ask: no run is running, so the run it waits for is PROPOSED with its cost

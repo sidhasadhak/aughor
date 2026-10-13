@@ -16,7 +16,7 @@
 import { useMemo, useState } from "react";
 
 import type { Connection } from "@/lib/api";
-import { countNoun, formatTableNumber, pct } from "@/lib/format";
+import { countNoun, formatCount, formatTableNumber, pct } from "@/lib/format";
 import { connectionLabel } from "@/lib/names";
 import {
   amendDecision, bookOutcome, bookScenario, declareDecision, decisionStands, getCalibration, getDecision,
@@ -25,10 +25,14 @@ import {
   type ScenarioBody,
 } from "@/lib/record";
 import {
-  Absent, ActorField, BackHeader, ClaimLine, Fact, Gate, Ledger, Page, Section, day, dayDistance, daysUntil,
+  Absent, ActorField, BackHeader, ClaimLine, Fact, Gate, ListCard, ListRow, Page, Section, day, dayDistance, daysUntil,
   useActor, useLoad,
-  type Actor, type LedgerColumn,
+  type Actor, type ListColumn,
 } from "@/components/record/kit";
+import {
+  CARD, Chip, Dot, Figure, Figures, NUM, NeedsRow, NeedsYou, Page as ClarityPage,
+} from "@/components/clarity/kit";
+import { chosenWords, countBy, dateWords, distanceWords, shortLabel, whenWords } from "@/components/record/words";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,58 +82,143 @@ export function DecisionsPanel({ connections, selectedConn, openId, onOpen, onOp
 function DecisionLedger({ connections, selectedConn, onOpen }: {
   connections: Connection[]; selectedConn: string; onOpen: (id: string) => void;
 }) {
-  const [filter, setFilter] = useState<Filter>("all");
   const [declaring, setDeclaring] = useState(false);
   const load = useLoad(() => listDecisions({ limit: 300 }), []);
-  const rows = useMemo(
-    () => (load.data ?? []).filter(d => filter === "all" || reviewState(d) === filter),
-    [load.data, filter]);
-  const many = new Set((load.data ?? []).map(d => d.connection_id)).size > 1;
-  const columns: LedgerColumn<Decision>[] = [
-    { head: "Question", cell: d => d.question, width: "34%" },
-    { head: "Chosen", cell: d => d.chosen },
-    { head: "Decided by", cell: d => whoLabel(d.decided_by), width: 130 },
-    { head: "Decided", cell: d => day(d.decided_at), width: 110 },
-    { head: "Review date", cell: d => (d.review_on ? `${day(d.review_on)} · ${dayDistance(d.review_on)}` : "none set"), width: 190 },
-    { head: "Review", cell: d => (
-      <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
-        <StatusChip hue={REVIEW_HUE[reviewState(d)]}>{REVIEW_WORDS[reviewState(d)]}</StatusChip>
-        {d.reopened_by && <StatusChip hue="caution" title="A claim it relied on was restated; a person has not answered yet">reopened</StatusChip>}
-      </span>
-    ), width: 200 },
-    ...(many ? [{ head: "Connection", cell: (d: Decision) => (d.connection_id ? connectionLabel(d.connection_id, connections) : "every connection"), width: 150 }] : []),
-  ];
+  // The form appears only when a person asks for it (CLARITY: read first, edit behind a button).
+  const form = declaring && (
+    <section aria-label="Record a decision" style={CARD}>
+      <DeclareForm connectionId={selectedConn} onCancel={() => setDeclaring(false)}
+        onBooked={d => { setDeclaring(false); load.reload(); onOpen(d.id); }} />
+    </section>
+  );
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-0)" }}>
-      <div className="aug-toolbar">
-        <Segmented label="Filter decisions by review" value={filter} onChange={setFilter}
-          options={FILTERS.map(f => ({ value: f.id, label: f.label }))} />
-        {load.data && (
-          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
-            {countNoun(rows.length, "decision")} · every connection
+    <ClarityPage testId="decisions-page">
+      <Gate load={load} what="decisions">
+        {all => <DecisionOverview all={all} connections={connections} onOpen={onOpen} form={form}
+          declaring={declaring} onDeclare={() => setDeclaring(v => !v)} />}
+      </Gate>
+    </ClarityPage>
+  );
+}
+
+const SOURCE_SHORT: Record<string, string> = {
+  declared: "declared", recommendation: "from a recommendation", approval: "from an approval", reply: "from a reply",
+};
+const REVIEW_DOT: Record<string, "amber" | "grey" | "green"> = { due: "amber", waiting: "grey", reviewed: "green" };
+
+/** Figures → Needs you → the list: how many, which are due for a review or reopened (with the button that answers
+ *  them), whether they can be scored at all, and every decision as one row. */
+function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare }: {
+  all: Decision[]; connections: Connection[]; onOpen: (id: string) => void;
+  form: React.ReactNode; declaring: boolean; onDeclare: () => void;
+}) {
+  const [filter, setFilter] = useState<Filter>("all");
+  const rows = useMemo(() => all.filter(d => filter === "all" || reviewState(d) === filter), [all, filter]);
+  const due = all.filter(d => reviewState(d) === "due");
+  const reviewed = all.filter(d => reviewState(d) === "reviewed");
+  const reopened = all.filter(d => d.reopened_by && reviewState(d) !== "due");
+  const next = all.filter(d => reviewState(d) === "waiting" && d.review_on).map(d => d.review_on).sort()[0] ?? "";
+  const oldestDue = due.map(d => d.review_on).sort()[0] ?? "";
+  const withExpectation = all.filter(d => d.expectation_claim).length;
+  const notes = [...new Set(all.filter(d => !d.expectation_claim)
+    .map(d => (typeof d.extra.expectation_note === "string" ? d.extra.expectation_note.replace(/^none:\s*/, "") : ""))
+    .filter(Boolean))];
+  const conns = [...new Set(all.map(d => d.connection_id).filter(Boolean))];
+  const many = conns.length > 1;
+  const scope = many ? `${conns.length} connections` : conns[0] ? connectionLabel(conns[0], connections) : "";
+  const label = (d: Decision) => shortLabel(d.question);
+  // What every row would repeat is said once, in the figure: who decided, and how each was booked.
+  const deciders = [...new Set(all.map(d => d.decided_by))];
+  const sources = [...new Set(all.map(d => d.source.kind))];
+
+  const columns: ListColumn<Decision>[] = [
+    { head: "Question", value: d => d.question },
+    { head: "Chosen", value: d => d.options.find(o => o.id === d.chosen)?.description || d.chosen },
+    { head: "Decided by", value: d => whoLabel(d.decided_by) },
+    { head: "Decided", value: d => day(d.decided_at) },
+    { head: "Review date", value: d => day(d.review_on) },
+    { head: "Review", value: d => REVIEW_WORDS[reviewState(d)] },
+    { head: "Reopened", value: d => (d.reopened_by ? "reopened" : "") },
+    { head: "Expectation", value: d => (d.expectation_claim ? "booked" : "none") },
+    { head: "Booked", value: d => SOURCE_WORDS[d.source.kind] ?? d.source.kind },
+    { head: "Connection", value: d => (d.connection_id ? connectionLabel(d.connection_id, connections) : "every connection") },
+  ];
+
+  return (
+    <>
+      <Figures testId="decision-figures">
+        <Figure label="Decisions" value={formatCount(all.length)} testId="fig-dec-all"
+          sub={all.length === 0 ? "none booked yet" : [
+            ...countBy(all, d => d.source.kind).map(([k, n]) => `${n} ${SOURCE_SHORT[k] ?? k}`),
+            deciders.length === 1 ? `by ${whoLabel(deciders[0])}` : "",
+          ].filter(Boolean).join(" · ")} />
+        <Figure label="Review due" value={formatCount(due.length)} tone={due.length ? "amber" : undefined} testId="fig-dec-due"
+          sub={due.length ? `the oldest since ${dateWords(oldestDue)}` : next ? `the next ${whenWords(next)}` : "no review date set"} />
+        <Figure label="Reviewed" value={formatCount(reviewed.length)} testId="fig-dec-reviewed"
+          sub={reviewed.length ? `of ${formatCount(all.length)}` : "no outcome booked yet"} />
+        <Figure label="With an expectation" value={`${formatCount(withExpectation)} of ${formatCount(all.length)}`}
+          testId="fig-dec-expect"
+          title={notes.length ? notes.join(" · ") : undefined}
+          sub={withExpectation === all.length ? "each can be scored against what was expected"
+            : <Chip title={notes.join(" · ") || undefined}>{`${formatCount(all.length - withExpectation)} cannot be scored`}</Chip>} />
+      </Figures>
+
+      <NeedsYou testId="decision-needs" empty="Nothing needs you">
+        {[
+          ...due.map(d => (
+            <NeedsRow key={`due-${d.id}`} testId="needs-dec-due"
+              title={`${label(d)} · review due since ${dateWords(d.review_on)}`}
+              detail={`${chosenWords(d)} by ${whoLabel(d.decided_by)} on ${dateWords(d.decided_at)}`}
+              actions={<Button size="xs" variant="secondary" onClick={() => onOpen(d.id)}>Review</Button>} />
+          )),
+          ...reopened.map(d => (
+            <NeedsRow key={`reopened-${d.id}`} testId="needs-dec-reopened"
+              title={`${label(d)} · reopened`}
+              detail="A claim it relied on was restated; a person has not answered yet"
+              actions={<Button size="xs" variant="secondary" onClick={() => onOpen(d.id)}>Open</Button>} />
+          )),
+        ]}
+      </NeedsYou>
+
+      {form}
+
+      <ListCard<Decision> label="Decisions" name="decisions" testId="decision-list" rows={rows} rowKey={d => d.id}
+        columns={columns}
+        tools={<>
+          <span className="aug-fs-xs" style={NUM}>
+            {[filter === "all" ? "" : `${formatCount(rows.length)} of ${formatCount(all.length)}`, scope].filter(Boolean).join(" · ")}
           </span>
-        )}
-        <span style={{ flex: 1 }} />
-        <Button size="xs" onClick={() => setDeclaring(v => !v)} aria-expanded={declaring}
-          title="A decision taken elsewhere, in one sentence, with what you expect of it">
-          Record a decision
-        </Button>
-      </div>
-      <Page wide>
-        {declaring && (
-          <DeclareForm connectionId={selectedConn} onCancel={() => setDeclaring(false)}
-            onBooked={d => { setDeclaring(false); load.reload(); onOpen(d.id); }} />
-        )}
-        <Gate load={load} what="decisions">
-          {() => (
-            <Ledger name="decisions" columns={columns} rows={rows} rowKey={d => d.id} onOpen={d => onOpen(d.id)}
-              empty={filter === "all"
-                ? "No decision is on the record yet. One is booked when a person accepts a recommendation or approves an action, and a decision taken elsewhere can be recorded here in a sentence."
-                : `No decision is in "${FILTERS.find(f => f.id === filter)?.label.toLowerCase()}" right now.`} />
-          )}
-        </Gate>
-      </Page>
-    </div>
+          <Segmented label="Filter decisions by review" value={filter} onChange={setFilter}
+            options={FILTERS.map(f => ({ value: f.id, label: f.label }))} />
+          <Button size="xs" onClick={onDeclare} aria-expanded={declaring}
+            title="A decision taken elsewhere, in one sentence, with what you expect of it">
+            Record a decision
+          </Button>
+        </>}
+        empty={filter === "all"
+          ? "No decision is on the record yet. Accepting a recommendation or approving an action books one."
+          : `No decision is in "${FILTERS.find(f => f.id === filter)?.label.toLowerCase()}" right now.`}
+        renderRow={(d, first) => {
+          const state = reviewState(d);
+          const meta = [
+            deciders.length > 1 ? `decided by ${whoLabel(d.decided_by)} · ${dateWords(d.decided_at)}` : `decided ${dateWords(d.decided_at)}`,
+            sources.length > 1 ? SOURCE_SHORT[d.source.kind] ?? "" : "",
+            d.dissent.length ? countNoun(d.dissent.length, "dissent") : "",
+            many ? (d.connection_id ? connectionLabel(d.connection_id, connections) : "every connection") : "",
+          ].filter(Boolean).join(" · ");
+          return (
+            <ListRow first={first} testId="decision-row" title={label(d)} full={d.question} onOpen={() => onOpen(d.id)}
+              mark={<Dot hue={REVIEW_DOT[state]} title={REVIEW_WORDS[state]} />}
+              chips={<>
+                <Chip title={d.options.find(o => o.id === d.chosen)?.description || undefined}>{chosenWords(d)}</Chip>
+                {d.reopened_by && <Chip tone="amber" title="A claim it relied on was restated; a person has not answered yet">reopened</Chip>}
+              </>}
+              figure={state === "reviewed" ? "reviewed" : d.review_on ? `review ${distanceWords(d.review_on)}` : "no review date"}
+              figureTitle={d.review_on ? `Review date: ${whenWords(d.review_on)}` : undefined}
+              meta={meta} />
+          );
+        }} />
+    </>
   );
 }
 

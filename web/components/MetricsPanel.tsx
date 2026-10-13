@@ -45,6 +45,7 @@ import {
   type OntologyKeys,
   type CatalogueMetric,
   type RemovedProposal,
+  type MetricDateCandidate,
   type MetricProposals,
   type MetricStatementOption,
   type MetricSqlDraft,
@@ -62,7 +63,7 @@ import {
   type Need, type Placed,
 } from "@/lib/semanticMetrics";
 import { withUniqueKeys } from "@/lib/listKeys";
-import { requestTab } from "@/lib/navigate";
+import { BindRolesDialog } from "@/components/semantic/BindRoles";
 import { useMe } from "@/lib/useMe";
 
 const GRAINS = ["day", "week", "month", "quarter", "year"] as const;
@@ -243,10 +244,47 @@ export function EntitySection({ metric, onChanged }: { metric: Metric; onChanged
   );
 }
 
-function DatesSection({ metric, proposals, onChanged, startEditing = false }: {
+const ANOTHER = "\u0000another";
+
+/** A proposal as the list says it: "web_sessions.session_start · text, read as a date". */
+function dateOptionWords(c: MetricDateCandidate): string {
+  return `${c.grain} · ${c.primary ? "main date · " : ""}${c.text ? "text, read as a date" : c.type}`;
+}
+
+/** A date column, chosen from the platform's proposals — a list (the user, 2026-10-13: the dates "do not appear as [a]
+ *  drop down") — or typed when none of them is the one. With no proposal at all it is the typed field alone. */
+function DateColumnPicker({ value, onChange, candidates, label, placeholder }: {
+  value: string; onChange: (v: string) => void; candidates: MetricDateCandidate[]; label: string; placeholder: string;
+}) {
+  const known = candidates.some(c => c.grain === value);
+  const [typing, setTyping] = useState(!!value.trim() && !known);
+  if (!candidates.length) {
+    return <Input placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)} aria-label={label} />;
+  }
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      <SelectField value={typing ? ANOTHER : value} aria-label={label}
+        onChange={e => {
+          if (e.target.value === ANOTHER) { setTyping(true); onChange(""); }
+          else { setTyping(false); onChange(e.target.value); }
+        }}>
+        {!value && !typing && <option value="">Choose the date…</option>}
+        {candidates.map(c => <option key={c.grain} value={c.grain}>{dateOptionWords(c)}</option>)}
+        <option value={ANOTHER}>Another column — type it…</option>
+      </SelectField>
+      {typing && (
+        <Input placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)} aria-label={`${label}, typed`} />
+      )}
+    </div>
+  );
+}
+
+function DatesSection({ metric, proposals, onChanged, startEditing = false, onEditSql }: {
   metric: Metric; proposals: MetricProposals | null; onChanged: () => void;
   /** Open straight on the form — the door from "Needs you" for a metric with no date column. */
   startEditing?: boolean;
+  /** Open the definition's SQL — where a date one join away is made usable, by reading its table. */
+  onEditSql?: () => void;
 }) {
   const [editing, setEditing] = useState(startEditing);
   const [kind, setKind] = useState(metric.time_kind ?? "flow");
@@ -256,7 +294,7 @@ function DatesSection({ metric, proposals, onChanged, startEditing = false }: {
   // and the person picks; none is said with the reason. The parent reads them from the SQL in the field.
   const candidates = proposals?.candidates ?? [];
   const candidatesNote = proposals?.note ?? "";
-  const grainList = `metric-grain-${metric.name}`;
+  const reachable = proposals?.reachable ?? [];
   const listed = candidates.length > 1;
   const tablesRead = Array.from(new Set(candidates.map((c) => c.table))).join(", ");
   // The one date is SET for the person — derived, so it follows the proposals as they arrive and yields to anything typed.
@@ -316,34 +354,41 @@ function DatesSection({ metric, proposals, onChanged, startEditing = false }: {
               <option value="cohort">Cohort — completed by a later date</option>
             </SelectField>
           </label>
-          <Input list={listed ? grainList : undefined}
-            placeholder={listed ? "Date column — pick one of the proposals, or type schema.table.column" : "Date column — schema.table.column"}
-            value={shownColumn} onChange={e => setColumn(e.target.value)} aria-label="Date column" />
-          {listed && (
-            <datalist id={grainList}>
-              {candidates.map(c => (
-                <option key={c.grain} value={c.grain}>{c.primary ? `main date · ${c.type}` : c.type}</option>
-              ))}
-            </datalist>
-          )}
+          <DateColumnPicker value={shownColumn} onChange={setColumn} candidates={candidates} label="Date column"
+            placeholder="Date column — schema.table.column" />
           <p className="aug-fs-xs" style={{ ...MUTED, margin: 0 }} data-testid="metric-date-proposals">
             {listed
-              ? `${candidates.length} dates on ${tablesRead} — pick one: ${candidates.map(c => c.grain).join(" · ")}`
+              ? `${candidates.length} dates on ${tablesRead} — choose one`
               : candidates.length === 1
                 ? `The only date on ${candidates[0].table} is ${candidates[0].grain} — set for you; change it here if that is wrong.`
                 : candidatesNote || "no proposals yet"}
           </p>
+          {candidates.find(c => c.grain === shownColumn)?.text && (
+            <p className="aug-fs-xs" style={{ ...MUTED, margin: 0 }} data-testid="metric-date-text">
+              {shownColumn.split(".").pop()} is kept as text — it is read as a date when a period is measured; a value
+              that is not a date fails that measurement, and says so.
+            </p>
+          )}
+          {reachable.length > 0 && (
+            <div style={{ ...ROW, alignItems: "flex-start" }} data-testid="metric-date-reachable">
+              <span className="aug-fs-xs" style={{ ...MUTED, flex: "1 1 320px" }}>
+                One join away: {reachable.map(r => `${r.grain} (on ${r.via})`).join(" · ")}. The definition reads{" "}
+                {reachable[0].from} only — add the join to {reachable[0].table} in its SQL, then choose the date here.
+              </span>
+              {onEditSql && <Button size="xs" variant="secondary" onClick={onEditSql}>Edit the SQL</Button>}
+            </div>
+          )}
           {kind === "cohort" && (
             <>
-              <Input list={listed ? grainList : undefined} placeholder="Completing date, e.g. schema.table.returned_at" value={outcome}
-                onChange={e => setOutcome(e.target.value)} aria-label="Completing date column" />
+              <DateColumnPicker value={outcome} onChange={setOutcome} candidates={candidates} label="Completing date column"
+                placeholder="Completing date, e.g. schema.table.returned_at" />
               <Input placeholder="Settles after (days)" value={settles}
                 onChange={e => setSettles(e.target.value)} aria-label="Settles after days" />
             </>
           )}
           {kind === "stock" && (
-            <Input list={listed ? grainList : undefined} placeholder="Counts until, e.g. schema.table.sold_at" value={until}
-              onChange={e => setUntil(e.target.value)} aria-label="Counts until column" />
+            <DateColumnPicker value={until} onChange={setUntil} candidates={candidates} label="Counts until column"
+              placeholder="Counts until, e.g. schema.table.sold_at" />
           )}
           <label className="aug-fs-xs" style={{ color: "var(--t2)", display: "flex", alignItems: "center", gap: 8 }}>Reported by
             <SelectField value={grain} onChange={e => setGrain(e.target.value)} aria-label="Date grain">
@@ -580,6 +625,8 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [promoting, setPromoting] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
+  // Binding a package's roles, here rather than in Settings (2026-10-13): the package and the metrics that read it.
+  const [binding, setBinding] = useState<{ packId: string; rows: Placed[] } | null>(null);
   /** Opened from "Needs you" to set a date: the Dates view opens on its form. */
   const [datesEditing, setDatesEditing] = useState(false);
 
@@ -1129,7 +1176,8 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
           {detailTab === "approval" && <GovernanceSection metric={sm} onChanged={() => { load(); }} />}
           {detailTab === "dates" && (
             <DatesSection key={`${sm.name}:${sm.time_column ?? ""}:${sm.time_confirmed_by ?? ""}`}
-              metric={sm} proposals={proposals} onChanged={() => { setDatesEditing(false); load(); }} startEditing={datesEditing} />
+              metric={sm} proposals={proposals} onChanged={() => { setDatesEditing(false); load(); }} startEditing={datesEditing}
+              onEditSql={() => setDetailTab("edit")} />
           )}
           {detailTab === "measures" && <EntitySection key={`${sm.name}:${sm.entity ?? ""}`} metric={sm} onChanged={load} />}
           {detailTab === "edit" && editorForm}
@@ -1191,7 +1239,8 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
             empty={`Nothing needs you${registryError ? " · the definitions could not be read, so their dates are not checked" : ""}`}>
             {withUniqueKeys(waiting, n => n.kind).map(([key, n]) => (
               <NeedsGroup key={key} need={n}
-                onOpen={(p, tab, editDates) => open(p, tab, { editDates, scroll: true })} />
+                onOpen={(p, tab, editDates) => open(p, tab, { editDates, scroll: true })}
+                onBind={(packId, rows) => setBinding({ packId, rows })} />
             ))}
           </NeedsYou>
         </>
@@ -1239,6 +1288,7 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
                                 ? definedDetail(p, p.stored)
                                 : <ReadFailed what="its stored definition" error="the definitions could not be read" onRetry={() => { load(); }} />)
                             : <MetricProvenance row={p.row} onCustomise={() => customise(p.row, p.key)} onRemove={() => removeRow(p.row, p.key)}
+                                onBind={() => setBinding({ packId: p.row.pack_id, rows: [p] })}
                                 busy={materialising === p.key} error={rowError[p.key] ?? ""} />
                         )}
                       </MetricRow>
@@ -1252,6 +1302,18 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
         {removed.length > 0 && <RemovedList removed={removed} onRestore={restore} />}
         {!adding && error && !selected && <p className="aug-fs-sm" style={{ ...ERROR, marginTop: 8 }}>{error}</p>}
       </Card>
+      {binding && connId && (
+        <BindRolesDialog open onClose={() => setBinding(null)} connId={connId}
+          schema={schema && schema !== "*" ? schema : (binding.rows[0]?.row.schema !== "*" ? binding.rows[0]?.row.schema : undefined)}
+          packId={binding.packId}
+          recipes={binding.rows.map(p => ({ name: p.row.name, label: p.row.label || p.row.name, sql: p.row.sql }))}
+          onBound={() => { load(); }}
+          onWriteSql={name => {
+            const p = binding.rows.find(x => x.row.name === name);
+            setBinding(null);
+            if (p) void customise(p.row, p.key);
+          }} />
+      )}
     </Page>
   );
 }
@@ -1300,8 +1362,10 @@ function MetricRow({ p, every, open, onToggle, children }: {
 }
 
 /** One kind of thing that needs a person — said once, with a button for each metric it is about. */
-function NeedsGroup({ need, onOpen }: {
+function NeedsGroup({ need, onOpen, onBind }: {
   need: Need; onOpen: (p: Placed, tab: DetailTab, editDates?: boolean) => void;
+  /** Bind a package's roles, in place — the package and the metrics of this group that read it. */
+  onBind?: (packId: string, rows: Placed[]) => void;
 }) {
   const n = need.items.length;
   const one = n === 1 ? need.items[0] : null;
@@ -1349,8 +1413,13 @@ function NeedsGroup({ need, onOpen }: {
       title = one ? `${name(one)} is not bound` : `${formatCount(n)} industry metrics are not bound`;
       detail = `the ${packs.join(", ") || "industry"} package names data not bound here${roles.length ? `: ${roles.join(", ")}` : ""}`;
       actions = <>
-        <Button size="xs" variant="secondary" onClick={() => requestTab("settings", { settings: "system" })}
-          title="Settings ▸ System ▸ Packages — bind the roles this package's SQL is written over.">Bind roles</Button>
+        {packs.map(pk => (
+          <Button key={pk} size="xs" variant="secondary"
+            onClick={() => onBind?.(pk, need.items.filter(p => p.row.pack_id === pk))}
+            title="Say which of your tables and columns this package's metrics read — here, in a dialog">
+            {packs.length > 1 ? `Bind ${pk} roles` : "Bind roles"}
+          </Button>
+        ))}
         {one
           ? <Button size="xs" variant="ghost" onClick={() => onOpen(one, "overview")}>Open</Button>
           : names("Open", "overview")}
@@ -1450,8 +1519,8 @@ function Field({
 /** What a suggestion shows before it is copied: what it means, and every way forward — make it this connection's, bind
  *  what it needs, or remove it. Never a dead end (the user, 2026-10-07: "no 'this requires binding' — that's a dead end
  *  with no action possible"). */
-function MetricProvenance({ row, onCustomise, onRemove, busy, error }: {
-  row: CatalogueMetric; onCustomise: () => void; onRemove: () => void; busy: boolean; error: string;
+function MetricProvenance({ row, onCustomise, onRemove, onBind, busy, error }: {
+  row: CatalogueMetric; onCustomise: () => void; onRemove: () => void; onBind?: () => void; busy: boolean; error: string;
 }) {
   const unbound = row.state === "needs_binding";
   const [removing, setRemoving] = useState(false);
@@ -1514,8 +1583,8 @@ function MetricProvenance({ row, onCustomise, onRemove, busy, error }: {
           {busy ? "Working…" : unbound ? "Write its SQL for this connection" : "Customise for this connection"}
         </Button>
         {unbound && (
-          <Button variant="secondary" onClick={() => requestTab("settings", { settings: "system" })}
-            title="Settings ▸ System ▸ Packages — bind the roles this package's SQL is written over.">
+          <Button variant="secondary" onClick={onBind}
+            title="Say which of your tables and columns this package's metric reads — here, in a dialog">
             Bind its roles
           </Button>
         )}

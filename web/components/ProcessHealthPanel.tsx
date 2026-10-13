@@ -1,180 +1,167 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getHealthScorecard, getPlatformMetrics, getAuditStats, type ScorecardItem, type HealthStatus, type PlatformMetrics, type AuditStats } from "@/lib/api";
-import { compactNumber, formatVariance } from "@/lib/format";
-import { ReadFailed } from "@/components/ui/states";
+/**
+ * Health — every metric that has a target, scored against it, laid out to CLARITY (`aughor-v2/CLARITY.md`): four
+ * figures (on target, warning, off target, not computed), the metrics off target or at a warning in amber with a way
+ * to ask why on the row, then the rest. Each metric is said once.
+ *
+ * The scorecard runs each targeted metric's governed query on the warehouse, so it is read once per visit (and on
+ * Retry) — never polled. With no metric targeted it says so in one line and opens the place a target is set: a
+ * metric's Edit tab in the Semantic Layer.
+ */
+import { useEffect, useState, type ReactNode } from "react";
+
+import { CARD, Chip, Dot, Empty, Figure, Figures, Label, MUTED, NUM, NeedsYou, ONE_LINE, Page, ROW, RULE, type Tone }
+  from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
+import { Loading, ReadFailed } from "@/components/ui/states";
+import { getHealthScorecard, type HealthStatus, type ScorecardItem } from "@/lib/api";
+import { compactNumber, countNoun, formatCount, formatMetricValue, formatPercent, formatVariance } from "@/lib/format";
+import { unitKind } from "@/lib/home";
+import { withUniqueKeys } from "@/lib/listKeys";
 
-const STATUS_COLORS: Record<HealthStatus, { bg: string; border: string; dot: string; text: string; label: string }> = {
-  green:   { bg: "var(--grn1)", border: "var(--grn2)", dot: "var(--grn4)", text: "var(--grn4)", label: "On target" },
-  yellow:  { bg: "var(--amb1)", border: "var(--amb2)", dot: "var(--amb4)", text: "var(--amb4)", label: "Warning" },
-  red:     { bg: "var(--red1)", border: "var(--red2)", dot: "var(--red4)", text: "var(--red4)", label: "Off target" },
-  unknown: { bg: "var(--bg-1)", border: "var(--b1)", dot: "var(--t3)", text: "var(--t3)", label: "No data" },
+/** A status as a mark: its word, its hue, the tone of its variance chip. */
+const MARK: Record<HealthStatus, { word: string; hue: "green" | "amber" | "red" | "grey"; tone: Tone }> = {
+  red: { word: "off target", hue: "red", tone: "down" },
+  yellow: { word: "warning", hue: "amber", tone: "amber" },
+  unknown: { word: "not computed", hue: "grey", tone: "plain" },
+  green: { word: "on target", hue: "green", tone: "up" },
 };
+const STATUS_TEXT: Record<HealthStatus, string> = {
+  red: "var(--red4)", yellow: "var(--amb4)", unknown: "var(--t3)", green: "var(--grn4)",
+};
+const ORDER: HealthStatus[] = ["red", "yellow", "unknown", "green"];
 
-function fmtValue(v: number | null, unit: string | null): string {
-  if (v === null) return "—";
-  const num = Math.abs(v);
-  let formatted: string;
-  if (num >= 1_000) formatted = compactNumber(v, 1);
-  else if (num < 1 && num > 0 && unit === "%") formatted = (v * 100).toFixed(1);
-  else formatted = v.toFixed(num < 10 ? 2 : 0);
-  return unit ? `${formatted}${unit === "$" ? "" : " "}${unit === "$" ? "" : unit}` : formatted;
+/** A metric's value as a reader reads it, by what its unit says: money short ($231.5K), a share as a percent (60.0%),
+ *  days as days, anything else compact with its unit after it. */
+export function valueText(v: number, unit: string | null): string {
+  const kind = unitKind(unit ?? undefined);
+  if (kind === "money") return `${v < 0 ? "-" : ""}$${compactNumber(Math.abs(v), Math.abs(v) >= 1000 ? 1 : 2)}`;
+  if (kind === "percent" || kind === "ratio") return formatPercent(v, 1);
+  if (kind === "days") return `${v.toFixed(1)} days`;
+  // 4.48M · 45.3K · 1,904
+  const n = Math.abs(v) >= 1e4 && Math.abs(v) < 1e6 ? compactNumber(v, 1) : formatMetricValue(v);
+  return unit && kind === "number" ? `${n} ${unit}` : n;
 }
 
-function fmtVariance(v: number | null): string {
-  if (v === null) return "";
-  return formatVariance(v, 1);
-}
-
-function MetricHealthCard({
-  item,
-  onInvestigate,
-}: {
-  item: ScorecardItem;
-  onInvestigate: (label: string) => void;
-}) {
-  const s = STATUS_COLORS[item.status];
-  return (
-    <div
-      className="flex flex-col gap-3 rounded-md p-4 transition-colors"
-      style={{ background: s.bg, border: `0.5px solid ${s.border}` }}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="w-[6px] h-[6px] rounded-[var(--r-pill)] shrink-0" style={{ background: s.dot }} />
-          <span className="aug-fs-xs font-mono" style={{ color: s.text }}>{s.label}</span>
-        </div>
-        {item.target_period && (
-          <span className="aug-fs-xs font-mono px-1.5 py-0.5 rounded-[3px]"
-            style={{ background: "var(--bg-0)", border: "0.5px solid var(--b0)", color: "var(--t3)" }}>
-            {item.target_period}
-          </span>
-        )}
-      </div>
-
-      {/* Metric name */}
-      <div>
-        <p className="aug-fs-ui font-medium text-[var(--t1)]">{item.label}</p>
-        {item.benchmark_source && (
-          <p className="aug-fs-xs mt-0.5 text-[var(--t3)]">{item.benchmark_source}</p>
-        )}
-      </div>
-
-      {/* Values */}
-      <div className="flex items-end justify-between gap-2">
-        <div>
-          <p className="aug-fs-display font-semibold font-mono leading-none text-[var(--t1)]">
-            {fmtValue(item.current, item.unit)}
-          </p>
-          <p className="aug-fs-xs mt-1 font-mono text-[var(--t3)]">
-            target {fmtValue(item.target, item.unit)}
-            {item.variance !== null && (
-              <span className="ml-1.5" style={{ color: item.variance < 0 ? "var(--red5)" : "var(--grn4)" }}>
-                {fmtVariance(item.variance)}
-              </span>
-            )}
-          </p>
-        </div>
-      </div>
-
-      {/* Investigate button — only for non-green metrics */}
-      {(item.status === "yellow" || item.status === "red") && (
-        <Button
-          variant="outline" size="xs"
-          onClick={() => onInvestigate(item.label)}
-          className="mt-auto"
-          style={{ color: s.text }}
-        >
-          Investigate →
-        </Button>
-      )}
-    </div>
-  );
-}
-
-interface ProcessHealthPanelProps {
+export function ProcessHealthPanel({ connectionId, onAsk, onOpenMetrics }: {
   connectionId: string;
-  onInvestigate: (question: string) => void;
-}
-
-export function ProcessHealthPanel({ connectionId, onInvestigate }: ProcessHealthPanelProps) {
-  const [items, setItems] = useState<ScorecardItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  // A failed read used to read as "No health metrics configured" — telling a person to go and
-  // define metrics that may well exist.
+  /** Opens a chat and asks the question straight away. */
+  onAsk: (question: string) => void;
+  /** Opens the Semantic Layer's Metrics, where a metric's target is set (its Edit tab). */
+  onOpenMetrics?: () => void;
+}) {
+  const [items, setItems] = useState<ScorecardItem[] | null>(null);
+  // A failed read used to read as "No health metrics configured" — telling a person to go and define metrics that may
+  // well exist. It says what failed now.
   const [failed, setFailed] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!connectionId) return;
-    setLoading(true);
+    let alive = true;
+    setItems(null);
+    setFailed(null);
     getHealthScorecard(connectionId)
-      .then(list => { setItems(list); setFailed(null); })
-      .catch(e => setFailed(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+      .then(list => { if (alive) setItems(list); })
+      .catch(e => { if (alive) setFailed(e instanceof Error ? e.message : String(e)); });
+    return () => { alive = false; };
   }, [connectionId, reload]);
 
-  if (loading) {
+  if (!connectionId) {
+    return <Page testId="health"><div className="aug-fs-sm" style={{ ...CARD, ...MUTED }}>Choose a connection to score its metrics.</div></Page>;
+  }
+  if (failed !== null) {
+    return <Page testId="health"><ReadFailed what="the scorecard" error={failed} onRetry={() => setReload(n => n + 1)} style={CARD} /></Page>;
+  }
+  if (items === null) {
+    return <Page testId="health"><Loading what="the scorecard (it runs each metric's query)" style={CARD} /></Page>;
+  }
+
+  if (items.length === 0) {
     return (
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
-        {[1, 2, 3].map(i => (
-          <div key={i} className="h-36 aug-skeleton" style={{ borderRadius: "var(--r3)" }} />
-        ))}
-      </div>
+      <Page testId="health">
+        <section aria-label="Scorecard" data-testid="health-empty" style={CARD}>
+          <Label>Scorecard</Label>
+          <Empty>No metric has a target yet, so nothing is scored.</Empty>
+          <div style={{ ...ROW, marginTop: 8 }}>
+            {onOpenMetrics && <Button size="xs" variant="secondary" onClick={onOpenMetrics}>Set a target</Button>}
+            <Chip title="In the Semantic Layer's Metrics, open a metric, then its Edit tab: Target value, Warning and Critical">
+              Semantic Layer › a metric › Edit
+            </Chip>
+          </div>
+        </section>
+      </Page>
     );
   }
 
-  if (failed !== null) return (
-    <ReadFailed what="the health scorecard" error={failed} onRetry={() => setReload(n => n + 1)}
-      style={{ padding: "24px 16px" }} />
-  );
-
-  if (items.length === 0) return (
-    <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--t3)" }}>
-      <p style={{ fontSize: 15, fontWeight: 500, marginBottom: 8 }}>No health metrics configured</p>
-      <p style={{ fontSize: 12, opacity: 0.7 }}>Define metrics with targets in the Semantic Layer to see a health scorecard here.</p>
-    </div>
-  );
-
-  const redYellow = items.filter(i => i.status === "red" || i.status === "yellow");
-  const green     = items.filter(i => i.status === "green");
-  const unknown   = items.filter(i => i.status === "unknown");
-  const sorted    = [...redYellow, ...green, ...unknown];
+  const count = (s: HealthStatus) => items.filter(i => i.status === s).length;
+  const sorted = [...items].sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || a.label.localeCompare(b.label));
+  const attention = sorted.filter(i => i.status === "red" || i.status === "yellow");
+  const rest = sorted.filter(i => i.status === "green" || i.status === "unknown");
+  const ask = (label: string) => onAsk(`Why is ${label} off target? Find the root cause and the contributing factors.`);
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <p className="aug-fs-ui font-medium text-[var(--t1)]">Business Health</p>
-          <div className="flex items-center gap-2">
-            {redYellow.length > 0 && (
-              <span className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-chip)] font-mono"
-                style={{ background: "var(--red1)", border: "0.5px solid var(--red2)", color: "var(--red5)" }}>
-                {redYellow.length} need attention
-              </span>
-            )}
-            {redYellow.length === 0 && green.length > 0 && (
-              <span className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-chip)] font-mono"
-                style={{ background: "var(--grn1)", border: "0.5px solid var(--grn2)", color: "var(--grn4)" }}>
-                all on target
-              </span>
-            )}
-          </div>
-        </div>
+    <Page testId="health">
+      <Figures testId="health-figures">
+        <Figure testId="health-fig-green" label="On target" value={formatCount(count("green"))}
+          sub={`of ${countNoun(items.length, "metric")} with a target`} />
+        <Figure testId="health-fig-yellow" label="Warning" value={formatCount(count("yellow"))}
+          tone={count("yellow") ? "amber" : undefined} sub="past the warning line" />
+        <Figure testId="health-fig-red" label="Off target" value={formatCount(count("red"))}
+          tone={count("red") ? "red" : undefined} sub="past the critical line" />
+        <Figure testId="health-fig-unknown" label="Not computed" value={formatCount(count("unknown"))}
+          sub={count("unknown") ? "its query failed or returned nothing" : "every one computed"} />
+      </Figures>
+
+      {attention.length > 0 && (
+        <NeedsYou testId="health-needs" right={countNoun(attention.length, "metric")}>
+          {withUniqueKeys(attention, m => m.name).map(([key, m], i) => (
+            <MetricRow key={key} m={m} first={i === 0}
+              action={<Button size="xs" variant="secondary" title="Asks it in a chat" onClick={() => ask(m.label)}>Ask why</Button>} />
+          ))}
+        </NeedsYou>
+      )}
+
+      {rest.length > 0 && (
+        <section aria-label="Scorecard" data-testid="health-list" style={CARD}>
+          <Label right={[count("green") && `${formatCount(count("green"))} on target`,
+            count("unknown") && `${formatCount(count("unknown"))} not computed`].filter(Boolean).join(" · ")}>
+            Scorecard
+          </Label>
+          {withUniqueKeys(rest, m => m.name).map(([key, m], i) => <MetricRow key={key} m={m} first={i === 0} />)}
+        </section>
+      )}
+    </Page>
+  );
+}
+
+/** One metric: its name (period and benchmark under it), its value against the target, the variance, the status. */
+function MetricRow({ m, first, action }: { m: ScorecardItem; first: boolean; action?: ReactNode }) {
+  const mark = MARK[m.status];
+  const meta = [m.target_period, m.benchmark_source].filter(Boolean).join(" · ");
+  return (
+    <div data-testid="health-row" style={{ display: "grid", alignItems: "center", gap: 12, padding: "7px 0",
+      gridTemplateColumns: "12px minmax(0, 1fr) auto auto", ...(first ? {} : RULE) }}>
+      <Dot hue={mark.hue} title={mark.word} />
+      <div style={{ minWidth: 0 }}>
+        <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)", fontWeight: 500 }} title={m.label}>{m.label}</div>
+        {meta && <div className="aug-fs-xs" style={{ ...MUTED, ...ONE_LINE }} title={meta}>{meta}</div>}
       </div>
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
-        {sorted.map(item => (
-          <MetricHealthCard
-            key={item.name}
-            item={item}
-            onInvestigate={(label) =>
-              onInvestigate(`Why is ${label} off target? Investigate the root cause and contributing factors.`)
-            }
-          />
-        ))}
+      <div style={{ ...ROW, flexWrap: "nowrap", gap: 8, justifyContent: "flex-end" }}>
+        {m.current !== null
+          ? <span className="aug-fs-chrome" style={{ ...NUM, color: "var(--t1)", fontWeight: 600 }}>{valueText(m.current, m.unit)}</span>
+          : <Chip title="The metric's query failed or returned no value, so it was not scored">no value</Chip>}
+        {m.target !== null && (
+          <span className="aug-fs-xs" style={{ ...MUTED, ...NUM, whiteSpace: "nowrap" }}>vs {valueText(m.target, m.unit)}</span>
+        )}
+        {m.variance !== null && (
+          <Chip tone={mark.tone} title={`${formatVariance(m.variance)} against its target`}>{formatVariance(m.variance)}</Chip>
+        )}
+      </div>
+      <div style={{ ...ROW, flexWrap: "nowrap", justifyContent: "flex-end", minWidth: 84 }}>
+        <span className="aug-fs-xs" style={{ whiteSpace: "nowrap", color: STATUS_TEXT[m.status] }}>{mark.word}</span>
+        {action}
       </div>
     </div>
   );

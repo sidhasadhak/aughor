@@ -20,6 +20,25 @@ const getMetricCatalogue = vi.fn();
 const getDefinitionReport = vi.fn();
 const getMetricAudit = vi.fn();
 const requestTab = vi.fn();
+const getMetricProposals = vi.fn();
+const bindPack = vi.fn();
+const RETAIL = {
+  manifest: { name: "Retail and e-commerce" },
+  entities: {
+    cart: { description: "One shopping cart a visitor created.", expects: {}, attributes: {
+      converted_order_id: { type: "id", description: "The order this cart became; empty when abandoned." } } },
+    order_item: { description: "One line of one order.", expects: {}, attributes: {
+      returned_at: { type: "timestamp", description: "When the line was returned; empty when it was not." } } },
+  },
+  metrics: [],
+};
+const LUX_TABLES = [
+  { name: "lux.web_sessions", row_count: null, columns: [
+    { name: "session_id", type: "TEXT", is_fk: false }, { name: "order_id", type: "TEXT", is_fk: false },
+    { name: "converted", type: "BOOLEAN", is_fk: false }] },
+  { name: "lux.order_items", row_count: null, columns: [
+    { name: "order_item_id", type: "TEXT", is_fk: false }, { name: "returned", type: "BOOLEAN", is_fk: false }] },
+];
 
 vi.mock("@/lib/api", () => ({
   getMetrics: (...a: unknown[]) => getMetrics(...a),
@@ -27,7 +46,13 @@ vi.mock("@/lib/api", () => ({
   getDefinitionReport: (...a: unknown[]) => getDefinitionReport(...a),
   getMetricAudit: (...a: unknown[]) => getMetricAudit(...a),
   getMyAccess: vi.fn(async () => ({ actor: "ana@example.com", signed_in: false })),
-  getMetricProposals: vi.fn(async () => ({ statements: [], statement_note: "", candidates: [], note: "" })),
+  getMetricProposals: (...a: unknown[]) => getMetricProposals(...a),
+  getPackDetail: vi.fn(async () => RETAIL),
+  getPackBinding: vi.fn(async () => null),
+  getSchemaRich: vi.fn(async () => ({ tables: LUX_TABLES, joins: [], isolated: [], warnings: [] })),
+  proposePackBindings: vi.fn(async () => ({ fully_groundable: false, groundable_roles: 1, total: 2,
+    proposals: { order_item: { role: "order_item", table: "lux.order_items", confidence: 0.8, evidence: "name", bound: true } } })),
+  bindPack: (...a: unknown[]) => bindPack(...a),
   getOntologyKeys: vi.fn(async () => ({ entities: [], metrics: [] })),
   materialiseMetric: vi.fn(), removeProposal: vi.fn(), restoreProposal: vi.fn(), promoteMetric: vi.fn(),
   createMetric: vi.fn(), updateMetric: vi.fn(), deleteMetric: vi.fn(), validateMetric: vi.fn(),
@@ -36,6 +61,7 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@/lib/navigate", () => ({ requestTab: (...a: unknown[]) => requestTab(...a) }));
 
 import { MetricsPanel } from "@/components/MetricsPanel";
+import { choose, optionsOf } from "@/lib/testing";
 
 /** The app draws every screen inside a Radix Theme; the detail's tabs and Tools menu need one. */
 const view = (ui: ReactElement) => render(<Theme>{ui}</Theme>);
@@ -68,7 +94,11 @@ const STORED = [
 const ROWS = [
   ...STORED.map(m => row({ name: m.name, label: m.label, status: m.status ?? "" })),
   row({ name: "cart_conv", label: "Cart-to-order conversion rate", source: "industry", state: "needs_binding", status: "",
-        editable: false, pack_id: "retail", missing_roles: ["cart"] }),
+        editable: false, pack_id: "retail", missing_roles: ["cart"],
+        sql: "SUM(CASE WHEN {{role.cart.converted_order_id}} IS NOT NULL THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0)" }),
+  row({ name: "return_rate", label: "Return rate", source: "industry", state: "needs_binding", status: "",
+        editable: false, pack_id: "retail", missing_roles: ["order_item"],
+        sql: "SUM(CASE WHEN {{role.order_item.returned_at}} IS NOT NULL THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0)" }),
 ];
 
 const REPORT = {
@@ -87,6 +117,7 @@ beforeEach(() => {
   getMetricCatalogue.mockResolvedValue({ connection_id: "c1", metrics: ROWS, counts: { total: ROWS.length } });
   getDefinitionReport.mockResolvedValue(REPORT);
   getMetricAudit.mockResolvedValue([]);
+  getMetricProposals.mockResolvedValue({ statements: [], statement_note: "", candidates: [], note: "" });
 });
 
 describe("the figures", () => {
@@ -134,11 +165,31 @@ describe("Needs you", () => {
     expect(within(report).getByText(/Population: unpinnable/)).toBeInTheDocument();
   });
 
-  it("sends an unbound industry metric to where its roles are bound", async () => {
+  it("binds an unbound industry metric's roles here, in a dialog — never a trip to Settings", async () => {
+    // 2026-10-13: "Bind roles" went to Settings ▸ System, where an industry package showed no way to bind at all.
     const user = userEvent.setup();
-    view(<MetricsPanel connId="c1" />);
+    bindPack.mockResolvedValue({ verified: true });
+    view(<MetricsPanel connId="c1" schema="lux" />);
     await user.click(await within(await screen.findByTestId("needs-not_bound")).findByRole("button", { name: "Bind roles" }));
-    expect(requestTab).toHaveBeenCalledWith("settings", { settings: "system" });
+    const dialog = await screen.findByTestId("bind-roles");
+    expect(requestTab).not.toHaveBeenCalled();
+    expect(dialog).toHaveTextContent("Bind the Retail and e-commerce package here · lux");
+    expect(dialog).toHaveTextContent("Its metrics are recipes written over roles, not over your tables.");
+    // Return rate needs a timestamp; order_items has only a true/false `returned` — not offered, and said.
+    const item = await within(dialog).findByTestId("bind-role-order_item");
+    expect(within(item).getByTestId("bind-none-order_item-returned_at")).toHaveTextContent(
+      "No timestamp column on order_items — a true/false column would count every row");
+    expect(within(dialog).getByTestId("bind-stuck")).toHaveTextContent("Return rate can't be bound to this data as it stands");
+    expect(within(dialog).getByRole("button", { name: "Write the SQL of Return rate" })).toBeInTheDocument();
+    // The cart: choose its table and the column for the one attribute the recipe reads, then bind.
+    await choose(within(dialog).getByRole("combobox", { name: "Table for cart" }), "lux.web_sessions");
+    await choose(await within(dialog).findByRole("combobox", { name: "Column for cart.converted_order_id" }), "order_id");
+    await user.click(within(dialog).getByRole("button", { name: "Bind 1 of 2 roles" }));
+    await waitFor(() => expect(bindPack).toHaveBeenCalled());
+    const [pack, conn, bindings, schema] = bindPack.mock.calls[0];
+    expect([pack, conn, schema]).toEqual(["retail", "c1", "lux"]);
+    expect(bindings).toEqual({ cart: expect.objectContaining({ table: "lux.web_sessions", columns: { converted_order_id: "order_id" } }) });
+    expect(await within(dialog).findByTestId("bind-result")).toHaveTextContent("Bound and checked");
   });
 
   it("is one muted line when nothing needs a person", async () => {
@@ -174,5 +225,52 @@ describe("a read that failed says so", () => {
     getMetricCatalogue.mockResolvedValue({ connection_id: "c1", metrics: [row({ name: "aov", label: "Average Order Value" })], counts: { total: 1 } });
     view(<MetricsPanel connId="c1" />);
     expect(await screen.findByTestId("metrics-needs")).toHaveTextContent("the definitions could not be read");
+  });
+});
+
+
+describe("the date a metric is measured by", () => {
+  // LuxExperience, 2026-10-13: "Date, timestamp or other date format columns do not appear as [a] drop down".
+  const openDates = async () => {
+    const user = userEvent.setup();
+    view(<MetricsPanel connId="c1" />);
+    await user.click(await within(await screen.findByTestId("needs-no_date")).findByRole("button", { name: "Gross Margin %" }));
+    return screen.findByTestId("metric-dates");
+  };
+  const cand = (grain: string, type: string, extra: object = {}) =>
+    ({ grain, table: grain.split(".").slice(0, -1).join("."), column: grain.split(".").pop(), type, primary: false, ...extra });
+
+  it("is chosen from a list of the proposals — a day kept as text among them, said to be text", async () => {
+    getMetricProposals.mockResolvedValue({ statements: [], statement_note: "", note: "",
+      candidates: [cand("orders.order_date", "date", { primary: true }), cand("orders.shipped_at", "timestamp"),
+                   cand("orders.order_day", "text", { text: true })] });
+    const dates = await openDates();
+    const pick = await within(dates).findByRole("combobox", { name: "Date column" });
+    expect(optionsOf(pick).map(o => o.text)).toEqual([
+      "Choose the date…", "orders.order_date · main date · date", "orders.shipped_at · timestamp",
+      "orders.order_day · text, read as a date", "Another column — type it…"]);
+    await choose(pick, "orders.order_day");
+    expect(await within(dates).findByTestId("metric-date-text")).toHaveTextContent("order_day is kept as text");
+    expect(within(dates).queryByRole("textbox", { name: /Date column/ })).toBeNull();
+  });
+
+  it("can still be typed when none of the proposals is the one", async () => {
+    getMetricProposals.mockResolvedValue({ statements: [], statement_note: "", note: "",
+      candidates: [cand("orders.order_date", "date"), cand("orders.shipped_at", "timestamp")] });
+    const dates = await openDates();
+    await choose(await within(dates).findByRole("combobox", { name: "Date column" }), "\u0000another");
+    expect(await within(dates).findByRole("textbox", { name: "Date column, typed" })).toBeInTheDocument();
+  });
+
+  it("says where the date is when the definition's own table has none, and opens its SQL", async () => {
+    getMetricProposals.mockResolvedValue({ statements: [], statement_note: "", candidates: [],
+      reachable: [{ grain: "orders.order_date", table: "orders", column: "order_date", via: "order_id", from: "order_items", type: "date" }],
+      note: "order_items has no date of its own — orders.order_date is one join away (on order_id); to be measured by it, the definition must read orders" });
+    const dates = await openDates();
+    await waitFor(() => expect(within(dates).getByTestId("metric-date-proposals")).toHaveTextContent("order_items has no date of its own"));
+    const away = within(dates).getByTestId("metric-date-reachable");
+    expect(away).toHaveTextContent("orders.order_date (on order_id)");
+    await userEvent.setup().click(within(away).getByRole("button", { name: "Edit the SQL" }));
+    expect(screen.getByRole("tab", { name: /Edit/ })).toHaveAttribute("aria-selected", "true");
   });
 });

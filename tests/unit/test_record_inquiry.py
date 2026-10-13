@@ -60,6 +60,23 @@ def test_the_subject_prefers_the_declared_metric():
     assert I.subject_of("How many orders did we get each day last week?") == "many-orders-get-each"
 
 
+def test_a_scheduled_run_opens_its_inquiry_on_what_was_asked_not_on_the_grounding_in_front_of_it():
+    """2026-10-13: the grounding filled the 500 stored characters, so the person's question never reached the Record,
+    and every scheduled run's subject came from the same header words, so two different questions woke one inquiry."""
+    from aughor.automations.temporal import observation_note
+    conn, note = _conn(), observation_note(NOW, "0 9 * * *")
+    asked = "What changed in theLook in the last day? Give me the top three findings with the numbers."
+    q = I.open_inquiry(question=f"{note}\n\n{asked}", connection_id=conn, opened_by="person:ana", run_id="run-s1", now=NOW)
+    assert q.question == asked and q.extra["scheduled"] is True
+    assert q.subject == I.subject_of(asked)
+    other = I.open_inquiry(question=f"{note}\n\nWhy did returns rise this week?", connection_id=conn,
+                           opened_by="person:ana", run_id="run-s2", now=NOW)
+    assert other.id != q.id and other.question == "Why did returns rise this week?"
+    # A person's own ask carries no such block and no flag.
+    mine = I.open_inquiry(question="Why did margin fall?", connection_id=conn, opened_by="person:ana", run_id="run-p", now=NOW)
+    assert mine.question == "Why did margin fall?" and "scheduled" not in mine.extra
+
+
 # ── a run lands on its inquiry ─────────────────────────────────────────────────────────────
 
 def _hyps():

@@ -361,7 +361,9 @@ def metric_proposals(req: ProposalsRequest):
     tables (the user, 2026-09-26: *"only when there are multiple date or timestamp columns
     in the table proposed in the SQL statement, only then the user may choose"*). Each empty
     list carries its reason."""
-    from aughor.semantic.metric_statement import date_candidates, proposed_statements, statement_tables
+    from aughor.semantic.metric_statement import (
+        date_candidates, dates_one_join_away, proposed_statements, statement_tables, year_only,
+    )
     from aughor.tools.profile_cache import profile_entry_for
     try:
         # The entry that describes THIS statement's tables — not merely the newest, which on a
@@ -377,14 +379,21 @@ def metric_proposals(req: ProposalsRequest):
     statements, statement_note = proposed_statements(req.sql, req.tables, req.filters, req.name, profile)
     candidates = date_candidates(req.sql, req.tables, profile)
     read = statement_tables(req.sql) or [t for t in req.tables if str(t).strip()]
+    # A statement whose own tables hold no date: where the date is instead, and what the definition must change to use
+    # it (2026-10-13 — the dates the person looked for were one join away, and the field said only "none").
+    reachable = [] if candidates or not read else dates_one_join_away(req.sql, req.tables, profile)
     if candidates:
         note = ""
     elif not read:
         note = "the statement names no table, so there is no date to propose — the FROM comes first"
+    elif reachable:
+        r = reachable[0]
+        note = (f"{r['from']} has no date of its own — {r['grain']} is one join away (on {r['via']}); to be measured "
+                f"by it, the definition must read {r['table']}")
     else:
-        note = f"no date or timestamp column was profiled on {', '.join(read)}"
+        note = year_only(read, profile) or f"no date or timestamp column was profiled on {', '.join(read)}"
     return {"statements": statements, "statement_note": statement_note,
-            "candidates": candidates, "note": note}
+            "candidates": candidates, "reachable": reachable, "note": note}
 
 
 class GenerateSqlRequest(BaseModel):

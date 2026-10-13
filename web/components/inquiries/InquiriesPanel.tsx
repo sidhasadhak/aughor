@@ -11,7 +11,7 @@
 import { useMemo, useState } from "react";
 
 import type { Connection } from "@/lib/api";
-import { compactNumber, countNoun, formatTableNumber } from "@/lib/format";
+import { compactNumber, countNoun, formatCount, formatTableNumber } from "@/lib/format";
 import { connectionLabel } from "@/lib/names";
 import {
   addInquiryHypothesis, closeInquiry, getInquiry, handInquiry, listInquiries, proposeInquiryRun,
@@ -19,10 +19,16 @@ import {
   type Claim, type Inquiry, type InquiryDetail,
 } from "@/lib/record";
 import {
-  Absent, ActorField, BackHeader, ClaimLine, Fact, Gate, Ledger, MarkWrong, Page, Section, day, dayDistance,
+  Absent, ActorField, BackHeader, ClaimLine, Fact, Gate, ListCard, ListRow, MarkWrong, Page, Section, day, dayDistance,
   markedWords, useActor, useLoad,
-  type LedgerColumn,
+  type ListColumn,
 } from "@/components/record/kit";
+import {
+  countBy, dateWords, daysFrom, inquiryLabel, inquiryStateShort, whenWords,
+} from "@/components/record/words";
+import {
+  Chip, Dot, Figure, Figures, NUM, NeedsRow, NeedsYou, Page as ClarityPage,
+} from "@/components/clarity/kit";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,49 +77,134 @@ export function InquiriesPanel({ connections, openId, onOpen, onOpenRun, onOpenD
 function InquiryLedger({ connections, onOpen, onAsk }: {
   connections: Connection[]; onOpen: (id: string) => void; onAsk: () => void;
 }) {
-  const [filter, setFilter] = useState<StateFilter>("all");
   const load = useLoad(() => listInquiries({ limit: 300 }), []);
-  const rows = useMemo(
-    () => (load.data ?? []).filter(q => filter === "all" || q.state === filter),
-    [load.data, filter]);
-  const many = new Set((load.data ?? []).map(q => q.connection_id)).size > 1;
-  const columns: LedgerColumn<Inquiry>[] = [
-    { head: "Question", cell: q => q.question },
-    { head: "State", cell: q => <StatusChip hue={STATE_HUE[q.state] ?? "muted"}>{inquiryState(q)}</StatusChip>, width: 190 },
-    { head: "Opened by", cell: q => whoLabel(q.opened_by), width: 150 },
-    { head: "Owner", cell: q => (typeof q.extra.owner === "string" && q.extra.owner ? whoLabel(q.extra.owner) : "—"), width: 130 },
-    { head: "Hypotheses", cell: q => q.hypotheses.length, num: true, width: 96 },
-    { head: "Still open", cell: q => q.open.length, num: true, width: 90 },
-    { head: "Next check", cell: q => (q.next_check ? `${day(q.next_check)} · ${dayDistance(q.next_check)}` : "—"), width: 170 },
-    { head: "Runs", cell: q => q.runs.length, num: true, width: 60 },
-    ...(many ? [{ head: "Connection", cell: (q: Inquiry) => connectionLabel(q.connection_id, connections), width: 150 }] : []),
-  ];
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-0)" }}>
-      <div className="aug-toolbar">
-        <Segmented label="Filter inquiries by state" value={filter} onChange={setFilter}
-          options={FILTERS.map(f => ({ value: f.id, label: f.label }))} />
-        {load.data && (
-          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
-            {countNoun(rows.length, "inquiry", "inquiries")} · every connection
+    <ClarityPage testId="inquiries-page">
+      <Gate load={load} what="inquiries">
+        {all => <InquiryOverview all={all} connections={connections} onOpen={onOpen} onAsk={onAsk} />}
+      </Gate>
+    </ClarityPage>
+  );
+}
+
+const STATE_DOT: Record<string, "blue" | "grey" | "green"> = { open: "blue", waiting: "grey", closed: "grey" };
+const UNSTATED = /^unstated\b/;
+
+/** Figures → Needs you → the list: what is open, what waits and on what, what is due for a person, and every inquiry
+ *  as one row — its label, how much is still open, one muted line. */
+function InquiryOverview({ all, connections, onOpen, onAsk }: {
+  all: Inquiry[]; connections: Connection[]; onOpen: (id: string) => void; onAsk: () => void;
+}) {
+  const [filter, setFilter] = useState<StateFilter>("all");
+  const rows = useMemo(() => all.filter(q => filter === "all" || q.state === filter), [all, filter]);
+  const of = (s: Inquiry["state"]) => all.filter(q => q.state === s);
+  const open = of("open"), waiting = of("waiting"), closed = of("closed");
+  const noRun = open.filter(q => q.runs.length === 0);
+  const reasons = [...new Set(waiting.map(q => q.waiting_for).filter(Boolean))];
+  const items = all.filter(q => q.state !== "closed").flatMap(q => q.open);
+  const withItems = all.filter(q => q.state !== "closed" && q.open.length > 0).length;
+  const unstated = items.length > 0 && items.every(o => !o.settled_by || UNSTATED.test(o.settled_by));
+  const due = waiting.filter(q => q.next_check && (daysFrom(q.next_check) ?? 1) <= 0);
+  const next = waiting.map(q => q.next_check).filter(d => d && (daysFrom(d) ?? 0) > 0).sort()[0] ?? "";
+  const conns = [...new Set(all.map(q => q.connection_id).filter(Boolean))];
+  const many = conns.length > 1;
+  const scope = many ? `${conns.length} connections` : conns[0] ? connectionLabel(conns[0], connections) : "";
+  const ownerOf = (q: Inquiry) => (typeof q.extra.owner === "string" ? q.extra.owner : "");
+
+  const columns: ListColumn<Inquiry>[] = [
+    { head: "Question", value: q => q.question },
+    { head: "State", value: q => inquiryState(q) },
+    { head: "Opened by", value: q => whoLabel(q.opened_by) },
+    { head: "Opened", value: q => day(q.opened_at) },
+    { head: "Owner", value: q => (ownerOf(q) ? whoLabel(ownerOf(q)) : "") },
+    { head: "Hypotheses", value: q => q.hypotheses.length },
+    { head: "Still open", value: q => q.open.length },
+    { head: "Next check", value: q => day(q.next_check) },
+    { head: "Runs", value: q => q.runs.length },
+    { head: "Connection", value: q => connectionLabel(q.connection_id, connections) },
+  ];
+
+  return (
+    <>
+      <Figures testId="inquiry-figures">
+        <Figure label="Open" value={formatCount(open.length)} testId="fig-inq-open"
+          sub={open.length === 0 ? "none open" : noRun.length ? `${noRun.length} with no run yet` : "each has a run"} />
+        <Figure label="Waiting" value={formatCount(waiting.length)} testId="fig-inq-waiting"
+          title={reasons.length ? `Waiting for: ${reasons.join(" · ")}` : undefined}
+          sub={waiting.length === 0 ? "none waiting"
+            : reasons.length === 1 ? `for ${reasons[0]}` : `on ${reasons.length} different things`} />
+        <Figure label="Closed" value={formatCount(closed.length)} testId="fig-inq-closed"
+          sub={closed.length === 0 ? "none closed yet"
+            : countBy(closed, q => q.closed_as || "closed").map(([k, n]) => `${n} ${k}`).join(" · ")} />
+        <Figure label="Still open" value={formatCount(items.length)} testId="fig-inq-items"
+          sub={items.length === 0 ? "nothing left open" : <>
+            <span>{`across ${countNoun(withItems, "inquiry", "inquiries")}`}</span>
+            {unstated && <Chip title="Each report named the gap without what would close it">none says what settles it</Chip>}
+          </>} />
+      </Figures>
+
+      <NeedsYou testId="inquiry-needs" empty={next ? `Nothing needs you · the next check is ${whenWords(next)}` : "Nothing needs you"}>
+        {[
+          ...due.map(q => (
+            <NeedsRow key={`due-${q.id}`} testId="needs-inq-due"
+              title={`${inquiryLabel(q.question, q.extra?.scheduled === true).text} · its check was due ${dateWords(q.next_check)}`}
+              detail={q.waiting_for ? `waiting for ${q.waiting_for}` : undefined}
+              actions={<Button size="xs" variant="secondary" onClick={() => onOpen(q.id)}>Open</Button>} />
+          )),
+          ...noRun.map(q => {
+            const cost = (q.extra.proposed_run as ProposedRun | undefined)?.cost;
+            return (
+              <NeedsRow key={`norun-${q.id}`} testId="needs-inq-norun"
+                title={inquiryLabel(q.question, q.extra?.scheduled === true).text}
+                detail={`open, with no run yet${cost?.tokens != null ? ` · a deep analysis would take about ${compactNumber(cost.tokens)} tokens here` : ""}`}
+                actions={<Button size="xs" variant="secondary" onClick={() => onOpen(q.id)}>Open</Button>} />
+            );
+          }),
+        ]}
+      </NeedsYou>
+
+      <ListCard<Inquiry> label="Inquiries" name="inquiries" testId="inquiry-list" rows={rows} rowKey={q => q.id}
+        columns={columns}
+        tools={<>
+          <span className="aug-fs-xs" style={NUM}>
+            {filter === "all" ? formatCount(all.length) : `${formatCount(rows.length)} of ${formatCount(all.length)}`}{scope ? ` · ${scope}` : ""}
           </span>
-        )}
-        <span style={{ flex: 1 }} />
-        <Button size="xs" onClick={onAsk} title="A deep analysis opens an inquiry, or wakes the one already open on its subject">
-          Ask why
-        </Button>
-      </div>
-      <Page wide>
-        <Gate load={load} what="inquiries">
-          {() => (
-            <Ledger name="inquiries" columns={columns} rows={rows} rowKey={q => q.id} onOpen={q => onOpen(q.id)}
-              empty={filter === "all"
-                ? "No inquiry has been opened yet. A deep analysis opens one, and so does an alert that fires; a second question on the same subject wakes the one already open instead of starting another."
-                : `No inquiry is ${filter} right now.`} />
-          )}
-        </Gate>
-      </Page>
-    </div>
+          <Segmented label="Filter inquiries by state" value={filter} onChange={setFilter}
+            options={FILTERS.map(f => ({ value: f.id, label: f.label }))} />
+          <Button size="xs" onClick={onAsk} title="A deep analysis opens an inquiry, or wakes the one already open on its subject">
+            Ask why
+          </Button>
+        </>}
+        empty={filter === "all"
+          ? "No inquiry has been opened yet. A deep analysis opens one, and so does an alert that fires."
+          : `No inquiry is ${filter} right now.`}
+        renderRow={(q, first) => {
+          const label = inquiryLabel(q.question, q.extra?.scheduled === true);
+          const owner = ownerOf(q);
+          const latest = q.runs[q.runs.length - 1];
+          // The reason every waiting inquiry shares is said once, in the figure above; a row names only its own.
+          const meta = [
+            q.state === "waiting" && reasons.length === 1 ? "waiting" : inquiryStateShort(q),
+            q.runs.length ? countNoun(q.runs.length, "run") : "no run yet",
+            q.next_check ? `next check ${dateWords(q.next_check)}` : "",
+            owner ? `owned by ${whoLabel(owner)}` : "",
+            q.opened_by && q.opened_by !== "person" ? `opened by ${whoLabel(q.opened_by)}` : "",
+            many ? connectionLabel(q.connection_id, connections) : "",
+            label.scheduled && latest?.why ? `latest: ${latest.why}` : "",
+          ].filter(Boolean).join(" · ");
+          return (
+            <ListRow first={first} testId="inquiry-row" title={label.text} full={label.full} onOpen={() => onOpen(q.id)}
+              mark={<Dot hue={q.state === "closed" && q.closed_as === "answered" ? "green" : STATE_DOT[q.state] ?? "grey"} title={inquiryState(q)} />}
+              chips={<>
+                {label.scheduled && <Chip title="Opened by a scheduled run">scheduled</Chip>}
+                {q.hypotheses.length > 0 && <Chip>{countNoun(q.hypotheses.length, "hypothesis", "hypotheses")}</Chip>}
+              </>}
+              figure={q.open.length > 0 ? `${formatCount(q.open.length)} still open` : undefined}
+              figureTitle={q.open.length ? q.open.map(o => `· ${o.what}`).join("\n") : undefined}
+              meta={meta} metaTitle={inquiryState(q)} />
+          );
+        }} />
+    </>
   );
 }
 

@@ -22,7 +22,7 @@ each row says what was believed and what replaced it. An empty kind is a count o
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from aughor.record import claims as _claims
 from aughor.record import decisions as _dec
@@ -131,15 +131,20 @@ _READERS = {"restatement": restatements, "refuted_hypothesis": refuted_hypothese
             "decision_worse_than_expected": decisions_worse_than_expected}
 
 
-def corrections(*, conn_id: Optional[str] = None, kind: Optional[str] = None, limit: int = 100) -> dict[str, Any]:
+def corrections(*, conn_id: Optional[str] = None, kind: Optional[str] = None, limit: int = 100,
+                visible: Optional[Callable[[str], bool]] = None) -> dict[str, Any]:
     """The view: counts by kind and the entries, newest first, each with what was believed and what
-    replaced it. ``kind`` narrows to one of :data:`KINDS`; an unknown kind is refused by name."""
+    replaced it. ``kind`` narrows to one of :data:`KINDS`; an unknown kind is refused by name.
+    ``visible`` (a connection id → may this reader see it) filters each kind BEFORE it is counted, so the
+    counts and the entries describe the same rows — the Record's door passes its org-and-workspace gate."""
     if kind and kind not in KINDS:
         raise ValueError(f"no correction kind named {kind!r}; the kinds are {', '.join(KINDS)}")
     counts: dict[str, int] = {}
     entries: list[dict] = []
     for k in KINDS:
         rows = _READERS[k](conn_id=conn_id, limit=limit)
+        if visible is not None:
+            rows = [r for r in rows if visible(str(r.get("connection_id") or ""))]
         counts[k] = len(rows)
         if not kind or kind == k:
             entries.extend(rows)

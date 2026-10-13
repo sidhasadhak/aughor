@@ -57,8 +57,9 @@ const SCALE = new Set([11, 12, 13, 14, 15, 18, 22, 28]);
  *  LOWER this as they are converted; never raise it. 877 → 639 (2026-10-12): it stood 196 above the count when
  *  Settings' four sections were redone to CLARITY, and they took 42 more literals out. 639 → 554 (2026-10-12): the Data
  *  Canvas, SQL Editor and Semantic Layer, redone the same day, took 85 more out. 554 → 576 the same day: the Data
- *  Canvas list was kept as it was (the user), and its 22 literals came back with it. */
-const FONT_SIZE_BASELINE = 576;
+ *  Canvas list was kept as it was (the user), and its 22 literals came back with it. 576 → 515 (2026-10-13): Agent
+ *  runs, Health, Documents, the Record, Notifications, Integrations and Evals, redone to CLARITY. */
+const FONT_SIZE_BASELINE = 515;
 
 const RADIUS_RULES = [
   {

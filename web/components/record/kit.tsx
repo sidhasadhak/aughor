@@ -12,11 +12,14 @@ import { Table } from "@radix-ui/themes";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
+import { CARD, Label, MUTED, NUM, ONE_LINE, ROW, RULE } from "@/components/clarity/kit";
 import { TableActions, tableFromElement } from "@/components/TableActions";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Loading, ReadFailed } from "@/components/ui/states";
-import { pct } from "@/lib/format";
+import { formatCount, pct } from "@/lib/format";
+import type { CsvCell } from "@/lib/query/csv";
 import { markClaimWrong, type Claim, type MarkedWrong } from "@/lib/record";
 import { useMe } from "@/lib/useMe";
 
@@ -243,6 +246,184 @@ export function Ledger<T>({ name, columns, rows, rowKey, onOpen, empty, selected
   );
 }
 
+// ── a list, the CLARITY way ──────────────────────────────────────────────────────────────
+
+/** One column of what Copy and CSV take: the full words of a row, not the short label it shows. */
+export interface ListColumn<T> {
+  head: string;
+  value: (row: T) => CsvCell;
+}
+
+/**
+ * A ledger as CLARITY lays it out (`aughor-v2/CLARITY.md` §3): a card on the ground, its small label with the count and
+ * Copy · CSV at the right end, then one row per thing — name · its marks · a figure · one muted line. The first `page`
+ * rows show; the rest are one click away and the label says how many are held back. Copy and CSV take every row, in the
+ * words the record keeps (the full question, not its label), because a table a reader cannot leave with is a picture
+ * of a table.
+ */
+export function ListCard<T>({ label, tools, rows, rowKey, columns, name, renderRow, empty, page = 50, group, testId }: {
+  label: React.ReactNode;
+  /** What filters or acts on the list (a filter, its one action), at the label's right end before Copy · CSV. */
+  tools?: React.ReactNode;
+  rows: T[];
+  rowKey: (row: T) => string;
+  columns: ListColumn<T>[];
+  /** The CSV's file name. */
+  name: string;
+  renderRow: (row: T, first: boolean) => React.ReactNode;
+  /** What an empty list says, in one muted line. */
+  empty: React.ReactNode;
+  page?: number;
+  /** Rows that share a key (a day) under one small heading, which says once what the rows would each repeat. The
+   *  rows arrive in order; a heading is drawn where the key changes. Copy and CSV take the rows, not the headings. */
+  group?: { key: (row: T) => string; head: (key: string, rows: T[]) => React.ReactNode; meta?: (key: string, rows: T[]) => React.ReactNode };
+  testId?: string;
+}) {
+  const [shown, setShown] = useState(page);
+  const read = () => ({ columns: columns.map(c => c.head), rows: rows.map(r => columns.map(c => c.value(r))) });
+  const members = new Map<string, T[]>();
+  if (group) for (const r of rows) { const k = group.key(r); members.set(k, [...(members.get(k) ?? []), r]); }
+  return (
+    <section aria-label={typeof label === "string" ? label : undefined} data-testid={testId} style={CARD}>
+      <Label right={<>
+        {tools}
+        {rows.length > 0 && <TableActions name={name} read={read} />}
+      </>}>{label}</Label>
+      {rows.length === 0
+        ? <div className="aug-fs-sm" style={{ ...MUTED, padding: "2px 0" }}>{empty}</div>
+        : rows.slice(0, shown).map((r, i, all) => {
+          const k = group?.key(r);
+          const heads = group && k !== undefined && (i === 0 || group.key(all[i - 1]) !== k);
+          return (
+            <Fragment key={rowKey(r)}>
+              {heads && (
+                <div data-list-group="" className="aug-fs-xs" style={{ display: "flex", alignItems: "baseline", gap: 8,
+                  padding: i === 0 ? "0 2px 2px" : "14px 2px 2px", color: "var(--t3)" }}>
+                  <span style={{ textTransform: "uppercase", letterSpacing: ".06em", whiteSpace: "nowrap" }}>
+                    {group.head(k, members.get(k) ?? [])}
+                  </span>
+                  {group.meta && <span style={{ ...ONE_LINE, marginLeft: "auto" }}>{group.meta(k, members.get(k) ?? [])}</span>}
+                </div>
+              )}
+              {renderRow(r, i === 0 || !!heads)}
+            </Fragment>
+          );
+        })}
+      {rows.length > shown && (
+        <div style={{ ...ROW, ...RULE, paddingTop: 8 }}>
+          <span className="aug-fs-xs" style={MUTED}>
+            {formatCount(shown)} of {formatCount(rows.length)} shown · Copy and CSV take all {formatCount(rows.length)}
+          </span>
+          <Button size="xs" variant="ghost" onClick={() => setShown(s => s + page)}>
+            Show {formatCount(Math.min(page, rows.length - shown))} more
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * One row of a list: a mark, the name (its full text on hover; a click opens it), the chips only this row carries,
+ * the figure at the right, and one muted line under the name.
+ */
+export function ListRow({ first, mark, title, full, onOpen, chips, figure, figureTitle, meta, metaTitle, actions, testId }: {
+  first: boolean;
+  mark?: React.ReactNode;
+  title: React.ReactNode;
+  /** The whole text the name stands for. */
+  full?: string;
+  onOpen?: () => void;
+  chips?: React.ReactNode;
+  figure?: React.ReactNode;
+  figureTitle?: string;
+  meta?: React.ReactNode;
+  metaTitle?: string;
+  actions?: React.ReactNode;
+  testId?: string;
+}) {
+  const name = <span className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }}>{title}</span>;
+  return (
+    <div data-testid={testId} style={{ padding: "8px 2px", ...(first ? {} : RULE) }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12, alignItems: "center" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            {mark}
+            {onOpen
+              ? <Button variant="link" size="xs" onClick={onOpen} title={full}
+                  style={{ height: "auto", padding: 0, margin: 0, minWidth: 0, flexShrink: 1, justifyContent: "flex-start" }}>
+                  {name}
+                </Button>
+              : <span title={full} style={{ minWidth: 0, display: "flex" }}>{name}</span>}
+            {chips}
+          </div>
+          {meta != null && meta !== "" && (
+            <div className="aug-fs-xs" title={metaTitle} style={{ ...MUTED, ...ONE_LINE, marginTop: 1 }}>{meta}</div>
+          )}
+        </div>
+        {(figure != null || actions) && (
+          <div style={{ ...ROW, flexWrap: "nowrap" }}>
+            {figure != null && (
+              <span className="aug-fs-chrome" title={figureTitle} style={{ color: "var(--t2)", textAlign: "right", ...NUM }}>{figure}</span>
+            )}
+            {actions}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export interface FacetValue {
+  value: string;
+  label: React.ReactNode;
+  count: number;
+  title?: string;
+}
+
+/**
+ * One filter in a left column (CLARITY §3): value · count · a 6px bar, the chosen rows tinted. Nothing chosen is
+ * everything; choosing narrows the list beside it.
+ */
+export function Facet({ label, values, chosen, onToggle, testId }: {
+  label: string; values: FacetValue[]; chosen: ReadonlySet<string>; onToggle: (value: string) => void; testId?: string;
+}) {
+  const top = Math.max(1, ...values.map(v => v.count));
+  return (
+    <div role="group" aria-label={label} data-testid={testId} style={{ marginBottom: 12 }}>
+      <Label>{label}</Label>
+      {values.map(v => {
+        const on = chosen.has(v.value);
+        return (
+          <label key={v.value} data-on={on || undefined} title={v.title} className="aug-fs-sm"
+            style={{ display: "grid", gridTemplateColumns: "16px minmax(0, 1fr) 40px 40px", alignItems: "center", gap: 7,
+              padding: "3px 4px", borderRadius: "var(--r2)", cursor: "pointer", background: on ? "var(--bg-sel)" : undefined }}>
+            <Checkbox checked={on} aria-label={`${label}: ${typeof v.label === "string" ? v.label : v.value}`}
+              onChange={() => onToggle(v.value)} />
+            <span style={{ ...ONE_LINE, color: "var(--t1)" }}>{v.label}</span>
+            <span style={{ textAlign: "right", color: "var(--t2)", ...NUM }}>{formatCount(v.count)}</span>
+            <span aria-hidden="true" style={{ height: 6, background: "var(--bg-3)", borderRadius: 3, overflow: "hidden" }}>
+              <span style={{ display: "block", height: "100%", width: `${(v.count / top) * 100}%`, background: "var(--chart-1)" }} />
+            </span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+/** A set of chosen facet values, toggled one at a time. */
+export function useChosen(): [ReadonlySet<string>, (value: string) => void, () => void] {
+  const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
+  const toggle = useCallback((v: string) => setChosen(prev => {
+    const next = new Set(prev);
+    if (next.has(v)) next.delete(v); else next.add(v);
+    return next;
+  }), []);
+  const clear = useCallback(() => setChosen(new Set()), []);
+  return [chosen, toggle, clear];
+}
+
 // ── the marks a claim carries ────────────────────────────────────────────────────────────
 
 const STATUS_HUE: Record<string, ChipHue> = { Final: "positive", Provisional: "caution", "To date": "info" };
@@ -262,7 +443,20 @@ const TIER_WORDS: Record<string, string> = {
 
 /** Where a claim sits on the authority ladder, in words. */
 export function TierMark({ tier }: { tier: string }) {
-  return <StatusChip hue="muted" title="How this statement is warranted">{TIER_WORDS[tier] ?? tier}</StatusChip>;
+  return <StatusChip hue="muted" title="How this statement is warranted">{tierWords(tier)}</StatusChip>;
+}
+
+/** "measured" · "computed" · "approved by a person" — a tier in the words the marks use. */
+export function tierWords(tier: string): string {
+  return TIER_WORDS[tier] ?? tier;
+}
+
+/** How often claims of this class have been right, as one line of text — what `Counted` shows, for a copy or a CSV. */
+export function countedWords(claim: Pick<Claim, "confidence" | "confidence_note">): string {
+  const c = claim.confidence;
+  if (!c) return claim.confidence_note || "not counted yet";
+  if (c.hit_rate == null) return c.note || `${c.n} cases so far`;
+  return `right ${pct(c.hit_rate)} of ${c.n} times`;
 }
 
 /**
