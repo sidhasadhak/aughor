@@ -5070,7 +5070,8 @@ export async function getRecentEvidenceClaims(
   const params = new URLSearchParams({ connection_id: connectionId, limit: String(limit) });
   if (canvasId) params.set("canvas_id", canvasId);
   const res = await fetch(`${getApiBase()}/investigations/evidence/recent?${params}`);
-  if (!res.ok) return [];
+  // A refused read throws: the Evidence layer says it could not read the ledger, never "no claims yet".
+  if (!res.ok) throw await refused(res, "Reading the claim ledger");
   return res.json();
 }
 
@@ -9684,7 +9685,8 @@ export async function getAdminUsers(): Promise<AdminUsers | null> {
 // measurement, and one reader of one number is what keeps that honest.
 
 export interface DatasetGate {
-  have: number; need: number; passes: boolean;
+  /** `need` and `passes` are null on a tier that is reported but is not a gate (graded by execution or a guard). */
+  have: number; need: number | null; passes: boolean | null; note?: string;
 }
 export interface LearningDatasets {
   /** Per kind (sft / dpo / golden): dataset and example counts. */
@@ -11204,6 +11206,9 @@ export interface LearningDatasetDetail {
   name?: string;
   dataset?: Record<string, unknown>;
   lineage?: Record<string, unknown>[];
+  /** "present" · "purged" · "missing" — whether the rows can be read back; `note` says why when they cannot. */
+  bytes?: string;
+  note?: string;
 }
 
 export async function getLearningDataset(name: string): Promise<LearningDatasetDetail> {

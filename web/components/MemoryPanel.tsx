@@ -1,32 +1,33 @@
 "use client";
-/* ── Memory — what the closed loop has learned (Aughor Intelligence · 06 Memory) ──────────────
-   Numbered sections beside a rail: §01 the remembered readings as rows (what was ambiguous → how it
-   is read, who settled it, where, how often it has been served), §02 the trusted queries and their
-   governance, §03 the training corpus; the rail is where memory comes from — resolutions by source,
-   the verdicts, and the weekly acceptance loop.
+/* ── Memory — what the closed loop has learned ─────────────────────────────────────────────────────────────────────
+   Laid out to CLARITY (`aughor-v2/CLARITY.md`) as a page that reads like a document, not a board: one line of what it
+   holds, the trusted queries waiting on a person under "Needs you", then one sheet of headed sections in short lines —
+   the readings it remembers, the queries it trusts, and side by side what reviewers said and the training corpus their
+   verdicts become.
 
-   Drawn only from what the loop stores. Left out: a "retired" list and its count (Revoke DELETES a
-   reading — nothing revoked is kept), "Add lesson" (no route writes a reading; they come from
-   settled clarify questions, probes and verdicts), a lesson's "because" and kind beyond its source,
-   an export of memory itself (the export here is the training corpus, and it writes), and the
-   design's "effect on behaviour" figures (nothing measures them). Each source loads on its own, so
-   a failed summary no longer hides the readings. Org-wide; reads /learning/*. */
-import { connectionLabel } from "@/lib/names";
-import React, { useCallback, useEffect, useState } from "react";
-import { compactNumber, countNoun, formatCount, formatTimestamp, pct, relTime } from "@/lib/format";
+   Drawn only from what the loop stores. Left out: a "retired" list (Revoke DELETES a reading — nothing revoked is
+   kept), "Add lesson" (no route writes a reading; they come from settled clarify questions, probes and verdicts), a
+   reading's "because", an export of memory itself (the export here is the training corpus, and it writes), and any
+   "effect on behaviour" figure (nothing measures one). Each source loads on its own and says when it could not be
+   read. Org-wide; reads /learning/*. */
+import { connectionLabel, keyToWords } from "@/lib/names";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { compactNumber, countNoun, formatCount, formatTimestamp, pct } from "@/lib/format";
+import { dayWords } from "@/lib/home";
 import {
   createTrustedQuery, deleteTrustedQuery, editTrustedQuery, getConnections,
   getLearningDataset, getLearningDatasets, getLearningSummary, listRememberedReadings,
   listTrustedQueries, revokeRememberedReading, runLearningExport, transitionTrustedQuery,
-  type Connection, type LearningDatasets, type LearningSummary, type RememberedReading,
+  type Connection, type LearningDatasetDetail, type LearningDatasets, type LearningSummary, type RememberedReading,
   type TrustedQueryRow,
 } from "@/lib/api";
 import { claimsOf, getIdToken } from "@/lib/auth";
+import {
+  Bar, CARD, Chip, Columns, Dot, Empty, HBars, MUTED, NUM, NeedsRow, NeedsYou, ONE_LINE, Page, ROW, RULE,
+} from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
-import { Sparkline } from "@/components/brief/Sparkline";
-import { SkeletonRows } from "@/components/ui/motion";
+import { Loading, ReadFailed } from "@/components/ui/states";
 import { SelectField } from "@/components/ui/select";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -34,67 +35,137 @@ import { Textarea } from "@/components/ui/textarea";
  *  same word the actions inbox uses. The server owns identity; this is provenance. */
 const actorName = () => claimsOf(getIdToken())?.email || "human";
 
-function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div style={{
-      flex: "1 1 120px", minWidth: 120, padding: "12px 14px",
-      background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
-    }}>
-      <div style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 600, color: "var(--t1)", marginTop: 4 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>{sub}</div>}
-    </div>
-  );
-}
+const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-const SOURCE_LABEL: Record<string, string> = { probe: "auto-probe", user: "user choice", verdict: "reviewer" };
+/** Who settled a reading, as a reader says it. */
+const SETTLED_BY: Record<string, string> = { probe: "a probe", user: "a person", verdict: "a reviewer" };
+const settledBy = (src: string) => SETTLED_BY[src] ?? keyToWords(src);
+
+/** A verdict's word. */
+const VERDICT_WORD: Record<string, string> = { accept: "accepted", correct: "corrected", reject: "rejected" };
 
 /** Readings shown before "Show all" — a long list stays scannable, and the cut is never silent. */
 const READINGS_SHOWN = 30;
 
-/** "72% → 84% over N wks" from the weekly acceptance series — the product's
- *  accuracy TREND (S3). Null when fewer than two measured weeks exist: one
- *  point is a number, not a direction. */
-function trendSub(trend?: { week: string; acceptance_rate: number }[]): string | null {
-  if (!trend || trend.length < 2) return null;
-  const first = trend[0], last = trend[trend.length - 1];
-  return `${Math.round(first.acceptance_rate * 100)}% → ${Math.round(last.acceptance_rate * 100)}% over ${trend.length} wks`;
+/** What each gate counts — on hover; the kind keeps the name the corpus is registered under. */
+const GATE_WHAT: Record<string, string> = {
+  sft: "Accepted answers to train on",
+  dpo: "A rejected answer paired with its correction",
+  golden: "Accepted answers held out to measure against",
+  guard_days: "Days of guard data on real traffic",
+};
+
+/** The dataset each kind is exported as — `aughor/learning/exporters.py`'s default names. The inspector asked for the
+ *  kind itself ("sft") and the registry, which keys by name ("nl2sql-sft"), never found one: every corpus read as
+ *  "no exported version yet" while the gates counted its rows. Keep in step with the exporters' defaults. */
+const DATASET_OF: Record<string, string> = {
+  sft: "nl2sql-sft", dpo: "nl2sql-dpo", golden: "nl2sql-golden", sft_bronze: "nl2sql-bronze", dpo_repair: "nl2sql-repairs",
+};
+
+/** A section of the page: a heading, what it counts, its one tool at the right, then its lines. */
+function Section({ title, meta, right, children, testId, style }: {
+  title: string; meta?: React.ReactNode; right?: React.ReactNode; children: React.ReactNode; testId?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <section aria-label={title} data-testid={testId} style={{ minWidth: 0, ...style }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+        <h2 className="aug-fs-h2" style={{ margin: 0, color: "var(--t1)", fontWeight: 600 }}>{title}</h2>
+        {meta != null && meta !== "" && <span className="aug-fs-sm" style={{ ...MUTED, ...NUM }}>{meta}</span>}
+        {right && <span style={{ ...ROW, marginLeft: "auto" }}>{right}</span>}
+      </div>
+      {children}
+    </section>
+  );
 }
 
+/** One line of a section: what it is, one muted line, and its figure and buttons at the right. */
+function Line({ first, children, figure, figureTitle, actions, below }: {
+  first: boolean; children: React.ReactNode; figure?: React.ReactNode; figureTitle?: string; actions?: React.ReactNode;
+  below?: React.ReactNode;
+}) {
+  return (
+    <div style={{ padding: "8px 0", ...(first ? {} : RULE) }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12, alignItems: "center" }}>
+        <div style={{ minWidth: 0 }}>{children}</div>
+        {(figure != null || actions) && (
+          <div style={{ ...ROW, flexWrap: "nowrap" }}>
+            {figure != null && <span className="aug-fs-chrome" title={figureTitle} style={{ color: "var(--t2)", ...NUM }}>{figure}</span>}
+            {actions}
+          </div>
+        )}
+      </div>
+      {below}
+    </div>
+  );
+}
+
+const SQL_BOX: React.CSSProperties = {
+  margin: "6px 0 0", whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)", color: "var(--t2)", background: "var(--bg-1)",
+  borderRadius: "var(--r2)", padding: 8, overflowWrap: "anywhere",
+};
+
 export function MemoryPanel() {
-  // Connections by name: the ledger's CONNECTION column and the trusted queries' scope line
-  // read `theLook`, never `8233e4fd` (lib/names.ts).
+  // Connections by name: a reading and a trusted query read `theLook`, never `8233e4fd` (lib/names.ts).
   const [conns, setConns] = useState<Connection[]>([]);
   useEffect(() => { getConnections().then(setConns).catch(() => {}); }, []);
+
+  // Each source on its own: a failed one says so in its place and hides nothing else.
   const [summary, setSummary] = useState<LearningSummary | null>(null);
   const [summaryState, setSummaryState] = useState<"loading" | "ready" | "failed">("loading");
-  // S5 cited memory — the readings themselves: remembered, cited, revocable.
   const [readings, setReadings] = useState<RememberedReading[] | null>(null);
-  const [readingsFailed, setReadingsFailed] = useState(false);
-  const [showAll, setShowAll] = useState(false);
-  const [revoking, setRevoking] = useState<string | null>(null);
-  // MI-3: the corpus those verdicts become, and the measured distance to MI-4's gates.
+  const [readingsErr, setReadingsErr] = useState("");
+  const [trusted, setTrusted] = useState<TrustedQueryRow[] | null>(null);
+  const [trustedErr, setTrustedErr] = useState("");
   const [datasets, setDatasets] = useState<LearningDatasets | null>(null);
-  const [exporting, setExporting] = useState(false);
-  // PX-4 — the write half: every trusted query in every status, governable from here.
-  const [trustedRows, setTrustedRows] = useState<TrustedQueryRow[]>([]);
+  const [datasetsState, setDatasetsState] = useState<"loading" | "ready" | "failed">("loading");
 
-  const reloadTrusted = useCallback(() => {
-    listTrustedQueries().then(setTrustedRows).catch(() => setTrustedRows([]));
+  // Each read sets only what it answers, so the first reads can run straight from the effect; a Retry says it is
+  // reading again before it reads.
+  const fetchSummary = useCallback(() => getLearningSummary()
+    .then(s => { setSummary(s); setSummaryState(s ? "ready" : "failed"); })
+    .catch(() => setSummaryState("failed")), []);
+  const fetchReadings = useCallback(() => listRememberedReadings()
+    .then(rs => { setReadings(rs); setReadingsErr(""); })
+    .catch(e => setReadingsErr(errText(e))), []);
+  const fetchTrusted = useCallback(() => listTrustedQueries()
+    .then(rs => { setTrusted(rs); setTrustedErr(""); })
+    .catch(e => setTrustedErr(errText(e))), []);
+  const fetchDatasets = useCallback(() => getLearningDatasets()
+    .then(d => { setDatasets(d); setDatasetsState(d ? "ready" : "failed"); })
+    .catch(() => setDatasetsState("failed")), []);
+
+  useEffect(() => { void fetchSummary(); void fetchReadings(); void fetchTrusted(); void fetchDatasets(); },
+    [fetchSummary, fetchReadings, fetchTrusted, fetchDatasets]);
+
+  const loadSummary = () => { setSummaryState("loading"); void fetchSummary(); };
+  const loadReadings = () => { setReadings(null); setReadingsErr(""); void fetchReadings(); };
+  const loadTrusted = () => { setTrusted(null); setTrustedErr(""); void fetchTrusted(); };
+  const loadDatasets = () => { setDatasetsState("loading"); void fetchDatasets(); };
+
+  // After a governance write: the queries, and what they feed — without blanking what is on screen.
+  const afterTrustedWrite = useCallback(() => {
+    void fetchTrusted();
     getLearningSummary().then(s => { if (s) setSummary(s); }).catch(() => {});
     getLearningDatasets().then(d => { if (d) setDatasets(d); }).catch(() => {});
-  }, []);
+  }, [fetchTrusted]);
 
-  useEffect(() => {
-    // Each source on its own: a failed summary used to hide the readings with it.
-    getLearningSummary()
-      .then(s => { setSummary(s); setSummaryState(s ? "ready" : "failed"); })
-      .catch(() => setSummaryState("failed"));
-    listTrustedQueries().then(setTrustedRows).catch(() => setTrustedRows([]));
-    listRememberedReadings().then(setReadings).catch(() => { setReadings([]); setReadingsFailed(true); });
-    getLearningDatasets().then(setDatasets).catch(() => setDatasets(null));
-  }, []);
+  // ── the readings ──
+  const [showAll, setShowAll] = useState(false);
+  const [revoking, setRevoking] = useState<string | null>(null);
+  const [revokeErr, setRevokeErr] = useState<{ id: string; text: string } | null>(null);
+  const revoke = async (id: string) => {
+    setRevoking(id);
+    setRevokeErr(null);
+    try {
+      await revokeRememberedReading(id);
+      setReadings(rs => (rs ?? []).filter(r => r.id !== id));
+    } catch (e) { setRevokeErr({ id, text: errText(e) }); }   // the row stays; the user can retry
+    finally { setRevoking(null); }
+  };
 
+  // ── the training corpus ──
+  const [exporting, setExporting] = useState(false);
   // A refused export used to end the spinner and change nothing, saying nothing.
   const [exportRefused, setExportRefused] = useState<string | null>(null);
   const exportNow = async () => {
@@ -102,7 +173,8 @@ export function MemoryPanel() {
     setExportRefused(null);
     try {
       const out = await runLearningExport();
-      setDatasets({ stats: datasets?.stats ?? {}, gates: out.gates });
+      setDatasets(d => ({ stats: d?.stats ?? {}, gates: out.gates }));
+      setDatasetsState("ready");
       const fresh = await getLearningDatasets();
       if (fresh) setDatasets(fresh);
     } catch (e) {
@@ -110,363 +182,309 @@ export function MemoryPanel() {
     } finally { setExporting(false); }
   };
 
-  const revoke = async (id: string) => {
-    setRevoking(id);
-    try {
-      await revokeRememberedReading(id);
-      setReadings(rs => (rs ?? []).filter(r => r.id !== id));
-    } catch { /* row stays; the user can retry */ }
-    finally { setRevoking(null); }
-  };
-
-  const ledger = summary?.ledger;
-  const verdicts = summary?.verdicts;
-  const acc = verdicts?.acceptance_rate ?? null;
-  const bySource = Object.entries(ledger?.by_source ?? {}).sort((a, b) => b[1] - a[1]);
-  const sourceTotal = bySource.reduce((n, [, c]) => n + c, 0);
-  const trend = verdicts?.trend ?? [];
-  const list = readings ?? [];
-  const visible = showAll ? list : list.slice(0, READINGS_SHOWN);
-
-  const meta = [
-    readings ? `${countNoun(list.length, "reading")} remembered` : "",
-    ledger ? `served ${compactNumber(ledger.served_total)}×` : "",
-    acc != null ? `${pct(acc)} of verdicts accepted` : "",
-  ].filter(Boolean).join(" · ");
-
-  return (
-    <div className="aug-profile">
-      <div className="aug-profile-main">
-        <div className="aug-brief-strip">
-          <span className="aug-brief-eyebrow">Memory</span>
-          {meta && <span className="aug-brief-meta">{meta}</span>}
-        </div>
-
-        <section className="aug-brief-sec">
-          <div className="aug-brief-body">
-            <div className="aug-brief-head">
-              <span className="aug-brief-eyebrow">Remembered readings</span>
-              <span className="aug-brief-meta">a prior on every matching question — cited to who settled it, and revocable</span>
-            </div>
-            {readings === null ? (
-              <SkeletonRows rows={5} />
-            ) : readingsFailed ? (
-              <p className="aug-brief-note">The remembered readings could not be read.</p>
-            ) : list.length === 0 ? (
-              <p className="aug-brief-note">
-                Nothing remembered yet. A reading is kept when an ambiguous question is settled — by a probe, by a
-                person answering a clarify question, or by a reviewer&apos;s verdict.
-              </p>
-            ) : (
-              <>
-                <div className="aug-moves-wrap">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>what was ambiguous → how it is read</TableHead>
-                        <TableHead className="aug-memory-col-source">settled by</TableHead>
-                        <TableHead className="aug-memory-col-conn">connection</TableHead>
-                        <TableHead className="num aug-memory-col-num">served</TableHead>
-                        <TableHead className="num aug-memory-col-when">settled</TableHead>
-                        <TableHead className="aug-memory-col-door"><span className="sr-only">Revoke</span></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {visible.map(r => (
-                        <TableRow key={r.id}>
-                          <TableCell className="aug-ledger-claim">
-                            <span className="aug-ledger-text">
-                              <span className="aug-memory-subject">{r.subject}</span> → {r.resolved_reading}
-                            </span>
-                            {r.resolved_sql && <span className="aug-ledger-query">{r.resolved_sql}</span>}
-                          </TableCell>
-                          <TableCell className="aug-memory-source">{SOURCE_LABEL[r.resolution_source] ?? r.resolution_source}</TableCell>
-                          <TableCell className="aug-memory-conn" title={r.connection_id}>{connectionLabel(r.connection_id, conns) || "—"}</TableCell>
-                          <TableCell className="num" title={r.last_used_at ? `last served ${formatTimestamp(r.last_used_at)}` : "not served yet"}>
-                            {compactNumber(r.use_count)}×
-                          </TableCell>
-                          <TableCell className="num aug-ledger-when" title={formatTimestamp(r.created_at)}>{relTime(r.created_at)}</TableCell>
-                          <TableCell className="aug-org-door">
-                            <Button variant="ghost" size="xs" disabled={revoking === r.id}
-                              onClick={() => { void revoke(r.id); }}
-                              title="Revoke: the reading is deleted, and the next matching question is asked again">
-                              {revoking === r.id ? "Revoking" : "Revoke"}
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-                <p className="aug-profile-foot">
-                  {list.length > READINGS_SHOWN && !showAll && (
-                    <>
-                      <Button variant="link" size="xs" onClick={() => setShowAll(true)}>
-                        Show all {formatCount(list.length)}
-                      </Button>{" "}
-                    </>
-                  )}
-                  Revoking deletes a reading — nothing revoked is kept, so there is no retired list — and the next
-                  matching question is asked again.
-                </p>
-              </>
-            )}
-          </div>
-        </section>
-
-        <section className="aug-brief-sec">
-          <div className="aug-brief-body">
-            {/* PX-4 — the closed loop's WRITE half. The flywheel moves by grading, and
-                until this section grading had no door: the panel could show trusted
-                queries and could not author, promote, or retire one. */}
-            <TrustedGovernance rows={trustedRows} onChanged={reloadTrusted} connections={conns} />
-          </div>
-        </section>
-
-        {datasets && (
-          <section className="aug-brief-sec">
-            <div className="aug-brief-body">
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
-                <span className="aug-fs-sm" style={{ fontWeight: 600, color: "var(--t2)" }}>Training corpus</span>
-                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>graded work, exportable — and the measured distance to the MI-4 gates</span>
-                <span style={{ flex: 1 }} />
-                <Button variant="ghost" size="xs" disabled={exporting} onClick={exportNow}
-                        className="h-auto px-1.5 py-0.5 aug-fs-xs font-normal">
-                  {exporting ? "Exporting…" : "Export now"}
-                </Button>
-              </div>
-              <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 8, maxWidth: 640 }}>
-                Distillation (MI-4) does not start until every gate passes; an unchanged corpus
-                exports nothing new, so the button is safe to press.
-              </div>
-              {exportRefused && (
-                <p role="alert" className="aug-fs-xs" style={{ color: "var(--red3)", margin: "0 0 8px" }}>{exportRefused}</p>
-              )}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                {Object.entries(datasets.gates).map(([kind, g]) => (
-                  <Tile key={kind} label={kind.toUpperCase()}
-                        value={`${compactNumber(g.have)} / ${compactNumber(g.need)}`}
-                        sub={g.passes ? "gate passes" : "below the gate"} />
-                ))}
-              </div>
-              <DatasetInspector kinds={Object.keys(datasets.gates)} />
-            </div>
-          </section>
-        )}
-      </div>
-
-      <aside className="aug-profile-rail" aria-label="Where memory comes from">
-        <div className="aug-profile-rail-head">
-          <span className="aug-brief-eyebrow">Sources</span>
-          <span className="aug-brief-meta">{ledger ? countNoun(ledger.resolutions, "resolution") : ""}</span>
-        </div>
-        <div className="aug-profile-block">
-          {summaryState === "loading" ? (
-            <SkeletonRows rows={3} />
-          ) : summaryState === "failed" ? (
-            <p className="aug-brief-note">The learning summary could not be read.</p>
-          ) : bySource.length === 0 ? (
-            <p className="aug-brief-note">No ambiguity has been settled yet.</p>
-          ) : bySource.map(([src, n]) => (
-            <div key={src} className="aug-memory-share">
-              <div className="aug-memory-share-head">
-                <span>{SOURCE_LABEL[src] ?? src}</span>
-                <span className="aug-memory-share-n">{formatCount(n)}</span>
-              </div>
-              <div className="aug-memory-share-rule" aria-hidden>
-                <span style={{ width: `${sourceTotal ? (n / sourceTotal) * 100 : 0}%` }} />
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="aug-profile-rail-head">
-          <span className="aug-brief-eyebrow">Verdicts</span>
-          <span className="aug-brief-meta">{verdicts ? countNoun(verdicts.total, "verdict") : ""}</span>
-        </div>
-        <div className="aug-profile-block">
-          {summaryState === "loading" ? (
-            <SkeletonRows rows={2} />
-          ) : summaryState === "failed" ? (
-            <p className="aug-brief-note">—</p>
-          ) : !verdicts || verdicts.total === 0 ? (
-            <p className="aug-brief-note">No reviewer has judged an answer yet.</p>
-          ) : (
-            <>
-              <dl className="aug-inspector-rows">
-                {Object.entries(verdicts.counts ?? {}).map(([k, n]) => (
-                  <div key={k}><dt>{k}</dt><dd>{formatCount(n)}</dd></div>
-                ))}
-              </dl>
-              {acc != null && (
-                <p className="aug-inspector-note">{pct(acc)} accepted{trendSub(trend) ? ` · ${trendSub(trend)}` : ""}</p>
-              )}
-            </>
-          )}
-        </div>
-
-        <div className="aug-profile-rail-head">
-          <span className="aug-brief-eyebrow">Loop</span>
-          <span className="aug-brief-meta">{trend.length >= 2 ? `acceptance · last ${trend.length} weeks` : ""}</span>
-        </div>
-        <div className="aug-profile-block">
-          {trend.length >= 2 ? (
-            <>
-              <Sparkline values={trend.map(t => t.acceptance_rate)} width={300} height={48} color="var(--chart-2)" />
-              <p className="aug-inspector-note">
-                The weekly share of verdicts that accepted the answer. Nothing else is measured — not how memory moved
-                confidence, nor how many clarify questions it saved.
-              </p>
-            </>
-          ) : (
-            <p className="aug-brief-note">Fewer than two measured weeks — one point is a number, not a trend.</p>
-          )}
-        </div>
-      </aside>
-    </div>
-  );
-}
-
-// ── PX-4 · trusted-query governance (the write half) ─────────────────────────
-
-const STATUS_COLOR: Record<string, string> = {
-  draft: "var(--t3)", proposed: "var(--blue4)", approved: "var(--grn4)",
-  rejected: "var(--t3)", deprecated: "var(--t3)",
-};
-
-function StatusChip({ status }: { status: string }) {
-  const color = STATUS_COLOR[status] ?? "var(--t3)";
-  return (
-    <span className="aug-fs-xs" style={{ color,
-      border: `1px solid color-mix(in srgb, ${color} 45%, transparent)`,
-      borderRadius: "var(--r-chip)", padding: "1px 8px", whiteSpace: "nowrap" }}>
-      {status}
-    </span>
-  );
-}
-
-function TrustedGovernance({ rows, onChanged, connections }: {
-  rows: TrustedQueryRow[]; onChanged: () => void; connections: Connection[];
-}) {
+  // ── trusted-query governance (the write half) ──
   const [busy, setBusy] = useState<string | null>(null);
-  const [err, setErr] = useState("");
-  const [note, setNote] = useState("");
-  const [open, setOpen] = useState<string | null>(null);
-  const [editing, setEditing] = useState<TrustedQueryRow | null>(null);
+  const [actErr, setActErr] = useState<{ id: string; text: string } | null>(null);
+  const [actNote, setActNote] = useState("");
+  const [openSql, setOpenSql] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [showSeed, setShowSeed] = useState(false);
-
   const act = async (id: string, fn: () => Promise<unknown>, done: string) => {
-    setBusy(id); setErr(""); setNote("");
-    try { await fn(); setNote(done); onChanged(); }
-    catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    setBusy(id); setActErr(null); setActNote("");
+    try { await fn(); setActNote(done); afterTrustedWrite(); }
+    catch (e) { setActErr({ id, text: errText(e) }); }
     finally { setBusy(null); }
   };
+  const remove = (q: TrustedQueryRow) => {
+    if (confirm("Remove this trusted query? The removal is audited."))
+      void act(q.id, () => deleteTrustedQuery(q.id, actorName()), "Removed — the removal is on the ledger.");
+  };
 
-  // Decisions first: what needs a human leads the list.
-  const order: Record<string, number> = { proposed: 0, draft: 1, approved: 2 };
-  const sorted = [...rows].sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3));
+  const rows = trusted ?? [];
+  // What needs a person: a proposal to approve, a draft to fix — proposals first.
+  const waiting = rows.filter(q => q.status === "proposed" || q.status === "draft")
+    .sort((a, b) => (a.status === "proposed" ? 0 : 1) - (b.status === "proposed" ? 0 : 1));
+  const order: Record<string, number> = { approved: 0, deprecated: 1, rejected: 2 };
+  const settled = rows.filter(q => q.status !== "proposed" && q.status !== "draft")
+    .sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3));
+  const approved = settled.filter(q => q.status === "approved").length;
+
+  const sqlBelow = (q: TrustedQueryRow) => (
+    <>
+      {openSql === q.id && <pre className="aug-fs-xs" style={SQL_BOX}>{q.sql}</pre>}
+      {editing === q.id && <EditTrustedForm row={q} onDone={() => { setEditing(null); afterTrustedWrite(); }} />}
+      {actErr?.id === q.id && <p role="alert" className="aug-fs-xs" style={{ color: "var(--red4)", margin: "4px 0 0" }}>{actErr.text}</p>}
+    </>
+  );
+  const sqlButton = (q: TrustedQueryRow) => (
+    <Button size="xs" variant="ghost" onClick={() => setOpenSql(o => (o === q.id ? null : q.id))}>
+      {openSql === q.id ? "Hide" : "SQL"}
+    </Button>
+  );
+  const removeButton = (q: TrustedQueryRow) => (
+    <Button size="xs" variant="ghost" disabled={busy === q.id} data-testid={`tq-delete-${q.id}`} onClick={() => remove(q)}>
+      Remove
+    </Button>
+  );
+  const where = (q: TrustedQueryRow) => `${connectionLabel(q.connection_id, conns)} · v${q.version}`;
+
+  // ── the readings, said once ──
+  const list = readings ?? [];
+  const visible = showAll ? list : list.slice(0, READINGS_SHOWN);
+  const readingsMeta = useMemo(() => {
+    if (!readings?.length) return "";
+    const by = new Map<string, number>();
+    for (const r of readings) by.set(r.resolution_source, (by.get(r.resolution_source) ?? 0) + 1);
+    const sources = [...by].sort((a, b) => b[1] - a[1]).map(([s, n]) => `${formatCount(n)} by ${settledBy(s)}`).join(", ");
+    const served = readings.reduce((n, r) => n + (r.use_count || 0), 0);
+    return `${formatCount(readings.length)} · ${sources} · served ${compactNumber(served)}× in all`;
+  }, [readings]);
+
+  const verdicts = summary?.verdicts;
+  const trend = verdicts?.trend ?? [];
 
   return (
-    <>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
-        <span className="aug-fs-sm" style={{ fontWeight: 600, color: "var(--t2)" }}>Trusted queries</span>
-        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-          only <strong>approved</strong> reaches a prompt; approval is a recorded human act
-        </span>
-        <span style={{ flex: 1 }} />
-        <Button variant="ghost" size="xs" className="h-auto px-1.5 py-0.5 aug-fs-xs font-normal"
-          onClick={() => setShowSeed(s => !s)} data-testid="tq-seed-toggle">
-          {showSeed ? "Close" : "Seed a trusted query"}
-        </Button>
-      </div>
-      {showSeed && <SeedTrustedForm onDone={() => { setShowSeed(false); onChanged(); }} />}
-      {sorted.length === 0 && (
-        <div className="aug-fs-sm" style={{ color: "var(--t3)", marginBottom: 12 }}>
-          None yet — seed one above, accept one through the Semantic Layer&rsquo;s Import tab,
-          or let a verified answer crystallize here.
-        </div>
-      )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 18 }}>
-        {sorted.map(q => (
-          <div key={q.id} data-testid={`tq-${q.id}`} style={{ border: "1px solid var(--b1)",
-            borderRadius: "var(--r2)", background: "var(--bg-1)", padding: "8px 10px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <StatusChip status={q.status} />
-              <span className="aug-fs-sm" style={{ flex: 1, color: "var(--t1)", minWidth: 0,
-                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {q.question}
-              </span>
-              <span className="aug-fs-xs" style={{ color: "var(--t3)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
-                {connectionLabel(q.connection_id, connections)} · v{q.version}
-              </span>
-              <Button variant="ghost" size="xs" className="h-auto px-1 py-0.5 aug-fs-xs font-normal"
-                onClick={() => setOpen(o => o === q.id ? null : q.id)}>
-                {open === q.id ? "Hide" : "SQL"}
-              </Button>
-            </div>
-            {open === q.id && (
-              <pre className="aug-fs-xs" style={{ margin: "6px 0 0", whiteSpace: "pre-wrap",
-                fontFamily: "var(--font-mono)", color: "var(--t2)", background: "var(--bg-2)",
-                borderRadius: "var(--r2)", padding: 8 }}>{q.sql}</pre>
+    <Page testId="memory-page">
+      <p className="aug-fs-ui" style={{ margin: 0, color: "var(--t2)" }}>
+        What Aughor has learned across every connection: how it reads ambiguous terms, the queries it trusts, and what
+        reviewers said.
+      </p>
+
+      <NeedsYou testId="memory-needs" waiting={waiting.length > 0}
+        right={waiting.length > 0 ? countNoun(waiting.length, "trusted query", "trusted queries") : undefined}>
+        {trusted === null && !trustedErr ? <Loading what="the trusted queries" />
+          : trustedErr ? <ReadFailed what="the trusted queries" error={trustedErr} onRetry={loadTrusted} />
+          : waiting.length === 0 ? <Empty>No trusted query waits for approval.</Empty>
+          : waiting.map(q => {
+            const failed = q.status === "draft" && (q.verification as { passed?: boolean } | null)?.passed === false;
+            return (
+              <div key={q.id} data-testid={`tq-${q.id}`}>
+                <NeedsRow title={<span title={q.question} style={{ ...ONE_LINE, display: "block" }}>{q.question}</span>}
+                  detail={q.status === "proposed"
+                    ? `Proposed · ${where(q)} — approving lets it reach prompts, and is recorded.`
+                    : failed ? `Verification failed — it stays a draft, out of every prompt. ${where(q)}`
+                    : `Draft · ${where(q)} — re-verify to propose it.`}
+                  actions={q.status === "proposed" ? (
+                    <>
+                      <Button size="xs" variant="default" disabled={busy === q.id} data-testid={`tq-approve-${q.id}`}
+                        onClick={() => act(q.id, () => transitionTrustedQuery(q.id, "approve", actorName()),
+                          "Approved — it now reaches prompts, and the approval is on the ledger.")}>
+                        Approve
+                      </Button>
+                      <Button size="xs" variant="ghost" disabled={busy === q.id}
+                        onClick={() => act(q.id, () => transitionTrustedQuery(q.id, "reject", actorName()), "Rejected.")}>
+                        Reject
+                      </Button>
+                      <Button size="xs" variant="ghost" disabled={busy === q.id}
+                        onClick={() => setEditing(e => (e === q.id ? null : q.id))}>Edit</Button>
+                      {sqlButton(q)}
+                      {removeButton(q)}
+                    </>
+                  ) : (
+                    <>
+                      <Button size="xs" variant="minimal" disabled={busy === q.id}
+                        onClick={() => act(q.id, () => transitionTrustedQuery(q.id, "propose", actorName()),
+                          "Re-verified and proposed.")}>
+                        Re-verify &amp; propose
+                      </Button>
+                      <Button size="xs" variant="ghost" disabled={busy === q.id}
+                        onClick={() => setEditing(e => (e === q.id ? null : q.id))}>Edit</Button>
+                      {sqlButton(q)}
+                      {removeButton(q)}
+                    </>
+                  )} />
+                {sqlBelow(q)}
+              </div>
+            );
+          })}
+      </NeedsYou>
+
+      <article aria-label="What the loop has learned" style={{ ...CARD, padding: "16px 20px" }}>
+        <Section title="Readings it remembers" testId="memory-readings" meta={readingsMeta}>
+          {readings === null && !readingsErr ? <Loading what="the remembered readings" />
+            : readingsErr ? <ReadFailed what="the remembered readings" error={readingsErr} onRetry={loadReadings} />
+            : list.length === 0 ? (
+              <Empty>Nothing remembered yet — a reading is kept when a probe, a person or a reviewer settles an ambiguous question.</Empty>
+            ) : (
+              <>
+                {visible.map((r, i) => (
+                  <Line key={r.id} first={i === 0}
+                    figure={`${compactNumber(r.use_count)}×`}
+                    figureTitle={r.last_used_at ? `served ${formatCount(r.use_count)} times · last ${formatTimestamp(r.last_used_at)}` : "not served yet"}
+                    actions={
+                      <Button variant="ghost" size="xs" disabled={revoking === r.id} onClick={() => { void revoke(r.id); }}
+                        title="Revoke: the reading is deleted — nothing revoked is kept — and the next matching question is asked again">
+                        {revoking === r.id ? "Revoking" : "Revoke"}
+                      </Button>
+                    }
+                    below={revokeErr?.id === r.id && (
+                      <p role="alert" className="aug-fs-xs" style={{ color: "var(--red4)", margin: "4px 0 0" }}>Not revoked — {revokeErr.text}</p>
+                    )}>
+                    <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }}
+                      title={`${r.subject} → ${r.resolved_reading}`}>
+                      <span style={{ color: "var(--t2)" }}>{r.subject}</span>
+                      <span style={MUTED}> → </span>{r.resolved_reading}
+                    </div>
+                    <div className="aug-fs-xs" style={{ ...MUTED, ...ONE_LINE }} title={formatTimestamp(r.created_at)}>
+                      settled by {settledBy(r.resolution_source)} · {connectionLabel(r.connection_id, conns) || "no connection"} · {dayWords(r.created_at)}
+                    </div>
+                    {r.resolved_sql && (
+                      <div className="aug-fs-xs" title={r.resolved_sql}
+                        style={{ ...MUTED, ...ONE_LINE, fontFamily: "var(--font-mono)" }}>{r.resolved_sql}</div>
+                    )}
+                  </Line>
+                ))}
+                {list.length > READINGS_SHOWN && !showAll && (
+                  <div className="aug-fs-xs" style={{ ...ROW, ...MUTED, ...RULE, paddingTop: 8 }}>
+                    <span>{formatCount(READINGS_SHOWN)} of {formatCount(list.length)} shown</span>
+                    <Button variant="ghost" size="xs" onClick={() => setShowAll(true)}>Show all {formatCount(list.length)}</Button>
+                  </div>
+                )}
+              </>
             )}
-            {q.status === "draft" && q.verification && (q.verification as { passed?: boolean }).passed === false && (
-              <p className="aug-fs-xs" style={{ color: "var(--amb4)", margin: "4px 0 0" }}>
-                Verification failed — it stays a draft, out of every prompt. Edit and re-propose.
-              </p>
-            )}
-            <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-              {q.status === "draft" && (
-                <Button size="xs" variant="minimal" disabled={busy === q.id}
-                  onClick={() => act(q.id, () => transitionTrustedQuery(q.id, "propose", actorName()),
-                    "Re-verified and proposed.")}>
-                  Re-verify &amp; propose
-                </Button>
-              )}
-              {q.status === "proposed" && (
+        </Section>
+
+        <Section title="Queries it trusts" testId="memory-trusted"
+          style={{ ...RULE, marginTop: 16, paddingTop: 14 }}
+          meta={trusted ? `${formatCount(approved)} approved · only approved ones reach a prompt` : ""}
+          right={
+            <Button variant="ghost" size="xs" onClick={() => setShowSeed(s => !s)} data-testid="tq-seed-toggle">
+              {showSeed ? "Close" : "Seed a trusted query"}
+            </Button>
+          }>
+          {showSeed && <SeedTrustedForm onDone={() => { setShowSeed(false); afterTrustedWrite(); }} />}
+          {actNote && <p className="aug-fs-xs" role="status" style={{ color: "var(--grn4)", margin: "0 0 6px" }}>{actNote}</p>}
+          {trusted === null && !trustedErr ? <Loading what="the trusted queries" />
+            : trustedErr ? <ReadFailed what="the trusted queries" error={trustedErr} onRetry={loadTrusted} />
+            : settled.length === 0 ? (
+              <Empty>
+                {waiting.length ? "None approved yet — the ones waiting are above." : "None yet — seed one, accept one from the Semantic Layer’s Import tab, or a verified answer lands here."}
+              </Empty>
+            ) : settled.map((q, i) => (
+              <div key={q.id} data-testid={`tq-${q.id}`}>
+                <Line first={i === 0}
+                  actions={<>
+                    {sqlButton(q)}
+                    {q.status === "approved" && (
+                      <Button size="xs" variant="ghost" disabled={busy === q.id}
+                        onClick={() => act(q.id, () => transitionTrustedQuery(q.id, "deprecate", actorName()),
+                          "Deprecated — it no longer reaches prompts.")}>
+                        Deprecate
+                      </Button>
+                    )}
+                    {removeButton(q)}
+                  </>}
+                  below={sqlBelow(q)}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                    <Dot hue={q.status === "approved" ? "green" : "grey"}
+                      title={q.status === "approved" ? "approved — reaches prompts" : `${q.status} — out of every prompt`} />
+                    <span className="aug-fs-chrome" title={q.question} style={{ ...ONE_LINE, color: "var(--t1)" }}>{q.question}</span>
+                    {q.status !== "approved" && <Chip>{q.status}</Chip>}
+                  </div>
+                  <div className="aug-fs-xs" title={q.note || undefined} style={{ ...MUTED, ...ONE_LINE, paddingLeft: 15 }}>
+                    {where(q)}{q.note ? ` · ${q.note}` : ""}
+                  </div>
+                </Line>
+              </div>
+            ))}
+        </Section>
+
+        <div style={{ ...RULE, marginTop: 16, paddingTop: 14, display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
+          <Section title="What reviewers said" testId="memory-verdicts"
+            meta={verdicts && verdicts.total > 0
+              ? <>{countNoun(verdicts.total, "verdict")}{verdicts.acceptance_rate != null && (
+                  <span title="A correction counts as half an acceptance."> · {pct(verdicts.acceptance_rate)} accepted</span>
+                )}</>
+              : ""}>
+            {summaryState === "loading" ? <Loading what="the verdicts" />
+              : summaryState === "failed" ? <ReadFailed what="the verdicts" onRetry={loadSummary} />
+              : !verdicts || verdicts.total === 0 ? <Empty>No reviewer has judged an answer yet.</Empty>
+              : (
                 <>
-                  <Button size="xs" variant="default" disabled={busy === q.id} data-testid={`tq-approve-${q.id}`}
-                    onClick={() => act(q.id, () => transitionTrustedQuery(q.id, "approve", actorName()),
-                      "Approved — it now reaches prompts, and the approval is on the ledger.")}>
-                    Approve
-                  </Button>
-                  <Button size="xs" variant="ghost" disabled={busy === q.id}
-                    onClick={() => act(q.id, () => transitionTrustedQuery(q.id, "reject", actorName()),
-                      "Rejected.")}>
-                    Reject
-                  </Button>
+                  <HBars testId="memory-verdict-bars" bars={Object.entries(verdicts.counts ?? {}).map(([k, n]) => ({
+                    key: k, name: VERDICT_WORD[k] ?? keyToWords(k), value: n, shown: formatCount(n),
+                    tip: `${VERDICT_WORD[k] ?? keyToWords(k)}: ${countNoun(n, "verdict")}`,
+                  }))} />
+                  <div style={{ marginTop: 12 }}>
+                    {trend.length >= 2 ? (
+                      <>
+                        <div className="aug-fs-xs" style={{ ...MUTED, marginBottom: 4 }}>
+                          Accepted each week · {pct(trend[0].acceptance_rate)} → {pct(trend[trend.length - 1].acceptance_rate)} over {trend.length} weeks
+                        </div>
+                        {/* A column per measured week, never wider than a column needs: two weeks are two marks, not a wall. */}
+                        <div style={{ maxWidth: Math.max(120, trend.length * 40) }}>
+                        <Columns height={44} columns={trend.map(t => ({
+                          key: t.week, value: t.acceptance_rate, label: t.week.replace(/^\d{4}-/, ""),
+                          tip: `${t.week}: ${pct(t.acceptance_rate)} of ${countNoun(t.total, "verdict")} accepted`,
+                        }))} />
+                        </div>
+                      </>
+                    ) : (
+                      <Empty>Fewer than two measured weeks — one point is a number, not a trend.</Empty>
+                    )}
+                  </div>
+                  <div className="aug-fs-xs" style={{ ...MUTED, marginTop: 8 }}
+                    title="Not how memory moved confidence, nor how many clarify questions it saved.">
+                    Only acceptance is measured — not what memory changed.
+                  </div>
                 </>
               )}
-              {q.status === "approved" && (
-                <Button size="xs" variant="ghost" disabled={busy === q.id}
-                  onClick={() => act(q.id, () => transitionTrustedQuery(q.id, "deprecate", actorName()),
-                    "Deprecated — it no longer reaches prompts.")}>
-                  Deprecate
-                </Button>
-              )}
-              {(q.status === "draft" || q.status === "proposed") && (
-                <Button size="xs" variant="ghost" disabled={busy === q.id}
-                  onClick={() => setEditing(editing?.id === q.id ? null : q)}>
-                  Edit
-                </Button>
-              )}
-              <Button size="xs" variant="ghost" disabled={busy === q.id} data-testid={`tq-delete-${q.id}`}
-                className="text-zinc-500 hover:text-red-400"
-                onClick={() => { if (confirm("Remove this trusted query? The removal is audited."))
-                  act(q.id, () => deleteTrustedQuery(q.id, actorName()), "Removed — the deletion is on the ledger."); }}>
-                Remove
+          </Section>
+
+          <Section title="Training corpus" testId="memory-corpus" meta="distillation waits until every gate passes"
+            right={
+              <Button variant="ghost" size="xs" disabled={exporting} onClick={exportNow}
+                title="Runs every exporter once — an unchanged corpus exports nothing new, so it is safe to press.">
+                {exporting ? "Exporting…" : "Export now"}
               </Button>
-            </div>
-            {editing?.id === q.id && (
-              <EditTrustedForm row={q} onDone={() => { setEditing(null); onChanged(); }} />
+            }>
+            {exportRefused && (
+              <p role="alert" className="aug-fs-xs" style={{ color: "var(--red4)", margin: "0 0 8px" }}>{exportRefused}</p>
             )}
-          </div>
+            {datasetsState === "loading" ? <Loading what="the training corpus" />
+              : datasetsState === "failed" || !datasets ? <ReadFailed what="the training corpus" onRetry={loadDatasets} />
+              : <Corpus datasets={datasets} />}
+          </Section>
+        </div>
+      </article>
+    </Page>
+  );
+}
+
+// ── the training corpus: each gate as a bar to its line, then what is not a gate ─────────────────────────────────────
+
+function Corpus({ datasets }: { datasets: LearningDatasets }) {
+  const entries = Object.entries(datasets.gates);
+  const gates = entries.filter(([, g]) => g.need != null);
+  const tiers = entries.filter(([, g]) => g.need == null);
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(70px, auto) minmax(60px, 1fr) auto", gap: "8px 10px",
+        alignItems: "center" }}>
+        {gates.map(([kind, g]) => (
+          <React.Fragment key={kind}>
+            <span className="aug-fs-sm" title={GATE_WHAT[kind]} style={{ color: "var(--t1)" }}>{keyToWords(kind)}</span>
+            <Bar value={g.have} max={g.need ?? 0} color={g.passes ? "var(--grn3)" : "var(--chart-1)"} />
+            <span className="aug-fs-sm" style={{ ...ROW, gap: 6, color: "var(--t2)", ...NUM, flexWrap: "nowrap" }}>
+              {formatCount(g.have)} of {formatCount(g.need)}{kind === "guard_days" ? " days" : ""}
+              {g.passes && <Chip tone="up">passes</Chip>}
+            </span>
+          </React.Fragment>
         ))}
       </div>
-      {note && <p className="aug-fs-xs" style={{ color: "var(--grn4)", margin: "0 0 10px" }}>{note}</p>}
-      {err && <p className="aug-fs-xs" style={{ color: "var(--red4)", margin: "0 0 10px" }}>{err}</p>}
+      {tiers.length > 0 && (
+        <div className="aug-fs-xs" style={{ ...MUTED, marginTop: 8 }}
+          title={tiers[0][1].note}>
+          Not gates, graded by execution or a guard: {tiers.map(([k, g]) => `${keyToWords(k)} ${formatCount(g.have)}`).join(" · ")}
+        </div>
+      )}
+      <DatasetInspector kinds={entries.map(([k]) => k).filter(k => DATASET_OF[k])} />
     </>
   );
 }
+
+// ── trusted-query forms (read first, edit behind Edit) ───────────────────────────────────────────────────────────────
 
 const fieldStyle: React.CSSProperties = {
   width: "100%", boxSizing: "border-box", background: "var(--bg-2)",
@@ -487,12 +505,11 @@ function SeedTrustedForm({ onDone }: { onDone: () => void }) {
     try {
       await createTrustedQuery({ ...f, actor: actorName() });
       onDone();
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setErr(errText(e)); }
     finally { setBusy(false); }
   };
   return (
-    <div className="aug-fs-sm" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)",
-      background: "var(--bg-1)", padding: 10, marginBottom: 10 }}>
+    <div className="aug-fs-sm" style={{ background: "var(--bg-1)", borderRadius: "var(--r3)", padding: 10, marginBottom: 10 }}>
       <SelectField style={fieldStyle} value={f.connection_id}
         onChange={e => setF(v => ({ ...v, connection_id: e.target.value }))} data-testid="tq-seed-conn">
         {conns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -505,17 +522,16 @@ function SeedTrustedForm({ onDone }: { onDone: () => void }) {
         data-testid="tq-seed-sql" />
       <Input style={fieldStyle} placeholder="note (optional) — why this is the right answer"
         value={f.note} onChange={e => setF(v => ({ ...v, note: e.target.value }))} />
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ ...ROW, gap: 10 }}>
         <Button size="sm" disabled={busy || !f.question.trim() || !f.sql.trim() || !f.connection_id}
           onClick={seed} data-testid="tq-seed-submit">
-          {busy ? "Verifying…" : "Seed — it is executed and guarded now"}
+          {busy ? "Verifying…" : "Seed"}
         </Button>
-        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-          Passing lands it <em>proposed</em>; failing lands a draft with the report. Nothing
-          reaches a prompt until a person approves.
+        <span className="aug-fs-xs" style={MUTED}>
+          It runs and is guarded now: passing lands it proposed, failing a draft. Only approval reaches a prompt.
         </span>
       </div>
-      {err && <p className="aug-fs-xs" style={{ color: "var(--red4)", margin: "6px 0 0" }}>{err}</p>}
+      {err && <p role="alert" className="aug-fs-xs" style={{ color: "var(--red4)", margin: "6px 0 0" }}>{err}</p>}
     </div>
   );
 }
@@ -527,7 +543,7 @@ function EditTrustedForm({ row, onDone }: { row: TrustedQueryRow; onDone: () => 
   const save = async () => {
     setBusy(true); setErr("");
     try { await editTrustedQuery(row.id, { ...f, actor: actorName() }); onDone(); }
-    catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    catch (e) { setErr(errText(e)); }
     finally { setBusy(false); }
   };
   return (
@@ -538,62 +554,60 @@ function EditTrustedForm({ row, onDone }: { row: TrustedQueryRow; onDone: () => 
         value={f.sql} onChange={e => setF(v => ({ ...v, sql: e.target.value }))} />
       <Input style={fieldStyle} placeholder="note" value={f.note}
         onChange={e => setF(v => ({ ...v, note: e.target.value }))} />
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <Button size="xs" disabled={busy} onClick={save}>Save — re-verifies, resets any approval</Button>
-        {err && <span className="aug-fs-xs" style={{ color: "var(--red4)" }}>{err}</span>}
+      <div style={{ ...ROW, gap: 10 }}>
+        <Button size="xs" disabled={busy} onClick={save} title="Saving re-verifies it and resets any approval">Save</Button>
+        <span className="aug-fs-xs" style={MUTED}>re-verifies, and resets any approval</span>
+        {err && <span role="alert" className="aug-fs-xs" style={{ color: "var(--red4)" }}>{err}</span>}
       </div>
     </div>
   );
 }
 
-// ── PX-4 · dataset detail (which verdicts fed the corpus) ─────────────────────
+// ── which verdicts fed a corpus ──────────────────────────────────────────────────────────────────────────────────────
 
 function DatasetInspector({ kinds }: { kinds: string[] }) {
-  const [name, setName] = useState<string | null>(null);
-  const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
-  const [lineage, setLineage] = useState<Record<string, unknown>[]>([]);
-  const [state, setState] = useState<"idle" | "loading" | "missing">("idle");
+  const [kind, setKind] = useState<string | null>(null);
+  const [detail, setDetail] = useState<LearningDatasetDetail | null>(null);
+  const [state, setState] = useState<"idle" | "loading" | "missing" | "failed">("idle");
   const inspect = async (k: string) => {
-    if (name === k) { setName(null); setDetail(null); return; }
-    setName(k); setState("loading"); setDetail(null); setLineage([]);
+    if (kind === k) { setKind(null); setDetail(null); return; }
+    setKind(k); setState("loading"); setDetail(null);
     try {
-      const d = await getLearningDataset(k);
+      const d = await getLearningDataset(DATASET_OF[k]);
       if (!d.found) { setState("missing"); return; }
-      setDetail(d.dataset ?? {});
-      setLineage((d.lineage as Record<string, unknown>[]) ?? []);
+      setDetail(d);
       setState("idle");
-    } catch { setState("missing"); }
+    } catch { setState("failed"); }
   };
+  if (!kinds.length) return null;
+  const node = detail?.dataset ?? {};
+  const lineage = detail?.lineage?.length ?? 0;
   return (
-    <div style={{ marginTop: 10 }}>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>Inspect a corpus:</span>
+    <div style={{ marginTop: 12 }}>
+      <div style={{ ...ROW, gap: 6 }}>
+        <span className="aug-fs-xs" style={MUTED}>Inspect a corpus:</span>
         {kinds.map(k => (
-          <Button key={k} size="xs" variant={name === k ? "secondary" : "ghost"} onClick={() => inspect(k)}>
-            {k}
+          <Button key={k} size="xs" variant={kind === k ? "secondary" : "ghost"} onClick={() => inspect(k)}>
+            {keyToWords(k)}
           </Button>
         ))}
       </div>
-      {name && state === "missing" && (
-        <p className="aug-fs-xs" style={{ color: "var(--t3)", margin: "6px 0 0" }}>
-          No exported version of “{name}” yet — press “Export now” above once the corpus has rows.
-        </p>
+      {kind && state === "loading" && <Loading what={`the ${keyToWords(kind)} corpus`} style={{ marginTop: 6 }} />}
+      {kind && state === "failed" && <Empty>Could not read the {keyToWords(kind)} corpus.</Empty>}
+      {kind && state === "missing" && (
+        <Empty>No exported version of “{DATASET_OF[kind]}” yet — press Export now once the corpus has rows.</Empty>
       )}
-      {name && detail && (
-        <div className="aug-fs-xs" style={{ margin: "8px 0 0", border: "1px solid var(--b1)",
-          borderRadius: "var(--r2)", background: "var(--bg-1)", padding: 10 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 12px" }}>
-            {Object.entries(detail).filter(([, v]) => typeof v !== "object" || v === null).map(([k, v]) => (
-              <React.Fragment key={k}>
-                <span style={{ color: "var(--t3)" }}>{k}</span>
-                <span style={{ color: "var(--t2)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>{String(v)}</span>
-              </React.Fragment>
-            ))}
+      {kind && detail && (
+        <div className="aug-fs-xs" style={{ marginTop: 8, background: "var(--bg-1)", borderRadius: "var(--r2)", padding: 10,
+          color: "var(--t2)" }} title={`id ${String(node.id ?? "")} · data ${String(node.data_id ?? "")}`}>
+          <span style={{ fontFamily: "var(--font-mono)", color: "var(--t1)" }}>{String(node.name ?? DATASET_OF[kind])}</span>
+          {" · "}version {String(node.version ?? "—")}
+          {" · "}{countNoun(Number(node.row_count ?? 0), "example")}
+          {node.created_at ? ` · exported ${dayWords(String(node.created_at))}` : ""}
+          <div style={{ ...MUTED, marginTop: 4 }}>
+            {countNoun(lineage, "lineage record")} — the verdicts and trusted queries that fed this version.
           </div>
-          <p style={{ color: "var(--t3)", margin: "6px 0 0" }}>
-            Provenance: {compactNumber(lineage.length)} lineage record{lineage.length === 1 ? "" : "s"} —
-            the verdicts that fed this version, the question MI-4 owes about any adapter it promotes.
-          </p>
+          {detail.note && <div style={{ color: "var(--amb4)", marginTop: 4 }}>{detail.note}</div>}
         </div>
       )}
     </div>

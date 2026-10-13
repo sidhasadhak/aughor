@@ -15,6 +15,7 @@ const getLearningSummary = vi.fn();
 const getLearningDatasets = vi.fn();
 const listRememberedReadings = vi.fn();
 const getConnections = vi.fn();
+const getLearningDataset = vi.fn();
 
 vi.mock("@/lib/api", async importOriginal => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -29,7 +30,7 @@ vi.mock("@/lib/api", async importOriginal => {
     createTrustedQuery: vi.fn(),
     editTrustedQuery: vi.fn(),
     deleteTrustedQuery: vi.fn(),
-    getLearningDataset: vi.fn(),
+    getLearningDataset: (...a: unknown[]) => getLearningDataset(...a),
     revokeRememberedReading: vi.fn(),
     runLearningExport: vi.fn(),
   };
@@ -77,5 +78,38 @@ describe("MemoryPanel trusted governance", () => {
     expect(await screen.findByText(/stays a draft, out of every prompt/)).toBeTruthy();
     expect(screen.queryByTestId("tq-approve-tq_2")).toBeNull();
     expect(screen.getByText(/Re-verify & propose/)).toBeTruthy();
+  });
+});
+
+describe("MemoryPanel reads that fail, and the corpus", () => {
+  it("trusted queries that could not be read say so — never that there are none", async () => {
+    listTrustedQueries.mockRejectedValue(new Error("Failed to fetch trusted queries (500)"));
+    render(<MemoryPanel />);
+    expect((await screen.findAllByText(/Could not read the trusted queries/)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/None yet/)).toBeNull();
+  });
+
+  it("a training corpus that could not be read says so instead of vanishing", async () => {
+    listTrustedQueries.mockResolvedValue([]);
+    render(<MemoryPanel />);
+    expect(await screen.findByText(/Could not read the training corpus/)).toBeTruthy();
+  });
+
+  it("inspecting a corpus asks for the dataset it is exported as, and a gate that is no dataset offers none", async () => {
+    listTrustedQueries.mockResolvedValue([]);
+    getLearningDatasets.mockResolvedValue({
+      stats: { sft: { datasets: 1, examples: 0 } },
+      gates: { sft: { have: 0, need: 1000, passes: false }, guard_days: { have: 39, need: 30, passes: true } },
+    });
+    getLearningDataset.mockResolvedValue({ found: true, dataset: { name: "nl2sql-sft", version: 1, row_count: 0 }, lineage: [] });
+    render(<MemoryPanel />);
+    const corpus = await screen.findByTestId("memory-corpus");
+    await waitFor(() => expect(corpus.textContent).toContain("39 of 30 days"));
+    const inspect = corpus.querySelectorAll("button");
+    const names = [...inspect].map(b => b.textContent);
+    expect(names).toContain("sft");
+    expect(names).not.toContain("guard days");
+    fireEvent.click([...inspect].find(b => b.textContent === "sft")!);
+    await waitFor(() => expect(getLearningDataset).toHaveBeenCalledWith("nl2sql-sft"));
   });
 });
