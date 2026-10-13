@@ -12,7 +12,7 @@
 import { useMemo, useState } from "react";
 
 import type { Connection } from "@/lib/api";
-import { countNoun, formatTableNumber } from "@/lib/format";
+import { countNoun, formatCount, formatTableNumber } from "@/lib/format";
 import { connectionLabel, keyToWords } from "@/lib/names";
 import {
   getMission, getMissionReport, getMissionTemplates, getPastMissionReport, listMissions, reportMissionNow,
@@ -20,9 +20,13 @@ import {
   type Mission, type MissionBody, type MissionDetail, type MissionReport, type MissionTemplate,
 } from "@/lib/record";
 import {
-  Absent, ActorField, BackHeader, Fact, Gate, Ledger, Page, Section, day, dayDistance, useActor, useLoad,
-  type LedgerColumn,
+  Absent, ActorField, BackHeader, Fact, Gate, ListCard, ListRow, Page, Section, day, useActor, useLoad,
+  type ListColumn,
 } from "@/components/record/kit";
+import {
+  CARD, Chip, Dot, Empty, Figure, Figures, NeedsRow, NeedsYou, Page as ClarityPage, ROW,
+} from "@/components/clarity/kit";
+import { countBy, dateWords, distanceWords } from "@/components/record/words";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,39 +69,113 @@ function MissionLedger({ connections, selectedConn, onOpen }: {
 }) {
   const [writing, setWriting] = useState(false);
   const load = useLoad(() => listMissions(), []);
-  const rows = load.data ?? [];
-  const columns: LedgerColumn<Mission>[] = [
-    { head: "Mission", cell: m => m.name },
-    { head: "Objective", cell: m => objectiveLine(m.objective) },
-    { head: "Owner", cell: m => (m.owner ? whoLabel(m.owner) : "no owner — it does not run"), width: 190 },
-    { head: "State", cell: m => <StatusChip hue={STATE_HUE[m.state] ?? "muted"}>{m.state}</StatusChip>, width: 110 },
-    { head: "Interruptions this week", cell: m => (m.runs ? `${m.interruptions_this_week} of ${m.budget.interruptions_per_week}` : "—"), num: true, width: 180 },
-    { head: "Next report", cell: m => (m.review.next_report_on ? `${day(m.review.next_report_on)} · ${dayDistance(m.review.next_report_on)}` : "—"), width: 180 },
-  ];
+  // The form appears only when a person asks for it (CLARITY: read first, edit behind a button).
+  const form = writing && (
+    <section aria-label="Write a mission" style={CARD}>
+      <MissionForm connectionId={selectedConn} connections={connections} onCancel={() => setWriting(false)}
+        onWritten={m => { setWriting(false); load.reload(); onOpen(m.id); }} />
+    </section>
+  );
+  const write = (
+    <Button size="xs" onClick={() => setWriting(v => !v)} aria-expanded={writing}>Write a mission</Button>
+  );
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--bg-0)" }}>
-      <div className="aug-toolbar">
-        {load.data && (
-          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
-            {countNoun(rows.length, "mission")} · {countNoun(rows.filter(m => m.runs).length, "runs", "run")} · every connection
-          </span>
-        )}
-        <span style={{ flex: 1 }} />
-        <Button size="xs" onClick={() => setWriting(v => !v)} aria-expanded={writing}>Write a mission</Button>
-      </div>
-      <Page wide>
-        {writing && (
-          <MissionForm connectionId={selectedConn} connections={connections} onCancel={() => setWriting(false)}
-            onWritten={m => { setWriting(false); load.reload(); onOpen(m.id); }} />
-        )}
-        <Gate load={load} what="missions">
-          {() => (
-            <Ledger name="missions" columns={columns} rows={rows} rowKey={m => m.id} onOpen={m => onOpen(m.id)}
-              empty="No mission has been written. A mission says what to achieve and what not to damage; once one is active and owned, the week's sends are ranked by what bears on it and it reports against its baseline on its cadence." />
-          )}
-        </Gate>
-      </Page>
-    </div>
+    <ClarityPage testId="missions-page">
+      <Gate load={load} what="missions">
+        {all => <MissionOverview all={all} onOpen={onOpen} form={form} write={write} />}
+      </Gate>
+    </ClarityPage>
+  );
+}
+
+const MISSION_DOT: Record<string, "green" | "blue" | "grey"> = { active: "green", proposed: "blue", paused: "grey", met: "green", retired: "grey" };
+
+/** Figures → Needs you → the list. With no mission written, the page is one muted line and its way to act — four
+ *  figures of zero would say nothing four times. */
+function MissionOverview({ all, onOpen, form, write }: {
+  all: Mission[]; onOpen: (id: string) => void; form: React.ReactNode; write: React.ReactNode;
+}) {
+  const live = all.filter(m => m.state !== "retired" && m.state !== "met");
+  const running = all.filter(m => m.runs);
+  const ownerless = live.filter(m => !m.owner);
+  const proposed = live.filter(m => m.state === "proposed" && m.owner);
+  const used = running.reduce((s, m) => s + m.interruptions_this_week, 0);
+  const budget = running.reduce((s, m) => s + m.budget.interruptions_per_week, 0);
+  const nextOf = running.filter(m => m.review.next_report_on).sort((a, b) => a.review.next_report_on.localeCompare(b.review.next_report_on))[0];
+
+  const columns: ListColumn<Mission>[] = [
+    { head: "Mission", value: m => m.name },
+    { head: "Objective", value: m => objectiveLine(m.objective) },
+    { head: "Owner", value: m => (m.owner ? whoLabel(m.owner) : "") },
+    { head: "State", value: m => m.state },
+    { head: "Runs", value: m => (m.runs ? "yes" : m.runs_note ?? "no") },
+    { head: "Interruptions this week", value: m => m.interruptions_this_week },
+    { head: "Interruptions a week, at most", value: m => m.budget.interruptions_per_week },
+    { head: "Reports", value: m => m.review.cadence },
+    { head: "Next report", value: m => day(m.review.next_report_on) },
+  ];
+
+  if (all.length === 0) {
+    return (
+      <>
+        {form}
+        <section aria-label="Missions" data-testid="mission-list" style={CARD}>
+          <div style={{ ...ROW, justifyContent: "space-between" }}>
+            <Empty title="Once one is active and owned, the week's sends are ranked by what bears on it, and it reports against its baseline on its cadence">
+              No mission is written yet · a mission says what to achieve and what not to damage
+            </Empty>
+            {write}
+          </div>
+        </section>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Figures testId="mission-figures">
+        <Figure label="Missions" value={formatCount(all.length)} testId="fig-mis-all"
+          sub={countBy(all, m => m.state).map(([k, n]) => `${n} ${k}`).join(" · ")} />
+        <Figure label="Running" value={formatCount(running.length)} testId="fig-mis-running"
+          sub={ownerless.length ? `${ownerless.length} without an owner do not run` : "active and owned"} />
+        <Figure label="Interruptions this week" value={running.length ? `${formatCount(used)} of ${formatCount(budget)}` : "—"}
+          testId="fig-mis-interruptions" sub={running.length ? `across ${countNoun(running.length, "running mission")}` : "none is running"} />
+        <Figure label="Next report" value={nextOf ? dateWords(nextOf.review.next_report_on) : "—"} testId="fig-mis-next"
+          sub={nextOf ? `${nextOf.name} · ${distanceWords(nextOf.review.next_report_on)}` : "none is due to report"} />
+      </Figures>
+
+      <NeedsYou testId="mission-needs" empty="Nothing needs you · every live mission is owned and running">
+        {[
+          ...ownerless.map(m => (
+            <NeedsRow key={`owner-${m.id}`} testId="needs-mis-owner" title={`${m.name} has no owner`}
+              detail="A mission without an owner is kept and does not run"
+              actions={<Button size="xs" variant="secondary" onClick={() => onOpen(m.id)}>Open</Button>} />
+          )),
+          ...proposed.map(m => (
+            <NeedsRow key={`proposed-${m.id}`} testId="needs-mis-proposed" title={`${m.name} is proposed`}
+              detail={`${objectiveLine(m.objective)} · activating it is a separate step`}
+              actions={<Button size="xs" variant="secondary" onClick={() => onOpen(m.id)}>Open</Button>} />
+          )),
+        ]}
+      </NeedsYou>
+
+      {form}
+
+      <ListCard<Mission> label="Missions" name="missions" testId="mission-list" rows={all} rowKey={m => m.id}
+        columns={columns} tools={write} empty="No mission is written yet."
+        renderRow={(m, first) => (
+          <ListRow first={first} testId="mission-row" title={m.name} full={objectiveLine(m.objective)} onOpen={() => onOpen(m.id)}
+            mark={<Dot hue={MISSION_DOT[m.state] ?? "grey"} title={m.state} />}
+            chips={m.state !== "active" && <Chip>{m.state}</Chip>}
+            figure={m.runs ? `${formatCount(m.interruptions_this_week)} of ${formatCount(m.budget.interruptions_per_week)} this week` : "does not run"}
+            figureTitle={m.runs ? "Interruptions this week, of the most it may make" : m.runs_note}
+            meta={[
+              objectiveLine(m.objective),
+              m.owner ? `owned by ${whoLabel(m.owner)}` : "no owner",
+              m.review.next_report_on ? `reports ${m.review.cadence}, next ${dateWords(m.review.next_report_on)}` : `reports ${m.review.cadence}`,
+            ].join(" · ")} />
+        )} />
+    </>
   );
 }
 
