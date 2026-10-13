@@ -26,3 +26,12 @@ describe("byWho", () => {
     expect(whoLabel("system", "system")).toBe("the platform");
   });
 });
+
+describe("a connection the list does not hold", () => {
+  it("says a generated id by its first 8, and a named one whole", async () => {
+    const { connectionLabel } = await import("@/lib/names");
+    expect(connectionLabel("8233e4fd0c1a9b77", [])).toBe("connection 8233e4fd");
+    expect(connectionLabel("workspace", [])).toBe("connection workspace");
+    expect(connectionLabel("workspace", [{ id: "workspace", name: "Workspace" }])).toBe("Workspace");
+  });
+});

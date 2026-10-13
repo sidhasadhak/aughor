@@ -21,7 +21,9 @@ export function connectionLabel(
 ): string {
   if (!id) return "";
   const hit = connections.find(c => c.id === id);
-  return hit?.name || `connection ${id.slice(0, 8)}`;
+  // Only a generated id (a long hex string) is cut to its first 8; a named id such as `workspace` is said whole —
+  // cut, it read "connection workspac".
+  return hit?.name || `connection ${/^[0-9a-f]{9,}$/i.test(id) ? id.slice(0, 8) : id}`;
 }
 
 /** Words out of a snake_case or dunder key: `__brief_metric_move__` → "brief metric move". */
