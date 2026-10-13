@@ -194,15 +194,16 @@ function GroupRow({ group: g, first, name, suite, open, onToggle, onOpen }: {
             {suite && measuresConsistency(suite) && <Chip title={suite.description}>consistency, not correctness</Chip>}
             {g.runs.length > 1 && <Chip testId="run-count">{`×${g.runs.length}`}</Chip>}
             {g.cell && <Chip title="The set-up these runs recorded they were asked for">{words(g.cell)}</Chip>}
-            <Chip tone={chip.tone} title={chip.title}>{chip.text}</Chip>
+            {/* "no band" / "nothing measured" are said once, under the score — not again as a chip here */}
+            {(floor === "held" || floor === "noisy") && <Chip tone={chip.tone} title={chip.title}>{chip.text}</Chip>}
           </div>
           <div className="aug-fs-xs" title={meta} style={{ ...MUTED, ...ONE_LINE }}>{meta}</div>
         </div>
         <Trend runs={g.runs} />
         <div style={{ textAlign: "right" }}>
           <div className="aug-fs-h2" data-testid="run-band" style={{ fontWeight: 600, color: "var(--t1)", ...NUM }}>{bandText(g.band)}</div>
-          <div className="aug-fs-xs" style={MUTED}>
-            {g.band ? `${plural(g.band.n, "replicate")}${g.band.n < 2 ? " — no band" : ""}` : "no measurement"}
+          <div className="aug-fs-xs" style={MUTED} title={floor === "single" || floor === "none" ? chip.title : undefined}>
+            {g.band ?`${plural(g.band.n, "replicate")}${g.band.n < 2 ? " — no band" : ""}` : "no measurement"}
           </div>
         </div>
         <Button size="xs" variant="ghost" aria-expanded={open} onClick={onToggle}>
