@@ -91,6 +91,14 @@ const SOURCE_LABEL: Record<NeedsHumanRow["source"], string> = {
 /** The proposal a row decides, by the id the inbox's accept and reject take: a proposal row IS one; an automation's
  *  approval names its own in `resolve.proposal_id` — its row id is the row's, which the API composes from the run
  *  when there is no proposal. "" when the row decides nothing. */
+/** What a waiting row's button says, by what it opens. A paused run opens itself (its row id IS the deep analysis's —
+ *  the "Open & resume" that read `resolve.investigation_id`, which the API never sends, only ever opened Attention);
+ *  a broken automation opens that automation; an alert is acknowledged where alerts are, in Attention. */
+const ROW_ACTION: Record<NeedsHumanRow["source"], string> = {
+  [PROPOSAL_SOURCE]: "Open in Attention", paused_run: "Open & resume", automation_approval: "Open automation",
+  agent_alert: "Open in Attention", automation_broken: "Open automation",
+};
+
 function proposalOf(row: NeedsHumanRow): string {
   if (row.source === PROPOSAL_SOURCE) return row.id;
   if (row.source === "automation_approval") return row.resolve?.proposal_id ?? "";
@@ -150,7 +158,7 @@ export function foldRuns(runs: FleetJob[], connections: ReadonlyArray<Connection
   return [...groups.values()];
 }
 
-export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvestigation, range,
+export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvestigation, onOpenAutomation, range,
   onBrush, onClearBrush, connections = [], traceFocus = null }: {
   /** The workspace's connections, so a run on one is named by its name rather than its id. */
   connections?: ReadonlyArray<ConnectionName>;
@@ -159,6 +167,8 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
   onOpenAgent?: (id: string, kind: "charter" | "persona") => void;
   onOpenAttention?: () => void;
   onOpenInvestigation?: (id: string) => void;
+  /** Opens one automation on the Automations layer (a broken automation's row). */
+  onOpenAutomation?: (automationId?: string) => void;
   range: TimeRange;
   onBrush: (since: string, until: string) => void;
   onClearBrush: () => void;
@@ -322,6 +332,14 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
     } catch (e) {
       setActionError(String((e as Error)?.message || e));
     } finally { setBusy(null); }
+  };
+
+  const openRow = (row: NeedsHumanRow) => {
+    if (row.source === "paused_run" && onOpenInvestigation) return onOpenInvestigation(row.id);
+    if ((row.source === "automation_broken" || row.source === "automation_approval") && onOpenAutomation) {
+      return onOpenAutomation(row.resolve?.automation_id);
+    }
+    onOpenAttention?.();
   };
 
   const resolveProposal = async (row: NeedsHumanRow, action: "accept" | "reject") => {
@@ -559,13 +577,8 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                               onClick={() => resolveProposal(row, "reject")}>Reject</Button>
                           </>
                         ) : (
-                          <Button size="xs" variant="secondary"
-                            onClick={() => {
-                              const run = row.resolve?.investigation_id;
-                              if (run && onOpenInvestigation) onOpenInvestigation(run);
-                              else onOpenAttention?.();
-                            }}>
-                            {row.source === "paused_run" ? "Open & resume" : "Open automation"}
+                          <Button size="xs" variant="secondary" onClick={() => openRow(row)}>
+                            {ROW_ACTION[row.source]}
                           </Button>
                         )}
                       </span>

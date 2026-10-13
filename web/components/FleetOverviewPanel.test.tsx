@@ -214,6 +214,26 @@ describe("needs you", () => {
     expect(calls.acceptProposal[0][0]).toBe("p1");
     expect(calls.rejectProposal[0][0]).toBe("p1");
   });
+
+  it("opens what each waiting row is about: a paused run itself, a broken automation, an alert in Attention", async () => {
+    const at = { since: "2026-10-11T20:00:00Z", waiting_ms: 60_000, connection_id: "c1" };
+    stubs.getNeedsHuman = () => Promise.resolve({ count: 3, sources: {}, rows: [
+      { ...at, source: "paused_run", id: "inv-7", title: "Why did revenue fall?", resolve: { feedback: "/investigations/inv-7/feedback" } },
+      { ...at, source: "automation_broken", id: "a9:broken", title: "Hourly pulse — cannot dispatch: unknown trigger",
+        resolve: { surface: "automation", automation_id: "a9", run_id: "r1" } },
+      { ...at, source: "agent_alert", id: "e1", title: "Error rate: crossed 40%", resolve: { ack: "/obs/agent-alerts/events/e1/ack" } },
+    ] as NeedsHumanRow[] });
+    const opened: string[] = [];
+    render(<Theme><FleetOverviewPanel range={range} onBrush={() => {}} onClearBrush={() => {}} connections={[]}
+      traceFocus={null} onOpenInvestigation={id => opened.push(`run ${id}`)}
+      onOpenAutomation={id => opened.push(`automation ${id}`)} onOpenAttention={() => opened.push("attention")} /></Theme>);
+    const card = await screen.findByTestId("ao-needs");
+    fireEvent.click(await within(card).findByRole("button", { name: "Open & resume" }));
+    fireEvent.click(within(card).getByRole("button", { name: "Open automation" }));
+    fireEvent.click(within(card).getByRole("button", { name: "Open in Attention" }));
+    // the paused run's own id — "Open & resume" read an id the API never sends and only ever opened Attention
+    expect(opened).toEqual(["run inv-7", "automation a9", "attention"]);
+  });
 });
 
 describe("the runs list", () => {

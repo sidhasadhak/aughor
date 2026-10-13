@@ -419,6 +419,10 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
 _INBOX = "kinetic_inbox"
 
 
+#: How many of each source the needs-human counts read, whatever ``limit`` trims the rows to.
+_COUNT_SCAN = 500
+
+
 @router.get("/control-room/needs-human")
 def needs_human(limit: int = 100):
     """One derived list over the four real sources — a VIEW, never a queue.
@@ -434,6 +438,9 @@ def needs_human(limit: int = 100):
 
     now = datetime.now(timezone.utc)
     rows: list[dict] = []
+    # `limit` trims the ROWS returned, never what is counted: the reads below each took `limit`, so the Agent Ops badge
+    # (which asks for one row) counted at most one of each source (2026-10-13). Counts read up to `_COUNT_SCAN` each.
+    scan = max(int(limit), _COUNT_SCAN)
     # The sources whose read FAILED, by their `sources` key. A failed read counted 0, so "Every source is empty" was
     # said over a source nobody read (the user's defect list, 2026-10-13): withheld is said, never implied.
     unread: list[str] = []
@@ -474,7 +481,7 @@ def needs_human(limit: int = 100):
     parked_proposals: set[str] = set()
     parked = []
     try:
-        parked = paused_runs(limit=limit)
+        parked = paused_runs(limit=scan)
         for run in parked:
             for effect in run.effects:
                 pid = str((effect.data or {}).get("proposal_id") or "")
@@ -485,7 +492,7 @@ def needs_human(limit: int = 100):
         unread.append("automation_approvals")
 
     try:
-        for p in list_proposals(status="pending", limit=limit):
+        for p in list_proposals(status="pending", limit=scan):
             if p.id in parked_proposals:
                 continue
             inbox_count += 1
@@ -580,7 +587,7 @@ def needs_human(limit: int = 100):
     try:
         from aughor.obs.agent_alert_store import list_events
 
-        for ev in list_events(unacknowledged_only=True, limit=limit):
+        for ev in list_events(unacknowledged_only=True, limit=scan):
             alert_count += 1
             rows.append({
                 "source": "agent_alert", "id": ev.id,
