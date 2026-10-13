@@ -37,10 +37,10 @@ import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
 import type { OpsLayer } from "@/components/OperationsWorkspace";
 import type { EvalsLayer } from "@/components/EvalsWorkspace";
-import type { AgenticOpsLayer as AgentsLayer } from "@/components/AgenticOpsWorkspace";
 import { Workspace as WorkspaceShell, type WorkspaceLayer } from "@/components/Workspace";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NAVIGATE_EVENT, type NavigateRequest } from "@/lib/navigate";
+import { OVERVIEW_LAYER, agentOpsLayerOf, type AgentOpsLayer as AgentsLayer } from "@/lib/agentOpsLayers";
 import type { RecordLayer } from "@/components/record/RecordWorkspace";
 
 function LoadingPanel() {
@@ -1026,10 +1026,6 @@ const VALID_LAYERS = new Set<IntelLayer>([
  *  workspace it belongs to, so a stale or foreign value is ignored, not routed to. */
 const OPS_LAYERS = new Set<OpsLayer>(["monitors", "actions", "integrations", "spend", "security"]);
 const EVALS_LAYERS = new Set<EvalsLayer>(["suites", "runs", "experiments"]);
-const AGENTIC_LAYERS = new Set<AgentsLayer>([
-  "fleet", "agents", "attention", "activity", "automations", "hub", "departures",
-  "duties", "action-centre", "developer",
-]);
 
 const RECORD_LAYERS = new Set<RecordLayer>(["inquiries", "decisions", "missions", "claims", "corrections"]);
 
@@ -1086,16 +1082,18 @@ export default function Home() {
   // S1 — the entity deep link (`?table=`), consumed once by the graph layer.
   const [initialGraphTable, setInitialGraphTable] = useState<string | undefined>(undefined);
 
-  /** Apply a `?layer=` value to the workspace `target` names; true when it was a real
-   *  layer of that workspace. Setters are stable, so mount/popstate closures may hold
-   *  the first instance safely. */
-  const applyLayerFor = (target: NavTab, l: string): boolean => {
-    if (target === "intelligence" && VALID_LAYERS.has(l as IntelLayer)) { setIntelLayer(l as IntelLayer); return true; }
-    if (target === "operations" && OPS_LAYERS.has(l as OpsLayer)) { setOpsLayer(l as OpsLayer); return true; }
-    if (target === "evals" && EVALS_LAYERS.has(l as EvalsLayer)) { setEvalsLayer(l as EvalsLayer); return true; }
-    if (target === "agentic-ops" && AGENTIC_LAYERS.has(l as AgentsLayer)) { setAgentsLayer(l as AgentsLayer); return true; }
-    if (target === "record" && RECORD_LAYERS.has(l as RecordLayer)) { setRecordLayer(l as RecordLayer); return true; }
-    return false;
+  /** Apply a `?layer=` value to the workspace `target` names; the layer it landed on when it
+   *  was a real layer of that workspace (an Agent Ops layer that folded into another lands on
+   *  that one — `?layer=activity` is the Overview), null otherwise. Setters are stable, so
+   *  mount/popstate closures may hold the first instance safely. */
+  const applyLayerFor = (target: NavTab, l: string): string | null => {
+    if (target === "intelligence" && VALID_LAYERS.has(l as IntelLayer)) { setIntelLayer(l as IntelLayer); return l; }
+    if (target === "operations" && OPS_LAYERS.has(l as OpsLayer)) { setOpsLayer(l as OpsLayer); return l; }
+    if (target === "evals" && EVALS_LAYERS.has(l as EvalsLayer)) { setEvalsLayer(l as EvalsLayer); return l; }
+    const agentic = target === "agentic-ops" ? agentOpsLayerOf(l) : null;
+    if (agentic) { setAgentsLayer(agentic); return agentic; }
+    if (target === "record" && RECORD_LAYERS.has(l as RecordLayer)) { setRecordLayer(l as RecordLayer); return l; }
+    return null;
   };
 
   // S1 — deep links win, applied after mount so the first client render still matches
@@ -1127,15 +1125,17 @@ export default function Home() {
       if (t === "builder") setQueryInitialMode("visual");
     }
     // PX-0 — the layer lands on whichever workspace the tab resolved to.
+    // The layer the link landed on — what the URL sync below waits for, so a folded layer's
+    // id is rewritten to the one it landed on rather than waited for forever.
     const layerApplied = rawLayer && resolved
-      ? applyLayerFor(resolved.tab, rawLayer) : false;
+      ? applyLayerFor(resolved.tab, rawLayer) : null;
     if (table) setInitialGraphTable(table);
     const linkedId = params.get("id");
     if (linkedId) setOpenId(linkedId);
     if (t || rawLayer || canvasId) {
       pendingDeepLink.current = {
         tab: resolved?.tab ?? t,
-        layer: layerApplied ? rawLayer : null,
+        layer: layerApplied,
         canvas: canvasId,
       };
     }
@@ -2046,7 +2046,7 @@ export default function Home() {
             {tab === "recents" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
                 <RecentsScreen onGoToChat={goToChat} onOpenRun={openInvestigation}
-                  onOpenMachineView={() => { setAgentsLayer("activity"); setTab("agentic-ops"); }}
+                  onOpenMachineView={() => { setAgentsLayer(OVERVIEW_LAYER); setTab("agentic-ops"); }}
                   workspaceId={selectedWorkspace} />
               </div>
             )}

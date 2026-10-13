@@ -81,7 +81,7 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
   onChatWithAgent }: {
   workspaceId?: string;
   workspaceName?: string;
-  /** CR1 drill-in: open a run's trace in the Activity layer's runs mode. */
+  /** CR1 drill-in: open a run's trace in the Overview's "Every trace" fold. */
   onOpenTrace?: (investigationId: string) => void;
   /** DS-5 drill-in: where a node on the agent's Map leads. Each is optional, and an
    *  absent one renders no Open control rather than a button that goes nowhere. */
@@ -739,7 +739,7 @@ export function AgentSpend({ agent, range }: { agent: UserAgent; range?: TimeRan
       <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>
         Priced from each provider&apos;s published catalogue, or a rate the operator declared
         (<code>AUGHOR_MODEL_PRICES</code>). A model nothing prices counts as unpriced, never as
-        free. Spend by call site and role, across every agent, is Activity → Usage.
+        free. Spend by model, role and call site, across every agent, is on the Overview.
       </div>
     </div>
   );

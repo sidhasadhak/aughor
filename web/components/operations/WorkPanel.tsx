@@ -7,7 +7,7 @@
  * much of it stands on something, how its runs ended by type, and what a warranted entry cost.
  * Then the failures by type, what left and what was held, and every principal — a person, a
  * built-in agent, an outside vendor's — with what became of its entries. The score is a count,
- * never a model's opinion. The live tail and the traces are one door away, folded. Between the
+ * never a model's opinion. The live events and the traces are one door away, on the Overview. Between the
  * departures and the principals: what is filed and still open, and what is on probation.
  */
 import { useMemo } from "react";
@@ -95,10 +95,10 @@ async function readPrincipals(): Promise<PrincipalRow[]> {
   }).sort((a, b) => b.n - a.n);
 }
 
-export function WorkPanel({ onOpenRuns, onOpenDepartures, onOpenActivity, onOpenAgents, onOpenActionCentre, onOpenDeveloper, onOpenHub }: {
+export function WorkPanel({ onOpenRuns, onOpenDepartures, onOpenOverview, onOpenAgents, onOpenActionCentre, onOpenDeveloper, onOpenHub }: {
   onOpenRuns: () => void;
   onOpenDepartures: () => void;
-  onOpenActivity: () => void;
+  onOpenOverview: () => void;
   onOpenAgents: () => void;
   onOpenActionCentre: () => void;
   onOpenDeveloper: () => void;
@@ -216,8 +216,8 @@ export function WorkPanel({ onOpenRuns, onOpenDepartures, onOpenActivity, onOpen
         </Gate>
       </Section>
 
-      <Section label="The live tail and traces" action={<Button size="xs" variant="outline" onClick={onOpenActivity}>Open activity</Button>}>
-        <Absent>What is running now, each run&apos;s trace and a deep run&apos;s phases are on the Activity tab.</Absent>
+      <Section label="The live events and traces" action={<Button size="xs" variant="outline" onClick={onOpenOverview}>Open Overview</Button>}>
+        <Absent>What is running now, each run&apos;s trace and a deep run&apos;s phases are on the Overview.</Absent>
       </Section>
     </Page>
   );
