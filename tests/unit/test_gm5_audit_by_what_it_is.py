@@ -157,3 +157,13 @@ def test_a_measurement_says_whose_it_is(monkeypatch, shop):
     assert (_audited("monitor_backtest"), _counted()) == (listed + 1, counted + 1)
     with pytest.raises(TypeError):
         run_sql_for("gm5")                      # a caller must say which it is
+
+
+def test_a_refused_statement_is_counted_as_blocked_not_as_an_error():
+    """The Security page read "11.2K errors" with all 248 blocked statements inside it: a refusal writes its reason to
+    `error`, so it was counted twice — once as blocked and once as a statement that ran and failed."""
+    AuditLogger.log(connection_id="gm5-err", sql="DROP TABLE t", verdict="blocked", error="DROP statements are not permitted")
+    AuditLogger.log(connection_id="gm5-err", sql="SELECT nope", verdict="safe", error="column nope not found")
+    AuditLogger.log(connection_id="gm5-err", sql="SELECT 1", verdict="safe")
+    stats = AuditLogger.stats(connection_id="gm5-err")
+    assert (stats["total"], stats["blocked"], stats["errors"]) == (3, 1, 1)
