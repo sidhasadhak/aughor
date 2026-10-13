@@ -724,11 +724,10 @@ def get_context_graph(
     collapsed to counts) and the typed staleness state. Builds on demand when a graph is
     not yet committed."""
     from aughor.org.context import current_org_id
-    from aughor.ontology.context_graph_search import merge_graphs
-    from aughor.ontology.context_graph_store import load_graphs_for_connection
+    from aughor.ontology.context_graph_store import committed_graph
 
     org = current_org_id()
-    cg = merge_graphs(load_graphs_for_connection(org, connection_id))
+    cg = committed_graph(org, connection_id, schema_name)
     if cg is None:
         from aughor.ontology.context_graph_build import build_context_graph
         cg = build_context_graph(connection_id, schema_name, org_id=org)
@@ -787,6 +786,24 @@ def _stamp_warrants(payload: dict, cg) -> None:
                      counter="context_graph.warrant_stamp")
 
 
+@router.post("/graph/rebuild")
+def rebuild_context_graph(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Rebuild the graph now and re-index it for search. "Rebuild owed" said one was owed and nothing could do it.
+    A projection of the ontology, the Record, the glossary and the Briefings — no model call, no warehouse query."""
+    from aughor.ontology.graph_freshness import refresh_context_graph
+    from aughor.org.context import current_org_id
+
+    result = refresh_context_graph(connection_id, schema_name, org_id=current_org_id(), force=True)
+    if result is None or not result.rebuilt:
+        why = getattr(getattr(result, "verdict", None), "reason", "") if result is not None else ""
+        raise HTTPException(status_code=409, detail="The graph was not rebuilt" + (f" — {why}" if why else
+                            " — this connection has no built ontology to project it from"))
+    return {"connection_id": connection_id, "schema_name": schema_name, "rebuilt": True, "indexed": result.indexed}
+
+
 @router.get("/graph/audit")
 def get_context_graph_audit(
     connection_id: str = BUILTIN_ID,
@@ -826,11 +843,10 @@ def get_context_graph_audit(
 
 
 def _load_graph_or_404(connection_id: str, schema_name: Optional[str]):
-    from aughor.ontology.context_graph_search import merge_graphs
-    from aughor.ontology.context_graph_store import load_graphs_for_connection
+    from aughor.ontology.context_graph_store import committed_graph
     from aughor.org.context import current_org_id
     org = current_org_id()
-    cg = merge_graphs(load_graphs_for_connection(org, connection_id))
+    cg = committed_graph(org, connection_id, schema_name)
     if cg is None:
         from aughor.ontology.context_graph_build import build_context_graph
         cg = build_context_graph(connection_id, schema_name, org_id=org)

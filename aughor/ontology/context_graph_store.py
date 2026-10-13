@@ -70,6 +70,17 @@ def load_graphs_for_connection(org_id: str, connection_id: str) -> list[ContextG
     return out
 
 
+def committed_graph(org_id: str, connection_id: str, schema_name: Optional[str] = None):
+    """The committed graph a reader of (connection, schema) means, or None when none is built: that schema's OWN graph
+    when one is named — never the merge of every schema's (LuxExperience's luxexperience Graph tab drew gold_finance's
+    37 tables beside its own, and its freshness compared that merge with one schema's ontology, 2026-10-13) — else, for
+    the connection as a whole, its graphs merged."""
+    if schema_name:
+        return load_graph(org_id, connection_id, schema_name)
+    from aughor.ontology.context_graph_search import merge_graphs
+    return merge_graphs(load_graphs_for_connection(org_id, connection_id))
+
+
 def graphs_for_connection(org_id: str, connection_id: str, *, schema_name: Optional[str] = None,
                           build: bool = True) -> list[ContextGraph]:
     """The connection's graphs, REBUILT ON DEMAND: what is on disk when something is, else — when

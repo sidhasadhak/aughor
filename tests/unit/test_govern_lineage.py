@@ -265,7 +265,7 @@ def test_lineage_route_answers_by_table_name(monkeypatch, tmp_path):
     store.save_graph(_graph_with_sql_finding())
 
     from aughor.routers.ontology import get_context_graph_lineage
-    out = get_context_graph_lineage("c", None, "orders")
+    out = get_context_graph_lineage("c", None, "orders", schema_name=None, column=None)
 
     assert out["node_id"] == "table:Order"
     assert out["counts_by_kind"] == {"finding": 1, "metric": 1}
@@ -281,7 +281,7 @@ def test_lineage_route_requires_a_subject(monkeypatch, tmp_path):
 
     from aughor.routers.ontology import get_context_graph_lineage
     try:
-        get_context_graph_lineage("c", None, None)
+        get_context_graph_lineage("c", None, None, schema_name=None, column=None)
     except HTTPException as exc:
         assert exc.status_code == 400
     else:

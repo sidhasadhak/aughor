@@ -1721,6 +1721,16 @@ export async function getConnectionGraph(connectionId: string, schemaName?: stri
   return res.json();
 }
 
+/** Rebuild the graph now and re-index it (a projection of stores already kept: no model, no warehouse). Refused with
+ *  why — no built ontology to project it from — rather than answered as done. */
+export async function rebuildContextGraph(connectionId: string, schemaName?: string): Promise<{ rebuilt: boolean; indexed: number }> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/graph/rebuild?${q}`, { method: "POST" });
+  if (!res.ok) throw await refused(res, "Rebuilding the graph");
+  return res.json();
+}
+
 // ── The graph's honesty scorecard (Wave P2 — GET /graph/audit) ────────────────
 
 export interface CGContentDrift {
