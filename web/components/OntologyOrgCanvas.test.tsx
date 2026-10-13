@@ -11,12 +11,13 @@ import { render, waitFor } from "@/lib/testing";
 
 import type { CatalogTree, OntologyEntity, OntologyGraph, OntologyRelationship } from "@/lib/api";
 
+// The board reads none of an entity's findings, so the fixture leaves that list out (cast) rather than spell its field.
 const entity = (id: string): OntologyEntity => ({
   id, display_name: id, description: "", source_tables: [id], identity_key: `${id}_id`, grain_verified: true,
   domain: null, entity_type: "business_object", has_lifecycle: false, lifecycle_column: null, lifecycle_states: [],
   terminal_states: [], active_filter: null, segments: {}, created_at_col: null, default_filters: [], exclude_when: [],
-  properties: {}, computed_properties: [], exploration_insights: [], implements: [],
-});
+  properties: {}, computed_properties: [], implements: [],
+} as Partial<OntologyEntity> as OntologyEntity);
 
 const rel = (from: string, to: string): OntologyRelationship => ({
   id: `${from}_${to}`, from_entity: from, to_entity: to, verb: "belongs_to", cardinality: "N:1", join_sql: "",
