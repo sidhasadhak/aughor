@@ -208,11 +208,15 @@ export function resultTools(s: {
 
 // ── The starting point: recent runs, the largest tables ────────────────────────────────────────────────────────────
 
-/** The statement a person ran, without the wrapper the run put around it (`SELECT * FROM (…) __q LIMIT n` — the
- *  platform's row cap, not their SQL). Unwrapped once and only on that exact shape; anything else is left as written. */
+/** The statement a person ran, without the wrappers the platform put around it: the row cap
+ *  (`SELECT * FROM (…) __q LIMIT n`), and inside it a cockpit piece's own — its sort, sum or buckets around the person's
+ *  statement, which `aughor/cockpit/queries.py` (`_embed`) puts in word for word as `FROM (\n<statement>\n) AS q`.
+ *  Each is unwrapped only on that exact shape; anything else is left as written. */
 export function unwrapRunSql(sql: string): string {
-  const m = /^\s*SELECT \* FROM \(([\s\S]*)\) __q LIMIT \d+\s*$/i.exec(sql ?? "");
-  return (m ? m[1] : sql ?? "").trim();
+  const capped = /^\s*SELECT \* FROM \(([\s\S]*)\) __q LIMIT \d+\s*$/i.exec(sql ?? "");
+  const run = (capped ? capped[1] : sql ?? "").trim();
+  const piece = /^SELECT [^\n]* FROM \(\n([\s\S]*)\n\) AS q(?:\s[^\n]*)?$/i.exec(run);
+  return (piece ? piece[1] : run).trim();
 }
 
 export interface RecentRun {
