@@ -137,3 +137,21 @@ def test_the_live_shape_that_prompted_this(monkeypatch):
     assert _restored({**state, "error": "cancelled — progress saved"}) is not None
     # The state round-trips as JSON, which is how it is stored.
     assert json.loads(json.dumps(state))["phase"] == "failed"
+
+
+def test_a_schema_its_budget_stopped_is_said_as_a_stop_not_a_failure():
+    """LuxExperience, 2026-10-13: "2 of 3 schemas failed to explore" over 46 findings, when both schemas had stopped at
+    their token budget with progress saved — and the platform continues such a stop a day later."""
+    from aughor.routers.exploration import _restored_error
+    stop = {"phase": "failed", "error": "cancelled (token budget (200,000 tokens) exceeded) — progress saved",
+            "stopped_on_budget_at": "2026-10-13T17:12:29+00:00"}
+    states = {"gold_governance": stop, "luxexperience": stop,
+              "broken": {"phase": "failed", "error": "connection refused"}}
+    per = {"gold_finance": "complete", "gold_governance": "failed", "luxexperience": "failed"}
+    out = _restored_error({"per_schema": per}, states.get)
+    assert out == ("2 of 3 schemas stopped at their run budget — progress saved, continued a day later: "
+                   "gold_governance, luxexperience")
+    # a real failure beside a stop is still said as a failure
+    out = _restored_error({"per_schema": {**per, "luxexperience": "complete", "broken": "failed"}}, states.get)
+    assert out == ("1 of 4 schemas failed to explore: broken; "
+                   "1 of 4 schemas stopped at its run budget — progress saved, continued a day later: gold_governance")
