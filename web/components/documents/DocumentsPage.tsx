@@ -368,6 +368,11 @@ export function doctreeConnection(docId: string): string | null {
   return cut > 0 ? rest.slice(0, cut) : null;
 }
 
+/** A plan a person confirms is read whole: it wraps instead of the row's one-line ellipsis. */
+function Plan({ children, tone }: { children: ReactNode; tone?: "red" }) {
+  return <span style={{ whiteSpace: "normal", color: tone === "red" ? "var(--red4)" : undefined }}>{children}</span>;
+}
+
 /** An embedder named for a person deciding whether to spend it: the model, and whether it runs here. */
 function embedderWords(plan: ReindexPlan): string {
   const local = plan.backend === "ollama";
@@ -399,8 +404,8 @@ function useDriftFix(drifted: Drifted[], onChanged: () => void): { detail: React
         return;
       }
       const why = conns.length
-        ? `No compiled documentation is kept for ${names}, so there is nothing to restore from.`
-        : `${names} ${drifted.length === 1 ? "is an upload" : "are uploads"}: chunks come back only by adding the file again.`;
+        ? `Nothing to restore from — no compiled documentation is kept for ${drifted.length === 1 ? "it" : "them"}.`
+        : `${drifted.length === 1 ? "An upload's" : "Uploads'"} chunks come back only by adding the file again.`;
       const r = await reindexDocuments(true);
       if (r.ok === false) { setFix({ at: "failed", text: `${why} ${r.error ?? "The index could not be read whole."}` }); return; }
       setFix({ at: "reindex", plan: r, why });
@@ -441,17 +446,16 @@ function useDriftFix(drifted: Drifted[], onChanged: () => void): { detail: React
       return { detail: "Reading what a restore would do…", actions: <Button size="xs" variant="secondary" disabled>Reading…</Button> };
     case "restore":
       return {
-        detail: <span title={`Restoring re-embeds every compiled document of ${countNoun(fix.conns.length, "connection")} — ${countNoun(fix.reembeds, "chunk")}.`}>
-          {`Restoring puts back ${countNoun(fix.adds, "chunk")} from the compiled documentation · re-embeds ${countNoun(fix.reembeds, "chunk")}`}
-        </span>,
+        detail: <Plan>{`Restoring puts back ${countNoun(fix.adds, "chunk")} from the compiled documentation · re-embeds `
+          + `${countNoun(fix.reembeds, "chunk")} (every compiled document of ${countNoun(fix.conns.length, "connection")})`}</Plan>,
         actions: <><Button size="xs" variant="secondary" onClick={() => restore(fix.conns)}>Restore</Button>{cancel}</>,
       };
     case "reindex": {
       const corrected = Object.keys(fix.plan.registry_corrections ?? {}).length;
       const text = `${fix.why} Correcting the list re-embeds ${countNoun(fix.plan.chunks_to_re_embed ?? 0, "chunk")} with `
-        + `${embedderWords(fix.plan)} and sets ${countNoun(corrected, "document")} to what the index holds.`;
+        + `${embedderWords(fix.plan)} and sets ${corrected === 1 ? "it" : `the ${corrected}`} to what the index holds.`;
       return {
-        detail: <span title={text}>{text}</span>,
+        detail: <Plan>{text}</Plan>,
         actions: <><Button size="xs" variant="secondary" onClick={reindex}>Correct the list</Button>{cancel}</>,
       };
     }
@@ -460,7 +464,7 @@ function useDriftFix(drifted: Drifted[], onChanged: () => void): { detail: React
     case "done":
       return { detail: fix.text, actions: null };
     case "failed":
-      return { detail: <span style={{ color: "var(--red4)" }} title={fix.text}>{fix.text}</span>,
+      return { detail: <Plan tone="red">{fix.text}</Plan>,
         actions: <Button size="xs" variant="ghost" onClick={plan}>Try again</Button> };
   }
 }

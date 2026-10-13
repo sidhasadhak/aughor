@@ -233,8 +233,8 @@ describe("the index and the list disagreeing — fixed only after the plan is re
     page();
     const needs = await screen.findByTestId("needs-drift");
     fireEvent.click(within(needs).getByRole("button", { name: "Restore…" }));
-    expect(await within(needs).findByText(/No compiled documentation is kept for DuckDB · ecommerce, DuckDB · main/)).toBeInTheDocument();
-    expect(within(needs).getByText(/re-embeds 51 chunks with nomic-embed-text \(local — no charge\) and sets 2 documents to what the index holds/))
+    expect(await within(needs).findByText(/Nothing to restore from — no compiled documentation is kept for them/)).toBeInTheDocument();
+    expect(within(needs).getByText(/re-embeds 51 chunks with nomic-embed-text \(local — no charge\) and sets the 2 to what the index holds/))
       .toBeInTheDocument();
     expect(reindexDocuments).toHaveBeenCalledWith(true);
     expect(reindexDocuments).not.toHaveBeenCalledWith(false);
