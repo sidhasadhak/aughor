@@ -166,13 +166,16 @@ interface Props {
   connections: Connection[];
   onSelect: (canvas: Canvas) => void;
   onNew: () => void;
-  /** Active workspace — scopes the canvas list to its connections. */
+  /** Active workspace — scopes the canvas list to its connections. Empty until the app knows it, and the list waits:
+   *  read without one, the server answers with every workspace's canvases. */
   workspaceId?: string;
 }
 
 export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Props) {
-  const [canvases, setCanvases]         = useState<Canvas[]>([]);
-  const [loading, setLoading]           = useState(true);
+  // Each answer is kept with the workspace (and the re-read) it was for, and only the current workspace's is drawn — so
+  // a switch never shows the last workspace's canvases while the new list is on its way.
+  const [read, setRead] = useState<{ workspaceId: string; reload: number; canvases: Canvas[] } | null>(null);
+  const [reloads, setReloads]           = useState(0);
   const [search, setSearch]             = useState("");
   const [filter, setFilter]             = useState<"all" | "mine">("all");
   const [sort, setSort]                 = useState<"activity" | "modified" | "name" | "tables">("activity");
@@ -180,19 +183,29 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
   const [view, setView]                 = useState<"cards" | "list">("cards");
   const [pendingDelete, setPendingDelete] = useState<Canvas | null>(null);
   const [deleting, setDeleting]         = useState(false);
+  const [deleteRefused, setDeleteRefused] = useState<string | null>(null);
 
-  const load = () => {
-    setLoading(true);
-    getCanvases(workspaceId).then(setCanvases).catch(() => setCanvases([]))
-      .finally(() => setLoading(false));
-  };
-  useEffect(load, [workspaceId]);
+  useEffect(() => {
+    if (!workspaceId) return;   // not known yet — the list waits rather than read every workspace's
+    let current = true;         // an answer for a workspace the screen has since left is dropped
+    const settle = (canvases: Canvas[]) => { if (current) setRead({ workspaceId, reload: reloads, canvases }); };
+    getCanvases(workspaceId).then(settle).catch(() => settle([]));
+    return () => { current = false; };
+  }, [workspaceId, reloads]);
+
+  const canvases = useMemo(
+    () => (read && read.workspaceId === workspaceId ? read.canvases : []), [read, workspaceId]);
+  const listLoading = !read || read.workspaceId !== workspaceId || read.reload !== reloads;
+
+  const askDelete = (canvas: Canvas | null) => { setPendingDelete(canvas); setDeleteRefused(null); };
 
   const handleDelete = async () => {
     if (!pendingDelete) return;
     setDeleting(true);
-    try { await deleteCanvas(pendingDelete.id); setPendingDelete(null); load(); }
-    catch { /* ignore */ }
+    setDeleteRefused(null);
+    try { await deleteCanvas(pendingDelete.id); setPendingDelete(null); setReloads(n => n + 1); }
+    // Refused: the canvas is still there, so the confirm stays open and says why.
+    catch (e) { setDeleteRefused(e instanceof Error && e.message ? e.message : "the server refused it"); }
     finally { setDeleting(false); }
   };
 
@@ -338,7 +351,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
       render: (_, { canvas }) =>
         canvas.is_legacy ? null : (
           <Button variant="ghost" size="xs"
-            onClick={e => { e.stopPropagation(); setPendingDelete(canvas); }}
+            onClick={e => { e.stopPropagation(); askDelete(canvas); }}
             title="Delete Data Canvas"
             style={{
               background: "none", border: "none", cursor: "pointer",
@@ -417,7 +430,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
         {/* Section bar */}
         <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t2)" }}>
-            {loading ? "Loading…" : `All Data Canvases${displayed.length > 0 ? ` (${displayed.length})` : ""}`}
+            {listLoading ? "Loading…" : `All Data Canvases${displayed.length > 0 ? ` (${displayed.length})` : ""}`}
           </span>
 
           {/* View toggle + Sort — right cluster */}
@@ -489,7 +502,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
           </div>
         </div>
 
-        {!loading && displayed.length === 0 ? (
+        {!listLoading && displayed.length === 0 ? (
           /* Empty state */
           <div style={{
             padding: "72px 0", display: "flex", flexDirection: "column",
@@ -531,7 +544,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
                   key={row.key}
                   row={row}
                   onSelect={() => onSelect(row.canvas)}
-                  onDelete={() => setPendingDelete(row.canvas)}
+                  onDelete={() => askDelete(row.canvas)}
                 />
               ))}
             </div>
@@ -559,7 +572,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
               className="aug-canvas-table"
               columns={columns}
               dataSource={displayed}
-              loading={loading}
+              loading={listLoading}
               pagination={false}
               showSorterTooltip={false}
               onRow={({ canvas }) => ({
@@ -576,7 +589,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
           position: "fixed", inset: 0, zIndex: 60,
           background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center",
         }}
-          onClick={() => setPendingDelete(null)}
+          onClick={() => askDelete(null)}
         >
           <div onClick={e => e.stopPropagation()} style={{
             background: "var(--bg-2)", border: "1px solid var(--b2)",
@@ -590,8 +603,11 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
               <strong style={{ color: "var(--t1)" }}>{pendingDelete.name}</strong>?
               This cannot be undone.
             </div>
+            {deleteRefused && (
+              <div role="alert" className="aug-fs-sm" style={{ color: "var(--red4)" }}>Not deleted — {deleteRefused}</div>
+            )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <Button onClick={() => setPendingDelete(null)} variant="ghost" size="sm">Cancel</Button>
+              <Button onClick={() => askDelete(null)} variant="ghost" size="sm">Cancel</Button>
               <Button variant="ghost" size="xs" onClick={handleDelete} disabled={deleting} style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "5px 12px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,

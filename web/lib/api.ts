@@ -4436,8 +4436,11 @@ export async function putConnectionInstructions(connId: string, text: string): P
   if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Failed to save instructions"));
 }
 
+/** Throws with the server's reason when it refuses — it answered nothing before, so a refused delete closed the
+ *  confirm as if the canvas were gone. */
 export async function deleteCanvas(id: string): Promise<void> {
-  await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw await refused(res, "Deleting the canvas");
 }
 
 /** A document pinned to a canvas. `missing` marks a binding whose document has since
