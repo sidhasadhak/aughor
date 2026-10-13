@@ -7148,6 +7148,9 @@ export interface OrgInsight {
   novelty: number;
   promoted_by: string;
   promoted_at: string;
+  /** Where it was promoted from — absent on one promoted before scoping existed. */
+  connection_id?: string;
+  schema?: string;
 }
 
 export async function getOrgIntelligence(connectionId?: string, schema?: string): Promise<OrgInsight[]> {
