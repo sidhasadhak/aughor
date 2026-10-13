@@ -108,3 +108,13 @@ def test_an_answer_asked_again_is_marked_so_in_the_model_call_log(monkeypatch):
     _ask(client)
     assert [bool(kw.get("ok", True)) for kw in logged] == [False, True]      # the failure, then the answer
     assert (logged[-1].get("extra") or {}).get("reasked_as_json") is True
+
+
+def test_a_memory_address_holding_429_is_not_a_rate_limit():
+    """The flake behind the test above (2026-10-13): instructor's error chains tenacity's
+    `RetryError[<Future at 0x1394290f0 …>]`, and a bare "429" substring read that address as an HTTP 429 — so an
+    empty answer was said as "the request never reached the model (rate limited)" and never asked again."""
+    address = RuntimeError("RetryError[<Future at 0x1394290f0 state=finished raised ValidationError>]")
+    assert P.classify_provider_error(address) != "rate_limited"
+    assert P.classify_provider_error(RuntimeError("Error code: 429 - {'type': 'rate_limit_error'}")) == "rate_limited"
+    assert P.classify_provider_error(RuntimeError("HTTP 429 from upstream")) == "rate_limited"

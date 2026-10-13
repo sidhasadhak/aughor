@@ -1640,7 +1640,12 @@ def _retry_after_seconds(exc: BaseException) -> Optional[float]:
 _DEADLINE_S = 180.0
 
 # 429/quota-shaped: the errors where ANOTHER attempt is itself another request against the limit.
-_RATE_LIMIT_MSGS = ("rate limit", "too many requests", "quota", "resource_exhausted", "429")
+_RATE_LIMIT_MSGS = ("rate limit", "too many requests", "quota", "resource_exhausted")
+#: HTTP 429 named in a message — as a whole number. A bare "429" substring also matched a memory address in an
+#: exception's text: tenacity's `RetryError[<Future at 0x1394290f0 …>]` under instructor read as a rate limit, so an
+#: empty Claude answer was said as "the request never reached the model (rate limited)" and never asked again — a
+#: flake in `test_anthropic_json_reask` whenever an address happened to hold those three digits (2026-10-13).
+_STATUS_429 = re.compile(r"\b429\b")
 
 
 def _is_rate_limited(exc: BaseException) -> bool:
@@ -1650,7 +1655,8 @@ def _is_rate_limited(exc: BaseException) -> bool:
     status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
     if status == 429:
         return True
-    return any(k in str(exc).lower() for k in _RATE_LIMIT_MSGS)
+    msg = str(exc).lower()
+    return any(k in msg for k in _RATE_LIMIT_MSGS) or bool(_STATUS_429.search(msg))
 
 
 def _is_quota_exhausted(exc: BaseException) -> bool:
