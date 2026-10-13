@@ -51,8 +51,9 @@ const BARE_KIND_KEY = new RegExp(`key=\\{[A-Za-z_$][\\w$]*\\.(?:${NOT_AN_IDENTIT
 /** Measured 2026-09-26, after the three `phase_id` lists were keyed with `withUniqueKeys`.
  *  One-way: when you convert one, lower this; never raise it. 59 → 58 on 2026-10-07: Home's
  *  "Get Started" cards (keyed `a.name`) went with the blocks that copied other pages. 58 → 55 on 2026-10-12: the
- *  Catalog's right panel was redone, and its schema, table and column lists are keyed by identities now. */
-const BASELINE = 55;
+ *  Catalog's right panel was redone, and its schema, table and column lists are keyed by identities now. 55 → 54 on
+ *  2026-10-13: Health was redone to CLARITY, and its metric rows are keyed with `withUniqueKeys`. */
+const BASELINE = 54;
 
 function bareKindKeys(text: string): string[] {
   return text.match(BARE_KIND_KEY) ?? [];

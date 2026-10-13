@@ -584,7 +584,9 @@ BASELINE: dict[str, int] = {
     # 2026-09-14: 573 → 583, a RAISE: the restored Briefing's Investigate doors (+15), less
     # the shell header's Investigate door that the restore took out (−5).
     # 2026-10-12: 581 → 576, measured; Security & Audit's redo took one, the rest is slack other waves left.
-    "investigation_in_web": 576,
+    # 2026-10-13: 576 → 548, measured; Agent runs left page.tsx for its own file and says "deep analysis", and
+    # Health asks "why" instead of investigating (−16); the rest is slack other waves left.
+    "investigation_in_web": 548,
     # Lowered twice over, by two waves that landed together. DS-11's completion reworded
     # four prose hits in `actions/inbox.py` and exempted the inbox suite; DS-13 exempted
     # `aughor/actions/executor.py` and its own suite, where every hit is a type name, an
