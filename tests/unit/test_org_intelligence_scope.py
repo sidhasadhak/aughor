@@ -96,7 +96,7 @@ def test_a_promotion_org_could_not_store_is_refused_and_the_finding_is_not_flagg
     from aughor.routers.exploration import promote_connection_finding
 
     finding = {"id": "f1", "finding": "Returns rose", "domain": "Sales"}
-    monkeypatch.setattr(store, "_find_insight_state", lambda conn, fid: ("c1", {"insights": [finding]}, finding))
+    monkeypatch.setattr(store, "find_connection_finding", lambda conn, fid: finding)
     flagged: list[str] = []
     monkeypatch.setattr(store, "promote_insight_conn", lambda conn, fid: flagged.append(fid) or finding)
 

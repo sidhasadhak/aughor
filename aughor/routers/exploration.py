@@ -1805,8 +1805,8 @@ def promote_connection_finding(connection_id: str, finding_id: str):
     default Briefing scope) had no promotion path until now. Org is written first and the
     finding flagged after, so a failed write leaves nothing saying "promoted" (503, with why).
     """
-    from aughor.explorer.store import _find_insight_state, promote_insight_conn
-    _key, _state, found = _find_insight_state(connection_id, finding_id)
+    from aughor.explorer.store import find_connection_finding, promote_insight_conn
+    found = find_connection_finding(connection_id, finding_id)
     if found is None:
         raise HTTPException(status_code=404, detail="Finding not found")
     _store_in_org(finding_id, found, canvas_id=f"conn:{connection_id}", connection_id=connection_id)

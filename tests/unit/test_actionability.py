@@ -86,16 +86,19 @@ def test_dismiss_finds_per_schema_insight(tmp_path):
 
 
 def test_promote_endpoint_found(tmp_path, monkeypatch):
-    # store layer returns an insight → endpoint reports promoted; Qdrant push is
-    # best-effort and must not raise even when unavailable.
-    monkeypatch.setattr(store, "promote_insight_conn",
-                        lambda c, i: {"finding": "f", "domain": "d", "novelty": 5, "angle": "a"})
+    # the finding is found, Org stores it, then it is flagged → promoted. (Org's push is no longer best-effort: a write
+    # Org could not store refuses the promotion — test_org_intelligence_scope pins that, 2026-10-13.)
+    from aughor.knowledge import org_intelligence
+    found = {"finding": "f", "domain": "d", "novelty": 5, "angle": "a"}
+    monkeypatch.setattr(store, "find_connection_finding", lambda c, i: found)
+    monkeypatch.setattr(store, "promote_insight_conn", lambda c, i: found)
+    monkeypatch.setattr(org_intelligence, "promote_to_org", lambda **kw: {})
     out = promote_connection_insight("conn1", "i1")
     assert out == {"insight_id": "i1", "promoted": True}
 
 
 def test_promote_endpoint_not_found(tmp_path, monkeypatch):
-    monkeypatch.setattr(store, "promote_insight_conn", lambda c, i: None)
+    monkeypatch.setattr(store, "find_connection_finding", lambda c, i: None)
     with pytest.raises(HTTPException) as ei:
         promote_connection_insight("conn1", "ghost")
     assert ei.value.status_code == 404

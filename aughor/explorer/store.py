@@ -527,6 +527,12 @@ def _find_insight_state(connection_id: str, insight_id: str):
     return None, None, None
 
 
+def find_connection_finding(connection_id: str, finding_id: str) -> Optional[dict]:
+    """A connection-scoped finding by id (bare or per-schema state), read only — or None. The promote route reads it
+    before writing anything: Org is written first and the finding flagged after, so a failed write flags nothing."""
+    return _find_insight_state(connection_id, finding_id)[2]
+
+
 def promote_insight_conn(connection_id: str, insight_id: str) -> Optional[dict]:
     """Mark a connection-scoped insight as promoted to Org intelligence.
 
