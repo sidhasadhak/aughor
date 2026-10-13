@@ -1,53 +1,74 @@
 "use client";
 
 /**
- * ProfilePanel — what Aughor knows about this business (Aughor Intelligence · 02 Profile).
+ * ProfilePanel — what Aughor knows about this business, redone to `aughor-v2/CLARITY.md` (2026-10-13).
  *
- * Instrument-dense, not an artefact: three numbered sections — what this business is, the data
- * profile by table, and what a blank means in a column — beside a rail of the governed metrics and
- * the status columns the explorer mapped. §03 carries forward the one thing the old Hub's
- * exploration panel knew that nothing else shows: the explorer's null meanings.
+ * A profile reads like a page, not a dashboard: it opens on what the business is — its name, the summary in prose and
+ * a column of facts beside it (the business model, the currency, a fiscal year a person set), with why Aughor thinks
+ * so one click away — then the tables as profiled, what a column's statuses and blanks mean, and the governed metrics.
+ * No figure row and no "Needs you": nothing on a profile waits on a person.
  *
- * Drawn only from stored data. Left out, because nothing records it:
- *   - a confidence and a "decided by" per table, and per fact except the industry guess;
- *   - channels, distribution centres, a fiscal week, revenue recognition, a returns window;
- *   - a "disputed" metric state — a metric is draft, proposed, approved or deprecated;
- *   - a lifecycle ORDER: the explorer stores a status column's values and, only when a table has a
- *     key and a timestamp, its transitions — so the rail says "status columns" and draws no arrows;
- *   - a profiling-run count, and Re-profile / Correct doors: no endpoint re-profiles on demand, the
- *     profile rebuild is an LLM call, and nothing corrects a profile in place.
- * A human setting wins over inference only where org settings say so (industry, currency, a fiscal
- * year that does not start in January), and the chips say which is which.
+ * It used to open on a strip of timestamps and three numbered sections beside a rail, with a paragraph under the
+ * table explaining its columns and a status note repeated on every status column. Those are said once now — in a
+ * column's hover, or in a section's label — and a status column whose values ran to a megabyte (a JSON payload the
+ * explorer mapped as a status) shows its first values and says how many more there are.
  *
- * Reads: /business-profile, /org-settings/effective and /metrics are pure. The schema profile may
- * open a warehouse connection when its cache has expired, and /findings runs an information-schema
- * query when given a schema — reads, never writes and never an LLM call.
+ * Drawn only from stored data. Left out, because nothing records it: a confidence and a "decided by" per table, and
+ * per fact except the industry guess; channels, distribution centres, a fiscal week; a "disputed" metric state; a
+ * lifecycle ORDER (only a status column's values, and transitions where a table has a key and a timestamp — so no
+ * arrows are drawn); a profiling-run count, and Re-profile / Correct doors (no endpoint re-profiles on demand, the
+ * profile rebuild is a model call, and nothing corrects a profile in place). A human setting wins over the inference
+ * only where org settings say so (industry, currency, a fiscal year that does not start in January), and each fact
+ * says which it is.
+ *
+ * Reads: /business-profile, /org-settings/effective and /metrics are pure. The schema profile may open a warehouse
+ * connection when its cache has expired, and /findings runs an information-schema query when given a schema — reads,
+ * never writes and never a model call. Each read fails on its own and says so, with Retry — never as an empty section.
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
+import { Card, CARD, Chip, Empty, Label, MUTED, NUM, ONE_LINE, ROW, RULE } from "@/components/clarity/kit";
+import { FoldLine, GroupHead } from "@/components/semantic/parts";
+import { TableActions } from "@/components/TableActions";
 import { SkeletonRows } from "@/components/ui/motion";
+import { ReadFailed } from "@/components/ui/states";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   getBusinessProfile, getEffectiveSettings, getExplorationFindings, getMetrics, getSchemaProfile,
-  type BusinessProfileResponse, type ExplorationFindings, type Metric, type OrgSettings, type SchemaProfile,
+  type BusinessProfileResponse, type ExplorationFindings, type LifecycleMap, type Metric, type OrgSettings,
+  type SchemaProfile,
 } from "@/lib/api";
+import { dateWords } from "@/lib/documents";
 import { countNoun, formatCount, formatTimestamp, pct, relTime } from "@/lib/format";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { withUniqueKeys } from "@/lib/listKeys";
+import { keyToWords } from "@/lib/names";
 
-type Load<T> = { state: "loading" } | { state: "ready"; data: T } | { state: "failed" };
+type Load<T> = { state: "loading" } | { state: "ready"; data: T } | { state: "failed"; error: string };
 
-/** One read per source, each failing on its own — a missing metric store must not blank the profile. */
-function useLoad<T>(read: () => Promise<T>, deps: unknown[]): Load<T> {
+/** One read per source, each failing on its own — a missing metric store must not blank the profile. The second value
+ *  reads it again. */
+function useLoad<T>(read: () => Promise<T>, deps: unknown[]): [Load<T>, () => void] {
   const [load, setLoad] = useState<Load<T>>({ state: "loading" });
+  const [reads, setReads] = useState(0);
   useEffect(() => {
     let alive = true;
     setLoad({ state: "loading" });
     read()
       .then(data => { if (alive) setLoad({ state: "ready", data }); })
-      .catch(() => { if (alive) setLoad({ state: "failed" }); });
+      .catch(e => { if (alive) setLoad({ state: "failed", error: e instanceof Error ? e.message : String(e) }); });
     return () => { alive = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-  return load;
+  }, [...deps, reads]);
+  return [load, () => setReads(n => n + 1)];
+}
+
+/** A section's body once its read lands: skeleton rows while it reads, a failed read said with Retry. */
+function Gate<T>({ load, what, retry, rows = 3, children }: {
+  load: Load<T>; what: string; retry: () => void; rows?: number; children: (data: T) => ReactNode;
+}) {
+  if (load.state === "loading") return <SkeletonRows rows={rows} />;
+  if (load.state === "failed") return <ReadFailed what={what} error={load.error} onRetry={retry} />;
+  return <>{children(load.data)}</>;
 }
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
@@ -62,38 +83,39 @@ const BLANK: Record<string, string> = {
   mixed:                   "more than one thing",
 };
 
-/** An inference Aughor holds (✓), a human setting or an unsure inference (◈), or an inference with
- *  no confidence recorded (no mark). Facts borrow the guard chip's drawing because the design draws
- *  them in that grammar, but a fact is not a guard verdict, so it is not a GuardChip. */
-type Mark = "held" | "human" | "unsure" | "plain";
-
-function FactChip({ mark, title, children }: { mark: Mark; title?: string; children: ReactNode }) {
-  const cls = mark === "held" ? "aug-guard aug-guard-passed" : mark === "plain" ? "aug-guard" : "aug-guard aug-guard-warned";
-  return (
-    <span className={cls} title={title}>
-      {mark === "held" && <span aria-hidden>✓</span>}
-      {(mark === "human" || mark === "unsure") && <span aria-hidden>◈</span>}
-      {children}
-    </span>
-  );
-}
-
-function metricState(status?: string): ReactNode {
-  if (status === "approved") return <FactChip mark="held">approved</FactChip>;
-  if (status === "proposed") return <FactChip mark="unsure">proposed</FactChip>;
-  return <FactChip mark="plain">{status || "draft"}</FactChip>;
+/** The explained blanks grouped by what a blank means, a data-quality gap first. */
+function blankGroups<T extends { meaning: string }>(blanks: [string, T][]): { meaning: string; rows: [string, T][] }[] {
+  const order = ["missing", ...Object.keys(BLANK).filter(k => k !== "missing")];
+  const by = new Map<string, [string, T][]>();
+  for (const b of blanks) by.set(b[1].meaning, [...(by.get(b[1].meaning) ?? []), b]);
+  const rank = (m: string) => (order.indexOf(m) < 0 ? order.length : order.indexOf(m));
+  return [...by.entries()].sort((a, b) => rank(a[0]) - rank(b[0])).map(([meaning, rows]) => ({ meaning, rows }));
 }
 
 /** At or above this the industry guess is held; below it the chip says it is an inference. */
 const HELD = 0.86;
 
-function Section({ children }: { children: ReactNode }) {
-  return (
-    <section className="aug-brief-sec">
-      <div className="aug-brief-body">{children}</div>
-    </section>
-  );
+/** A status column shows this many of its values; the rest are counted. */
+export const STATES_SHOWN = 8;
+/** A value longer than this is cut, its start kept on hover — one explorer run mapped a JSON payload as a status. */
+const STATE_CHARS = 40;
+
+/** A status column's values as a reader sees them: the first few, each cut to a readable length, and how many more. */
+export function statusValues(lc: LifecycleMap): { shown: { text: string; full: string; terminal: boolean; active: boolean }[]; more: number } {
+  const all = lc.states ?? [];
+  const terminal = new Set(lc.terminal_states ?? []);
+  const active = new Set(lc.active_states ?? []);
+  return {
+    shown: all.slice(0, STATES_SHOWN).map(st => ({
+      text: st.length > STATE_CHARS ? `${st.slice(0, STATE_CHARS - 1)}…` : st,
+      full: st.length > 200 ? `${st.slice(0, 200)}…` : st,
+      terminal: terminal.has(st), active: active.has(st),
+    })),
+    more: Math.max(0, all.length - STATES_SHOWN),
+  };
 }
+
+const TERM: CSSProperties = { ...MUTED, paddingTop: 2 };
 
 export function ProfilePanel({ connectionId, canvasId, schema, workspaceId }: {
   connectionId: string;
@@ -101,51 +123,17 @@ export function ProfilePanel({ connectionId, canvasId, schema, workspaceId }: {
   schema?:      string;
   workspaceId?: string;
 }) {
-  const profile  = useLoad<BusinessProfileResponse>(() => getBusinessProfile(connectionId, schema), [connectionId, schema]);
-  const settings = useLoad<OrgSettings>(() => getEffectiveSettings(workspaceId), [workspaceId]);
-  const tables   = useLoad<SchemaProfile>(() => getSchemaProfile(connectionId), [connectionId]);
-  const metrics  = useLoad<Metric[]>(() => getMetrics(), []);
-  const findings = useLoad<ExplorationFindings>(() => getExplorationFindings(connectionId, schema), [connectionId, schema]);
+  const [profile, reProfile]   = useLoad<BusinessProfileResponse>(() => getBusinessProfile(connectionId, schema), [connectionId, schema]);
+  const [settings, reSettings] = useLoad<OrgSettings>(() => getEffectiveSettings(workspaceId), [workspaceId]);
+  const [tables, reTables]     = useLoad<SchemaProfile>(() => getSchemaProfile(connectionId), [connectionId]);
+  const [metrics, reMetrics]   = useLoad<Metric[]>(() => getMetrics(), []);
+  const [findings, reFindings] = useLoad<ExplorationFindings>(() => getExplorationFindings(connectionId, schema), [connectionId, schema]);
+  const [why, setWhy] = useState(false);
+  const [showDeprecated, setShowDeprecated] = useState(false);
 
   const p = profile.state === "ready" && profile.data.available ? profile.data.profile ?? null : null;
   const generatedAt = profile.state === "ready" ? profile.data.generated_at ?? null : null;
   const org = settings.state === "ready" ? settings.data : null;
-
-  const facts = useMemo(() => {
-    const out: { key: string; mark: Mark; text: string; title?: string; changes?: boolean }[] = [];
-    if (org?.industry) {
-      const changes = !p?.industry || p.industry !== org.industry;
-      out.push({ key: "industry", mark: "human", text: `human: industry ${org.industry}`, changes,
-        title: changes && p?.industry ? `Aughor inferred ${p.industry}; the org setting wins`
-          : changes ? "Set in org settings" : "Set in org settings, and the inference agrees" });
-    } else if (p?.industry) {
-      const held = p.confidence >= HELD;
-      out.push({ key: "industry", mark: held ? "held" : "unsure", text: held ? p.industry : `${p.industry}, inferred`,
-        title: `Industry inferred at confidence ${p.confidence.toFixed(2)}` });
-    }
-    if (p?.business_model) {
-      out.push({ key: "model", mark: "plain", text: p.business_model, title: "Inferred; no confidence is recorded for it" });
-    }
-    if (org?.currency_code) {
-      const changes = !p?.currency_code || p.currency_code !== org.currency_code;
-      out.push({ key: "currency", mark: "human", text: `human: currency ${org.currency_code}`, changes,
-        title: changes && p?.currency_code ? `Aughor inferred ${p.currency_code}; the org setting wins`
-          : changes ? "Set in org settings" : "Set in org settings, and the inference agrees" });
-    } else if (p?.currency_code) {
-      out.push({ key: "currency", mark: "plain", text: `currency ${p.currency_code}`,
-        title: p.currency_code === "USD" ? "USD is also what the profile says when nothing indicates otherwise" : "Inferred" });
-    }
-    // A January start is also what an unset setting reads as, so only another month is a human decision.
-    if (org && org.fiscal_year_start_month > 1) {
-      out.push({ key: "fy", mark: "human", text: `human: fiscal year starts ${MONTHS[org.fiscal_year_start_month - 1]}`,
-        title: "Set in org settings", changes: true });
-    }
-    return out;
-  }, [p, org]);
-  // "Corrected" only when a human setting changed or added something; one that restates the inference
-  // confirms it.
-  const corrected = facts.some(f => f.changes);
-  const confirmed = !corrected && facts.some(f => f.mark === "human");
 
   const tableRows = useMemo(() => {
     if (tables.state !== "ready" || !tables.data.available) return [];
@@ -166,6 +154,9 @@ export function ProfilePanel({ connectionId, canvasId, schema, workspaceId }: {
       });
   }, [tables, schema]);
   const lastProfiled = tableRows.reduce<string | null>((a, t) => (!a || t.computed_at > a ? t.computed_at : a), null);
+  // Said once in the label when every table was profiled the same day; a column only when they differ.
+  const profiledApart = new Set(tableRows.map(t => (t.computed_at || "").slice(0, 10))).size > 1;
+  const [now] = useState(() => Date.now());
 
   // A connection's own entry for a metric beats the global one of the same name.
   const governed = useMemo(() => {
@@ -180,220 +171,303 @@ export function ProfilePanel({ connectionId, canvasId, schema, workspaceId }: {
     return [...byName.values()];
   }, [metrics, connectionId]);
   const allGlobal = governed.length > 0 && governed.every(m => (m.connection ?? "*") === "*");
+  const live = governed.filter(m => m.status !== "deprecated");
+  const deprecated = governed.filter(m => m.status === "deprecated");
 
   const statusCols = findings.state === "ready" ? Object.entries(findings.data.lifecycle_maps ?? {}) : [];
+  const noOrder = statusCols.every(([, lc]) => !(lc.transitions ?? []).length);
   const blanks = findings.state === "ready"
     ? Object.entries(findings.data.null_meanings ?? {}).filter(([, v]) => v.meaning !== "not_applicable" && v.meaning !== "unknown")
     : [];
 
-  const stripMeta = [
-    generatedAt ? `business profile inferred ${relTime(generatedAt)} ago` : "",
-    lastProfiled ? `tables profiled ${relTime(lastProfiled)} ago` : "",
-  ].filter(Boolean).join(" · ");
-
   return (
-    <div className="aug-profile">
-      <div className="aug-profile-main">
-        <div className="aug-brief-strip">
-          <span className="aug-brief-eyebrow">Profile</span>
-          {stripMeta && <span className="aug-brief-meta">{stripMeta}</span>}
-          {canvasId && <span className="aug-brief-meta aug-profile-strip-end">connection-wide — a canvas does not narrow the profile</span>}
-        </div>
-
-        <Section>
-          <div className="aug-brief-eyebrow-row">
-            <span className="aug-brief-eyebrow">What this business is · {corrected ? "inferred, then corrected" : confirmed ? "inferred · org settings agree" : "inferred"}</span>
-          </div>
-          {profile.state === "loading" ? (
-            <SkeletonRows rows={3} />
-          ) : profile.state === "failed" ? (
-            <p className="aug-brief-note">The business profile could not be read.</p>
-          ) : !p ? (
-            <p className="aug-brief-note">
-              No business profile has been inferred for this {schema ? "schema" : "connection"} yet — the explorer infers one when it runs.
-            </p>
+    <div data-testid="profile-overview" style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+      <section aria-label="The business" style={{ ...CARD, padding: "14px 20px 16px" }}>
+        <Label right={<>
+          {generatedAt && <span title={formatTimestamp(generatedAt)}>inferred {relTime(generatedAt)} ago</span>}
+          {canvasId && <Chip title="A canvas does not narrow the profile">connection-wide</Chip>}
+        </>}>
+          The business
+        </Label>
+        <Gate load={profile} what="the business profile" retry={reProfile}>
+          {() => !p ? (
+            <Empty>No business profile inferred for this {schema ? "schema" : "connection"} yet — the explorer infers one when it runs.</Empty>
           ) : (
-            <>
-              <p className="aug-profile-prose">{p.summary}</p>
-              {facts.length > 0 && (
-                <div className="aug-profile-facts">
-                  {facts.map(f => <FactChip key={f.key} mark={f.mark} title={f.title}>{f.text}</FactChip>)}
-                </div>
-              )}
-              {p.evidence && (
-                <p className="aug-profile-why">
-                  Why Aughor thinks so: {Array.isArray(p.evidence) ? p.evidence.join(" ") : p.evidence}
-                </p>
-              )}
-            </>
-          )}
-        </Section>
-
-        <Section>
-          <div className="aug-brief-head">
-            <span className="aug-brief-eyebrow">Data profile · by table</span>
-            <span className="aug-brief-meta">rows · grain · latest record · null pressure · when profiled</span>
-          </div>
-          {tables.state === "loading" ? (
-            <SkeletonRows rows={6} />
-          ) : tables.state === "failed" ? (
-            <p className="aug-brief-note">The table profile could not be read.</p>
-          ) : tableRows.length === 0 ? (
-            <p className="aug-brief-note">
-              No table profile yet — tables are profiled when the connection is first read, and again after its schema changes.
-            </p>
-          ) : (
-            <>
-              <div className="aug-moves-wrap">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>table</TableHead>
-                      <TableHead>grain</TableHead>
-                      <TableHead className="num">rows</TableHead>
-                      <TableHead className="num">latest record</TableHead>
-                      <TableHead className="num">avg null</TableHead>
-                      <TableHead className="num">profiled</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {tableRows.map(t => (
-                      <TableRow key={t.table}>
-                        <TableCell className="aug-profile-tname">{t.name}</TableCell>
-                        <TableCell>
-                          {t.grain_column ? (
-                            <>
-                              {t.grain_column}
-                              {t.grain_verified
-                                ? <span className="aug-moves-good" title="The profiler verified this key"> ✓</span>
-                                : <span className="aug-profile-dim"> · unverified</span>}
-                            </>
-                          ) : <span className="aug-profile-dim">—</span>}
-                        </TableCell>
-                        <TableCell className="num">{formatCount(t.row_count)}</TableCell>
-                        <TableCell className="num" title={t.primary_timestamp ? `the latest ${t.primary_timestamp}` : undefined}>
-                          {t.date_range?.[1] ? t.date_range[1].slice(0, 10) : <span className="aug-profile-dim">no timestamp</span>}
-                        </TableCell>
-                        <TableCell className="num">{t.avgNull == null ? "—" : pct(t.avgNull, 1)}</TableCell>
-                        <TableCell className="num aug-profile-dim" title={formatTimestamp(t.computed_at)}>{relTime(t.computed_at)} ago</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "14px 36px", alignItems: "flex-start" }}>
+              <div style={{ flex: "1 1 480px", minWidth: 0, maxWidth: 820 }}>
+                <IndustryLine inferred={p.industry} confidence={p.confidence} human={org?.industry || ""} />
+                <p className="aug-fs-ui" style={{ margin: "8px 0 0", lineHeight: 1.7, color: "var(--t1)" }}>{p.summary}</p>
+                {p.evidence && (
+                  <>
+                    <FoldLine open={why} onToggle={() => setWhy(o => !o)} testId="profile-why">Why Aughor thinks so</FoldLine>
+                    {why && (
+                      <p className="aug-fs-sm" style={{ margin: "6px 0 0", lineHeight: 1.6, color: "var(--t2)" }}>
+                        {Array.isArray(p.evidence) ? p.evidence.join(" ") : p.evidence}
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
-              <p className="aug-profile-foot">
-                Grain is the key column the profiler checked — ✓ where it verified it. Null pressure is the average null rate
-                across a table&apos;s columns. None of these figures records a human decision.
-              </p>
-            </>
-          )}
-        </Section>
-
-        <Section>
-          <div className="aug-brief-head">
-            <span className="aug-brief-eyebrow">What a blank means · by column</span>
-            <span className="aug-brief-meta">a null the explorer could explain, and the rule behind it</span>
-          </div>
-          {findings.state === "loading" ? (
-            <SkeletonRows rows={3} />
-          ) : findings.state === "failed" ? (
-            <p className="aug-brief-note">The explorer&apos;s findings could not be read.</p>
-          ) : blanks.length === 0 ? (
-            <p className="aug-brief-note">The explorer has not named what a blank means in any column yet.</p>
-          ) : (
-            <div className="aug-moves-wrap">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>column</TableHead>
-                    <TableHead>a blank means</TableHead>
-                    <TableHead>rule</TableHead>
-                    <TableHead className="num">null rate</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {blanks.map(([key, nm]) => {
-                    const [table, column] = key.split(":");
-                    return (
-                      <TableRow key={key}>
-                        <TableCell className="aug-profile-tname">{table}.{column}</TableCell>
-                        <TableCell className={nm.meaning === "missing" ? "aug-profile-gap" : undefined}>{BLANK[nm.meaning] ?? nm.meaning}</TableCell>
-                        <TableCell className="aug-profile-rule" title={nm.business_rule ?? undefined}>{nm.business_rule ?? "—"}</TableCell>
-                        <TableCell className="num">{nm.null_rate == null ? "—" : pct(nm.null_rate, 1)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+              <dl className="aug-fs-sm" data-testid="profile-facts" style={{ flex: "0 1 340px", minWidth: 240, margin: 0,
+                display: "grid", gridTemplateColumns: "88px minmax(0, 1fr)", gap: "8px 12px" }}>
+                {p.business_model && (
+                  <>
+                    <dt style={TERM}>Model</dt>
+                    <dd style={{ margin: 0, minWidth: 0 }} title={`${p.business_model}\n\nInferred; no confidence is recorded for it.`}>
+                      <div style={{ color: "var(--t1)", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical",
+                        overflow: "hidden" }}>{p.business_model}</div>
+                    </dd>
+                  </>
+                )}
+                <SettingFact term="Currency" inferred={p.currency_code ?? ""} human={org?.currency_code ?? ""}
+                  inferredTitle={p.currency_code === "USD" ? "Inferred — USD is also what the profile says when nothing indicates otherwise" : "Inferred"} />
+                {/* A January start is also what an unset setting reads as, so only another month is a human decision. */}
+                {org && org.fiscal_year_start_month > 1 && (
+                  <>
+                    <dt style={TERM}>Fiscal year</dt>
+                    <dd style={{ margin: 0, ...ROW }}>
+                      <span style={{ color: "var(--t1)" }}>starts {MONTHS[org.fiscal_year_start_month - 1]}</span>
+                      <Chip title="Set in org settings">org setting</Chip>
+                    </dd>
+                  </>
+                )}
+                {settings.state === "failed" && (
+                  <>
+                    <dt style={TERM}>Org settings</dt>
+                    <dd style={{ margin: 0 }}>
+                      <ReadFailed what="them — a setting a person made may be missing here" onRetry={reSettings} />
+                    </dd>
+                  </>
+                )}
+              </dl>
             </div>
           )}
-        </Section>
+        </Gate>
+      </section>
+
+      <Card label="Tables" testId="profile-tables" right={tableRows.length > 0 && <>
+        <span title="Each figure is the profiler's; none records a human decision.">
+          {countNoun(tableRows.length, "table")}{lastProfiled && !profiledApart && ` · profiled ${relTime(lastProfiled)} ago`}
+        </span>
+        <TableActions name="table profile" read={() => ({
+          columns: ["table", "key", "key verified", "rows", "latest record", "average null rate", "profiled"],
+          rows: tableRows.map(t => [t.name, t.grain_column, t.grain_verified, t.row_count, t.date_range?.[1] ?? null,
+            t.avgNull, t.computed_at]),
+        })} />
+      </>}>
+        <Gate load={tables} what="the table profile" retry={reTables} rows={6}>
+          {() => tableRows.length === 0 ? (
+            <Empty>No table profile yet — tables are profiled when the connection is first read, and after its schema changes.</Empty>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>table</TableHead>
+                  <TableHead title="The key column the profiler checked — ✓ where it verified it">key</TableHead>
+                  <TableHead className="num">rows</TableHead>
+                  <TableHead className="num" title="The latest value of the table's main timestamp">latest record</TableHead>
+                  <TableHead className="num" title="The average null rate across the table's columns">blank</TableHead>
+                  {profiledApart && <TableHead className="num">profiled</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tableRows.map(t => (
+                  <TableRow key={t.table}>
+                    <TableCell style={{ fontFamily: "var(--font-mono)" }}>{t.name}</TableCell>
+                    <TableCell>
+                      {t.grain_column ? (
+                        <span style={ROW}>
+                          <span style={{ fontFamily: "var(--font-mono)" }}>{t.grain_column}</span>
+                          {t.grain_verified
+                            ? <span title="The profiler verified this key" style={{ color: "var(--grn4)" }}>✓</span>
+                            : <span style={MUTED}>unverified</span>}
+                        </span>
+                      ) : <span style={MUTED}>—</span>}
+                    </TableCell>
+                    <TableCell className="num">{formatCount(t.row_count)}</TableCell>
+                    <TableCell className="num" title={t.primary_timestamp ? `the latest ${t.primary_timestamp}` : undefined}>
+                      {t.date_range?.[1] ? dateWords(t.date_range[1], now) : <span style={MUTED}>no timestamp</span>}
+                    </TableCell>
+                    <TableCell className="num">{t.avgNull == null ? "—" : pct(t.avgNull, 1)}</TableCell>
+                    {profiledApart && (
+                      <TableCell className="num" title={formatTimestamp(t.computed_at)} style={MUTED}>{relTime(t.computed_at)} ago</TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Gate>
+      </Card>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 14, alignItems: "start" }}>
+        <Card label="Status columns" testId="profile-status" right={findings.state === "ready" && statusCols.length > 0 && (
+          <span title={noOrder ? "No transitions were recorded between the values, so no order is claimed" : undefined}>
+            {countNoun(statusCols.length, "column")}{noOrder && " · no order claimed"}
+          </span>
+        )}>
+          <Gate load={findings} what="the explorer's findings" retry={reFindings}>
+            {() => statusCols.length === 0 ? <Empty>No status column mapped yet.</Empty> : statusCols.map(([table, lc], i) => {
+              const { shown, more } = statusValues(lc);
+              const transitions = (lc.transitions ?? []).length;
+              return (
+                <div key={table} style={{ padding: "7px 0", ...(i ? RULE : {}) }}>
+                  <div className="aug-fs-sm" style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                    <span style={{ fontFamily: "var(--font-mono)", color: "var(--t1)", ...ONE_LINE }}>{table}.{lc.status_column}</span>
+                    {!noOrder && (
+                      <span className="aug-fs-xs" style={{ ...MUTED, marginLeft: "auto" }}>
+                        {transitions ? countNoun(transitions, "transition") : "no order claimed"}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ ...ROW, gap: 4, marginTop: 4 }}>
+                    {shown.map((st, k) => (
+                      <span key={`${k}:${st.text}`} className="aug-fs-xs"
+                        title={[st.full, st.terminal ? "terminal" : st.active ? "active" : ""].filter(Boolean).join(" · ")}
+                        style={{ padding: "0 7px", borderRadius: "var(--r1)", border: `1px ${st.terminal ? "dashed" : "solid"} var(--b2)`,
+                          color: st.terminal ? "var(--t3)" : "var(--t2)", maxWidth: 260, ...ONE_LINE }}>
+                        {st.text}
+                      </span>
+                    ))}
+                    {more > 0 && <span className="aug-fs-xs" style={MUTED}>+{formatCount(more)} more</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </Gate>
+        </Card>
+
+        <Card label="What a blank means" testId="profile-blanks"
+          right={findings.state === "ready" && blanks.length > 0 && countNoun(blanks.length, "column")}>
+          <Gate load={findings} what="the explorer's findings" retry={reFindings}>
+            {() => blanks.length === 0 ? <Empty>No column&apos;s blanks are explained yet.</Empty> : blankGroups(blanks).map((g, gi) => (
+              // What a blank means is said once per group, not on every column that shares it.
+              <div key={g.meaning} data-testid={`blanks-${g.meaning}`}>
+                <GroupHead first={gi === 0} count={g.rows.length}
+                  name={g.meaning === "missing" ? <Chip tone="amber">{BLANK.missing}</Chip> : <span>{BLANK[g.meaning] ?? keyToWords(g.meaning)}</span>} />
+                {g.rows.map(([key, nm], i) => {
+                  const [table, column] = key.split(":");
+                  return (
+                    <div key={key} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12, alignItems: "center",
+                      padding: "5px 0", ...(i ? RULE : {}) }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="aug-fs-sm" style={{ fontFamily: "var(--font-mono)", color: "var(--t1)", ...ONE_LINE }}>{table}.{column}</div>
+                        {nm.business_rule && (
+                          <div className="aug-fs-xs" title={nm.business_rule} style={{ ...MUTED, ...ONE_LINE }}>{nm.business_rule}</div>
+                        )}
+                      </div>
+                      <span className="aug-fs-sm" title="null rate" style={{ color: "var(--t2)", ...NUM }}>
+                        {nm.null_rate == null ? "—" : pct(nm.null_rate, 1)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </Gate>
+        </Card>
       </div>
 
-      <aside className="aug-profile-rail" aria-label="Governed metrics and status columns">
-        <div className="aug-profile-rail-head">
-          <span className="aug-brief-eyebrow">Governed metrics</span>
-          <span className="aug-brief-meta">
-            {metrics.state === "ready" ? `${formatCount(governed.length)}${allGlobal ? " · global" : ""}` : ""}
-          </span>
-        </div>
-        <div className="aug-profile-block">
-          {metrics.state === "loading" ? (
-            <SkeletonRows rows={2} />
-          ) : metrics.state === "failed" ? (
-            <p className="aug-brief-note">The metrics could not be read.</p>
-          ) : governed.length === 0 ? (
-            <p className="aug-brief-note">No governed metric applies to this connection.</p>
-          ) : governed.map(m => (
-            <div key={m.name} className="aug-profile-metric"
-              title={(m.connection ?? "*") === "*" ? "Applies to every connection" : undefined}>
-              <div className="aug-profile-metric-head">
-                <span className="aug-profile-metric-name">{m.name}</span>
-                <span className="aug-profile-metric-v">v{m.version ?? 0}</span>
-                <span className="aug-profile-metric-state">{metricState(m.status)}</span>
+      <Card label="Governed metrics" testId="profile-metrics" right={metrics.state === "ready" && governed.length > 0 && <>
+        {formatCount(live.length)}
+        {allGlobal && <Chip title="Each applies to every connection">every connection</Chip>}
+      </>}>
+        <Gate load={metrics} what="the metrics" retry={reMetrics} rows={2}>
+          {() => governed.length === 0 ? <Empty>No governed metric applies to this connection.</Empty> : (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", columnGap: 28 }}>
+                {withUniqueKeys(live, m => m.name).map(([key, m]) => <MetricRow key={key} m={m} />)}
               </div>
-              <span className="aug-profile-formula">{m.sql}</span>
-            </div>
-          ))}
-        </div>
+              {deprecated.length > 0 && (
+                <>
+                  <FoldLine open={showDeprecated} onToggle={() => setShowDeprecated(o => !o)} testId="profile-deprecated">
+                    Deprecated · {formatCount(deprecated.length)}
+                  </FoldLine>
+                  {showDeprecated && (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", columnGap: 28 }}>
+                      {withUniqueKeys(deprecated, m => m.name).map(([key, m]) => <MetricRow key={key} m={m} />)}
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </Gate>
+      </Card>
+    </div>
+  );
+}
 
-        <div className="aug-profile-rail-head">
-          <span className="aug-brief-eyebrow">Status columns</span>
-          <span className="aug-brief-meta">{findings.state === "ready" ? countNoun(statusCols.length, "mapped", "mapped") : ""}</span>
-        </div>
-        <div className="aug-profile-block">
-          {findings.state === "loading" ? (
-            <SkeletonRows rows={3} />
-          ) : findings.state === "failed" ? (
-            <p className="aug-brief-note">The explorer&apos;s findings could not be read.</p>
-          ) : statusCols.length === 0 ? (
-            <p className="aug-brief-note">No status column has been mapped yet.</p>
-          ) : statusCols.map(([table, lc]) => {
-            const terminal = lc.terminal_states ?? [];
-            const active = lc.active_states ?? [];
-            const transitions = lc.transitions ?? [];
-            return (
-              <div key={table} className="aug-profile-lc">
-                <span className="aug-profile-lc-name">{table}.{lc.status_column}</span>
-                <div className="aug-profile-states">
-                  {(lc.states ?? []).map(st => (
-                    <span key={st}
-                      className={`aug-profile-state${terminal.includes(st) ? " aug-profile-state-terminal" : ""}`}
-                      title={terminal.includes(st) ? "terminal" : active.includes(st) ? "active" : undefined}>
-                      {st}
-                    </span>
-                  ))}
-                </div>
-                <span className="aug-profile-lc-note">
-                  {transitions.length > 0
-                    ? `${countNoun(transitions.length, "transition")} observed between these values`
-                    : "no transitions recorded, so no order is claimed"}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </aside>
+/** The business's industry as the page's heading, and whose word it is: held, inferred, or an org setting that wins. */
+function IndustryLine({ inferred, confidence, human }: { inferred: string; confidence: number; human: string }) {
+  const name = human || inferred;
+  if (!name) return null;
+  let chip: ReactNode;
+  if (human) {
+    const corrected = !!inferred && inferred !== human;
+    chip = (
+      <Chip title={corrected ? `Aughor inferred ${inferred}; the org setting wins` : inferred ? "Set in org settings, and the inference agrees" : "Set in org settings"}>
+        {corrected ? "org setting · corrected" : "org setting"}
+      </Chip>
+    );
+  } else {
+    const held = confidence >= HELD;
+    chip = (
+      <Chip tone={held ? "up" : "plain"} title={`Industry inferred at confidence ${confidence.toFixed(2)}; held at ${HELD} and above`}>
+        {held ? "✓ held" : "inferred"} · {pct(confidence)}
+      </Chip>
+    );
+  }
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+      <h2 className="aug-fs-h1" style={{ margin: 0, fontWeight: 600, color: "var(--t1)" }}>{name}</h2>
+      {chip}
+    </div>
+  );
+}
+
+/** A fact an org setting can decide: its value, and whether a person set it — and what Aughor had inferred, when the
+ *  two differ. */
+function SettingFact({ term, inferred, human, inferredTitle }: { term: string; inferred: string; human: string; inferredTitle: string }) {
+  const value = human || inferred;
+  if (!value) return null;
+  const corrected = !!human && !!inferred && human !== inferred;
+  return (
+    <>
+      <dt style={TERM}>{term}</dt>
+      <dd style={{ margin: 0, ...ROW }}>
+        <span style={{ color: "var(--t1)" }}>{value}</span>
+        {human ? (
+          <Chip title={corrected ? `Aughor inferred ${inferred}; the org setting wins` : inferred ? "Set in org settings, and the inference agrees" : "Set in org settings"}>
+            {corrected ? `org setting · inferred ${inferred}` : "org setting"}
+          </Chip>
+        ) : <span className="aug-fs-xs" title={inferredTitle} style={MUTED}>inferred</span>}
+      </dd>
+    </>
+  );
+}
+
+const METRIC_STATE: Record<string, { tone: "plain" | "violet"; title: string }> = {
+  proposed: { tone: "violet", title: "Proposed, not yet approved" },
+  draft: { tone: "plain", title: "A draft — not yet proposed" },
+  deprecated: { tone: "plain", title: "Deprecated — kept for its history" },
+};
+
+/** A governed metric: its name, version and — only when it is not approved — its state; the formula on one line. */
+function MetricRow({ m }: { m: Metric }) {
+  const state = m.status && m.status !== "approved" ? METRIC_STATE[m.status] ?? { tone: "plain" as const, title: m.status } : null;
+  return (
+    <div style={{ padding: "7px 0", ...RULE, minWidth: 0 }}
+      title={(m.connection ?? "*") === "*" ? `${m.name} · applies to every connection` : m.name}>
+      <div className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <span style={{ color: "var(--t1)", fontWeight: 500, ...ONE_LINE }}>{m.label || keyToWords(m.name)}</span>
+        <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>v{m.version ?? 0}</span>
+        {state && <Chip tone={state.tone} title={state.title}>{m.status}</Chip>}
+      </div>
+      <div className="aug-fs-xs" title={m.sql || undefined}
+        style={{ ...MUTED, ...ONE_LINE, fontFamily: m.sql ? "var(--font-mono)" : undefined }}>
+        {m.sql || "no formula recorded"}
+      </div>
     </div>
   );
 }
