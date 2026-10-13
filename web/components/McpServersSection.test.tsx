@@ -63,9 +63,11 @@ const server = (over: Partial<McpServerRow> = {}): McpServerRow => ({
   ...over,
 });
 
-/** A server's own controls open under its card's Manage — one card shape for every integration. */
+/** A server's own controls open under its row's Manage; its roster, with every tool's verdict, under its Details. */
 const openManage = async () =>
   fireEvent.click(within(await screen.findByTestId("mcp-server-s1")).getByRole("button", { name: /^manage$/i }));
+const openDetails = async () =>
+  fireEvent.click(within(await screen.findByTestId("mcp-server-s1")).getByRole("button", { name: /^details/i }));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -215,9 +217,34 @@ describe("signing in", () => {
       const el = await screen.findByTestId(card);
       await waitFor(() => expect(within(el).getByText(/3 tools · 2 callable here/)).toBeInTheDocument());
       expect(within(el).getByText(/connected/)).toBeInTheDocument();
-      expect(within(el).getAllByRole("button").map(b => b.textContent)).toEqual(["Manage"]);
+      // Connected: no Connect left on the row — only its controls and its Details.
+      expect(within(el).getAllByRole("button").map(b => b.textContent?.trim())).toEqual(["Manage", "Details"]);
     }
     expect(api.discoverMcpServer).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a server, one row", () => {
+  // 2026-10-13: the last block on Integrations in the old look — a bordered card per server, "signed in
+  // 2026-10-07 16:00" raw, and its facts cut mid-word. A row says what it reaches in a few words and when it was
+  // signed in as a person reads it; the long description and the roster are behind Details.
+  it("says what it reaches, a humanised sign-in and its tools on one line, the rest behind Details", async () => {
+    api.listMcpServers.mockResolvedValue({ servers: [server({
+      id: "cmp", name: "Composio", transport: "http", url: "https://connect.composio.dev/mcp", command: "", args: [],
+      tool_count: 11, callable_count: 5, tools: [tool({ server_id: "cmp" })],
+      auth_mode: "oauth_authorization_code",
+      oauth: { mode: "oauth_authorization_code", signed_in: true, obtained_at: "2026-09-01T12:00:00Z", refreshable: true } })] });
+    render(<McpServersSection />);
+    const row = await screen.findByTestId("mcp-card-composio");
+    await waitFor(() => expect(row.textContent).toContain(
+      "Gmail, Slack, GitHub, Notion and 500+ more apps · signed in 1 Sep · renews itself · 11 tools · 5 callable here"));
+    expect(row.textContent).not.toMatch(/2026-/);
+    expect(row.textContent).not.toContain("500+ apps behind one sign-in");
+
+    fireEvent.click(within(row).getByRole("button", { name: /^details/i }));
+    const details = within(row).getByTestId("mcp-details");
+    expect(details.textContent).toContain("500+ apps behind one sign-in");
+    expect(within(details).getByText("read_the_weather")).toBeInTheDocument();
   });
 });
 
@@ -231,8 +258,7 @@ describe("the roster", () => {
 
   it("LISTS a refused tool rather than hiding it, with the server's own sentence", async () => {
     render(<McpServersSection />);
-    await openManage();
-    fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
+    await openDetails();
 
     expect(await screen.findByText("unannotated_thing")).toBeInTheDocument();
     expect(screen.getByText(REFUSAL)).toBeInTheDocument();
@@ -240,8 +266,7 @@ describe("the roster", () => {
 
   it("never shows the roster without saying when it was read", async () => {
     render(<McpServersSection />);
-    await openManage();
-    fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
+    await openDetails();
     expect(await screen.findByText(/Read from the server at/)).toBeInTheDocument();
   });
 
@@ -299,9 +324,8 @@ describe("the write slice — a grant is a person's ratification, drawn as one",
       servers: [server({ tools: [tool(), refused()] })],
     });
     render(<McpServersSection />);
-    // The roster lives behind the Tools toggle — the grant controls are ON it.
-    await openManage();
-    fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
+    // The roster lives behind the row's Details — the grant controls are ON it.
+    await openDetails();
     // One Grant button, for the refused row. A read-only tool needs no ratification, and
     // offering one would invite a permission that authorizes nothing.
     expect(await screen.findAllByRole("button", { name: /^grant$/i })).toHaveLength(1);
@@ -316,9 +340,8 @@ describe("the write slice — a grant is a person's ratification, drawn as one",
       })],
     });
     render(<McpServersSection />);
-    // The roster lives behind the Tools toggle — the grant controls are ON it.
-    await openManage();
-    fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
+    // The roster lives behind the row's Details — the grant controls are ON it.
+    await openDetails();
     // The property a reader most needs before putting this on a canvas that runs
     // unattended. A granted row that looked like a read would hide it.
     expect(await screen.findByText("writes")).toBeInTheDocument();
@@ -339,9 +362,8 @@ describe("the write slice — a grant is a person's ratification, drawn as one",
       })],
     });
     render(<McpServersSection />);
-    // The roster lives behind the Tools toggle — the grant controls are ON it.
-    await openManage();
-    fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
+    // The roster lives behind the row's Details — the grant controls are ON it.
+    await openDetails();
     // "Somebody approved this and the server changed it" is a different situation from
     // "nobody has approved this", with a different next action. Flattening them is how a
     // person re-approves a change they never saw.
@@ -355,9 +377,8 @@ describe("the write slice — a grant is a person's ratification, drawn as one",
     api.listMcpServers.mockResolvedValue({ servers: [server({ tools: [refused()] })] });
     api.grantMcpTool.mockResolvedValue({ server: server() });
     render(<McpServersSection />);
-    // The roster lives behind the Tools toggle — the grant controls are ON it.
-    await openManage();
-    fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
+    // The roster lives behind the row's Details — the grant controls are ON it.
+    await openDetails();
     fireEvent.click(await screen.findByRole("button", { name: /^grant$/i }));
     await waitFor(() => expect(api.grantMcpTool).toHaveBeenCalledWith("s1", MUTATING));
     // Re-read, never optimistic: the server pins the declaration and decides the state, so
@@ -370,9 +391,8 @@ describe("the write slice — a grant is a person's ratification, drawn as one",
     api.grantMcpTool.mockRejectedValue(
       new Error("'delete_everything' is not on this server's discovered roster."));
     render(<McpServersSection />);
-    // The roster lives behind the Tools toggle — the grant controls are ON it.
-    await openManage();
-    fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
+    // The roster lives behind the row's Details — the grant controls are ON it.
+    await openDetails();
     fireEvent.click(await screen.findByRole("button", { name: /^grant$/i }));
     expect(await screen.findByText(/not on this server's discovered roster/))
       .toBeInTheDocument();
