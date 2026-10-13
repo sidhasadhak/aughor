@@ -100,3 +100,38 @@ def test_resolver_grounds_the_shipped_pack():
     pack = load_pack(REPO / "packs" / "customer-analytics")
     rep = binding_report(pack.entities, _retail_facts())
     assert rep["fully_groundable"], {k: v.evidence for k, v in rep["proposals"].items()}
+
+
+# LuxExperience's own layout (Postgres `luxexperience`, read over HTTP 2026-10-13) — the tables the retail roles
+# compete over. `ownership` carries the most date columns; order_items has none of its own.
+_LUX = {
+    "order_items": [("order_item_id", "text"), ("order_id", "text"), ("product_id", "text"), ("quantity", "integer"),
+                    ("unit_price_eur", "numeric"), ("cost_eur", "numeric"), ("returned", "boolean")],
+    "orders": [("order_id", "text"), ("customer_id", "text"), ("order_date", "date"), ("gmv_eur", "numeric"),
+               ("status", "text")],
+    "customers": [("customer_id", "text"), ("country", "text"), ("signup_fy", "integer")],
+    "products": [("product_id", "text"), ("brand", "text"), ("retail_price_eur", "numeric")],
+    "ownership": [("platform", "text"), ("parent_entity", "text"), ("effective_from", "date"), ("effective_to", "date")],
+    "web_sessions": [("session_id", "text"), ("customer_id", "text"), ("session_start", "text"),
+                     ("converted", "boolean"), ("order_id", "text")],
+    "returns": [("return_id", "text"), ("order_item_id", "text"), ("order_id", "text"), ("return_date", "date")],
+}
+
+
+def test_retail_on_luxexperience_proposes_what_is_named_for_each_role_and_never_a_dated_guess():
+    """2026-10-13: the retail pack's customer and product are kinds `party` and `catalog`, which the resolver had no
+    rule for, so no entity resolved; each event then fell to the table with the most date columns — `ownership`, for
+    both order_item and cart — and the Bind dialog pre-picked it."""
+    from aughor.packs.adapter import schema_facts_from_table_cols
+    facts = schema_facts_from_table_cols({t: [c for c, _ in cols] for t, cols in _LUX.items()},
+                                         col_types={t: dict(cols) for t, cols in _LUX.items()})
+    props = propose_bindings(load_pack(REPO / "packs" / "retail").entities, facts)
+    assert (props["customer"].table, props["customer"].column) == ("customers", "customer_id")
+    assert (props["product"].table, props["product"].column) == ("products", "product_id")
+    # order_item: the table named for it, though it has no date of its own — said, not hidden
+    assert props["order_item"].table == "order_items" and props["order_item"].column is None
+    assert "no date or time column" in props["order_item"].evidence
+    # cart: no table is named for it, and the pack does not declare it is about the customer — so nothing is proposed
+    assert props["cart"].bound is False and props["cart"].table is None
+    assert "no table is named for cart" in props["cart"].evidence
+    assert all(p.table != "ownership" for p in props.values())
