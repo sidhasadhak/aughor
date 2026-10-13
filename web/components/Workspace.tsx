@@ -38,11 +38,12 @@ type WorkspaceProps<L extends string> = {
   /** AO-4 — a "?" at the end of the tab row that explains the active layer; rendered only
    *  when given, so a workspace without help text shows no control that does nothing. */
   help?: (layer: L) => void;
-  /** Drop the layer-tab row. For the ONE workspace whose layers each already have
-   *  their own item in the left rail (Data: Catalog / SQL Editor / Semantic Layer), the
-   *  tabs are a second copy of a control the rail already provides. The other
-   *  workspaces fold several rail items into fewer layers, or none at all, so their
-   *  switcher is the only way to reach a layer and the tabs stay. */
+  /** Drop the layer-tab row. For a workspace whose layers each already have their own
+   *  item in the left rail (Data: Catalog / SQL Editor / Semantic Layer; Operations:
+   *  Monitors / Notifications / Integrations / Spend / Security & Audit), the tabs are a
+   *  second copy of a control the rail already provides. The other workspaces fold
+   *  several rail items into fewer layers, or none at all, so their switcher is the only
+   *  way to reach a layer and the tabs stay. */
   hideTabs?: boolean;
 };
 

@@ -87,6 +87,9 @@ export function OperationsWorkspace({ connId, workspaceId, layer, onLayerChange,
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Operations views"
+      // Monitors, Notifications, Integrations, Spend and Security & Audit are each their own rail item: the switcher
+      // row repeated the rail. The rail is the switcher, as on Data.
+      hideTabs
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {
         if (id === "monitors")    return <MonitorsPanel connId={connId} workspaceId={workspaceId} />;
