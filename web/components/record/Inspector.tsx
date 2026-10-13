@@ -23,7 +23,7 @@ import {
   type Claim, type DecisionDetail, type InquiryDetail, type MissionDetail,
 } from "@/lib/record";
 import {
-  Absent, Counted, Gate, StatusMark, TierMark, day, dayDistance, useLoad,
+  Absent, Counted, Gate, StatusMark, TierMark, day, dayDistance, useActor, useLoad,
 } from "@/components/record/kit";
 import { Beside, Box, Part, Title, useEscape } from "@/components/record/beside";
 import { reviewState } from "@/components/decisions/DecisionsPanel";
@@ -149,6 +149,7 @@ const REVIEW_WORDS: Record<string, string> = { reviewed: "reviewed", due: "revie
 
 function DecisionView({ id, onInspect }: { id: string; onInspect: Inspect }) {
   const load = useLoad(() => getDecision(id), [id]);
+  const me = useActor().name;
   return (
     <Gate load={load} what="the decision">
       {(d: DecisionDetail) => {
@@ -166,7 +167,7 @@ function DecisionView({ id, onInspect }: { id: string; onInspect: Inspect }) {
               </Box>
             )}
             <Part label="What was chosen">
-              <Box chosen foot={<span>decided {day(d.decided_at)} by {whoLabel(d.decided_by)}</span>}>{d.chosen}</Box>
+              <Box chosen foot={<span>decided {day(d.decided_at)} by {whoLabel(d.decided_by, me)}</span>}>{d.chosen}</Box>
               {others.map(o => <Box key={o.id} foot={<span>not taken</span>}>{o.description}</Box>)}
             </Part>
             <Part label="What it relied on">

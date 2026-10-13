@@ -15,6 +15,8 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { formatTimestamp } from "@/lib/format";
+
 export const RANGE_KEYS = ["1h", "6h", "24h", "7d", "30d"] as const;
 export type RangeKey = (typeof RANGE_KEYS)[number];
 
@@ -39,9 +41,14 @@ export function rangeParams(r: TimeRange): { range?: string; since?: string; unt
   return { range: r.key };
 }
 
-/** What the header should say this window is. */
+/** What the header should say this range is: a named one in words ("last 24 hours"); a brushed one as its two ends,
+ *  "Oct 12, 02:00 PM – 03:00 PM", the day said again only when the end falls on another. */
 export function rangeLabel(r: TimeRange): string {
-  if (r.since && r.until) return "custom window";
+  if (r.since && r.until) {
+    const from = formatTimestamp(r.since, "short"), to = formatTimestamp(r.until, "short");
+    const [fromDay] = from.split(", "), [toDay, toTime] = to.split(", ");
+    return `${from} – ${toTime && toDay === fromDay ? toTime : to}`;
+  }
   return RANGE_LABELS[r.key].toLowerCase();
 }
 

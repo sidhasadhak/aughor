@@ -11,7 +11,7 @@ import { Theme } from "@radix-ui/themes";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogueMetric, Metric } from "@/lib/api";
 
@@ -22,6 +22,7 @@ const getMetricAudit = vi.fn();
 const requestTab = vi.fn();
 const getMetricProposals = vi.fn();
 const bindPack = vi.fn();
+const getMyAccess = vi.fn(async () => ({ actor: "ana@example.com", signed_in: false }));
 const RETAIL = {
   manifest: { name: "Retail and e-commerce" },
   entities: {
@@ -45,7 +46,7 @@ vi.mock("@/lib/api", () => ({
   getMetricCatalogue: (...a: unknown[]) => getMetricCatalogue(...a),
   getDefinitionReport: (...a: unknown[]) => getDefinitionReport(...a),
   getMetricAudit: (...a: unknown[]) => getMetricAudit(...a),
-  getMyAccess: vi.fn(async () => ({ actor: "ana@example.com", signed_in: false })),
+  getMyAccess: () => getMyAccess(),
   getMetricProposals: (...a: unknown[]) => getMetricProposals(...a),
   getPackDetail: vi.fn(async () => RETAIL),
   getPackBinding: vi.fn(async () => null),
@@ -66,6 +67,7 @@ vi.mock("@/lib/navigate", () => ({ requestTab: (...a: unknown[]) => requestTab(.
 
 import { MetricsPanel } from "@/components/MetricsPanel";
 import { choose, optionsOf } from "@/lib/testing";
+import { forgetMe } from "@/lib/useMe";
 
 /** The app draws every screen inside a Radix Theme; the detail's tabs and Tools menu need one. */
 const view = (ui: ReactElement) => render(<Theme>{ui}</Theme>);
@@ -206,6 +208,23 @@ describe("Needs you", () => {
     const needs = await screen.findByTestId("metrics-needs");
     expect(needs).toHaveAttribute("data-waiting", "false");
     expect(needs).toHaveTextContent("Nothing needs you");
+  });
+});
+
+describe("who proposed it", () => {
+  afterEach(() => forgetMe());
+
+  it("is 'you' when the reader proposed it — on the Needs-you row and on its approval", async () => {
+    forgetMe();
+    getMyAccess.mockResolvedValueOnce({ actor: "ana", signed_in: false });
+    const user = userEvent.setup();
+    view(<MetricsPanel connId="c1" />);
+    const review = await screen.findByTestId("needs-review");
+    await waitFor(() => expect(review).toHaveTextContent("proposed by you"));
+    await user.click(within(review).getByRole("button", { name: "Review" }));
+    const governance = await screen.findByTestId("metric-governance");
+    expect(governance).toHaveTextContent("proposed by you");
+    expect(governance).not.toHaveTextContent("by ana");
   });
 });
 

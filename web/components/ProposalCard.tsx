@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/button";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { acceptProposal, getProposalById, rejectProposal, type StagedProposal } from "@/lib/api";
 import { formatCount, relTime, zonedTimeWords } from "@/lib/format";
+import { byWho } from "@/lib/names";
+import { useMe } from "@/lib/useMe";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -357,6 +359,7 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
   accountLabel?: (grantId: string) => string;
 }) {
   const p = proposal;
+  const me = useMe();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [mint, setMint] = useState(false);
@@ -416,7 +419,7 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
           </span>
         )}
         <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
-          by {p.proposer} · waiting {relTime(p.created_at)}
+          by {byWho(p.proposer, me?.actor)} · waiting {relTime(p.created_at)}
         </span>
         <span className="flex-1" />
         {inboxHref && (

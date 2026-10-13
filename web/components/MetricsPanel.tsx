@@ -65,6 +65,7 @@ import {
 import { withUniqueKeys } from "@/lib/listKeys";
 import { BindRolesDialog } from "@/components/semantic/BindRoles";
 import { useMe } from "@/lib/useMe";
+import { byWho } from "@/lib/names";
 
 const GRAINS = ["day", "week", "month", "quarter", "year"] as const;
 
@@ -475,7 +476,7 @@ function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: (
     <div style={STACK} data-testid="metric-governance">
       <div style={ROW}>
         <Chip tone={STATUS_TONE[status] ?? "plain"}>{status}{metric.version ? ` v${metric.version}` : ""}</Chip>
-        {by && <span className="aug-fs-sm" style={MUTED}>{status} by {by}{at ? ` · ${dayWords(at)}` : ""}</span>}
+        {by && <span className="aug-fs-sm" style={MUTED}>{status} by {byWho(by, me?.actor)}{at ? ` · ${dayWords(at)}` : ""}</span>}
       </div>
       {/* A3 — above the buttons on purpose. A report placed after the control that acts on it is read after the
           decision, which is the same as not being read. */}
@@ -614,6 +615,7 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
   /** The connection's datasets — what a definition can belong to. */
   datasets?: string[];
 }) {
+  const me = useMe();
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   /** The dataset of the definition being edited — with `selected`, its identity. */
@@ -1129,7 +1131,7 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
                 <Chip tone={STATUS_TONE[status] ?? "plain"}>{status}{sm.version ? ` v${sm.version}` : ""}</Chip>
                 {status === "approved" && sm.approved_by && (
                   <span className="aug-fs-sm" style={MUTED} title={sm.approved_at ? formatTimestamp(sm.approved_at) : undefined}>
-                    approved by {sm.approved_by}{sm.approved_at ? ` · ${dayWords(sm.approved_at)}` : ""}
+                    approved by {byWho(sm.approved_by, me?.actor)}{sm.approved_at ? ` · ${dayWords(sm.approved_at)}` : ""}
                   </span>
                 )}
                 <Chip title="Its id — what SQL, agents and the API call it">
@@ -1367,6 +1369,7 @@ function NeedsGroup({ need, onOpen, onBind }: {
   /** Bind a package's roles, in place — the package and the metrics of this group that read it. */
   onBind?: (packId: string, rows: Placed[]) => void;
 }) {
+  const me = useMe();
   const n = need.items.length;
   const one = n === 1 ? need.items[0] : null;
   const name = (p: Placed) => p.row.label || p.row.name;
@@ -1386,7 +1389,7 @@ function NeedsGroup({ need, onOpen, onBind }: {
       const at = one?.stored?.proposed_at;
       title = one ? `${name(one)} is waiting for review` : `${formatCount(n)} metrics are waiting for review`;
       detail = one
-        ? `proposed${one.stored?.proposed_by ? ` by ${one.stored.proposed_by}` : ""}${at ? ` · ${dayWords(at)}` : ""} — approve or reject it`
+        ? `proposed${one.stored?.proposed_by ? ` by ${byWho(one.stored.proposed_by, me?.actor)}` : ""}${at ? ` · ${dayWords(at)}` : ""} — approve or reject it`
         : "proposed, not yet approved — approve or reject each";
       actions = one
         ? <Button size="xs" variant="secondary" onClick={() => onOpen(one, "approval")}>Review</Button>

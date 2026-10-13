@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getQueryHistory, type AuditRecord } from "@/lib/api";
 import { formatCount, relTime } from "@/lib/format";
-import { runMark, runMeta } from "@/lib/query/workbench";
+import { runMark, runMeta, unwrapRunSql } from "@/lib/query/workbench";
 import { Chip, Empty, Label, NUM } from "@/components/clarity/kit";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -90,11 +90,13 @@ export function HistoryRail({
         )}
         {rows.map(r => {
           const mark = runMark(r);
+          // The statement the person wrote — the audit row holds what ran, the row cap's `__q` wrapper included.
+          const sql = unwrapRunSql(r.sql_full || r.sql_digest);
           return (
             <Button
               key={r.id}
               variant="ghost"
-              onClick={() => onRestore(r.sql_full || r.sql_digest)}
+              onClick={() => onRestore(sql)}
               title="Open this query in a new tab"
               className="mb-0.5 block h-auto w-full whitespace-normal px-2 py-1.5 text-left font-normal"
             >
@@ -106,7 +108,7 @@ export function HistoryRail({
                   whiteSpace: "nowrap",
                 }}
               >
-                {preview(r.sql_full || r.sql_digest)}
+                {preview(sql)}
               </span>
               <span className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--t3)",
                 marginTop: 2, ...NUM }}>

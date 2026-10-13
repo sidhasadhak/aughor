@@ -29,6 +29,13 @@ export function keyToWords(key: string): string {
   return key.replace(/^_+|_+$/g, "").replace(/[_-]+/g, " ").trim();
 }
 
+/** Who did something, as the reader reads it: "you" when it was the reader — `me` is the name the server records them
+ *  under (`useMe().actor`) — else the name as given. A ledger's `user:` / `person:` prefix does not stop the match. */
+export function byWho(who: string | null | undefined, me: string | null | undefined): string {
+  const w = (who ?? "").trim(), mine = (me ?? "").trim();
+  return mine && w.replace(/^(?:user|person):/, "") === mine ? "you" : w;
+}
+
 /** Who a SQL caller was, for an audit trail: the agent's roster name and what it was doing.
  *  Known callers are named; an unknown dunder still reads as words rather than as a key. */
 export function callerLabel(key: string): { agent: string; detail?: string } {

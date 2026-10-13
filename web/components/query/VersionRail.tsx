@@ -28,7 +28,7 @@ import {
 } from "@/lib/api";
 import { Loading } from "@/components/ui/states";
 import { Empty, Label } from "@/components/clarity/kit";
-import { formatCount } from "@/lib/format";
+import { formatCount, formatTimestamp, relTime } from "@/lib/format";
 
 export function VersionRail({
   queryId,
@@ -149,8 +149,9 @@ export function VersionRail({
           >
             <span style={{ color: "var(--t1)" }}>v{v.version}</span>
             {i === 0 && <span className="aug-fs-ui" style={{ color: "var(--t3)" }}>current</span>}
-            <span className="aug-fs-ui" style={{ color: "var(--t3)", marginLeft: "auto" }}>
-              {v.created_at ? v.created_at.slice(0, 16).replace("T", " ") : ""}
+            <span className="aug-fs-ui" style={{ color: "var(--t3)", marginLeft: "auto" }}
+              title={v.created_at ? formatTimestamp(v.created_at) : undefined}>
+              {v.created_at ? `${relTime(v.created_at)} ago` : ""}
             </span>
           </button>
         ))}
