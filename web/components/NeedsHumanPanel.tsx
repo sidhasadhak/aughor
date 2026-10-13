@@ -50,6 +50,15 @@ const SOURCE_CHIP: Record<NeedsHumanRow["source"], ChipSpec> = {
   automation_broken: { hue: "negative", label: "broken" },
 };
 
+/** A source by the words its count says beside it, for naming one that could not be read. */
+const SOURCE_WORDS: Record<keyof NeedsHuman["sources"], string> = {
+  kinetic_inbox: "inbox proposals",
+  paused_runs: "paused deep runs",
+  automation_approvals: "automation approvals",
+  agent_alerts: "agent alerts",
+  broken_automations: "broken automations",
+};
+
 /** An alert's own severity outranks the source chip: three rows can wait the same
  *  number of minutes and not be equally urgent. */
 function chipFor(row: NeedsHumanRow): ChipSpec {
@@ -124,6 +133,9 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
   // turn this into "the age of whichever row happens to be first".
   const oldest = data.rows.length
     ? Math.max(...data.rows.map(r => r.waiting_ms ?? 0)) : null;
+  // A source whose read failed is not empty: its count is "—" and it is named, never folded into "nothing waits".
+  const unread = data.unread ?? [];
+  const n = (key: keyof NeedsHuman["sources"]) => (unread.includes(key) ? "—" : data.sources[key] ?? 0);
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
@@ -138,14 +150,14 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
       <MiniStatRow>
         <MiniStat value={data.count} label="Waiting on a human"
           tone={data.count > 0 ? "var(--amb4)" : "var(--t1)"} />
-        <MiniStat value={data.sources.kinetic_inbox} label="Inbox proposals" />
-        <MiniStat value={data.sources.paused_runs} label="Paused deep runs" />
-        <MiniStat value={data.sources.automation_approvals} label="Automation approvals" />
+        <MiniStat value={n("kinetic_inbox")} label="Inbox proposals" />
+        <MiniStat value={n("paused_runs")} label="Paused deep runs" />
+        <MiniStat value={n("automation_approvals")} label="Automation approvals" />
         {/* `?? 0` because this source is newer than the panel: an API that predates
             VA-6 omits the key, and rendering `undefined` where a count belongs is a
             worse answer than zero. */}
-        <MiniStat value={data.sources.agent_alerts ?? 0} label="Agent alerts" />
-        <MiniStat value={data.sources.broken_automations ?? 0} label="Broken automations"
+        <MiniStat value={n("agent_alerts")} label="Agent alerts" />
+        <MiniStat value={n("broken_automations")} label="Broken automations"
           tone={(data.sources.broken_automations ?? 0) > 0 ? "var(--red4)" : undefined} />
         {/* The leading indicator. A count says how many are waiting; the OLDEST says
             whether anything has been abandoned — three items waiting a minute and three
@@ -155,10 +167,17 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
           tone={oldest != null && oldest > 3_600_000 ? "var(--red4)" : undefined} />
       </MiniStatRow>
 
+      {unread.length > 0 && (
+        <div role="alert" data-testid="needs-unread" className="aug-fs-sm" style={{ color: "var(--amb4)", marginBottom: 12 }}>
+          {`Could not read ${unread.map(k => SOURCE_WORDS[k]).join(", ")} — anything waiting there is not shown.`}
+        </div>
+      )}
+
       {data.rows.length === 0 ? (
         <div style={{ padding: 32, textAlign: "center", color: "var(--t3)", fontSize: 12,
           background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
-          Nothing needs a human. Every source is empty right now.
+          {unread.length > 0 ? "Nothing waits in the sources that could be read."
+            : "Nothing needs a human. Every source is empty right now."}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

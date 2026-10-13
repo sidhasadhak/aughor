@@ -10367,6 +10367,8 @@ export interface NeedsHuman {
     broken_automations?: number;
   };
   rows: NeedsHumanRow[];
+  /** The sources whose read failed, by their `sources` key — their count is not a zero. Optional: older APIs omit it. */
+  unread?: (keyof NeedsHuman["sources"])[];
 }
 
 export async function getNeedsHuman(limit = 100): Promise<NeedsHuman> {

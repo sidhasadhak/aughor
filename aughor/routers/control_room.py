@@ -430,6 +430,9 @@ def needs_human(limit: int = 100):
 
     now = datetime.now(timezone.utc)
     rows: list[dict] = []
+    # The sources whose read FAILED, by their `sources` key. A failed read counted 0, so "Every source is empty" was
+    # said over a source nobody read (the user's defect list, 2026-10-13): withheld is said, never implied.
+    unread: list[str] = []
 
     def _waiting_ms(since: Any) -> Optional[int]:
         ts = _parse_ts(since)
@@ -475,6 +478,7 @@ def needs_human(limit: int = 100):
                     parked_proposals.add(pid)
     except Exception:
         logger.warning("needs-human: parked-run read failed", exc_info=True)
+        unread.append("automation_approvals")
 
     try:
         for p in list_proposals(status="pending", limit=limit):
@@ -493,6 +497,7 @@ def needs_human(limit: int = 100):
             })
     except Exception:
         logger.warning("needs-human: inbox read failed", exc_info=True)
+        unread.append("kinetic_inbox")
 
     # Source B — deep runs paused at a gate, resumable via feedback.
     # `investigations` has no paused_at column; the honest timestamp is the
@@ -522,6 +527,7 @@ def needs_human(limit: int = 100):
             })
     except Exception:
         logger.warning("needs-human: paused-run read failed", exc_info=True)
+        unread.append("paused_runs")
 
     # Source C — automation runs PARKED on an approval (DS-8).
     #
@@ -559,6 +565,7 @@ def needs_human(limit: int = 100):
                 })
     except Exception:
         logger.warning("needs-human: parked-run row build failed", exc_info=True)
+        unread.append("automation_approvals")
 
     # Source D — agent alerts nobody has acknowledged (VA-6). A fired alert IS a thing
     # waiting on a person, and acknowledging it is the resolve action, so it belongs in the
@@ -582,6 +589,7 @@ def needs_human(limit: int = 100):
             })
     except Exception:
         logger.warning("needs-human: agent-alert read failed", exc_info=True)
+        unread.append("agent_alerts")
 
     # Source E — automations whose effects cannot dispatch at all. An effect pointing at
     # something that does not exist (a deleted Action Hub trigger, a removed subscription)
@@ -634,6 +642,7 @@ def needs_human(limit: int = 100):
             })
     except Exception:
         logger.warning("needs-human: broken-automation read failed", exc_info=True)
+        unread.append("broken_automations")
 
     rows.sort(key=lambda r: r.get("waiting_ms") or 0, reverse=True)
     return {
@@ -644,4 +653,5 @@ def needs_human(limit: int = 100):
                     "agent_alerts": alert_count,
                     "broken_automations": broken_count},
         "rows": rows[: max(1, int(limit))],
+        "unread": list(dict.fromkeys(unread)),
     }

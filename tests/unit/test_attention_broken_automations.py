@@ -145,3 +145,19 @@ def test_a_fire_that_recovered_still_clears_it(client):
     rows = [r for r in _attention(client)["rows"]
             if r["resolve"].get("automation_id") == "auto-fixed"]
     assert rows == []
+
+
+def test_a_source_that_could_not_be_read_is_named_never_counted_as_empty(client, monkeypatch):
+    """A failed read counted 0, so Attention said "Nothing needs a human. Every source is empty right now" over a source
+    nobody had read (the user's defect list, 2026-10-13). It is named instead; the sources that did read still count."""
+    import aughor.obs.agent_alert_store as alerts
+
+    def unreadable(**_):
+        raise RuntimeError("database is locked")
+    monkeypatch.setattr(alerts, "list_events", unreadable)
+    body = _attention(client)
+    assert body["unread"] == ["agent_alerts"]
+    assert body["count"] == sum(body["sources"].values())
+    assert _attention(client)["unread"] == ["agent_alerts"]
+    monkeypatch.undo()
+    assert _attention(client)["unread"] == []
