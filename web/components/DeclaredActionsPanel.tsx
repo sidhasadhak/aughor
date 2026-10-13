@@ -37,8 +37,9 @@ import { claimsOf, getIdToken } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { countNoun, formatCount, formatTimestamp, relTime } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
-import { keyToWords } from "@/lib/names";
+import { byWho, keyToWords } from "@/lib/names";
 import { dismissSend, getSends, retrySend, type ActionSend } from "@/lib/objects";
+import { useMe } from "@/lib/useMe";
 
 // ── Reading ──────────────────────────────────────────────────────────────────────
 
@@ -497,7 +498,8 @@ function EditLayer({ connectionId, read, nameOf }: { connectionId: string; read:
   const list = read.data;
   const groups = useMemo(() => groupEdits(list ?? []), [list]);
   // Said once: one person behind every edit is named in the label, not on each line.
-  const who = (e: LayerEdit) => e.actor || e.source || "";
+  const me = useMe();
+  const who = (e: LayerEdit) => byWho(e.actor || e.source || "", me?.actor);
   const people = [...new Set((list ?? []).map(who).filter(Boolean))];
   const shared = people.length === 1 ? people[0] : "";
 
