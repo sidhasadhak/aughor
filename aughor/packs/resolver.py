@@ -111,28 +111,46 @@ def _resolve_entity(facts: SchemaFacts, role_name: str = "") -> BindingCandidate
     )
 
 
-def _resolve_event(facts: SchemaFacts, entity_table: Optional[str]) -> BindingCandidate:
-    """The event is a dated fact that references the entity — proof a party was 'active'."""
+def _carries_name(role_name: str, table_name: str) -> bool:
+    """Whether a table is NAMED for the role — `order_item` → order_items, `cart` → carts. One way only: `orders`
+    does not carry `order_item`, because an order is not one of its lines (`_name_affinity` would match it)."""
+    rn = (role_name or "").lower().rstrip("s")
+    return len(rn) >= 3 and rn in table_name.split(".")[-1].lower()
+
+
+def _resolve_event(facts: SchemaFacts, entity_table: Optional[str], role_name: str = "",
+                   about_entity: bool = True) -> BindingCandidate:
+    """The event is the table named for the role, else — when the pack declares the event is ABOUT the entity
+    (`expects.references`) — a dated fact that references it, proof a party was 'active'. Nothing else is proposed: a
+    dated table that neither carries the role's name nor is declared to reference the entity is a guess, and it was
+    one (2026-10-13: on LuxExperience, `ownership` — the table with the most date columns — was proposed for both
+    order_item and cart, and the Bind dialog pre-picked it; a cart is not "any dated table about a customer" either)."""
     best: Optional[TableFact] = None
     best_score = -1.0
     for t in facts.tables:
-        if not t.date_columns():
+        named = _carries_name(role_name, t.name)
+        refs_entity = (entity_table in t.references.values()) if entity_table and about_entity else False
+        if not named and not (refs_entity and t.date_columns()):
             continue
-        refs_entity = entity_table in t.references.values() if entity_table else False
-        score = (5 if refs_entity else 0) + min(t.row_count, 1) + len(t.date_columns()) * 0.1
+        score = (50 if named else 0) + (5 if refs_entity else 0) + min(t.row_count, 1) + len(t.date_columns()) * 0.1
         if t.name == entity_table:
             score -= 3                    # the entity table itself is rarely the event fact
         if score > best_score:
             best, best_score = t, score
     if best is None:
-        return BindingCandidate(role="", evidence="no dated fact table found")
-    refs_entity = entity_table in best.references.values() if entity_table else False
-    datecol = best.date_columns()[0].name
-    conf = (0.8 if refs_entity else 0.4)
+        return BindingCandidate(role="", evidence=(
+            f"no table is named for {role_name or 'the role'}"
+            + (f" and no dated table references {entity_table}" if entity_table and about_entity else "")
+            + " — choose its table, or this warehouse may not hold it"))
+    named = _carries_name(role_name, best.name)
+    refs_entity = (entity_table in best.references.values()) if entity_table and about_entity else False
+    dates = best.date_columns()
+    conf = 0.8 if refs_entity and dates else 0.6 if named and dates else 0.5
     return BindingCandidate(
-        role="", table=best.name, column=datecol, confidence=conf,
-        evidence=(f"{best.name} is a dated fact"
-                  + (f" referencing {entity_table}" if refs_entity else " (no FK to the entity — verify)")),
+        role="", table=best.name, column=dates[0].name if dates else None, confidence=conf,
+        evidence=(f"{best.name} is " + ("named for the role" if named else "a dated fact")
+                  + (f", referencing {entity_table}" if refs_entity else "")
+                  + ("" if dates else " — it has no date or time column of its own")),
         bound=True,
     )
 
@@ -172,6 +190,10 @@ def _resolve_value_role(spec: RoleSpec, facts: SchemaFacts) -> BindingCandidate:
     return BindingCandidate(role="", value=choice, confidence=0.6, evidence=evidence, bound=True)
 
 
+#: Role kinds resolved as an entity: an identity table, referenced by the facts about it.
+ENTITY_KINDS = ("entity", "party", "catalog")
+
+
 def propose_bindings(entities: dict[str, RoleSpec], facts: SchemaFacts) -> dict[str, BindingCandidate]:
     """Propose a concrete binding for every declared role against `facts`. Resolved in
     dependency order (entity → event → date anchor) so later roles can lean on earlier ones.
@@ -182,10 +204,10 @@ def propose_bindings(entities: dict[str, RoleSpec], facts: SchemaFacts) -> dict[
     def kind(spec: RoleSpec) -> str:
         return str((spec.expects or {}).get("kind", "")).lower()
 
-    # 1) entity roles
+    # 1) entity roles — a pack may name the kind of thing it is: a party (customer) or a catalog item (product)
     entity_table = None
     for name, spec in entities.items():
-        if kind(spec) == "entity":
+        if kind(spec) in ENTITY_KINDS:
             cand = _resolve_entity(facts, role_name=name)
             cand.role = name
             out[name] = cand
@@ -196,7 +218,8 @@ def propose_bindings(entities: dict[str, RoleSpec], facts: SchemaFacts) -> dict[
     event_cand = BindingCandidate(role="")
     for name, spec in entities.items():
         if kind(spec) == "event":
-            cand = _resolve_event(facts, entity_table)
+            cand = _resolve_event(facts, entity_table, role_name=name,
+                                  about_entity=bool((spec.expects or {}).get("references")))
             cand.role = name
             out[name] = cand
             if cand.bound:

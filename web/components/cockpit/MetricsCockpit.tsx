@@ -9,12 +9,15 @@
  * It belongs to the connection, not to the person, so it is not in "Your cockpits" and cannot be
  * arranged or retired. A person's own cockpits sit beside it, as before.
  */
-import { RangeMeasuresExpected, type RangeChoice } from "@/components/brief/BriefRange";
+import type { RangeChoice } from "@/components/brief/BriefRange";
+import { Chip, MUTED } from "@/components/clarity/kit";
+import { MetricsFigures } from "@/components/cockpit/MetricsFigures";
 import { PeriodPicker, choiceName } from "@/components/cockpit/PeriodPicker";
 import { Absent, Gate, useLoad } from "@/components/record/kit";
 import { Loading } from "@/components/ui/states";
 import { measureRange, type BriefingRange, type BriefingRangeBlock, type CockpitRange } from "@/lib/api";
-import { formatDateTime } from "@/lib/format";
+import { periodShort } from "@/lib/cockpit/figures";
+import { formatDateTime, relTime } from "@/lib/format";
 
 /** The strip's id for it. No cockpit a person keeps can carry it. */
 export const METRICS_COCKPIT = "::metrics";
@@ -57,17 +60,37 @@ export function MetricsCockpit({ connectionId, schema, rangesOn, value, onChange
       </div>
     );
   }
+  const block = !reading && load.data ? load.data.period : null;
   return (
     <div data-testid="metrics-cockpit">
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+      {/* The bar (the mockup's): the period, what it is against, how far behind the data is read, when it was measured. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
         <PeriodPicker value={value} onChange={onChange} reading={reading}
           showing={load.data && !reading ? showing(load.data.period) : null} />
-        {!reading && load.data && (
-          <span className="aug-fs-sm" data-testid="metrics-measured-at" style={{ marginLeft: "auto", color: "var(--t3)" }}>
-            {load.data.from_briefing ? "As the Briefing measured it" : "Measured"} {formatDateTime(load.data.measured_at)}
+        {block && (
+          <span data-testid="metrics-period" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <Chip title={`Measured for ${block.covers}`}>{periodShort(block.start, block.end, block.period) || block.covers}</Chip>
+            <Chip title={`Against ${block.compared_with}`}>
+              {`vs ${periodShort(block.previous_start, block.previous_end, block.period) || block.compared_with}`}
+            </Chip>
+            {block.lag_days > 1 && (
+              <Chip tone="amber" testId="metrics-lag" title={block.lag_source === "beyond_horizon"
+                ? `${block.still_moving.join(", ") || "A table"} ${block.still_moving.length > 1 ? "were" : "was"} still changing ${block.lag_days - 1} days after a day ended, so recent figures may still move`
+                : "Newer days are still settling"}>
+                {`data ${block.lag_days} days behind`}
+              </Chip>
+            )}
+            <span className="aug-fs-sm" data-testid="metrics-measured-at" style={MUTED} title={formatDateTime(load.data!.measured_at)}>
+              {load.data!.from_briefing ? "as the Briefing measured it" : "measured"}{" "}
+              {!load.data!.measured_at ? "" : Date.now() - Date.parse(load.data!.measured_at) < 60_000 ? "just now"
+                : `${relTime(load.data!.measured_at)} ago`}
+            </span>
           </span>
         )}
       </div>
+      {block?.edge_note && (
+        <div className="aug-fs-sm" data-testid="metrics-edge-note" style={{ color: "var(--t2)", margin: "-6px 0 12px" }}>{block.edge_note}</div>
+      )}
       {reading && load.data !== null && (
         <Loading what={`the metrics for ${choiceName(value)}`} style={{ padding: "12px 0" }} />
       )}
@@ -78,7 +101,7 @@ export function MetricsCockpit({ connectionId, schema, rangesOn, value, onChange
           style={{ opacity: reading ? 0.45 : 1, transition: "opacity 120ms ease-out", pointerEvents: reading ? "none" : undefined }}>
           <Gate load={load} what={`the metrics for ${choiceName(value)}`}>
             {d => (d && (d.period.measured.length > 0 || d.period.unmeasured.length > 0)
-              ? <RangeMeasuresExpected connectionId={connectionId} schema={schema} block={d.period} />
+              ? <MetricsFigures connectionId={connectionId} schema={schema} block={d.period} />
               : <Absent>No approved metric is on this connection yet. Approve one in the Semantic Layer and it is measured here.</Absent>)}
           </Gate>
         </div>

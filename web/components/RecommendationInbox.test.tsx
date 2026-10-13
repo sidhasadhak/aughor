@@ -18,7 +18,8 @@ const SCHEDULED = "[Scheduled-run context — written by code, not inferred]\nTh
 
 let list: unknown;
 let details: Record<string, unknown>;
-let outcomes: Record<string, unknown[]>;
+/** An Error in place of a list: that analysis's outcomes read is refused. */
+let outcomes: Record<string, unknown[] | Error>;
 const posted: { url: string; body: unknown }[] = [];
 
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -34,7 +35,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   }
   if (p === RUNS) return list instanceof Error ? json({ detail: "down" }, 503) : json(list);
   const m = p.match(/^\/[a-z]+\/([^/]+)(\/outcomes)?$/);
-  if (m && m[2]) return json(outcomes[m[1]] ?? []);
+  if (m && m[2]) return outcomes[m[1]] instanceof Error ? json({ detail: "down" }, 500) : json(outcomes[m[1]] ?? []);
   if (m) return m[1] in details ? json(details[m[1]]) : json({ detail: "gone" }, 500);
   return json({});
 }) as typeof fetch;
@@ -88,6 +89,14 @@ describe("the Inbox", () => {
   it("says an analysis it could not read, instead of skipping it", async () => {
     mount();
     expect(await screen.findByText("1 deep analysis could not be read")).toBeInTheDocument();
+  });
+
+  it("counts an analysis whose outcomes could not be read as unread, never its recommendations as open", async () => {
+    outcomes.b = new Error("down");
+    mount();
+    expect(await screen.findByText("2 deep analyses could not be read")).toBeInTheDocument();
+    expect(screen.getByTestId("inbox-fig-open-value")).toHaveTextContent("2");
+    expect(screen.queryByText("Re-check the delivery promise.")).toBeNull();
   });
 
   it("says a failed read with a Retry, never the empty line", async () => {

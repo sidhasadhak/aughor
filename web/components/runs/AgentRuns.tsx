@@ -9,8 +9,8 @@
  * It was a wall of fifty cards: the same three questions asked ten times each, a green "Completed" on every one, a
  * dash where a run kept no headline. Only what is not completed is said now, and it is said first.
  *
- * This is the person's history (the run list). The machine view of the same runs — events, traces, spans — is
- * Agent Ops ▸ Activity, one link away; they are views over different records, so they stay two (PX-6).
+ * This is the person's history (the run list). The machine view of the same runs — events, traces, spans — is at the
+ * foot of Agent Ops' Overview, one link away; they are views over different records, so they stay two (PX-6).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -62,7 +62,8 @@ const UNFINISHED = new Set(["failed", "timed_out", "interrupted", "cancelled"]);
 /** What a person is needed for: a run that ended without an answer, or one waiting at a step. */
 const NEEDS = new Set([...UNFINISHED, "paused"]);
 
-const isChat = (r: Run) => r.kind === "chat";
+/** A conversation, not a deep analysis — the run list's one other kind. Agent Ops' Overview reads the rest as its deep runs. */
+export const isChat = (r: Pick<Run, "kind">) => r.kind === "chat";
 const kindOf = (r: Run): RunKind => (isChat(r) ? "chat" : "investigation");
 const markOf = (status: string) => status === "complete" ? null
   : MARK[status] ?? { word: keyToWords(status) || "unknown", hue: "grey" as const };
@@ -254,7 +255,8 @@ export function AgentRuns({ onGoToChat, onOpenRun, onOpenMachineView, workspaceI
   );
 }
 
-function StatusMark({ status }: { status: string }) {
+/** A status that is not "complete" as its mark — a dot and a word in its hue; nothing for a completed run. */
+export function StatusMark({ status }: { status: string }) {
   const m = markOf(status);
   if (!m) return null;
   return (

@@ -10,10 +10,9 @@
  * domain's tables near their bearing instead of drifting into soup. Dragging pins a node
  * (the classic fx/fy pattern); the sim reheats around it.
  *
- * P2 — selection drives real actions through the workspace's own `onInvestigate` seam (the
- * same one the Ontology panel and Briefing already use): a selected table becomes "Ask about
- * this table", several become "Ask across these tables", a finding becomes a re-examination
- * prompt, a metric or term becomes its own question. The graph is a launcher for the Ask
+ * P2 — selection drives real actions: the canvas reports what is chosen and the panel beside
+ * it (`ConnectionGraphPanel`) says the chosen node's essentials and turns the choice into a
+ * question on the workspace's Ask surface (`questionFor`). The graph is a launcher for the Ask
  * surface, not a picture beside it.
  *
  * P3 — findings carry `generated_at`, so when the findings layer is on, a time slider
@@ -21,14 +20,19 @@
  * identities are preserved across cutoff changes, so existing nodes keep their positions and
  * only the newly-arrived findings fly in.
  *
- * Findings (100) and terms (255) stay behind counted toggles — the default ~30-node view
- * must never become the hairball the C4 card surface exists to avoid.
+ * Findings (100) and terms (255) stay behind toggles — the default ~30-node view must never
+ * become the hairball the card surface exists to avoid.
+ *
+ * CLARITY (2026-10-13): links are straight runs that turn only at a right angle (`type: "step"`,
+ * zero radius — never a bezier), every colour is a token (`KIND_HUE` in `lib/graphView.ts`),
+ * and the legend, the two toggles and the replay sit on the picture rather than in a bar above it.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   Controls,
   MarkerType,
+  Panel,
   ReactFlow,
   applyNodeChanges,
   type Edge as RFEdge,
@@ -48,24 +52,11 @@ import {
 } from "d3-force";
 import type { CGEdge, CGNode, ConnectionGraph } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { WarrantChip } from "@/components/graph/WarrantChip";
-
-const KIND_COLOR: Record<string, { bg: string; border: string }> = {
-  domain:        { bg: "rgba(100,116,139,0.18)", border: "#64748b" },
-  table:         { bg: "rgba(37,99,235,0.16)",   border: "#3b82f6" },
-  metric:        { bg: "rgba(124,58,237,0.16)",  border: "#8b5cf6" },
-  brief:         { bg: "rgba(22,163,74,0.16)",   border: "#22c55e" },
-  finding:       { bg: "rgba(234,88,12,0.14)",   border: "#f97316" },
-  glossary_term: { bg: "rgba(8,145,178,0.14)",   border: "#06b6d4" },
-};
-
-const EDGE_COLOR: Record<string, string> = {
-  joins_on: "#3b82f6",
-  derived_from: "#8b5cf6",
-  grounded_in: "#f97316",
-  defines: "#06b6d4",
-  resolves: "#64748b",
-};
+import { Dot } from "@/components/clarity/kit";
+import { Icon } from "@/components/ui/icon";
+import { fmtDate, pct } from "@/lib/format";
+import { withUniqueKeys } from "@/lib/listKeys";
+import { EDGE_HUE, KIND_HUE, nodeName } from "@/lib/graphView";
 
 const TWO_PI = Math.PI * 2;
 
@@ -85,8 +76,8 @@ interface SimNode extends SimulationNodeDatum {
 interface Props {
   graph: ConnectionGraph;
   onOpenTable?: (tableId: string) => void;
-  /** The workspace's Ask seam — a question here lands on the full Ask surface. */
-  onAsk?: (question: string) => void;
+  /** Which nodes are chosen, each time the choice changes — the side panel beside the canvas reads them. */
+  onSelectionChange?: (ids: string[]) => void;
 }
 
 /** Deterministic radial seed, grouped by domain (see the module docstring). */
@@ -151,7 +142,7 @@ function seedLayout(all: CGNode[], edges: CGEdge[]): Map<string, { x: number; y:
 }
 
 /** The Ask question a selection turns into — one selected thing, one honest question. */
-function questionFor(selected: CGNode[]): string {
+export function questionFor(selected: CGNode[]): string {
   if (selected.length === 1) {
     const n = selected[0];
     if (n.kind === "table") return `Give me an overview of the ${n.label} table: what it contains, its data quality, and the most important patterns in it.`;
@@ -172,11 +163,47 @@ function questionFor(selected: CGNode[]): string {
   return `Analyze the relationship between: ${selected.map((n) => n.label).join(", ")}.`;
 }
 
-export function GraphCanvas({ graph, onOpenTable, onAsk }: Props) {
+/** A join's label on the map: the measured overlap when there is one, else its warrant — so an unprobed join is
+ *  visibly weaker rather than merely unlabelled (which reads as "no detail", not "no proof"). Other links carry none. */
+export function joinLabel(e: CGEdge): string | undefined {
+  if (e.kind !== "joins_on") return undefined;
+  const measured = e.provenance?.measured;
+  if (typeof measured === "number") return pct(measured);
+  if (e.warrant?.warrant === "declared") return "declared";
+  return e.warrant ? "unprobed" : undefined;
+}
+
+/** What the canvas hands React Flow for one link: straight runs turning at right angles, coloured by the kind it
+ *  starts from. Exported so a test can hold the shape without drawing it (jsdom draws nothing). */
+export function toFlowEdge(e: CGEdge): RFEdge {
+  const hue = EDGE_HUE[e.kind] ?? KIND_HUE.domain;
+  return {
+    id: e.id, source: e.from_id, target: e.to_id,
+    type: "step",
+    label: joinLabel(e),
+    style: { stroke: hue, strokeWidth: e.kind === "joins_on" ? 1.6 : 1, opacity: 0.6 },
+    labelStyle: { fill: "var(--t2)", fontSize: 11 },
+    labelBgStyle: { fill: "transparent" },
+    markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: hue },
+  };
+}
+
+/** The legend's kinds, in the palette's order. Findings and terms are toggles as well as keys. */
+const LEGEND: { kind: string; word: string }[] = [
+  { kind: "domain", word: "Domains" },
+  { kind: "table", word: "Tables" },
+  { kind: "metric", word: "Metrics" },
+];
+
+export function GraphCanvas({ graph, onOpenTable, onSelectionChange }: Props) {
   const [showFindings, setShowFindings] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [rfNodes, setRfNodes] = useState<RFNode[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // The tick handler reads the CURRENT choice through this ref. It used to close over the set as
+  // it stood when the simulation started, so every tick after a click — and every drag, which
+  // reheats — put the old selection back.
+  const selectedRef = useRef<Set<string>>(new Set());
   // P3 — the findings-time cutoff (an index into the sorted timestamp list; null = all).
   const [timeIdx, setTimeIdx] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -188,6 +215,7 @@ export function GraphCanvas({ graph, onOpenTable, onAsk }: Props) {
   const allEdges = useMemo(() => Object.values(graph.edges) as CGEdge[], [graph]);
   const byId = useMemo(() => new Map(all.map((n) => [n.id, n])), [all]);
   const seeds = useMemo(() => seedLayout(all, allEdges), [all, allEdges]);
+  const present = useMemo(() => new Set(all.map((n) => n.kind)), [all]);
 
   // The findings timeline — distinct timestamps, sorted. Blank stamps sort first (always shown).
   const timeline = useMemo(() => {
@@ -210,6 +238,18 @@ export function GraphCanvas({ graph, onOpenTable, onAsk }: Props) {
     }
     return ids;
   }, [all, showFindings, showTerms, cutoff]);
+
+  // What is chosen AND on the map: a chosen node the reader then hides (findings off, the replay rewound) is not
+  // reported as chosen while it is hidden.
+  const chosen = useMemo(() => {
+    const visible = new Set(visibleIds);
+    return selectedIds.filter((id) => visible.has(id));
+  }, [selectedIds, visibleIds]);
+  useEffect(() => { selectedRef.current = new Set(selectedIds); }, [selectedIds]);
+  // The callback is read through a ref so a caller handing a new function each render cannot loop the report.
+  const onSelectionRef = useRef(onSelectionChange);
+  useEffect(() => { onSelectionRef.current = onSelectionChange; }, [onSelectionChange]);
+  useEffect(() => { onSelectionRef.current?.(chosen); }, [chosen]);
 
   // ── the simulation: one instance, node identity preserved across visibility changes ──
   useEffect(() => {
@@ -243,20 +283,21 @@ export function GraphCanvas({ graph, onOpenTable, onAsk }: Props) {
       .force("ay", forceY<SimNode>((d) => d.ay).strength((d) =>
         d.kind === "domain" ? 0.35 : d.kind === "table" ? 0.12 : 0.04));
 
-    const sel = new Set(selectedIds);
     const onTick = () => {
+      const sel = selectedRef.current;
       setRfNodes(sim.nodes().map((sn) => {
         const n = byId.get(sn.id)!;
-        const c = KIND_COLOR[n.kind] ?? KIND_COLOR.domain;
+        const hue = KIND_HUE[n.kind] ?? KIND_HUE.domain;
         const big = n.kind === "domain";
+        const name = nodeName(n);
         return {
           id: sn.id,
           position: { x: sn.x ?? 0, y: sn.y ?? 0 },
-          data: { label: n.label.length > 30 ? `${n.label.slice(0, 30)}…` : n.label },
+          data: { label: name.length > 30 ? `${name.slice(0, 30)}…` : name },
           selected: sel.has(sn.id),
           style: {
-            background: c.bg, border: `1.5px solid ${c.border}`, color: "var(--t1, #e2e8f0)",
-            borderRadius: big ? 22 : 8, fontSize: big ? 13 : 11,
+            background: `color-mix(in srgb, ${hue} 16%, var(--bg-1))`, border: `1.5px solid ${hue}`, color: "var(--t1)",
+            borderRadius: big ? "var(--r-pill)" : "var(--r3)", fontSize: big ? 13 : 11,
             padding: big ? "10px 16px" : "5px 9px", width: "auto",
           },
         };
@@ -266,9 +307,6 @@ export function GraphCanvas({ graph, onOpenTable, onAsk }: Props) {
     sim.alpha(0.9).alphaDecay(0.035).restart();
     onTick();
     return () => { sim.on("tick", null); sim.stop(); };
-    // selectedIds is applied inside onNodesChange; re-running the sim for a selection
-    // change would reheat the layout every click.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleIds, allEdges, byId, seeds]);
 
   // P3 — replay: advance the cutoff through the timeline.
@@ -306,123 +344,66 @@ export function GraphCanvas({ graph, onOpenTable, onAsk }: Props) {
 
   const rfEdges: RFEdge[] = useMemo(() => {
     const idset = new Set(visibleIds);
-    return allEdges
-      .filter((e) => idset.has(e.from_id) && idset.has(e.to_id))
-      .map((e) => {
-        const measured = e.provenance?.measured;
-        // P2: a join with a measured overlap shows the number; one without shows its
-        // warrant class instead of nothing, so an unprobed edge is visibly weaker on the
-        // map rather than merely unlabelled (which reads as "no detail", not "no proof").
-        const label = e.kind !== "joins_on" ? undefined
-          : typeof measured === "number" ? `${Math.round(measured * 100)}%`
-          : e.warrant?.warrant === "declared" ? "declared"
-          : e.warrant ? "unprobed" : undefined;
-        return {
-          id: e.id, source: e.from_id, target: e.to_id,
-          label,
-          style: { stroke: EDGE_COLOR[e.kind] ?? "#475569", strokeWidth: e.kind === "joins_on" ? 1.6 : 1, opacity: 0.6 },
-          labelStyle: { fill: "var(--t2, #94a3b8)", fontSize: 11 },
-          labelBgStyle: { fill: "transparent" },
-          markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: EDGE_COLOR[e.kind] ?? "#475569" },
-        };
-      });
+    return allEdges.filter((e) => idset.has(e.from_id) && idset.has(e.to_id)).map(toFlowEdge);
   }, [allEdges, visibleIds]);
 
-  const selected = selectedIds.map((id) => byId.get(id)).filter((n): n is CGNode => !!n);
-  const counts = graph.counts || {};
-
-  const chip = (active: boolean, onClick: () => void, label: string) => (
-    <Button variant={active ? "secondary" : "ghost"} size="xs" onClick={onClick}
-      style={{
-        borderRadius: 999,
-        border: `1px solid ${active ? "var(--t3, #64748b)" : "var(--bg-3, #1e293b)"}`,
-        color: active ? "var(--t1, #e2e8f0)" : "var(--t3, #94a3b8)",
-      }}>{label}</Button>
-  );
-
-  const action = (label: string, onClick: () => void, primary = false) => (
-    <Button variant={primary ? "default" : "outline"} size="xs" onClick={onClick}>
-      {label}
+  const toggle = (on: boolean, kind: string, word: string, onClick: () => void) => (
+    <Button variant={on ? "secondary" : "ghost"} size="xs" aria-pressed={on} onClick={onClick}
+      title={on ? `Hide the ${word.toLowerCase()}` : `Show the ${word.toLowerCase()} on the map`}>
+      <Dot color={KIND_HUE[kind]} />{word}
     </Button>
   );
 
-  const cutoffLabel = cutoff ? cutoff.slice(0, 10) : "all time";
-
   return (
-    <div style={{ height: "100%", minHeight: 560, display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-        {chip(showFindings, () => { setShowFindings((v) => !v); setTimeIdx(null); setPlaying(false); },
-          showFindings ? "Findings shown" : `Show ${counts.finding || 0} findings`)}
-        {chip(showTerms, () => setShowTerms((v) => !v),
-          showTerms ? "Terms shown" : `Show ${counts.glossary_term || 0} terms`)}
-        {showFindings && timeline.length > 1 && (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Button variant="outline" size="xs" onClick={() => setPlaying((p) => !p)}
-              title="Replay how knowledge accumulated">
-              {playing ? "❚❚" : "▶"}
-            </Button>
-            <input type="range" min={0} max={timeline.length - 1}
-              value={timeIdx ?? timeline.length - 1}
-              onChange={(e) => { setPlaying(false); setTimeIdx(Number(e.target.value)); }}
-              style={{ width: 160 }} aria-label="Findings up to date" />
-            <span style={{ fontSize: 11, color: "var(--t3, #94a3b8)", minWidth: 80 }}>
-              {timeIdx === null ? "all findings" : `up to ${cutoffLabel}`}
-            </span>
-          </span>
-        )}
-        <span style={{ fontSize: 11, color: "var(--t3, #94a3b8)", marginLeft: "auto" }}>
-          drag pins a node · click selects · shift-click multi-selects
-        </span>
-      </div>
-
-      {selected.length > 0 && (
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap",
-                      padding: "6px 10px", borderRadius: 8, border: "1px solid var(--bg-3, #1e293b)",
-                      background: "var(--bg-2, rgba(15,23,42,0.6))" }}>
-          <span style={{ fontSize: 11, color: "var(--t2, #94a3b8)" }}>
-            {selected.length === 1
-              ? `${selected[0].kind.replace("_", " ")}: ${selected[0].label.slice(0, 60)}`
-              : `${selected.length} selected`}
-          </span>
-          {onAsk && action(
-            selected.length === 1 && selected[0].kind === "table" ? "Ask about this table"
-              : selected.length === 1 && selected[0].kind === "finding" ? "Re-examine this finding"
-              : selected.length === 1 ? `Ask about ${selected[0].kind.replace("_", " ")}`
-              : "Ask about these together",
-            () => onAsk(questionFor(selected)), true)}
-          {selected.length === 1 && selected[0].kind === "table" && onOpenTable &&
-            action("Open detail", () => onOpenTable(selected[0].id))}
-          {/* P2: the warrant class, not the raw source name a reader cannot rank. The
-              source stays in the tooltip for anyone who wants the store it came from. */}
-          {selected.length === 1 && selected[0].warrant &&
-            <WarrantChip warrant={selected[0].warrant} showDetail />}
-          {selected.length === 1 && selected[0].provenance &&
-            <span style={{ fontSize: 11, color: "var(--t4, #64748b)" }}
-                  title={selected[0].provenance.note}>
-              source: {selected[0].provenance.source}
-            </span>}
-        </div>
-      )}
-
-      <div style={{ flex: 1, borderRadius: 10, overflow: "hidden", border: "1px solid var(--bg-3, #1e293b)" }}>
-        <ReactFlow
-          nodes={rfNodes}
-          edges={rfEdges}
-          onNodesChange={onNodesChange}
-          onNodeDrag={onNodeDrag}
-          onNodeDragStop={onNodeDragStop}
-          onNodeDoubleClick={(_, n) => { if (String(n.id).startsWith("table:")) onOpenTable?.(String(n.id)); }}
-          fitView
-          minZoom={0.08}
-          proOptions={{ hideAttribution: true }}
-          nodesConnectable={false}
-          selectionOnDrag={false}
-          colorMode="dark"
-        >
-          <Background gap={28} size={1} />
-          <Controls showInteractive={false} />
-        </ReactFlow>
-      </div>
+    <div style={{ height: "100%", minHeight: 560 }}>
+      <ReactFlow
+        nodes={rfNodes}
+        edges={rfEdges}
+        onNodesChange={onNodesChange}
+        onNodeDrag={onNodeDrag}
+        onNodeDragStop={onNodeDragStop}
+        onNodeDoubleClick={(_, n) => { if (String(n.id).startsWith("table:")) onOpenTable?.(String(n.id)); }}
+        fitView
+        minZoom={0.08}
+        proOptions={{ hideAttribution: true }}
+        nodesConnectable={false}
+        selectionOnDrag={false}
+        colorMode="dark"
+        style={{ background: "var(--bg-1)" }}
+      >
+        <Panel position="top-left">
+          <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+            color: "var(--t2)", background: "color-mix(in srgb, var(--bg-1) 88%, transparent)", padding: "3px 8px",
+            borderRadius: "var(--r2)" }} data-testid="graph-legend">
+            {withUniqueKeys(LEGEND.filter((k) => present.has(k.kind)), (k) => k.kind).map(([key, k]) => (
+              <span key={key} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                <Dot color={KIND_HUE[k.kind]} />{k.word}
+              </span>
+            ))}
+            {present.has("finding") && toggle(showFindings, "finding", "Findings",
+              () => { setShowFindings((v) => !v); setTimeIdx(null); setPlaying(false); })}
+            {present.has("glossary_term") && toggle(showTerms, "glossary_term", "Terms", () => setShowTerms((v) => !v))}
+            {showFindings && timeline.length > 1 && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <Button variant="ghost" size="icon-xs" onClick={() => setPlaying((p) => !p)}
+                  aria-label={playing ? "Pause the replay" : "Replay how the findings accumulated"}
+                  title={playing ? "Pause the replay" : "Replay how the findings accumulated"}>
+                  <Icon name={playing ? "stop" : "run"} size={12} />
+                </Button>
+                <input type="range" min={0} max={timeline.length - 1}
+                  value={timeIdx ?? timeline.length - 1}
+                  onChange={(e) => { setPlaying(false); setTimeIdx(Number(e.target.value)); }}
+                  style={{ width: 140 }} aria-label="Findings up to date" />
+                <span style={{ minWidth: 80, color: "var(--t3)" }}>
+                  {cutoff === null ? "all findings" : `up to ${fmtDate(cutoff, "day")}`}
+                </span>
+              </span>
+            )}
+          </div>
+        </Panel>
+        <Background gap={28} size={1} />
+        <Controls showInteractive={false} />
+      </ReactFlow>
     </div>
   );
 }

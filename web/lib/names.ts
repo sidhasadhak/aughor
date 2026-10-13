@@ -21,12 +21,21 @@ export function connectionLabel(
 ): string {
   if (!id) return "";
   const hit = connections.find(c => c.id === id);
-  return hit?.name || `connection ${id.slice(0, 8)}`;
+  // Only a generated id (a long hex string) is cut to its first 8; a named id such as `workspace` is said whole —
+  // cut, it read "connection workspac".
+  return hit?.name || `connection ${/^[0-9a-f]{9,}$/i.test(id) ? id.slice(0, 8) : id}`;
 }
 
 /** Words out of a snake_case or dunder key: `__brief_metric_move__` → "brief metric move". */
 export function keyToWords(key: string): string {
   return key.replace(/^_+|_+$/g, "").replace(/[_-]+/g, " ").trim();
+}
+
+/** Who did something, as the reader reads it: "you" when it was the reader — `me` is the name the server records them
+ *  under (`useMe().actor`) — else the name as given. A ledger's `user:` / `person:` prefix does not stop the match. */
+export function byWho(who: string | null | undefined, me: string | null | undefined): string {
+  const w = (who ?? "").trim(), mine = (me ?? "").trim();
+  return mine && w.replace(/^(?:user|person):/, "") === mine ? "you" : w;
 }
 
 /** Who a SQL caller was, for an audit trail: the agent's roster name and what it was doing.

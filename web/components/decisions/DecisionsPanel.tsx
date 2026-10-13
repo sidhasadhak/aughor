@@ -112,6 +112,7 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
   all: Decision[]; connections: Connection[]; onOpen: (id: string) => void;
   form: React.ReactNode; declaring: boolean; onDeclare: () => void;
 }) {
+  const me = useActor().name;
   const [filter, setFilter] = useState<Filter>("all");
   const rows = useMemo(() => all.filter(d => filter === "all" || reviewState(d) === filter), [all, filter]);
   const due = all.filter(d => reviewState(d) === "due");
@@ -150,7 +151,7 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
         <Figure label="Decisions" value={formatCount(all.length)} testId="fig-dec-all"
           sub={all.length === 0 ? "none booked yet" : [
             ...countBy(all, d => d.source.kind).map(([k, n]) => `${n} ${SOURCE_SHORT[k] ?? k}`),
-            deciders.length === 1 ? `by ${whoLabel(deciders[0])}` : "",
+            deciders.length === 1 ? `by ${whoLabel(deciders[0], me)}` : "",
           ].filter(Boolean).join(" · ")} />
         <Figure label="Review due" value={formatCount(due.length)} tone={due.length ? "amber" : undefined} testId="fig-dec-due"
           sub={due.length ? `the oldest since ${dateWords(oldestDue)}` : next ? `the next ${whenWords(next)}` : "no review date set"} />
@@ -168,7 +169,7 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
           ...due.map(d => (
             <NeedsRow key={`due-${d.id}`} testId="needs-dec-due"
               title={`${label(d)} · review due since ${dateWords(d.review_on)}`}
-              detail={`${chosenWords(d)} by ${whoLabel(d.decided_by)} on ${dateWords(d.decided_at)}`}
+              detail={`${chosenWords(d)} by ${whoLabel(d.decided_by, me)} on ${dateWords(d.decided_at)}`}
               actions={<Button size="xs" variant="secondary" onClick={() => onOpen(d.id)}>Review</Button>} />
           )),
           ...reopened.map(d => (
@@ -201,7 +202,7 @@ function DecisionOverview({ all, connections, onOpen, form, declaring, onDeclare
         renderRow={(d, first) => {
           const state = reviewState(d);
           const meta = [
-            deciders.length > 1 ? `decided by ${whoLabel(d.decided_by)} · ${dateWords(d.decided_at)}` : `decided ${dateWords(d.decided_at)}`,
+            deciders.length > 1 ? `decided by ${whoLabel(d.decided_by, me)} · ${dateWords(d.decided_at)}` : `decided ${dateWords(d.decided_at)}`,
             sources.length > 1 ? SOURCE_SHORT[d.source.kind] ?? "" : "",
             d.dissent.length ? countNoun(d.dissent.length, "dissent") : "",
             many ? (d.connection_id ? connectionLabel(d.connection_id, connections) : "every connection") : "",
@@ -367,8 +368,8 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
     <>
       <div className="aug-rail-head"><span className="aug-label">This decision</span></div>
       <Fact label="Answerable">{whoLabel(d.owner || d.decided_by)}</Fact>
-      {d.approvers.length > 0 && <Fact label="Approvers">{d.approvers.map(whoLabel).join(", ")}</Fact>}
-      <Fact label="Decided">{day(d.decided_at)} by {whoLabel(d.decided_by)}</Fact>
+      {d.approvers.length > 0 && <Fact label="Approvers">{d.approvers.map(a => whoLabel(a, actor.name)).join(", ")}</Fact>}
+      <Fact label="Decided">{day(d.decided_at)} by {whoLabel(d.decided_by, actor.name)}</Fact>
       <Fact label="Booked">{SOURCE_WORDS[d.source.kind] ?? d.source.kind}</Fact>
       <Fact label="Review date">{d.review_on ? `${day(d.review_on)} · ${dayDistance(d.review_on)}` : "none set"}</Fact>
       {d.objective && <Fact label="Toward">{d.objective}</Fact>}

@@ -17,6 +17,8 @@ import type { StagedProposal } from "@/lib/api";
 const acceptProposal = vi.fn();
 const rejectProposal = vi.fn();
 const getProposalById = vi.fn();
+// Who is reading: nobody, until a test says (the network is closed, so an unmocked read would only fail).
+const getMyAccess = vi.fn(async (): Promise<{ actor: string; signed_in: boolean } | null> => null);
 
 vi.mock("@/lib/api", async importOriginal => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -25,10 +27,12 @@ vi.mock("@/lib/api", async importOriginal => {
     acceptProposal: (...a: unknown[]) => acceptProposal(...a),
     rejectProposal: (...a: unknown[]) => rejectProposal(...a),
     getProposalById: (...a: unknown[]) => getProposalById(...a),
+    getMyAccess: () => getMyAccess(),
   };
 });
 
 const { ProposalCard, utcWords } = await import("@/components/ProposalCard");
+const { forgetMe } = await import("@/lib/useMe");
 
 const chainParams = (channel: string) => ({
   conn_id: "conn-x", name: "morning anomalies", description: "",
@@ -114,6 +118,14 @@ describe("ProposalCard", () => {
     expect(screen.getByText(/schema thelook/)).toBeInTheDocument();
     expect(screen.getByText("A scope and a stance.")).toBeInTheDocument();
     expect(screen.getByText(/less context than plain chat/)).toBeInTheDocument();
+  });
+
+  it("says 'by you' when the reader proposed it", async () => {
+    forgetMe();
+    getMyAccess.mockResolvedValueOnce({ actor: "amit", signed_in: false });
+    render(<ProposalCard proposal={proposal({ proposer: "amit" })} actor="tester" />);
+    expect(await screen.findByText(/^by you · waiting/)).toBeInTheDocument();
+    forgetMe();
   });
 });
 

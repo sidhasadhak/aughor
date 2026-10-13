@@ -2,8 +2,14 @@
 
 /**
  * Agent Ops · Overview — the operating picture, laid out to CLARITY (`aughor-v2/CLARITY.md`): four figures (runs,
- * failed, running now, model spend), then what needs a person in amber with its buttons on the row, then runs by
- * agent as a chart, then the agents and their runs as lists.
+ * failed, running now, model spend), then what needs a person in amber with its buttons on the row, then one chart —
+ * runs by agent, or tokens by model — then the agents, where their tokens went, their runs, and the deep runs by
+ * question, as lists; the live events and every trace are folded shut at the foot.
+ *
+ * One page for "what the agents did, and what it cost": the Activity tab's four views folded in here (2026-10-13). Its
+ * Usage became the spend figure's calls and fallback share, the chart's second reading and the three token lists; its
+ * Phases became the deep runs; its Stream and its Traces are the two folds, unchanged inside. A trace another layer
+ * opens lands in the "Every trace" fold, open on it.
  *
  * Four rules it keeps, each from an earlier defect:
  *
@@ -21,30 +27,48 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { ActivityStreamPanel } from "@/components/ActivityStreamPanel";
 import { ActivityChart, colorFor } from "@/components/agentops/ActivityChart";
+import { DeepRuns } from "@/components/agentops/DeepRuns";
 import { ProvenanceDrawer, type Provenance } from "@/components/agentops/ProvenanceDrawer";
+import { UsageLists, type EventsFilter } from "@/components/agentops/UsageLists";
 import { RANGE_LABELS, rangeParams, type TimeRange } from "@/components/agentops/useTimeRange";
 import { Sparkline } from "@/components/brief/Sparkline";
 import {
-  CARD, Card, Chip, Dot, Empty, Figure, Figures, MUTED, NUM, NeedsYou, ONE_LINE, ROW, RULE,
+  CARD, Card, Chip, Dot, Empty, Figure, Figures, Fold, MUTED, NUM, NeedsYou, ONE_LINE, ROW, RULE,
 } from "@/components/clarity/kit";
+import { TraceExplorerPanel } from "@/components/TraceExplorerPanel";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
 import { Segmented } from "@/components/ui/segmented";
 import { Loading, ReadFailed } from "@/components/ui/states";
 import {
-  BUILT_IN_AGENT_KIND, acceptProposal, cancelJob, getFleetOverview, getJobs, getNeedsHuman, getObsTimeseries,
-  patchAgent, patchUserAgent, rejectProposal,
-  type FleetJob, type FleetOverview, type FleetRow, type FleetRunnerRow, type NeedsHumanRow, type TimeSeriesResponse,
+  BUILT_IN_AGENT_KIND, acceptProposal, cancelJob, getActivityEvents, getFleetOverview, getJobs, getNeedsHuman,
+  getObsTimeseries, getTraces, getUsageSummary, patchAgent, patchUserAgent, rejectProposal,
+  type Connection, type FleetJob, type FleetOverview, type FleetRow, type FleetRunnerRow, type NeedsHumanRow,
+  type TimeSeriesResponse, type UsageSummary,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
 import { compactNumber, countNoun, formatCost, formatCount, pct, relTime } from "@/lib/format";
+import { jobKindLabel, jobTitle } from "@/lib/jobKinds";
 import { needsYouTitle } from "@/lib/names";
-import { runDisplayTitle } from "@/lib/runTitle";
 import { useVisiblePoll } from "@/lib/useVisiblePoll";
 
+/** A connection as a run list names it. */
+type ConnectionName = Pick<Connection, "id" | "name">;
+
 type RunFilter = "active" | "failed" | "succeeded" | "all";
+
+/** What the one chart counts: runs by agent (the default), or model tokens by model. */
+type ChartMode = "runs" | "tokens";
+const CHART_MODES: { value: ChartMode; label: string; title: string }[] = [
+  { value: "runs", label: "Runs by agent", title: "Agent runs started, per bucket, by the agent that owns them" },
+  { value: "tokens", label: "Tokens by model", title: "Model tokens, per bucket, by the model that spent them" },
+];
+
+/** A trace another layer opened. A new object each time, so opening the same one twice still lands on it. */
+export type TraceFocus = { traceId?: string; investigationId?: string };
 
 const RUN_FILTERS: { value: RunFilter; label: string; title: string }[] = [
   { value: "active", label: "Running", title: "In flight now, of any age" },
@@ -63,6 +87,15 @@ const SOURCE_LABEL: Record<NeedsHumanRow["source"], string> = {
   [PROPOSAL_SOURCE]: "proposal", paused_run: "paused run", automation_approval: "automation",
   agent_alert: "alert", automation_broken: "broken automation",
 };
+
+/** The proposal a row decides, by the id the inbox's accept and reject take: a proposal row IS one; an automation's
+ *  approval names its own in `resolve.proposal_id` — its row id is the row's, which the API composes from the run
+ *  when there is no proposal. "" when the row decides nothing. */
+function proposalOf(row: NeedsHumanRow): string {
+  if (row.source === PROPOSAL_SOURCE) return row.id;
+  if (row.source === "automation_approval") return row.resolve?.proposal_id ?? "";
+  return "";
+}
 
 /** How a run's state reads as a mark, and its colour. */
 const STATE_MARK: Record<string, { word: string; color: string }> = {
@@ -102,15 +135,15 @@ function perBucket(seconds: number): string {
 }
 
 /** Runs that are the same work ending the same way, folded into one row with a count (CLARITY: say a thing once). */
-export interface RunGroup { key: string; title: string; agent: string; state: string; runs: FleetJob[] }
+export interface RunGroup { key: string; title: string; raw: string; agent: string; state: string; runs: FleetJob[] }
 
-export function foldRuns(runs: FleetJob[]): RunGroup[] {
+export function foldRuns(runs: FleetJob[], connections: ReadonlyArray<ConnectionName> = []): RunGroup[] {
   const groups = new Map<string, RunGroup>();
   for (const j of runs) {
-    const title = runDisplayTitle(j.title || j.kind).title;
+    const { title, raw } = jobTitle(j, connections);
     const agent = j.agent?.agent || j.kind;
     const key = `${agent}\u0000${title}\u0000${j.state}`;
-    const g = groups.get(key) ?? { key, title, agent, state: j.state, runs: [] };
+    const g = groups.get(key) ?? { key, title, raw, agent, state: j.state, runs: [] };
     g.runs.push(j);
     groups.set(key, g);
   }
@@ -118,7 +151,11 @@ export function foldRuns(runs: FleetJob[]): RunGroup[] {
 }
 
 export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvestigation, range,
-  onBrush, onClearBrush }: {
+  onBrush, onClearBrush, connections = [], traceFocus = null }: {
+  /** The workspace's connections, so a run on one is named by its name rather than its id. */
+  connections?: ReadonlyArray<ConnectionName>;
+  /** A trace opened from another layer: the "Every trace" fold opens on it and scrolls into view. */
+  traceFocus?: TraceFocus | null;
   onOpenAgent?: (id: string, kind: "charter" | "persona") => void;
   onOpenAttention?: () => void;
   onOpenInvestigation?: (id: string) => void;
@@ -141,6 +178,37 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
   const [busy, setBusy] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const runsRef = useRef<HTMLElement | null>(null);
+
+  // What the model calls in the range came to, by model, role and call site — one read for the spend figure's calls
+  // and fallback share and for the three token lists, so the two can never disagree.
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [usageError, setUsageError] = useState<string | null>(null);
+  const [chartMode, setChartMode] = useState<ChartMode>("runs");
+  const [tokenChart, setTokenChart] = useState<TimeSeriesResponse | null>(null);
+  const [tokenChartError, setTokenChartError] = useState<string | null>(null);
+  const [hiddenModels, setHiddenModels] = useState<Set<string>>(new Set());
+
+  // The two folds at the foot, shut until asked for. A drill opens one already where it points: a model or a role
+  // opens the live events filtered to it, a live event's trace (or another layer's) opens every trace on that one.
+  const [eventsOpen, setEventsOpen] = useState(false);
+  const [eventsFilter, setEventsFilter] = useState<EventsFilter | null>(null);
+  const [tracesOpen, setTracesOpen] = useState(false);
+  const [traceSel, setTraceSel] = useState<{ traceId: string | null; investigationId: string | null }>(
+    { traceId: null, investigationId: null });
+  const eventsRef = useRef<HTMLElement | null>(null);
+  const tracesRef = useRef<HTMLElement | null>(null);
+  const [seenFocus, setSeenFocus] = useState<TraceFocus | null>(null);
+  if (traceFocus !== seenFocus) {
+    setSeenFocus(traceFocus);
+    if (traceFocus) {
+      setTraceSel({ traceId: traceFocus.traceId ?? null, investigationId: traceFocus.investigationId ?? null });
+      setTracesOpen(true);
+    }
+  }
+  // What the folds hold, said on them while they are shut — each one small read, once, and never a number not read.
+  const [eventCount, setEventCount] = useState<{ total: number; checks: number } | null>(null);
+  const [traceCount, setTraceCount] = useState<{ total: number | null; scanned: number | null } | null>(null);
+  const [countError, setCountError] = useState<{ events?: string; traces?: string }>({});
 
   const params = useMemo(() => rangeParams(range), [range]);
 
@@ -165,7 +233,42 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
     getNeedsHuman(100)
       .then(d => { setAttention(d.rows); setAttentionError(null); })
       .catch(e => setAttentionError(String(e?.message || e)));
+    getUsageSummary(params)
+      .then(u => { setUsage(u); setUsageError(null); })
+      .catch(e => setUsageError(String(e?.message || e)));
   }, [params, showRunners]);
+
+  // The tokens chart is read only once it is asked for, then with the range like the runs chart.
+  const loadTokens = useCallback(() => {
+    if (chartMode !== "tokens") return;
+    getObsTimeseries({ group: "model", measure: "tokens", ...params })
+      .then(c => { setTokenChart(c); setTokenChartError(null); })
+      .catch(e => { setTokenChart(null); setTokenChartError(String(e?.message || e)); });
+  }, [chartMode, params]);
+  useEffect(() => { loadTokens(); }, [loadTokens]);
+  useVisiblePoll(loadTokens, 15_000);
+
+  useEffect(() => {
+    let alive = true;
+    getActivityEvents({ limit: 1 })
+      .then(d => {
+        if (!alive) return;
+        const total = Object.values(d.kinds).reduce((n, k) => n + k, 0);
+        setEventCount({ total, checks: d.kinds.guardrail ?? 0 });
+      })
+      .catch(e => { if (alive) setCountError(c => ({ ...c, events: String(e?.message || e) })); });
+    getTraces({ limit: 1 })
+      // `total` is what matched over the scanned window; without it there is no count to say — never the page's length.
+      .then(d => { if (alive) setTraceCount({ total: d.total ?? null, scanned: d.scanned_events ?? null }); })
+      .catch(e => { if (alive) setCountError(c => ({ ...c, traces: String(e?.message || e) })); });
+    return () => { alive = false; };
+  }, []);
+
+  // A trace another layer opened: its fold scrolls into view once the page is there to scroll.
+  const ready = data !== null;
+  useEffect(() => {
+    if (traceFocus && ready) tracesRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, [traceFocus, ready]);
 
   // Only while this layer is on screen; shown again, it refreshes at once.
   const visible = useVisiblePoll(load, 15_000);   // slow fallback if the stream is down
@@ -225,8 +328,8 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
     setBusy(row.id);
     setActionError(null);
     try {
-      if (action === "accept") await acceptProposal(row.id, "agent-ops");
-      else await rejectProposal(row.id, "agent-ops");
+      if (action === "accept") await acceptProposal(proposalOf(row), "agent-ops");
+      else await rejectProposal(proposalOf(row), "agent-ops");
       load();
     } catch (e) {
       setActionError(String((e as Error)?.message || e));
@@ -256,12 +359,37 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
   const pricedShare = calls ? 1 - unpriced / calls : null;
   const unmetered = tiles.tokens.unmetered_runs;
 
+  // The chart on screen: runs by agent, or tokens by model — the same range, the same buckets, the same brush.
+  const tokens = chartMode === "tokens";
+  const shownChart = tokens ? tokenChart : chart;
+  const shownError = tokens ? tokenChartError : chartError;
+  const shownHidden = tokens ? hiddenModels : hidden;
+  const shownOrder = (shownChart?.series ?? []).map(s => s.key);
+  // A legend only when there are two series or more; the tokens chart names at most eight models, as Usage did.
+  const legend = (shownChart?.series.length ?? 0) > 1 ? shownChart!.series.slice(0, tokens ? 8 : undefined) : [];
+  const toggleSeries = (key: string) => (tokens ? setHiddenModels : setHidden)(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
   // Which buckets the current brush covers, for the chart's highlight overlay.
   const selection: [number, number] | null = (() => {
-    if (!range.since || !range.until || !chart) return null;
-    const s = chart.edges.findIndex(e => Date.parse(e) >= Date.parse(range.since!));
-    return s < 0 ? null : [Math.max(0, s), chart.edges.length - 1];
+    if (!range.since || !range.until || !shownChart) return null;
+    const s = shownChart.edges.findIndex(e => Date.parse(e) >= Date.parse(range.since!));
+    return s < 0 ? null : [Math.max(0, s), shownChart.edges.length - 1];
   })();
+
+  const openEvents = (filter: EventsFilter | null) => {
+    setEventsFilter(filter);
+    setEventsOpen(true);
+    eventsRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  };
+  const openTrace = (traceId: string) => {
+    setTraceSel({ traceId, investigationId: null });
+    setTracesOpen(true);
+    tracesRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  };
 
   const openRuns = (filter: RunFilter) => {
     setRunFilter(filter);
@@ -345,6 +473,17 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                   </Chip>
                 )}
                 <span>{compactNumber(tiles.tokens.total)} tokens</span>
+                {usage && <span data-testid="ao-spend-calls" style={NUM}>· {countNoun(usage.calls, "call")}</span>}
+                {usage && usage.fallback.rate != null && (
+                  <span data-testid="ao-fallback" style={{ ...NUM, color: usage.fallback.fell_back > 0 ? "var(--amb4)" : undefined }}
+                    title={`${formatCount(usage.fallback.fell_back)} of ${formatCount(usage.fallback.of_attributed)} calls `
+                      + "that recorded it — the primary backend refused and another provider answered"}>
+                    · {pct(usage.fallback.rate)} fell back
+                  </span>
+                )}
+                {usageError && !usage && (
+                  <Chip tone="amber" testId="ao-spend-calls-failed" title={usageError}>calls not read</Chip>
+                )}
                 {unmetered > 0 && (
                   <Chip tone="amber" title="Finished runs that reported no usage — unknown, not zero">
                     {formatCount(unmetered)} unmetered
@@ -361,6 +500,13 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
                 facts: [
                   ["Tokens", `${compactNumber(tiles.tokens.total)} from ${countNoun(tiles.tokens.metered_runs, "run")} that reported usage`],
                   ["Runs that reported no usage", `${formatCount(unmetered)} — unknown, not zero`],
+                  ...(usage ? [
+                    ["Calls that reported no usage", `${formatCount(usage.calls_without_usage)} of ${formatCount(usage.calls)}`
+                      + (usage.calls_without_usage ? " — unknown, not zero" : "")],
+                    ["Fell back to another provider", usage.fallback.of_attributed === 0
+                      ? "no call recorded whether it fell back"
+                      : `${formatCount(usage.fallback.fell_back)} of ${formatCount(usage.fallback.of_attributed)} calls that recorded it`],
+                  ] as Array<[string, string]> : []),
                 ],
                 note: tiles.cost && !tiles.cost.is_complete
                   ? "A floor, not a total: some calls ran on models nothing publishes a price for." : undefined,
@@ -387,8 +533,7 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
               <div>
                 {attention.slice(0, 3).map((row, i) => {
                   const t = needsYouTitle(row.title);
-                  const decides = row.source === PROPOSAL_SOURCE
-                    || (row.source === "automation_approval" && !!row.resolve?.proposal_id);
+                  const decides = proposalOf(row) !== "";
                   return (
                     <div key={`${row.source}:${row.id}`} style={{ display: "grid", alignItems: "center", gap: 12,
                       gridTemplateColumns: "minmax(0, 1fr) auto auto", padding: "8px 0", ...(i ? RULE : {}) }}>
@@ -436,45 +581,55 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
             )}
           </NeedsYou>
 
-          {/* ── the picture: runs by agent on the shared axis ──────────────────────── */}
-          <Card label="Runs by agent" testId="ao-chart"
-            right={chart ? `${rangeWords} · ${perBucket(chart.window.bucket_seconds)}` : rangeWords}>
+          {/* ── the picture: runs by agent, or tokens by model, on the shared axis ─────────────────── */}
+          <Card testId="ao-chart" ariaLabel={tokens ? "Tokens by model" : "Runs by agent"}
+            label={<Segmented label="What the chart counts" value={chartMode} onChange={setChartMode}
+              options={CHART_MODES} />}
+            right={<>
+              <span>{shownChart ? `${rangeWords} · ${perBucket(shownChart.window.bucket_seconds)}` : rangeWords}</span>
+              {/* A top-N built from a share of the calls is not a top-N: what share named a model is said. */}
+              {tokens && tokenChart?.coverage != null && tokenChart.coverage < 1 && (
+                <Chip tone="amber" title="Calls that named no model are not drawn">
+                  {pct(tokenChart.coverage)} of calls named a model
+                </Chip>
+              )}
+            </>}>
             <div style={{ ...ROW, marginBottom: 6 }}>
-              {/* A legend only when there are two series or more; each swatch also hides its series. */}
-              {(chart?.series.length ?? 0) > 1 && chart!.series.map(s => {
-                const off = hidden.has(s.key);
+              {/* Each swatch also hides its series. */}
+              {legend.map(s => {
+                const off = shownHidden.has(s.key);
+                const name = s.label || "(unattributed)";
                 return (
                   <Button key={s.key} variant="ghost" size="xs" aria-pressed={!off}
-                    title={off ? `Show ${s.label}` : `Hide ${s.label}`}
-                    onClick={() => setHidden(prev => {
-                      const next = new Set(prev);
-                      if (next.has(s.key)) next.delete(s.key); else next.add(s.key);
-                      return next;
-                    })}
+                    title={off ? `Show ${name}` : `Hide ${name}`}
+                    onClick={() => toggleSeries(s.key)}
                     style={{ height: "auto", padding: "1px 6px", margin: 0, color: "var(--t2)", opacity: off ? 0.45 : 1,
                       textDecoration: off ? "line-through" : "none" }}>
-                    <i aria-hidden style={{ width: 8, height: 8, borderRadius: 2, background: colorFor(s.key, order) }} />
-                    {s.label}
+                    <i aria-hidden style={{ width: 8, height: 8, borderRadius: 2, background: colorFor(s.key, shownOrder) }} />
+                    {name}
                   </Button>
                 );
               })}
-              <label className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto",
-                color: "var(--t2)", cursor: "pointer" }}
-                title="The automation engine's per-minute check — background work, not an agent's. Counted apart unless switched in.">
-                <Checkbox checked={showRunners} onChange={e => setShowRunners(e.target.checked)} />
-                <span style={NUM}>include {formatCount(tiles.runner_runs)} background runs</span>
-              </label>
+              {!tokens && (
+                <label className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto",
+                  color: "var(--t2)", cursor: "pointer" }}
+                  title="The automation engine's per-minute check — background work, not an agent's. Counted apart unless switched in.">
+                  <Checkbox checked={showRunners} onChange={e => setShowRunners(e.target.checked)} />
+                  <span style={NUM}>include {formatCount(tiles.runner_runs)} background runs</span>
+                </label>
+              )}
             </div>
-            {chartError ? (
-              <ReadFailed what="the run chart" error={chartError} onRetry={load} />
-            ) : chart === null ? (
-              <Loading what="the run chart" />
-            ) : chart.series.every(s => !s.total) ? (
-              <Empty>No agent runs in this range.</Empty>
+            {shownError ? (
+              <ReadFailed what={tokens ? "the token chart" : "the run chart"} error={shownError}
+                onRetry={tokens ? loadTokens : load} />
+            ) : shownChart === null ? (
+              <Loading what={tokens ? "the token chart" : "the run chart"} />
+            ) : shownChart.series.every(s => !s.total) ? (
+              <Empty>{tokens ? "No model calls in this range." : "No agent runs in this range."}</Empty>
             ) : (
-              <ActivityChart window={chart.window} edges={chart.edges}
-                series={chart.series} runners={[]} showRunners={false}
-                hidden={hidden} order={order} selection={selection}
+              <ActivityChart window={shownChart.window} edges={shownChart.edges}
+                series={shownChart.series} runners={[]} showRunners={false}
+                hidden={shownHidden} order={shownOrder} selection={selection}
                 onBrush={onBrush} onPickBucket={onBrush} />
             )}
             {range.since && (
@@ -496,6 +651,9 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
             {runners.map(r => <RunnerRow key={r.id} row={r} />)}
           </Card>
 
+          {/* ── where the tokens went: by model, by role, by where in the code ─────────────────────── */}
+          <UsageLists data={usage} error={usageError} onRetry={load} onOpenEvents={openEvents} />
+
           {/* ── the runs behind the figures ───────────────────────────────────────── */}
           <section ref={runsRef} aria-label="Runs" data-testid="ao-runs" style={CARD}>
             <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8,
@@ -507,12 +665,50 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
               </span>
             </div>
             {runFilter === "active" ? (
-              <ActiveRuns runs={active} error={activeError} onRetry={load} onKill={id => cancelJob(id).then(load).catch(() => {})} />
+              <ActiveRuns runs={active} error={activeError} onRetry={load} connections={connections}
+                onKill={id => cancelJob(id).then(load).catch(() => {})} />
             ) : (
               <RangedRuns filter={runFilter} ranged={ranged} error={rangedError} onRetry={loadRanged}
-                rangeWords={rangeWords} />
+                rangeWords={rangeWords} connections={connections} />
             )}
           </section>
+
+          {/* ── the deep runs, each by its question; a row opens its phases and its trace ──────────── */}
+          <DeepRuns onResume={onOpenInvestigation} />
+
+          {/* ── the machine view, folded shut until asked for ──────────────────────────────────────── */}
+          <Fold title="Live events" testId="ao-fold-events" sectionRef={eventsRef} height={460}
+            open={eventsOpen} onOpenChange={setEventsOpen}
+            meta={eventCount
+              ? `${compactNumber(eventCount.total)} recent events${eventCount.checks
+                ? ` · ${compactNumber(eventCount.checks)} of them guardrail checks, the routine ones hidden until asked for` : ""}`
+              : countError.events ? <span title={countError.events}>every event as it happens · count not read</span>
+              : "every event as it happens"}
+            right={eventsFilter && (
+              <Button variant="ghost" size="xs" onClick={() => setEventsFilter(null)} style={{ color: "var(--blue4)" }}>
+                filtered to {eventsFilter.model || eventsFilter.role} — clear
+              </Button>
+            )}>
+            <ActivityStreamPanel onOpenTrace={openTrace} filter={eventsFilter} range={range} />
+          </Fold>
+          <Fold title="Every trace" testId="ao-fold-traces" sectionRef={tracesRef} height={640}
+            open={tracesOpen} onOpenChange={setTracesOpen}
+            meta={<>
+              {traceCount?.total != null
+                ? `${formatCount(traceCount.total)} traces${traceCount.scanned != null
+                  ? ` in the newest ${compactNumber(traceCount.scanned)} events` : ""} · `
+                : countError.traces ? <span title={countError.traces}>count not read · </span> : null}
+              search by question or answer, filter by result, duration, tokens
+            </>}
+            right={traceSel.investigationId && (
+              // The fold is "every trace": narrowed to one deep analysis's, it says so and lets go.
+              <Button variant="ghost" size="xs" style={{ color: "var(--blue4)" }}
+                onClick={() => setTraceSel({ traceId: null, investigationId: null })}>
+                one deep analysis&apos;s traces — show all
+              </Button>
+            )}>
+            <TraceExplorerPanel focusInvestigationId={traceSel.investigationId} focusTraceId={traceSel.traceId} />
+          </Fold>
         </div>
       </div>
 
@@ -643,50 +839,56 @@ function StateMark({ state }: { state: string }) {
 }
 
 /** What is in flight, one row each — every one can be killed. */
-function ActiveRuns({ runs, error, onRetry, onKill }: {
+function ActiveRuns({ runs, error, onRetry, onKill, connections }: {
   runs: FleetJob[]; error: string | null; onRetry: () => void; onKill: (id: string) => void;
+  connections: ReadonlyArray<ConnectionName>;
 }) {
   if (error !== null) return <ReadFailed what="what is running" error={error} onRetry={onRetry} />;
   const live = runs.filter(j => ACTIVE.includes(j.state));
   if (live.length === 0) return <Empty>Nothing running right now.</Empty>;
   return (
     <div>
-      {live.slice(0, 60).map((j, i) => (
-        <div key={j.id} style={{ display: "grid", alignItems: "center", gap: 12, padding: "7px 0",
-          gridTemplateColumns: "minmax(0, 1fr) auto auto", ...(i ? RULE : {}) }}>
-          <div style={{ minWidth: 0 }}>
-            <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }} title={j.title || j.kind}>
-              {runDisplayTitle(j.title || j.kind).title}
+      {live.slice(0, 60).map((j, i) => {
+        const t = jobTitle(j, connections);
+        return (
+          <div key={j.id} data-testid="ao-active-run" style={{ display: "grid", alignItems: "center", gap: 12,
+            padding: "7px 0", gridTemplateColumns: "minmax(0, 1fr) auto auto", ...(i ? RULE : {}) }}>
+            <div style={{ minWidth: 0 }}>
+              <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }} title={t.raw}>
+                {t.title}
+              </div>
+              <div className="aug-fs-xs" style={{ ...ROW, gap: 6, color: "var(--t2)" }}>
+                <StateMark state={j.state} /><span>· {j.agent?.agent || j.kind} · started {relTime(j.created_at)} ago</span>
+              </div>
             </div>
-            <div className="aug-fs-xs" style={{ ...ROW, gap: 6, color: "var(--t2)" }}>
-              <StateMark state={j.state} /><span>· {j.agent?.agent || j.kind} · started {relTime(j.created_at)} ago</span>
-            </div>
+            <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>{j.duration_ms ? duration(j.duration_ms) : ""}</span>
+            <Button variant="ghost" size="xs" onClick={() => onKill(j.id)}>Kill</Button>
           </div>
-          <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>{j.duration_ms ? duration(j.duration_ms) : ""}</span>
-          <Button variant="ghost" size="xs" onClick={() => onKill(j.id)}>Kill</Button>
-        </div>
-      ))}
+        );
+      })}
       {live.length > 60 && <div className="aug-fs-xs" style={{ ...MUTED, paddingTop: 6, ...RULE }}>+{live.length - 60} more running</div>}
     </div>
   );
 }
 
 /** The range's runs, the same work ending the same way folded into one row with its count. */
-function RangedRuns({ filter, ranged, error, onRetry, rangeWords }: {
+function RangedRuns({ filter, ranged, error, onRetry, rangeWords, connections }: {
   filter: Exclude<RunFilter, "active">; ranged: { runs: FleetJob[]; capped: string[] } | null;
   error: string | null; onRetry: () => void; rangeWords: string;
+  connections: ReadonlyArray<ConnectionName>;
 }) {
   if (error !== null) return <ReadFailed what="the runs" error={error} onRetry={onRetry} />;
   if (ranged === null) return <Loading what="the runs" />;
   const runs = ranged.runs.filter(j => (filter === "all" ? true
     : filter === "succeeded" ? j.state === "SUCCEEDED" : STOPPED.includes(j.state)));
-  const groups = foldRuns(runs);
+  const groups = foldRuns(runs, connections);
+  const capped = ranged.capped.map(jobKindLabel).join(", ");
   return (
     <div data-testid="ao-runs-list">
       {ranged.capped.length > 0 && (
         <div style={{ marginBottom: 6 }}>
-          <Chip tone="amber" title={`More than 200 runs of ${ranged.capped.join(", ")} in ${rangeWords}: the newest 200 of each are listed`}>
-            a floor · the newest 200 of {ranged.capped.join(", ")}
+          <Chip tone="amber" title={`More than 200 runs of ${capped} in ${rangeWords}: the newest 200 of each are listed`}>
+            a floor · the newest 200 of {capped}
           </Chip>
         </div>
       )}
@@ -701,7 +903,7 @@ function RangedRuns({ filter, ranged, error, onRetry, rangeWords }: {
         return (
           <div key={g.key} data-testid="ao-run-group" style={{ display: "grid", alignItems: "center", gap: 12, padding: "7px 0",
             gridTemplateColumns: "minmax(0, 1fr) auto", ...(i ? RULE : {}) }}>
-            <div style={{ minWidth: 0 }} title={errors.length ? errors.join("\n") : g.title}>
+            <div style={{ minWidth: 0 }} title={errors.length ? errors.join("\n") : g.raw}>
               <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }}>{g.title}</div>
               <div className="aug-fs-xs" style={{ ...ROW, gap: 6, color: "var(--t2)" }}>
                 <StateMark state={g.state} />

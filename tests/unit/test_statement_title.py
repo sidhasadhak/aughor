@@ -42,3 +42,21 @@ def test_shapes(sql, title):
 @pytest.mark.parametrize("sql", ["DELETE FROM t", "not sql at all (((", "", "SELECT 1"])
 def test_a_statement_that_does_not_say_gets_no_words_never_a_guess(sql):
     assert statement_title(sql, "duckdb") == ""
+
+
+def test_the_door_reads_the_connections_own_dialect_so_a_bigquery_statement_gets_its_words(monkeypatch):
+    """The tests above hand the dialect in; the door looks it up (`trust.lineage_edges.dialect_for_connection`). That
+    lookup read the registry's `type`, which no row carries — the column is `conn_type` — so every connection parsed
+    generically, BigQuery's backticks failed, and all seven of theLook's recent runs got no words (2026-10-13)."""
+    from aughor.db import registry
+    from aughor.trust.lineage_edges import dialect_for_connection
+    monkeypatch.setattr(registry, "list_connections", lambda *a, **k: [
+        {"id": "bq", "name": "theLook", "conn_type": "bigquery"},
+        {"id": "pg", "name": "Lux", "conn_type": "postgres"},
+        {"id": "dk", "name": "DuckDB", "conn_type": "duckdb"},
+    ])
+    assert (dialect_for_connection("bq"), dialect_for_connection("pg"), dialect_for_connection("dk")) == ("bigquery", "postgres", "duckdb")
+    assert dialect_for_connection("gone") is None
+    sql, title = LIVE[0]
+    assert statement_title(sql, dialect_for_connection("bq")) == title
+    assert statement_title(sql, None) == ""          # what the door produced before: no dialect, no words

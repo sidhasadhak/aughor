@@ -8,6 +8,7 @@
  * through, so a screen can say why something was refused instead of "request failed".
  */
 import { getApiBase } from "./config";
+import { byWho } from "./names";
 
 export class RecordError extends Error {
   status: number;
@@ -744,14 +745,18 @@ export const getOnboarding = (connectionId: string) =>
 // ── words for the ledger's own identifiers ───────────────────────────────────────────────
 
 /** `user:ana` → `ana`; `person:ana` → `ana`; `monitor:churn-watch` → `the churn-watch monitor`;
- *  an empty author reads as nobody named, never as a blank cell. */
-export function whoLabel(who: string | null | undefined): string {
+ *  an empty author reads as nobody named, never as a blank cell. Given `me` (the reader, `useMe().actor`), the
+ *  reader's own name reads as "you". */
+export function whoLabel(who: string | null | undefined, me?: string | null): string {
   const w = (who ?? "").trim();
   if (!w) return "nobody named";
   const [kind, ...rest] = w.split(":");
   const name = rest.join(":");
-  if (!name) return w === "system" ? "the platform" : w === "person" ? "a person" : w === "unidentified" ? "nobody identified" : w;
-  if (kind === "user" || kind === "person") return name;
+  if (!name) {
+    return w === "system" ? "the platform" : w === "person" ? "a person" : w === "unidentified" ? "nobody identified"
+      : byWho(w, me);
+  }
+  if (kind === "user" || kind === "person") return byWho(name, me);
   if (kind === "monitor") return `the ${name} monitor`;
   if (kind === "agent") return `the ${name} agent`;
   if (kind === "claim") return "a restated claim";

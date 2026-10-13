@@ -9,7 +9,8 @@
  * This is a STARTING arrangement, not the arrangement: the canvas is `@xyflow/react`, so a person drags a card
  * where they want it and that position is what they see next time. What lives here is only what has to be
  * decided before anyone has dragged anything — which is why there is no edge geometry in this file any more. The
- * canvas routes its own edges and places its own labels; this returns positions.
+ * canvas routes its own edges and places its own labels; this returns positions, and how far a label steps aside
+ * when it would land on another (`separateLabels`).
  *
  * Pure: the map component draws what this returns, and the tests pin it without a DOM.
  */
@@ -51,6 +52,60 @@ export const LABEL_LIFT = 14;
 export function linkLabelY(side: string, sourceY: number, targetY: number, middleY: number): number {
   if (side !== "left" && side !== "right") return middleY;
   return Math.min(sourceY, targetY) - CARD.h / 2 - LABEL_LIFT;
+}
+
+/** A link's label as the map sizes it before anything is drawn: 11px text (`--aug-fs-xs`) inside the 6×3 padding the
+ *  map hands React Flow. A character is counted a little wider than Inter draws one, so two labels the map keeps
+ *  apart are apart on screen too. One step aside is a label's height and the air above it. */
+export const LINK_LABEL = { charW: 6.4, padX: 6, padY: 3, h: 20, gap: 4 };
+
+/** One named link's label, centred where React Flow would put it. */
+export interface LabelSpot {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  /** A sideways link's label is lifted clear above its cards (`linkLabelY`), so it only ever steps further up. */
+  sideways: boolean;
+}
+
+interface Box { x0: number; y0: number; x1: number; y1: number }
+
+const labelBox = (spot: LabelSpot, dy: number): Box => {
+  const w = spot.text.length * LINK_LABEL.charW + 2 * LINK_LABEL.padX;
+  return { x0: spot.x - w / 2, y0: spot.y + dy - LINK_LABEL.h / 2, x1: spot.x + w / 2, y1: spot.y + dy + LINK_LABEL.h / 2 };
+};
+const meets = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+/** How many steps a label may take before it settles for the nearest place clear of every other label. */
+const MAX_STEPS = 12;
+
+/** How far each named link's label moves, up or down, so that no two labels lie on top of each other. Measured on the
+ *  live maps (2026-10-13): theLook's Order opened with 5 of its 6 labels in a pile — three links run between Order and
+ *  User and two between Order and Product, and links between the same two cards share one path and so one label
+ *  point — and Lux's Platform had 6 of its 18 on a neighbour's. A label stays where React Flow puts it when that is
+ *  clear; otherwise it steps a label's height at a time to the nearest place that touches no label already placed
+ *  and no card, so the labels of links sharing a path stack along it. A card may cover a label's padding, which
+ *  hides no text — counting that as a collision sent a label six steps up a map for a corner it barely touched.
+ *  Sideways labels are placed first and then upright ones, each in the order given, so the same map always settles
+ *  the same way. `cards` are top-left corners. */
+export function separateLabels(spots: LabelSpot[], cards: { x: number; y: number }[] = []): Map<string, number> {
+  const step = LINK_LABEL.h + LINK_LABEL.gap;
+  const { padX, padY } = LINK_LABEL;
+  const blocks = cards.map((c) => ({ x0: c.x + padX, y0: c.y + padY, x1: c.x + CARD.w - padX, y1: c.y + CARD.h - padY }));
+  const placed: Box[] = [];
+  const shifts = new Map<string, number>();
+  // The labels with the fewest places to go are placed first: a sideways link's only steps up, an upright link's
+  // either way.
+  for (const spot of [...spots.filter((s) => s.sideways), ...spots.filter((s) => !s.sideways)]) {
+    const tries = [0];
+    for (let n = 1; n <= MAX_STEPS; n += 1) tries.push(...(spot.sideways ? [-n] : [-n, n]));
+    const clearOfLabels = (t: number) => !placed.some((box) => meets(box, labelBox(spot, t * step)));
+    const clearOfCards = (t: number) => !blocks.some((box) => meets(box, labelBox(spot, t * step)));
+    const t = tries.find((n) => clearOfLabels(n) && clearOfCards(n)) ?? tries.find(clearOfLabels) ?? 0;
+    shifts.set(spot.id, t * step);
+    placed.push(labelBox(spot, t * step));
+  }
+  return shifts;
 }
 
 function neighboursOf(map: TypeMap): Map<string, Set<string>> {

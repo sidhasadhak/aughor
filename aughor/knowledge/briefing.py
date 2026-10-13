@@ -15,6 +15,7 @@ Cache: the `briefing_cache` keyed store  |  TTL: 2 hours per connection
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -463,6 +464,50 @@ def best_action_for(ins: dict, *, industry=None) -> Optional[dict]:
             "executable": False, "why": "the playbook's best play for this finding, by learned success rate"}
 
 
+#: A figure in a sentence or a finding: "15,098", "581", "13156.4" — never a citation marker "[1]".
+_FIGURE = re.compile(r"(?<![\w.\[])\d[\d,]*(?:\.\d+)?(?![\d\]])")
+
+
+def _figures(text: str) -> set[float]:
+    """The figures a text states that can tell one finding from another: three digits or more, and not a year — "3%"
+    or "12 orders" sit in half the findings of any brief, so they never decide which one a sentence cites."""
+    out: set[float] = set()
+    for m in _FIGURE.finditer(text or ""):
+        raw = m.group(0).replace(",", "")          # digits, and a decimal part only with digits after it
+        whole = raw.split(".")[0]
+        if len(whole) < 3 or (len(whole) == 4 and "." not in raw and 1900 <= int(whole) <= 2100):
+            continue
+        out.add(float(raw))
+    return out
+
+
+def _reconcile_refs(narrative: str, top: list[dict]) -> dict[str, dict]:
+    """Which finding each [N] marker of the narrative cites.
+
+    The prompt numbers its findings [1]…[8] and a marker is read as that number — but a narrator may number its
+    markers in the order it uses them, and LuxExperience's September edition put [1] on the AOV sentence while ref 1
+    opened the clienteling finding (2026-10-12). So the figures decide: a marker whose numbered finding shares no figure
+    with the sentence it sits in goes to the one finding that does share them. A sentence with no telling figure, a
+    numbered finding that shares one, and a tie all keep the number."""
+    by_number = {str(i + 1): ins for i, ins in enumerate(top)}
+    said: dict[str, set[float]] = {}
+    for sentence in re.split(r"(?<=[.!?])\s+", narrative or ""):
+        figures = _figures(re.sub(r"\[\d+\]", "", sentence))
+        for ref in re.findall(r"\[(\d+)\]", sentence):
+            said.setdefault(ref, set()).update(figures)
+    out = dict(by_number)
+    for ref, figures in said.items():
+        own = by_number.get(ref)
+        if not figures or (own is not None and figures & _figures(str(own.get("finding") or ""))):
+            continue
+        shared = {n: len(figures & _figures(str(ins.get("finding") or ""))) for n, ins in by_number.items()}
+        most = max(shared.values(), default=0)
+        best = [n for n, k in shared.items() if k == most]
+        if most and len(best) == 1:
+            out[ref] = by_number[best[0]]
+    return out
+
+
 def generate_narrative(
     domain_data: dict[str, list[dict]],
     patterns: list[dict],
@@ -744,8 +789,8 @@ def generate_narrative(
     # guarantee, covering findings persisted before that landed. `aughor.util.format` owns the rule.
     narrative_text = round_long_decimals(_cur(result.narrative))
 
-    # Map citation refs back to actual insight IDs
-    ref_to_insight: dict[str, dict] = {str(i + 1): ins for i, ins in enumerate(top[:8])}
+    # Map citation refs back to actual insight IDs — by the figures each marked sentence says (`_reconcile_refs`)
+    ref_to_insight: dict[str, dict] = _reconcile_refs(narrative_text, top[:8])
     # CB-7 — the playbook is read for this brief's industry only (a play from another industry is
     # a plausible-sounding recipe for a business the reader is not in).
     _pb_industry = None

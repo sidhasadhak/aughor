@@ -6,7 +6,10 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { CARD, collapseParts, hubOf, LABEL_LIFT, layoutMap, linkLabelY, litBy, ringsOf, unlinkedTypes } from "@/lib/entityMapLayout";
+import {
+  CARD, collapseParts, hubOf, LABEL_LIFT, type LabelSpot, layoutMap, LINK_LABEL, linkLabelY, litBy, ringsOf, separateLabels,
+  unlinkedTypes,
+} from "@/lib/entityMapLayout";
 import type { TypeMap, TypeMapLink, TypeMapRow } from "@/lib/objectTypes";
 
 const link = (from: string, to: string): TypeMapLink => ({
@@ -165,6 +168,69 @@ describe("where a link's label sits", () => {
     expect(linkLabelY("left", 320, 300, 310)).toBe(300 - CARD.h / 2 - LABEL_LIFT);
     expect(linkLabelY("bottom", 100, 400, 250)).toBe(250);
     expect(linkLabelY("top", 400, 100, 250)).toBe(250);
+  });
+});
+
+describe("separateLabels — no named link's label lands on another", () => {
+  const STEP = LINK_LABEL.h + LINK_LABEL.gap;
+  const spot = (id: string, x: number, y: number, sideways = true, text = "belongs to · N:1"): LabelSpot =>
+    ({ id, x, y, text, sideways });
+  /** The box a label is drawn in once its shift is applied — as wide as the map counts it. */
+  const box = (s: LabelSpot, dy: number) => {
+    const w = s.text.length * LINK_LABEL.charW + 2 * LINK_LABEL.padX;
+    return { x0: s.x - w / 2, x1: s.x + w / 2, y0: s.y + dy - LINK_LABEL.h / 2, y1: s.y + dy + LINK_LABEL.h / 2 };
+  };
+  /** Every pair of labels whose boxes meet, by id. */
+  const overlapping = (spots: LabelSpot[], shifts: Map<string, number>) => {
+    const boxes = spots.map((s) => ({ id: s.id, ...box(s, shifts.get(s.id) ?? 0) }));
+    return boxes.flatMap((a, i) => boxes.slice(i + 1)
+      .filter((b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1).map((b) => `${a.id}/${b.id}`));
+  };
+
+  it("leaves a label that touches nothing where React Flow put it", () => {
+    const spots = [spot("a", 100, 100), spot("b", 600, 100), spot("c", 100, 400, false)];
+    expect([...separateLabels(spots).values()]).toEqual([0, 0, 0]);
+  });
+
+  it("stacks the labels of links that share one path — theLook's three between Order and User — a step apart", () => {
+    // links between the same two cards share one path, and so one label point
+    const spots = [spot("belongs", 300, 200, true, "belongs to · N:1 · via OrderItem"), spot("belongs2", 300, 200),
+      spot("placed", 300, 200, true, "placed by · N:1")];
+    const shifts = separateLabels(spots);
+    expect(overlapping(spots, shifts)).toEqual([]);
+    // a sideways link's label sits above its cards, so its stack climbs and never drops onto them
+    expect([...shifts.values()]).toEqual([0, -STEP, -2 * STEP]);
+  });
+
+  it("moves an upright link's label the nearer way, up first and then down", () => {
+    const spots = [spot("a", 300, 200, false), spot("b", 300, 200, false), spot("c", 300, 200, false)];
+    expect([...separateLabels(spots).values()]).toEqual([0, -STEP, STEP]);
+  });
+
+  it("places a sideways label before an upright one, which can give way in either direction", () => {
+    // the upright label comes first in the map's order, yet the sideways one keeps its place
+    const spots = [spot("upright", 300, 200, false), spot("sideways", 320, 205)];
+    const shifts = separateLabels(spots);
+    expect(shifts.get("sideways")).toBe(0);
+    expect(Math.abs(shifts.get("upright")!)).toBeGreaterThanOrEqual(STEP);
+    expect(overlapping(spots, shifts)).toEqual([]);
+  });
+
+  it("steps a label off a card, but lets a card cover the padding round its text", () => {
+    const label = spot("a", 300, 200, false);
+    // a card right under the label: the label leaves it
+    expect(Math.abs(separateLabels([label], [{ x: 300 - CARD.w / 2, y: 200 - CARD.h / 2 }]).get("a")!))
+      .toBeGreaterThanOrEqual(STEP);
+    // a card whose corner reaches only into the label's padding hides none of its text, so the label stays
+    const w = label.text.length * LINK_LABEL.charW + 2 * LINK_LABEL.padX;
+    const corner = { x: 300 + w / 2 - LINK_LABEL.padX + 1, y: 200 + LINK_LABEL.h / 2 - LINK_LABEL.padY + 1 };
+    expect(separateLabels([label], [corner]).get("a")).toBe(0);
+  });
+
+  it("keeps every label of a crowded middle clear of every other — Lux's Platform names eighteen links", () => {
+    const spots = Array.from({ length: 18 }, (_, i) =>
+      spot(`l${i}`, 400 + (i % 6) * 40, 300 + Math.floor(i / 6) * 10, i % 2 === 0));
+    expect(overlapping(spots, separateLabels(spots))).toEqual([]);
   });
 });
 

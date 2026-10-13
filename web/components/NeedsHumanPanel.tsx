@@ -13,7 +13,7 @@
  */
 import { connectionLabel, needsYouTitle } from "@/lib/names";
 import { getConnections as listConnectionsForNames, type Connection as ConnectionForNames } from "@/lib/api";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useVisiblePoll } from "@/lib/useVisiblePoll";
 
@@ -50,6 +50,16 @@ const SOURCE_CHIP: Record<NeedsHumanRow["source"], ChipSpec> = {
   automation_broken: { hue: "negative", label: "broken" },
 };
 
+/** Each source by its key on the wire and the words its count says beside it — a source that could not be read is
+ *  named by the same words. */
+const SOURCES: { key: keyof NeedsHuman["sources"]; label: string }[] = [
+  { key: "kinetic_inbox", label: "Inbox proposals" },
+  { key: "paused_runs", label: "Paused deep runs" },
+  { key: "automation_approvals", label: "Automation approvals" },
+  { key: "agent_alerts", label: "Agent alerts" },
+  { key: "broken_automations", label: "Broken automations" },
+];
+
 /** An alert's own severity outranks the source chip: three rows can wait the same
  *  number of minutes and not be equally urgent. */
 function chipFor(row: NeedsHumanRow): ChipSpec {
@@ -71,11 +81,26 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
   useEffect(() => { listConnectionsForNames().then(setConns).catch(() => {}); }, []);
   const [data, setData] = useState<NeedsHuman | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // A read that failed, and an acknowledge the server refused — two different things to say.
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
+  // Reads overlap: the poll fires every 10 s and this route runs its sweeps before it answers.
+  // Only an answer newer than the one on screen may replace it, so a slow read that started
+  // before something arrived cannot put "nothing" back over what a later read found.
+  const issued = useRef(0);
+  const shown = useRef(0);
   const load = useCallback(() => {
-    getNeedsHuman().then(d => { setData(d); setError(null); })
-      .catch(e => setError(String(e?.message || e)));
+    const n = ++issued.current;
+    getNeedsHuman().then(d => {
+      if (n < shown.current) return;
+      shown.current = n;
+      setData(d); setError(null);
+    }).catch(e => {
+      if (n < shown.current) return;
+      shown.current = n;
+      setError(String(e?.message || e));
+    });
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -84,17 +109,20 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
 
   const resolveAlert = async (row: NeedsHumanRow) => {
     setBusy(row.id);
+    setActionError(null);
     try {
       await acknowledgeAgentAlert(row.id);
       load();
     } catch (e) {
-      setError(String((e as Error)?.message || e));
+      setActionError(String((e as Error)?.message || e));
     } finally {
       setBusy(null);
     }
   };
 
-  if (error && !data) {
+  // A failed read is said whenever it happens, not only before the first answer. Kept behind an
+  // earlier empty answer, it printed "Nothing needs a human … right now" over a read that never came back.
+  if (error && (!data || data.rows.length === 0)) {
     return <ReadFailed what="what needs a person" error={error} onRetry={load} style={{ padding: 24 }} />;
   }
   if (!data) {
@@ -106,6 +134,9 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
   // turn this into "the age of whichever row happens to be first".
   const oldest = data.rows.length
     ? Math.max(...data.rows.map(r => r.waiting_ms ?? 0)) : null;
+  // A source whose read failed is not empty: its count is "—" and it is named, never folded into "nothing waits".
+  const unread = data.unread ?? [];
+  const n = (key: keyof NeedsHuman["sources"]) => (unread.includes(key) ? "—" : data.sources[key] ?? 0);
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
@@ -113,18 +144,20 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
           decided was worth being told about, and an empty Attention page with no rules
           reads as "all clear" when it means "nothing is watching". */}
       <AgentAlertRulesPanel />
+      {error && <ReadFailed what="what needs a person again — the list below is from the last read"
+        error={error} onRetry={load} style={{ marginBottom: 12 }} />}
+      {actionError && <div role="alert" className="aug-fs-sm" style={{ color: "var(--red4)", marginBottom: 12 }}>
+        Not done — {actionError}</div>}
       <MiniStatRow>
         <MiniStat value={data.count} label="Waiting on a human"
           tone={data.count > 0 ? "var(--amb4)" : "var(--t1)"} />
-        <MiniStat value={data.sources.kinetic_inbox} label="Inbox proposals" />
-        <MiniStat value={data.sources.paused_runs} label="Paused deep runs" />
-        <MiniStat value={data.sources.automation_approvals} label="Automation approvals" />
-        {/* `?? 0` because this source is newer than the panel: an API that predates
-            VA-6 omits the key, and rendering `undefined` where a count belongs is a
-            worse answer than zero. */}
-        <MiniStat value={data.sources.agent_alerts ?? 0} label="Agent alerts" />
-        <MiniStat value={data.sources.broken_automations ?? 0} label="Broken automations"
-          tone={(data.sources.broken_automations ?? 0) > 0 ? "var(--red4)" : undefined} />
+        {/* `?? 0` (in `n`) because a source can be newer than the API: one that predates VA-6 omits the key, and
+            rendering `undefined` where a count belongs is a worse answer than zero. */}
+        {SOURCES.map(({ key, label }) => (
+          <MiniStat key={key} value={n(key)} label={label}
+            tone={key === "broken_automations" && (data.sources.broken_automations ?? 0) > 0 && !unread.includes(key)
+              ? "var(--red4)" : undefined} />
+        ))}
         {/* The leading indicator. A count says how many are waiting; the OLDEST says
             whether anything has been abandoned — three items waiting a minute and three
             waiting since Tuesday are the same count and a different situation. */}
@@ -133,10 +166,18 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
           tone={oldest != null && oldest > 3_600_000 ? "var(--red4)" : undefined} />
       </MiniStatRow>
 
+      {unread.length > 0 && (
+        <div role="alert" data-testid="needs-unread" className="aug-fs-sm" style={{ color: "var(--amb4)", marginBottom: 12 }}>
+          {`Could not read ${unread.map(k => (SOURCES.find(s => s.key === k)?.label ?? k).toLowerCase()).join(", ")}`
+            + " — anything waiting there is not shown."}
+        </div>
+      )}
+
       {data.rows.length === 0 ? (
         <div style={{ padding: 32, textAlign: "center", color: "var(--t3)", fontSize: 12,
           background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
-          Nothing needs a human. Every source is empty right now.
+          {unread.length > 0 ? "Nothing waits in the sources that could be read."
+            : "Nothing needs a human. Every source is empty right now."}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

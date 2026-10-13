@@ -48,6 +48,7 @@ const DRAWINGS = {
   "components/cockpit/ObjectCockpitStarter.tsx": "the starter's preview of objects per day, drawn small from measured counts",
   "components/cockpit/AppPieces.tsx": "a timeline's bars between two moments, one lane per object, computed per page",
   "components/ERDiagram.tsx":       "relationship edges between table cards",
+  "components/BrainMapPanel.tsx":   "the brain map's measured-link arrows between store boxes, computed per layout",
   "components/ProcessMapper.tsx":   "the process map itself — nodes, edges, hit areas",
   "components/brief/Sparkline.tsx": "the sparkline path, area fill and end dot",
   "components/query/GeometryOutline.tsx": "a cell's geometry drawn to its own bounds — paths and dots computed per value (DE-5e)",

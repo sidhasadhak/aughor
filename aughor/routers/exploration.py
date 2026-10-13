@@ -316,7 +316,7 @@ class FixAllRequest(BaseModel):
 
 # ── Connection-scoped ─────────────────────────────────────────────────────────
 
-def _restored_error(state: dict) -> str | None:
+def _restored_error(state: dict, schema_state=None) -> str | None:
     """Name the schemas that failed, for a run restored from disk.
 
     This field was hardcoded to `None`, so a restored exploration could not report
@@ -334,6 +334,11 @@ def _restored_error(state: dict) -> str | None:
     single-schema one) reported `phase: "failed", error: null` forever. The per-schema
     sentence stays as the fallback, because a partly-failed run still reports COMPLETE and
     that remains the only place its failures can be said out loud.
+
+    **A budget stop is not a failure.** A schema its own run budget stopped records the FAILED phase, but its
+    progress is saved and the platform continues it a day later (`explorer/continuous.py`). `schema_state(name)`
+    reads each failed schema's own state so such a stop is said as one: LuxExperience read "2 of 3 schemas failed
+    to explore" over 46 findings when both had stopped at their token budget (2026-10-13).
     """
     recorded = str(state.get("error") or "").strip()
     if recorded:
@@ -342,8 +347,26 @@ def _restored_error(state: dict) -> str | None:
     failed = sorted(s for s, p in per.items() if p == ExplorationPhase.FAILED.value)
     if not failed:
         return None
-    shown = ", ".join(failed[:5]) + (f" (+{len(failed) - 5} more)" if len(failed) > 5 else "")
-    return f"{len(failed)} of {len(per)} schemas failed to explore: {shown}"
+    from aughor.explorer.continuous import stopped_on_budget_at
+    stopped = [s for s in failed if schema_state is not None and stopped_on_budget_at(schema_state(s))]
+    broke = [s for s in failed if s not in stopped]
+
+    def shown(names: list[str]) -> str:
+        return ", ".join(names[:5]) + (f" (+{len(names) - 5} more)" if len(names) > 5 else "")
+
+    said = []
+    if broke:
+        said.append(f"{len(broke)} of {len(per)} schemas failed to explore: {shown(broke)}")
+    if stopped:
+        said.append(f"{len(stopped)} of {len(per)} schemas stopped at {'its' if len(stopped) == 1 else 'their'} run "
+                    f"budget — progress saved, continued a day later: {shown(stopped)}")
+    return "; ".join(said)
+
+
+def _schema_state_reader(conn_id: str):
+    """Each schema's own saved state, by name — for `_restored_error` to tell a budget stop from a failure."""
+    from aughor.explorer import store as _s
+    return lambda schema: _s.load(_store_key(conn_id, schema))
 
 
 def _continues_at(state: dict) -> str | None:
@@ -449,7 +472,7 @@ def get_exploration_status(conn_id: str, schema: str | None = None):
         "first_insight_at": state.get("first_insight_at"),
         "first_insight_seconds": elapsed_seconds(state.get("started_at"), state.get("first_insight_at")),
         "completed_at": state.get("completed_at"),
-        "error": _restored_error(state),
+        "error": _restored_error(state, None if schema else _schema_state_reader(conn_id)),
         # a run its own budget stopped is continued a day later — the Briefing says when
         "continues_at": _continues_at(state),
         "domain_intel_skipped": state.get("domain_intel_skipped", False),

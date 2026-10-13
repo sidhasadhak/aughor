@@ -91,7 +91,7 @@ export function ProvenanceDrawer({ open, data, onClose }: {
 
             <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "5px 12px",
                          margin: 0 }}>
-              {data.window && <><Dt>Window</Dt><Dd mono>{data.window}</Dd></>}
+              {data.window && <><Dt>Range</Dt><Dd mono>{data.window}</Dd></>}
               <Dt>Definition</Dt><Dd>{data.definition}</Dd>
               {data.denominator && <><Dt>Out of</Dt><Dd mono>{data.denominator}</Dd></>}
               {data.coverage && <><Dt>Coverage</Dt><Dd mono>{data.coverage}</Dd></>}

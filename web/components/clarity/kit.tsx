@@ -3,16 +3,17 @@
 /**
  * The one kit a screen redone to CLARITY is built from (`aughor-v2/CLARITY.md`): the page, a card on the ground, a
  * small uppercase section label with its meta at the right, a fact as a chip, a figure (label · value · one muted
- * line), the amber "Needs you" card and its rows, a bar, bars by category, columns over time, and the one muted line
- * an empty section is.
+ * line), the amber "Needs you" card and its rows, a bar, bars by category, columns over time, a section folded shut,
+ * and the one muted line an empty section is.
  *
  * Home drew these first, inside `home/HomeDesk.tsx`. Security & Audit, Monitors, Agent Ops' Overview, Now and the
  * Inbox share them from here, so they read as one product and like Home (two kits were made the same day and are
  * one here). Nothing here fetches or decides — it only lays out.
  */
-import { Children, type CSSProperties, type ReactNode } from "react";
+import { Children, type CSSProperties, type ReactNode, type Ref, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Tooltip } from "@/components/ui/tooltip";
 
 /** A card on the ground: the panel fill, no shadow, the edge only where the skin needs one (light). */
@@ -158,6 +159,40 @@ export function NeedsYou({ right, children, testId, waiting, empty }: {
       style={on ? { ...CARD, background: "var(--amb1)", borderColor: "var(--amb2)" } : CARD}>
       <Label tone={on ? "amber" : undefined} right={right}>Needs you</Label>
       {rows ? (rows.length ? rows : <Empty>{empty}</Empty>) : children}
+    </section>
+  );
+}
+
+/**
+ * A section folded shut at the foot of a page: its name, what it holds in a few muted words, and Show. Its body is not
+ * mounted until it is first opened — a live tail or a long index costs nothing until somebody asks for it — and stays
+ * mounted after, hidden, so what was chosen inside it survives closing it (the Workspace keeps its layers the same way).
+ * `height` bounds a body that scrolls inside itself.
+ */
+export function Fold({ title, meta, right, open, onOpenChange, height, children, testId, sectionRef }: {
+  title: string; meta?: ReactNode; right?: ReactNode; open: boolean; onOpenChange: (open: boolean) => void;
+  height?: number; children: ReactNode; testId?: string; sectionRef?: Ref<HTMLElement>;
+}) {
+  const [mounted, setMounted] = useState(open);
+  if (open && !mounted) setMounted(true);
+  return (
+    <section ref={sectionRef} aria-label={title} data-testid={testId} data-open={open ? "true" : "false"}
+      style={{ ...CARD, padding: 0, scrollMarginTop: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", minWidth: 0 }}>
+        <span className="aug-fs-chrome" style={{ color: "var(--t1)", fontWeight: 500, whiteSpace: "nowrap" }}>{title}</span>
+        <span className="aug-fs-sm" style={{ ...MUTED, ...ONE_LINE, flex: "1 1 auto", ...NUM }}>{meta}</span>
+        {right}
+        <Button variant="ghost" size="xs" aria-expanded={open} onClick={() => onOpenChange(!open)}>
+          {open ? "Hide" : "Show"} <Icon name={open ? "chevu" : "chevd"} size={12} />
+        </Button>
+      </div>
+      {mounted && (
+        <div data-testid={testId ? `${testId}-body` : undefined} inert={!open} aria-hidden={!open || undefined}
+          style={{ display: open ? "flex" : "none", flexDirection: "column", height, overflow: "hidden",
+            borderTop: "1px solid var(--b0)" }}>
+          {children}
+        </div>
+      )}
     </section>
   );
 }

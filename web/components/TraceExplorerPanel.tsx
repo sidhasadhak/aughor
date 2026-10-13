@@ -17,6 +17,7 @@
 import type { TraceFilters } from "@/lib/api";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { runDisplayTitle } from "@/lib/runTitle";
 import { soleSqlOfEvents } from "@/lib/verdictSql";
 
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ import { compactNumber, relTime } from "@/lib/format";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ReadFailed } from "@/components/ui/states";
 
 /** Depth of every span id, walked from the tree the API assembled. */
 function spanDepths(spans: TraceSpan[], depth = 1, out: Map<string, number> = new Map()) {
@@ -49,32 +51,15 @@ function spanDepths(spans: TraceSpan[], depth = 1, out: Map<string, number> = ne
 
 export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   focusInvestigationId?: string | null;
-  /** A trace opened from another layer (activity → "trace") — wins over the default pick. */
+  /** A trace opened from elsewhere (a live event's "trace", another layer's drill) — wins over the default pick. */
   focusTraceId?: string | null;
 }) {
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [detail, setDetail] = useState<TraceDetail | null>(null);
-  // VA-4e — the canvas leads. "Where did the time go" is a follow-up question; "what did
-  // this run actually do" is the one a reader opens a run with, and the flow answers it.
-  const [tab, setTab] = useState<"flow" | "timeline" | "events" | "logs" | "feedback">("flow");
   /** The index collapses to a rail. A 420px list beside a canvas leaves the canvas the
    *  narrower half of the pane — measured, 24-node runs fitted at 0.4 zoom — and once a
    *  run is picked, the list has done its job. */
   const [indexOpen, setIndexOpen] = useState(true);
-  const [expanded, setExpanded] = useState<number | null>(null);
-  const [note, setNote] = useState("");
-  const [verdicts, setVerdicts] = useState<FindingVerdict[]>([]);
-  const [verdictBusy, setVerdictBusy] = useState(false);
-  const [correctedSql, setCorrectedSql] = useState("");
-  const [runFeedback, setRunFeedback] = useState<TraceFeedback | null>(null);
-  const [logs, setLogs] = useState<TraceLogs | null>(null);
-  /** Session replay: how many events the run has "reached". null = show all,
-   *  which is the resting state — replay is a thing you opt into, not a mode
-   *  the panel starts in. */
-  const [replayAt, setReplayAt] = useState<number | null>(null);
-  const [runBusy, setRunBusy] = useState(false);
-
   /** Narrowing happens on the SERVER. Filtering a page in the browser looks the same to
    *  a reader and answers a different question — "the matching runs" versus "the matching
    *  runs among the fifty we happened to fetch" — and the count would confirm the wrong
@@ -111,116 +96,12 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   useEffect(() => { setOffset(0); }, [filters, pageSize]);
   useEffect(() => { if (focusTraceId) setSelected(focusTraceId); }, [focusTraceId]);
 
-  useEffect(() => {
-    if (!selected) { setDetail(null); return; }
-    getTrace(selected).then(setDetail).catch(() => setDetail(null));
-  }, [selected]);
-
-  const invId = detail?.measured ? detail.investigation_id : null;
-  // MI-3 — the SQL a verdict on this run is ABOUT. `tool_call` events carry the executed
-  // statement as `payload.input`; MI-1's `audit_log.trace_id` is the durable twin of this,
-  // but the events are already loaded here so no round trip is needed.
-  //
-  // Only when ONE distinct statement ran. A run that issued several has no single query
-  // its finding rests on, and naming one would be a fabricated attribution — a wrong
-  // training pair is worse than a missing one (§3.9's reward-integrity law applies to the
-  // corpus, not just the grader).
-  const runSql = useMemo(
-    () => (detail?.measured ? soleSqlOfEvents(detail.events) : ""), [detail]);
-  const connId = detail?.measured ? detail.conn_id : null;
-
-  const loadVerdicts = useCallback(() => {
-    getVerdicts(connId ?? undefined, 50).then(setVerdicts).catch(() => {});
-  }, [connId]);
-  useEffect(() => { setReplayAt(null); }, [selected]);
-
-  const loadLogs = useCallback(async () => {
-    if (!selected) return;
-    try { setLogs(await getTraceLogs(selected)); } catch { setLogs(null); }
-  }, [selected]);
-
-  const loadRunFeedback = useCallback(async () => {
-    if (!selected) return;
-    try { setRunFeedback(await getTraceFeedback(selected)); } catch { setRunFeedback(null); }
-  }, [selected]);
-
-  useEffect(() => { if (tab === "feedback") { loadVerdicts(); loadRunFeedback(); } },
-    [tab, loadVerdicts, loadRunFeedback]);
-  useEffect(() => { if (tab === "logs") loadLogs(); }, [tab, loadLogs]);
-
-  const depths = useMemo(
-    () => (detail?.measured ? spanDepths(detail.spans) : new Map<string, number>()),
-    [detail]);
-
-  // tool_call entry rows whose span produced a result — the result row renders
-  // the pair, so the entry row is folded away. An entry with NO result renders.
-  const resultSpans = useMemo(() => {
-    const set = new Set<string>();
-    if (detail?.measured) {
-      for (const e of detail.events) {
-        if (e.kind === "tool_call_result" && e.span_id) set.add(e.span_id);
-      }
-    }
-    return set;
-  }, [detail]);
-
-  const totalMs = detail?.measured ? detail.duration_ms || 0 : 0;
-
-  /** Where this run came from, from the rows it recorded. Shared with the canvas rail so
-   *  the header and the rail cannot disagree about the same run. */
-  const runOrigin = useMemo(
-    () => (detail?.measured ? originOf(detail.events) : null), [detail]);
-
-  /** The model that did the work. Named in the header because "which model was this" is
-   *  the first thing asked of a slow or wrong run, and it was only ever visible by
-   *  opening a node. A run that used more than one says so rather than picking one. */
-  const runModel = useMemo(() => {
-    if (!detail?.measured) return "";
-    const models = new Set(detail.events.map(e => e.model).filter(Boolean) as string[]);
-    if (models.size === 0) return "";
-    if (models.size === 1) return [...models][0];
-    return `${models.size} models`;
-  }, [detail]);
-
   /** The answer headline. The detail endpoint does not carry one — every measured
    *  `final_response` row has a null payload — so it comes off the list row this run was
    *  picked from, which is where the API does compute it. */
   const runAnswer = useMemo(
     () => traces.find(t => t.trace_id === selected)?.answer ?? "",
     [traces, selected]);
-
-  const submitRunFeedback = async (verdict: "helpful" | "unhelpful") => {
-    if (!selected) return;
-    setRunBusy(true);
-    try {
-      await recordTraceFeedback(selected, verdict, note);
-      setNote("");
-      loadRunFeedback();
-    } finally {
-      setRunBusy(false);
-    }
-  };
-
-  const submitVerdict = async (verdict: "accept" | "correct" | "reject") => {
-    if (!invId) return;
-    setVerdictBusy(true);
-    try {
-      await recordVerdict({
-        verdict, investigationId: invId, connectionId: connId ?? "",
-        note, headline: headlineOf(detail),
-        // Without these a verdict here is a label with nothing to learn from: measured
-        // 2026-09-03, every `correct` row in the store had an empty `corrected_sql`
-        // because chat was the only surface that sent one.
-        sqlSource: runSql,
-        correctedSql: verdict === "correct" ? correctedSql.trim() : "",
-      });
-      setNote("");
-      setCorrectedSql("");
-      loadVerdicts();
-    } finally {
-      setVerdictBusy(false);
-    }
-  };
 
   return (
     <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -418,13 +299,164 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
         </div>
       </div>
         }
-        right={
+        right={<TraceView traceId={selected} answer={runAnswer} />}
+      />
+    </div>
+  );
+}
+
+/**
+ * One run, read from its trace: the flow, the waterfall, its events, its logs, and the feedback on it. The index above
+ * picks the run; anything else that already knows one — a deep run on the Overview, whose trace id IS its own id —
+ * shows the same view by handing it the id.
+ */
+export function TraceView({ traceId, answer = "" }: {
+  traceId: string | null;
+  /** The run's answer headline. The detail endpoint does not carry one — see `runAnswer` above. */
+  answer?: string;
+}) {
+  const selected = traceId;
+  const runAnswer = answer;
+  const [detail, setDetail] = useState<TraceDetail | null>(null);
+  // VA-4e — the canvas leads. "Where did the time go" is a follow-up question; "what did
+  // this run actually do" is the one a reader opens a run with, and the flow answers it.
+  const [tab, setTab] = useState<"flow" | "timeline" | "events" | "logs" | "feedback">("flow");
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [note, setNote] = useState("");
+  const [verdicts, setVerdicts] = useState<FindingVerdict[]>([]);
+  const [verdictBusy, setVerdictBusy] = useState(false);
+  const [correctedSql, setCorrectedSql] = useState("");
+  const [runFeedback, setRunFeedback] = useState<TraceFeedback | null>(null);
+  const [logs, setLogs] = useState<TraceLogs | null>(null);
+  /** Session replay: how many events the run has "reached". null = show all,
+   *  which is the resting state — replay is a thing you opt into, not a mode
+   *  the panel starts in. */
+  const [replayAt, setReplayAt] = useState<number | null>(null);
+  const [runBusy, setRunBusy] = useState(false);
+
+  // A trace the log no longer holds (null) and a read that failed are two different things to say — neither is
+  // "select a trace".
+  const [readError, setReadError] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
+  const loadDetail = useCallback(() => {
+    setReadError(null);
+    setMissing(false);
+    if (!selected) { setDetail(null); return; }
+    getTrace(selected)
+      .then(d => { setDetail(d); setMissing(d === null); })
+      .catch(e => { setDetail(null); setReadError(String(e?.message || e)); });
+  }, [selected]);
+  useEffect(() => { loadDetail(); }, [loadDetail]);
+
+  const invId = detail?.measured ? detail.investigation_id : null;
+  // MI-3 — the SQL a verdict on this run is ABOUT. `tool_call` events carry the executed
+  // statement as `payload.input`; MI-1's `audit_log.trace_id` is the durable twin of this,
+  // but the events are already loaded here so no round trip is needed.
+  //
+  // Only when ONE distinct statement ran. A run that issued several has no single query
+  // its finding rests on, and naming one would be a fabricated attribution — a wrong
+  // training pair is worse than a missing one (§3.9's reward-integrity law applies to the
+  // corpus, not just the grader).
+  const runSql = useMemo(
+    () => (detail?.measured ? soleSqlOfEvents(detail.events) : ""), [detail]);
+  const connId = detail?.measured ? detail.conn_id : null;
+
+  const loadVerdicts = useCallback(() => {
+    getVerdicts(connId ?? undefined, 50).then(setVerdicts).catch(() => {});
+  }, [connId]);
+  useEffect(() => { setReplayAt(null); }, [selected]);
+
+  const loadLogs = useCallback(async () => {
+    if (!selected) return;
+    try { setLogs(await getTraceLogs(selected)); } catch { setLogs(null); }
+  }, [selected]);
+
+  const loadRunFeedback = useCallback(async () => {
+    if (!selected) return;
+    try { setRunFeedback(await getTraceFeedback(selected)); } catch { setRunFeedback(null); }
+  }, [selected]);
+
+  useEffect(() => { if (tab === "feedback") { loadVerdicts(); loadRunFeedback(); } },
+    [tab, loadVerdicts, loadRunFeedback]);
+  useEffect(() => { if (tab === "logs") loadLogs(); }, [tab, loadLogs]);
+
+  const depths = useMemo(
+    () => (detail?.measured ? spanDepths(detail.spans) : new Map<string, number>()),
+    [detail]);
+
+  // tool_call entry rows whose span produced a result — the result row renders
+  // the pair, so the entry row is folded away. An entry with NO result renders.
+  const resultSpans = useMemo(() => {
+    const set = new Set<string>();
+    if (detail?.measured) {
+      for (const e of detail.events) {
+        if (e.kind === "tool_call_result" && e.span_id) set.add(e.span_id);
+      }
+    }
+    return set;
+  }, [detail]);
+
+  const totalMs = detail?.measured ? detail.duration_ms || 0 : 0;
+
+  /** Where this run came from, from the rows it recorded. Shared with the canvas rail so
+   *  the header and the rail cannot disagree about the same run. */
+  const runOrigin = useMemo(
+    () => (detail?.measured ? originOf(detail.events) : null), [detail]);
+
+  /** The model that did the work. Named in the header because "which model was this" is
+   *  the first thing asked of a slow or wrong run, and it was only ever visible by
+   *  opening a node. A run that used more than one says so rather than picking one. */
+  const runModel = useMemo(() => {
+    if (!detail?.measured) return "";
+    const models = new Set(detail.events.map(e => e.model).filter(Boolean) as string[]);
+    if (models.size === 0) return "";
+    if (models.size === 1) return [...models][0];
+    return `${models.size} models`;
+  }, [detail]);
+
+  const submitRunFeedback = async (verdict: "helpful" | "unhelpful") => {
+    if (!selected) return;
+    setRunBusy(true);
+    try {
+      await recordTraceFeedback(selected, verdict, note);
+      setNote("");
+      loadRunFeedback();
+    } finally {
+      setRunBusy(false);
+    }
+  };
+
+  const submitVerdict = async (verdict: "accept" | "correct" | "reject") => {
+    if (!invId) return;
+    setVerdictBusy(true);
+    try {
+      await recordVerdict({
+        verdict, investigationId: invId, connectionId: connId ?? "",
+        note, headline: headlineOf(detail),
+        // Without these a verdict here is a label with nothing to learn from: measured
+        // 2026-09-03, every `correct` row in the store had an empty `corrected_sql`
+        // because chat was the only surface that sent one.
+        sqlSource: runSql,
+        correctedSql: verdict === "correct" ? correctedSql.trim() : "",
+      });
+      setNote("");
+      setCorrectedSql("");
+      loadVerdicts();
+    } finally {
+      setVerdictBusy(false);
+    }
+  };
+
+  return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {!detail || !detail.measured ? (
+        {readError ? (
+          <ReadFailed what="this trace" error={readError} onRetry={loadDetail} style={{ padding: 32 }} />
+        ) : !detail || !detail.measured ? (
           <div style={{ padding: 32, fontSize: 12, color: "var(--t3)" }}>
             {detail && !detail.measured
               ? <>Not recorded — enable <code style={{ fontSize: 11 }}>obs.session_log</code>.</>
-              : "Select a trace."}
+              : missing ? "The log holds no trace under this id."
+              : selected ? "Loading the trace…" : "Select a trace."}
           </div>
         ) : (
           <>
@@ -438,7 +470,11 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="aug-fs-ui" style={{ fontWeight: 500, overflow: "hidden",
                     textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {detail.question || detail.trace_id}
+                    {/* A scheduled run's question opens with the grounding code wrote for the model; the title
+                        is what the person asked (lib/runTitle.ts), the whole of it on hover. */}
+                    <span title={detail.question || undefined}>
+                      {runDisplayTitle(detail.question).title || detail.trace_id}
+                    </span>
                   </div>
                   <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2,
                     display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -755,9 +791,6 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
           </>
         )}
       </div>
-        }
-      />
-    </div>
   );
 }
 

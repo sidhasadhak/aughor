@@ -32,7 +32,7 @@ export function RangePicker({ range, onKey, onClearBrush }: {
         options={RANGE_KEYS.map(k => ({ value: k, label: k, title: RANGE_LABELS[k] }))} />
       {brushed && (
         <Button variant="link" size="xs" onClick={onClearBrush}
-          title="Clear the brushed window and go back to the named range">
+          title="Clear the brushed range and go back to the named one">
           brushed · clear
         </Button>
       )}

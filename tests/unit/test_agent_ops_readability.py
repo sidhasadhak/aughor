@@ -34,16 +34,16 @@ SURFACE = [
     "components/FleetOverviewPanel.tsx",
     "components/NeedsHumanPanel.tsx",
     "components/ActivityStreamPanel.tsx",
-    "components/AgenticActivityPanel.tsx",
     "components/AgenticOpsWorkspace.tsx",
-    "components/RunGraphsPanel.tsx",
+    "components/agentops/RunPhases.tsx",          # was RunGraphsPanel; Activity folded into Overview (2026-10-13)
+    "components/agentops/DeepRuns.tsx",
     "components/AgenticAgentsPanel.tsx",
     "components/TraceExplorerPanel.tsx",
     "components/agentops/ActivityChart.tsx",
     "components/agentops/ProvenanceDrawer.tsx",
     "components/agentops/RangePicker.tsx",
     "components/agentops/RunTimeline.tsx",
-    "components/agentops/UsagePanel.tsx",
+    "components/agentops/UsageLists.tsx",         # was UsagePanel
 ]
 
 

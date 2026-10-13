@@ -3654,9 +3654,11 @@ export async function logOutcome(
   return res.json();
 }
 
+/** Where an analysis's recommendations stand. Throws on a refused read: `[]` would say nothing
+ *  was ever marked, and every recommendation would read as still open. */
 export async function getInvestigationOutcomes(invId: string): Promise<RecOutcome[]> {
   const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/outcomes`);
-  if (!res.ok) return [];
+  if (!res.ok) throw await refused(res, "Reading the outcomes");
   return res.json();
 }
 
@@ -4436,8 +4438,11 @@ export async function putConnectionInstructions(connId: string, text: string): P
   if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Failed to save instructions"));
 }
 
+/** Throws with the server's reason when it refuses — it answered nothing before, so a refused delete closed the
+ *  confirm as if the canvas were gone. */
 export async function deleteCanvas(id: string): Promise<void> {
-  await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw await refused(res, "Deleting the canvas");
 }
 
 /** A document pinned to a canvas. `missing` marks a binding whose document has since
@@ -5065,7 +5070,8 @@ export async function getRecentEvidenceClaims(
   const params = new URLSearchParams({ connection_id: connectionId, limit: String(limit) });
   if (canvasId) params.set("canvas_id", canvasId);
   const res = await fetch(`${getApiBase()}/investigations/evidence/recent?${params}`);
-  if (!res.ok) return [];
+  // A refused read throws: the Evidence layer says it could not read the ledger, never "no claims yet".
+  if (!res.ok) throw await refused(res, "Reading the claim ledger");
   return res.json();
 }
 
@@ -7143,6 +7149,9 @@ export interface OrgInsight {
   novelty: number;
   promoted_by: string;
   promoted_at: string;
+  /** Where it was promoted from — absent on one promoted before scoping existed. */
+  connection_id?: string;
+  schema?: string;
 }
 
 export async function getOrgIntelligence(connectionId?: string, schema?: string): Promise<OrgInsight[]> {
@@ -9676,7 +9685,8 @@ export async function getAdminUsers(): Promise<AdminUsers | null> {
 // measurement, and one reader of one number is what keeps that honest.
 
 export interface DatasetGate {
-  have: number; need: number; passes: boolean;
+  /** `need` and `passes` are null on a tier that is reported but is not a gate (graded by execution or a guard). */
+  have: number; need: number | null; passes: boolean | null; note?: string;
 }
 export interface LearningDatasets {
   /** Per kind (sft / dpo / golden): dataset and example counts. */
@@ -10362,6 +10372,8 @@ export interface NeedsHuman {
     broken_automations?: number;
   };
   rows: NeedsHumanRow[];
+  /** The sources whose read failed, by their `sources` key — their count is not a zero. Optional: older APIs omit it. */
+  unread?: (keyof NeedsHuman["sources"])[];
 }
 
 export async function getNeedsHuman(limit = 100): Promise<NeedsHuman> {
@@ -11194,6 +11206,9 @@ export interface LearningDatasetDetail {
   name?: string;
   dataset?: Record<string, unknown>;
   lineage?: Record<string, unknown>[];
+  /** "present" · "purged" · "missing" — whether the rows can be read back; `note` says why when they cannot. */
+  bytes?: string;
+  note?: string;
 }
 
 export async function getLearningDataset(name: string): Promise<LearningDatasetDetail> {

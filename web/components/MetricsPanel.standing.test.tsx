@@ -11,7 +11,7 @@ import { Theme } from "@radix-ui/themes";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogueMetric, Metric } from "@/lib/api";
 
@@ -22,6 +22,7 @@ const getMetricAudit = vi.fn();
 const requestTab = vi.fn();
 const getMetricProposals = vi.fn();
 const bindPack = vi.fn();
+const getMyAccess = vi.fn(async () => ({ actor: "ana@example.com", signed_in: false }));
 const RETAIL = {
   manifest: { name: "Retail and e-commerce" },
   entities: {
@@ -45,13 +46,17 @@ vi.mock("@/lib/api", () => ({
   getMetricCatalogue: (...a: unknown[]) => getMetricCatalogue(...a),
   getDefinitionReport: (...a: unknown[]) => getDefinitionReport(...a),
   getMetricAudit: (...a: unknown[]) => getMetricAudit(...a),
-  getMyAccess: vi.fn(async () => ({ actor: "ana@example.com", signed_in: false })),
+  getMyAccess: () => getMyAccess(),
   getMetricProposals: (...a: unknown[]) => getMetricProposals(...a),
   getPackDetail: vi.fn(async () => RETAIL),
   getPackBinding: vi.fn(async () => null),
   getSchemaRich: vi.fn(async () => ({ tables: LUX_TABLES, joins: [], isolated: [], warnings: [] })),
   proposePackBindings: vi.fn(async () => ({ fully_groundable: false, groundable_roles: 1, total: 2,
-    proposals: { order_item: { role: "order_item", table: "lux.order_items", confidence: 0.8, evidence: "name", bound: true } } })),
+    proposals: {
+      order_item: { role: "order_item", table: "lux.order_items", confidence: 0.8, evidence: "name", bound: true },
+      cart: { role: "cart", table: null, confidence: 0, bound: false,
+              evidence: "no table is named for cart — choose its table, or this warehouse may not hold it" },
+    } })),
   bindPack: (...a: unknown[]) => bindPack(...a),
   getOntologyKeys: vi.fn(async () => ({ entities: [], metrics: [] })),
   materialiseMetric: vi.fn(), removeProposal: vi.fn(), restoreProposal: vi.fn(), promoteMetric: vi.fn(),
@@ -62,6 +67,7 @@ vi.mock("@/lib/navigate", () => ({ requestTab: (...a: unknown[]) => requestTab(.
 
 import { MetricsPanel } from "@/components/MetricsPanel";
 import { choose, optionsOf } from "@/lib/testing";
+import { forgetMe } from "@/lib/useMe";
 
 /** The app draws every screen inside a Radix Theme; the detail's tabs and Tools menu need one. */
 const view = (ui: ReactElement) => render(<Theme>{ui}</Theme>);
@@ -181,6 +187,9 @@ describe("Needs you", () => {
       "No timestamp column on order_items — a true/false column would count every row");
     expect(within(dialog).getByTestId("bind-stuck")).toHaveTextContent("Return rate can't be bound to this data as it stands");
     expect(within(dialog).getByRole("button", { name: "Write the SQL of Return rate" })).toBeInTheDocument();
+    // Nothing was proposed for the cart, and the row says why rather than leaving an empty select to puzzle over.
+    expect(within(dialog).getByTestId("bind-unproposed-cart")).toHaveTextContent(
+      "nothing proposed — no table is named for cart — choose its table, or this warehouse may not hold it");
     // The cart: choose its table and the column for the one attribute the recipe reads, then bind.
     await choose(within(dialog).getByRole("combobox", { name: "Table for cart" }), "lux.web_sessions");
     await choose(await within(dialog).findByRole("combobox", { name: "Column for cart.converted_order_id" }), "order_id");
@@ -199,6 +208,23 @@ describe("Needs you", () => {
     const needs = await screen.findByTestId("metrics-needs");
     expect(needs).toHaveAttribute("data-waiting", "false");
     expect(needs).toHaveTextContent("Nothing needs you");
+  });
+});
+
+describe("who proposed it", () => {
+  afterEach(() => forgetMe());
+
+  it("is 'you' when the reader proposed it — on the Needs-you row and on its approval", async () => {
+    forgetMe();
+    getMyAccess.mockResolvedValueOnce({ actor: "ana", signed_in: false });
+    const user = userEvent.setup();
+    view(<MetricsPanel connId="c1" />);
+    const review = await screen.findByTestId("needs-review");
+    await waitFor(() => expect(review).toHaveTextContent("proposed by you"));
+    await user.click(within(review).getByRole("button", { name: "Review" }));
+    const governance = await screen.findByTestId("metric-governance");
+    expect(governance).toHaveTextContent("proposed by you");
+    expect(governance).not.toHaveTextContent("by ana");
   });
 });
 

@@ -187,6 +187,20 @@ describe("the starting point", () => {
     expect(unwrapRunSql("DROP SCHEMA rearm_single CASCADE")).toBe("DROP SCHEMA rearm_single CASCADE");
   });
 
+  it("opens a cockpit piece's statement without the piece's sort or sum around it — theLook's live runs", () => {
+    // As the live audit holds them (2026-10-13): the row cap around a piece's wrapper around the person's statement.
+    const stmt = "SELECT u.country, ROUND(SUM(oi.sale_price), 2) AS sales FROM thelook.orders o JOIN thelook.users u "
+      + "ON u.id = o.user_id GROUP BY 1 ORDER BY sales DESC LIMIT 5";
+    expect(unwrapRunSql(`SELECT * FROM (SELECT * FROM (\n${stmt}\n) AS q ORDER BY \`q\`.\`sales\` DESC LIMIT 201) __q LIMIT 202`))
+      .toBe(stmt);
+    const daily = "SELECT DATE(o.created_at) AS day, u.country, SUM(oi.sale_price) AS sales\nFROM thelook.orders o\nGROUP BY 1, 2";
+    expect(unwrapRunSql("SELECT * FROM (SELECT DATE_TRUNC(`q`.`day`, DAY) AS x, `q`.`country` AS s, SUM(`q`.`sales`) AS v0 "
+      + `FROM (\n${daily}\n) AS q GROUP BY 1, 2 ORDER BY 1 LIMIT 41) __q LIMIT 42`)).toBe(daily);
+    expect(unwrapRunSql(`SELECT * FROM (SELECT SUM(\`q\`.\`sales\`) AS v0 FROM (\n${stmt}\n) AS q) __q LIMIT 3`)).toBe(stmt);
+    // a person's own subquery aliased q, on one line, is theirs — left as written
+    expect(unwrapRunSql("SELECT * FROM (SELECT 1 AS a) AS q")).toBe("SELECT * FROM (SELECT 1 AS a) AS q");
+  });
+
   it("folds a repeated statement into a count, newest first", () => {
     const runs = recentRuns([
       run("a", "SELECT * FROM (SELECT SUM(x) FROM t) __q LIMIT 501"),

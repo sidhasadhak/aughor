@@ -731,7 +731,7 @@ export interface DraftRun {
   fallback: boolean;
   version: number;
   provenance: string;
-  /** The run's trace — its model call and what it wrote, replayable in Activity. */
+  /** The run's trace — its model call and what it wrote, replayable in Agent Ops' Overview, under Every trace. */
   trace_id?: string;
   catalogue_chars: number;
   said: { entities?: number; parts?: number; links?: number };

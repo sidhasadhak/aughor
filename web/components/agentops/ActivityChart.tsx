@@ -138,7 +138,7 @@ export function ActivityChart({
   return (
     <div style={{ position: "relative", userSelect: "none" }}>
       <svg ref={svgRef} viewBox={`0 0 ${VB.w} ${VB.h}`} preserveAspectRatio="none"
-        role="img" aria-label={`Runs per bucket, stacked by agent, over ${win.range || "the window"}`}
+        role="img" aria-label={`Runs per bucket, stacked by agent, over ${win.range || "the range"}`}
         style={{ width: "100%", height: 190, display: "block", cursor: "crosshair", touchAction: "none" }}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}
         onPointerLeave={() => { setHover(null); setDrag(null); }}>

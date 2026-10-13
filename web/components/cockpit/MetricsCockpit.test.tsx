@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from "@/lib/testing";
+import { render, screen, waitFor, within } from "@/lib/testing";
 import { describe, expect, it, vi } from "vitest";
 
 import type { BriefingRangeBlock } from "@/lib/api";
@@ -23,7 +23,8 @@ describe("the metrics cockpit while a new period is read", () => {
     api.readExpectedNext.mockResolvedValue({ target: null, items: [], why: "" });
     api.measureRange.mockResolvedValueOnce({ period: block("k1", "September 2026", "$300"), from_briefing: false, measured_at: "2026-10-08T10:00:00Z", scope_key: "c" });
     const view = render(<MetricsCockpit connectionId="c" rangesOn value={{ preset: "previous_month" }} onChange={() => {}} />);
-    expect(await screen.findByText("$300")).toBeTruthy();
+    // the figure on its card (the full table, behind Details, holds it too)
+    expect(await within(await screen.findByTestId("cockpit-figures")).findByText("$300")).toBeTruthy();
     expect(screen.getByTestId("cockpit-range").textContent).toBe("September 2026 · final");
 
     let arrive: (v: unknown) => void = () => {};
@@ -35,7 +36,7 @@ describe("the metrics cockpit while a new period is read", () => {
 
     arrive({ period: { ...block("k2", "the week of 2026-10-05 so far, 2026-10-05 to 2026-10-07", "$90"), under_way: true },
       from_briefing: false, measured_at: "2026-10-08T10:01:00Z", scope_key: "c" });
-    expect(await screen.findByText("$90")).toBeTruthy();
+    expect(await within(await screen.findByTestId("cockpit-figures")).findByText("$90")).toBeTruthy();
     await waitFor(() => expect(screen.queryByText("Loading the metrics for Current week…")).toBeNull());
     expect(screen.getByTestId("cockpit-range").textContent).toBe("the week of 2026-10-05 so far, 2026-10-05 to 2026-10-07 · to date");
     expect(screen.getByTestId("metrics-body").getAttribute("aria-busy")).toBeNull();

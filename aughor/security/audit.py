@@ -282,7 +282,9 @@ class AuditLogger:
                        COUNT(*)                                           AS total,
                        SUM(CASE WHEN verdict='blocked'    THEN 1 ELSE 0 END) AS blocked,
                        SUM(CASE WHEN verdict='suspicious' THEN 1 ELSE 0 END) AS suspicious,
-                       SUM(CASE WHEN error IS NOT NULL    THEN 1 ELSE 0 END) AS errors,
+                       -- a refused statement never ran: its reason sits in `error`, but it is counted as blocked
+                       SUM(CASE WHEN error IS NOT NULL AND COALESCE(verdict, '') <> 'blocked'
+                                THEN 1 ELSE 0 END)                         AS errors,
                        SUM(pii_redacted)                                  AS pii_redacted,
                        AVG(duration_ms)                                   AS avg_duration_ms
                     FROM audit_log {where}""",

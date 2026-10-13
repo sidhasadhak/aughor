@@ -660,10 +660,13 @@ export function CanvasWorkspace({ canvas, connections, allConnections, onClose, 
                 <HistoryDetailPanel
                   invId={openInvId}
                   onBack={() => setOpenInvId(null)}
-                  onContinue={() => {
+                  // The follow-up asked under a past run opens a fresh conversation that asks it: the seed ChatPanel
+                  // submits on mount, as the chat screen's history does.
+                  onContinue={(question, mode) => {
                     setOpenInvId(null);
-                    setChatInitialQuestion(undefined);
-                    setChatInitialMode(undefined);
+                    setRestoreSessionId(null);
+                    setChatInitialQuestion(question);
+                    setChatInitialMode(mode);
                     setWsTab("chat");
                     setChatKey(k => k + 1);
                   }}

@@ -413,7 +413,8 @@ describe("the metrics, the cockpit a person opens on", () => {
     // measured for the latest month, as a cockpit is read — and the Briefing's own table shows it
     await waitFor(() => expect(api.measureRange).toHaveBeenCalledWith("thelook", { preset: "previous_month" }, "thelook"));
     expect(await screen.findByText("Measured for August 2026 · against July 2026")).toBeInTheDocument();
-    expect(screen.getByText("$110")).toBeInTheDocument();
+    // the figure on its card — the table behind Details holds it too
+    expect(within(screen.getByTestId("metrics-figures")).getAllByText("$110").length).toBeGreaterThan(0);
     // and what the metric's own past expects of the range after it
     expect(await screen.findByText("$100 to $116")).toBeInTheDocument();
     expect(api.readExpectedNext).toHaveBeenCalledWith("thelook", { preset: "previous_month" }, "thelook", undefined);
@@ -435,7 +436,11 @@ describe("the metrics, the cockpit a person opens on", () => {
     api.listCockpits.mockResolvedValue({ ...LIST, cockpits: [] });
     show();
     expect(await screen.findByTestId("metrics-cockpit")).toBeInTheDocument();
-    expect(screen.getByText(/You have no cockpits yet/)).toBeInTheDocument();
+    // one muted line and its door, under the metrics; what a cockpit of your own is, on its hover
+    const none = screen.getByTestId("cockpit-none-yet");
+    expect(none).toHaveTextContent("No cockpit of your own yet");
+    expect(none.getAttribute("title")).toMatch(/the set of cards you keep watching for one area/);
+    expect(within(none).getByRole("button", { name: /New cockpit|Start “My cockpit”/ })).toBeInTheDocument();
   });
 });
 

@@ -13,17 +13,22 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within, change, choose, optionsOf } from "@/lib/testing";
 import userEvent from "@testing-library/user-event";
-import { Position, ReactFlowProvider } from "@xyflow/react";
+import { type BaseEdgeProps, Position, ReactFlowProvider } from "@xyflow/react";
 
 import type { OntologyDraft, TypeMap } from "@/lib/objectTypes";
 
-const handoff: { nodes: any[]; edges: any[]; edgeTypes?: Record<string, any>; onNodeDragStop?: (e: unknown, n: unknown) => void } =
-  { nodes: [], edges: [] };
+const handoff: { nodes: any[]; edges: any[]; edgeTypes?: Record<string, any>; onNodeDragStop?: (e: unknown, n: unknown) => void;
+  /** What the map's own edge hands React Flow's `BaseEdge` — the path, and where the label is centred. */
+  baseEdges: BaseEdgeProps[] } = { nodes: [], edges: [], baseEdges: [] };
 
 vi.mock("@xyflow/react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@xyflow/react")>();
   return {
     ...actual,
+    BaseEdge: (props: BaseEdgeProps) => {
+      handoff.baseEdges.push(props);
+      return <actual.BaseEdge {...props} />;
+    },
     ReactFlow: ({ nodes, edges, nodeTypes, edgeTypes, onNodeDragStop, onNodeClick, children }: any) => {
       handoff.nodes = nodes;
       handoff.edges = edges;
@@ -146,6 +151,7 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
 }));
 
 import { EntityTypeMap } from "@/components/ontology/EntityTypeMap";
+import { LINK_LABEL } from "@/lib/entityMapLayout";
 
 const CACHE_KEY = "ont-map-layout";
 const SCOPE = "c1:s";
@@ -340,6 +346,59 @@ describe("EntityTypeMap", () => {
     await userEvent.click(reset);
     await waitFor(() => expect(putPreference).toHaveBeenLastCalledWith("ontology_map_layout", { [SCOPE]: {} }));
     expect(handoff.nodes.find((n) => n.id === "order")!.position).not.toEqual({ x: 42, y: 7 });
+  });
+});
+
+describe("EntityTypeMap — a picked type's labels never land on one another", () => {
+  // theLook's Order and User are joined by three links; links between the same two cards share one path, and so
+  // one label point — measured 2026-10-13, Order opened with 5 of its 6 labels in a pile.
+  const shared: TypeMap = {
+    ...map,
+    links: [...map.links,
+      { ...map.links[0], relationship: "oi_order_placed", verb: "placed in", name: "order_item_placed_in_order" },
+      { ...map.links[0], relationship: "oi_order_billed", verb: "billed on", name: "order_item_billed_on_order" }],
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    stored.value = undefined;
+    served.map = shared;
+    handoff.nodes = [];
+    handoff.edges = [];
+    handoff.baseEdges = [];
+  });
+
+  it("hands each label of links sharing a path its own step, and the edge draws the label there", async () => {
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    await waitFor(() => expect(handoff.edges.filter((e) => e.label).length).toBe(4));
+    const parallel = handoff.edges.filter((e) => e.source === "order_item" && e.target === "order");
+    expect(parallel).toHaveLength(3);
+    // one label point, three labels: each is stepped at least a label's height from every other
+    const shifts = parallel.map((e) => e.data.labelShift as number).sort((a, b) => a - b);
+    for (let i = 1; i < shifts.length; i++) expect(shifts[i] - shifts[i - 1]).toBeGreaterThanOrEqual(LINK_LABEL.h);
+
+    // the edge centres its label at React Flow's own label point, moved by the step it was handed
+    const Edge = handoff.edgeTypes!.link;
+    const labelYFor = (labelShift: number) => {
+      handoff.baseEdges = [];
+      const { unmount } = render(
+        <ReactFlowProvider>
+          <svg>
+            <Edge id="e" source="a" target="b" sourceX={0} sourceY={0} targetX={300} targetY={120}
+              sourcePosition={Position.Right} targetPosition={Position.Left} data={{ labelShift }} />
+          </svg>
+        </ReactFlowProvider>);
+      unmount();
+      return handoff.baseEdges.at(-1)!.labelY as number;
+    };
+    expect(labelYFor(-2 * (LINK_LABEL.h + LINK_LABEL.gap)) - labelYFor(0)).toBe(-2 * (LINK_LABEL.h + LINK_LABEL.gap));
+  });
+
+  it("leaves a lone label where React Flow puts it", async () => {
+    served.map = map;
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    await waitFor(() => expect(handoff.edges.filter((e) => e.label).length).toBe(2));
+    expect(handoff.edges.map((e) => e.data.labelShift)).toEqual([0, 0]);
   });
 });
 

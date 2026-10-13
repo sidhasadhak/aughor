@@ -415,6 +415,10 @@ def fleet_overview(window_minutes: int = 60, spark_hours: int = 24,
 
 # ── CR4: needs a human ───────────────────────────────────────────────────────────
 
+#: The inbox's key on the needs-human wire — a row's `source` and its count's key, spelled once (a frozen name).
+_INBOX = "kinetic_inbox"
+
+
 @router.get("/control-room/needs-human")
 def needs_human(limit: int = 100):
     """One derived list over the four real sources — a VIEW, never a queue.
@@ -430,6 +434,9 @@ def needs_human(limit: int = 100):
 
     now = datetime.now(timezone.utc)
     rows: list[dict] = []
+    # The sources whose read FAILED, by their `sources` key. A failed read counted 0, so "Every source is empty" was
+    # said over a source nobody read (the user's defect list, 2026-10-13): withheld is said, never implied.
+    unread: list[str] = []
 
     def _waiting_ms(since: Any) -> Optional[int]:
         ts = _parse_ts(since)
@@ -475,6 +482,7 @@ def needs_human(limit: int = 100):
                     parked_proposals.add(pid)
     except Exception:
         logger.warning("needs-human: parked-run read failed", exc_info=True)
+        unread.append("automation_approvals")
 
     try:
         for p in list_proposals(status="pending", limit=limit):
@@ -482,7 +490,7 @@ def needs_human(limit: int = 100):
                 continue
             inbox_count += 1
             rows.append({
-                "source": "kinetic_inbox", "id": p.id,
+                "source": _INBOX, "id": p.id,
                 "title": f"{p.action_id}: {p.reasoning[:140]}" if p.reasoning
                 else p.action_id,
                 "connection_id": p.connection_id,
@@ -493,6 +501,7 @@ def needs_human(limit: int = 100):
             })
     except Exception:
         logger.warning("needs-human: inbox read failed", exc_info=True)
+        unread.append(_INBOX)
 
     # Source B — deep runs paused at a gate, resumable via feedback.
     # `investigations` has no paused_at column; the honest timestamp is the
@@ -522,6 +531,7 @@ def needs_human(limit: int = 100):
             })
     except Exception:
         logger.warning("needs-human: paused-run read failed", exc_info=True)
+        unread.append("paused_runs")
 
     # Source C — automation runs PARKED on an approval (DS-8).
     #
@@ -559,6 +569,7 @@ def needs_human(limit: int = 100):
                 })
     except Exception:
         logger.warning("needs-human: parked-run row build failed", exc_info=True)
+        unread.append("automation_approvals")
 
     # Source D — agent alerts nobody has acknowledged (VA-6). A fired alert IS a thing
     # waiting on a person, and acknowledging it is the resolve action, so it belongs in the
@@ -582,6 +593,7 @@ def needs_human(limit: int = 100):
             })
     except Exception:
         logger.warning("needs-human: agent-alert read failed", exc_info=True)
+        unread.append("agent_alerts")
 
     # Source E — automations whose effects cannot dispatch at all. An effect pointing at
     # something that does not exist (a deleted Action Hub trigger, a removed subscription)
@@ -634,14 +646,16 @@ def needs_human(limit: int = 100):
             })
     except Exception:
         logger.warning("needs-human: broken-automation read failed", exc_info=True)
+        unread.append("broken_automations")
 
     rows.sort(key=lambda r: r.get("waiting_ms") or 0, reverse=True)
     return {
         "count": (inbox_count + paused_count + approval_count + alert_count
                   + broken_count),
-        "sources": {"kinetic_inbox": inbox_count, "paused_runs": paused_count,
+        "sources": {_INBOX: inbox_count, "paused_runs": paused_count,
                     "automation_approvals": approval_count,
                     "agent_alerts": alert_count,
                     "broken_automations": broken_count},
         "rows": rows[: max(1, int(limit))],
+        "unread": list(dict.fromkeys(unread)),
     }

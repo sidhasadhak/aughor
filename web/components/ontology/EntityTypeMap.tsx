@@ -49,7 +49,7 @@ import { Input } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/ui/motion";
 import { getConnections, getMyPreferences, putMyPreference } from "@/lib/api";
 import { formatCount } from "@/lib/format";
-import { CARD, collapseParts, hubOf, layoutMap, linkLabelY, litBy } from "@/lib/entityMapLayout";
+import { CARD, collapseParts, hubOf, type LabelSpot, layoutMap, linkLabelY, litBy, separateLabels } from "@/lib/entityMapLayout";
 import {
   confirmProposals,
   declareEntity,
@@ -782,16 +782,35 @@ const NODE_TYPES = { entity: EntityCard };
 /** How round a link's corner is: not at all. A link runs straight and turns at a right angle, never along a curve. */
 export const LINK_CORNER_RADIUS = 0;
 
+interface Ends {
+  sourceX: number; sourceY: number; sourcePosition: Position;
+  targetX: number; targetY: number; targetPosition: Position;
+}
+
+/** Where a link runs and where its label is centred, from its two handle points. The edge draws with it and the map
+ *  keeps labels apart with it (`separateLabels`), so the two agree on where every label starts. */
+function linkGeometry(ends: Ends): { path: string; labelX: number; labelY: number } {
+  const [path, labelX, labelY] = getSmoothStepPath({ ...ends, borderRadius: LINK_CORNER_RADIUS });
+  return { path, labelX, labelY: linkLabelY(ends.sourcePosition, ends.sourceY, ends.targetY, labelY) };
+}
+
+/** The point a link leaves or reaches a card by: the middle of that side, where the card's handle sits. */
+function handlePoint(topLeft: { x: number; y: number }, at: "t" | "r" | "b" | "l"): { x: number; y: number } {
+  const x = at === "l" ? topLeft.x : at === "r" ? topLeft.x + CARD.w : topLeft.x + CARD.w / 2;
+  const y = at === "t" ? topLeft.y : at === "b" ? topLeft.y + CARD.h : topLeft.y + CARD.h / 2;
+  return { x, y };
+}
+
 /** A link between two cards: straight runs that turn only at a right angle — React Flow's step path with square
  *  corners — and its label lifted clear above its two cards on a sideways link, which would otherwise clip it
- *  (`linkLabelY`). */
+ *  (`linkLabelY`), then moved by `data.labelShift`, the step the map gave it so it lands on no other label. */
 export function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, markerEnd, label,
-  labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, interactionWidth }: EdgeProps) {
-  const [path, labelX, labelY] = getSmoothStepPath({
-    sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, borderRadius: LINK_CORNER_RADIUS });
+  labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, interactionWidth, data }: EdgeProps) {
+  const { path, labelX, labelY } = linkGeometry({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const shift = typeof data?.labelShift === "number" ? data.labelShift : 0;
   return (
     <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} interactionWidth={interactionWidth}
-      label={label} labelX={labelX} labelY={linkLabelY(sourcePosition, sourceY, targetY, labelY)} labelStyle={labelStyle}
+      label={label} labelX={labelX} labelY={labelY + shift} labelStyle={labelStyle}
       labelShowBg={labelShowBg} labelBgStyle={labelBgStyle} labelBgPadding={labelBgPadding}
       labelBgBorderRadius={labelBgBorderRadius} />
   );
@@ -859,8 +878,9 @@ function MapCanvas({ map, selected, onSelect, scope, sources }: {
   // The links, drawn between whichever sides the two cards now face — recomputed from live positions, so an edge
   // follows a card that was dragged rather than pointing at where it used to be.
   useEffect(() => {
+    const corner = new Map(nodes.map((n) => [n.id, n.position]));
     const at = new Map(nodes.map((n) => [n.id, { x: n.position.x + CARD.w / 2, y: n.position.y + CARD.h / 2 }]));
-    setEdges(map.links.flatMap((link) => {
+    const drawn = map.links.flatMap((link) => {
       const [a, b] = [at.get(link.from), at.get(link.to)];
       if (!a || !b || link.from === link.to) return [];
       const on = lit.links.has(link.relationship);
@@ -894,7 +914,21 @@ function MapCanvas({ map, selected, onSelect, scope, sources }: {
                  opacity: on || lit.links.size === 0 ? 0.95 : UNLIT },
         data: { why: link.traversable ? "" : link.why_not ?? "", crosses },
       } satisfies RFEdge];
-    }));
+    });
+    // Two named links whose labels would land on one another — two links between the same two cards share one path
+    // and so one label point — are stepped apart before they reach the canvas (`separateLabels`).
+    const spots: LabelSpot[] = drawn.flatMap((edge) => {
+      const [from, to] = [corner.get(edge.source), corner.get(edge.target)];
+      if (typeof edge.label !== "string" || !from || !to) return [];
+      const out = edge.sourceHandle;
+      const into = edge.targetHandle.slice(0, 1) as keyof typeof SIDES;
+      const [s, t] = [handlePoint(from, out), handlePoint(to, into)];
+      const { labelX, labelY } = linkGeometry({ sourceX: s.x, sourceY: s.y, sourcePosition: SIDES[out],
+                                                targetX: t.x, targetY: t.y, targetPosition: SIDES[into] });
+      return [{ id: edge.id, x: labelX, y: labelY, text: edge.label, sideways: out === "l" || out === "r" }];
+    });
+    const shifts = separateLabels(spots, nodes.map((n) => n.position));
+    setEdges(drawn.map((edge) => ({ ...edge, data: { ...edge.data, labelShift: shifts.get(edge.id) ?? 0 } })));
   }, [map.links, nodes, lit, setEdges]);
 
   /** One drop is one write: the cache for this device's next paint, the store for every other one. */

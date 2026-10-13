@@ -2,6 +2,7 @@
 import React from "react";
 import type { CGStanding, CGWarrant, CGWarrantClass, GraphAudit, NodeTrust } from "@/lib/api";
 import { StatusChip, ChipHue } from "@/components/brief/StatusChip";
+import { formatCount } from "@/lib/format";
 
 /**
  * Wave P2 — the warrant class, rendered the SAME way everywhere an edge, a node, or a
@@ -55,61 +56,39 @@ export function WarrantChip({ warrant, showDetail = false }: {
 }
 
 /**
- * The honesty scorecard — the warrant mix of the whole graph, plus the two freshness
- * axes.
+ * The honesty scorecard — how every link in the graph is known, as one bar and a line per
+ * class, for the side panel beside the map. (The freshness axes moved to the chip above the
+ * picture, which says "Rebuild owed" with its reason on hover — said once, 2026-10-13.)
  *
  * All five classes are always shown, including the empty ones. A scorecard that hid its
  * weak classes would read as "nothing weak here", which is the failure mode this wave
- * exists to refuse — the same reason the drift line is shown next to the staleness chip
- * rather than instead of it.
+ * exists to refuse.
  */
-export function GraphAuditBar({ audit }: { audit: GraphAudit | null }) {
-  if (!audit || audit.totals.edges === 0) return null;
+export function WarrantMix({ audit }: { audit: GraphAudit }) {
   const total = audit.totals.edges;
   const classes = audit.order;
-
   return (
-    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "12px 16px", marginBottom: 14 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)" }}>How we know this graph</span>
-        {/* Joins, not all edges: `grounded_in` links (a finding to the table it came
-            from) can never be measured and are ~95% of a real graph, so an all-edge
-            share read 3% on a connection whose every join WAS measured. Named for its
-            denominator so nobody has to guess it. */}
-        <span style={{ fontSize: 11, color: "var(--t3)" }}>
-          {audit.totals.joins > 0
-            ? `${Math.round(audit.joins_measured_share * 100)}% of ${audit.totals.joins} joins are measured against your data`
-            : `${total} connections, no joins yet`}
-        </span>
-      </div>
-
-      <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", background: "var(--bg-3)", marginBottom: 10 }}>
+    <div data-testid="warrant-mix">
+      <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", background: "var(--bg-3)", marginBottom: 8 }}>
         {classes.map((c) => {
           const n = audit.edges[c] || 0;
-          if (!n) return null;
+          if (!n || !total) return null;
           return (
-            <div
-              key={c}
-              title={`${n} ${audit.labels[c].toLowerCase()} · ${audit.meanings[c]}`}
-              style={{ width: `${(n / total) * 100}%`, background: BAR[c] }}
-            />
+            <div key={c} title={`${formatCount(n)} ${audit.labels[c].toLowerCase()} · ${audit.meanings[c]}`}
+              style={{ width: `${(n / total) * 100}%`, background: BAR[c] }} />
           );
         })}
       </div>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      <div className="aug-fs-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 14px" }}>
         {classes.map((c) => (
-          <StatusChip key={c} hue={HUE[c]} strength="soft" title={audit.meanings[c]}>
-            {audit.labels[c]} · {audit.edges[c] || 0}
-          </StatusChip>
+          <span key={c} title={audit.meanings[c]} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0,
+            color: audit.edges[c] ? "var(--t2)" : "var(--t3)" }}>
+            <span aria-hidden style={{ width: 7, height: 7, borderRadius: "var(--r-pill)", background: BAR[c], flex: "none" }} />
+            {audit.labels[c]}
+            <span style={{ marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>{formatCount(audit.edges[c] || 0)}</span>
+          </span>
         ))}
       </div>
-
-      {audit.drift?.drifted && (
-        <div style={{ fontSize: 11, color: "var(--amb1)", marginTop: 10 }}>
-          ⚠ {audit.drift.reason || "The graph is missing what the platform has since learned — rebuild it."}
-        </div>
-      )}
     </div>
   );
 }

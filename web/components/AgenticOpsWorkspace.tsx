@@ -10,13 +10,14 @@ import { RangePicker } from "@/components/agentops/RangePicker";
 import { Button } from "@/components/ui/button";
 import { useTimeRange } from "@/components/agentops/useTimeRange";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
+import { OVERVIEW_LAYER, type AgentOpsLayer } from "@/lib/agentOpsLayers";
 import { BUILT_IN_AGENT_KIND, getConnections, getDepartureSummary, getNeedsHuman, type Connection } from "@/lib/api";
 import { askSpotlight } from "@/lib/commandRegistry";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
 
 // ── Lazy panels — load on first open, then keep mounted (Workspace keep-alive),
-// so the activity tail, a selected trace and an agent detail survive switches.
+// so the live events, a selected trace and an agent detail survive switches.
 const loading = () => (
   <div style={{ flex: 1, background: "var(--bg-0)", padding: 16 }}>
     <SkeletonRows rows={6} />
@@ -26,7 +27,6 @@ const loading = () => (
 const FleetOverviewPanel = dynamic(() => import("@/components/FleetOverviewPanel").then(m => ({ default: m.FleetOverviewPanel })), { ssr: false, loading });
 const AgenticAgentsPanel = dynamic(() => import("@/components/AgenticAgentsPanel").then(m => ({ default: m.AgenticAgentsPanel })), { ssr: false, loading });
 const NeedsHumanPanel    = dynamic(() => import("@/components/NeedsHumanPanel").then(m => ({ default: m.NeedsHumanPanel })),       { ssr: false, loading });
-const AgenticActivityPanel = dynamic(() => import("@/components/AgenticActivityPanel").then(m => ({ default: m.AgenticActivityPanel })), { ssr: false, loading });
 const AutomationsPanel   = dynamic(() => import("@/components/AutomationsPanel").then(m => ({ default: m.AutomationsPanel })),     { ssr: false, loading });
 const HubMapPanel        = dynamic(() => import("@/components/agentops/HubMapPanel").then(m => ({ default: m.HubMapPanel })),      { ssr: false, loading });
 const ActionCentrePanel  = dynamic(() => import("@/components/operations/ActionCentrePanel").then(m => ({ default: m.ActionCentrePanel })), { ssr: false, loading });
@@ -43,7 +43,6 @@ const ROLE: Record<string, IconName> = {
   gauge: "gauge",
   spark: "spark",
   hand: "hand",
-  activity: "activity",
   flow: "flow",
   send: "send",
 };
@@ -60,21 +59,24 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
 // automations-tab removal ran: no LEGACY_AGENTIC_LAYER entry maps to it, no URL
 // parameter persists this layer, and the command palette routes to the workspace,
 // not the tab. Its automation strip was the third surface for automation runs
-// (Automations → History and Activity → Traces are the others); its phase view —
-// the half with no second home — moved to Activity → Phases.
-export type AgenticOpsLayer =
-  "fleet" | "agents" | "attention" | "activity" | "automations" | "hub" | "departures"
-  | "duties" | "action-centre" | "developer";
+// (Automations → History and the traces are the others); its phase view — the half
+// with no second home — moved to Activity → Phases.
+//
+// `activity` folded into the Overview 2026-10-13: its Usage became the spend figure's
+// calls, the chart's tokens reading and the three token lists; its Phases the deep runs
+// by question; its Stream and Traces two folds at the Overview's foot. A link that still
+// names it lands on the Overview, and every drill that opened a trace there opens the
+// Overview's "Every trace" fold on it. The layer ids live in lib/agentOpsLayers.ts, beside
+// what a link naming a gone one resolves to.
 
-// Labels follow docs/GLOSSARY.md — Overview · Roster · Attention · Activity · Runs. The
+// Labels follow docs/GLOSSARY.md — Overview · Roster · Attention · Automations. The
 // inner layer stops being "Agents" now that the workspace is called Agent Ops (a workspace
 // containing a tab of the same name is the collision the glossary row exists to prevent),
 // and "Run graphs" becomes "Runs". The layer IDS are unchanged, so every deep link holds.
-const LAYERS: WorkspaceLayer<AgenticOpsLayer>[] = [
+const LAYERS: WorkspaceLayer<AgentOpsLayer>[] = [
   { id: "fleet",     icon: "gauge",    label: "Overview",  blurb: "What's wrong · what's running · what it cost" },
   { id: "agents",    icon: "spark",    label: "Roster",    blurb: "One agent, fully: health, runs, spend, config" },
   { id: "attention", icon: "hand",     label: "Attention", blurb: "What needs a human, and for how long" },
-  { id: "activity",  icon: "activity", label: "Activity",  blurb: "Usage · the live tail · traces · deep-run phases" },
   // Moved here from Operations 2026-08-29 (user-decided). An automation IS an agent
   // operating on a schedule — since VA-9b it names the agent it runs as, every step
   // inherits that agent, and its governed writes are attributed to `agent:<id>` rather
@@ -101,13 +103,13 @@ const LAYERS: WorkspaceLayer<AgenticOpsLayer>[] = [
 ];
 
 type Props = {
-  layer: AgenticOpsLayer;
+  layer: AgentOpsLayer;
   /** The connection the Automations layer scopes to — that panel filters by it. */
   connId?: string;
   /** AO-4 — lets the workspace change that connection itself (a picker in its context
    *  bar) instead of sending the reader to the rail. Optional: without it, no picker. */
   onSelectConnection?: (connectionId: string) => void;
-  onLayerChange: (l: AgenticOpsLayer) => void;
+  onLayerChange: (l: AgentOpsLayer) => void;
   workspaceId?: string;
   workspaceName?: string;
   onOpenInvestigation?: (invId: string) => void;
@@ -138,8 +140,9 @@ export function AgenticOpsWorkspace({
   onOpenIntegrations, onOpenConnection, onChatWithAgent,
   onOpenRuns, onOpenDeclaredActions, onOpenApprovals, onOpenSettings,
 }: Props) {
-  // Cross-layer focus: a trace opened from Fleet/Agents/Attention lands in the
-  // Activity layer's runs mode; an agent opened from Fleet lands in Agents.
+  // Cross-layer focus: a trace opened from the Roster or Departures lands in the
+  // Overview's "Every trace" fold, open on it; an agent opened from the Overview lands
+  // in the Roster.
   const [traceFocus, setTraceFocus] = useState<{ traceId?: string; investigationId?: string } | null>(null);
   const [agentFocus, setAgentFocus] = useState<{ id: string; kind: "charter" | "persona" } | null>(null);
   // `?agent=<built-in agent id>` opens one built-in agent's page on arrival — the chat's budget
@@ -165,15 +168,15 @@ export function AgenticOpsWorkspace({
     setAgentFocus({ id, kind });
     onLayerChange("agents");
   }, [onLayerChange]);
-  // The connection picker's options — read once; a failure leaves the picker absent
-  // rather than empty, and the rail still works.
+  // The connections — read once: the picker's options, and the names the Overview's run lists
+  // say instead of an id. A failure leaves the picker absent rather than empty, and a run on a
+  // connection then reads "connection 8233e4fd" (lib/names.ts), never the bare id.
   const [connections, setConnections] = useState<Connection[] | null>(null);
   useEffect(() => {
-    if (!onSelectConnection) return;
     let alive = true;
     getConnections().then(c => { if (alive) setConnections(c); }).catch(() => {});
     return () => { alive = false; };
-  }, [onSelectConnection]);
+  }, []);
   const [attention, setAttention] = useState(0);
   const [departuresOwed, setDeparturesOwed] = useState(0);
   // Creating an agent is reachable from EVERY layer, not just the one whose sidebar happens
@@ -181,7 +184,7 @@ export function AgenticOpsWorkspace({
   // the Roster must re-open the flow, and a bool that is already true fires no change.
   const [createSignal, setCreateSignal] = useState(0);
   // ONE window for the whole surface, held here so every layer reads the same one and a
-  // brush drawn on the Overview still applies when the reader switches to Activity. Two
+  // brush drawn on the Overview still applies when the reader switches to the Roster. Two
   // independent windows on one page is how two tiles disagree with no visible reason.
   const { range, setKey, setBrush, clearBrush } = useTimeRange();
 
@@ -209,9 +212,10 @@ export function AgenticOpsWorkspace({
     setCreateSignal(n => n + 1);
   }, [onLayerChange]);
 
+  // A new object every time, so the same trace opened twice still opens its fold and scrolls to it.
   const openAnalysisTrace = useCallback((invId: string) => {
     setTraceFocus({ investigationId: invId });
-    onLayerChange("activity");
+    onLayerChange(OVERVIEW_LAYER);
   }, [onLayerChange]);
 
   return (
@@ -270,11 +274,6 @@ export function AgenticOpsWorkspace({
             // than navigating out to Operations — and lands on the one that was clicked.
             onOpenAutomations={openAutomation} />
         );
-        if (id === "activity") return (
-          <AgenticActivityPanel
-            focusInvestigationId={traceFocus?.investigationId}
-            focusTraceId={traceFocus?.traceId} range={range} />
-        );
         if (id === "automations") return (
           <AutomationsPanel connId={connId} workspaceId={workspaceId} focusId={automationFocus} />
         );
@@ -282,7 +281,7 @@ export function AgenticOpsWorkspace({
           <WorkPanel
             onOpenRuns={() => onOpenRuns?.()}
             onOpenDepartures={() => onLayerChange("departures")}
-            onOpenActivity={() => onLayerChange("activity")}
+            onOpenOverview={() => onLayerChange(OVERVIEW_LAYER)}
             onOpenAgents={() => onLayerChange("agents")}
             onOpenActionCentre={() => onLayerChange("action-centre")}
             onOpenDeveloper={() => onLayerChange("developer")}
@@ -310,10 +309,10 @@ export function AgenticOpsWorkspace({
         );
         return (
           <FleetOverviewPanel
-            range={range} onBrush={setBrush} onClearBrush={clearBrush}
+            range={range} onBrush={setBrush} onClearBrush={clearBrush} connections={connections ?? []}
             onOpenAttention={() => onLayerChange("attention")}
             onOpenInvestigation={onOpenInvestigation}
-            onOpenAgent={(id, kind) => openAgent(id, kind)} /> // "fleet"
+            onOpenAgent={(id, kind) => openAgent(id, kind)} traceFocus={traceFocus} />
         );
       }}
     />

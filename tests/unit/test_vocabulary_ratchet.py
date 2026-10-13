@@ -458,7 +458,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # for the second and nothing else. The file spells it ONCE, as a typed constant
          # every fixture takes; what a reader is shown says "Thinking…", "Thought process"
          # and "Agent".
-         "web/components/ChatMessage.trace.test.tsx"),
+         "web/components/ChatMessage.trace.test.tsx",
+         # The job-kind names (2026-10-13): Agent Ops' run lists printed a run's kind as the
+         # slug the API sent. This module maps each frozen job kind to the words a reader
+         # sees, so two of its keys are the wire's `investigation` kinds; the words they map
+         # to say "deep analysis". The one file, exactly — no prefix, so no test rides on it.
+         "web/lib/jobKinds.ts"),
         "the user-visible word is 'deep analysis'. `investigation` stays as the BACKEND "
         "spelling only (frozen table/route/job-kind); web/lib/api.ts is exempt because it "
         "must mirror the backend contract field-for-field, and the SSE→UIMessage seam is "
@@ -575,7 +580,8 @@ BASELINE: dict[str, int] = {
     # restored the Hub's domain rail on the Profile layer (ProfileLayer.tsx +28: the
     # domain-findings API by its own names). Code #498 removed came back by request;
     # renaming that API to dodge the pattern would only hide it from this test.
-    "insight": 1754,   # 1757 → 1754 on 2026-09-28: the cockpit's test fixtures no longer spell out a card's provenance
+    "insight": 1740,   # 1757 → 1754 on 2026-09-28: the cockpit's test fixtures no longer spell out a card's provenance;
+    #                    1754 → 1740 on 2026-10-13: Org, redone to CLARITY, says "finding" and aliases the frozen API names
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
     # 2026-09-13: 602 → 573, measured. Instrument redrew the Briefing and deleted ProcessMapper.tsx;
@@ -598,7 +604,8 @@ BASELINE: dict[str, int] = {
     # 2026-09-06: 348 → 347. SP-1/SP-3 leftovers: the inbox's four accept bodies now
     # share ONE lazy import of the executor's result type (`_executor_result`), so
     # two new accept kinds arrived while the count still fell by one.
-    "kinetic": 319,   # lowered 2026-09-15: SP-9 hoisted the route prefix onto the router
+    "kinetic": 316,   # lowered 2026-09-15: SP-9 hoisted the route prefix onto the router; 319 → 316 on 2026-10-13:
+    #                   Actions, redone to CLARITY, spells the edit layer's frozen route once
                       # (spelled once, wire identical) — the ratchet's own law, applied.
                       # previously 328, lowered 2026-09-12 with ON-4's withdrawal door: its HTTP suite, the panel's
                       # test and the object client are exempt above (frozen route, real component name),

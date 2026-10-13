@@ -541,12 +541,12 @@ interface EdgeData {
   x2: number; y2: number;
 }
 
-/** Evaluate a cubic bezier at t ∈ [0,1]. */
-function cubicBezier(
-  p0: number, p1: number, p2: number, p3: number, t: number,
-): number {
-  const u = 1 - t;
-  return u*u*u*p0 + 3*u*u*t*p1 + 3*u*t*t*p2 + t*t*t*p3;
+/** A link between two cards: straight runs that turn only at a right angle, never a curve (aughor-v2/CLARITY.md §3,
+ *  the user 2026-10-10). It leaves its card level, turns upright halfway across the gap, and arrives level, so the
+ *  arrow lands square on the card's side; its label sits at the middle of the upright run. */
+export function stepLink(x1: number, y1: number, x2: number, y2: number): { d: string; mx: number; my: number } {
+  const mx = (x1 + x2) / 2;
+  return { d: `M${x1},${y1} L${mx},${y1} L${mx},${y2} L${x2},${y2}`, mx, my: (y1 + y2) / 2 };
 }
 
 function FlowEdges({
@@ -604,15 +604,8 @@ function FlowEdges({
         const lit = isHovered || isActive;
         const animate = !compact || lit;
 
-        const goRight = x2 >= x1;
-        const dx = Math.max(80, Math.abs(x2 - x1) * 0.46);
-        const cpx1 = x1 + (goRight ? dx : -dx);
-        const cpx2 = x2 - (goRight ? dx : -dx);
-        const d = `M${x1},${y1} C${cpx1},${y1} ${cpx2},${y2} ${x2},${y2}`;
-
-        // midpoint for labels
-        const mx = cubicBezier(x1, cpx1, cpx2, x2, 0.5);
-        const my = cubicBezier(y1, y1, y2, y2, 0.5);
+        // midpoint for labels: the middle of the upright run
+        const { d, mx, my } = stepLink(x1, y1, x2, y2);
 
         const baseColor   = verified ? "var(--grn4)" : "var(--blue4)";
         const hoverColor  = "var(--vio4)";
@@ -790,13 +783,7 @@ function CausalEdges({
         </marker>
       </defs>
       {positioned.map(({ edge, x1, y1, x2, y2 }) => {
-        const goRight = x2 >= x1;
-        const dx = Math.max(80, Math.abs(x2 - x1) * 0.46);
-        const cpx1 = x1 + (goRight ? dx : -dx);
-        const cpx2 = x2 - (goRight ? dx : -dx);
-        const d = `M${x1},${y1} C${cpx1},${y1} ${cpx2},${y2} ${x2},${y2}`;
-        const mx = cubicBezier(x1, cpx1, cpx2, x2, 0.5);
-        const my = cubicBezier(y1, y1, y2, y2, 0.5);
+        const { d, mx, my } = stepLink(x1, y1, x2, y2);
         const weightLabel = edge.weight > 1 ? `×${edge.weight}` : "";
         return (
           <g key={edge.id} opacity={0.75}>

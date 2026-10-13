@@ -12,16 +12,17 @@
  * the fields and drops them from the body looks identical on screen.
  */
 import { describe, expect, it, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@/lib/testing";
+import { render, screen, waitFor, within } from "@/lib/testing";
 import userEvent from "@testing-library/user-event";
 
 import { DeclaredActionsPanel } from "@/components/DeclaredActionsPanel";
 
-type Call = { url: string; method: string; body: any };
+type Call = { url: string; method: string; body: unknown };
 const calls: Call[] = [];
-let annotations: any[] = [];
-let sends: any[] = [];
+let annotations: Record<string, unknown>[] = [];
+let sends: Record<string, unknown>[] = [];
 let outboxOn = true;
+let inboxFails = false;
 
 function jsonResponse(body: unknown) {
   return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) } as Response;
@@ -32,6 +33,7 @@ beforeEach(() => {
   annotations = [];
   sends = [];
   outboxOn = true;
+  inboxFails = false;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -41,6 +43,7 @@ beforeEach(() => {
       return jsonResponse({ enabled: outboxOn, sends });
     }
     if (url.includes("/ontology/kinetic-actions")) return jsonResponse({});
+    if (url.includes("/inbox") && inboxFails) return { ok: false, status: 500, json: async () => ({}), text: async () => "" } as Response;
     if (url.includes("/kinetic-actions/annotations")) {
       if (method === "DELETE") {
         annotations = [];
@@ -101,7 +104,9 @@ describe("DeclaredActionsPanel — the calls that wait for a person (Arc OC-6)",
     const user = userEvent.setup();
     render(<DeclaredActionsPanel connectionId="c1" />);
     const rows = await screen.findAllByTestId("send-row");
-    expect(rows[0].textContent).toContain("waits for you · 5 attempts");
+    // it waits under Needs you, first, with how often it was tried and why it failed
+    expect(within(screen.getByTestId("actions-needs")).getAllByTestId("send-row")).toHaveLength(1);
+    expect(rows[0].textContent).toContain("5 attempts");
     expect(rows[0].textContent).toContain("not delivered after 5 attempts");
     expect(screen.getAllByTestId("send-retry")).toHaveLength(1);                 // only the one that waits for a person
     await user.click(screen.getByTestId("send-retry"));
@@ -143,5 +148,17 @@ describe("DeclaredActionsPanel — the calls that wait for a person (Arc OC-6)",
     const off = await screen.findByTestId("sends-off");
     expect(off.textContent).toContain("Settings → System → Feature flags");
     expect(screen.queryAllByTestId("send-row")).toHaveLength(0);
+  });
+});
+
+describe("DeclaredActionsPanel — what waits for a person", () => {
+  // The approvals were read with `.catch(() => [])`: a failed read said "Nothing is waiting", teaching the reader that
+  // nothing needed them. A failed read says so now, with Retry.
+  it("says the approvals could not be read, never that nothing waits", async () => {
+    inboxFails = true;
+    render(<DeclaredActionsPanel connectionId="c1" />);
+    const needs = await screen.findByTestId("actions-needs");
+    await waitFor(() => expect(needs.textContent).toContain("Could not read the approvals"));
+    expect(needs.textContent).not.toContain("Nothing waits for you");
   });
 });

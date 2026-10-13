@@ -235,6 +235,23 @@ def get_suite(suite_id: str) -> Optional[dict]:
     return _suite_row(row) if row else None
 
 
+def rename_suite(suite_id: str, name: str) -> Optional[dict]:
+    """A suite's title, changed in place: its id, key, cases, runs and the graduation receipts that cite them stay —
+    a suite is found by its KEY, and its title is free to change. None when there is no such suite."""
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("a suite's title is required")
+    c = _connect()
+    try:
+        cur = c.execute("UPDATE eval_suites SET name=? WHERE id=? AND org_id=?", (name, suite_id, current_org_id()))
+        c.commit()
+        if not cur.rowcount:
+            return None
+    finally:
+        c.close()
+    return get_suite(suite_id)
+
+
 def delete_suite(suite_id: str) -> bool:
     """Delete a suite and everything under it. Cascade is manual because SQLite
     foreign keys are off by default here — leaving orphan cases behind would

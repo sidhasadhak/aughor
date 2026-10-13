@@ -1,507 +1,665 @@
 "use client";
 
 /**
- * DeclaredActionsPanel — what Aughor may do on a connection (Aughor Intelligence · 07 Actions).
+ * Actions — what Aughor may do on a connection (the Intelligence workspace's Actions tab), laid out to CLARITY
+ * (`aughor-v2/CLARITY.md`) as the ledger it is. The declared actions come first, read like a document: each one's name
+ * and what it does in a line, what it changes as one muted line of facts, and its gate as a chip whose title is the rule.
+ * Beside them, in amber, what waits for a person: the approvals, and an outbox call no retry will deliver. Then the edit
+ * layer — the values actions and people set over the data, by the object they sit on, each withdrawable — and the calls
+ * the actions made to other systems.
  *
- * Numbered sections beside a rail. §01 the declared actions — what each does, what it is about, and
- * its gate — with the door to the action designer (`ontology/ActionDesigner`), which replaced the declare form on
- * 2026-10-09: the walk-through found that form a developer's, pre-filled with someone else's refund rule; §02 the overlay edits a person wrote over the data,
- * each withdrawable, with the form that annotates a value; §03 proposing actions from a finding. The
- * rail holds what is awaiting approval, with the doors that resolve it, and the permission model as
- * the code enforces it.
+ * It was numbered sections beside a rail: three tables, two forms open on a reading view and the permission model in
+ * prose. The forms open when asked for (New action · Propose from a finding · Annotate a value), and the permission model
+ * is the title of each gate.
  *
- * Proposals are staged, never run from here. `POST /kinetic-actions/propose` writes each valid one
- * to the inbox, where it waits in the rail until a person approves it — which runs it exactly once —
- * or rejects it. This panel used to execute a proposal directly and leave its staged row pending, so
- * the same side effect could later be approved and run a second time.
+ * Proposals are staged, never run from here: proposing writes each valid one to the approvals, where it waits until a
+ * person approves it — which runs it exactly once — or rejects it. (This panel once executed a proposal directly and
+ * left its staged row pending, so the same side effect could later be approved and run a second time.)
  *
- * Drawn only from stored data. Left out: an action's scope and state and its runs in the last 30
- * days (no count is kept), an overlay edit's previous value (not stored), a dry-run door (none
- * exists), and a "disabled" gate (no such tier).
+ * Drawn only from stored data. Left out because nothing keeps them: an action's runs in the last 30 days, an edit's
+ * previous value, a dry run, a "disabled" gate.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
+import { CARD, Chip, Empty, Label, MUTED, NUM, NeedsRow, NeedsYou, ONE_LINE, Page, ROW, RULE } from "@/components/clarity/kit";
 import { ActionDesigner } from "@/components/ontology/ActionDesigner";
+import { humanName } from "@/components/ontology/TypeOverview";
+import { ProposalCard } from "@/components/ProposalCard";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { ProposalCard } from "@/components/ProposalCard";
-import { SkeletonRows } from "@/components/ui/motion";
+import { Input } from "@/components/ui/input";
+import { Loading, ReadFailed } from "@/components/ui/states";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { getProposals, type StagedProposal } from "@/lib/api";
-import { dismissSend, getSends, retrySend, type ActionSend } from "@/lib/objects";
 import { claimsOf, getIdToken } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { countNoun, formatCount, formatTimestamp, relTime } from "@/lib/format";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { withUniqueKeys } from "@/lib/listKeys";
+import { byWho, keyToWords } from "@/lib/names";
+import { dismissSend, getSends, retrySend, type ActionSend } from "@/lib/objects";
+import { useMe } from "@/lib/useMe";
+
+// ── Reading ──────────────────────────────────────────────────────────────────────
+
+/** A refused read, with its HTTP status: a 404 on the declared actions means the connection has no ontology yet. */
+class Refused extends Error {
+  status: number;
+  constructor(status: number, message: string) { super(message); this.status = status; }
+}
+
+/** The server's own words for a refusal — its `detail`, not the JSON around it. */
+function detailOf(text: string): string {
+  try {
+    const d = JSON.parse(text)?.detail;
+    if (typeof d === "string") return d;
+    if (d && typeof d.message === "string") return d.message;
+  } catch { /* not JSON: the text is the words */ }
+  return text;
+}
 
 async function apiFetch(path: string, opts?: RequestInit) {
   const res = await fetch(`${getApiBase()}${path}`, { headers: { "Content-Type": "application/json" }, ...opts });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw new Error(text || `HTTP ${res.status}`);
+    throw new Refused(res.status, detailOf(text) || `HTTP ${res.status}`);
   }
   return res.json();
 }
 const post = (p: string, b: unknown) => apiFetch(p, { method: "POST", body: JSON.stringify(b) });
-const del = (p: string) => apiFetch(p, { method: "DELETE" });
+const said = (e: unknown) => String((e as Error)?.message || e);
+const on = (c: string) => `connection_id=${encodeURIComponent(c)}`;
 
-/** Who is acting — the signed-in email, else the word the actions inbox uses. Provenance, not auth. */
-const actorName = () => claimsOf(getIdToken())?.email || "human";
+/** The edit layer's one route (the frozen wire path keeps its old name). */
+const EDITS = "/kinetic-actions/annotations";
 
-const input: React.CSSProperties = { width: "100%", padding: "6px 8px", fontSize: 12, border: "1px solid var(--b0)", borderRadius: 6, background: "var(--bg-2)", color: "var(--t1)", marginBottom: 6, boxSizing: "border-box" };
-
-function Err({ e }: { e: string | null }) {
-  return e ? <p className="aug-actions-err">{e}</p> : null;
+interface Param { name: string; display_name?: string; data_type?: string; kind?: string; object_type?: string; required?: boolean }
+interface ObjectEdit { object: string; property: string; value?: string }
+interface SideEffect { kind: string; lane?: string; config?: Record<string, unknown> }
+/** A declared action, as the ontology's declared-actions read answers it (secrets masked). */
+interface Declared {
+  id: string;
+  display_name?: string;
+  description?: string;
+  kind?: string;
+  risk?: string;
+  object_type?: string;
+  creates?: string;
+  params?: Param[];
+  edits?: ObjectEdit[];
+  side_effects?: SideEffect[];
+  submission_criteria?: { expr: string }[];
+  verification?: { sql?: string } | null;
+  reversibility?: string;
+  undo?: { action_id?: string; window_hours?: number } | null;
+}
+/** One value in the edit layer, as `GET …/annotations` answers it. */
+interface LayerEdit {
+  id: string;
+  table: string;
+  column?: string;
+  key_column?: string;
+  row_key?: string;
+  kind?: string;
+  body: string;
+  source?: string;
+  actor?: string;
+  origin?: string;
+  note?: string;
+  object_type?: string;
+  version?: number;
+  created_at?: string;
 }
 
-/** The gate an action's risk puts on it, as `govern/actions.py` enforces it. */
+const readActions = (c: string) => apiFetch(`/ontology/kinetic-actions?${on(c)}`).then(r => Object.values(r ?? {}) as Declared[]);
+const readEdits = (c: string) => apiFetch(`${EDITS}?${on(c)}`).then(r => (r?.edits ?? []) as LayerEdit[]);
+const readPending = (c: string) => getProposals(c, "pending");
+const readOutbox = (c: string) => getSends(c).then(r => ({ enabled: !!r?.enabled, sends: r?.sends ?? [] }));
+
+interface Read<T> { data: T | null; error: string | null; status: number; reload: () => void }
+
+/** One read of this connection: its answer, or why it failed — never an empty list for a failed read. What another
+ *  connection answered is not this one's, so a switch reads as loading until this connection answers. */
+function useRead<T>(connectionId: string, read: (c: string) => Promise<T>): Read<T> {
+  const [got, setGot] = useState<{ conn: string; data: T | null; error: string | null; status: number } | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!connectionId) return;
+    let alive = true;
+    read(connectionId)
+      .then(data => { if (alive) setGot({ conn: connectionId, data, error: null, status: 200 }); })
+      .catch(e => {
+        if (!alive) return;
+        setGot(prev => ({ conn: connectionId, data: prev?.conn === connectionId ? prev.data : null, error: said(e),
+          status: e instanceof Refused ? e.status : 0 }));
+      });
+    return () => { alive = false; };
+  }, [connectionId, read, tick]);
+  const reload = useCallback(() => setTick(t => t + 1), []);
+  const mine = got?.conn === connectionId ? got : null;
+  return { data: mine?.data ?? null, error: mine?.error ?? null, status: mine?.status ?? 0, reload };
+}
+
+/** Who is acting — the signed-in email, else the word the approvals use. Provenance, not auth. */
+const actorName = () => claimsOf(getIdToken())?.email || "human";
+
+// ── Words ────────────────────────────────────────────────────────────────────────
+
+const MONO: React.CSSProperties = { fontFamily: "var(--font-mono)" };
+const SUB: React.CSSProperties = { color: "var(--t2)", marginTop: -4, marginBottom: 6 };
+const ERR: React.CSSProperties = { color: "var(--red4)", margin: "4px 0" };
+
+/** The gate an action's risk puts on it, as `govern/actions.py` enforces it — the permission model, one rule per title.
+ *  An action declares no risk only before it is classified, and the server reads that as high. */
 const GATE: Record<string, { label: string; ask: boolean; title: string }> = {
-  read_only: { label: "runs, audited", ask: false, title: "Read-only: never gated; every run is audited" },
-  low:       { label: "runs, audited", ask: false, title: "Low risk — reversible or additive: runs without asking; every run is audited" },
-  high:      { label: "needs approval", ask: true, title: "High risk: a person approves each run, or a standing grant pre-approves one target" },
+  read_only: { label: "runs, audited", ask: false, title: "Reads only: never gated, and every run is audited" },
+  low: { label: "runs, audited", ask: false, title: "Low risk — reversible or additive: runs without asking, and every run is audited" },
+  high: { label: "needs approval", ask: true,
+    title: "High risk: a person approves each run. Approving a staged proposal is that approval, once; a standing grant can pre-approve one target" },
 };
 
-/** What an action does, one line each: the calls it makes, what it writes, what it takes, what it must satisfy. */
-function effectLines(a: any): string[] {
-  const out: string[] = [];
-  for (const se of a.side_effects || []) {
-    out.push(se.kind === "http"
-      ? `calls ${String(se.config?.method || "POST")} ${String(se.config?.url || "")}${se.config?.auth_secret ? " · key set" : ""}`
-      : `side effect: ${String(se.kind)}`);
+/** Nodes joined by ", " — the values one action sets, said in one breath. */
+function joined(nodes: React.ReactNode[]): React.ReactNode {
+  return nodes.map((n, i) => <React.Fragment key={i}>{i ? ", " : ""}{n}</React.Fragment>);
+}
+
+const setNode = (e: ObjectEdit) => <><span style={MONO}>{e.property}</span>{e.value ? ` = ${e.value}` : ""}</>;
+
+/** What an action does, as facts: what it is about, what it makes and sets, the calls it makes, what it takes, what it
+ *  must satisfy, how it is checked and undone. Long text (a URL, a read's SQL, a parameter's type) is in the title. */
+function actionFacts(a: Declared, nameOf: (id: string) => string): { key: string; node: React.ReactNode; title?: string }[] {
+  const out: { key: string; node: React.ReactNode; title?: string }[] = [];
+  if (a.object_type) out.push({ key: "on", node: <>on {humanName(a.object_type)}</> });
+  const edits = a.edits ?? [];
+  const made = edits.filter(e => e.object === "created" && a.creates);
+  const sets = edits.filter(e => !(e.object === "created" && a.creates));
+  if (a.creates) {
+    out.push({ key: "creates", title: "A new object the platform keeps; its values sit in the edit layer",
+      node: <>creates a {humanName(a.creates)}{made.length ? <> with {joined(made.map(setNode))}</> : null}</> });
   }
-  for (const e of a.edits || []) {
-    out.push(`writes ${String(e.property)} on ${String(e.object)}${e.value ? ` = ${String(e.value)}` : ""} — an overlay, never the source`);
+  if (sets.length) out.push({ key: "sets", title: "Set in the edit layer — never written to the source", node: <>sets {joined(sets.map(setNode))}</> });
+  (a.side_effects ?? []).forEach((se, i) => {
+    const url = String(se.config?.url ?? "");
+    const method = String(se.config?.method ?? "POST");
+    let host = url;
+    try { host = url ? new URL(url).host : ""; } catch { /* not a URL: say it as written */ }
+    out.push({ key: `call${i}`, title: se.kind === "http" ? `${method} ${url}` : undefined,
+      node: se.kind === "http"
+        ? <>calls {method} {host}{se.config?.auth_secret ? " · key set" : ""}{se.lane === "writeback" ? " · its edits wait on it" : ""}</>
+        : <>{keyToWords(se.kind)}</> });
+  });
+  const params = a.params ?? [];
+  if (params.length) {
+    out.push({ key: "takes", node: <>takes {params.map(p => p.display_name || p.name).join(", ")}</>,
+      title: params.map(p => `${p.name}: ${p.kind === "object" ? p.object_type : p.data_type}${p.required === false ? " (optional)" : ""}`).join(" · ") });
   }
-  const params = (a.params || []).map((p: any) => `${p.name}:${p.kind === "object" ? p.object_type : p.data_type}`);
-  if (params.length) out.push(`params ${params.join(", ")}`);
-  for (const c of a.submission_criteria || []) out.push(`must satisfy ${String(c.expr)}`);
-  if (a.verification?.sql) out.push(`verified by ${String(a.verification.sql)}`);
-  if (a.reversibility === "irreversible") out.push("irreversible");
-  else if (a.undo?.action_id) {
+  (a.submission_criteria ?? []).forEach((c, i) => out.push({ key: `must${i}`, node: <>must satisfy <span style={MONO}>{c.expr}</span></> }));
+  if (a.verification?.sql) out.push({ key: "verified", node: <>checked by a read</>, title: a.verification.sql });
+  if (a.undo?.action_id) {
     const hours = Number(a.undo.window_hours) || 0;
-    out.push(`undone by ${String(a.undo.action_id)}${hours > 0 ? ` within ${hours} h` : ""}`);
+    out.push({ key: "undo", node: <>undone by {nameOf(a.undo.action_id)}{hours > 0 ? ` within ${hours} h` : ""}</> });
+  }
+  if (!a.creates && !edits.length && !(a.side_effects ?? []).length) {
+    out.push({ key: "kind", node: <>{a.kind === "query" ? "reads only" : a.kind === "side_effect" ? "has a side effect" : "annotates"}</> });
   }
   return out;
 }
 
-function Section({ title, meta, children }: { title: string; meta?: string; children: React.ReactNode }) {
+const SEND_WORDS: Record<ActionSend["status"], string> = {
+  queued: "waiting to be sent again", sending: "being sent", delivered: "delivered",
+  unknown: "no answer — being checked", dead: "could not be delivered", dismissed: "left undelivered",
+};
+/** A call waits for a person when no retry will deliver it, or when no answer came back. */
+const waits = (s: ActionSend) => s.status === "dead" || s.status === "unknown";
+/** The calls listed below the approvals: the newest this many. */
+const CALLS_SHOWN = 20;
+
+// ── The page ─────────────────────────────────────────────────────────────────────
+
+export function DeclaredActionsPanel({ connectionId }: { connectionId: string }) {
+  const actions = useRead(connectionId, readActions);
+  const edits = useRead(connectionId, readEdits);
+  const pending = useRead<StagedProposal[]>(connectionId, readPending);
+  const outbox = useRead(connectionId, readOutbox);
+  const [designing, setDesigning] = useState(false);
+  const [proposing, setProposing] = useState(false);
+
+  const names = useMemo(() => new Map((actions.data ?? []).map(a => [a.id, a.display_name || humanName(a.id)])), [actions.data]);
+  const nameOf = useCallback((id: string) => names.get(id) ?? humanName(id), [names]);
+
+  if (!connectionId) {
+    return <Page testId="actions-page"><section style={CARD}><Empty>Choose a connection to see what Aughor may do on it.</Empty></section></Page>;
+  }
+
   return (
-    <section className="aug-brief-sec">
-      <div className="aug-brief-body">
-        <div className="aug-brief-head">
-          <span className="aug-brief-eyebrow">{title}</span>
-          {meta && <span className="aug-brief-meta">{meta}</span>}
+    <Page testId="actions-page">
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-start" }}>
+        <section aria-label="Declared actions" data-testid="actions-ledger" style={{ ...CARD, flex: "999 1 560px" }}>
+          <Label right={<>
+            <Button variant="ghost" size="xs" aria-expanded={proposing} onClick={() => setProposing(p => !p)}
+              title="Paste a finding; the agent stages any declared action it warrants for a person to approve">
+              Propose from a finding
+            </Button>
+            {!designing && (
+              <Button variant="outline" size="xs" data-testid="actions-new" onClick={() => setDesigning(true)}>
+                <Icon name="plus" size={12} /> New action
+              </Button>
+            )}
+          </>}>
+            Declared actions{actions.data && <span style={{ ...NUM, color: "var(--t2)" }}>{formatCount(actions.data.length)}</span>}
+          </Label>
+          <div className="aug-fs-sm" style={SUB}>What Aughor may do on this connection, and which runs a person approves first.</div>
+          <Ledger read={actions} nameOf={nameOf} />
+          {proposing && <ProposeForm connectionId={connectionId} nameOf={nameOf} onClose={() => setProposing(false)} onStaged={pending.reload} />}
+          {designing && (
+            <div style={{ display: "flex", border: "1px solid var(--b1)", borderRadius: "var(--r3)", marginTop: 10 }}>
+              <ActionDesigner connectionId={connectionId} within=""
+                onClose={() => { setDesigning(false); actions.reload(); }} onDeclared={() => actions.reload()} />
+            </div>
+          )}
+        </section>
+
+        <div style={{ flex: "1 1 320px", minWidth: 0 }}>
+          <Waiting connectionId={connectionId} pending={pending} outbox={outbox}
+            onResolved={(t, m) => {
+              if (t === "ok") { toast.info(m); edits.reload(); }
+              pending.reload();
+            }} />
         </div>
-        {children}
       </div>
-    </section>
+
+      <EditLayer connectionId={connectionId} read={edits} nameOf={nameOf} />
+      <Calls read={outbox} />
+    </Page>
   );
 }
 
-// ── §02 · annotating a value ─────────────────────────────────────────────────────
+// ── The ledger ───────────────────────────────────────────────────────────────────
 
-function AnnotateForm({ connectionId, onSaved }: { connectionId: string; onSaved: () => void }) {
-  const [err, setErr] = useState<string | null>(null);
-  const [f, setF] = useState({ table: "", column: "", key_column: "", row_key: "", body: "", kind: "annotation" });
-
-  const save = async () => {
-    setErr(null);
-    try {
-      await post(`/kinetic-actions/annotate?connection_id=${encodeURIComponent(connectionId)}`, f);
-      setF({ ...f, body: "" }); onSaved();
-    } catch (e: any) { setErr(String(e.message || e)); }
-  };
-
+function Ledger({ read, nameOf }: { read: Read<Declared[]>; nameOf: (id: string) => string }) {
+  if (read.data === null) {
+    if (read.status === 404) return <Empty title={read.error ?? undefined}>No ontology is built on this connection yet — an action is declared on one.</Empty>;
+    if (read.error) return <ReadFailed what="the declared actions" error={read.error} onRetry={read.reload} />;
+    return <Loading what="the declared actions" />;
+  }
   return (
-    <div className="aug-actions-form">
-      <div className="aug-actions-form-title">Annotate a value</div>
-      <Err e={err} />
-      <Input style={input} placeholder="table" value={f.table} onChange={e => setF({ ...f, table: e.target.value })} />
-      <div style={{ display: "flex", gap: 6 }}>
-        <Input style={{ ...input, flex: 1 }} placeholder="column (optional)" value={f.column} onChange={e => setF({ ...f, column: e.target.value })} />
-        <Input style={{ ...input, flex: 1 }} placeholder="key column (optional)" value={f.key_column} onChange={e => setF({ ...f, key_column: e.target.value })} />
-        <Input style={{ ...input, flex: 1 }} placeholder="row key (optional)" value={f.row_key} onChange={e => setF({ ...f, row_key: e.target.value })} />
+    <>
+      {read.error && <RefreshFailed error={read.error} onRetry={read.reload} />}
+      {read.data.length === 0
+        ? <Empty>No action is declared yet.</Empty>
+        : read.data.map((a, i) => <ActionRow key={a.id} a={a} first={i === 0} nameOf={nameOf} />)}
+    </>
+  );
+}
+
+function ActionRow({ a, first, nameOf }: { a: Declared; first: boolean; nameOf: (id: string) => string }) {
+  const gate = GATE[a.risk || "high"];
+  const facts = actionFacts(a, nameOf);
+  return (
+    <div data-testid="action-row" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12,
+      alignItems: "start", padding: "8px 0", ...(first ? {} : RULE) }}>
+      <div style={{ minWidth: 0 }}>
+        <div className="aug-fs-chrome" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+          <span title={a.id} style={{ color: "var(--t1)", fontWeight: 600 }}>{a.display_name || humanName(a.id)}</span>
+          {a.description && <span style={{ marginLeft: 8 }}>{a.description}</span>}
+        </div>
+        {facts.length > 0 && (
+          <div className="aug-fs-xs" style={{ ...MUTED, marginTop: 2, lineHeight: 1.6, overflowWrap: "anywhere" }}>
+            {facts.map((f, i) => <span key={f.key} title={f.title}>{i ? " · " : ""}{f.node}</span>)}
+          </div>
+        )}
       </div>
-      <Input style={input} placeholder="annotation / correction text" value={f.body} onChange={e => setF({ ...f, body: e.target.value })} />
-      <Button variant="default" size="sm" disabled={!f.table.trim() || !f.body.trim()} onClick={save}>Save annotation</Button>
+      <span style={{ ...ROW, flexWrap: "nowrap", gap: 6 }}>
+        {a.reversibility === "irreversible" && (
+          <Chip tone="down" title="Declared irreversible: no undo can take it back">irreversible</Chip>
+        )}
+        <Chip tone={gate?.ask ? "amber" : "plain"} title={gate?.title}>{gate ? gate.label : String(a.risk)}</Chip>
+      </span>
     </div>
   );
 }
 
-// ── §03 · proposing from a finding ───────────────────────────────────────────────
+/** A refresh that failed while an earlier answer is on screen: said, beside the answer it did not replace. */
+function RefreshFailed({ error, onRetry }: { error: string; onRetry: () => void }) {
+  return (
+    <div className="aug-fs-xs" style={{ ...ROW, marginBottom: 6 }}>
+      <Chip tone="amber" title={error}>not refreshed — showing the last read</Chip>
+      <Button variant="link" size="xs" onClick={onRetry}>Retry</Button>
+    </div>
+  );
+}
 
-function ProposeSection({ connectionId, onStaged }: { connectionId: string; onStaged: () => void }) {
+// ── Proposing from a finding ─────────────────────────────────────────────────────
+
+interface Proposed { action_id: string; inbox_id?: string; status?: string; ok?: boolean; message?: string;
+  reasoning?: string; params?: Record<string, unknown> }
+
+function ProposeForm({ connectionId, nameOf, onClose, onStaged }: {
+  connectionId: string; nameOf: (id: string) => string; onClose: () => void; onStaged: () => void;
+}) {
   const [context, setContext] = useState("");
-  const [proposals, setProposals] = useState<any[] | null>(null);
+  const [proposals, setProposals] = useState<Proposed[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const propose = async () => {
     setBusy(true); setErr(null); setProposals(null);
     try {
-      const r = await post(`/kinetic-actions/propose?connection_id=${encodeURIComponent(connectionId)}`, { context });
+      const r = await post(`/kinetic-actions/propose?${on(connectionId)}`, { context });
       setProposals(r.proposals || []);
-      onStaged();   // every valid proposal is now in the inbox: the rail shows it for approval
-    } catch (e: any) { setErr(String(e.message || e)); }
+      onStaged();   // every valid proposal is now in the approvals: Needs you shows it
+    } catch (e) { setErr(said(e)); }
     finally { setBusy(false); }
   };
 
   return (
-    <>
-      <Err e={err} />
-      <p className="aug-brief-note">
-        Paste a finding. The agent proposes any declared action it warrants; each valid proposal is staged in
-        Awaiting approval, and nothing runs until a person approves it. Proposing uses a model call.
-      </p>
-      <Textarea style={{ ...input, minHeight: 72, marginTop: 8 }} placeholder="e.g. Order X9001 was charged EUR 480 twice — a clear duplicate charge." value={context} onChange={e => setContext(e.target.value)} />
-      <Button variant="secondary" size="sm" disabled={busy || !context.trim()} onClick={propose}>
-        {busy ? "Proposing…" : "Propose actions"}
-      </Button>
-      {proposals && proposals.length === 0 && <p className="aug-brief-note">The agent abstained — nothing to propose.</p>}
-      {proposals && proposals.length > 0 && (
-        <div className="aug-actions-proposals">
-          {proposals.map((p, i) => (
-            <div key={i} className="aug-actions-proposal">
-              <div className="aug-approval-head">
-                <span className="aug-approval-kind">{p.action_id}</span>
-                <span className="aug-brief-meta">{p.inbox_id ? "staged · awaiting approval" : String(p.status)}</span>
-              </div>
-              {p.reasoning && <span className="aug-approval-why">{p.reasoning}</span>}
-              <span className="aug-approval-params">
-                {Object.entries(p.params ?? {}).map(([k, v]) => `${k}: ${String(v)}`).join(" · ") || "no parameters"}
-              </span>
-              {!p.ok && p.message && <p className="aug-actions-err">{p.message}</p>}
-            </div>
-          ))}
+    <div data-testid="actions-propose" style={{ ...RULE, marginTop: 6, paddingTop: 10 }}>
+      <div className="aug-fs-sm" style={{ ...ROW, color: "var(--t2)", marginBottom: 6 }}>
+        <span>The agent stages any declared action the finding warrants; nothing runs until a person approves it.</span>
+        <Chip title="Proposing asks the model once">1 model call</Chip>
+      </div>
+      {err && <div className="aug-fs-sm" role="alert" style={ERR}>{err}</div>}
+      <Textarea aria-label="A finding" style={{ minHeight: 72 }} value={context} onChange={e => setContext(e.target.value)}
+        placeholder="e.g. Order X9001 was charged EUR 480 twice — a clear duplicate charge." />
+      <div style={{ ...ROW, marginTop: 6 }}>
+        <Button variant="secondary" size="xs" disabled={busy || !context.trim()} onClick={propose}>
+          {busy ? "Proposing…" : "Propose actions"}
+        </Button>
+        <Button variant="ghost" size="xs" onClick={onClose}>Close</Button>
+      </div>
+      {proposals && proposals.length === 0 && <Empty>The agent abstained — nothing to propose.</Empty>}
+      {proposals && proposals.length > 0 && withUniqueKeys(proposals, p => p.inbox_id || p.action_id).map(([key, p]) => (
+        <div key={key} className="aug-fs-sm" style={{ ...RULE, padding: "6px 0", marginTop: 6 }}>
+          <div style={ROW}>
+            <span style={{ color: "var(--t1)", fontWeight: 600 }}>{nameOf(p.action_id)}</span>
+            <span style={MUTED}>{p.inbox_id ? "staged — waits for approval" : String(p.status ?? "")}</span>
+          </div>
+          {p.reasoning && <div style={{ color: "var(--t2)" }}>{p.reasoning}</div>}
+          <div className="aug-fs-xs" style={{ ...MUTED, ...MONO, overflowWrap: "anywhere" }}>
+            {Object.entries(p.params ?? {}).map(([k, v]) => `${k}: ${String(v)}`).join(" · ") || "no parameters"}
+          </div>
+          {!p.ok && p.message && <div role="alert" style={ERR}>{p.message}</div>}
         </div>
-      )}
-    </>
+      ))}
+    </div>
   );
 }
 
-// ── The layer ────────────────────────────────────────────────────────────────────
+// ── What waits for a person ──────────────────────────────────────────────────────
 
-const SEND_WORDS: Record<ActionSend["status"], string> = {
-  queued: "waiting to be sent again", sending: "being sent", delivered: "delivered",
-  unknown: "no answer — being checked", dead: "waits for you", dismissed: "left undelivered",
-};
-
-/** Arc OC-6 — the outbox of this connection's declared actions: the calls that wait for a person first, with Retry
- *  and Dismiss, then what was delivered or is being retried and why. Shown while the outbox is on, or holds any call. */
-function SendsSection({ connectionId }: { connectionId: string }) {
-  const [state, setState] = useState<{ enabled: boolean; sends: ActionSend[] } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+function Waiting({ connectionId, pending, outbox, onResolved }: {
+  connectionId: string;
+  pending: Read<StagedProposal[]>;
+  outbox: Read<{ enabled: boolean; sends: ActionSend[] }>;
+  onResolved: (t: "ok" | "err", message: string) => void;
+}) {
   const [busy, setBusy] = useState("");
   // the call a person is leaving undelivered, and why — asked on the row, never in a native prompt (an embedded
   // browser refuses `window.prompt`, and the button then did nothing; 2026-10-10)
   const [leaving, setLeaving] = useState<{ id: string; why: string } | null>(null);
-  const load = useCallback(() => {
-    getSends(connectionId).then(r => { setState({ enabled: !!r?.enabled, sends: r?.sends ?? [] }); setError(null); })
-      .catch(e => setError(String(e.message || e)));
-  }, [connectionId]);
-  useEffect(() => { if (connectionId) load(); }, [connectionId, load]);
-  if (!state) return error ? <Err e={error} /> : null;
-  if (!state.enabled && state.sends.length === 0) {
-    // Off is said, never implied: a section that hid itself read as a feature that does not exist (2026-10-10).
-    return (
-      <Section title="Sends" meta="the outbox is off">
-        <p className="aug-brief-note" data-testid="sends-off">
-          A declared action's calls to other systems go out once, when it is pressed, and are not kept. Switch the outbox
-          on in Settings → System → Feature flags to keep each call, retry it by why it failed, and hand you the ones
-          that need a person.
-        </p>
-      </Section>
-    );
-  }
-  const waiting = state.sends.filter(s => s.status === "dead" || s.status === "unknown");
-  const rest = state.sends.filter(s => s.status !== "dead" && s.status !== "unknown").slice(0, 20);
+  const calls = (outbox.data?.sends ?? []).filter(waits);
+  const approvals = pending.data ?? [];
+  const count = calls.length + approvals.length;
+
   const act = async (s: ActionSend, what: "retry" | "dismiss", why = "") => {
     setBusy(s.id);
     try {
       if (what === "retry") await retrySend(connectionId, s.id);
       else await dismissSend(connectionId, s.id, why);
       setLeaving(null);
-      load();
+      outbox.reload();
     } catch (e) {
-      toast.error(what === "retry" ? "Not sent" : "Not dismissed", { description: String((e as Error).message || e).slice(0, 240) });
+      toast.error(what === "retry" ? "Not sent" : "Not dismissed", { description: said(e).slice(0, 240) });
     } finally { setBusy(""); }
   };
-  const row = (s: ActionSend, door: boolean) => (
-    <React.Fragment key={s.id}>
-    <TableRow data-testid="send-row">
-      <TableCell className="aug-actions-id">{s.action_name}<span className="aug-actions-kind">{s.effect.kind}{s.effect.lane === "writeback" ? " · writeback" : ""}</span></TableCell>
-      <TableCell className="aug-ledger-claim">
-        <span className="aug-ledger-text">{SEND_WORDS[s.status]}{s.attempts ? ` · ${countNoun(s.attempts, "attempt")}` : ""}</span>
-        {/* a call a person left undelivered says who and why — their reason, beside what the call itself met */}
-        {s.status === "dismissed" && (s.resolved_by || s.note) && (
-          <span className="aug-ledger-query" data-testid="send-left-by">
-            {[s.resolved_by && `by ${s.resolved_by}`, s.note].filter(Boolean).join(" — ")}
-          </span>
-        )}
-        {/* a call that landed says what settled it — its check found it, nothing sent again — not the error before;
-            the line wraps: unwrapped, a long reason pushed the "when" column off the table (live, 2026-10-10) */}
-        {(s.status === "delivered" ? s.reconciled : s.last_error || s.reconciled) && (
-          <span className="aug-ledger-query" data-testid="send-said" style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
-            {s.status === "delivered" ? s.reconciled : s.last_error || s.reconciled}
-          </span>
-        )}
-      </TableCell>
-      <TableCell className="num aug-ledger-when" title={formatTimestamp(s.updated_at)}>{relTime(s.updated_at)}</TableCell>
-      <TableCell className="aug-org-door">
-        {door && (
-          <span style={{ display: "flex", gap: 4 }}>
-            <Button size="xs" variant="outline" disabled={!!busy} data-testid="send-retry" onClick={() => void act(s, "retry")}>
-              Retry
-            </Button>
-            <Button size="xs" variant="ghost" disabled={!!busy} data-testid="send-dismiss"
-              onClick={() => setLeaving({ id: s.id, why: "" })}>
-              Dismiss
-            </Button>
-          </span>
-        )}
-      </TableCell>
-    </TableRow>
-    {leaving?.id === s.id && (
-      <TableRow data-testid="send-dismiss-form">
-        <TableCell colSpan={4}>
-          <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <Input value={leaving.why} aria-label="Why it is left undelivered" placeholder="Why is it left undelivered?"
-              onChange={(e) => setLeaving({ id: s.id, why: e.target.value })} />
-            <Button size="xs" variant="outline" disabled={!!busy || !leaving.why.trim()} data-testid="send-dismiss-confirm"
-              onClick={() => void act(s, "dismiss", leaving.why.trim())}>
-              Leave it undelivered
-            </Button>
-            <Button size="xs" variant="ghost" onClick={() => setLeaving(null)}>Cancel</Button>
-          </span>
-        </TableCell>
-      </TableRow>
-    )}
-    </React.Fragment>
-  );
+
   return (
-    <Section title="Sends" meta={waiting.length ? `${countNoun(waiting.length, "call")} wait${waiting.length === 1 ? "s" : ""} for you`
-      : "a declared action's calls to other systems, delivered through the outbox"}>
-      <Err e={error} />
-      {state.sends.length === 0 ? <p className="aug-brief-note">No call has been sent yet.</p> : (
-        <div className="aug-moves-wrap">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="aug-actions-col-id">action</TableHead>
-                <TableHead>what became of it</TableHead>
-                <TableHead className="num aug-memory-col-when">when</TableHead>
-                <TableHead className="aug-memory-col-door"><span className="sr-only">Retry or dismiss</span></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {waiting.map(s => row(s, true))}
-              {rest.map(s => row(s, false))}
-            </TableBody>
-          </Table>
-        </div>
+    <NeedsYou testId="actions-needs" waiting={count > 0} right={count > 0 ? [
+      approvals.length ? countNoun(approvals.length, "approval") : "",
+      calls.length ? countNoun(calls.length, "call") : "",
+    ].filter(Boolean).join(" · ") : undefined}>
+      {calls.map(s => (
+        <React.Fragment key={s.id}>
+          <NeedsRow testId="send-row"
+            title={<>{s.action_name}<span className="aug-fs-xs" style={{ ...MUTED, fontWeight: 400 }}>{s.attempts ? ` · ${countNoun(s.attempts, "attempt")}` : ""}</span></>}
+            detail={<span title={[SEND_WORDS[s.status], s.last_error].filter(Boolean).join(" — ")}>{s.last_error || SEND_WORDS[s.status]}</span>}
+            actions={<>
+              <Button size="xs" variant="secondary" disabled={!!busy} data-testid="send-retry" onClick={() => void act(s, "retry")}>
+                Retry
+              </Button>
+              <Button size="xs" variant="ghost" disabled={!!busy} data-testid="send-dismiss" onClick={() => setLeaving({ id: s.id, why: "" })}>
+                Dismiss
+              </Button>
+            </>} />
+          {leaving?.id === s.id && (
+            <div data-testid="send-dismiss-form" style={{ ...ROW, flexWrap: "nowrap", margin: "0 0 6px" }}>
+              <Input value={leaving.why} aria-label="Why it is left undelivered" placeholder="Why is it left undelivered?"
+                style={{ flex: 1 }} onChange={e => setLeaving({ id: s.id, why: e.target.value })} />
+              <Button size="xs" variant="outline" disabled={!!busy || !leaving.why.trim()} data-testid="send-dismiss-confirm"
+                onClick={() => void act(s, "dismiss", leaving.why.trim())}>
+                Leave it undelivered
+              </Button>
+              <Button size="xs" variant="ghost" onClick={() => setLeaving(null)}>Cancel</Button>
+            </div>
+          )}
+        </React.Fragment>
+      ))}
+      {pending.data === null
+        ? (pending.error ? <ReadFailed what="the approvals" error={pending.error} onRetry={pending.reload} /> : <Loading what="the approvals" />)
+        : approvals.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: calls.length ? 8 : 0 }}>
+            {/* SP-9 — the ONE approval card; what either click creates, never raw params. */}
+            {approvals.map(p => <ProposalCard key={p.id} proposal={p} actor={actorName()} onResolved={onResolved} />)}
+          </div>
+        )}
+      {pending.data !== null && pending.error && <RefreshFailed error={pending.error} onRetry={pending.reload} />}
+      {pending.data !== null && count === 0 && (
+        <Empty title="A proposal lands here when the agent or an automation stages one, and approving it runs it once; an outbox call no retry will deliver waits here too">
+          Nothing waits for you.
+        </Empty>
       )}
-    </Section>
+    </NeedsYou>
   );
 }
 
-export function DeclaredActionsPanel({ connectionId }: { connectionId: string }) {
-  const [actions, setActions] = useState<Record<string, any>>({});
-  const [actionsErr, setActionsErr] = useState<string | null>(null);
-  const [edits, setEdits] = useState<any[]>([]);
-  const [editsErr, setEditsErr] = useState<string | null>(null);
-  const [busyEdit, setBusyEdit] = useState<string | null>(null);
-  const [pending, setPending] = useState<StagedProposal[] | null>(null);
-  const [designing, setDesigning] = useState(false);
+// ── The edit layer ───────────────────────────────────────────────────────────────
 
-  const loadActions = useCallback(() => {
-    apiFetch(`/ontology/kinetic-actions?connection_id=${encodeURIComponent(connectionId)}`)
-      .then(r => { setActions(r || {}); setActionsErr(null); }).catch(e => setActionsErr(String(e.message || e)));
-  }, [connectionId]);
-  const loadEdits = useCallback(() => {
-    apiFetch(`/kinetic-actions/annotations?connection_id=${encodeURIComponent(connectionId)}`)
-      .then(r => { setEdits(r?.edits || []); setEditsErr(null); }).catch(e => setEditsErr(String(e.message || e)));
-  }, [connectionId]);
-  const loadPending = useCallback(() => {
-    getProposals(connectionId, "pending").then(r => setPending(r ?? [])).catch(() => setPending([]));
-  }, [connectionId]);
+/** The values set on one object (or on a column or table, when no row is named), newest first. */
+interface EditGroup { key: string; entity: string; rowKey: string; where: string; newest: string; edits: LayerEdit[] }
 
-  useEffect(() => {
-    if (!connectionId) return;
-    loadActions(); loadEdits(); loadPending();
-  }, [connectionId, loadActions, loadEdits, loadPending]);
+function groupEdits(edits: readonly LayerEdit[]): EditGroup[] {
+  const groups = new Map<string, EditGroup>();
+  for (const e of edits) {
+    const key = `${e.table}|${e.key_column ?? ""}|${e.row_key ?? ""}`;
+    const g = groups.get(key) ?? {
+      key, entity: humanName(e.object_type || e.table), rowKey: e.row_key ?? "",
+      where: `${e.table}${e.row_key ? ` · ${e.key_column || "key"} = ${e.row_key}` : ""}`, newest: "", edits: [],
+    };
+    g.edits.push(e);
+    if ((e.created_at ?? "") > g.newest) g.newest = e.created_at ?? "";
+    groups.set(key, g);
+  }
+  return [...groups.values()].sort((a, b) => b.newest.localeCompare(a.newest));
+}
+
+/** What an edit sets, in the reader's words: a property's name, or a note on one. */
+function editLabel(e: LayerEdit): string {
+  const col = e.column ? humanName(e.column) : "";
+  if (e.kind === "property") return col || "Value";
+  if (e.kind === "correction") return col ? `Corrected ${col.toLowerCase()}` : "Correction";
+  return col ? `Note on ${col.toLowerCase()}` : "Note";
+}
+
+function EditLayer({ connectionId, read, nameOf }: { connectionId: string; read: Read<LayerEdit[]>; nameOf: (id: string) => string }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [annotating, setAnnotating] = useState(false);
+  const list = read.data;
+  const groups = useMemo(() => groupEdits(list ?? []), [list]);
+  // Said once: one person behind every edit is named in the label, not on each line.
+  const me = useMe();
+  const who = (e: LayerEdit) => byWho(e.actor || e.source || "", me?.actor);
+  const people = [...new Set((list ?? []).map(who).filter(Boolean))];
+  const shared = people.length === 1 ? people[0] : "";
 
   // ON-4 — one edit, unsaid. The connection-wide purge was the only way back before this.
   const withdraw = async (id: string) => {
-    setEditsErr(null); setBusyEdit(id);
+    setFailed(null); setBusy(id);
     try {
-      await del(`/kinetic-actions/annotations/${encodeURIComponent(id)}?connection_id=${encodeURIComponent(connectionId)}`);
-      loadEdits();
-    } catch (e: any) { setEditsErr(String(e.message || e)); }
-    finally { setBusyEdit(null); }
+      await apiFetch(`${EDITS}/${encodeURIComponent(id)}?${on(connectionId)}`, { method: "DELETE" });
+      read.reload();
+    } catch (e) { setFailed(said(e)); }
+    finally { setBusy(null); }
   };
 
-  if (!connectionId) {
-    return <div className="aug-ledger-pad"><p className="aug-brief-note">Select a connection to see what Aughor may do on it.</p></div>;
-  }
-
-  const actionList = Object.values(actions) as any[];
-  const meta = [
-    countNoun(actionList.length, "declared action"),
-    pending ? `${formatCount(pending.length)} awaiting approval` : "",
-    countNoun(edits.length, "overlay edit"),
-  ].filter(Boolean).join(" · ");
-
   return (
-    <div className="aug-profile">
-      <div className="aug-profile-main">
-        <div className="aug-brief-strip">
-          <span className="aug-brief-eyebrow">Actions</span>
-          <span className="aug-brief-meta">{meta}</span>
+    <section aria-label="Edit layer" data-testid="actions-edits" style={CARD}>
+      <Label right={<>
+        {shared && <span>all by {shared}</span>}
+        <Button variant="ghost" size="xs" aria-expanded={annotating} onClick={() => setAnnotating(a => !a)}>Annotate a value</Button>
+      </>}>
+        Edit layer{list && <span style={{ ...NUM, color: "var(--t2)" }}>{formatCount(list.length)}</span>}
+      </Label>
+      <div className="aug-fs-sm" style={SUB}>Values set over the data by an action or a person — merged when read, never written to the source.</div>
+      {annotating && <AnnotateForm connectionId={connectionId} onClose={() => setAnnotating(false)} onSaved={read.reload} />}
+      {failed && <div className="aug-fs-sm" role="alert" style={ERR}>Not withdrawn — {failed}</div>}
+      {list === null
+        ? (read.error ? <ReadFailed what="the edit layer" error={read.error} onRetry={read.reload} /> : <Loading what="the edit layer" />)
+        : <>
+          {read.error && <RefreshFailed error={read.error} onRetry={read.reload} />}
+          {list.length === 0 ? <Empty>Nothing is set over the data yet.</Empty> : groups.map((g, i) => (
+            <div key={g.key} data-testid="edit-group" style={{ padding: "6px 0", ...(i ? RULE : {}) }}>
+              <div className="aug-fs-chrome" style={{ ...ROW, gap: 6 }} title={g.where}>
+                <span style={{ color: "var(--t1)", fontWeight: 600 }}>{g.entity}</span>
+                {g.rowKey
+                  ? <span className="aug-fs-xs" style={{ ...MONO, color: "var(--t2)" }}>{g.rowKey}</span>
+                  : <span className="aug-fs-xs" style={MUTED}>{g.edits.some(e => e.column) ? "every row" : "the whole table"}</span>}
+              </div>
+              {g.edits.map(e => {
+                const via = e.origin?.startsWith("action:") ? `via ${nameOf(e.origin.slice(7))}` : e.origin ? keyToWords(e.origin) : "";
+                const meta = [via, e.note, !shared && who(e) ? `by ${who(e)}` : ""].filter(Boolean).join(" · ");
+                return (
+                  <div key={e.id} data-testid="edit-row" title={e.version ? `version ${e.version}` : undefined}
+                    style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0 10px", padding: "1px 0 1px 12px" }}>
+                    <span className="aug-fs-sm" style={{ flex: "0 1 190px", color: "var(--t2)", ...ONE_LINE }} title={e.column || undefined}>
+                      {editLabel(e)}
+                    </span>
+                    <span className="aug-fs-sm" style={{ flex: "1 1 220px", minWidth: 0, overflowWrap: "anywhere" }}>
+                      <span style={{ color: "var(--t1)" }}>{e.body}</span>
+                      {meta && <span className="aug-fs-xs" style={{ ...MUTED, marginLeft: 8 }}>{meta}</span>}
+                    </span>
+                    <span className="aug-fs-xs" style={{ ...MUTED, ...NUM, whiteSpace: "nowrap", marginLeft: "auto" }}
+                      title={e.created_at ? formatTimestamp(e.created_at) : undefined}>
+                      {e.created_at ? relTime(e.created_at) : "—"}
+                    </span>
+                    <Button size="xs" variant="ghost" disabled={busy === e.id} onClick={() => void withdraw(e.id)}
+                      title="Withdraw this edit — the next read stops merging it and the source value, never written, is what shows">
+                      {busy === e.id ? "Withdrawing…" : "Withdraw"}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </>}
+    </section>
+  );
+}
+
+function AnnotateForm({ connectionId, onClose, onSaved }: { connectionId: string; onClose: () => void; onSaved: () => void }) {
+  const [err, setErr] = useState<string | null>(null);
+  const [f, setF] = useState({ table: "", column: "", key_column: "", row_key: "", body: "", kind: "annotation" });
+  const save = async () => {
+    setErr(null);
+    try {
+      await post(`/kinetic-actions/annotate?${on(connectionId)}`, f);
+      setF({ ...f, body: "" }); onSaved();
+    } catch (e) { setErr(said(e)); }
+  };
+  return (
+    <div data-testid="actions-annotate" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 6,
+      padding: "8px 0 10px" }}>
+      {err && <div className="aug-fs-sm" role="alert" style={{ ...ERR, gridColumn: "1 / -1" }}>{err}</div>}
+      <Input aria-label="Table" placeholder="table" value={f.table} onChange={e => setF({ ...f, table: e.target.value })} />
+      <Input aria-label="Column" placeholder="column (optional)" value={f.column} onChange={e => setF({ ...f, column: e.target.value })} />
+      <Input aria-label="Key column" placeholder="key column (optional)" value={f.key_column} onChange={e => setF({ ...f, key_column: e.target.value })} />
+      <Input aria-label="Row key" placeholder="row key (optional)" value={f.row_key} onChange={e => setF({ ...f, row_key: e.target.value })} />
+      <Input aria-label="Note" placeholder="the note" value={f.body} style={{ gridColumn: "1 / -1" }}
+        onChange={e => setF({ ...f, body: e.target.value })} />
+      <span style={{ ...ROW, gridColumn: "1 / -1" }}>
+        <Button variant="default" size="xs" disabled={!f.table.trim() || !f.body.trim()} onClick={save}>Save note</Button>
+        <Button variant="ghost" size="xs" onClick={onClose}>Close</Button>
+      </span>
+    </div>
+  );
+}
+
+// ── Calls to other systems ───────────────────────────────────────────────────────
+
+/** Arc OC-6 — the outbox of this connection's declared actions: what was delivered or is being sent again, and why.
+ *  The calls that wait for a person are under Needs you, with Retry and Dismiss. Off is said, never implied: a section
+ *  that hid itself read as a feature that does not exist (2026-10-10). */
+function Calls({ read }: { read: Read<{ enabled: boolean; sends: ActionSend[] }> }) {
+  const all = read.data?.sends ?? [];
+  const rest = all.filter(s => !waits(s));
+  const shown = rest.slice(0, CALLS_SHOWN);
+  return (
+    <section aria-label="Calls to other systems" data-testid="actions-calls" style={CARD}>
+      <Label right={read.data && <>
+        {rest.length > CALLS_SHOWN && <Chip title="The newest calls are listed; older ones are kept and not shown">newest {CALLS_SHOWN} of {formatCount(rest.length)}</Chip>}
+        <Chip title={read.data.enabled ? "Each call is kept, retried by why it failed, and handed to you when no retry will deliver it"
+          : "Switched off in Settings → System → Feature flags"}>
+          {read.data.enabled ? "outbox on" : "outbox off"}
+        </Chip>
+      </>}>
+        Calls to other systems
+      </Label>
+      {read.data === null
+        ? (read.error ? <ReadFailed what="the outbox" error={read.error} onRetry={read.reload} /> : <Loading what="the outbox" />)
+        : <>
+          {read.error && <RefreshFailed error={read.error} onRetry={read.reload} />}
+          {!read.data.enabled && all.length === 0 ? (
+            <div data-testid="sends-off">
+              <Empty>Calls go out once and are not kept. Switch the outbox on in Settings → System → Feature flags to keep and retry them.</Empty>
+            </div>
+          ) : rest.length === 0 ? (
+            <Empty>{all.length ? "Every call is under Needs you." : "No call has been sent yet."}</Empty>
+          ) : shown.map((s, i) => <CallRow key={s.id} s={s} first={i === 0} />)}
+        </>}
+    </section>
+  );
+}
+
+function CallRow({ s, first }: { s: ActionSend; first: boolean }) {
+  // a call that landed says what settled it — its check found it, nothing sent again — not the error before
+  const settled = s.status === "delivered" ? s.reconciled : s.last_error || s.reconciled;
+  return (
+    <div data-testid="send-row" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12, padding: "6px 0",
+      ...(first ? {} : RULE) }}>
+      <div style={{ minWidth: 0 }}>
+        <div className="aug-fs-chrome" style={{ ...ROW, gap: 6 }}>
+          <span style={{ color: "var(--t1)", fontWeight: 500 }}>{s.action_name}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>
+            {SEND_WORDS[s.status]}{s.attempts ? ` · ${countNoun(s.attempts, "attempt")}` : ""}
+          </span>
+          <span className="aug-fs-xs" style={MUTED} title={s.effect.target || undefined}>
+            {s.effect.kind}{s.effect.lane === "writeback" ? " · writeback" : ""}
+          </span>
         </div>
-
-        <Section title="Declared actions" meta="what Aughor is permitted to do on this connection, and what it must ask first">
-          <Err e={actionsErr} />
-          {actionList.length === 0 ? (
-            <p className="aug-brief-note">No declared actions yet — declare one below.</p>
-          ) : (
-            <div className="aug-moves-wrap">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="aug-actions-col-id">action</TableHead>
-                    <TableHead>what it does</TableHead>
-                    <TableHead className="aug-actions-col-about">about</TableHead>
-                    <TableHead className="aug-actions-col-gate">gate</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {actionList.map(a => {
-                    const gate = GATE[a.risk];
-                    return (
-                      <TableRow key={a.id}>
-                        <TableCell className="aug-actions-id">{a.id}<span className="aug-actions-kind">{a.kind}</span></TableCell>
-                        <TableCell className="aug-ledger-claim">
-                          <span className="aug-ledger-text">{a.description || "—"}</span>
-                          {effectLines(a).map((line, i) => <span key={i} className="aug-ledger-query">{line}</span>)}
-                        </TableCell>
-                        <TableCell className="aug-actions-about">{a.object_type || "—"}</TableCell>
-                        <TableCell>
-                          <span className={`aug-actions-gate${gate?.ask ? " aug-actions-gate-ask" : ""}`} title={gate?.title}>
-                            {gate ? gate.label : String(a.risk || "—")}
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-          {designing ? (
-            <div style={{ display: "flex", border: "1px solid var(--b1)", borderRadius: "var(--r3)", marginTop: 8 }}>
-              <ActionDesigner connectionId={connectionId} within=""
-                onClose={() => { setDesigning(false); loadActions(); }} onDeclared={() => loadActions()} />
-            </div>
-          ) : (
-            <Button variant="outline" size="sm" style={{ marginTop: 8 }} data-testid="actions-new" onClick={() => setDesigning(true)}>
-              <Icon name="plus" size={12} /> New action
-            </Button>
-          )}
-        </Section>
-
-        <SendsSection connectionId={connectionId} />
-
-        <Section title="Overlay edits" meta="a person's edit over the data — merged when it is read, never written to the source">
-          <Err e={editsErr} />
-          {edits.length === 0 ? (
-            <p className="aug-brief-note">No overlay edits yet — annotate or correct a value below.</p>
-          ) : (
-            <div className="aug-moves-wrap">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="aug-actions-col-target">target</TableHead>
-                    <TableHead>edit</TableHead>
-                    <TableHead className="num aug-memory-col-when">when</TableHead>
-                    <TableHead className="aug-memory-col-door"><span className="sr-only">Withdraw</span></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {edits.map((e, i) => (
-                    <TableRow key={e.id || i}>
-                      <TableCell className="aug-actions-target">
-                        {e.table}{e.column ? `.${e.column}` : ""}{e.row_key ? `#${e.key_column}=${e.row_key}` : ""}
-                      </TableCell>
-                      <TableCell className="aug-ledger-claim">
-                        <span className="aug-ledger-text">{e.body}</span>
-                        <span className="aug-ledger-query">{[e.kind, e.actor || e.source, e.origin, e.note].filter(Boolean).join(" · ")}</span>
-                      </TableCell>
-                      <TableCell className="num aug-ledger-when" title={e.created_at ? formatTimestamp(e.created_at) : undefined}>
-                        {e.created_at ? relTime(e.created_at) : "—"}
-                      </TableCell>
-                      <TableCell className="aug-org-door">
-                        <Button size="xs" variant="ghost" disabled={busyEdit === e.id} onClick={() => withdraw(e.id)}
-                          title="Withdraw this edit — the next read stops merging it and the source value, never written, is what shows">
-                          {busyEdit === e.id ? "Withdrawing…" : "Withdraw"}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-          <AnnotateForm connectionId={connectionId} onSaved={loadEdits} />
-        </Section>
-
-        <Section title="Propose from a finding" meta="the agent stages; a person approves">
-          <ProposeSection connectionId={connectionId} onStaged={loadPending} />
-        </Section>
+        {/* a call a person left undelivered says who and why — their reason, beside what the call itself met */}
+        {s.status === "dismissed" && (s.resolved_by || s.note) && (
+          <div className="aug-fs-xs" data-testid="send-left-by" style={{ color: "var(--t2)" }}>
+            {[s.resolved_by && `by ${s.resolved_by}`, s.note].filter(Boolean).join(" — ")}
+          </div>
+        )}
+        {settled && (
+          <div className="aug-fs-xs" data-testid="send-said" style={{ ...MUTED, overflowWrap: "anywhere" }}>{settled}</div>
+        )}
       </div>
-
-      <aside className="aug-profile-rail" aria-label="Approvals and the permission model">
-        <div className="aug-profile-rail-head">
-          <span className="aug-brief-eyebrow">Awaiting approval</span>
-          <span className="aug-brief-meta">{pending ? formatCount(pending.length) : ""}</span>
-        </div>
-        <div className="aug-profile-block">
-          {pending === null ? (
-            <SkeletonRows rows={2} />
-          ) : pending.length === 0 ? (
-            <p className="aug-brief-note">
-              Nothing is waiting. A proposal lands here when the agent or an automation stages one; approving it runs it once.
-            </p>
-          ) : (
-            <div className="aug-approvals">
-              {/* SP-9 — the ONE approval card; what either click creates, never raw params. */}
-              {pending.map(p => (
-                <ProposalCard key={p.id} proposal={p} actor={actorName()}
-                  onResolved={(t, m) => {
-                    if (t === "ok") { toast.info(m); loadEdits(); }
-                    loadPending();
-                  }} />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="aug-profile-rail-head">
-          <span className="aug-brief-eyebrow">Permission model</span>
-        </div>
-        <div className="aug-profile-block">
-          <dl className="aug-actions-perm">
-            <div><dt>read_only</dt><dd>Never gated. Every run is audited.</dd></div>
-            <div><dt>low</dt><dd>Reversible or additive: runs without asking, and every run is audited.</dd></div>
-            <div>
-              <dt className="aug-actions-gate-ask">high</dt>
-              <dd>A person approves each run. Approving a staged proposal is that approval, once; a standing grant can pre-approve one target.</dd>
-            </div>
-          </dl>
-        </div>
-      </aside>
+      <span className="aug-fs-xs" style={{ ...MUTED, ...NUM, whiteSpace: "nowrap" }} title={formatTimestamp(s.updated_at)}>
+        {relTime(s.updated_at)}
+      </span>
     </div>
   );
 }

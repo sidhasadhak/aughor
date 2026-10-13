@@ -8,6 +8,11 @@
  * period with recording on renders as quiet ("recording — no events yet"),
  * which is a different claim from the flag-off empty state that names the
  * flag. Live via EventSource on /activity/stream with a slow poll fallback.
+ *
+ * Routine guardrail checks — a PII check that let the call through — are hidden until asked for. The platform runs
+ * one on every model call and on the automation engine's per-minute check, so on a quiet install they are most of the
+ * tail (1,652 of the newest 2,000 events on theLook, 2026-10-13) and bury the calls they guard. A check that BLOCKED is
+ * never hidden; the hidden ones are counted where the filters are, one click from showing.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -17,7 +22,7 @@ import { StatusChip } from "@/components/brief/StatusChip";
 import { getActivityEvents, type SessionEvent } from "@/lib/api";
 import { getApiBase, onApiBaseChange } from "@/lib/config";
 import { fmtMs } from "@/lib/cost";
-import { compactNumber, relTime } from "@/lib/format";
+import { compactNumber, formatCount, relTime } from "@/lib/format";
 
 const KIND_HUE: Record<string, "positive" | "negative" | "caution" | "info" | "accent" | "muted"> = {
   user_request: "info",
@@ -30,6 +35,19 @@ const KIND_HUE: Record<string, "positive" | "negative" | "caution" | "info" | "a
 
 const MAX_ROWS = 300;
 
+/** A guardrail check that let its call through — the same line the governance feed draws between an allow and a block
+ *  (`aughor/govern/audit_categories.py`): blocked when its payload says so or the event failed. */
+export function isRoutineCheck(e: Pick<SessionEvent, "kind" | "ok" | "payload">): boolean {
+  if (e.kind !== "guardrail") return false;
+  const blocked = Boolean((e.payload as { blocked?: unknown } | null | undefined)?.blocked);
+  return !blocked && e.ok !== false;
+}
+
+/** "PII checks" when every hidden check is the PII guardrail, the general word otherwise. */
+function checksWord(hidden: SessionEvent[]): string {
+  return hidden.length > 0 && hidden.every(e => e.name === "pii") ? "PII checks" : "guardrail checks";
+}
+
 export function ActivityStreamPanel({ onOpenTrace, filter, range }: {
   onOpenTrace?: (traceId: string) => void;
   /** A drill from the Usage page — the tail opens already narrowed to that row. */
@@ -41,6 +59,9 @@ export function ActivityStreamPanel({ onOpenTrace, filter, range }: {
   const [kinds, setKinds] = useState<Record<string, number>>({});
   const [kindFilter, setKindFilter] = useState<string | null>(null);
   const [errorsOnly, setErrorsOnly] = useState(false);
+  const [showRoutine, setShowRoutine] = useState(false);
+  // Asking for the guardrail kind by name is asking to see its checks.
+  const hiding = !showRoutine && kindFilter !== "guardrail";
   const [recording, setRecording] = useState(true);
   const [live, setLive] = useState(false);
   const lastSeq = useRef(0);
@@ -67,8 +88,10 @@ export function ActivityStreamPanel({ onOpenTrace, filter, range }: {
   }), [filter?.model, filter?.provider, filter?.role, range]);
 
   const load = useCallback(() => {
+    // The route cannot leave a kind out, so while routine checks are hidden the backfill reads deeper — enough that
+    // the hours the checks crowd out still reach the screen.
     getActivityEvents({ kind: kindFilter ?? undefined, errors_only: errorsOnly,
-                        limit: 100, ...drill })
+                        limit: hiding ? MAX_ROWS : 100, ...drill })
       .then(d => {
         setKinds(d.kinds);
         setRecording(d.measured);
@@ -76,7 +99,7 @@ export function ActivityStreamPanel({ onOpenTrace, filter, range }: {
         lastSeq.current = d.events.reduce((m, e) => Math.max(m, e.seq), lastSeq.current);
       })
       .catch(() => {});
-  }, [kindFilter, errorsOnly, drill]);
+  }, [kindFilter, errorsOnly, drill, hiding]);
 
   // Live tail — one EventSource per filter combination; poll as fallback.
   useEffect(() => {
@@ -109,6 +132,9 @@ export function ActivityStreamPanel({ onOpenTrace, filter, range }: {
     return () => { es.close(); esRef.current = null; clearInterval(iv); };
   }, [load, kindFilter, errorsOnly, apiBase, drill]);
 
+  const hidden = hiding ? events.filter(isRoutineCheck) : [];
+  const shown = hidden.length ? events.filter(e => !isRoutineCheck(e)) : events;
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* ── filter bar: kinds come from the data ── */}
@@ -123,6 +149,16 @@ export function ActivityStreamPanel({ onOpenTrace, filter, range }: {
           </Button>
         ))}
         <span style={{ flex: 1 }} />
+        {hidden.length > 0 ? (
+          <Button variant="ghost" size="xs" data-testid="stream-routine" onClick={() => setShowRoutine(true)}
+            title="Guardrail checks that let their call through. A check that blocked always shows.">
+            {formatCount(hidden.length)} routine {checksWord(hidden)} hidden · show
+          </Button>
+        ) : showRoutine && (
+          <Button variant="secondary" size="xs" data-testid="stream-routine" onClick={() => setShowRoutine(false)}>
+            routine checks shown · hide
+          </Button>
+        )}
         <Button variant={errorsOnly ? "secondary" : "ghost"} size="xs"
           onClick={() => setErrorsOnly(v => !v)}>errors only</Button>
         <StatusChip hue={live ? "positive" : "muted"} strength="soft"
@@ -133,16 +169,18 @@ export function ActivityStreamPanel({ onOpenTrace, filter, range }: {
 
       {/* ── the stream ── */}
       <div style={{ flex: 1, overflowY: "auto", padding: "8px 20px" }}>
-        {events.length === 0 ? (
+        {shown.length === 0 ? (
           <div className="aug-fs-sm" style={{ padding: 32, textAlign: "center", color: "var(--t2)" }}>
-            {filter?.model || filter?.role
+            {hidden.length > 0
+              ? `Only routine ${checksWord(hidden)} among the newest ${formatCount(events.length)} events.`
+              : filter?.model || filter?.role
               ? `No events for ${filter.model ?? filter.role} in this window.`
               : recording
                 ? "Quiet — recording is on; events will appear the moment an agent does anything."
                 : "No matching events."}
           </div>
         ) : (
-          events.map(e => (
+          shown.map(e => (
             <div key={e.seq} style={{ display: "flex", alignItems: "center", gap: 10,
               padding: "5px 0", borderBottom: "1px solid var(--b0)", fontSize: 12 }}>
               <span style={{ color: "var(--t2)", fontSize: 12, width: 34, flexShrink: 0 }}
