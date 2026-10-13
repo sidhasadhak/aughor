@@ -51,7 +51,11 @@ vi.mock("@/lib/api", () => ({
   getPackBinding: vi.fn(async () => null),
   getSchemaRich: vi.fn(async () => ({ tables: LUX_TABLES, joins: [], isolated: [], warnings: [] })),
   proposePackBindings: vi.fn(async () => ({ fully_groundable: false, groundable_roles: 1, total: 2,
-    proposals: { order_item: { role: "order_item", table: "lux.order_items", confidence: 0.8, evidence: "name", bound: true } } })),
+    proposals: {
+      order_item: { role: "order_item", table: "lux.order_items", confidence: 0.8, evidence: "name", bound: true },
+      cart: { role: "cart", table: null, confidence: 0, bound: false,
+              evidence: "no table is named for cart — choose its table, or this warehouse may not hold it" },
+    } })),
   bindPack: (...a: unknown[]) => bindPack(...a),
   getOntologyKeys: vi.fn(async () => ({ entities: [], metrics: [] })),
   materialiseMetric: vi.fn(), removeProposal: vi.fn(), restoreProposal: vi.fn(), promoteMetric: vi.fn(),
@@ -181,6 +185,9 @@ describe("Needs you", () => {
       "No timestamp column on order_items — a true/false column would count every row");
     expect(within(dialog).getByTestId("bind-stuck")).toHaveTextContent("Return rate can't be bound to this data as it stands");
     expect(within(dialog).getByRole("button", { name: "Write the SQL of Return rate" })).toBeInTheDocument();
+    // Nothing was proposed for the cart, and the row says why rather than leaving an empty select to puzzle over.
+    expect(within(dialog).getByTestId("bind-unproposed-cart")).toHaveTextContent(
+      "nothing proposed — no table is named for cart — choose its table, or this warehouse may not hold it");
     // The cart: choose its table and the column for the one attribute the recipe reads, then bind.
     await choose(within(dialog).getByRole("combobox", { name: "Table for cart" }), "lux.web_sessions");
     await choose(await within(dialog).findByRole("combobox", { name: "Column for cart.converted_order_id" }), "order_id");

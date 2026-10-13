@@ -147,9 +147,12 @@ export function BindRolesDialog({ open, onClose, connId, schema, packId, recipes
                       <option value="">Choose the table…</option>
                       {withUniqueKeys(tables, t => t.name).map(([k, t]) => <option key={k} value={t.name}>{t.name}</option>)}
                     </SelectField>
-                    {proposal?.table && (
+                    {proposal?.table ? (
                       <span style={MUTED} title={proposal.evidence}>{`proposed: ${bare(proposal.table)}`}</span>
-                    )}
+                    ) : proposal?.evidence ? (
+                      // Nothing proposed is said, with why — never an empty select the reader must puzzle over.
+                      <span style={MUTED} data-testid={`bind-unproposed-${n.role}`}>{`nothing proposed — ${proposal.evidence}`}</span>
+                    ) : null}
                   </label>
                   {choice.table && withUniqueKeys(n.attributes, a => a.name).map(([aKey, a]) => {
                     const options = columnsOf(choice.table).filter(c => fits(a.type, c.type, c.name));
