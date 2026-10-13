@@ -914,17 +914,15 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-actions-perm dt { font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
 .aug-actions-perm dd { margin: 0; font-size: 11px; line-height: 1.55; color: var(--t3); }
 
-/* ── Graph (Aughor Intelligence · 04 Graph) — the map beside what it cannot vouch for ─────────── */
-.aug-graph-modes { margin-left: auto; }
-.aug-graph-map { flex: 1; display: flex; min-width: 0; min-height: 560px; overflow: hidden; border: 1px solid var(--b1); border-radius: var(--r3); }
+/* ── Graph (Aughor Intelligence · 04 Graph) — the picture, and beside it what needs a person or the chosen node ── */
+/* One card on the ground (CLARITY §3): the canvas and its side panel share it, split by a row rule. */
+.aug-graph-map { flex: 1; display: flex; min-width: 0; min-height: 560px; overflow: hidden; background: var(--bg-1); border: 1px solid var(--card-edge); border-radius: var(--r3); }
 .aug-graph-canvas { flex: 1; min-width: 0; }
-.aug-graph-rail { width: 300px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b1); }
-.aug-graph-warn { display: flex; flex-direction: column; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid var(--b0); }
-.aug-graph-warn:last-of-type { padding-bottom: 0; border-bottom: 0; }
-.aug-graph-warn-kind { font-size: 12px; font-weight: 600; color: var(--t3); white-space: nowrap; }
-.aug-graph-warn-ask { color: var(--amb4); }
-.aug-graph-warn-bad { color: var(--red4); }
-.aug-graph-warn-why { font-size: 12px; line-height: 1.55; color: var(--t2); }
+.aug-graph-rail { width: 320px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b0); }
+@media (max-width: 900px) {
+  .aug-graph-map { flex-direction: column; }
+  .aug-graph-rail { width: auto; border-left: 0; border-top: 1px solid var(--b0); }
+}
 
 /* ── Ontology (Aughor Intelligence · 03) — the card's physical table beside its business name ── */
 .aug-entity-card-table { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
