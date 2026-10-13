@@ -1,308 +1,243 @@
 "use client";
 
-/**
- * Activity — what the explorer ran on a connection (or a canvas), redone to `aughor-v2/CLARITY.md` (2026-10-13) as a
- * log read like a document: one line saying what it holds and how the run stands (its buttons beside it), what needs a
- * person (failed queries to repair, a run that stopped), then the queries themselves under a heading per day, newest
- * first. A row opens on its SQL and its result; a failed one keeps the repair it always had.
- *
- * It used to open on a strip of coloured phase chips, a filter bar and an eight-column table (#, timestamp, type,
- * message, status, rows, object) of 30 rows. The rows are all still here, with every fact a column held; the column
- * sort is gone — a log reads newest first, and Copy · CSV take every row to sort elsewhere.
- *
- * A failed read is said, never shown as "no activity": the episode reads throw now, where they returned [].
- */
-import React, { useEffect, useMemo, useState } from "react";
-
-import { Chip, Dot, Empty, Label, MUTED, NUM, NeedsRow, NeedsYou, ONE_LINE, Page, ROW, RULE } from "@/components/clarity/kit";
-import { ListCard } from "@/components/record/kit";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Segmented } from "@/components/ui/segmented";
-import { Loading, ReadFailed } from "@/components/ui/states";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  fixAll,
-  fixEpisode,
-  getCanvasExplorationEpisodes,
-  getCanvasExplorationStatus,
   getExplorationEpisodes,
   getExplorationStatus,
-  restartCanvasExploration,
-  restartExploration,
-  resumeCanvasExploration,
-  resumeExploration,
-  retryQuery,
-  stopCanvasExploration,
   stopExploration,
+  resumeExploration,
+  restartExploration,
+  retryQuery,
+  getCanvasExplorationEpisodes,
+  getCanvasExplorationStatus,
+  stopCanvasExploration,
+  resumeCanvasExploration,
+  restartCanvasExploration,
+  fixEpisode,
+  fixAll,
   type ExplorationEpisode,
   type ExplorationStatus,
-  type FixAllResult,
-  type FixSaveResult,
   type RetryQueryResult,
+  type FixSaveResult,
+  type FixAllResult,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
-import { countNoun, formatCount, MONTHS_SHORT } from "@/lib/format";
-import { withUniqueKeys } from "@/lib/listKeys";
-import { keyToWords } from "@/lib/names";
+import { formatCount } from "@/lib/format";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
+import { Button } from "@/components/ui/button";
 
-/** How many of the newest queries one read takes; past it, the older ones are said to be unread. */
-const READ_LIMIT = 1000;
+// ── Phase metadata ────────────────────────────────────────────────────────────
 
-// ── Words for a query ─────────────────────────────────────────────────────────────────────
-
-/** What each phase of the explorer is doing, in the reader's words (a phase key is a wire value). */
-const PHASE_WORD: Record<string, string> = {
-  exploration: "schema",
-  null_meaning: "nulls",
-  join_verification: "joins",
-  lifecycle_mapping: "lifecycles",
-  distribution: "distributions",
-  cross_table: "across tables",
-  domain_intel: "business questions",
-  synthesis: "synthesis",
-  // chat-initiated query kinds
-  ask: "quick answer",
-  investigate: "deep analysis",
+// Token-driven (no raw hex): hardcoded dark-theme values made these chips —
+// and most of this table — unreadable in light mode and the # column nearly
+// invisible everywhere.
+const PHASE_META: Record<string, { label: string; color: string; bg: string }> = {
+  exploration:       { label: "schema",    color: "var(--t2)",    bg: "var(--bg-3)" },
+  null_meaning:      { label: "nulls",     color: "var(--blue4)", bg: "var(--blue1)" },
+  join_verification: { label: "joins",     color: "var(--amb4)",  bg: "var(--amb1)" },
+  lifecycle_mapping: { label: "lifecycle", color: "var(--grn4)",  bg: "var(--grn1)" },
+  distribution:      { label: "dist",      color: "var(--vio4)",  bg: "var(--vio1)" },
+  cross_table:       { label: "patterns",  color: "var(--red4)",  bg: "var(--red1)" },
+  domain_intel:      { label: "intel",     color: "var(--blue4)", bg: "var(--blue1)" },
+  // Chat-initiated query types
+  ask:               { label: "quick",     color: "var(--t2)",    bg: "var(--bg-3)" },
+  investigate:       { label: "agentic",   color: "var(--vio4)",  bg: "var(--vio1)" },
 };
-const phaseWord = (phase: string) => PHASE_WORD[phase] ?? keyToWords(phase);
 
-const failedObservation = (ep: ExplorationEpisode) =>
-  ep.observation.startsWith("ERROR:") || ep.observation.startsWith("EXCEPTION:");
-
-/** The error's own words, without the driver's trailer ("…; reason: invalidQuery, location: query, message: …"). */
-function errorWords(observation: string): string {
-  const bare = observation.replace(/^(ERROR|EXCEPTION):\s*/i, "");
-  const cut = bare.split(/;\s*reason:/i)[0].trim();
-  return cut.length > 160 ? `${cut.slice(0, 160)}…` : cut;
+function phaseMeta(phase: string) {
+  return PHASE_META[phase] ?? { label: phase, color: "var(--t3)", bg: "var(--bg-3)" };
 }
 
-/** The table a statement reads first: the last part of a dotted name, never an EXTRACT(… FROM column). */
-function tableOf(sql: string): string {
-  for (const m of sql.matchAll(/\b(?:FROM|INTO|UPDATE)\s+[`"']?([\w.-]+)[`"']?(\s*\))?/gi)) {
-    if (m[2]) continue;
-    const parts = m[1].split(".");
-    return parts[parts.length - 1];
-  }
-  return "";
+// ── Row metadata derivation ───────────────────────────────────────────────────
+
+interface RowMeta {
+  isError:  boolean;
+  status:   "success" | "error";
+  datetime: string;   // "May 27 · 14:32:15"
+  date:     Date;
+  object:   string;
+  rows:     number | null;
+  message:  string;
 }
 
-/** What a query asked and what kind of question it was, from its recorded intent: a business-question row carries
- *  "Domain Customer | angle=… | the question", a synthesis "[synth:share] the question". */
-function readIntent(ep: ExplorationEpisode): { asked: string; kind: string } {
-  const think = ep.think.trim();
-  const synth = /^\[synth:[^\]]+\]\s*([\s\S]*)$/.exec(think);
-  // The log keeps a synthesis's question cut short; a cut one says so.
-  if (synth) return { asked: !synth[1] ? "a synthesis" : /[?.!)]$/.test(synth[1]) ? synth[1] : `${synth[1]}…`, kind: "synthesis" };
-  const parts = think.split(" | ");
-  if (parts.length >= 3) {
-    const domain = /^Domain\s+(.+)$/.exec(parts[0]);
-    return { asked: parts.slice(2).join(" | "), kind: domain ? `${domain[1]} questions` : phaseWord(ep.phase) };
-  }
-  return { asked: think || ep.sql.replace(/\s+/g, " ").slice(0, 120) || "a query", kind: phaseWord(ep.phase) };
+function deriveRowMeta(ep: ExplorationEpisode): RowMeta {
+  const isError = ep.observation.startsWith("ERROR:") || ep.observation.startsWith("EXCEPTION:");
+
+  const d    = new Date(ep.ts * 1000);
+  const datePart = d.toLocaleDateString([], { month: "short", day: "numeric" });
+  const timePart = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const datetime = `${datePart} · ${timePart}`;
+
+  // Extract primary table from SQL
+  const tableMatch =
+    ep.sql.match(/\bFROM\s+["'`]?(\w+)["'`]?/i) ??
+    ep.sql.match(/\bINTO\s+["'`]?(\w+)["'`]?/i) ??
+    ep.sql.match(/\bUPDATE\s+["'`]?(\w+)["'`]?/i);
+  const object = tableMatch?.[1] ?? "—";
+
+  // Extract row count from observation
+  const rowMatch = ep.observation.match(/\b(\d+)\s+rows?\b/i);
+  const rows = rowMatch ? parseInt(rowMatch[1], 10) : null;
+
+  // Clean up message
+  const thinkParts = ep.think.split(" | ");
+  const message = isError
+    ? ep.observation.replace(/^(ERROR|EXCEPTION):\s*/i, "").slice(0, 200)
+    : (thinkParts.length >= 3 ? thinkParts.slice(2).join(" | ") : ep.think).slice(0, 200);
+
+  return { isError, status: isError ? "error" : "success", datetime, date: d, object, rows, message };
 }
 
-interface Item {
-  key: string;
-  /** The newest run of this statement; `members` holds every run folded into the row, newest first. */
-  ep: ExplorationEpisode;
-  members: ExplorationEpisode[];
-  at: Date;
-  /** When the earliest folded run ran. */
-  first: Date;
-  asked: string;
-  kind: string;
-  table: string;
-  rows: number | null;
-  failed: boolean;
-  error: string;
+// ── Stable expansion key ──────────────────────────────────────────────────────
+// Uses episode_id + ts + phase so it's stable across re-sorts/re-filters.
+function expandKey(ep: ExplorationEpisode) {
+  return `${ep.episode_id}|${ep.ts}|${ep.phase}`;
 }
 
-/** The log newest first, one row per statement — a run repeated back to back with the same intent, statement and
- *  result on the same day folds into one row that counts it (theLook: 26 of 177 were such repeats). */
-function toItems(episodes: ExplorationEpisode[]): Item[] {
-  const newestFirst = [...episodes].sort((a, b) => b.ts - a.ts);
-  const runs: ExplorationEpisode[][] = [];
-  for (const ep of newestFirst) {
-    const last = runs[runs.length - 1]?.[0];
-    if (last && last.think === ep.think && last.sql === ep.sql && last.observation === ep.observation
-      && dayKey(new Date(last.ts * 1000)) === dayKey(new Date(ep.ts * 1000))) runs[runs.length - 1].push(ep);
-    else runs.push([ep]);
-  }
-  return withUniqueKeys(runs, members => `${members[0].episode_id}|${members[0].ts}`).map(([key, members]) => {
-    const ep = members[0];
-    const failed = failedObservation(ep);
-    const rowMatch = failed ? null : /\b(\d+)\s+rows?\b/i.exec(ep.observation);
-    return {
-      key, ep, members, at: new Date(ep.ts * 1000), first: new Date(members[members.length - 1].ts * 1000),
-      ...readIntent(ep), table: tableOf(ep.sql),
-      rows: rowMatch ? parseInt(rowMatch[1], 10) : null, failed, error: failed ? errorWords(ep.observation) : "",
-    };
+// ── Sort helpers ──────────────────────────────────────────────────────────────
+
+type SortCol = "seq" | "ts" | "type" | "message" | "status" | "rows" | "object";
+
+interface WithMeta {
+  ep:   ExplorationEpisode;
+  meta: RowMeta;
+  seq:  number; // 1-based original position in API response
+}
+
+function sortItems(items: WithMeta[], col: SortCol, dir: "asc" | "desc"): WithMeta[] {
+  const m = dir === "asc" ? 1 : -1;
+  return [...items].sort((a, b) => {
+    switch (col) {
+      case "seq":     return m * (a.seq - b.seq);
+      case "ts":      return m * (a.ep.ts - b.ep.ts);
+      case "type":    return m * phaseMeta(a.ep.phase).label.localeCompare(phaseMeta(b.ep.phase).label);
+      case "message": return m * a.meta.message.localeCompare(b.meta.message);
+      case "status":  return m * a.meta.status.localeCompare(b.meta.status);
+      case "rows":    return m * ((a.meta.rows ?? -1) - (b.meta.rows ?? -1));
+      case "object":  return m * a.meta.object.localeCompare(b.meta.object);
+      default:        return 0;
+    }
   });
 }
 
-// ── Days and times ────────────────────────────────────────────────────────────────────────
+// ── Date filter helpers ───────────────────────────────────────────────────────
 
-const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-function pad(n: number): string { return String(n).padStart(2, "0"); }
-function dayKey(d: Date): string { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
-function clock(d: Date): string { return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
-function dayWords(d: Date): string {
-  const words = `${WEEKDAY[d.getDay()]} ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
-  return d.getFullYear() === new Date().getFullYear() ? words : `${words} ${d.getFullYear()}`;
+type DateFilter   = "all" | "today" | "yesterday" | "week";
+type StatusFilter = "all" | "success" | "error";
+
+function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }
+
+function passesDateFilter(d: Date, filter: DateFilter): boolean {
+  if (filter === "all") return true;
+  const now      = new Date();
+  const today    = dayStart(now);
+  const yesterday = today - 86_400_000;
+  const weekAgo  = today - 7 * 86_400_000;
+  const ts       = dayStart(d);
+  if (filter === "today")     return ts === today;
+  if (filter === "yesterday") return ts === yesterday;
+  if (filter === "week")      return d.getTime() >= weekAgo;
+  return true;
 }
 
-type Range = "all" | "today" | "yesterday" | "week";
-type Outcome = "all" | "success" | "error";
+// ── Status bar ────────────────────────────────────────────────────────────────
 
-function inRange(d: Date, range: Range): boolean {
-  if (range === "all") return true;
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  if (range === "today") return day === today;
-  if (range === "yesterday") return day === today - 86_400_000;
-  return d.getTime() >= today - 7 * 86_400_000;
-}
-
-// ── How the run stands ────────────────────────────────────────────────────────────────────
-
-interface RunStateProps {
-  status: ExplorationStatus | null;
-  statusFailed: boolean;
-  stopped: boolean;
+interface StatusBarProps {
+  status: ExplorationStatus | null; stopped: boolean;
   onStop: () => void; onResume: () => void; onRestart: () => void;
   stopping: boolean; resuming: boolean; restarting: boolean;
 }
 
-/** The run's state as chips (one per dataset when the connection has several), what the last run counted, and its
- *  buttons — Stop while it runs, Resume and Restart when it is stopped. An interrupted run's buttons are in Needs you. */
-function RunState({ status, statusFailed, stopped, onStop, onResume, onRestart, stopping, resuming, restarting }: RunStateProps) {
-  if (!status) {
-    return statusFailed
-      ? <Chip tone="down" testId="run-state" title="The explorer's status could not be read">run state not read</Chip>
-      : null;
-  }
+function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, resuming, restarting }: StatusBarProps) {
+  if (!status) return null;
   // A run a restart killed reads as stopped, with its reason, never as running (2026-10-07).
   const interrupted = !!status.interrupted;
-  const running = !stopped && !interrupted && !["complete", "failed", "pending"].includes(status.phase);
-  const halted = stopped || interrupted || status.paused || status.phase === "pending";
-  // Per-dataset runs: one chip per run, so a dead OLD run's "failed" can never pass for the run just started on another.
+  const isRunning = !stopped && !interrupted && !["complete", "failed", "pending"].includes(status.phase);
+  const isStopped = stopped || interrupted || status.paused || status.phase === "pending";
+  const meta = phaseMeta(status.phase);
+  // Per-schema runs: one labelled chip per run, so a dead OLD run's "failed"
+  // can never masquerade as the run the user just started on another schema.
   const perSchema = Object.entries(status.per_schema ?? {});
-  const counted = [
-    status.queries_executed > 0 && countNoun(status.queries_executed, "query", "queries"),
-    status.facts_discovered > 0 && countNoun(status.facts_discovered, "fact"),
-    status.insights_found > 0 && countNoun(status.insights_found, "finding"),
-    status.tables_total > 0 && countNoun(status.tables_total, "table"),
-    status.tables_total > 0 && countNoun(status.joins_total, "join"),
-  ].filter(Boolean).join(" · ");
   return (
-    <div data-testid="run-state" style={{ ...ROW, gap: 6 }}>
-      {perSchema.length > 0 ? perSchema.map(([schema, phase]) => {
-        const cut = (status.interrupted_schemas ?? []).includes(schema);
-        const live = !stopped && !cut && !["complete", "failed", "pending"].includes(phase);
-        const word = phase === "complete" ? "complete" : phase === "pending" ? "idle" : phase === "failed" ? "failed"
-          : cut ? `interrupted at ${phaseWord(phase)}` : phaseWord(phase);
-        return (
-          <Chip key={schema} tone={phase === "failed" ? "down" : live ? "accent" : "plain"}
-            title={phase === "failed" && status.error ? status.error : `The run on ${schema}: ${word}`}>
-            {live && <span className="aug-dot aug-dot-live" aria-hidden />}{schema} · {word}
-          </Chip>
-        );
-      }) : (
-        <Chip tone={status.phase === "failed" ? "down" : running ? "accent" : "plain"}
-          title={status.error ?? status.interrupted_note ?? undefined}>
-          {running && <span className="aug-dot aug-dot-live" aria-hidden />}
-          {interrupted ? `interrupted at ${phaseWord(status.phase)}` : halted && !running ? "stopped"
-            : status.phase === "complete" ? "complete" : status.phase === "failed" ? "failed"
-            : `running · ${phaseWord(status.phase)}`}
-        </Chip>
+    <div className="flex items-center gap-3 px-4 py-2 border-b shrink-0 flex-wrap" style={{ borderColor: "var(--b2)", background: "var(--bg-0)" }}>
+      {perSchema.length > 0 ? (
+        perSchema.map(([sch, ph]) => {
+          const m = phaseMeta(ph);
+          const cut = (status.interrupted_schemas ?? []).includes(sch);
+          const running = !stopped && !cut && !["complete", "failed", "pending"].includes(ph);
+          const stoppedChip = !running && (ph === "pending" || ph === "failed" || ph === "complete");
+          return (
+            <span key={sch} className="flex items-center gap-1.5 aug-fs-xs px-2 py-0.5 rounded font-medium"
+              title={`Exploration run for schema "${sch}" — ${ph}`}
+              style={ph === "failed" ? { background: "var(--red1)", color: "var(--red4)" }
+                   : stoppedChip && ph !== "complete" ? { background: "var(--bg-3)", color: "var(--t3)" }
+                   : { background: m.bg, color: m.color }}>
+              {running && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] aug-pulse-dot" style={{ background: m.color }} />}
+              <span style={{ opacity: 0.75 }}>{sch}</span>
+              {" · "}
+              {ph === "complete" ? "complete" : ph === "pending" ? "idle" : ph === "failed" ? "failed"
+                : cut ? `interrupted at ${m.label}` : m.label}
+            </span>
+          );
+        })
+      ) : (
+        <span className="flex items-center gap-1.5 aug-fs-xs px-2 py-0.5 rounded font-medium"
+          style={isStopped && !isRunning ? { background: "var(--bg-3)", color: "var(--t3)" } : { background: meta.bg, color: meta.color }}>
+          {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] aug-pulse-dot" style={{ background: meta.color }} />}
+          {interrupted ? `interrupted at ${meta.label}` : isStopped && !isRunning ? "stopped" : status.phase === "complete" ? "complete" : status.phase === "pending" ? "idle" : meta.label}
+        </span>
       )}
-      {counted && <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>last run {counted}</span>}
-      {status.phase === "complete" && status.domain_intel_skipped && status.domain_intel_note && (
-        <Chip title={status.domain_intel_note}>business questions skipped</Chip>
-      )}
-      {running && (
-        <Button size="xs" variant="destructive" onClick={onStop} disabled={stopping}>{stopping ? "Stopping…" : "Stop"}</Button>
-      )}
-      {halted && !running && !interrupted && (
-        <>
-          <Button size="xs" variant="secondary" onClick={onResume} disabled={resuming || restarting}>
-            {resuming ? "Resuming…" : "Resume"}
+      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+        {status.queries_executed > 0 && `${status.queries_executed} queries`}
+        {status.facts_discovered > 0 && ` · ${status.facts_discovered} facts`}
+        {status.insights_found    > 0 && ` · ${status.insights_found} findings`}
+        {interrupted && status.interrupted_note && <span title={status.interrupted_note}> · {status.interrupted_note}</span>}
+        {/* the exploration principles — a run held on a spent budget, or questions waiting for a layer, said */}
+        {status.held_note && <span title={status.held_note} style={{ color: "var(--amb4)" }}> · held: {status.held_note}</span>}
+        {status.phase === "complete" && status.domain_intel_skipped && status.domain_intel_note && (
+          <span title={status.domain_intel_note}> · {status.domain_intel_note}</span>
+        )}
+      </span>
+      <div className="ml-auto flex items-center gap-2">
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+          {status.tables_total > 0 && `${status.tables_total} tables · ${status.joins_total} joins`}
+        </span>
+        {isRunning && (
+          <Button variant="ghost" size="xs" onClick={onStop} disabled={stopping}
+            className="flex items-center gap-1 aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
+            style={{ background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)" }}>
+            <span className="w-2 h-2 rounded-sm inline-block" style={{ background: "var(--red4)" }} />
+            {stopping ? "stopping…" : "Stop"}
           </Button>
-          <Button size="xs" variant="ghost" onClick={onRestart} disabled={resuming || restarting}>
-            {restarting ? "Restarting…" : "Restart"}
+        )}
+        {isStopped && !isRunning && (<>
+          <Button variant="ghost" size="xs" onClick={onResume} disabled={resuming || restarting}
+            className="aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
+            style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
+            {resuming ? "resuming…" : interrupted ? "Continue" : "Resume"}
           </Button>
-        </>
-      )}
+          <Button variant="ghost" size="xs" onClick={onRestart} disabled={resuming || restarting}
+            className="aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
+            style={{ background: "var(--amb1)", color: "var(--amb4)", border: "0.5px solid var(--amb2)" }}>
+            {restarting ? "restarting…" : "Restart"}
+          </Button>
+        </>)}
+      </div>
     </div>
   );
 }
 
-// ── A row and what it opens on ────────────────────────────────────────────────────────────
+// ── Retry panel ───────────────────────────────────────────────────────────────
 
-const CODE: React.CSSProperties = {
-  margin: 0, padding: "8px 10px", borderRadius: "var(--r2)", background: "var(--code-bg)", color: "var(--t2)",
-  fontFamily: "var(--font-code)", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, maxHeight: 240,
-  overflow: "auto",
-};
-
-function QueryRow({ item, first, open, onToggle, connectionId, canvasId }: {
-  item: Item; first: boolean; open: boolean; onToggle: () => void; connectionId: string; canvasId?: string;
-}) {
-  const { ep } = item;
-  const obs = ep.observation.slice(0, 600) + (ep.observation.length > 600 ? "…" : "");
-  return (
-    <div data-testid="activity-row" style={{ padding: "6px 0", ...(first ? {} : RULE) }}>
-      <Button variant="ghost" aria-expanded={open} onClick={onToggle} title={ep.think || undefined}
-        style={{ display: "grid", gridTemplateColumns: "12px minmax(0, 1fr) auto 14px", gap: 10, alignItems: "center",
-          width: "100%", height: "auto", margin: 0, padding: "2px", textAlign: "left", whiteSpace: "normal", fontWeight: 400 }}>
-        <Dot hue={item.failed ? "red" : "green"} title={item.failed ? "failed" : "ran"} />
-        <span style={{ minWidth: 0 }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-            <span className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }}>{item.asked}</span>
-            {item.members.length > 1 && (
-              <Chip title={`The same statement ran ${item.members.length} times, with the same result`}>{`×${item.members.length}`}</Chip>
-            )}
-          </span>
-          <span className="aug-fs-xs" style={{ ...ONE_LINE, display: "block", ...MUTED }}>
-            {[item.kind, item.table, clock(item.first) === clock(item.at) ? clock(item.at) : `${clock(item.first)}–${clock(item.at)}`]
-              .filter(Boolean).join(" · ")}
-            {item.failed && <span style={{ color: "var(--red4)" }}> · {item.error}</span>}
-          </span>
-        </span>
-        <span className="aug-fs-chrome" style={{ ...NUM, color: item.failed ? "var(--red4)" : "var(--t2)", textAlign: "right" }}
-          title={item.rows == null && !item.failed ? "The result did not say how many rows it held" : undefined}>
-          {item.failed ? "failed" : item.rows == null ? "—" : countNoun(item.rows, "row")}
-        </span>
-        <Icon name={open ? "chevu" : "chevd"} size={12} />
-      </Button>
-      {open && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "8px 2px 6px 24px" }}>
-          <div>
-            <Label>SQL</Label>
-            <pre className="aug-fs-xs" style={CODE}>{ep.sql || "No statement was recorded."}</pre>
-          </div>
-          <div>
-            <Label>{item.failed ? "Error" : "Result"}</Label>
-            <pre className="aug-fs-xs" style={item.failed ? { ...CODE, background: "var(--red1)", color: "var(--red4)" } : CODE}>{obs}</pre>
-          </div>
-          {item.failed && ep.sql && <RetryPanel ep={ep} connectionId={connectionId} errorMsg={ep.observation} canvasId={canvasId} />}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Repair one failed query: run a corrected statement (with the person's guidance, if any), then save it as a finding. */
 function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationEpisode; connectionId: string; errorMsg: string; canvasId?: string }) {
-  const [hint, setHint] = useState("");
+  const [hint, setHint]       = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<RetryQueryResult | null>(null);
-  const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState<FixSaveResult | null>(null);
+  const [result, setResult]   = useState<RetryQueryResult | null>(null);
+  const [open, setOpen]       = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState<FixSaveResult | null>(null);
 
   async function handleRetry() {
     setLoading(true); setResult(null); setSaved(null);
@@ -320,104 +255,340 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
     } finally { setSaving(false); }
   }
 
-  if (!open) {
-    return <div><Button size="xs" variant="secondary" onClick={() => setOpen(true)}>Retry with a fix</Button></div>;
-  }
+  if (!open) return (
+    <Button variant="ghost" size="xs" onClick={() => setOpen(true)} className="aug-fs-xs px-2.5 py-1 rounded mt-2"
+      style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
+      ↺ Retry with fix
+    </Button>
+  );
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ ...ROW, flexWrap: "nowrap" }}>
-        <Input type="text" value={hint} onChange={e => setHint(e.target.value)} aria-label="Guidance for the fix"
+    <div className="rounded-md p-3 space-y-2 mt-2" style={{ background: "var(--bg-0)", border: "0.5px solid var(--b2)" }}>
+      <p className="aug-fs-xs uppercase tracking-widest" style={{ color: "var(--t3)" }}>Guidance (optional)</p>
+      <div className="flex gap-2">
+        <Input type="text" value={hint} onChange={e => setHint(e.target.value)}
           onKeyDown={e => e.key === "Enter" && !loading && handleRetry()}
-          placeholder="Guidance, optional — e.g. use click_ts instead of click_id" style={{ flex: 1, minWidth: 0 }} />
-        <Button size="xs" variant="secondary" onClick={handleRetry} disabled={loading}>{loading ? "Fixing…" : "Run fix"}</Button>
-        <Button size="xs" variant="ghost" onClick={() => { setOpen(false); setResult(null); }}>Cancel</Button>
+          placeholder="e.g. use click_ts instead of click_id…"
+          className="flex-1" />
+        <Button variant="ghost" size="xs" onClick={handleRetry} disabled={loading}
+          className="aug-fs-xs px-3 py-1.5 rounded disabled:opacity-40 shrink-0"
+          style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
+          {loading ? "fixing…" : "Run fix"}
+        </Button>
+        <Button variant="ghost" size="xs" onClick={() => { setOpen(false); setResult(null); }}
+          className="aug-fs-xs px-2 py-1.5 rounded" style={{ color: "var(--t3)" }}>✕</Button>
       </div>
       {result && (
-        <>
-          {result.explanation && <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>{result.explanation}</div>}
-          {result.corrected_sql && <pre className="aug-fs-xs" style={CODE}>{result.corrected_sql}</pre>}
+        <div className="space-y-2 pt-1">
+          {result.explanation && <p className="aug-fs-xs" style={{ color: "var(--blue4)" }}>{result.explanation}</p>}
+          <pre className="aug-fs-xs font-code rounded p-2 overflow-x-auto"
+            style={{ background: "var(--code-bg)", color: "var(--t3)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+            {result.corrected_sql}
+          </pre>
           {result.ok ? (
             <>
-              <div style={{ overflowX: "auto" }}>
-                <Table className="aug-fs-xs">
-                  <TableHeader><TableRow>{result.columns.map(c => <TableHead key={c}>{c}</TableHead>)}</TableRow></TableHeader>
+              <div className="overflow-x-auto rounded" style={{ background: "var(--code-bg)" }}>
+                <Table className="aug-fs-xs font-mono">
+                  <TableHeader><TableRow>{result.columns.map(c => (
+                    <TableHead key={c} className="px-2 py-1 text-left font-medium"
+                      style={{ color: "var(--t3)", borderBottom: "0.5px solid var(--b2)" }}>{c}</TableHead>
+                  ))}</TableRow></TableHeader>
                   <TableBody>{result.rows.slice(0, 15).map((row, i) => (
-                    <TableRow key={i}>{row.map((cell, j) => <TableCell key={j}>{cell as string}</TableCell>)}</TableRow>
+                    <TableRow key={i} style={{ borderBottom: "0.5px solid var(--b0)" }}>
+                      {row.map((cell, j) => <TableCell key={j} className="px-2 py-1" style={{ color: "var(--t3)" }}>{cell as string}</TableCell>)}
+                    </TableRow>
                   ))}</TableBody>
                 </Table>
               </div>
               {/* Save the successful fix as a finding (through the Phase-8 guards) */}
-              {!saved
-                ? <div><Button size="xs" variant="secondary" onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save as finding"}</Button></div>
-                : <SaveFeedback saved={saved} />}
+              {!saved ? (
+                <Button variant="ghost" size="xs" onClick={handleSave} disabled={saving}
+                  className="aug-fs-xs px-3 py-1.5 rounded disabled:opacity-40"
+                  style={{ background: "var(--grn1)", color: "var(--grn4)", border: "0.5px solid var(--grn2)" }}>
+                  {saving ? "saving…" : "Save as finding"}
+                </Button>
+              ) : (
+                <SaveFeedback saved={saved} />
+              )}
             </>
           ) : (
-            <pre className="aug-fs-xs" style={{ ...CODE, background: "var(--red1)", color: "var(--red4)" }}>{result.error}</pre>
+            <pre className="aug-fs-xs font-code rounded p-2"
+              style={{ background: "var(--red1)", color: "var(--red4)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+              {result.error}
+            </pre>
           )}
-        </>
+        </div>
       )}
     </div>
   );
 }
 
+// ── Save-as-finding feedback ──────────────────────────────────────────────────
+
 function SaveFeedback({ saved }: { saved: FixSaveResult }) {
-  const note = saved.insight?.verification_note;
-  if (!saved.ok) return <div><Chip tone="down" title={saved.error}>{`Not saved — ${saved.error ?? "the save failed"}`}</Chip></div>;
-  if (saved.stored && saved.insight?.unverified) return <div><Chip tone="amber" title={note}>{`Saved, not verified — ${note}`}</Chip></div>;
-  if (!saved.stored) return <div><Chip tone="accent" title={saved.reason}>{`Query fixed — ${saved.reason ?? "no finding stored"}`}</Chip></div>;
-  return <div><Chip tone="up">Saved as a finding</Chip></div>;
+  let tone = { bg: "var(--grn1)", fg: "var(--grn4)", bd: "var(--grn2)" };  // saved clean
+  let text = "✓ Saved as finding";
+  if (!saved.ok) { tone = { bg: "var(--red1)", fg: "var(--red4)", bd: "var(--red2)" }; text = `✕ ${saved.error ?? "save failed"}`; }
+  else if (saved.stored && saved.insight?.unverified) {
+    tone = { bg: "var(--amb1)", fg: "var(--amb4)", bd: "var(--amb2)" };
+    text = `⚠ Saved as unverified — ${saved.insight.verification_note}`;
+  } else if (!saved.stored) {
+    tone = { bg: "var(--blue1)", fg: "var(--blue4)", bd: "var(--blue2)" };
+    text = `✓ Query fixed — ${saved.reason ?? "no finding stored"}`;
+  }
+  return (
+    <p className="aug-fs-xs px-2.5 py-1.5 rounded" style={{ background: tone.bg, color: tone.fg, border: `0.5px solid ${tone.bd}` }}>
+      {text}
+    </p>
+  );
 }
 
-// ── The page ──────────────────────────────────────────────────────────────────────────────
+// ── Expanded row detail ───────────────────────────────────────────────────────
+
+function ExpandedDetail({ ep, connectionId, canvasId }: { ep: ExplorationEpisode; connectionId: string; canvasId?: string }) {
+  const isError    = ep.observation.startsWith("ERROR:") || ep.observation.startsWith("EXCEPTION:");
+  const obsPreview = ep.observation.slice(0, 600) + (ep.observation.length > 600 ? "…" : "");
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 4px 8px" }}>
+      {/* SQL */}
+      <div>
+        <p style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>SQL</p>
+        <pre style={{ fontSize: 11, fontFamily: "var(--font-code)", color: "var(--t3)", background: "var(--bg-0)", border: "0.5px solid var(--b1)", borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
+          {ep.sql || "(no sql)"}
+        </pre>
+      </div>
+      {/* Result */}
+      <div>
+        <p style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Result</p>
+        <pre style={{ fontSize: 11, fontFamily: "var(--font-code)", color: isError ? "var(--red4)" : "var(--t3)", background: isError ? "var(--red1)" : "var(--code-bg)", border: `0.5px solid ${isError ? "var(--red2)" : "var(--b1)"}`, borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
+          {obsPreview}
+        </pre>
+      </div>
+      {/* Query intent */}
+      {ep.think && (
+        <div>
+          <p style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Query intent</p>
+          <p style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.55, margin: 0 }}>{ep.think}</p>
+        </div>
+      )}
+      {isError && ep.sql && <RetryPanel ep={ep} connectionId={connectionId} errorMsg={ep.observation} canvasId={canvasId} />}
+    </div>
+  );
+}
+
+// ── Sort indicator ────────────────────────────────────────────────────────────
+
+function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
+  if (!active) return <span style={{ marginLeft: 3, opacity: 0.25 }}>⇅</span>;
+  return <span style={{ marginLeft: 3, color: "var(--blue4)" }}>{dir === "asc" ? "↑" : "↓"}</span>;
+}
+
+// ── Log table ─────────────────────────────────────────────────────────────────
+
+const DEFAULT_LIMIT = 30;
+
+interface LogTableProps {
+  items:        WithMeta[];
+  connectionId: string;
+  canvasId?:    string;
+  sortCol:      SortCol;
+  sortDir:      "asc" | "desc";
+  onSort:       (col: SortCol) => void;
+}
+
+function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: LogTableProps) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggle = (key: string) =>
+    setExpanded(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+
+  const TH: React.CSSProperties = {
+    position: "sticky", top: 0, zIndex: 1,
+    background: "var(--bg-0)",
+    padding: "7px 8px",
+    textAlign: "left", fontSize: 11,
+    fontFamily: "var(--font-mono)", color: "var(--t3)",
+    textTransform: "uppercase", letterSpacing: "0.07em",
+    borderBottom: "1px solid var(--b2)", fontWeight: 500,
+    whiteSpace: "nowrap",
+    userSelect: "none",
+    cursor: "pointer",
+  };
+
+  function thClick(col: SortCol) {
+    return { style: { ...TH, color: sortCol === col ? "var(--blue4)" : "var(--t3)" }, onClick: () => onSort(col) };
+  }
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <Table layout="fixed" >
+        <colgroup>
+          <col style={{ width: 44 }} />
+          <col style={{ width: 148 }} />
+          <col style={{ width: 74 }} />
+          <col />
+          <col style={{ width: 74 }} />
+          <col style={{ width: 54 }} />
+          <col style={{ width: 120 }} />
+          <col style={{ width: 28 }} />
+        </colgroup>
+        <TableHeader>
+          <TableRow>
+            <TableHead {...thClick("seq")} style={{ ...TH, textAlign: "right", paddingRight: 10, color: sortCol === "seq" ? "var(--blue4)" : "var(--t3)", cursor: "pointer" }}>
+              #<SortIcon active={sortCol === "seq"} dir={sortDir} />
+            </TableHead>
+            <TableHead {...thClick("ts")}>
+              timestamp<SortIcon active={sortCol === "ts"} dir={sortDir} />
+            </TableHead>
+            <TableHead {...thClick("type")}>
+              type<SortIcon active={sortCol === "type"} dir={sortDir} />
+            </TableHead>
+            <TableHead {...thClick("message")}>
+              message<SortIcon active={sortCol === "message"} dir={sortDir} />
+            </TableHead>
+            <TableHead {...thClick("status")}>
+              status<SortIcon active={sortCol === "status"} dir={sortDir} />
+            </TableHead>
+            <TableHead {...thClick("rows")} style={{ ...TH, textAlign: "right", color: sortCol === "rows" ? "var(--blue4)" : "var(--t3)", cursor: "pointer" }}>
+              rows<SortIcon active={sortCol === "rows"} dir={sortDir} />
+            </TableHead>
+            <TableHead {...thClick("object")}>
+              object<SortIcon active={sortCol === "object"} dir={sortDir} />
+            </TableHead>
+            <TableHead style={{ ...TH, cursor: "default" }} />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((item, idx) => {
+            const { ep, meta, seq } = item;
+            const pm     = phaseMeta(ep.phase);
+            // Stable key: not position-dependent so it survives re-sort
+            const ekey   = expandKey(ep);
+            // Fragment key must be unique even for duplicate episodes
+            const fkey   = `${ekey}|${idx}`;
+            const isOpen = expanded.has(ekey);
+
+            return (
+              <React.Fragment key={fkey}>
+                <TableRow
+                  onClick={() => toggle(ekey)}
+                  style={{
+                    borderBottom: isOpen ? "none" : "0.5px solid var(--b0)",
+                    cursor: "pointer",
+                    background: isOpen ? "var(--bg-2)" : "transparent",
+                  }}
+                  onMouseEnter={e => { if (!isOpen) (e.currentTarget as HTMLTableRowElement).style.background = "var(--bg-3)"; }}
+                  onMouseLeave={e => { if (!isOpen) (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}
+                >
+                  {/* # — var(--b0) was a BORDER token used as text: near-invisible */}
+                  <TableCell style={{ padding: "7px 10px 7px 8px", textAlign: "right", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap" }}>
+                    {seq}
+                  </TableCell>
+                  {/* timestamp */}
+                  <TableCell style={{ padding: "7px 8px", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap" }}>
+                    {meta.datetime}
+                  </TableCell>
+                  {/* type */}
+                  <TableCell style={{ padding: "7px 8px" }}>
+                    <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 3, background: pm.bg, color: pm.color, border: `0.5px solid color-mix(in srgb, ${pm.color} 25%, transparent)` }}>
+                      {pm.label}
+                    </span>
+                  </TableCell>
+                  {/* message */}
+                  <TableCell style={{ padding: "7px 8px", fontSize: 11, color: meta.isError ? "var(--red4)" : "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {meta.message}
+                  </TableCell>
+                  {/* status */}
+                  <TableCell style={{ padding: "7px 8px" }}>
+                    <span style={{
+                      fontSize: 11, padding: "2px 6px", borderRadius: 3, fontWeight: 500,
+                      background: meta.isError ? "var(--red1)" : "var(--grn1)",
+                      color: meta.isError ? "var(--red4)" : "var(--grn4)",
+                      border: `0.5px solid ${meta.isError ? "var(--red2)" : "var(--grn2)"}`,
+                    }}>
+                      {meta.isError ? "error" : "success"}
+                    </span>
+                  </TableCell>
+                  {/* rows */}
+                  <TableCell style={{ padding: "7px 8px", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", textAlign: "right", whiteSpace: "nowrap" }}>
+                    {formatCount(meta.rows)}
+                  </TableCell>
+                  {/* object */}
+                  <TableCell style={{ padding: "7px 8px", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {meta.object}
+                  </TableCell>
+                  {/* expand */}
+                  <TableCell style={{ padding: "7px 8px", textAlign: "center", fontSize: 11, color: "var(--t3)" }}>
+                    {isOpen ? "▲" : "▼"}
+                  </TableCell>
+                </TableRow>
+
+                {/* Detail row — always in DOM when open, no conditional to avoid fragment issues */}
+                {isOpen && (
+                  <TableRow style={{ background: "var(--bg-2)", borderBottom: "0.5px solid var(--b1)" }}>
+                    <TableCell colSpan={8} style={{ padding: "0 16px" }}>
+                      <ExpandedDetail ep={ep} connectionId={connectionId} canvasId={canvasId} />
+                    </TableCell>
+                  </TableRow>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+// ── Segmented control ─────────────────────────────────────────────────────────
+
+function Seg<T extends string>({ value, options, onChange }: { value: T; options: { v: T; label: string }[]; onChange: (v: T) => void }) {
+  return <Segmented label="View" value={value} onChange={onChange} options={options.map(o => ({ value: o.v, label: o.label }))} />;
+}
+
+// ── Main panel ────────────────────────────────────────────────────────────────
 
 interface Props {
   connectionId: string;
-  isActive: boolean;
-  canvasId?: string;
+  isActive:     boolean;
+  canvasId?:    string;
 }
 
 export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
-  // Each read is kept with the connection (or canvas) it was of, so another connection's log never shows under this one
-  // while its own is read — nor after its own read fails.
-  const scope = canvasId ? `canvas:${canvasId}` : connectionId;
-  const [read, setRead] = useState<{ scope: string; episodes: ExplorationEpisode[] } | null>(null);
-  const [readFailure, setReadFailure] = useState<{ scope: string; message: string } | null>(null);
-  const [statusRead, setStatusRead] = useState<{ scope: string; status: ExplorationStatus | null; failed: boolean } | null>(null);
-  const episodes = read?.scope === scope ? read.episodes : null;
-  const readError = readFailure?.scope === scope ? readFailure.message : null;
-  const status = statusRead?.scope === scope ? statusRead.status : null;
-  const statusFailed = statusRead?.scope === scope && statusRead.failed;
-  const [reads, setReads] = useState(0);
-  const [stopped, setStopped] = useState(false);
-  const [stopping, setStopping] = useState(false);
-  const [resuming, setResuming] = useState(false);
+  const [episodes, setEpisodes]   = useState<ExplorationEpisode[]>([]);
+  const [status, setStatus]       = useState<ExplorationStatus | null>(null);
+  const [stopped, setStopped]     = useState(false);
+  const [stopping, setStopping]   = useState(false);
+  const [resuming, setResuming]   = useState(false);
   const [restarting, setRestarting] = useState(false);
   // why a Continue or Restart did not run — a spent monthly budget the person chose not to run past
   const [runError, setRunError] = useState("");
-  const [range, setRange] = useState<Range>("all");
-  const [outcome, setOutcome] = useState<Outcome>("all");
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const [fixingAll, setFixingAll] = useState(false);
+  const [filterDate, setFilterDate]     = useState<DateFilter>("all");
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
+  const [showAll, setShowAll]           = useState(false);
+  const [sortCol, setSortCol]   = useState<SortCol>("ts");
+  const [sortDir, setSortDir]   = useState<"asc" | "desc">("desc");
+  const [fixingAll, setFixingAll]       = useState(false);
   const [fixAllSummary, setFixAllSummary] = useState<FixAllResult["summary"] | null>(null);
-  const [fixAllError, setFixAllError] = useState("");
-  const scoped = !!scope;
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!isActive || !scoped) return;
+    if (!isActive) return;
     let cancelled = false;
     const load = async () => {
-      const statusAsked = (canvasId ? getCanvasExplorationStatus(canvasId) : getExplorationStatus(connectionId))
-        .then(s => ({ status: s, failed: false }), () => ({ status: null, failed: true }));
       try {
-        const eps = canvasId
-          ? await getCanvasExplorationEpisodes(canvasId, "", READ_LIMIT)
-          : await getExplorationEpisodes(connectionId, "", READ_LIMIT);
-        if (!cancelled) { setRead({ scope, episodes: eps }); setReadFailure(null); }
-      } catch (e) {
-        if (!cancelled) setReadFailure({ scope, message: e instanceof Error ? e.message : String(e) });
-      }
-      const st = await statusAsked;
-      if (!cancelled) { setStatusRead({ scope, ...st }); if (st.status?.paused) setStopped(true); }
+        const [eps, st] = canvasId
+          ? await Promise.all([
+              getCanvasExplorationEpisodes(canvasId, "", 1000),
+              getCanvasExplorationStatus(canvasId).catch(() => null),
+            ])
+          : await Promise.all([
+              getExplorationEpisodes(connectionId, "", 1000),
+              getExplorationStatus(connectionId).catch(() => null),
+            ]);
+        if (!cancelled) { setEpisodes(eps); setStatus(st); if (st?.paused) setStopped(true); }
+      } catch { /* next poll retries */ }
     };
     load();
     // K2: kernel events drive refresh; the interval is only a slow fallback.
@@ -426,7 +597,12 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
       kinds: ["exploration."], connId: connectionId, canvasId: canvasId || undefined,
     });
     return () => { cancelled = true; clearInterval(t); unsub(); };
-  }, [connectionId, canvasId, scope, isActive, scoped, reads]);
+  }, [connectionId, canvasId, isActive]);
+
+  function handleSort(col: SortCol) {
+    if (col === sortCol) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortCol(col); setSortDir(col === "ts" ? "desc" : "asc"); }
+  }
 
   async function handleStop() {
     setStopping(true);
@@ -451,166 +627,146 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
     try {
       if (canvasId) await restartCanvasExploration(canvasId);
       else await restartExploration(connectionId);
-      setStopped(false); setRead({ scope, episodes: [] });
+      setStopped(false); setEpisodes([]);
     } catch (e) {
       setRunError(e instanceof Error ? e.message : "The run did not restart");
     } finally { setRestarting(false); }
   }
 
-  const items = useMemo(() => toItems(episodes ?? []), [episodes]);
-  const ranged = useMemo(() => items.filter(it => inRange(it.at, range)), [items, range]);
-  const shown = useMemo(() => ranged.filter(it => outcome === "all" || (outcome === "error") === it.failed), [ranged, outcome]);
-  const failures = useMemo(() => ranged.filter(it => it.failed), [ranged]);
-  const failedRuns = useMemo(() => failures.flatMap(it => it.members), [failures]);
+  // Build withMeta (preserve original seq)
+  const withMeta: WithMeta[] = episodes.map((ep, i) => ({
+    ep, meta: deriveRowMeta(ep), seq: i + 1,
+  }));
 
-  // Fix all repairs ONLY the failed queries this range shows. The client passes exactly that set, so the server never
-  // re-derives "all errors" or generates fresh queries — a range ("Yesterday") scopes the batch.
+  // Filter
+  const filtered = withMeta.filter(({ meta }) => {
+    if (filterStatus !== "all" && meta.status !== filterStatus) return false;
+    if (!passesDateFilter(meta.date, filterDate)) return false;
+    return true;
+  });
+
+  // Sort
+  const sorted = sortItems(filtered, sortCol, sortDir);
+
+  // Slice
+  const displayed = showAll ? sorted : sorted.slice(0, DEFAULT_LIMIT);
+
+  const isRunning  = status && !["complete", "failed", "pending"].includes(status.phase);
+  const errorCount = filtered.filter(({ meta }) => meta.isError).length;
+
+  // Fix-all: repair ONLY the errored episodes currently visible under the filter. The
+  // client passes exactly that set, so the server never re-derives "all errors" or
+  // generates fresh queries — a date filter (e.g. "Yesterday") naturally scopes the batch.
   async function handleFixAll() {
-    if (failedRuns.length === 0 || fixingAll) return;
-    setFixingAll(true); setFixAllSummary(null); setFixAllError("");
+    const errs = filtered.filter(({ meta }) => meta.isError).map(({ ep }) => ep);
+    if (errs.length === 0 || fixingAll) return;
+    setFixingAll(true); setFixAllSummary(null);
     try {
       const r = await fixAll(
         connectionId,
-        failedRuns.map(ep => ({ sql: ep.sql, error: ep.observation, think: ep.think, phase: ep.phase })),
+        errs.map(ep => ({ sql: ep.sql, error: ep.observation, think: ep.think, phase: ep.phase })),
         "", canvasId ?? "",
       );
       setFixAllSummary(r.summary);
-    } catch (e) {
-      setFixAllError(e instanceof Error ? e.message : String(e));
-    } finally { setFixingAll(false); }
+    } catch { /* surfaced by the unchanged error rows on next poll */ }
+    finally { setFixingAll(false); }
   }
 
-  if (!scoped) {
-    return <Page testId="activity"><Empty>No connection is open — the explorer keeps its log per connection.</Empty></Page>;
-  }
-  if (episodes === null) {
+  if (episodes.length === 0) {
     return (
-      <Page testId="activity">
-        {readError
-          ? <ReadFailed what="the explorer's log" error={readError} onRetry={() => setReads(r => r + 1)} />
-          : <Loading what="the explorer's log" />}
-      </Page>
+      <div className="h-full flex flex-col">
+        <StatusBar status={status} stopped={stopped} onStop={handleStop} onResume={handleResume} onRestart={handleRestart} stopping={stopping} resuming={resuming} restarting={restarting} />
+        {runError && <div className="aug-fs-xs px-4 py-1" data-testid="run-error" style={{ color: "var(--amb4)" }}>{runError}</div>}
+        <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: "var(--t3)" }}>
+          <p className="aug-fs-sm">No activity recorded yet.</p>
+          <p className="aug-fs-xs" style={{ color: "var(--t3)" }}>Activity appears here as background exploration runs.</p>
+        </div>
+      </div>
     );
   }
 
-  const interrupted = !!status?.interrupted;
-  const oldest = items.length ? items[items.length - 1].at : null;
-  const errorsSaid = new Set(failures.map(f => f.error));
-  const failDays = [...new Set(failures.map(f => dayWords(f.at)))];
-  const toggle = (key: string) => setOpen(prev => {
-    const next = new Set(prev);
-    if (next.has(key)) next.delete(key); else next.add(key);
-    return next;
-  });
-
   return (
-    <Page testId="activity">
-      <div style={{ ...ROW, gap: 10 }}>
-        <span className="aug-fs-ui" style={{ color: "var(--t1)" }}>
-          What the explorer ran {canvasId ? "on this canvas" : "here"}, newest first
-        </span>
-        {oldest && (
-          <span className="aug-fs-sm" style={{ ...MUTED, ...NUM }}>
-            {countNoun(episodes.length, "query", "queries")} since {dayWords(oldest)}
+    <div className="h-full flex flex-col overflow-hidden">
+      <StatusBar status={status} stopped={stopped} onStop={handleStop} onResume={handleResume} onRestart={handleRestart} stopping={stopping} resuming={resuming} restarting={restarting} />
+        {runError && <div className="aug-fs-xs px-4 py-1" data-testid="run-error" style={{ color: "var(--amb4)" }}>{runError}</div>}
+
+      {/* Filter + controls bar */}
+      <div className="flex items-center gap-2.5 px-4 py-2 border-b shrink-0 flex-wrap"
+        style={{ borderColor: "var(--b1)", background: "var(--bg-0)" }}>
+        <Seg<DateFilter>
+          value={filterDate} onChange={setFilterDate}
+          options={[
+            { v: "all",       label: "All dates"  },
+            { v: "today",     label: "Today"      },
+            { v: "yesterday", label: "Yesterday"  },
+            { v: "week",      label: "This week"  },
+          ]}
+        />
+        <Seg<StatusFilter>
+          value={filterStatus} onChange={setFilterStatus}
+          options={[
+            { v: "all",     label: "All"     },
+            { v: "success", label: "Success" },
+            { v: "error",   label: "Error"   },
+          ]}
+        />
+        <div style={{ flex: 1 }} />
+        {errorCount > 0 && (
+          <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)" }}>
+            {errorCount} error{errorCount !== 1 ? "s" : ""}
           </span>
         )}
-        {episodes.length >= READ_LIMIT && (
-          <Chip title={`One read takes the newest ${formatCount(READ_LIMIT)} queries; older ones are kept but not read here.`}>
-            {`the latest ${formatCount(READ_LIMIT)} · older not read`}
-          </Chip>
+        {errorCount > 0 && (
+          <Button variant="ghost" size="xs" onClick={handleFixAll} disabled={fixingAll}
+            title={`Repair the ${errorCount} errored quer${errorCount !== 1 ? "ies" : "y"} visible under the current filter`}
+            style={{
+              fontSize: 11, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
+              background: "var(--amb1)", color: "var(--amb4)", border: "0.5px solid var(--amb2)",
+              opacity: fixingAll ? 0.5 : 1,
+            }}>
+            {fixingAll ? "fixing…" : `Fix all (${errorCount})`}
+          </Button>
         )}
-        {readError && <Chip tone="down" title={readError} testId="activity-reread-failed">the last re-read failed</Chip>}
-        <span style={{ flex: 1 }} />
-        <RunState status={status} statusFailed={statusFailed} stopped={stopped}
-          onStop={handleStop} onResume={handleResume} onRestart={handleRestart}
-          stopping={stopping} resuming={resuming} restarting={restarting} />
+        {fixAllSummary && (
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>
+            fixed {fixAllSummary.fixed}/{fixAllSummary.total} · saved {fixAllSummary.saved}
+            {fixAllSummary.flagged > 0 && ` (${fixAllSummary.flagged} flagged)`}
+            {fixAllSummary.failed > 0 && ` · ${fixAllSummary.failed} still failing`}
+          </span>
+        )}
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+          {showAll ? `${filtered.length}` : `${Math.min(DEFAULT_LIMIT, filtered.length)} of ${filtered.length}`}
+          {isRunning && <span className="ml-2 inline-flex items-center gap-1.5" style={{ color: "var(--t3)" }}><span className="aug-dot aug-dot-live" aria-hidden />live</span>}
+        </span>
+        {filtered.length > DEFAULT_LIMIT && (
+          <Button variant="ghost" size="xs" onClick={() => setShowAll(v => !v)} style={{
+            fontSize: 11, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
+            background: showAll ? "var(--blue1)" : "var(--bg-1)",
+            color: showAll ? "var(--blue4)" : "var(--t3)",
+            border: `0.5px solid ${showAll ? "var(--blue2)" : "var(--bg-3)"}`,
+          }}>
+            {showAll ? "Show less" : `Show all ${filtered.length}`}
+          </Button>
+        )}
       </div>
-      {runError && <div role="alert" className="aug-fs-sm" data-testid="run-error" style={{ color: "var(--amb4)" }}>{runError}</div>}
 
-      <NeedsYou testId="activity-needs"
-        empty={`Nothing needs you · no failed query${range === "all" ? "" : " in this range"}, no run waiting`}>
-        {[
-          failures.length > 0 && (
-            <NeedsRow key="failed" testId="needs-failed"
-              title={`${countNoun(failedRuns.length, "query", "queries")} failed${failDays.length === 1 ? ` · ${failDays[0]}` : ""}`}
-              detail={fixAllError ? `Fix all did not run — ${fixAllError}`
-                : fixAllSummary ? `fixed ${fixAllSummary.fixed} of ${fixAllSummary.total} · saved ${fixAllSummary.saved}`
-                  + `${fixAllSummary.flagged > 0 ? ` (${fixAllSummary.flagged} flagged)` : ""}`
-                  + `${fixAllSummary.failed > 0 ? ` · ${fixAllSummary.failed} still failing` : ""}`
-                : `${failures[0].error}${errorsSaid.size > 1 ? ` · and ${countNoun(errorsSaid.size - 1, "other error")}` : ""}`}
-              actions={<>
-                <Button size="xs" variant="ghost" onClick={() => setOutcome("error")}>Show</Button>
-                <Button size="xs" variant="secondary" onClick={handleFixAll} disabled={fixingAll}
-                  title={`Repair the ${countNoun(failedRuns.length, "failed query", "failed queries")} in this range and save each that works as a finding`}>
-                  {fixingAll ? "Fixing…" : `Fix all ${failedRuns.length}`}
-                </Button>
-              </>} />
-          ),
-          interrupted && status && (
-            <NeedsRow key="interrupted" testId="needs-interrupted"
-              title={(status.interrupted_schemas ?? []).length
-                ? `The run stopped on ${(status.interrupted_schemas ?? []).join(", ")}`
-                : `The run stopped at ${phaseWord(status.phase)}`}
-              detail={status.interrupted_note}
-              actions={<>
-                <Button size="xs" variant="secondary" onClick={handleResume} disabled={resuming || restarting}>
-                  {resuming ? "Resuming…" : "Continue"}
-                </Button>
-                <Button size="xs" variant="ghost" onClick={handleRestart} disabled={resuming || restarting}>
-                  {restarting ? "Restarting…" : "Restart"}
-                </Button>
-              </>} />
-          ),
-          status?.held_note && (
-            <NeedsRow key="held" testId="needs-held" title="A run is held" detail={status.held_note} />
-          ),
-        ]}
-      </NeedsYou>
-
-      <ListCard<Item>
-        testId="activity-log"
-        label="Queries"
-        name="explorer-queries"
-        tools={<>
-          <Segmented label="Outcome" value={outcome} onChange={setOutcome} options={[
-            { value: "all", label: "All" }, { value: "success", label: "Succeeded" }, { value: "error", label: "Failed" },
-          ]} />
-          <Segmented label="Range" value={range} onChange={setRange} options={[
-            { value: "all", label: "All dates" }, { value: "today", label: "Today" },
-            { value: "yesterday", label: "Yesterday" }, { value: "week", label: "This week" },
-          ]} />
-        </>}
-        rows={shown}
-        page={30}
-        rowKey={it => it.key}
-        columns={[
-          { head: "When", value: it => `${dayKey(it.at)} ${clock(it.at)}` },
-          { head: "Times", value: it => it.members.length },
-          { head: "Kind", value: it => it.kind },
-          { head: "Asked", value: it => it.asked },
-          { head: "Table", value: it => it.table },
-          { head: "Rows", value: it => it.rows },
-          { head: "Outcome", value: it => (it.failed ? "failed" : "ran") },
-          { head: "Error", value: it => (it.failed ? it.ep.observation : "") },
-          { head: "SQL", value: it => it.ep.sql },
-        ]}
-        group={{
-          key: it => dayKey(it.at),
-          head: (_k, rows) => dayWords(rows[0].at),
-          meta: (_k, rows) => {
-            const runs = rows.reduce((n, r) => n + r.members.length, 0);
-            const failed = rows.reduce((n, r) => n + (r.failed ? r.members.length : 0), 0);
-            return `${countNoun(runs, "query", "queries")}${failed ? ` · ${failed} failed` : ""}`;
-          },
-        }}
-        empty={items.length === 0
-          ? "Nothing has run here yet — the explorer's queries appear as it runs."
-          : "No query matches these filters."}
-        renderRow={(it, first) => (
-          <QueryRow key={it.key} item={it} first={first} open={open.has(it.key)} onToggle={() => toggle(it.key)}
-            connectionId={connectionId} canvasId={canvasId} />
+      {/* Table */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ background: "var(--bg-0)" }}>
+        {displayed.length === 0 ? (
+          <div className="flex items-center justify-center h-32 aug-fs-xs" style={{ color: "var(--t3)" }}>
+            No entries match the current filters.
+          </div>
+        ) : (
+          <LogTable
+            items={displayed}
+            connectionId={connectionId}
+            canvasId={canvasId}
+            sortCol={sortCol}
+            sortDir={sortDir}
+            onSort={handleSort}
+          />
         )}
-      />
-    </Page>
+      </div>
+    </div>
   );
 }

@@ -60,8 +60,9 @@ const SCALE = new Set([11, 12, 13, 14, 15, 18, 22, 28]);
  *  Canvas list was kept as it was (the user), and its 22 literals came back with it. 576 → 515 (2026-10-13): Agent
  *  runs, Health, Documents, the Record, Notifications, Integrations and Evals, redone to CLARITY. 515 → 514 (2026-10-13):
  *  Actions and Org, redone to CLARITY. 514 → 444 the same day: Profile, Graph, Evidence, Memory, Brain map and Security's
- *  Activity, Gate map and Policies, redone to CLARITY. */
-const FONT_SIZE_BASELINE = 444;
+ *  Activity, Gate map and Policies, redone to CLARITY. 444 → 463 the same day: Security's Activity lens was kept as
+ *  it was (the user), and its 19 literals came back with it. */
+const FONT_SIZE_BASELINE = 463;
 
 const RADIUS_RULES = [
   {
