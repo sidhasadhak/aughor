@@ -1,5 +1,4 @@
 "use client";
-import { connectionLabel } from "@/lib/names";
 import { CONNECTORS } from "@/lib/connectors.gen";
 import { ErrorState } from "@/components/ui/states";
 
@@ -21,15 +20,13 @@ import { installWorkspaceHeader, setActiveWorkspace } from "@/lib/workspace";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { OwnersPanel } from "@/components/OwnersPanel";
-import { setOrgSettingsCache, localizeCurrency } from "@/lib/orgSettings";
-import { runDisplayTitle } from "@/lib/runTitle";
+import { setOrgSettingsCache } from "@/lib/orgSettings";
 import { formatCount } from "@/lib/format";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInQueryProvider, type OpenInQueryRequest } from "@/lib/openInQuery";
 import { getCanvases } from "@/lib/api";
 import { CommandPalette, GlobalCommands } from "@/components/CommandPalette";
-import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
@@ -126,7 +123,6 @@ import {
   type AgentRosterEntry,
 } from "@/lib/api";
 import { costSummary, fmtCompact, fmtMs } from "@/lib/cost";
-import { subscribeKernelEvents } from "@/lib/events";
 import { Segmented } from "@/components/ui/segmented";
 import { TabStrip } from "@/components/ui/tab-strip";
 import { Input } from "@/components/ui/input";
@@ -201,25 +197,6 @@ function NavIcon({ name, size = 14, color = "currentColor" }: { name: string; si
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-/** A finding headline shown as a plain one-line list subtitle: strip markdown emphasis (no bold
- *  rendering here, so `**…**` would otherwise leak literal asterisks) and honour the currency. */
-function plainSubtitle(text: string): string {
-  // PX-1 — a scheduled run's stored question leads with a code-written grounding
-  // block; that text is for the model, and rendering it as a title put
-  // "[Scheduled-run context — …]" on five cards of one screen. Derive, display-side.
-  return localizeCurrency(runDisplayTitle(text).title).replace(/\*+/g, "");
-}
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
 
 function freshnessLabel(ts: string | null): string | null {
   if (!ts) return null;
