@@ -1756,34 +1756,36 @@ def promote_canvas_finding(canvas_id: str, finding_id: str):
     from aughor.canvas.store import get_canvas
     if not get_canvas(canvas_id):
         raise HTTPException(status_code=404, detail="Canvas not found")
-    from aughor.explorer.store import promote_insight, load_canvas
-    if not promote_insight(canvas_id, finding_id):
+    from aughor.explorer.store import load_canvas, promote_insight
+    found = next((i for i in load_canvas(canvas_id).get("insights", []) if i.get("id") == finding_id), None)
+    if found is None:
         raise HTTPException(status_code=404, detail="Finding not found")
-
-    # Push the full finding text into the org_intelligence Qdrant collection
-    try:
-        state = load_canvas(canvas_id)
-        found = next(
-            (i for i in state.get("insights", []) if i.get("id") == finding_id),
-            None,
-        )
-        if found:
-            from aughor.canvas.store import resolve_connection_id
-            from aughor.knowledge.org_intelligence import promote_to_org
-            promote_to_org(
-                insight_id=finding_id,   # FROZEN Qdrant payload key
-                text=found.get("finding", ""),
-                domain=found.get("domain", ""),
-                novelty=found.get("novelty", 3),
-                canvas_id=canvas_id,
-                angle=found.get("angle", ""),
-                connection_id=resolve_connection_id(canvas_id) or "",
-                schema=found.get("source_schema", "") or "",
-            )
-    except Exception:
-        pass  # Qdrant unavailable — metadata flag is already set; non-critical
-
+    from aughor.canvas.store import resolve_connection_id
+    # Org first, the flag after: the flag was set and a failed Org write swallowed, so the Briefing said "Promoted ✓"
+    # over a finding Org never received — and every deep analysis is handed Org's closest five.
+    _store_in_org(finding_id, found, canvas_id=canvas_id, connection_id=resolve_connection_id(canvas_id) or "")
+    promote_insight(canvas_id, finding_id)
     return {"insight_id": finding_id, "promoted": True}
+
+
+def _store_in_org(finding_id: str, found: dict, *, canvas_id: str, connection_id: str) -> None:
+    """Write a promoted finding into the org-intelligence collection, or refuse the promotion with why (503)."""
+    from aughor.knowledge.org_intelligence import OrgIntelUnavailable, promote_to_org
+    try:
+        promote_to_org(
+            insight_id=finding_id,   # FROZEN Qdrant payload key
+            text=found.get("finding", ""),
+            domain=found.get("domain", ""),
+            novelty=found.get("novelty", 3),
+            canvas_id=canvas_id,
+            angle=found.get("angle", ""),
+            connection_id=connection_id,
+            schema=found.get("source_schema", "") or "",
+        )
+    except OrgIntelUnavailable as exc:
+        raise HTTPException(status_code=503, detail=f"Not promoted — {exc}") from exc
+    except Exception as exc:  # noqa: BLE001 — any failed write is the same refusal, said with its reason
+        raise HTTPException(status_code=503, detail=f"Not promoted — Org could not store it: {str(exc)[:160]}") from exc
 
 
 @router.post("/exploration/canvas/{canvas_id}/insights/{insight_id}/promote", deprecated=True)
@@ -1800,29 +1802,15 @@ def promote_connection_finding(connection_id: str, finding_id: str):
     """Promote a connection-scoped Briefing/Hub finding to org-wide intelligence.
 
     Counterpart to the canvas promote endpoint — connection-level findings (the
-    default Briefing scope) had no promotion path until now.
+    default Briefing scope) had no promotion path until now. Org is written first and the
+    finding flagged after, so a failed write leaves nothing saying "promoted" (503, with why).
     """
-    from aughor.explorer.store import promote_insight_conn
-    found = promote_insight_conn(connection_id, finding_id)
+    from aughor.explorer.store import _find_insight_state, promote_insight_conn
+    _key, _state, found = _find_insight_state(connection_id, finding_id)
     if found is None:
         raise HTTPException(status_code=404, detail="Finding not found")
-
-    # Push the full finding text into the org_intelligence Qdrant collection.
-    try:
-        from aughor.knowledge.org_intelligence import promote_to_org
-        promote_to_org(
-            insight_id=finding_id,   # FROZEN Qdrant payload key
-            text=found.get("finding", ""),
-            domain=found.get("domain", ""),
-            novelty=found.get("novelty", 3),
-            canvas_id=f"conn:{connection_id}",
-            angle=found.get("angle", ""),
-            connection_id=connection_id,
-            schema=found.get("source_schema", "") or "",
-        )
-    except Exception:
-        pass  # Qdrant unavailable — metadata flag is already set; non-critical
-
+    _store_in_org(finding_id, found, canvas_id=f"conn:{connection_id}", connection_id=connection_id)
+    promote_insight_conn(connection_id, finding_id)
     return {"insight_id": finding_id, "promoted": True}
 
 

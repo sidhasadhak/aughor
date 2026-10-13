@@ -2492,7 +2492,8 @@ export async function promoteCanvasInsight(canvasId: string, insightId: string):
     `${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/findings/${encodeURIComponent(insightId)}/promote`,
     { method: "POST" }
   );
-  if (!res.ok) throw new Error("Failed to promote insight");
+  // the server's reason travels: Org writes first, and a promotion it could not store is refused with why (503)
+  if (!res.ok) throw await refused(res, "Promoting");
   return res.json();
 }
 
@@ -2501,7 +2502,7 @@ export async function promoteConnectionInsight(connectionId: string, insightId: 
     `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/findings/${encodeURIComponent(insightId)}/promote`,
     { method: "POST" }
   );
-  if (!res.ok) throw new Error("Failed to promote insight");
+  if (!res.ok) throw await refused(res, "Promoting");
   return res.json();
 }
 

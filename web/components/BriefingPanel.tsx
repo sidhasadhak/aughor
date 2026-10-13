@@ -1101,7 +1101,11 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
       if (canvasId) await promoteCanvasInsight(canvasId, insight.id);
       else await promoteConnectionInsight(connectionId, insight.id);
       setPromStatus("done");
-    } catch { setPromStatus("error"); }
+    } catch (e) {
+      setPromStatus("error");
+      // why it was not promoted — Org could not store it is not the same as "try again"
+      toast.error("Not promoted", { description: e instanceof Error ? e.message.slice(0, 200) : undefined });
+    }
   }, [insight.id, canvasId, connectionId]);
 
   const handleShareTo = useCallback(async (trigger: ActionTrigger) => {

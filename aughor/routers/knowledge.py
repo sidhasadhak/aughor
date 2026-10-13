@@ -662,8 +662,12 @@ def list_org_intelligence_endpoint(connection_id: str | None = None, schema: str
     Unscoped → the whole collection (the Org panel). With ``connection_id`` (and
     optionally ``schema``) → only that scope's promotions, so scoped surfaces
     (the Hub) don't blend every connection's insights together."""
-    from aughor.knowledge.org_intelligence import list_org_intelligence
-    return list_org_intelligence(connection_id=connection_id, schema=schema)
+    from aughor.knowledge.org_intelligence import OrgIntelUnavailable, list_org_intelligence
+    try:
+        return list_org_intelligence(connection_id=connection_id, schema=schema)
+    except OrgIntelUnavailable as exc:
+        # said, never answered as an empty list: "Nothing promoted yet" over an outage taught the reader it was empty
+        raise HTTPException(status_code=503, detail=f"Org could not be read — {exc}") from exc
 
 
 @router.delete("/org-intelligence/{point_id}")
