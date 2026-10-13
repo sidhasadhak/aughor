@@ -1042,6 +1042,22 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const unplaced = notPlaced.filter(c => !c.not_offered);
   const withheld = notPlaced.filter(c => c.not_offered);
 
+  const startOwn = pinned > 0 ? (
+    <Button variant="secondary" size="xs" disabled={busy}
+      onClick={() => void write(() => startMyCockpit(connectionId), () => "“My cockpit” started from your pinned cards.")}>
+      Start “My cockpit” from {pinned} pinned {pinned === 1 ? "card" : "cards"}
+    </Button>
+  ) : (
+    <Button variant="secondary" size="xs" onClick={() => setNewOpen(true)}>New cockpit</Button>
+  );
+  // Under the Metrics cockpit, a person's own cockpits are one muted line and their door — the explanation on hover.
+  const noneYetLine = (
+    <div className="aug-fs-sm" data-testid="cockpit-none-yet" style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--t3)" }}
+      title="A cockpit is the set of cards you keep watching for one area — returns, pricing, marketing. It is yours: nobody else sees it or changes it.">
+      {list.cockpits.length ? "No cockpit of your own in use" : "No cockpit of your own yet"} — the cards you keep watching for one area
+      {startOwn}
+    </div>
+  );
   const noneYet = (
         <EmptyState icon="gauge" variant="inline"
           title={list.cockpits.length ? "You have no cockpits in use" : "You have no cockpits yet"}
@@ -1359,7 +1375,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
         <>
           <MetricsCockpit connectionId={connectionId} schema={schema} rangesOn={rangesOn}
             value={chosenRange} onChange={setChosenRange} />
-          {live.length === 0 && <div style={{ marginTop: 20 }}>{noneYet}</div>}
+          {live.length === 0 && <div style={{ marginTop: 14 }}>{noneYetLine}</div>}
         </>
       ) : chosen.startsWith("shared:") ? (
         <SharedCockpitView connectionId={connectionId} schema={schema}
