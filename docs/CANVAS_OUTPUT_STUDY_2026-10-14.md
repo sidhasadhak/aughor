@@ -296,7 +296,21 @@ ask or moves a rule into a check; none adds a call.
   PRIORITY paragraph is gone from every tier (the list the prompt receives is already in order — the
   question's cuts first, then `_prioritize_dimensions`; a pack-supplied order can replace the sorter
   later); and no prompt asks for bold the code strips (`_strip_emphasis_deep`). Tests:
-  `tests/unit/test_phase_guards_p3.py`. Not yet proven live.
+  `tests/unit/test_phase_guards_p3.py`.
+* **P3 proven live (2026-10-14, 17:45–18:10 UTC, `:8000` on `fa1dcd02`):** theLook diagnose `d4039693`. The
+  extra-filter guard fired three times — the analyst called `decompose` three times and each plan had added
+  `status NOT IN ('Cancelled','Returned')` — and every re-plan removed it: all fourteen stored queries carry no
+  filter beyond the declared one, and the decomposition now measures July $336,383 → August $385,389, the
+  baseline's and the analyst's own scope (before: $296,916 → $335,733). The planners' prompts dropped about a
+  thousand tokens each (5,316 → 4,260; 5,769 → 4,687). No figure leaked from an uncited result; the plan was not
+  reconciled; the waterfall stayed empty. Two gaps the proof exposed, fixed in the follow-up commit: refused a
+  WHERE filter, the `baseline` planner kept the rows out through `SUM(IF(status NOT IN (…), sale_price, 0))`
+  instead — the guard reads conditional aggregates now, and the measure's own conditions (a return rate's
+  `CASE WHEN status = 'Returned'`) are declared so a rate is never asked to drop them; and the decomposition's
+  20-row top movers carried no slice note because that path does not pass `_assemble_phase_findings` — the
+  stamp moved to `_phase_result`, the seam every phase passes. The follow-up is unit-tested, not re-proven
+  live. Cost note: on the capable tier a diagnose answer runs 24 loop steps, 36 interpret rows and the
+  guards' re-plans; this run made 26 model calls over 168k prompt tokens on Sonnet 5.5 (~$0.50).
 * Not done in P3, named: the interpret prompts' SEVERITY GROUNDING / FORBIDDEN paragraphs still ride
   every tier (their verifiers exist: `_ranking_noise_caveat`, `_lead_with_verdict`,
   `check_significance_claims`); the lens prompts keep `_ADA_SQL_GROUNDING`; the dimensional scan still
