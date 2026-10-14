@@ -307,13 +307,20 @@ describe("the date a metric is measured by", () => {
     const user = userEvent.setup();
     getMetrics.mockResolvedValue([metric({
       name: "gross_margin", label: "Gross Margin %", time_kind: "flow", time_column: "luxexperience.order.order_date",
-      sql: "SELECT SUM(oi.unit_price_eur) AS gm FROM order_items oi JOIN luxexperience.orders o ON oi.order_id = o.order_id",
+      sql: "SELECT SUM(unit_price_eur) AS gm FROM order_items",       // stored: no join yet
     })]);
     getMetricProposals.mockResolvedValue({ statements: [], statement_note: "", note: "",
       candidates: [cand("luxexperience.orders.order_date", "date", { primary: true })] });
     view(<MetricsPanel connId="c1" />);
     const row = (await screen.findAllByTestId("metric-row")).find(r => r.textContent?.includes("Gross Margin %"))!;
     await user.click(within(row).getByRole("button"));
+    // The join written on the Edit tab, not yet saved: the dates are proposed from it and saved with it.
+    await user.click(await screen.findByRole("tab", { name: /Edit/ }));
+    const sqlField = await screen.findByRole("textbox", { name: "SQL statement" });
+    const joined = "SELECT SUM(oi.unit_price_eur) AS gm FROM order_items oi JOIN luxexperience.orders o ON oi.order_id = o.order_id";
+    await user.clear(sqlField);
+    await user.type(sqlField, joined);
+    expect(sqlField).toHaveValue(joined);
     await user.click(await screen.findByRole("tab", { name: /Dates/ }));
     const dates = await screen.findByTestId("metric-dates");
     await user.click(within(dates).getByRole("button", { name: "Correct…" }));
@@ -327,8 +334,9 @@ describe("the date a metric is measured by", () => {
     await waitFor(() => expect(within(dates).getByRole("combobox", { name: "Date column" })).toHaveTextContent("luxexperience.orders.order_date"));
     expect(within(dates).queryByRole("textbox", { name: "Date column, typed" })).toBeNull();
     expect(within(dates).queryByTestId("metric-date-use")).toBeNull();
+    expect(within(dates).getByTestId("metric-date-with-sql")).toHaveTextContent("Saved together with the SQL as it stands on the Edit tab.");
     await user.click(within(dates).getByRole("button", { name: "Save dates" }));
     await waitFor(() => expect(vi.mocked(api.updateMetric)).toHaveBeenCalledWith(
-      "gross_margin", expect.objectContaining({ time_column: "luxexperience.orders.order_date", time_kind: "flow" }), expect.anything()));
+      "gross_margin", expect.objectContaining({ time_column: "luxexperience.orders.order_date", time_kind: "flow", sql: joined }), expect.anything()));
   });
 });
