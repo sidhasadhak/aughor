@@ -262,7 +262,24 @@ ask or moves a rule into a check; none adds a call.
   alone. So a capable binding (the live coder, 1M-token context) now reads `INTAKE_ASK` — 3,295 chars, 525
   words, the seven fields and those judgments, no case law, and the profile block as a section only when there
   is one; a baseline binding keeps the long form byte for byte (`intake_prompt(capable)`, the narrator's own
-  tiering). 12,951 → 3,295 chars (25%). Tests: `tests/unit/test_intake_ask.py`. Not yet proven live.
+  tiering). 12,951 → 3,295 chars (25%). Tests: `tests/unit/test_intake_ask.py`.
+* **P2 proven live, after a finding (2026-10-14, 16:34–17:05 UTC).** The first four runs on the P2 commit
+  (`c376932a`, `2e30ff91`, `faab7bed`, `99201af8`) gave specs identical to their long-form runs and kept P4's
+  behaviour — but the intake prompt was 8,667 tokens before and after: the ask never reached the model. The
+  live coder is **`claude-sonnet-5-5`**, and Anthropic's models API declares no context window, so
+  `tier_for` resolved every Claude binding to BASELINE — 20k of schema instead of 60k, 12 interpret rows
+  instead of 36, 10 loop steps instead of 24, and the long-form prompts — and nothing said so. Fixed at the
+  cause (`c434f1ea`): the catalogue records Anthropic's documented 200k floor for every model it lists;
+  after a refresh the tier follows. Then, on the capable tier: theLook describe `cb4d07c6` — intake
+  **8,667 → 5,153 prompt tokens (−41%)**, the spec identical field for field, every figure the same, the
+  period now "16 Mar – 15 Sep 2026" (the cross-section period fix in the same commit); Lux describe
+  `28ff61e1` — intake 16,537 → 25,669, because the capable tier now shows the model 60k of Lux's 42-table
+  schema instead of 20k (the diet's −2.4k tokens inside a +11k schema), spec and figures unchanged.
+  Every Claude binding runs on the capable budgets from here; the four P2 runs above were the last on
+  baseline.
+* **Recorded against myself:** the 16:34 restart ran with an active job in the pre-check — the birth of the
+  user's new LuxExperience canvas (`8a93c946`, created 16:24) — and cut it at ten minutes. Its record stays
+  RUNNING; the re-run is `POST /exploration/canvas/8a93c946/restart` (model calls, the user's call).
 * Still open from §6: P3 (incl. the 15-row cap that let `55e58a3b` claim "no category above 3.8%" over a
   truncated slice, and the `decompose` phase tool measuring revenue on a narrower scope than the governed
   metric), P5, P6. The DIMENSION PRIORITY list: undecided.
