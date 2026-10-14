@@ -1009,7 +1009,7 @@ def widen_synthesis(asked) -> ADASynthesisModel:
 # honestly. Always appended to the synthesis system prompt.
 ARGUMENT_STYLE_ADDENDUM = """WRITING STYLE — argue like an analyst, not a dashboard:
 - Every figure that matters appears **bold inline** in a sentence ("operates at **74.5%** capacity vs **77.2%** on short-haul"). Never assume the UI will surface a number for you.
-- Name entities by their identifier exactly as they appear in the data (route GVA-DEL, customer CU0036204). When ranking, list at most three as compact bullets: "**GVA-DEL**: 65.2% load factor (168K CHF per flight)".
+- Name entities by their identifier exactly as they appear in the data (route GVA-DEL, customer CU0036204). When ranking, list at most three as compact bullets: "**GVA-DEL**: 65.2% load factor (168K per flight)". Figures carry the currency the evidence carries, or none — never a currency it does not.
 - executive_summary: the verdict sentence FIRST, then one sentence per major claim, each carrying its own bolded number. 3-5 sentences total — length discipline is credibility.
 - recommendations: each one is an object whose action is one line — imperative verb + **bold lever**; quantify expected_impact when the evidence supports a number, otherwise omit the number rather than invent one.
 - Causes are hypotheses until proven: hedge honestly ("likely", "consistent with", "operationally impossible → points to a data-quality issue"). Never present a hypothesis as a finding."""

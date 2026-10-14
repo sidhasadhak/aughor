@@ -241,5 +241,17 @@ ask or moves a rule into a check; none adds a call.
   narrator writes from the CITED results — their rows are its evidence, the uncited are named by title, so a
   figure it cannot see it cannot state and the grounding check holds the line (`_phases_cited`). Tests:
   `tests/unit/test_narrator_asks.py`.
+* **P4 proven live (2026-10-14, 15:32–15:50 UTC, `:8000` on `3fbd10b0`):** Lux diagnose `d206ec65` and theLook
+  diagnose `1f925796`. Both: `plan_reconciliation` null, waterfall empty under a descriptive licence,
+  recommendations with no invented owner or date, and every figure in the narrator's prose traced to a
+  cited exhibit's rows — nothing from an uncited result. On theLook the two revenue scopes were both cited
+  this time, and the narrator SAID they differ (385,389 vs 335,733, "a gap the analysis did not reconcile"),
+  capped its confidence and made the reconciliation its first action — instead of blending them as
+  `5b6fb57c` had. Two inaccuracies remain in that answer: it labelled 385,389 "all statuses" (the SQL
+  excludes Cancelled), and it wrote every figure in **CHF** over data that carries no currency — the only
+  CHF in the run was the example in the narrator's own style rule. Fixed at the cause (the example lost its
+  unit) and guarded (`report_checks.check_currency`: a currency CODE no result, column or label carries is
+  refused with the retry; symbols are left alone).
 * Still open from §6: P2, P3 (incl. the 15-row cap that let `55e58a3b` claim "no category above 3.8%" over a
-  truncated slice), P5, P6. The DIMENSION PRIORITY list: undecided.
+  truncated slice, and the `decompose` phase tool measuring revenue on a narrower scope than the governed
+  metric), P5, P6. The DIMENSION PRIORITY list: undecided.
