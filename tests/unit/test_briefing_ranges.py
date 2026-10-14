@@ -628,3 +628,16 @@ def test_a_north_star_whose_definition_was_deprecated_is_not_asked_for_again(con
     why = {u["name"]: u["reason"] for u in got["unmeasured"]}
     assert why["AOV"] == "its definition was deprecated, so it is not measured under this name"
     assert why["Gross margin"].startswith("no approved definition")
+
+
+def test_a_whole_month_is_compared_with_the_whole_month_before():
+    """LuxExperience's "Last month", 2026-10-13: a whole September (30 days) was compared with 1–30 August — the cut
+    that keeps a month UNDER WAY like for like, applied to a finished one. A whole month is held to the whole month
+    before; a month still under way keeps the same days of the one before."""
+    oct13 = date(2026, 10, 13)
+    whole = _edge("previous_month", today=oct13, edge={"through": date(2026, 10, 12)})
+    assert (whole.start, whole.end) == (date(2026, 9, 1), date(2026, 10, 1))
+    assert (whole.previous_start, whole.previous_end) == (date(2026, 8, 1), date(2026, 9, 1))     # all of August
+    under_way = _edge("current_month", today=oct13, edge={"through": date(2026, 10, 12)})
+    assert (under_way.start, under_way.end) == (date(2026, 10, 1), date(2026, 10, 13))
+    assert (under_way.previous_start, under_way.previous_end) == (date(2026, 9, 1), date(2026, 9, 13))

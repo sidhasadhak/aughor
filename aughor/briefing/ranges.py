@@ -235,7 +235,9 @@ def _edge_range(preset: str, *, today: date, through: Optional[date], held_by: t
         pe = ps + days
     elif unit == "month":
         ps = _unit_before("month", s)
-        pe = min(ps + days, s)
+        # A whole month is compared with the whole month before; only a month still under way is held to the same
+        # days of the one before. Cut by day count, a whole September was compared with 1–30 August (2026-10-13).
+        pe = s if e >= whole else min(ps + days, s)
     else:
         ps, pe = _year_back(s), _year_back(e)
     if unit in ("day", "week"):
