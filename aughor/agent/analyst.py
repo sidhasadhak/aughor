@@ -838,12 +838,22 @@ def _attach_measured_period(report: dict, intake: Optional[dict], windows: Optio
     intake = intake or {}
     start, end = str(intake.get("observation_start") or ""), str(intake.get("observation_end") or "")
     windows = [w for w in (windows or []) if w.get("start") and w.get("end")]
-    if not windows or not start or not end or intake.get("cross_sectional"):
+    if not windows:
+        return
+    distinct = list(dict.fromkeys((w["start"], w["end"]) for w in windows))
+    measured = "; ".join(_window_words(a if a == b else f"{a} → {b}") for a, b in distinct)
+    if not start or not end:
+        # The question named no window the intake could pin ("the last 6 months"), so the label
+        # was the data's whole coverage — "2019-01-11 → 2026-10-18" over an answer measured on
+        # 16 Mar – 15 Sep 2026 (live, cee3f6ed, 2026-10-14). The statements' own dates are the
+        # period the figures were measured over, so the report states those.
+        report["period_as_measured"] = {"stated": "", "windows": windows, "within_stated": False}
+        report["observation_period"] = measured
+        return
+    if intake.get("cross_sectional"):
         return
     within = [w for w in windows if start <= w["start"] and w["end"] <= end]
     stated = str(report.get("observation_period") or "") or _window_words(f"{start} → {end}")
-    distinct = list(dict.fromkeys((w["start"], w["end"]) for w in windows))
-    measured = "; ".join(_window_words(a if a == b else f"{a} → {b}") for a, b in distinct)
     report["period_as_measured"] = {"stated": stated, "windows": windows,
                                     "within_stated": bool(within)}
     if within:

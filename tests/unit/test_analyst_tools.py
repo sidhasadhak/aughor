@@ -793,6 +793,21 @@ def test_no_readable_window_and_a_cross_section_leave_the_label_alone():
         assert report == {"observation_period": "August 2026", "data_gaps": []}
 
 
+def test_a_question_with_no_pinned_window_states_the_period_its_statements_measured():
+    """"The last 6 months" pinned no window at intake, so the report's label was the data's whole
+    coverage — "2019-01-11 → 2026-10-18" over an answer measured on 16 Mar – 15 Sep 2026 (live,
+    cee3f6ed, 2026-10-14). The statements' dates are the period; the report states them, with
+    nothing to reconcile against and so no caveat."""
+    intake = {"observation_start": "", "observation_end": "", "cross_sectional": True}
+    report = {"observation_period": "2019-01-11 → 2026-10-18", "data_gaps": []}
+    an._attach_measured_period(report, intake, [
+        {"tool": "run_sql", "start": "2026-03-16", "end": "2026-09-15"}])
+    assert report["observation_period"] == "16 Mar – 15 Sep 2026"
+    assert report["period_as_measured"] == {"stated": "", "within_stated": False,
+                                            "windows": [{"tool": "run_sql", "start": "2026-03-16", "end": "2026-09-15"}]}
+    assert report["data_gaps"] == []
+
+
 def test_the_agent_run_states_the_window_its_phase_ran_on(monkeypatch, traffic_db, faux_llm):
     """Through the runner: the spec reads August, the model runs the baseline on July, and
     the finished report says July — with the reason — rather than the spec's August."""
