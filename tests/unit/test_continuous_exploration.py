@@ -157,6 +157,17 @@ def test_the_planner_judges_every_dataset_and_spends_on_the_most_valuable_first(
         "stage": (False, "raw")}, "a raw dataset is read for its pipeline health, not its periods"
 
 
+
+def test_a_dataset_whose_questions_run_stopped_on_its_budget_is_still_watched(monkeypatch):
+    """LuxExperience 2026-10-12 → 14: its questions run kept stopping on its budget, so its phase stayed `failed` and the
+    watch — SQL only — never read the days arriving after it."""
+    stopped = _stopped(error=_BUDGET_STOP, stopped_on_budget_at=(_NOW - timedelta(hours=2)).isoformat(),
+                       structure_learned={"at": "2026-07-01T00:00:00+00:00", "fp": "abc"})
+    unlearned = _stopped(error=_BUDGET_STOP, stopped_on_budget_at=(_NOW - timedelta(hours=2)).isoformat())
+    _planner(monkeypatch, {"lux": stopped, "fresh": unlearned}, layers={"lux": "business", "fresh": "business"})
+    _, watches = cont.plan_jobs(now=_NOW)
+    assert [w["schema"] for w in watches] == ["lux"], "watched once its structure is known, whatever its questions run"
+
 def test_a_spent_budget_holds_the_model_runs_and_says_so(monkeypatch):
     states = {"marts": _complete(), "sales": _complete("old")}
     held = _planner(monkeypatch, states, layers={"marts": "business", "sales": "business"},

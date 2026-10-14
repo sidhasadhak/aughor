@@ -153,6 +153,13 @@ def _plan(job: str, reason: str, *, gaps_only: bool = True, **extra) -> dict:
             "uses_model": job in ("questions", "full"), **extra}
 
 
+def structure_known(state: dict) -> bool:
+    """This dataset's structure has been learned — stamped when the structure job ends, or a run that got past it.
+    A questions run that stopped on its budget afterwards does not unlearn it."""
+    phase = str(state.get("phase") or "pending")
+    return bool(state.get("structure_learned")) or phase in ("domain_intel", "synthesis", "complete")
+
+
 def next_job(state: dict, prog: dict, *, jobs: frozenset, current_fp: Optional[str], running: bool,
              interrupted: bool, now: datetime, questions_share: Optional[float]) -> Optional[dict]:
     """Pure: the job one dataset needs next, or None. ``jobs`` are what its layer lets the platform
@@ -163,7 +170,7 @@ def next_job(state: dict, prog: dict, *, jobs: frozenset, current_fp: Optional[s
         return None
     asks = "questions" in jobs
     phase = str(state.get("phase") or "pending")
-    learned = bool(state.get("structure_learned")) or phase in ("domain_intel", "synthesis", "complete")
+    learned = structure_known(state)
     if phase == "pending" and not state.get("tables_total") and not learned:
         return _plan("full", NEW_DATASET, gaps_only=False) if asks else _plan("structure", NEW_DATASET)
     if interrupted:
@@ -293,8 +300,10 @@ def plan_jobs(*, now: Optional[datetime] = None) -> tuple[list[dict], list[dict]
                                  "value": _approved_count(conn_id, sch),
                                  "asked": sum(popularity.get(t, 0) for t in _tables_of(state)),
                                  "failures": prog.get("failures", 0)})
-                if str(state.get("phase") or "") == "complete" and ("time" in jobs or layer == "raw"):
-                    # business: its settled periods and its dimensions' new values; raw: its pipeline health
+                if structure_known(state) and not running and ("time" in jobs or layer == "raw"):
+                    # business: its settled periods and its dimensions' new values; raw: its pipeline health.
+                    # SQL only, so it waits on the structure, never on a questions run: LuxExperience's kept stopping on
+                    # its budget, and its new days went unread from 2026-10-12 until this was a "complete" run's alone.
                     watches.append({"conn_id": conn_id, "schema": sch, "key": key, "layer": layer,
                                     "time": "time" in jobs, "reopen": "questions" in jobs})
         except Exception as exc:
