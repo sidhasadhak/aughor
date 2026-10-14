@@ -182,6 +182,7 @@ export function AgentMap({
     }));
     const rfEdges: RFEdge[] = edges.map(e => ({
       id: e.id, source: e.from, target: e.to,
+      type: "step",          // square, never curved — as every diagram here draws a link
       style: {
         stroke: e.dashed ? "var(--t4)" : "var(--b2)",
         strokeWidth: e.dashed ? 1 : 1.5,

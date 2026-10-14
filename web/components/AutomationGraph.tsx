@@ -357,6 +357,7 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
       target: e.to,
       label: isData || isRoute ? e.label : undefined,
       animated: false,
+      type: "step",          // square, never curved — as every diagram here draws a link
       style: isRoute
         ? { stroke: "var(--chart-4)", strokeWidth: 1.6, strokeDasharray: "7 4" }
         : isData

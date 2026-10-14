@@ -65,6 +65,8 @@ describe("AutomationGraph handoff", () => {
 
   it("gives every edge a distinct id", () => {
     const ids = toFlow(graph()).edges.map(e => e.id);
+    // straight runs turning square, never curves (the user, 2026-10-13)
+    expect(toFlow(graph()).edges.every(e => e.type === "step")).toBe(true);
     expect(new Set(ids).size).toBe(ids.length);
   });
 

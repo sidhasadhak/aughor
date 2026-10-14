@@ -1087,7 +1087,7 @@ export function TraceFlow({
       if (!drawn.has(from) || !drawn.has(to)) continue;
       bridged.push({
         id: `band-next-${from}-${to}`,
-        source: from, target: to, animated: false,
+        source: from, target: to, animated: false, type: "step",
         style: { stroke: "var(--b2)" },
         markerEnd: { type: MarkerType.ArrowClosed, color: "var(--b2)" },
       });
@@ -1097,6 +1097,7 @@ export function TraceFlow({
       .filter(e => drawn.has(e.from) && drawn.has(e.to))
       .map((e, i) => ({
         id: `${e.kind}-${i}-${e.from}-${e.to}`,
+        type: "step",          // square, never curved — as every diagram here draws a link
         source: e.from,
         target: e.to,
         // The latency is rendered ON the edge — the detail that turns boxes-and-arrows

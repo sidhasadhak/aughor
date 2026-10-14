@@ -184,6 +184,8 @@ describe("TraceFlow", () => {
     expect(drawn().edges).toHaveLength(3);
     expect(drawn().edges.map(e => `${e.source}->${e.target}`)).toEqual(
       ["sup->a", "sup->b", "a->b"]);
+    // straight runs turning square, never curves (the user, 2026-10-13)
+    expect(drawn().edges.every(e => (e as { type?: string }).type === "step")).toBe(true);
   });
 
   it("puts a latency only on the edges where waiting is what happened", () => {

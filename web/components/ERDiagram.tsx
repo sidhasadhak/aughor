@@ -407,8 +407,8 @@ export function ERDiagram({ schema }: { schema: RichSchema }) {
       sourceHandle: `${j.c2}__s`,
       target: j.t1,
       targetHandle: sameLane ? `${j.c1}__rt` : `${j.c1}__t`,
-      type: "smoothstep",
-      pathOptions: { borderRadius: 8 },
+      // Straight runs that turn square, as every diagram here draws a link (the user, 2026-10-13: the Org board).
+      type: "step",
       style: {
         stroke: j.match === "exact" ? "var(--blue4)" : "var(--t3)",
         strokeWidth: 1.4,
