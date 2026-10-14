@@ -15,10 +15,12 @@ import type { SessionEvent } from "@/lib/api";
 
 const reads: Array<Record<string, unknown>> = [];
 let events: SessionEvent[] = [];
+let refuse: string | null = null;
 vi.mock("@/lib/api", async importOriginal => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getActivityEvents: (p: Record<string, unknown>) => {
     reads.push(p);
+    if (refuse) return Promise.reject(new Error(refuse));
     return Promise.resolve({ measured: true, events, kinds: { guardrail: 3, llm_call: 1 }, window: null });
   },
 }));
@@ -37,6 +39,7 @@ const routine = (seq: number) => ev(seq, "guardrail", { name: "pii", payload: { 
 
 beforeEach(() => {
   reads.length = 0;
+  refuse = null;
   events = [
     routine(5),
     ev(4, "llm_call", { name: "claude-sonnet-5-5" }),
@@ -82,5 +85,13 @@ describe("the routine guardrail checks", () => {
     expect(isRoutineCheck(ev(1, "guardrail", { payload: { blocked: true } }))).toBe(false);
     expect(isRoutineCheck(ev(1, "guardrail", { ok: false }))).toBe(false);
     expect(isRoutineCheck(ev(1, "llm_call"))).toBe(false);
+  });
+
+  it("say a read that failed, never the quiet 'recording is on' line", async () => {
+    refuse = "Reading the log failed (503)";
+    events = [];
+    render(<Theme><ActivityStreamPanel /></Theme>);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Reading the log failed (503)");
+    expect(screen.queryByText(/Quiet — recording is on/)).toBeNull();
   });
 });

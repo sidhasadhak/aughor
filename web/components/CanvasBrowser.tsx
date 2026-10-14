@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { getCanvases, deleteCanvas, type Canvas, type Connection } from "@/lib/api";
+import { ReadFailed } from "@/components/ui/states";
 import { AugTable } from "@/components/AugTable";
 import { Button } from "@/components/ui/button";
 import type { TableColumnsType } from "antd";
@@ -174,7 +175,7 @@ interface Props {
 export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Props) {
   // Each answer is kept with the workspace (and the re-read) it was for, and only the current workspace's is drawn — so
   // a switch never shows the last workspace's canvases while the new list is on its way.
-  const [read, setRead] = useState<{ workspaceId: string; reload: number; canvases: Canvas[] } | null>(null);
+  const [read, setRead] = useState<{ workspaceId: string; reload: number; canvases: Canvas[]; error?: string } | null>(null);
   const [reloads, setReloads]           = useState(0);
   const [search, setSearch]             = useState("");
   const [filter, setFilter]             = useState<"all" | "mine">("all");
@@ -188,8 +189,12 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
   useEffect(() => {
     if (!workspaceId) return;   // not known yet — the list waits rather than read every workspace's
     let current = true;         // an answer for a workspace the screen has since left is dropped
-    const settle = (canvases: Canvas[]) => { if (current) setRead({ workspaceId, reload: reloads, canvases }); };
-    getCanvases(workspaceId).then(settle).catch(() => settle([]));
+    const settle = (canvases: Canvas[], error?: string) => {
+      if (current) setRead({ workspaceId, reload: reloads, canvases, error });
+    };
+    // A failed read is said, never drawn as "No Data Canvases yet" (2026-10-13).
+    getCanvases(workspaceId).then(c => settle(c))
+      .catch(e => settle([], e instanceof Error && e.message ? e.message : "the read failed"));
     return () => { current = false; };
   }, [workspaceId, reloads]);
 
@@ -502,7 +507,10 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
           </div>
         </div>
 
-        {!listLoading && displayed.length === 0 ? (
+        {!listLoading && read?.error ? (
+          <ReadFailed what="the Data Canvases" error={read.error} onRetry={() => setReloads(n => n + 1)}
+            style={{ padding: "48px 0" }} />
+        ) : !listLoading && displayed.length === 0 ? (
           /* Empty state */
           <div style={{
             padding: "72px 0", display: "flex", flexDirection: "column",

@@ -74,6 +74,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   /** Whether ANY run in the loaded window records a user — see the filter below. */
   const [anyUser, setAnyUser] = useState(false);
 
+  const [listError, setListError] = useState<string | null>(null);
   const loadList = useCallback(() => {
     setListBusy(true);
     getTraces({
@@ -87,8 +88,10 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
         setAnyUser(prev => prev || d.traces.some(t => !!t.user_id));
         setTotal(d.total ?? d.traces.length);
         setScanned(d.scanned_events ?? null);
+        setListError(null);
       })
-      .catch(() => {})
+      // A failed read is said, never drawn as "Recording is on — the next question … will appear here" (2026-10-13).
+      .catch(e => setListError(e instanceof Error && e.message ? e.message : "the read failed"))
       .finally(() => setListBusy(false));
   }, [focusInvestigationId, filters, pageSize, offset]);
 
@@ -227,7 +230,8 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
         )}
 
         <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
-          {traces.length === 0 ? (
+          {listError && <ReadFailed what="the traces" error={listError} onRetry={loadList} style={{ padding: "8px 6px" }} />}
+          {listError && traces.length === 0 ? null : traces.length === 0 ? (
             <div className="aug-fs-sm" style={{ padding: 16, color: "var(--t3)" }}>
               {listBusy ? "Loading…"
                 : total === 0 && (filters.q || filters.status || filters.user_id
