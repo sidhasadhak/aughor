@@ -381,6 +381,14 @@ class InvestigationPhaseResult(TypedDict):
     # prose becomes, and one shipped as the headline of an executive report (the "$14"
     # specimen). Each consumer renders it in its own register; absent on older phases.
     caveats: NotRequired[list[str]]
+    # P5 (canvas-output study, 2026-10-14) — the code-written significance verdict, STRUCTURED:
+    # {"sigma": 0.16, "significant": False, "text": "σ = 0.16 — within normal variance"}, or
+    # {"sigma": None, "significant": None, "text": "significance not assessable — …"} when the
+    # baseline is too short. It used to ride `summary` as "[stats.py: σ=0.16 — within normal
+    # variance]" — machinery in the reader's prose (16 of 88 stored reports). The page draws it as
+    # the badge it already has; the routers and the contradiction scan read it here first and
+    # fall back to the bracket on older phases. Absent on a phase code did not test.
+    verdict: NotRequired[dict]
 
 
 class WaterfallEntry(TypedDict):

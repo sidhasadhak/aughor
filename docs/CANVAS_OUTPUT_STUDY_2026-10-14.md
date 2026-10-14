@@ -315,4 +315,56 @@ ask or moves a rule into a check; none adds a call.
   every tier (their verifiers exist: `_ranking_noise_caveat`, `_lead_with_verdict`,
   `check_significance_claims`); the lens prompts keep `_ADA_SQL_GROUNDING`; the dimensional scan still
   sorts worst-first under its cap (the slice now says so).
-* Still open from §6: P5, P6.
+* **P5 built (2026-10-14 PM, the user's "let's do P5 first"):** the machine's words out of the reader's prose,
+  each to a slot that already had a reader. (1) The baseline's `[stats.py: σ=3.88 — significant anomaly]`
+  is the phase's **`verdict`** (`{"sigma", "significant", "text"}`, `baseline_verdict`), never a bracket in
+  `summary`; the page draws it as the badge the findings already wear (`PhaseVerdict`), the PDF as a small
+  "Verdict" line under the summary, the narrator reads it as a `CODE VERDICT:` line beside the summary, and
+  the contradiction scan, `_states_normal_variance` and the confidence ceiling read the slot first and the
+  bracket on older stored phases (`phase_verdict`). The later planners still get it in words on the internal
+  hand-off (`_baseline_summary`). The web also strips the bracket out of an older report's summary. (2) A
+  finding that contradicted its verdict read "<verdict> The phase narrator wrote: <sentence>" — the verdict
+  now goes to `stat_note` (the badge above the sentence), and the model's sentence stays the body. (3) The
+  "Not independently challenged" caveat keeps the reader's half; the machine's reason stays on
+  `causal_checks.refutation.why`. Not done, named: the intake's own ALL-CAPS tags (`CLAIM LICENCE:`,
+  `ROUTING:`, `TEMPORAL AXIS RECOVERED:`) still ride `intake_notes`; they reach no web body (the intake phase
+  is filtered from both) and are parsed by the licence readers, so moving them is a separate change. Tests:
+  `tests/unit/test_phase_verdict_p5.py`, `web/components/InvestigationReport.verdict.test.tsx`. Proof: a
+  stored report's phase carries `verdict` and a summary without the bracket — needs one live diagnose run
+  after a restart on the fix (the user's call; ~$0.50 on Sonnet 5.5).
+* **Why the Lux answer said "I rely on the phase tool's summaries" (`99201af8`, 16:34 UTC) — read back from
+  the trace, and what now channels it.** The chain: the schema linker kept `order_items` and dropped
+  `orders`, the table that carries the date (the intake's own notes: "the orders columns are not listed,
+  orders.order_ts is an assumption"); the date resolver had no `orders` block to correct the invented column
+  against, so the spec carried `orders.order_ts`; the phase planners wrote it and the SQL fixer repaired it
+  **nine times** (nine model calls); the analyst copied the spec's column into its own cut, got Postgres's
+  "column o.order_ts does not exist — perhaps you meant o.order_id", listed the whole schema (81k chars),
+  wrote the same column again, fixed it only for the platform cut, and concluded — in the first person, about
+  its tools — that it "could not run the category and brand cut". Its two `decompose` runs also carried the
+  same ids (`decomp_0..2` twice): the exhibit's citation was ambiguous and the page keyed two children
+  `decomp_2` (the console error the user pasted). Built: (a) **`complete_join_paths`** — the linked schema
+  TEXT is completed with the tables its joins need (pinned temporal dimensions, ranked, FK-completed, scoped),
+  one body for the Agent path and the deep path, which until now completed only its data catalog; (b) the
+  intake's date resolver reads the un-linked **`full_schema_context`** (both paths carry it) so an invented
+  column is corrected against the catalogue, not the excerpt; (c) a failed `run_sql` comes back with the
+  fixer's own **diagnosis** — the real columns of the table the alias names (`diagnose_sql_error`, now reading
+  Postgres, BigQuery and Snowflake's unknown-column shapes too); (d) **`conclude` holds `answer` and `gaps` to
+  the reader's register** — the first person and the machinery's names ("phase tool", "the query errored",
+  `result_id`) are refused once with the register asked for ("This analysis did not test…"); (e) a repeated
+  phase tool's phase and finding ids are **renamed in place** before the model reads them
+  (`decomposition_2`, `decomp_0_2`), and the web keys its lists with `withUniqueKeys` for older reports.
+  Tests: `tests/unit/test_lux_answer_guards.py`. Adjacent, not done: `list_tables` returns the whole visible
+  schema (81k chars on Lux) — a manifest of names with `describe_table` for detail would cost less; the
+  prompts' `orders.order_ts` example (`INTAKE_PROMPT`, `_ADA_SQL_GROUNDING`) is a plausible column on a real
+  table name — placeholder forms would not be copied; the "Mr Porter 23.15% vs 22.78%" discrepancy the
+  narrator noted is unexplained.
+* **The ERD** had not been removed: #610 moved the schema's diagram into Tools ▾ "as a tab of its own", and a
+  view behind a menu reads as removed. It is a tab again — Overview · Tables · **Diagram** · Docs · Settings —
+  at schema scope and on a one-schema connection, which is its schema (`CatalogScope.tsx`).
+* **A metric's date on a table its SQL does not read** (the user's gross-margin question): a period filters
+  the date's own table INSIDE the statement (`scoped_statement`), so `order_items`' gross margin cannot take
+  `orders.order_date` until its SQL joins `orders` — the editor's "one join away" hint already says so, but
+  the save accepted `luxexperience.order.order_date` (a table the statement never reads, spelled wrong) and
+  said nothing. The save now refuses it (422) with the fix. Live: Lux `gross_margin` still carries that
+  column — correct it in the editor (join `orders` in the SQL, then choose `orders.order_date`).
+* Still open from §6: P6.

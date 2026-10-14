@@ -213,6 +213,46 @@ def _repair_by_transpile(db, error: str, sql: str) -> str | None:
     return promoted if promoted.strip() != sql.strip() else None
 
 
+#: A column the engine could not find, as each engine says it: Postgres (`column o.order_ts does
+#: not exist`, `column "order_ts" does not exist`), BigQuery (`Name order_ts not found inside o`,
+#: `Unrecognized name: order_ts`), Snowflake (`invalid identifier 'O.ORDER_TS'`). DuckDB's own
+#: shape (`Table "o" does not have a column named "x"`) is read first by `_make_diagnosis`.
+_MISSING_COLUMN_RES = (
+    re.compile(r'column\s+"?(?P<alias>\w+)\.(?P<col>\w+)"?\s+does not exist', re.I),
+    re.compile(r'column\s+"(?P<col>\w+)"\s+does not exist', re.I),
+    re.compile(r'Name\s+(?P<col>\w+)\s+not found inside\s+(?P<alias>\w+)'),
+    re.compile(r'Unrecognized name:\s+(?P<col>\w+)'),
+    re.compile(r"invalid identifier\s+'(?:(?P<alias>\w+)\.)?(?P<col>\w+)'", re.I),
+)
+
+
+def _missing_column(error: str) -> "tuple[str | None, str] | None":
+    """(alias-or-None, column) the error names as missing, or None."""
+    for rx in _MISSING_COLUMN_RES:
+        m = rx.search(error or "")
+        if m:
+            return (m.groupdict().get("alias"), m.group("col"))
+    return None
+
+
+def _columns_of(table: str, table_cols: dict[str, list[str]]) -> list[str]:
+    """The known columns of ``table``, matched as written, lower-cased, or by bare name."""
+    want = table.rsplit(".", 1)[-1].lower()
+    return (table_cols.get(table) or table_cols.get(table.lower())
+            or next((v for k, v in table_cols.items()
+                     if k.lower() == table.lower() or k.rsplit(".", 1)[-1].lower() == want), None) or [])
+
+
+def diagnose_sql_error(error: str, sql: str, table_cols: dict[str, list[str]], *,
+                       dialect: str = "duckdb") -> str:
+    """The fixer's own diagnosis of a failed statement, for a caller that hands the error back
+    to a model instead of repairing it itself — the analyst's `run_sql` (2026-10-14, 99201af8:
+    "column o.order_ts does not exist" went back with Postgres's HINT to try `o.order_id`; the
+    model listed the whole schema (81k chars), wrote the same column again, and gave up on the
+    cut). Named here so one reading of an error serves both doors."""
+    return _make_diagnosis(error, sql, table_cols, dialect=dialect)
+
+
 def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]],
                     dialect: str = "duckdb") -> str:
     """
@@ -262,6 +302,30 @@ def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]],
             f"DIAGNOSIS: '{bad_col}' does not exist in table '{real_table}'. "
             "Use only column names that appear verbatim in the SCHEMA above."
         )
+
+    # The same fact as Postgres, BigQuery and Snowflake say it (`_MISSING_COLUMN_RES`): the real
+    # columns of the table the alias names — or of every table the query reads, when the error
+    # names none — so the model corrects the column instead of guessing another.
+    miss = _missing_column(error)
+    if miss:
+        alias_ref, bad_col = miss
+        aliases = _resolve_aliases(sql)
+        if alias_ref and alias_ref.lower() in aliases:
+            tables = [aliases[alias_ref.lower()]]
+        else:
+            tables = sorted(set(aliases.values()))
+        listing = [f"{t}: {', '.join(cols)}" for t in tables for cols in [_columns_of(t, table_cols)] if cols]
+        where = f"table '{tables[0]}'" if len(tables) == 1 else "any table this query reads"
+        head = (f"DIAGNOSIS: Snowflake reports invalid identifier '{bad_col}' — it does not exist in {where}."
+                if "invalid identifier" in error.lower() else
+                f"DIAGNOSIS: '{bad_col}' does not exist in {where}.")
+        if listing:
+            return (
+                f"{head}\nExact columns — " + "; ".join(listing) + "\n"
+                f"Use the column from this list that carries the intent of '{bad_col}' (a date or "
+                "timestamp column when it stood for a date). NEVER substitute a constant or NULL."
+            )
+        return f"{head} Use only column names that appear verbatim in the SCHEMA above."
 
     # Referenced table/alias used but not brought into FROM/JOIN
     # (DuckDB: 'Referenced table "oi" not found!')

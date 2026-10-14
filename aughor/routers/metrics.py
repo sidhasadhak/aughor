@@ -496,6 +496,30 @@ def _stamp_time_edit(existing, req: MetricRequest) -> dict:
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+def _require_date_on_a_table_read(data: dict) -> None:
+    """A metric's date must be on a table its definition reads.
+
+    The user, 2026-10-14: Gross Margin % (LuxExperience) is measured on `order_items`, which has
+    no date, and was saved with `luxexperience.order.order_date` — a table the statement never
+    reads, and one spelled wrong (`orders`). The save said nothing; the first period measured
+    would have said "its statement does not read luxexperience.order" (`scoped_statement`).
+    Refused at the door instead, with the fix the editor already names beside the field: a
+    period filters the date's own table INSIDE the statement, so the statement must read it."""
+    from aughor.semantic.metric_statement import split_grain
+    from aughor.semantic.metric_time import bare_name, tables_read
+    column = str(data.get("time_column") or "").strip()
+    table, _col = split_grain(column)
+    if not column or not table:
+        return                        # unset, or a bare column: nothing to check it against
+    read = tables_read(data)
+    if not read:
+        return                        # a definition that names no table is checked at measurement
+    if bare_name(table) not in {bare_name(t) for t in read}:
+        raise HTTPException(status_code=422, detail=(
+            f"{column} is on {table}, which this definition does not read (it reads "
+            f"{', '.join(read)}). Add the join to {table} in the SQL, then choose the date here."))
+
+
 def _plain_unit(unit: Optional[str]) -> Optional[str]:
     """A saved unit carries no figure measured once — see `metric_catalogue.plain_unit`."""
     from aughor.semantic.metric_catalogue import plain_unit
@@ -528,6 +552,7 @@ def create_metric(req: MetricRequest):
     data = {k: v for k, v in req.model_dump().items() if k not in _SERVER_OWNED}
     data["unit"] = _plain_unit(data.get("unit"))
     data.update(_stamp_time_edit(None, req))
+    _require_date_on_a_table_read(data)
     from aughor.semantic.metric_time import with_dates
     m = with_dates(req.connection, MetricDefinition(**data))
     save_metric(m)
@@ -576,6 +601,7 @@ def update_metric(name: str, req: MetricRequest, schema: Optional[str] = None):
     data = {k: v for k, v in req.model_dump().items() if k not in _SERVER_OWNED}
     data.update({"name": new_name, "schema_name": target_ds, "unit": _plain_unit(data.get("unit"))})
     data.update(_stamp_time_edit(existing, req))
+    _require_date_on_a_table_read(data)
     audit = None
     if existing is not None:
         # Governance state is owned by the transition workflow (B-8), not by edits —

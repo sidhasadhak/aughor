@@ -3,12 +3,14 @@
 /**
  * One catalog — or one schema of it — redone to `aughor-v2/CLARITY.md` (2026-10-12, the approved
  * `design-mockups/catalog.html` frame 2): a header line (name · what it is · its state · Ask about it · Tools ▾), then
- * Overview · Tables · Docs · Settings. The Overview opens on four figures, what needs a person (only when something
- * does), rows by table beside what the platform knows, then the tables.
+ * Overview · Tables · Diagram · Docs · Settings. The Overview opens on four figures, what needs a person (only when
+ * something does), rows by table beside what the platform knows, then the tables. The Diagram — the tables and the
+ * joins between them — is a tab at schema scope and on a one-schema connection (2026-10-14: #610 had moved it into
+ * Tools ▾, and the user read that as removed).
  *
  * Nothing the old panels did is gone: testing and removing the connection, Volumes and Permissions sit in Tools ▾;
  * the Briefings switch, the dataset program (layers, budget), a connector's sync and files in Settings; a schema's
- * diagram and profile in Tools ▾ as tabs of their own; the compiled schema documents in Docs. Reads on open are the
+ * profile in Tools ▾ as a tab of its own; the compiled schema documents in Docs. Reads on open are the
  * old ones plus two GETs over stores — the metrics and the ontology — never a warehouse query, never a model call; the
  * search index's status comes from the screen, which reads it once.
  */
@@ -110,7 +112,6 @@ export function CatalogScope({ entry, schema, view, conn, dups, status, label, o
   const tools: ToolItem[] = [
     { label: "Test connection", onSelect: () => onTest?.(), hidden: !!schema || !real || !conn || !onTest, testId: "tool-test" },
     { label: "Sync and files", onSelect: () => setTab("settings"), hidden: !!schema || !real || !hasConnectorActions(entry.conn_type) },
-    { label: "Diagram", onSelect: () => setTab("diagram"), hidden: !schema, title: "The tables and the joins between them" },
     { label: "Profile", onSelect: () => setTab("profile"), hidden: !schema, title: "Each column's empty share, distinct values and shape" },
     { label: "Volumes", onSelect: () => setTab("volumes"), hidden: !!schema, title: "Files kept under this catalog" },
     { label: "Permissions", onSelect: () => setTab("permissions"), hidden: !!schema, title: "Which workspaces can read this catalog" },
@@ -124,8 +125,12 @@ export function CatalogScope({ entry, schema, view, conn, dups, status, label, o
     } },
   ];
 
-  const tabs: Tab[] = ["overview", "tables", ...(real ? ["docs" as const] : []), "settings",
-    ...((["diagram", "profile", "volumes", "permissions"] as const).filter(t => t === tab))];
+  // The diagram is a view in the strip, not a tool: at schema scope, and at a one-schema connection, which IS its
+  // schema (the user, 2026-10-14 — #610 had put it behind Tools ▾, and a view behind a menu reads as removed).
+  const diagramSchema = schema ?? (entry.schemas.length === 1 ? entry.schemas[0] : undefined);
+  const tabs: Tab[] = ["overview", "tables", ...(diagramSchema ? ["diagram" as const] : []),
+    ...(real ? ["docs" as const] : []), "settings",
+    ...((["profile", "volumes", "permissions"] as const).filter(t => t === tab))];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--bg-0)" }}>
@@ -156,7 +161,7 @@ export function CatalogScope({ entry, schema, view, conn, dups, status, label, o
             <SchemaShape connectionId={connId} schemaTables={schema.tables.map(t => t.name)} />
           </div>
         )
-        : tab === "diagram" && schema ? <SchemaDiagram connId={connId} schema={schema} />
+        : tab === "diagram" && diagramSchema ? <SchemaDiagram connId={connId} schema={diagramSchema} />
         : (
           <Page testId={`catalog-scope-${tab}`}>
             {tab === "overview" && (
