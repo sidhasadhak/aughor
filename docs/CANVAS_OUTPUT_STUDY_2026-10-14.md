@@ -1,0 +1,209 @@
+# Data Canvas investigation output — study (2026-10-14)
+
+The question: the investigations a person asks on the Data Canvas are the platform's most
+important output. CLARITY was applied to the canvas chrome and to a dozen other screens; the
+report body was not touched. Are the guides around the model making its answers worse than the
+model would write on its own, and what in the pipeline is structurally wrong?
+
+Method: the 88 most recent complete investigations on the live API (74 asked on the canvas,
+14 scheduled Day-Briefing runs), read over HTTP; the prompt modules and the two pipelines read
+from code; one stored answer opened on the live canvas; the per-site prompt weights from
+`GET /obs/prompt-weight`. No model call was spent.
+
+## 1. What actually runs
+
+Two pipelines produce the same report shape (`AnswerReport`, `aughor/agent/state.py:401`):
+
+* **The analyst loop** (`aughor/agent/analyst.py:1759`) — the default for an Agent question
+  on the canvas since `ask.converse` graduated. Intake once, then a tool loop (`run_sql`,
+  `list_tables`, `describe_table`, `z_score`, `value_lookup`, `profile_column`, plus the four
+  phase tools `baseline` / `decompose` / `cross_section` / `premise_check`), then the model's
+  closing prose. A regex (`investigate.question_shape`, `investigate.py:1180`) decides
+  "describe" or "diagnose": a describe question loses the four phase tools and takes
+  `_describe_rules` (2.7k chars); its closing prose becomes the answer with no narrator call
+  (`_conclusion_as_answer`, 10713). A diagnose question goes to the narrator
+  (`ada_synthesize`, 10743) with the loop's prose as "THE ANALYST'S OWN CONCLUSION".
+* **The phase script** (`graph.py` / `phase_waves.py`) — intake → baseline → decomposition →
+  dimensional → behavioral → synthesis, or the cross-sectional lenses. Runs for the scheduled
+  Day-Briefing investigations and the legacy `POST /investigate`.
+
+Measured on the 88: **66 of 74 canvas questions** ran the analyst loop with only `intake` +
+`adhoc_N` phases (one per `run_sql`); 8 ran a phase script; all 14 scheduled runs ran the
+phase script plus 36 `adhoc_N` phases between them.
+
+## 2. What the reader gets — measured
+
+| What | Canvas (74) | Scheduled (14) |
+|---|---|---|
+| findings drawn with a chart/table and **no words** | 143 of 248 (58%) | 51 of 121 (42%) |
+| reports whose body tabulates rows that a finding below draws again | 46 of 88 | |
+| headline over 16 words (the narrator's own rule, `SYNTHESIS_CORE_RULES`) | 43 of 88 — median 16, p90 32, max 37 | |
+| body opening with "The following table lists…" (forbidden by `_describe_rules`) | 22 of 88 | |
+| phase summary carrying machinery text `[stats.py: σ=3.88 — significant anomaly]` | 16 of 88 | |
+| `attribution_waterfall` empty | 73 of 74 | 13 of 14 |
+| recommendations with `expected_impact` "N/A" | 6 of 17 | 1 of 21 |
+| `plan_reconciliation` reporting `synthesis` skipped | 73 of 74 | 14 of 14 |
+
+One describe answer as the reader sees it (investigation `2060e143`, canvas
+E-Commerce Operations Overview, History ▸ Report): a 32-word headline that is the first
+sentence of the prose, the sentence "The following table lists the top 10 product categories
+by revenue for this period:", the table as the model wrote it, a note, then **the same ten
+rows again** as a bar chart titled by code ("Total revenue by category — 5 Mar – 4 Sep 2026")
+drawing only one of the two measures the question asked for, with a source button. No
+sentence belongs to the chart. (Adjacent: the stored text says `$229,793.89`; the page shows
+`€229,793.89` — a currency relabel without a conversion.)
+
+Why: every `run_sql` the analyst makes becomes an `adhoc_N` phase with `summary: ""` and
+`interpretation: ""` (`analyst.py:748-778` — "the narrator writes the prose from the evidence
+log"), and the canvas draws any finding that has columns (`InvestigationReport.tsx:348`). The
+analyst's words about those rows live in its prose, so the page shows the reading once as
+prose and the rows twice. The envelope (`answer/envelope.py`) already folds this correctly —
+`lift_tables` takes the table out of the body and makes it the grid — but the canvas renders
+`executive_summary`, which keeps the table, not the envelope.
+
+The headline is `_lead_sentence(conclusion)` (10615): the first sentence of free prose,
+capped at 240 chars. `_describe_rules` tells the model that sentence must carry "its figures
+— what leads, what trails, by how much", so the headline is a paragraph by instruction.
+
+## 3. What is asked of the model that nobody reads
+
+* `ADASynthesisModel` (prompts_investigate.py:949) asks ten fields. The canvas renders five
+  (`headline`, `executive_summary`, `closing_summary`, `recommendations`,
+  `total_change_label`; `InvestigationReport.tsx:536-611`). `confidence`,
+  `confidence_justification`, `attribution_waterfall`, `causal_links` are never on the page;
+  `data_gaps` reaches only the envelope's caveats. The waterfall is empty in 86 of 88 reports
+  (forced empty on every cross-sectional run, 11241) and three of the seven narrator rules,
+  plus `check_signs` and `check_waterfall_sums`, govern it.
+* `AnswerRecommendationModel` requires `owner` and `timeline`. The data holds neither, so
+  the model invents "Logistics Operations" and "2026-10-30" and the page prints them
+  ("Impact: N/A Owner: Logistics Operations Timeline: 2026-10-30").
+* `ARGUMENT_STYLE_ADDENDUM` demands every figure "**bold inline**"; `DECOMPOSE_INTERPRET`
+  says "bold the share" and, two lines up, "Use NO markdown emphasis";
+  `_strip_emphasis_deep` (11422) then removes every bold from the shipped report. The model
+  spends attention on formatting the code deletes.
+* `chart_type` is asked twice per query (plan and interpret) and resolved by code at the one
+  seam (`_phase_result`, 2505). `stat_note` and `is_significant` are asked and then
+  overwritten whenever code computed a verdict (`_assemble_phase_findings`, 3014-3018).
+* `orchestration_plan` declares the five-phase script at intake for every run, including
+  analyst runs that never follow it; `reconcile` then journals `baseline / decomposition /
+  dimensional` as skipped in 51–53 of 74 and `synthesis` as skipped in 87 of 88 (it is a
+  node, never a phase id). The handoff journal records a plan nobody executed.
+* A describe answer costs 7 model calls for one SQL statement (trace `6759cc33`: intake ×2,
+  `build_analysis_ledger`, loop ×3, `judgment.seam:judge` — which failed "structured output
+  empty"). 15.3k prompt tokens, 949 completion.
+
+## 4. Guide or guard — the prompts
+
+The repo already states the principle (PE-2, `report_checks.py:1-13`): a correctness
+contract "belongs in code that verifies, not prose that hopes"; the synthesis prompt was cut
+from 1,700 tokens of lecture to seven rules plus deterministic checks and one named retry.
+That was done for the narrator only. Everything upstream of it is still prophylaxis:
+
+* **`INTAKE_PROMPT`** (12.9k chars, 170 lines; 102 calls at 6,946 prompt tokens mean): seven
+  numbered sections with ten `(critical)` / "all mandatory" guards, each a past failure
+  written out as case law — BINDING, INTENT, LOSS (a–d), MAGNITUDE, DRIVER, TWO SIDES,
+  PoP/YoY coverage guards, five DATE COLUMN "NEVER" rules. Code already verifies or
+  overwrites much of it: `_clamp_intake_to_coverage` decides `no_prior_period` from the real
+  dates; `_pin_canonical_metric` binds the governed metric; `resolve_claim_type` decides the
+  licence; eight of 29 output fields are "set by code". The prompt refers four times to the
+  PROFILE CONTEXT block ("GRAIN: the PROFILE states…", "Read the PROFILE CONTEXT date range
+  FIRST") — on the analyst path that block is **empty** (`analyst.py:1678`,
+  `scan_context: ""`). The guards that have no code check (date column must be a date-typed
+  column that exists; metric table must be in the schema) are the two cheapest to write.
+* **Phase plan prompts** are fixed scripts: "Write 2–3 SQL queries", "at least 13
+  consecutive periods", "1 SQL query per dimension (up to 4)", "max 4 queries total", and a
+  "DIMENSION PRIORITY — customer type › channel › product category › geography" that is an
+  e-commerce assumption applied to every connection. `_ADA_SQL_GROUNDING` (1.5k) rides every
+  plan call and the TABLE NAMES / NEVER CAST / NO EXTRA FILTERS paragraphs are repeated in all
+  four temporal plan prompts — while `_uses_relative_date` and the fan-out check already force
+  a corrective re-plan, which is the guard.
+* **Interpret prompts** carry FORBIDDEN word lists (`BREAKDOWN_INTERPRET`) and a SEVERITY
+  GROUNDING paragraph repeated five times, beside `_ranking_noise_caveat`,
+  `_concentration_note`, `check_significance_claims` and `check_noise_findings_not_cited`,
+  which verify the same thing and already prepend the verdict to the rows the model reads
+  (`_results_text_with_verdicts`).
+* **`_describe_rules`** (2.7k) is violated on the page in 22 of 88 answers ("The following
+  table…") — the number the envelope's `lifted_tables` counter was built to report. A rule the
+  model does not keep is a rule to verify or to make unnecessary, not to restate.
+
+What is genuinely a guard and should stay exactly as it is: every check on `run_sql`
+(guards, caveats, `too_few`, `first_change_missing`, `not_the_declared_measure`), the
+`_every_result_warned` stop check, `_results_text_with_verdicts`, `run_report_checks` with
+its one named retry and `withhold_untraced`, the claim licence, the coverage clamp.
+
+## 5. The verdict
+
+The loop design is right — the model chooses the slices, code verifies each one — and the
+analyst's prose is, on the live specimens, the best text the run produces (the repo measured
+this on 2026-09-29 and built `_conclusion_as_answer` from it). What is wrong is that the
+analyst's answer is then forced through a report shape built for the phase script:
+
+1. its results are shown as wordless "phases", so the page repeats the rows and separates the
+   reading from the exhibit;
+2. its prose is cut at the first sentence to make a headline, by an instruction that puts
+   the figures in that sentence;
+3. the narrator model carries fields with no reader, and required fields the data cannot fill;
+4. the intake and phase prompts lecture about contracts that code already enforces, to a
+   model that is told to read a profile block it is not given.
+
+None of it is the model's intelligence failing; it is the scaffolding choosing the shape of
+the answer before the model has read the data.
+
+## 6. Proposal — channel, do not script
+
+In order of reader-facing leverage. Each names the number that proves it.
+
+**P1 — The analyst's answer carries its own structure, and the canvas draws that.**
+Add a `conclude` tool to the analyst roster: `headline` (one line, the claim),
+`answer` (prose, no tables), `exhibits` (the result ids the answer cites, each with a one-line
+claim that becomes the exhibit's caption). Calling it ends the turn. The report is then
+headline · answer · each cited exhibit once, where cited, captioned by its claim · caveats
+from the guards — the envelope's fold, which already exists, with the exhibit claims it was
+missing. Uncited results stay behind the source drawer and the Evidence tab. Removes
+`_lead_sentence` / `_ranked_headline` guessing, the prose-table lift, the wordless
+`adhoc_N` cards, and the duplicate table. Proof: duplicate-rows 46 → 0; headline words
+median ≤ 12; wordless drawn findings 58% → 0; "The following table" 22 → 0. Every guard in
+§4's last paragraph stays. The same tool serves the scheduled runs' `adhoc_N` phases.
+
+**P2 — Intake on the PE-2 diet.** Split `INTAKE_PROMPT` into the ask (what to measure,
+over which window, cut by what, compared with what — the seven questions, without the case
+law) and verifiers: the coverage clamp and metric pin already exist; add a date-column type
+check and a metric-table-in-schema check with one named retry. Drop the PROFILE references
+where no profile is given, or give the analyst path the profile. Keep the LOSS reading as a
+declared rule (it is a definition, not a guard). Proof: the replay harness
+(`replay_args`, `GET /obs/prompt-capture`) on the eight real canvas questions and the five
+benchmark ones — same `metric_sql`, same windows, same `cross_sectional`; prompt tokens at
+`ada_intake` from 6.9k mean to under 4k.
+
+**P3 — Phase prompts say the job, code enforces the SQL.** One shared grounding line; the
+corrective re-plan (which exists) is the guard for relative dates, fan-out, unknown tables.
+Dimensions come from the intake's `dimensions` and the ontology, not a retail priority list.
+Remove the SEVERITY / FORBIDDEN paragraphs where a verifier already runs. Reconcile emphasis:
+either keep inline bold through to `BriefProse` (it renders it) or stop asking for it — not
+both. Proof: `run_analysis_phase` prompt mean 4.6k → ~3k with no change in the phase checks'
+violation rate.
+
+**P4 — Ask the narrator only for what has a reader.** `attribution_waterfall` requested
+only under a causal licence on a change question (it is forced empty otherwise); `owner` and
+`timeline` optional, `expected_impact` optional and only when the evidence supports a number
+(the addendum already says so). `data_gaps` and `causal_links` keep their consumers (envelope
+caveats, the Record's causal proposals). The `orchestration_plan` is declared only on the
+phase script, so `plan_reconciliation` reconciles a plan that ran.
+
+**P5 — Machinery text out of prose.** `[stats.py: σ=…]` goes to the phase's verdict slot
+(the badge and warning already exist on the page), never into `summary`; "The phase narrator
+wrote:" keeps the verdict in the badge and the model's sentence in the body. Proof: 16 → 0.
+
+**P6 — One answer, one rendering.** The History panel and the chat turn render the same
+object (today: chat renders the streamed report, History sniffs fields and renders
+`executive_summary` with its table). With P1 that object is the envelope.
+
+Not proposed: a second model call to caption or shorten anything. Every proposal removes an
+ask or moves a rule into a check; none adds a call.
+
+## 7. Calls needed
+
+* P1 changes the report body — the one canvas surface CLARITY never reached. Build straight
+  to it, or mock the body first on `2060e143` and `55e58a3b` (one describe, one diagnose)?
+* Order: P1 then P2 is the reader-first order; P2 then P1 is the cost-first order.
+* The e-commerce DIMENSION PRIORITY list: drop (P3) or keep as a pack-supplied default?
