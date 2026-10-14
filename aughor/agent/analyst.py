@@ -851,6 +851,13 @@ def _attach_measured_period(report: dict, intake: Optional[dict], windows: Optio
         report["observation_period"] = measured
         return
     if intake.get("cross_sectional"):
+        # A cross-sectional run states its data coverage as its period, and the coverage is not
+        # what a describe answer measured: "last 6 months" pinned 16 Mar – 15 Sep 2026, every
+        # statement carried that window, and the page said 2019-01-11 → 2026-10-18 (c376932a,
+        # 2026-10-14). The statements' windows are the period; the report states them.
+        report["period_as_measured"] = {"stated": str(report.get("observation_period") or ""),
+                                        "windows": windows, "within_stated": True}
+        report["observation_period"] = measured
         return
     within = [w for w in windows if start <= w["start"] and w["end"] <= end]
     stated = str(report.get("observation_period") or "") or _window_words(f"{start} → {end}")

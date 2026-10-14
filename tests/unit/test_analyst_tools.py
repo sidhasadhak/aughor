@@ -783,14 +783,22 @@ def test_a_report_states_the_period_its_figures_were_measured_over():
     assert kept["observation_period"] == "August 2026" and kept["data_gaps"] == []
 
 
-def test_no_readable_window_and_a_cross_section_leave_the_label_alone():
-    """A window the code cannot read is not evidence of a mismatch, and a cross-sectional scan
-    states its data coverage, not a window."""
-    for intake, windows in ((_AUG, []), ({**_AUG, "cross_sectional": True},
-                                         [{"tool": "x", "start": "2026-07-01", "end": "2026-07-31"}])):
-        report = {"observation_period": "August 2026", "data_gaps": []}
-        an._attach_measured_period(report, intake, windows)
-        assert report == {"observation_period": "August 2026", "data_gaps": []}
+def test_no_readable_window_leaves_the_label_alone():
+    """A window the code cannot read is not evidence of a mismatch."""
+    report = {"observation_period": "August 2026", "data_gaps": []}
+    an._attach_measured_period(report, _AUG, [])
+    assert report == {"observation_period": "August 2026", "data_gaps": []}
+
+
+def test_a_cross_section_states_the_window_its_statements_measured():
+    """A cross-sectional run's period was its data coverage, which is not what a describe answer
+    measured: "last 6 months" pinned 16 Mar – 15 Sep 2026 and the page said 2019-01-11 → 2026-10-18
+    (c376932a, 2026-10-14). The statements' windows are the period, with no caveat to raise."""
+    intake = {**_AUG, "cross_sectional": True, "observation_start": "2026-03-16", "observation_end": "2026-09-15"}
+    report = {"observation_period": "2019-01-11 → 2026-10-18", "data_gaps": []}
+    an._attach_measured_period(report, intake, [{"tool": "run_sql", "start": "2026-03-16", "end": "2026-09-15"}])
+    assert report["observation_period"] == "16 Mar – 15 Sep 2026" and report["data_gaps"] == []
+    assert report["period_as_measured"]["stated"] == "2019-01-11 → 2026-10-18"
 
 
 def test_a_question_with_no_pinned_window_states_the_period_its_statements_measured():
