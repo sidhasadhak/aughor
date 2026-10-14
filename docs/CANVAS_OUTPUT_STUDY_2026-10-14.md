@@ -380,11 +380,14 @@ ask or moves a rule into a check; none adds a call.
   `run_sql` did not run this time, so the diagnosis path is unit-tested, not live-proven. The intake chose
   `SUM(orders.gmv_eur)` on `orders` as revenue (the earlier run measured line value on `order_items`); both are
   defensible readings of an uncatalogued "revenue", and the intake notes say which and why.
-  **Exposed by the proof, not fixed:** the narrator wrote, as a data gap, that code's verdict (σ = 0.97) does not
-  reconcile with the planner's own z (0.011). From the stored 15 monthly rows, September's revenue sits 0.19σ
-  above the 14 prior months and 0.01σ above the 12 prior — so code's 0.97 is not revenue's. The cause is in
-  `ada_baseline`: `code_sigma` is the LARGEST σ `analyze_query_result` returns for any numeric column of the
-  first result — here `baseline_0` carries revenue, orders and AOV, and the orders or AOV series won. The
-  marker carried the same number before; the slot made the narrator able to say so. The fix is to read the
-  metric's own column (the finding's `stat_note` already does: "z = 0.19 (revenue vs 15-month mean)").
+  **Exposed by the proof, then fixed (the user's call):** the narrator wrote, as a data gap, that code's verdict
+  (σ = 0.97) does not reconcile with the planner's own z (0.011). From the stored 15 monthly rows, September's
+  revenue sits 0.19σ above the 14 prior months and 0.01σ above the 12 prior — so code's 0.97 was not revenue's.
+  The cause was in the baseline node: `code_sigma` was the LARGEST σ `analyze_query_result` returned for any
+  numeric column of the first result — `baseline_0` carries revenue, orders and AOV, and the orders series won.
+  The marker carried the same number before; the slot made the narrator able to say so. Now a per-column stat
+  result names its `column`, `_metric_sigma` takes the metric's own series (by the label's words or an
+  identifier the formula reads; else the first analysed column, which the planners write first), and the
+  verdict names it: "σ = 0.19 on revenue — within normal variance". Unit-tested on measured series
+  (`test_phase_verdict_p5.py`), not re-proven live.
 * Still open from §6: P6.

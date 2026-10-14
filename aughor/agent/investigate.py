@@ -2535,8 +2535,39 @@ def _phase_result(
     return out
 
 
+_SIGMA_STOP = frozenset({"sum", "avg", "count", "min", "max", "distinct", "as", "of", "the", "by", "and", "total"})
+
+
+def _metric_sigma(stat_results, metric_label: str, metric_sql: str) -> tuple[Optional[float], str]:
+    """The σ of the METRIC's own series among a result's analysed columns, with that column's
+    name — never the largest σ of any column.
+
+    The baseline node took the maximum over every numeric column of its first result; on
+    `2f8ad418` (2026-10-14) that result carried revenue, orders and AOV, the orders series won
+    at 0.97, and the phase's verdict said so about revenue — which sat at 0.19σ, as the
+    finding's own note read. The column is matched to the metric by name: its label's words
+    ("revenue (gross merchandise value)" → revenue), or an identifier its formula reads
+    (`SUM(gmv_eur)` → gmv_eur). With no name match the result's first analysed column is
+    taken — the planners write the metric as the first measure — and a result whose stats
+    carry no column (older callers, tests) keeps the first σ it has."""
+    scored = [sr for sr in (stat_results or []) if getattr(sr, "sigma", None) is not None]
+    if not scored:
+        return None, ""
+    label_tokens = {t for t in re.findall(r"[a-z0-9]+", (metric_label or "").lower()) if len(t) > 1 and t not in _SIGMA_STOP}
+    sql_names = {t for t in re.findall(r"[a-z_][a-z0-9_]*", (metric_sql or "").lower()) if t not in _SIGMA_STOP}
+    for sr in scored:
+        col = str(getattr(sr, "column", "") or "").lower()
+        if not col:
+            continue
+        col_tokens = {t for t in re.findall(r"[a-z0-9]+", col) if len(t) > 1}
+        if col in sql_names or col in label_tokens or (col_tokens & label_tokens):
+            return float(sr.sigma), col
+    first = next((sr for sr in scored if getattr(sr, "column", "")), scored[0])
+    return float(first.sigma), str(getattr(first, "column", "") or "")
+
+
 def baseline_verdict(code_sigma: Optional[float], code_significant: Optional[bool],
-                     n_periods: Optional[int] = None) -> Optional[dict]:
+                     n_periods: Optional[int] = None, column: str = "") -> Optional[dict]:
     """The baseline's code-written significance verdict as the phase's `verdict` slot (P5).
 
     Until 2026-10-14 this was appended to the phase SUMMARY as "[stats.py: σ=3.88 — significant
@@ -2548,8 +2579,9 @@ def baseline_verdict(code_sigma: Optional[float], code_significant: Optional[boo
     if code_sigma is not None:
         significant = bool(code_significant)
         label = "significant anomaly" if significant else "within normal variance"
-        return {"sigma": round(float(code_sigma), 2), "significant": significant,
-                "text": f"σ = {float(code_sigma):.2f} — {label}"}
+        on = f" on {column}" if column else ""
+        return {"sigma": round(float(code_sigma), 2), "significant": significant, "column": column or "",
+                "text": f"σ = {float(code_sigma):.2f}{on} — {label}"}
     if n_periods is not None and n_periods < _MIN_BASELINE_PERIODS:
         return {"sigma": None, "significant": None,
                 "text": (f"significance not assessable — the baseline holds {max(n_periods - 1, 0)} "
@@ -7918,14 +7950,15 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     # that the router can trust unconditionally.
     code_sigma: Optional[float] = None
     code_significant: Optional[bool] = None
+    code_sigma_column = ""
     for _, r in results:
         if r.error or not r.rows or not r.columns:
             continue
         stat_results = analyze_query_result(r.columns, r.rows, r.sql)
-        for sr in stat_results:
-            if sr.sigma is not None:
-                if code_sigma is None or sr.sigma > code_sigma:
-                    code_sigma = float(sr.sigma)  # numpy.float64 → python float
+        # The METRIC's own series, by name — never the largest σ of any column (`_metric_sigma`;
+        # python float, never numpy's).
+        code_sigma, code_sigma_column = _metric_sigma(
+            stat_results, intake_data.get("metric_label") or "", intake_data.get("metric_sql") or "")
         if code_sigma is not None:
             # bool() so a numpy.bool_ never reaches graph state — the LangGraph msgpack
             # checkpointer can't serialize numpy scalars and the whole run crashes.
@@ -8027,7 +8060,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     # P5 — the σ verdict is the phase's `verdict` slot, never a bracket in its summary. The
     # later planners still read it in words, on the internal hand-off (`_baseline_summary`).
     if code_sigma is not None:
-        _verdict = baseline_verdict(code_sigma, code_significant)
+        _verdict = baseline_verdict(code_sigma, code_significant, column=code_sigma_column)
     _handoff_summary = (f"{summary} Code's verdict: {_verdict['text']}." if _verdict else summary).strip()
 
     # ── Premise validation: detect when observation period contradicts the question's intent ──

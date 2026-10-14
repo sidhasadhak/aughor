@@ -15,8 +15,8 @@ from aughor.export.document import _build_ada
 
 
 def test_the_baseline_verdict_is_a_slot_with_the_sigma_the_bool_and_the_words():
-    assert I.baseline_verdict(3.876, True) == {"sigma": 3.88, "significant": True, "text": "σ = 3.88 — significant anomaly"}
-    assert I.baseline_verdict(0.16, False) == {"sigma": 0.16, "significant": False, "text": "σ = 0.16 — within normal variance"}
+    assert I.baseline_verdict(3.876, True) == {"sigma": 3.88, "significant": True, "column": "", "text": "σ = 3.88 — significant anomaly"}
+    assert I.baseline_verdict(0.16, False) == {"sigma": 0.16, "significant": False, "column": "", "text": "σ = 0.16 — within normal variance"}
     short = I.baseline_verdict(None, None, 3)
     assert short["significant"] is None and short["sigma"] is None
     assert short["text"].startswith("significance not assessable — the baseline holds 2 period(s)")
@@ -24,10 +24,42 @@ def test_the_baseline_verdict_is_a_slot_with_the_sigma_the_bool_and_the_words():
     assert I.baseline_verdict(None, None, I._MIN_BASELINE_PERIODS) is None
 
 
+def test_the_verdict_is_the_metrics_own_sigma_not_the_largest_of_any_column():
+    """2f8ad418 (2026-10-14): the baseline's first result carried revenue, orders and AOV; the orders
+    series' σ = 0.97 was stamped as revenue's verdict while revenue sat at 0.19σ."""
+    from types import SimpleNamespace as NS
+    stats = [NS(sigma=0.19, column="revenue"), NS(sigma=0.97, column="orders")]
+    assert I._metric_sigma(stats, "revenue (gross merchandise value)", "SUM(gmv_eur)") == (0.19, "revenue")
+    assert I._metric_sigma(stats[::-1], "revenue (gross merchandise value)", "SUM(gmv_eur)") == (0.19, "revenue")
+    # the formula's own identifier names the column when the label does not
+    assert I._metric_sigma([NS(sigma=0.4, column="orders"), NS(sigma=1.1, column="gmv_eur")], "GMV", "SUM(gmv_eur)") == (1.1, "gmv_eur")
+    # no name matches: the first analysed column is the metric (the planners write it first)
+    assert I._metric_sigma(stats, "margin", "SUM(x)") == (0.19, "revenue")
+    # older stat results carry no column: the first σ, as before
+    assert I._metric_sigma([NS(sigma=2.4), NS(sigma=3.1)], "revenue", "SUM(r)") == (2.4, "")
+    assert I._metric_sigma([], "revenue", "SUM(r)") == (None, "")
+    v = I.baseline_verdict(0.19, False, column="revenue")
+    assert v == {"sigma": 0.19, "significant": False, "column": "revenue", "text": "σ = 0.19 on revenue — within normal variance"}
+
+
+def test_the_stats_layer_names_the_column_each_series_verdict_is_about():
+    """Measured, not mocked: a 15-month table whose orders series swings more than its revenue."""
+    from aughor.tools.stats import analyze_query_result
+    months = [f"2025-{m:02d}-01" for m in range(7, 13)] + [f"2026-{m:02d}-01" for m in range(1, 10)]
+    revenue = [690634, 601766, 708531, 704142, 801634, 767236, 752303, 652868, 789062, 730124, 699489, 764794, 655349, 627935, 721755]
+    orders = [1100, 1000, 1150, 1120, 1300, 1250, 1200, 1050, 1280, 1180, 1120, 1240, 1060, 1063, 1500]
+    rows = [[m, r, o] for m, r, o in zip(months, revenue, orders)]
+    stats = analyze_query_result(["month", "revenue", "orders"], rows, "SELECT month, revenue, orders FROM t")
+    by_col = {s.column: s.sigma for s in stats if s.sigma is not None}
+    assert set(by_col) == {"revenue", "orders"} and by_col["orders"] > by_col["revenue"]
+    sigma, col = I._metric_sigma(stats, "revenue (gross merchandise value)", "SUM(gmv_eur)")
+    assert col == "revenue" and sigma == by_col["revenue"]
+
+
 def test_the_phase_carries_the_verdict_and_its_summary_carries_no_bracket():
     phase = I._phase_result("baseline", "Baseline", "", "complete", "Revenue rose 1.1%.", [],
                             verdict=I.baseline_verdict(0.73, False))
-    assert phase["verdict"] == {"sigma": 0.73, "significant": False, "text": "σ = 0.73 — within normal variance"}
+    assert phase["verdict"] == {"sigma": 0.73, "significant": False, "column": "", "text": "σ = 0.73 — within normal variance"}
     assert "stats.py" not in phase["summary"] and "[" not in phase["summary"]
     bare = I._phase_result("decomposition", "D", "", "complete", "AOV rose.", [])
     assert "verdict" not in bare                                       # absent on a phase code did not test
