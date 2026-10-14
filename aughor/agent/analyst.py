@@ -264,11 +264,30 @@ def _adhoc_filters(text: str, declared: Any = (), dialect: str = "") -> list[str
     return list(dict.fromkeys(out))
 
 
-def value_filters_beyond(sql: str, declared: Any = (), dialect: str = "") -> list[str]:
+def value_filters_beyond(sql: str, declared: Any = (), dialect: str = "", *,
+                         conditional: bool = False) -> list[str]:
     """The public reading of a statement's value filters beyond the ones DECLARED — what the phase
     planners' extra-filter guard (P3, `investigate._extra_filters`) and this module's result titles
-    share, so the two paths agree on what a filter is. See `_adhoc_filters`."""
-    return _adhoc_filters(sql, declared, dialect)
+    share, so the two paths agree on what a filter is. See `_adhoc_filters` for the WHERE reading.
+
+    ``conditional`` also reads the conditions of conditional aggregates — ``SUM(IF(status NOT IN
+    ('Cancelled','Returned'), sale_price, 0))``, ``CASE WHEN … THEN sale_price END`` — because a
+    planner that is refused a WHERE filter keeps the rows out that way instead (live, d4039693: the
+    baseline measured August at 335,733 through an IF the WHERE reader never saw). A title keeps the
+    WHERE reading: a CASE in a projection names the measure, not the rows read."""
+    out = list(_adhoc_filters(sql, declared, dialect))
+    if not conditional:
+        return out
+    from sqlglot import exp, parse_one
+    from aughor.sql.metric_filter_guard import same_condition
+    tree = parse_one(sql, read=dialect or None)
+    for node in tree.find_all(exp.If):
+        for cond in _and_parts(node.this):
+            piece = _value_filter(cond)
+            if piece and not any(same_condition(cond.sql(dialect=dialect or None), str(d), dialect or "duckdb")
+                                 for d in declared or ()):
+                out.append(piece)
+    return list(dict.fromkeys(out))
 
 
 #: The column roles a result's title reads — the ones `plottedMeasures` in

@@ -121,3 +121,41 @@ def test_no_prompt_asks_for_the_bold_the_code_strips():
         assert "**" not in text, name
         for ask in ("bold the", "bold it", "bolded", "bold inline", "bold lever"):
             assert ask not in text, (name, ask)
+
+
+# ── what the live proof (d4039693, 2026-10-14) added ───────────────────────────────────────
+
+COND = ("SELECT DATE_TRUNC(DATE(created_at), MONTH) AS m, SUM(IF(status NOT IN ('Cancelled','Returned'), sale_price, 0)) AS revenue "
+        "FROM order_items WHERE created_at >= '2025-08-01' GROUP BY 1")
+
+
+def test_a_filter_hidden_in_a_conditional_aggregate_is_read_too():
+    """Refused a WHERE filter, the baseline planner kept the rows out through an IF instead, and
+    measured August at 335,733 against the decomposition's 385,389."""
+    assert I._extra_filters([_q("baseline", COND)], DECLARED, "bigquery") == [("baseline", "status not in Cancelled, Returned")]
+    own = "SELECT SUM(CASE WHEN status <> 'Cancelled' THEN sale_price END) AS revenue FROM order_items"
+    assert I._extra_filters([_q("own", own)], DECLARED, "bigquery") == []
+
+
+def test_the_measures_own_conditions_are_declared_so_a_rate_is_never_asked_to_drop_them():
+    intake = {"metric_filters": [], "metric_sql": "SUM(CASE WHEN status = 'Returned' THEN 1 END) / COUNT(*)",
+              "other_measures": [{"label": "cancelled", "sql": "SUM(IF(status = 'Cancelled', 1, 0))"}]}
+    declared = I._declared_conditions(intake)
+    assert "status = 'Returned'" in declared and "status = 'Cancelled'" in declared
+    rate = "SELECT SUM(CASE WHEN status = 'Returned' THEN 1 END) / COUNT(*) AS r FROM order_items WHERE created_at >= '2026-08-01'"
+    assert I._extra_filters([_q("rate", rate)], declared, "bigquery") == []
+
+
+def test_every_phase_stamps_the_slice_note_on_its_cards():
+    """The decomposition builds its findings without `_assemble_phase_findings`; the stamp lives at
+    `_phase_result`, the seam every phase passes."""
+    capped = {"finding_id": "decomp_1", "title": "top movers", "sql": "SELECT p, d FROM t ORDER BY ABS(d) DESC LIMIT 20",
+              "columns": ["p", "d"], "rows": [[i, i] for i in range(20)], "row_count": 20, "error": None,
+              "interpretation": "", "key_numbers": [], "chart_type": "auto", "stat_note": "z = 1.2", "is_significant": False}
+    whole = {**capped, "finding_id": "decomp_0", "sql": "SELECT p, d FROM t", "stat_note": None}
+    phase = I._phase_result("decomposition", "Metric Decomposition", "", "complete", "s", [capped, whole])
+    notes = {f["finding_id"]: f.get("stat_note") or "" for f in phase["findings"]}
+    assert notes["decomp_1"].startswith("z = 1.2 A capped scan: these 20 rows are a slice")
+    assert "capped" not in notes["decomp_0"]
+    again = I._phase_result("decomposition", "Metric Decomposition", "", "complete", "s", phase["findings"])
+    assert again["findings"][0]["stat_note"].count("capped scan") == 1          # idempotent

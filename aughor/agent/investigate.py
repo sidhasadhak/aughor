@@ -2513,6 +2513,12 @@ def _phase_result(
     from aughor.agent.chart_vocab import resolve_chart_type
     for _f in findings:
         _f["chart_type"] = resolve_chart_type(_f.get("chart_type"))
+        # P3 — a capped scan says it is a slice on every phase's card, whichever path built it.
+        if _f.get("sql") and _f.get("rows") and not _f.get("error") and "capped scan" not in (_f.get("stat_note") or ""):
+            _cap = _capped_scan_note_for(_f.get("sql") or "", int(_f.get("row_count") or len(_f.get("rows") or [])))
+            if _cap:
+                _prior = (_f.get("stat_note") or "").strip()
+                _f["stat_note"] = f"{_prior} {_cap}".strip() if _prior else _cap
     return InvestigationPhaseResult(
         phase_id=phase_id,
         phase_name=phase_name,
@@ -2788,6 +2794,14 @@ def _extreme_tie_note(columns, rows) -> Optional[str]:
 
 
 _LIMIT_RE = re.compile(r"\blimit\s+(\d+)\s*$", re.I)
+
+
+def _capped_scan_note_for(sql: str, row_count: int) -> str:
+    """`_capped_scan_note` for a finding that carries its own SQL and row count — the stamp at
+    `_phase_result`, the one seam every phase's findings pass through, so a decomposition built
+    without `_assemble_phase_findings` (d4039693's 20-row top movers) says it is a slice too."""
+    from types import SimpleNamespace as _NS
+    return _capped_scan_note(_NS(sql=sql or "", row_count=row_count or 0, rows=[]))
 
 
 def _capped_scan_note(result) -> str:
@@ -5698,21 +5712,52 @@ def _extra_filters(queries, declared, dialect: str = "") -> list[tuple[str, str]
     are the window's and are never named. Read with the analyst's own filter reader, so the two
     paths agree on what a filter is; an unparsed statement names none."""
     out: list[tuple[str, str]] = []
-    try:
-        from aughor.agent.analyst import value_filters_beyond
-    except Exception:
-        return out
+    from aughor.agent.analyst import value_filters_beyond
     for q in queries or []:
         sql = getattr(q, "sql", "") or ""
         if not sql:
             continue
         try:
-            extra = value_filters_beyond(sql, declared or (), dialect or "")
-        except Exception:
+            extra = value_filters_beyond(sql, declared or (), dialect or "", conditional=True)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "an unparsed statement names no extra filter; the guard stays silent on it",
+                     counter="deep_analysis.extra_filter_parse")
             continue
         if extra:
             out.append((getattr(q, "title", "") or "", "; ".join(extra)))
     return out
+
+
+def _declared_conditions(intake_data: dict) -> list[str]:
+    """Every condition the spec DECLARES on a column's values: the governed metric's own filters
+    (`metric_filters`), and the conditions written into the metric's and the other measures' own
+    expressions — a return rate's ``CASE WHEN status = 'Returned'`` is the measure, not an extra
+    filter, and the guard must not ask for it to be removed."""
+    out: list[str] = [str(f) for f in ((intake_data or {}).get("metric_filters") or []) if str(f).strip()]
+    exprs = [str((intake_data or {}).get("metric_sql") or "")]
+    exprs += [str((m or {}).get("sql") or "") for m in ((intake_data or {}).get("other_measures") or [])]
+    try:
+        from sqlglot import exp, parse_one
+        for e in exprs:
+            if not e.strip():
+                continue
+            try:
+                tree = parse_one(f"SELECT {e} AS m FROM t")
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "a measure expression that does not parse declares no condition",
+                         counter="deep_analysis.declared_conditions_parse")
+                continue
+            for node in tree.find_all(exp.If):
+                out.append(node.this.sql())
+            for where in tree.find_all(exp.Where):
+                out.append(where.this.sql())
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "declared conditions are best-effort; the metric's own filters still count",
+                 counter="deep_analysis.declared_conditions")
+    return list(dict.fromkeys(out))
 
 
 _RELATIVE_DATE_RE = re.compile(
@@ -7808,7 +7853,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         conn, phase_id="baseline", title="Baseline & Anomaly Assessment", emoji="📊", schema=schema,
         plan_system="Write SQL queries for baseline anomaly detection. Return a JSON object with a 'queries' list." + _sql_grounding(),
         plan_user=plan_prompt,
-        declared_filters=list(intake_data.get("metric_filters") or []),
+        declared_filters=_declared_conditions(intake_data),
         interpret_system="You are a senior data analyst interpreting query results. Be precise. Cite real numbers.",
         interpret_user_fn=lambda results_text: BASELINE_INTERPRET_PROMPT.format(
             question=question, results_text=results_text, events_section=events_section,
@@ -8126,7 +8171,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
         conn, phase_id="decomposition", title="Metric Decomposition", emoji="🧩", schema=schema,
         plan_system="Write SQL for metric decomposition. Decompose the metric into additive sub-drivers." + _sql_grounding(),
         plan_user=plan_prompt,
-        declared_filters=list(intake_data.get("metric_filters") or []),
+        declared_filters=_declared_conditions(intake_data),
         interpret_system="Interpret metric decomposition results. State clearly whether volume or value drove the change.",
         interpret_user_fn=lambda results_text: DECOMPOSE_INTERPRET_PROMPT.format(
             question=question, baseline_summary=baseline_summary, results_text=results_text),
@@ -8249,7 +8294,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
         conn, phase_id="dimensional", title="Dimensional Analysis", emoji="🔬", schema=schema,
         plan_system="Write contribution-analysis SQL for each dimension. Sort by absolute_change ASC." + _sql_grounding(),
         plan_user=plan_prompt,
-        declared_filters=list(intake_data.get("metric_filters") or []),
+        declared_filters=_declared_conditions(intake_data),
         interpret_system="Interpret contribution analysis. Identify concentrated vs. diffuse decline.",
         interpret_user_fn=lambda results_text: DIMENSIONAL_INTERPRET_PROMPT.format(
             question=question, prior_summary=prior_summary, results_text=results_text),
@@ -8374,7 +8419,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         conn, phase_id="behavioral", title="Behavioral & Operational", emoji="👥", schema=schema,
         plan_system="Write SQL for behavioral and operational diagnostics." + _sql_grounding(),
         plan_user=plan_prompt,
-        declared_filters=list(intake_data.get("metric_filters") or []),
+        declared_filters=_declared_conditions(intake_data),
         interpret_system="Interpret behavioral and operational findings. Be specific about what changed.",
         interpret_user_fn=lambda results_text: BEHAVIORAL_INTERPRET_PROMPT.format(
             question=question, prior_summary=prior_summary, results_text=results_text),
