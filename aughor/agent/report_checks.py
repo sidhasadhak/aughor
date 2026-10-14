@@ -648,6 +648,33 @@ def check_claim_type(claim_type: str, prose: str) -> list[str]:
         f"the design supports {claim_type} claims only; these sentences assert more: {short} (#15)")]
 
 
+#: A currency named as a CODE in prose is a deliberate statement, and one the evidence never
+#: carries is the narrator's own. Live (1f925796, 2026-10-14) every figure in a theLook answer
+#: was written "CHF" — the data holds no currency at all, and the only CHF in the run was an
+#: example in the narrator's own style rule. Symbols ("$", "€") are left alone: a symbol is a
+#: convention a reader supplies, and the evidence rarely carries one either way.
+_CURRENCY_CODE_RE = re.compile(r"\b(USD|EUR|GBP|CHF|JPY|INR|AUD|CAD|SGD|HKD|CNY|SEK|NOK|DKK|AED|BRL|MXN)\b")
+
+
+def check_currency(prose: str, evidence: str, context: str = "") -> list[str]:
+    """Every currency code the prose states appears in the evidence (a column such as `gmv_eur`,
+    a value, a label) or in the question; one that appears nowhere is a unit the narrator
+    invented. Conservative: a prose without a code says nothing."""
+    stated = {m.group(1) for m in _CURRENCY_CODE_RE.finditer(prose or "")}
+    if not stated:
+        return []
+    seen = (evidence or "") + " " + (context or "")
+    low = seen.lower()
+    invented = sorted(c for c in stated if c.lower() not in low)
+    if not invented:
+        return []
+    codes = ", ".join(invented)
+    return [Violation(
+        f"{pitfall(36)} the figures are stated in {codes}, which no result, column or label of this run "
+        "carries — state them in the currency the evidence carries, or with no currency at all.",
+        disclosure=f"the figures were stated in {codes}, a currency no result of this run carries")]
+
+
 def _closed(text: str) -> str:
     """A field as its own sentence: stripped, and ending in terminal punctuation."""
     t = (text or "").strip()
@@ -679,6 +706,9 @@ def run_report_checks(synth: Any, question: str, evidence: str, phases: Any = No
     violations += check_question_addressed(question, prose + " " + " ".join(
         str(g) for g in (_get("data_gaps", []) or [])))
     violations += check_grounding(prose, evidence)
+    violations += check_currency(prose + " " + " ".join(
+        f"{getattr(r, 'action', '') or ''} {getattr(r, 'expected_impact', '') or ''}"
+        for r in (_get("recommendations", []) or [])), evidence, question)
     violations += check_noise_findings_not_cited(phases, prose, headline=str(_get("headline")))
     violations += check_significance_claims(phases, prose)
     violations += check_claim_type(claim_type, prose)

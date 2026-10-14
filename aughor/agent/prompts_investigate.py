@@ -179,6 +179,86 @@ Be precise. Every answer must be grounded in the schema provided.
 If something is genuinely unknowable from the schema, say so.
 """
 
+# P2 of the canvas-output study (2026-10-14) — the intake on the PE-2 diet. `INTAKE_PROMPT` above
+# is 12.9k chars: seven numbered sections and ten "(critical)" / "all mandatory" guards, each a past
+# failure written out as case law, four of them telling the model to read a PROFILE block that is
+# EMPTY on the analyst path. Nearly every guard has a verifier that runs AFTER the model answers —
+# `_validate_intake_metric_table`, `_validate_intake_dimensions` and `_validate_intake_windows`
+# with one named-correction retry; `_resolve_date_column`; `_clamp_intake_to_coverage`;
+# `periods_asked`; the cross-sectional and temporal-change routers; `_pin_canonical_metric`; the
+# money-coherence and over-count retries; `_drop_self_referential_segment`; the loss directive —
+# so the prose was prophylaxis on top of enforcement. A capable binding gets the ASK: what each
+# field means and the judgments only the model can make (which measure, which reading of "loss",
+# which columns a relationship's words refer to); the checks do the rest. A baseline model keeps
+# the long form, as the narrator's `BASELINE_GUARDRAILS` do.
+INTAKE_ASK = """\
+You are a senior data analyst reading a business question into an investigation specification. \
+The schema below is the whole of what exists: every table and column you name is in it, spelled \
+as it shows them.
+
+QUESTION: {question}
+
+SCHEMA:
+{schema}
+
+{scan_section}{sql_context}
+
+{events_section}
+{origin_finding_section}
+Fill the specification from the question and the schema.
+
+MEASURES — what the question asks to measure. The first goes in metric_label / metric_sql, every \
+other one in other_measures, one aggregate expression each. A CANONICAL METRIC listed below whose \
+name matches is used verbatim, its filters included: the governed formula is the authority. A money \
+question (revenue, sales, cost, margin, losing money) is measured in money, never by a count, a \
+rating or a review. "Losing money" is a negative outcome, not spend: a refund, write-off or \
+chargeback amount; else a margin (revenue minus cost); else the value of reversed transactions \
+(returned, cancelled, refunded); else unsold stock — name the reading you took in intake_notes, \
+because a bare spend total answers only a question about spend. A quantity the question names (a \
+delay, a duration, an amount) is measured as the quantity, not as a 0/1 flag that marks it: the \
+flag answers "how often", the question asked "how much".
+
+OBSERVATION PERIOD — the period the question names, as ISO dates; none when it names none, and \
+the answer then covers all the data. A question about a change that names no period takes the \
+most recent complete period. The clock above says which day is settled.
+
+COMPARISON — only when the question compares periods or asks why something changed: the period of \
+the same length before the observation, and the same period a year earlier when the data reaches \
+it. Otherwise every comparison field stays empty.
+
+WHERE, WHICH and DRIVER questions — cross_sectional is true when the question asks which segment is \
+weakest, strongest or losing, or whether one thing affects another: the answer compares groups, \
+not periods. For a driver or relationship question name both sides: comparison_segment_sql is the \
+condition (a boolean or CASE expression on a column the metric does not already read), and \
+relationship_left_sql / relationship_right_sql are the columns the question's words refer to — \
+the most specific column on the right, the others carrying the same concept in \
+relationship_right_alternatives. An intervention_column only when the data records an assignment \
+someone applied: a treatment arm, a variant, a policy from a date.
+
+DATE COLUMN — the table.column of the primary transaction timestamp, a DATE or TIMESTAMP column. \
+When the metric table has none, one reachable by a join, with the join in intake_notes. Populate \
+it whenever the schema has one, whatever the question's shape.
+
+METRIC TABLE — the table that holds the metric, exactly as the schema names it, prefix included.
+
+DIMENSIONS — the categorical table.columns a reader could cut the metric by, up to 8.
+
+STATUS — when the metric table carries a status column, say in intake_notes which values look \
+terminal; filter on it only when the question asks about completed or valid transactions, and \
+say that you did.
+
+intake_notes carries every judgment above a reader would need to follow. What the schema cannot \
+answer, say.
+"""
+
+
+def intake_prompt(capable: bool) -> str:
+    """The intake template for one binding: the ask for a capable model, the long form for a
+    baseline one (PE-2's tiering rule — prose a stronger model makes unnecessary is a restriction,
+    scaled with the model; the checks run for every tier)."""
+    return INTAKE_ASK if capable else INTAKE_PROMPT
+
+
 # ── Phase 2: Baseline & anomaly detection ────────────────────────────────────
 
 BASELINE_PLAN_PROMPT = """\
@@ -206,8 +286,16 @@ Write 2–3 SQL queries to:
   3. Compute a z-score: how many standard deviations is the observation from the
      trailing baseline mean (EXCLUDE the observation period from baseline stats)?
 
+{sql_rules}
+
+Return the queries with a short title and chart_type for each.
+"""
+
+#: The long-form rules the baseline template carried, kept for a BASELINE-tier model (P3). The
+#: "DuckDB dialect only" line is gone from every tier: the SQL DIALECT line names the engine, and
+#: this one contradicted it on every BigQuery and Postgres connection.
+_BASELINE_SQL_RULES = """\
 SQL RULES:
-  - DuckDB dialect only
   - ALWAYS use the exact table names shown in the SCHEMA, including schema prefix (e.g. ecommerce.orders)
   - DATE_TRUNC for period alignment
   - NULLIF(x, 0) before every division
@@ -226,10 +314,7 @@ SQL RULES:
   - NO EXTRA FILTERS: Only filter on the date range specified above. Do NOT add
     filters on status, amount thresholds, delay days, price bands, or any other column
     unless the investigation spec explicitly requires it. Arbitrary extra WHERE clauses
-    will bias the results by excluding the majority of rows.
-
-Return the queries with a short title and chart_type for each.
-"""
+    will bias the results by excluding the majority of rows."""
 
 BASELINE_INTERPRET_PROMPT = """\
 INVESTIGATION: "{question}"
@@ -303,12 +388,15 @@ Use the CASE WHEN date pattern to compare periods in a single query:
   SUM(CASE WHEN {date_column} >= '{comp_start}' AND {date_column} < date '{comp_end}' + INTERVAL 1 DAY
            THEN metric ELSE 0 END) AS comp_value
 
-SQL RULES: DuckDB, NULLIF, DATE_TRUNC, compact output.
+{sql_rules}
+"""
+
+_DECOMPOSE_SQL_RULES = """\
+SQL RULES: NULLIF, DATE_TRUNC, compact output.
   TABLE NAMES: Use table names exactly as shown in SCHEMA — no added/removed prefixes.
   Never CAST an _id/_key/_code column as DATE. If the date_column is in a joined table, JOIN to reach it.
   NO EXTRA FILTERS: Only filter on the two date ranges above. Do NOT add filters on status, amount,
-  or any other column beyond what the metric_sql expression already includes. All rows count.
-"""
+  or any other column beyond what the metric_sql expression already includes. All rows count."""
 
 DECOMPOSE_INTERPRET_PROMPT = """\
 INVESTIGATION: "{question}"
@@ -325,7 +413,7 @@ For each query, interpret what sub-metric drove the overall change.
 
 Write clear, number-anchored interpretations. Cite values from the data. Use NO markdown emphasis — no bold, no italics.
 State the key_numbers that demonstrate the decomposition.
-phase_summary: "The decline was driven by X (**Y%**), not Z" — bold the share; be definitive if the data supports it.
+phase_summary: "The decline was driven by X (Y%), not Z" — be definitive if the data supports it.
 """
 
 # ── Phase 4: Dimensional drill-down ──────────────────────────────────────────
@@ -359,22 +447,21 @@ Write 1 SQL query per dimension (up to 4 dimensions). Each query must:
 CONTRIBUTION FORMULA (use window function):
   ROUND(100.0 * (obs - comp) / NULLIF(SUM(obs - comp) OVER (), 0), 1) AS contribution_pct
 
-DIMENSION PRIORITY — analyse in this order (the list above is already sorted):
-  1st: Customer type / segment (new vs returning — splits the entire cause tree)
-  2nd: Channel / acquisition source (points to a team or budget)
-  3rd: Product category / business line (assortment or pricing issue)
-  4th: Geography / region (logistics, local competition, macro)
-  Lower priority: device, payment method, price band
+The dimensions above are listed in the order to analyse them; with fewer than 4, analyse what exists.
 
-If fewer than 4 dimensions are available, analyse what exists in priority order.
+{sql_rules}
+"""
 
-SQL RULES: DuckDB, NULLIF, compact output (≤ 15 rows per query).
+#: P3 — the retail "DIMENSION PRIORITY" paragraph (customer type › channel › category › geography)
+#: is gone from both tiers: the list the prompt receives is already in order (`_prioritize_dimensions`,
+#: the question's own cuts first), and the paragraph restated one industry's ranking to every connection.
+_DIMENSIONAL_SQL_RULES = """\
+SQL RULES: NULLIF, compact output (≤ 15 rows per query).
   TABLE NAMES: Use table names exactly as shown in SCHEMA — no added/removed prefixes.
   Never CAST an _id/_key/_code column as DATE. If the date_column is in a joined table, JOIN to reach it.
   NO EXTRA FILTERS: Filter ONLY on the two date ranges above (observation vs comparison).
   Do NOT add filters on status, price range, delay, or any other attribute. All rows count —
-  adding extra filters will silently exclude data and produce biased contribution numbers.
-"""
+  adding extra filters will silently exclude data and produce biased contribution numbers."""
 
 DIMENSIONAL_INTERPRET_PROMPT = """\
 INVESTIGATION: "{question}"
@@ -399,8 +486,8 @@ For each dimension analysed (ONLY when a real baseline is present), interpret th
 
 Write dimension-by-dimension findings with specific numbers. Use NO markdown emphasis.
 Highlight the SINGLE most actionable finding across all dimensions.
-phase_summary: when a baseline exists and concentration exists, "**X%** of the total decline came from
-[dimension: value]" (bold the share); when the baseline is missing, state that no prior-period data is
+phase_summary: when a baseline exists and concentration exists, "X% of the total decline came from
+[dimension: value]"; when the baseline is missing, state that no prior-period data is
 available so the late-period change cannot be attributed to any segment.
 """
 
@@ -554,7 +641,7 @@ For EACH dimension, write a finding:
 Be honest: if a dimension is healthy or evenly spread, say it is NOT a problem area.
 
 phase_summary: one sentence naming where value is most concentrated or weakest — lead with the
-decisive number (bold it), e.g. "Losses concentrate in **11** underperforming franchises (< $1,000 each)."
+decisive number, e.g. "Losses concentrate in 11 underperforming franchises (< $1,000 each)."
 """
 
 # Ratio-metric variant: the metric is a percentage / rate / per-unit ratio, so metric_total must be
@@ -585,7 +672,7 @@ For EACH dimension, write a finding:
     by what the ratio MEASURES — do NOT assume the minimum is the problem. Only call a value
     'weak'/'a problem'/'underperforming' if it is clearly adverse versus a benchmark or a genuine
     outlier far from the rest. If the ratios are tightly clustered, say so and use relative language
-    ("the lowest at **2.2%** vs the ~4.3% of the rest").
+    ("the lowest at 2.2% vs the ~4.3% of the rest").
   - key_numbers: the 1–3 most telling values — include the ratio, and the numerator or denominator
     where it explains the result.
   - chart_type: "magnitude" (a ranked bar), or "change" when the measure is a signed delta
@@ -597,7 +684,7 @@ Be honest: if the ratios are evenly spread, say it is NOT a problem area. If the
 FAVOURABLE direction, say so explicitly rather than framing it as a weakness.
 
 phase_summary: one sentence naming where the ratio is highest/lowest and whether it actually matters
-— lead with the decisive number (bold it) and the correct direction, e.g. "Freight runs **2.2%** of
+— lead with the decisive number and the correct direction, e.g. "Freight runs 2.2% of
 order value in Germany vs ~4.3% elsewhere — the LOWEST cost ratio, a strength rather than a weakness."
 """
 
@@ -648,14 +735,37 @@ Return max 4 queries total. Prioritise TARGETED queries over generic ones.
 If a required table (sessions, refunds, inventory, etc.) does not exist in the schema above,
 set sql to null and provide a one-line explanation in rationale — do NOT fabricate table names.
 
-SQL RULES: DuckDB, NULLIF, compact output (≤ 15 rows per query).
+{sql_rules}
+"""
+
+_BEHAVIORAL_SQL_RULES = """\
+SQL RULES: NULLIF, compact output (≤ 15 rows per query).
   TABLE NAMES: Use table names exactly as shown in SCHEMA — no added/removed prefixes.
   Never CAST an _id/_key/_code column as DATE. If the date_column is in a joined table, JOIN to reach it.
   NO EXTRA FILTERS: Filter only on the date ranges above and the specific segment from the dominant
   finding. Do NOT add filters on amount, status, delay days, price bands, or unrelated attributes.
   Column aliases must match the actual schema column name or a clearly descriptive label — never
-  alias a column with a name that belongs to a different schema column (e.g. don't alias utm_source as plan_type).
-"""
+  alias a column with a name that belongs to a different schema column (e.g. don't alias utm_source as plan_type)."""
+
+#: P3 — what a capable model is told about its SQL, once. Each sentence is a guard that runs on the
+#: planned query: a window anchored on today is re-planned (`_uses_relative_date`), a join that
+#: fans the metric out is re-planned and caveated (the Verifier), a filter the spec does not declare
+#: is re-planned and caveated (`_extra_filters`), and a name the schema lacks fails at execution
+#: and is retried with the hint. The long blocks above repeated these as prose in four prompts.
+_SQL_RULES_ASK = """\
+SQL: the schema's names exactly as shown, prefix included; the metric's own table at its own grain,
+with a dimension reached through its lookup table's unique key; NULLIF before a division; filter only
+on the windows above and the metric's declared filter — a query that anchors on today's date, fans the
+metric out across a join, or keeps rows by any other column is sent back once to be rewritten."""
+
+_PLAN_SQL_RULES = {"baseline": _BASELINE_SQL_RULES, "decompose": _DECOMPOSE_SQL_RULES,
+                   "dimensional": _DIMENSIONAL_SQL_RULES, "behavioral": _BEHAVIORAL_SQL_RULES}
+
+
+def plan_sql_rules(phase: str, capable: bool) -> str:
+    """The SQL rules a phase planner reads: the ask for a capable binding, the phase's long-form
+    block for a baseline one (the narrator's and the intake's tiering, applied to the planners)."""
+    return _SQL_RULES_ASK if capable else _PLAN_SQL_RULES[phase]
 
 BEHAVIORAL_INTERPRET_PROMPT = """\
 INVESTIGATION: "{question}"
@@ -724,8 +834,7 @@ quoted from its TOTAL line; a result with none gets no total.
 cause" and name what to check next. A negligible spread is negligible — say so; never \
 present a tiny sub-segment reversal as the driver.
 - Signs: losses/declines NEGATIVE, gains POSITIVE, the same quantity never flips sign \
-anywhere. Waterfall entries account for ~100% of the change (add "Unexplained / \
-residual" if short); amount_label and pct_of_total share their sign.
+anywhere.
 - confidence: HIGH = phases converge, attribution ~complete · MEDIUM = cause found, \
 gaps remain · LOW = evidence cannot discriminate.
 - recommendations: for controllable causes and material gaps; at least one whenever a \
@@ -933,9 +1042,16 @@ class WaterfallEntryModel(BaseModel):
 
 class AnswerRecommendationModel(BaseModel):
     action: str
-    expected_impact: str
-    owner: str
-    timeline: str
+    # P4 (canvas-output study, 2026-10-14): the three were REQUIRED, so the narrator invented them —
+    # "Logistics Operations", "2026-10-30" — and the page printed the inventions. Each is asked only
+    # when the evidence holds it; the page prints only what is there.
+    expected_impact: str = Field(default="", description=(
+        "Only when the evidence supports a figure or a direction for this action; otherwise empty — "
+        "never an estimate."))
+    owner: str = Field(default="", description=(
+        "Only when the data or the question names who owns this; otherwise empty — never a guess at a team."))
+    timeline: str = Field(default="", description=(
+        "Only when the data or the question names when; otherwise empty — never an invented date."))
 
 
 class CausalLinkModel(BaseModel):
@@ -967,31 +1083,69 @@ class ADASynthesisModel(BaseModel):
     )
 
 
+#: P4 — what the narrator is asked for when no waterfall can exist: `ADASynthesisModel` minus
+#: `attribution_waterfall`. A waterfall apportions a CHANGE among its CAUSES, so it is asked for
+#: only under a causal licence on a change question; measured on 88 stored reports it was empty
+#: in 86 (forced empty on every cross-sectional run), while three of the seven narrator rules
+#: and two checks governed it. Derived from the full model, like `IntakeAsk`, so the two cannot
+#: drift; `widen_synthesis` turns an answer back into the full model with an empty waterfall.
+def _build_synthesis_ask_model():
+    from pydantic import create_model
+    keep = {n: (f.annotation, f) for n, f in ADASynthesisModel.model_fields.items()
+            if n != "attribution_waterfall"}
+    return create_model("SynthesisAsk", __doc__=ADASynthesisModel.__doc__, **keep)
+
+
+SynthesisAsk = _build_synthesis_ask_model()
+
+
+def synthesis_ask_model(waterfall: bool):
+    """The response model for one narrator call: the full model when a waterfall is asked for,
+    else the same model without that field."""
+    return ADASynthesisModel if waterfall else SynthesisAsk
+
+
+def widen_synthesis(asked) -> ADASynthesisModel:
+    """The narrator's answer as a full `ADASynthesisModel`; a waterfall not asked for is empty."""
+    if asked is None or isinstance(asked, ADASynthesisModel):
+        return asked
+    return ADASynthesisModel(attribution_waterfall=[], **asked.model_dump())
+
+
 # R16 P2 — the argument-style writing contract.
 # Distilled from the report-style study (docs/REPORT_STYLE_STUDY_2026-07-16.md):
 # the strongest analyst reports ARGUE in prose — a verdict first, numbers bold
 # inline in sentences, entities named by their identifiers, causes hedged
 # honestly. Always appended to the synthesis system prompt.
 ARGUMENT_STYLE_ADDENDUM = """WRITING STYLE — argue like an analyst, not a dashboard:
-- Every figure that matters appears **bold inline** in a sentence ("operates at **74.5%** capacity vs **77.2%** on short-haul"). Never assume the UI will surface a number for you.
-- Name entities by their identifier exactly as they appear in the data (route GVA-DEL, customer CU0036204). When ranking, list at most three as compact bullets: "**GVA-DEL**: 65.2% load factor (168K CHF per flight)".
-- executive_summary: the verdict sentence FIRST, then one sentence per major claim, each carrying its own bolded number. 3-5 sentences total — length discipline is credibility.
-- recommendations: each one is an object whose action is one line — imperative verb + **bold lever**; quantify expected_impact when the evidence supports a number, otherwise omit the number rather than invent one.
+- Every figure that matters appears inline in a sentence ("operates at 74.5% capacity vs 77.2% on short-haul"). Never assume the UI will surface a number for you.
+- Name entities by their identifier exactly as they appear in the data (route GVA-DEL, customer CU0036204). When ranking, list at most three as compact bullets: "GVA-DEL: 65.2% load factor (168K per flight)". Figures carry the currency the evidence carries, or none — never a currency it does not.
+- executive_summary: the verdict sentence FIRST, then one sentence per major claim, each carrying its own number. 3-5 sentences total — length discipline is credibility.
+- recommendations: each one is an object whose action is one line — imperative verb + the lever; quantify expected_impact when the evidence supports a number, otherwise omit the number rather than invent one.
 - Causes are hypotheses until proven: hedge honestly ("likely", "consistent with", "operationally impossible → points to a data-quality issue"). Never present a hypothesis as a finding."""
 
 
-def synthesis_system_prompt() -> str:
+#: The waterfall's own rule — in the system prompt only on a call that asks for one (P4).
+WATERFALL_RULE = ("- attribution_waterfall: entries account for ~100% of the change (add \"Unexplained / "
+                  "residual\" if short); amount_label and pct_of_total share their sign.")
+
+
+def synthesis_system_prompt(waterfall: bool = True) -> str:
     """The narrator's system prompt. R16 P2: the argument-style writing contract
     above is appended, so the prose argues like an analyst instead of pointing at a
     dashboard. Lives here (not investigate.py) both because it is a prompt and
     because module-level functions in investigate.py are auto-wrapped by the
-    node-span instrumentation, which expects a `state` argument."""
+    node-span instrumentation, which expects a `state` argument.
+
+    ``waterfall`` says whether this call asks for one (`synthesis_ask_model`); its rule rides
+    only then — a rule for a field the call does not carry is a rule for nothing."""
     base = (
         "You are a senior data analyst writing a board-level investigation report. "
         "Every number must trace to the evidence log. No fabrication. "
         "Be definitive where evidence is strong; honest about uncertainty where it isn't."
     )
-    parts = [base, ARGUMENT_STYLE_ADDENDUM, SYNTHESIS_CORE_RULES]
+    rules = SYNTHESIS_CORE_RULES + ("\n" + WATERFALL_RULE if waterfall else "")
+    parts = [base, ARGUMENT_STYLE_ADDENDUM, rules]
     # PE-2 tiering: the long-form guardrails ride along only for BASELINE-tier
     # narrators. Fail to the conservative register — an unresolvable binding means a
     # bare harness or broken config, exactly where the verbose guidance is safest.

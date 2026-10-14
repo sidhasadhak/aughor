@@ -1054,12 +1054,10 @@ def _claim_licence_section(intake_data: dict, phases: list) -> str:
             why = line.split("—", 1)[-1].strip()
             break
     out = "\n\n" + admissible_verbs_directive(claim_type, why or "by the design of this analysis")
+    # P4 — below a causal licence the waterfall is no longer ASKED for (`synthesis_ask_model`), so
+    # the paragraph that told the model to leave it empty has nothing left to say.
     if not is_at_least(claim_type, "causal"):
-        out += (
-            "\n\nATTRIBUTION WATERFALL — leave `attribution_waterfall` EMPTY and "
-            "`total_change_label` blank. A waterfall decomposes a change into the causes that "
-            "produced it; this analysis measured a relationship, not a change, and has no "
-            "causes to apportion. Inventing an entry to fill the field is a fabricated cause.")
+        out += "\n\nTOTAL CHANGE — leave `total_change_label` blank: this analysis measured a relationship, not a change."
     return out
 
 
@@ -2490,6 +2488,11 @@ def _results_text_with_verdicts(results, max_rows: Optional[int] = None,
                     "STATISTICAL VERDICT for this query — it OVERRIDES what the shares below "
                     "suggest. A PROPORTIONAL split is NOT a finding: do not call it "
                     "concentration, a driver, or a place to act. " + _conc)
+        # P3 — a slice says it is one, to the narrator about to read it as the whole.
+        if not getattr(r, "error", None) and getattr(r, "rows", None) and not (verdict and "capped scan" in verdict):
+            _cap = _capped_scan_note(r)
+            if _cap:
+                parts.append("STATISTICAL VERDICT for this query — it OVERRIDES what the rows below suggest. " + _cap)
         parts.append(format_result_for_llm(r, max_rows=max_rows))
     return "\n\n".join(parts)
 
@@ -2510,6 +2513,12 @@ def _phase_result(
     from aughor.agent.chart_vocab import resolve_chart_type
     for _f in findings:
         _f["chart_type"] = resolve_chart_type(_f.get("chart_type"))
+        # P3 — a capped scan says it is a slice on every phase's card, whichever path built it.
+        if _f.get("sql") and _f.get("rows") and not _f.get("error") and "capped scan" not in (_f.get("stat_note") or ""):
+            _cap = _capped_scan_note_for(_f.get("sql") or "", int(_f.get("row_count") or len(_f.get("rows") or [])))
+            if _cap:
+                _prior = (_f.get("stat_note") or "").strip()
+                _f["stat_note"] = f"{_prior} {_cap}".strip() if _prior else _cap
     return InvestigationPhaseResult(
         phase_id=phase_id,
         phase_name=phase_name,
@@ -2787,6 +2796,29 @@ def _extreme_tie_note(columns, rows) -> Optional[str]:
 _LIMIT_RE = re.compile(r"\blimit\s+(\d+)\s*$", re.I)
 
 
+def _capped_scan_note_for(sql: str, row_count: int) -> str:
+    """`_capped_scan_note` for a finding that carries its own SQL and row count — the stamp at
+    `_phase_result`, the one seam every phase's findings pass through, so a decomposition built
+    without `_assemble_phase_findings` (d4039693's 20-row top movers) says it is a slice too."""
+    from types import SimpleNamespace as _NS
+    return _capped_scan_note(_NS(sql=sql or "", row_count=row_count or 0, rows=[]))
+
+
+def _capped_scan_note(result) -> str:
+    """The sentence a result that hit its own LIMIT carries, whatever its shape: the rows are a
+    slice in the query's own order, and the groups beyond it — the largest movers in the other
+    direction among them — are not here. The rate ranking already said this (`_ranking_noise_caveat`);
+    a contribution scan sorted worst-first did not, and `55e58a3b` (2026-10-14) read its 15-row
+    slice as "no category above 3.8% of the change" while the decomposition two cards up showed
+    Outerwear at 13.8%."""
+    if not _hit_row_cap(result):
+        return ""
+    n = int(getattr(result, "row_count", 0) or len(getattr(result, "rows", None) or []))
+    return (f"A capped scan: these {n} rows are a slice in the query's own order, not the whole "
+            "dimension — groups beyond the cap, the largest movers in the other direction among them, "
+            "are not shown, so nothing here says what the largest group is or that no group exceeds a value.")
+
+
 def _hit_row_cap(result) -> bool:
     """True when the result returned exactly as many rows as its own LIMIT allowed — the
     only evidence available here that the reader is looking at a slice rather than the
@@ -2997,6 +3029,12 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
             _tie = _extreme_tie_note(r.columns, r.rows)
             if _tie:
                 f["stat_note"] = _tie
+        # P3 — a capped scan is a slice, and the finding says so where the reader sees it.
+        if not r.error and r.rows and "capped scan" not in (f.get("stat_note") or ""):
+            _cap = _capped_scan_note(r)
+            if _cap:
+                _prior = (f.get("stat_note") or "").strip()
+                f["stat_note"] = f"{_prior} {_cap}".strip() if _prior else _cap
         # Exposure normalisation — the leading group leads almost any additive metric BY BEING
         # LARGEST, so a share-of-total without a share-of-population beside it restates group size
         # and reads as a finding. APPENDED, never conditional on stat_note being empty: a tie note
@@ -4187,6 +4225,28 @@ def _trim_to_boundary(text: str, budget: int) -> str:
         return cut[:ends[-1]]
     words = cut.rsplit(" ", 1)[0].rstrip(" ,;:—-")
     return (words or cut) + "…"
+
+
+def _phases_cited(phases: list, cited_ids: list[str]) -> tuple[list, list[tuple[str, str]]]:
+    """P4 — the phases as the narrator reads them on an analyst turn that concluded: copies
+    holding only the findings the analyst cited (in their phase order), a phase left with none
+    hidden; and the results it did not cite, as ``(finding_id, title)``. The stored phases are
+    not touched — the report keeps every result, the page names the uncited ones under Sources."""
+    cited = set(cited_ids or [])
+    out: list = []
+    uncited: list[tuple[str, str]] = []
+    for p in phases or []:
+        findings = list(p.get("findings") or [])
+        kept = [f for f in findings if str(f.get("finding_id")) in cited]
+        for f in findings:
+            if str(f.get("finding_id")) not in cited and (f.get("rows") or f.get("error")) and p.get("phase_id") != "intake":
+                uncited.append((str(f.get("finding_id")), str(f.get("title") or "")))
+        copy = dict(p)
+        copy["findings"] = kept
+        if not kept and p.get("phase_id") != "intake":
+            copy["_hidden"] = True
+        out.append(copy)
+    return out, uncited
 
 
 def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
@@ -5612,6 +5672,94 @@ _ADA_SQL_GROUNDING = (
 )
 
 
+def _coder_capable() -> bool:
+    """Whether the coder binding earned the CAPABLE tier — the switch every prompt diet turns on
+    (the narrator's, the intake's, the planners'). Resolution fails to False, the conservative
+    register, exactly as the narrator's does."""
+    try:
+        from aughor.llm.profile import profile_for
+        return bool(profile_for("coder").capable)
+    except Exception:
+        return False
+
+
+def _sql_grounding() -> str:
+    """P3 — the shared SQL grounding paragraph rides a planner's system prompt only for a
+    BASELINE binding; a capable one reads the one-paragraph ask inside its plan prompt
+    (`prompts_investigate.plan_sql_rules`), and the guards on the planned query do the rest."""
+    return "" if _coder_capable() else _ADA_SQL_GROUNDING
+
+
+def _sql_rules_for(phase: str) -> str:
+    from aughor.agent.prompts_investigate import plan_sql_rules
+    return plan_sql_rules(phase, _coder_capable())
+
+
+#: P3 — the caveat a finding carries when its query kept rows by a filter the spec never
+#: declared and the one corrective re-plan did not remove it. Live (1f925796, 2026-10-14): the
+#: decomposition's query added `status NOT IN ('Cancelled','Returned')` to a metric declared over
+#: `status <> 'Cancelled'`, measured August at 335,733 against the baseline's 385,389, and the
+#: narrator wrote one story over both. The prompt's "NO EXTRA FILTERS" rule was prose; this is
+#: the check.
+_EXTRA_FILTER_CAVEAT = ("extra filter: this query keeps rows by {filters} — a condition the metric's "
+                        "definition does not carry — so its totals are over a narrower population than "
+                        "the baseline's and cannot be reconciled to it.")
+
+
+def _extra_filters(queries, declared, dialect: str = "") -> list[tuple[str, str]]:
+    """``(query title, the filter in words)`` for every planned query whose WHERE keeps rows by a
+    column's values beyond the filters the spec DECLARES (the governed metric's own). Date bounds
+    are the window's and are never named. Read with the analyst's own filter reader, so the two
+    paths agree on what a filter is; an unparsed statement names none."""
+    out: list[tuple[str, str]] = []
+    from aughor.agent.analyst import value_filters_beyond
+    for q in queries or []:
+        sql = getattr(q, "sql", "") or ""
+        if not sql:
+            continue
+        try:
+            extra = value_filters_beyond(sql, declared or (), dialect or "", conditional=True)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "an unparsed statement names no extra filter; the guard stays silent on it",
+                     counter="deep_analysis.extra_filter_parse")
+            continue
+        if extra:
+            out.append((getattr(q, "title", "") or "", "; ".join(extra)))
+    return out
+
+
+def _declared_conditions(intake_data: dict) -> list[str]:
+    """Every condition the spec DECLARES on a column's values: the governed metric's own filters
+    (`metric_filters`), and the conditions written into the metric's and the other measures' own
+    expressions — a return rate's ``CASE WHEN status = 'Returned'`` is the measure, not an extra
+    filter, and the guard must not ask for it to be removed."""
+    out: list[str] = [str(f) for f in ((intake_data or {}).get("metric_filters") or []) if str(f).strip()]
+    exprs = [str((intake_data or {}).get("metric_sql") or "")]
+    exprs += [str((m or {}).get("sql") or "") for m in ((intake_data or {}).get("other_measures") or [])]
+    try:
+        from sqlglot import exp, parse_one
+        for e in exprs:
+            if not e.strip():
+                continue
+            try:
+                tree = parse_one(f"SELECT {e} AS m FROM t")
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "a measure expression that does not parse declares no condition",
+                         counter="deep_analysis.declared_conditions_parse")
+                continue
+            for node in tree.find_all(exp.If):
+                out.append(node.this.sql())
+            for where in tree.find_all(exp.Where):
+                out.append(where.this.sql())
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "declared conditions are best-effort; the metric's own filters still count",
+                 counter="deep_analysis.declared_conditions")
+    return list(dict.fromkeys(out))
+
+
 _RELATIVE_DATE_RE = re.compile(
     r"\bcurrent_date\b|\bcurrent_timestamp\b|\bsysdate\b|\b(?:now|getdate|date_sub|date_add|dateadd)\s*\(",
     re.IGNORECASE,
@@ -6337,7 +6485,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     (falling back to the schema-string parse) when a connection isn't supplied.
     """
     from aughor.agent.prompts_investigate import (
-        INTAKE_PROMPT, IntakeAsk, IntakeOutput)
+        IntakeAsk, IntakeOutput)
 
     question = state["question"]
     # Size the intake caps to the bound model's window (Layer A, §5b.3): unchanged on a
@@ -6363,10 +6511,21 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # clamp then cut the end to 1 September, and the spec said five months (2026-09-30).
     from aughor.agent.sql_context import learned_settle_days, sql_context as _sql_context
     _settle_days = learned_settle_days(state.get("connection_id") or "")
-    prompt = INTAKE_PROMPT.format(
+    # P2 — a capable binding reads the ask (`INTAKE_ASK`); a baseline one the long form. The
+    # profile block is a section only when there is one: on the analyst path it is empty, and
+    # the long form told the model to read it anyway. Resolution fails to the long form — the
+    # conservative register — exactly as the narrator's tiering does.
+    try:
+        from aughor.llm.profile import profile_for
+        _capable = profile_for("coder").capable
+    except Exception:
+        _capable = False
+    from aughor.agent.prompts_investigate import intake_prompt
+    prompt = intake_prompt(_capable).format(
         question=question,
         schema=schema,
         scan_context=scan,
+        scan_section=f"PROFILE CONTEXT (date ranges, row counts, key columns):\n{scan}\n\n" if scan.strip() else "",
         sql_context=_sql_context(conn, settle_days=_settle_days),
         events_section=events_section,
         origin_finding_section=origin_finding_section,
@@ -7112,11 +7271,14 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             # the question's wording. A cross-sectional question over dated data still trends.
             has_time_axis=(intake.date_column or "").strip().upper() not in ("", "NONE"),
         )
-        plan_dict = plan.to_dict()
-        from aughor.agent.handoff import emit_handoff
-        emit_handoff("orchestrator", "analyst", "intake",
-                     {"plan": plan.summary(), "planned_ids": plan.planned_ids},
-                     conn_id=state.get("connection_id") or None)
+        # P4 — an analyst turn declares no plan: the analyst chooses its own slices, and a plan
+        # it never follows was reconciled as "skipped" on 87 of 88 stored reports (2026-10-14).
+        plan_dict = None if state.get("analyst_turn") else plan.to_dict()
+        if plan_dict is not None:
+            from aughor.agent.handoff import emit_handoff
+            emit_handoff("orchestrator", "analyst", "intake",
+                         {"plan": plan.summary(), "planned_ids": plan.planned_ids},
+                         conn_id=state.get("connection_id") or None)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "orchestration plan", counter="orchestrator")
@@ -7240,6 +7402,7 @@ def run_analysis_phase(
     sql_context: str = "",
     sql_transform=None,
     coverage_end: Optional[str] = None,   # CA-0: the data's last date, for the partial-period verdict
+    declared_filters: Optional[list] = None,   # P3: the spec's own filters; None → the extra-filter guard is off
 ) -> "_PhaseRun":
     """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every deep-analysis phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
@@ -7410,6 +7573,49 @@ def run_analysis_phase(
                 _fanout_caveat = _FANOUT_CAVEAT
     except Exception:
         _fanout_caveat = None
+
+    # Extra-filter guard (P3) — a planner that keeps rows by a column the spec never declared
+    # measures a narrower population than the baseline, and the narrator then reconciles two
+    # totals in words (1f925796). The prompt rule is advisory; this detects, re-plans once, and
+    # caveats what the re-plan did not remove — on the same channel the fan-out guard uses.
+    if declared_filters is not None and not _preplanned and plan and plan.queries:
+        try:
+            _dialect_ef = getattr(conn, "dialect", "") or ""
+            _extra = _extra_filters(plan.queries, declared_filters, _dialect_ef)
+            if _extra:
+                from aughor.stats import stats as _sef
+                _sef.inc("deep_analysis.extra_filter_guard_retries")
+                from aughor.agent.progress import emit_guard_receipt as _egr_ef
+                _egr_ef("extra_filter_replan", "replanned_queries",
+                        detail="; ".join(f"{t or 'query'}: {f}" for t, f in _extra)[:400])
+                _declared_words = "; ".join(str(d) for d in declared_filters) or "none"
+                try:
+                    _fixed = _provider("coder").complete(
+                        system=plan_system_eff,
+                        user=plan_user + (
+                            "\n\nCORRECTION REQUIRED — EXTRA FILTER: a previous attempt kept rows by a "
+                            "condition the metric's definition does not carry: "
+                            + "; ".join(f"'{t or 'query'}' keeps {f}" for t, f in _extra)
+                            + f". The metric's declared filter is: {_declared_words}. Filter only on the "
+                            "date windows above and that declared filter; remove every other condition "
+                            "on a column's values. Do not change what the metric measures."),
+                        response_model=PhasePlan)
+                    if _fixed and _fixed.queries:
+                        plan = _fixed
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "extra-filter re-plan is best-effort; the original plan still runs",
+                             counter="deep_analysis.extra_filter_guard.replan_failed")
+                _still = _extra_filters(plan.queries, declared_filters, _dialect_ef)
+                if _still and _fanout_caveat is None:
+                    _sef.inc("deep_analysis.extra_filter_guard_unresolved")
+                    _egr_ef("extra_filter_replan", "caveated",
+                            detail="the re-plan still keeps the filter; the result will carry a caveat")
+                    _fanout_caveat = _EXTRA_FILTER_CAVEAT.format(
+                        filters="; ".join(dict.fromkeys(f for _, f in _still)))
+        except Exception as _ef_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_ef_exc, "extra-filter guard is best-effort", counter="deep_analysis.extra_filter_guard")
 
     # Step 2 — execute (parallel — each query gets its own reader connection)
     # Caller's deterministic per-query pass (e.g. the lifecycle guard). Applied to the FINAL
@@ -7611,6 +7817,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     _no_prior = bool(intake_data.get("no_prior_period")) or not (comp_start and comp_end)
     from aughor.agent.sql_context import window_text
     plan_prompt = BASELINE_PLAN_PROMPT.format(
+        sql_rules=_sql_rules_for("baseline"),
         question=question,
         metric_label=metric_label,
         metric_sql=metric_sql,
@@ -7644,8 +7851,9 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     plan_prompt += render_entity_context(intake_data)
     _run = run_analysis_phase(
         conn, phase_id="baseline", title="Baseline & Anomaly Assessment", emoji="📊", schema=schema,
-        plan_system="Write SQL queries for baseline anomaly detection. Return a JSON object with a 'queries' list." + _ADA_SQL_GROUNDING,
+        plan_system="Write SQL queries for baseline anomaly detection. Return a JSON object with a 'queries' list." + _sql_grounding(),
         plan_user=plan_prompt,
+        declared_filters=_declared_conditions(intake_data),
         interpret_system="You are a senior data analyst interpreting query results. Be precise. Cite real numbers.",
         interpret_user_fn=lambda results_text: BASELINE_INTERPRET_PROMPT.format(
             question=question, results_text=results_text, events_section=events_section,
@@ -7942,6 +8150,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
     metric_table = intake_data.get("metric_table", "")
 
     plan_prompt = DECOMPOSE_PLAN_PROMPT.format(
+        sql_rules=_sql_rules_for("decompose"),
         question=question,
         baseline_summary=baseline_summary,
         total_change="(see baseline findings)",
@@ -7960,8 +8169,9 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     _run = run_analysis_phase(
         conn, phase_id="decomposition", title="Metric Decomposition", emoji="🧩", schema=schema,
-        plan_system="Write SQL for metric decomposition. Decompose the metric into additive sub-drivers." + _ADA_SQL_GROUNDING,
+        plan_system="Write SQL for metric decomposition. Decompose the metric into additive sub-drivers." + _sql_grounding(),
         plan_user=plan_prompt,
+        declared_filters=_declared_conditions(intake_data),
         interpret_system="Interpret metric decomposition results. State clearly whether volume or value drove the change.",
         interpret_user_fn=lambda results_text: DECOMPOSE_INTERPRET_PROMPT.format(
             question=question, baseline_summary=baseline_summary, results_text=results_text),
@@ -8062,6 +8272,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     ) if prioritized_dims else "  (none identified)"
 
     plan_prompt = DIMENSIONAL_PLAN_PROMPT.format(
+        sql_rules=_sql_rules_for("dimensional"),
         question=question,
         baseline_summary=baseline_summary,
         decomposition_summary=decomp_summary,
@@ -8081,8 +8292,9 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     _run = run_analysis_phase(
         conn, phase_id="dimensional", title="Dimensional Analysis", emoji="🔬", schema=schema,
-        plan_system="Write contribution-analysis SQL for each dimension. Sort by absolute_change ASC." + _ADA_SQL_GROUNDING,
+        plan_system="Write contribution-analysis SQL for each dimension. Sort by absolute_change ASC." + _sql_grounding(),
         plan_user=plan_prompt,
+        declared_filters=_declared_conditions(intake_data),
         interpret_system="Interpret contribution analysis. Identify concentrated vs. diffuse decline.",
         interpret_user_fn=lambda results_text: DIMENSIONAL_INTERPRET_PROMPT.format(
             question=question, prior_summary=prior_summary, results_text=results_text),
@@ -8185,6 +8397,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
 
     plan_prompt = BEHAVIORAL_PLAN_PROMPT.format(
+        sql_rules=_sql_rules_for("behavioral"),
         question=question,
         prior_summary=prior_summary,
         dominant_finding=dominant_finding,
@@ -8204,8 +8417,9 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     _run = run_analysis_phase(
         conn, phase_id="behavioral", title="Behavioral & Operational", emoji="👥", schema=schema,
-        plan_system="Write SQL for behavioral and operational diagnostics." + _ADA_SQL_GROUNDING,
+        plan_system="Write SQL for behavioral and operational diagnostics." + _sql_grounding(),
         plan_user=plan_prompt,
+        declared_filters=_declared_conditions(intake_data),
         interpret_system="Interpret behavioral and operational findings. Be specific about what changed.",
         interpret_user_fn=lambda results_text: BEHAVIORAL_INTERPRET_PROMPT.format(
             question=question, prior_summary=prior_summary, results_text=results_text),
@@ -10727,10 +10941,17 @@ def _conclusion_as_answer(state, intake_data: dict, question: str):
     if shape != "describe" or not conclusion:
         return None
     from aughor.agent.prompts_investigate import ADASynthesisModel
-    # The body is what the headline left — nothing when the headline is the whole answer. Q1's
-    # one sentence (2026-10-03) was both, and the page printed it twice.
-    headline, body = _lead_sentence(conclusion, question, _result_values(state))
-    headline = headline or _ranked_headline(state, conclusion)
+    concluded = state.get("_analyst_conclude") or {}
+    if (concluded.get("headline") or "").strip():
+        # P1 (`analyst.conclude`) — the analyst named its own headline and answer; nothing to cut.
+        headline, body = concluded["headline"].strip(), (concluded.get("answer") or conclusion).strip()
+        if (concluded.get("gaps") or "").strip():
+            body = f"{body}\n\n{concluded['gaps'].strip()}".strip()
+    else:
+        # The body is what the headline left — nothing when the headline is the whole answer. Q1's
+        # one sentence (2026-10-03) was both, and the page printed it twice.
+        headline, body = _lead_sentence(conclusion, question, _result_values(state))
+        headline = headline or _ranked_headline(state, conclusion)
     return ADASynthesisModel(
         headline=headline, executive_summary=body, closing_summary="",
         total_change_label="", attribution_waterfall=[], confidence="HIGH",
@@ -10745,7 +10966,7 @@ def ada_synthesize(state: AgentState) -> dict:
     Phase 8 — Synthesis: Attribution Waterfall + Recommendations.
     Assembles all phase findings into an AnswerReport.
     """
-    from aughor.agent.prompts_investigate import ADA_SYNTHESIZE_PROMPT, ADASynthesisModel
+    from aughor.agent.prompts_investigate import ADA_SYNTHESIZE_PROMPT
     from aughor.agent.state import AnswerReport, WaterfallEntry, AnswerRecommendation
 
     question = state["question"]
@@ -10819,10 +11040,19 @@ def ada_synthesize(state: AgentState) -> dict:
             "must be LOW. recommendations should be empty or advisory only."
         )
 
-    phases_summary = _phases_summary(phases)
+    # P4 — on an analyst turn that concluded, the narrator writes from the results the analyst
+    # CITED: their rows are the evidence, the rest are named by title. Live (5b6fb57c, 2026-10-14)
+    # the narrator read every result and wrote one story over two measurements of "revenue" —
+    # the baseline's $336,383 → $385,389 and an uncited decomposition's $296,916 → $335,733 —
+    # then declared that the uncited split "reconciles to +$49.0K". A figure it cannot see it
+    # cannot state; the grounding check holds the line.
+    _concluded = state.get("_analyst_conclude") or {}
+    _cited_ids = [str(e.get("finding_id")) for e in (_concluded.get("exhibits") or []) if e.get("finding_id")]
+    narr_phases, uncited_results = (_phases_cited(phases, _cited_ids) if _cited_ids else (phases, []))
+    phases_summary = _phases_summary(narr_phases)
     # Budget-aware: phases are kept verbatim (exact numbers, for grounding) up to the budget; any
     # overflow is folded into a number-preserving digest (tree-reduce) instead of being truncated away.
-    evidence_log = _phases_evidence_budgeted(phases)
+    evidence_log = _phases_evidence_budgeted(narr_phases)
 
     # ── Cross-phase contradiction detection (typed) ───────────────────────────
     # Before synthesis, deterministically check phase summaries for contradictions.
@@ -10837,16 +11067,20 @@ def ada_synthesize(state: AgentState) -> dict:
     # Reconcile the Analyst's declared plan against the phases that actually ran, and
     # journal the seam so planned-vs-actual autonomy is legible in the Fleet view.
     orchestration_plan = state.get("_orchestration_plan")
-    plan_reconciliation = reconcile((orchestration_plan or {}).get("planned_ids", []), phase_ids)
-    try:
-        from aughor.agent.handoff import emit_handoff
-        emit_handoff("analyst", "orchestrator", "synthesis",
-                     {"reconciliation": plan_reconciliation,
-                      "contradictions": contradiction_report.severity},
-                     conn_id=state.get("connection_id") or None)
-    except Exception as _exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(_exc, "plan reconciliation journal", counter="orchestrator")
+    # P4 — a run that declared no plan (an analyst turn) reconciles nothing: nothing was planned,
+    # so nothing was "skipped", and the journal records no seam that did not happen.
+    plan_reconciliation = (reconcile(orchestration_plan.get("planned_ids", []), phase_ids)
+                           if orchestration_plan else None)
+    if plan_reconciliation is not None:
+        try:
+            from aughor.agent.handoff import emit_handoff
+            emit_handoff("analyst", "orchestrator", "synthesis",
+                         {"reconciliation": plan_reconciliation,
+                          "contradictions": contradiction_report.severity},
+                         conn_id=state.get("connection_id") or None)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "plan reconciliation journal", counter="orchestrator")
 
     # CA-0 — no prior period: the data holds a single span. The report may describe what the
     # window contains and how the level moved WITHIN it; it may not attribute a change to a
@@ -11006,6 +11240,17 @@ def ada_synthesize(state: AgentState) -> dict:
         "evidence above — weigh it, but cite only what the evidence supports):\n"
         + _analyst_note
     ) if _analyst_note else ""
+    if _cited_ids and analyst_conclusion_section:
+        # P4 — the conclusion's structure rides with its prose: the headline it chose and the
+        # claim it attached to each cited result, and the results it did not cite, by title,
+        # whose figures are not in the evidence above.
+        _claims = "\n".join(f"- {e.get('finding_id')}: {e.get('claim')}" for e in _concluded.get("exhibits") or [])
+        analyst_conclusion_section += (
+            f"\nIts headline: {_concluded.get('headline') or ''}\nThe results it cites, each with its claim:\n{_claims}")
+        if uncited_results:
+            analyst_conclusion_section += (
+                "\nResults it did not cite — their rows are not in the evidence above, so none of "
+                "their figures can be stated: " + "; ".join(f"{t} ({i})" for i, t in uncited_results))
 
     synth_prompt = _agent_brief + ADA_SYNTHESIZE_PROMPT.format(
         clock_section=_clock_section(intake_data),
@@ -11029,8 +11274,16 @@ def ada_synthesize(state: AgentState) -> dict:
     _synth_timeout = float(_os.getenv("AUGHOR_SYNTH_TIMEOUT_S", "120"))
     # R16 P2 — the narrator's system prompt lives with the other prompts and carries
     # the report-style writing contract.
-    from aughor.agent.prompts_investigate import synthesis_system_prompt
-    _synth_system = synthesis_system_prompt()
+    from aughor.agent.prompts_investigate import synthesis_ask_model, synthesis_system_prompt, widen_synthesis
+    # P4 — the waterfall is asked for only where one can exist: a causal licence on a change
+    # question (it is forced empty on every cross-sectional run below). A run that recorded no
+    # licence keeps the full ask it always had.
+    from aughor.agent.claim_type import is_at_least as _licence_at_least
+    _licence = _recorded_claim_licence(intake_data, phases)
+    _ask_waterfall = (not _licence) or (_licence_at_least(_licence, "causal")
+                                        and not intake_data.get("cross_sectional"))
+    _ask_model = synthesis_ask_model(_ask_waterfall)
+    _synth_system = synthesis_system_prompt(waterfall=_ask_waterfall)
     # R6 — stream the report prose (executive_summary) to the client as the narrator
     # writes it, so a multi-minute deep run isn't silent between phase_complete and the
     # final report. Capture the sink emitter HERE (node body, sink visible) so the closure
@@ -11043,11 +11296,11 @@ def ada_synthesize(state: AgentState) -> dict:
     def _run_synth():
         prov = _provider("narrator")
         if _emit_report is not None:
-            return prov.complete_streaming(
-                system=_synth_system, user=synth_prompt, response_model=ADASynthesisModel,
-                text_field="executive_summary", on_text=_emit_report)
-        return prov.complete(system=_synth_system, user=synth_prompt,
-                             response_model=ADASynthesisModel)
+            return widen_synthesis(prov.complete_streaming(
+                system=_synth_system, user=synth_prompt, response_model=_ask_model,
+                text_field="executive_summary", on_text=_emit_report))
+        return widen_synthesis(prov.complete(system=_synth_system, user=synth_prompt,
+                                             response_model=_ask_model))
 
     synth = _as_written
     if synth is not None:
@@ -11073,7 +11326,7 @@ def ada_synthesize(state: AgentState) -> dict:
     # a cheap model writing a real (and still PE-2-checked) report beats a machine
     # stitching summaries every time.
     if synth is None:
-        synth = _fast_synthesis_rescue(_synth_system, synth_prompt, ADASynthesisModel)
+        synth = widen_synthesis(_fast_synthesis_rescue(_synth_system, synth_prompt, _ask_model))
 
     # PE-2 — verify what the prompt used to lecture about. The sign/waterfall/grounding/
     # question-addressed contracts moved out of ~1,700 tokens of per-call prose into
@@ -11099,9 +11352,9 @@ def ada_synthesize(state: AgentState) -> dict:
                                  + "\n\nYOUR PREVIOUS DRAFT FAILED THESE DETERMINISTIC "
                                    "CHECKS — fix exactly these, change nothing else:\n- "
                                  + "\n- ".join(_violations))
-                    _retry = _provider("narrator").complete(
+                    _retry = widen_synthesis(_provider("narrator").complete(
                         system=_synth_system, user=_fix_user,
-                        response_model=ADASynthesisModel)
+                        response_model=_ask_model))
                     if _retry is not None:
                         synth = _retry
                         _violations = run_report_checks(synth, question, evidence_log, phases, _licence)

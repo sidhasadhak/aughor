@@ -38,9 +38,11 @@ import { RuleOutsSection } from "@/components/brief/RuleOuts";
 import { TrendStrip } from "@/components/brief/Sparkline";
 import { Icon } from "@/components/ui/icon";
 import { QuestionFrame } from "@/components/QuestionFrame";
+import { Chip, Figure, Figures, Label, ROW, RULE } from "@/components/clarity/kit";
 import type { OntologyFrame, RuleOuts } from "@/lib/types";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { namesPeriod } from "@/lib/format";
+import { deriveFigureSource } from "@/lib/figureSource";
 import { Button } from "@/components/ui/button";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -137,6 +139,12 @@ export interface AnswerReport {
   closing_summary?: string | null;
   /** IP-1 — the Verifier's rule-outs for the move this report states; absent when it states none. */
   rule_outs?: RuleOuts | null;
+  /** P1 (`analyst.conclude`) — the answer's own structure: the results it cites, in order, each with its
+   *  claim; the figures it rests on; what the data could not answer. A report that carries `exhibits` is
+   *  drawn by `ConcludedBody`; every other report renders exactly as before. */
+  exhibits?: { finding_id: string; claim: string }[] | null;
+  figures?: { label: string; value: string; note?: string }[] | null;
+  gaps?: string | null;
 }
 
 // ── Collapsible data table — quiet, only when a finding has no chart ───────────
@@ -471,6 +479,153 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
   );
 }
 
+// ── The concluded body (P1, `analyst.conclude`) ────────────────────────────────
+//
+// The analyst named its own headline, answer and the results it cites. So the body is: the
+// headline · the figures it rests on · the period and the guards' caveats as chips · the answer ·
+// each cited result ONCE, numbered, captioned by its claim · the actions · the results it did not
+// cite, named under Sources. Measured before this (2026-10-14, 88 stored answers): 58% of the
+// results drawn carried no words and 46 bodies tabulated rows a result below drew again.
+
+/** A caveat as a chip: its first clause on the page, the whole of it on hover. */
+function caveatChip(text: string) {
+  const first = text.split(/[:;—]/)[0].trim();
+  return first.length > 72 ? first.slice(0, 72).trimEnd() + "…" : first;
+}
+
+/** The one grid slot of an exhibit — today the result table; the one line the grid consolidation changes. */
+function ExhibitGrid({ finding }: { finding: InvestigationFinding }) {
+  return <SqlResultTable columns={finding.columns} rows={finding.rows as unknown[][]} maxHeight={280} />;
+}
+
+function Exhibit({ n, finding, claim, answer, onShowSource }: {
+  n: number; finding: InvestigationFinding; claim: string; answer: string; onShowSource?: ShowSource;
+}) {
+  const [open, setOpen] = useState(false);
+  const { warning } = splitStatNote(finding.stat_note);
+  const hasData = finding.columns.length > 0 && finding.rows.length > 0;
+  const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
+  const oneRecord = hasData && !hasChart && isOneRecord(finding.columns, finding.rows as unknown[][]);
+  const source = deriveFigureSource(finding.sql, finding.columns, finding.rows as unknown[][], finding.row_count);
+  const caption = claim.trim() || finding.title;
+  return (
+    <div className="flex flex-col gap-2 pt-3" style={RULE} data-testid={`exhibit-${finding.finding_id}`}>
+      <div style={{ ...ROW, alignItems: "baseline" }}>
+        <span className="aug-fs-xs font-semibold" style={{ color: "var(--blue4)" }}>{n}</span>
+        <span className="aug-text-ui font-medium text-zinc-100">{caption}</span>
+        {finding.trust_caveat?.trim() && (
+          <span style={{ marginLeft: "auto" }}>
+            <Chip tone="amber" title={finding.trust_caveat}>⚠ {caveatChip(finding.trust_caveat)}</Chip>
+          </span>
+        )}
+      </div>
+      {hasChart && (
+        <ResultChartCard columns={finding.columns} rows={finding.rows as unknown[][]} title={caption}
+                         chartType={finding.chart_type} columnUnits={finding.column_units} exhibit={finding.exhibit}
+                         defaultShowLabels />
+      )}
+      {oneRecord && <FindingFigures columns={finding.columns} row={finding.rows[0] as unknown[]} answer={answer} />}
+      {warning && <div className="aug-fs-xs text-zinc-400 leading-relaxed">⚠ {warning}</div>}
+      {finding.error && <p className="aug-text-xs text-red-400 font-mono">{finding.error}</p>}
+      {hasData && (
+        <div className="aug-fs-xs text-zinc-500" style={ROW}>
+          {source?.tables?.length ? <span className="font-mono">{source.tables.join(" · ")}</span> : null}
+          <span>{finding.row_count || finding.rows.length} rows</span>
+          <span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
+            <Button variant="ghost" size="xs" onClick={() => setOpen(v => !v)}>
+              {open ? <Icon name="chevd" size={16} /> : <Icon name="chevr" size={16} />}Table
+            </Button>
+            {onShowSource && (
+              <Button variant="ghost" size="xs" title={`Data + SQL behind “${finding.title}”`}
+                      onClick={() => onShowSource({ columns: finding.columns, rows: finding.rows as unknown[][], sql: finding.sql || null, title: finding.title })}>
+                <Icon name="table" size={16} label="SQL" />SQL
+              </Button>
+            )}
+          </span>
+        </div>
+      )}
+      {open && hasData && <ExhibitGrid finding={finding} />}
+    </div>
+  );
+}
+
+function ConcludedBody({ report, onShowSource, frame }: { report: AnswerReport; onShowSource?: ShowSource; frame?: OntologyFrame | null }) {
+  const phases = report.phases.filter(p => p.phase_id !== "intake" && p.status !== "skipped" && !p._hidden);
+  const findings = phases.flatMap(p => p.findings);
+  const byId = new Map(findings.map(f => [f.finding_id, f] as const));
+  const cited = (report.exhibits ?? [])
+    .map(e => ({ claim: e.claim, finding: byId.get(e.finding_id) }))
+    .filter((x): x is { claim: string; finding: InvestigationFinding } => !!x.finding);
+  const citedIds = new Set(cited.map(x => x.finding.finding_id));
+  const results = findings.filter(f => (f.columns.length > 0 && f.rows.length > 0) || f.error);
+  const uncited = results.filter(f => !citedIds.has(f.finding_id));
+  const caveats = Array.from(new Set([
+    ...phases.filter(p => p.findings.some(f => citedIds.has(f.finding_id))).flatMap(p => p.caveats ?? []),
+  ].map(c => c.trim()).filter(Boolean)));
+  const answer = [report.headline, report.executive_summary].filter(Boolean).join("\n");
+  const says = (s?: string | null) => !!s && answer.toLowerCase().includes(s.toLowerCase());
+  const periodStr = (says(report.observation_period) || namesPeriod(answer, report.observation_period ?? ""))
+    && (!report.comparison_basis || says(report.comparison_basis))
+    ? ""
+    : [report.observation_period, report.comparison_basis ? `vs ${report.comparison_basis}` : ""].filter(Boolean).join(" ");
+  const figures = (report.figures ?? []).filter(f => f.value?.trim()).slice(0, 4);
+  const gaps = (report.gaps ?? "").trim();
+
+  return (
+    <Brief>
+      {report.headline?.trim() && <BriefHeadline>{report.headline}</BriefHeadline>}
+      {figures.length > 0 && (
+        <Figures testId="answer-figures">
+          {figures.map((f, i) => <Figure key={i} label={f.label} value={f.value} sub={f.note || undefined} />)}
+        </Figures>
+      )}
+      {(periodStr || caveats.length > 0) && (
+        <div style={ROW}>
+          {periodStr && <Chip>{periodStr}</Chip>}
+          {caveats.map(c => <Chip key={c} tone="amber" title={c}>⚠ {caveatChip(c)}</Chip>)}
+        </div>
+      )}
+      {report.executive_summary && !sameSentence(report.executive_summary, report.headline)
+        && <AnswerProse text={report.executive_summary} />}
+      {gaps && !restated(gaps, report.executive_summary) && <BriefProse text={gaps} muted />}
+      <QuestionFrame frame={report.frame ?? frame} />
+
+      {cited.length > 0 && (
+        <BriefSection>
+          <Label right={`${cited.length} of ${results.length} results drawn`}>Exhibits</Label>
+          {cited.map((x, i) => (
+            <Exhibit key={x.finding.finding_id} n={i + 1} finding={x.finding} claim={x.claim} answer={answer} onShowSource={onShowSource} />
+          ))}
+        </BriefSection>
+      )}
+
+      <RuleOutsSection ruleOuts={report.rule_outs} />
+
+      {report.recommendations && report.recommendations.length > 0 && (
+        <BriefSection className="border-t border-zinc-800/60 pt-4">
+          <Label>Next</Label>
+          <RecommendationsList recs={report.recommendations} />
+        </BriefSection>
+      )}
+
+      {uncited.length > 0 && (
+        <BriefSection className="border-t border-zinc-800/60 pt-4">
+          <Label right={`${results.length} results`}>Sources</Label>
+          <div className="aug-fs-xs text-zinc-500" style={{ ...ROW, gap: 4 }} data-testid="uncited-results">
+            <span>{uncited.length} not drawn:</span>
+            {uncited.map(f => onShowSource ? (
+              <Button key={f.finding_id} variant="ghost" size="xs" title={`Data + SQL behind “${f.title}”`}
+                      onClick={() => onShowSource({ columns: f.columns, rows: f.rows as unknown[][], sql: f.sql || null, title: f.title })}>
+                {sourceLabel(f.title)} · {f.row_count || f.rows.length} rows
+              </Button>
+            ) : <span key={f.finding_id}>{sourceLabel(f.title)} · {f.row_count || f.rows.length} rows</span>)}
+          </div>
+        </BriefSection>
+      )}
+    </Brief>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function InvestigationReportView({
@@ -503,6 +658,11 @@ export function InvestigationReportView({
         {withUniqueKeys(phases, p => p.phase_id).map(([key, phase]) => <StreamingPhaseCard key={key} phase={phase} />)}
       </div>
     );
+  }
+
+  // P1 — an answer that named its own exhibits is drawn as it said; every other report as before.
+  if (report.exhibits && report.exhibits.length > 0) {
+    return <ConcludedBody report={report} onShowSource={onShowSource} frame={frame} />;
   }
 
   const analysisPhases = report.phases.filter(p => p.phase_id !== "intake" && p.status !== "skipped" && !p._hidden);

@@ -107,6 +107,11 @@ FLAG_ENV = {
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     "briefing.by_period": "AUGHOR_BRIEFING_BY_PERIOD",
     "briefing.ranges": "AUGHOR_BRIEFING_RANGES",
+    # P1 of the canvas-output study (docs/CANVAS_OUTPUT_STUDY_2026-10-14.md), 2026-10-14. ON gives the
+    # analyst a `conclude` tool: its answer ends with a headline, prose and the results it cites, and
+    # the canvas draws each cited result once. OFF → the answer's first sentence is cut as the headline
+    # and every result is drawn, byte-identical.
+    "analyst.conclude": "AUGHOR_ANALYST_CONCLUDE",
     # Arc CT-4 (ROADMAP §3.50). ON adds a Cockpit tab to the Data Canvas: the canvas's own cards,
     # arranged by a kept spec — tabs, sections, cards shown by a condition. No model call: the
     # tab draws what was approved. OFF → the Data Canvas has its three tabs and the cockpit's
@@ -674,6 +679,15 @@ FLAG_META = {
                        "date column is set by rule, and a person can correct it in the metric editor. "
                        "Off: the Briefing keeps its switch.",
     },
+    "analyst.conclude": {
+        "label": "Agent answers end with their own structure",
+        "summary": "The agent closes an answer with a headline, the answer and the results it cites. "
+                   "The canvas draws each cited result once, with its claim.",
+        "facts": [{"kind": "free", "text": "No extra model calls"}],
+        "description": "A result the answer does not cite stays behind Sources. A headline over one line, "
+                       "or an answer carrying a table, is sent back once to be rewritten. Off: the answer's "
+                       "first sentence is its headline and every result is drawn.",
+    },
     "briefing.by_period": {
         "label": "Briefings by day, week, month and year",
         "summary": "Adds a Briefing for the last complete day, week, month or year. "
@@ -869,6 +883,13 @@ EXPERIMENT: dict = {
                        "(§3.48 BR-4): a person given the Day and the Month Briefing for theLook "
                        "beside the standing one cannot name a move only the dated one carries — "
                        "then the recipes ship without prose, or the flag is deleted",
+    # P1 of the canvas-output study, 2026-10-14. No extra model call: the conclusion replaces the prose answer.
+    "analyst.conclude": "does an answer that names its own headline and exhibits read better than one cut from "
+                        "its prose? Measured on the stored theLook answers: 58% of drawn results carried no words, "
+                        "46 of 88 bodies tabulated rows a result below drew again, headlines ran to 32 words at p90. "
+                        "Falsifier: on the next twenty Agent answers a cited result is drawn twice, a headline runs "
+                        "past 16 words, or the reader faces more words than before — then the first-sentence cut "
+                        "stays and the flag is deleted",
     # Arc AO-6 (ROADMAP §3.52), 2026-10-03 — one model call per drafted batch, N per nightly run.
     "agents.testing_centre": "do drafted questions become goldens a person certifies, and does a nightly "
                              "diff catch a regression a person would otherwise have met in a channel? "

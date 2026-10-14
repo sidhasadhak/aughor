@@ -41,6 +41,11 @@ class ToolSpec:
     description: str
     parameters: dict
     run: Callable[[dict], Any]
+    #: A tool whose successful result IS the turn's answer (the analyst's `conclude`): the
+    #: loop ends on it, with the result as `LoopResult.conclusion`, instead of asking again.
+    #: The result must be a dict carrying ``concluded: True`` and ``answer``; a dict without
+    #: them (a refused conclusion, with its reason) goes back to the model like any result.
+    concludes: bool = False
 
     def as_wire(self) -> dict:
         return {"type": "function",
@@ -73,8 +78,11 @@ class LoopResult:
     #: "budget" (it spent every step and had nothing to say even then) | "silent" (it
     #: returned neither a tool call nor text, twice — a stall, and deliberately NOT the
     #: same thing as running out of budget, because telling a user to narrow their
-    #: question is wrong advice when the turn stopped after one step of eight).
+    #: question is wrong advice when the turn stopped after one step of eight) |
+    #: "concluded" (a concluding tool returned the answer — `conclusion` holds it).
     stop_reason: str = "answered"
+    #: The concluding tool's result, when the turn ended on one; None otherwise.
+    conclusion: Optional[dict] = None
 
     @property
     def used_tools(self) -> bool:
@@ -292,6 +300,19 @@ def run_tool_loop(
             if not history and not preface and replay_args:
                 _capture_replay(decision_id, site, question, wire, provider, prompt_fingerprint,
                                 replay_args, trace_id=trace_id)
+        # A concluding tool's accepted result ends the turn here, exactly as a text answer
+        # would: `stop_check` may hand it back once while two calls remain, and a second
+        # conclusion stands. A refused conclusion (no `concluded`) is an ordinary result.
+        if spec.concludes and ok and isinstance(result, dict) and result.get("concluded"):
+            answer = str(result.get("answer") or "")
+            why = (stop_check(answer) if stop_check is not None and not held
+                   and budget - call_index - 1 >= 2 else None)
+            if why:
+                held = True
+                _record(LoopStep(tool="(answer held)", arguments={}, ok=False, detail=why[:300]))
+                history.extend(_exchange(call, why))
+                continue
+            return LoopResult(answer=answer, steps=steps, stop_reason="concluded", conclusion=result)
         # The remaining-step count rides the RESULT, not the system prompt: it changes
         # every step, and the prompt is fingerprinted once per turn and prefix-cached.
         # Appended after `_record` so `result_chars` stays the tool's own size.

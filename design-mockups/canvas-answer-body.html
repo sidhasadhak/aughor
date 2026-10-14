@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canvas answer body — P1</title>
+<!-- Mockup for approval (2026-10-14): the Data Canvas answer body as P1 would draw it — the analyst's own headline and
+     answer, each cited result drawn ONCE where it is cited, captioned by its claim; caveats as chips; sources one line.
+     Two stored answers on theLook, read live (GET /investigations/{id}; no warehouse query, no model call): 2060e143
+     (a describe question) and 55e58a3b (a diagnose question). Every figure is read from the stored rows; the prose is
+     written here the way the conclude tool would return it. Not app code. -->
+<style>
+:root { --bg-0:#111; --bg-1:#191919; --bg-2:#222; --line:#2e2e2e; --line-2:#3a3a3a; --t1:#eee; --t2:#b4b4b4;
+  --t3:#8a8a8a; --accent:#3e63dd; --accent-11:#9eb1ff; --accent-soft:rgba(62,99,221,.16); --violet:#baa7ff;
+  --violet-soft:rgba(110,86,207,.22); --green:#3dd68c; --green-soft:rgba(61,214,140,.12); --amber:#ffc53d;
+  --amber-soft:rgba(255,197,61,.12); --deemph:#4E5A6A; --r2:6px; --r3:12px; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg-0); color:var(--t1); font:13px/1.45 Inter, system-ui, -apple-system, sans-serif; }
+.note { padding:8px 16px; font-size:12px; color:var(--t2); background:var(--accent-soft); border-bottom:1px solid var(--line); }
+.note b { color:var(--accent-11); }
+.app { display:grid; grid-template-columns:196px 1fr; }
+.rail { border-right:1px solid var(--line); padding:12px 8px; color:var(--t2); font-size:12.5px; min-height:100vh; }
+.rail .grp { margin:14px 8px 4px; font-size:11px; color:var(--t3); }
+.rail .it { padding:4px 8px; border-radius:var(--r2); } .rail .it.on { background:var(--bg-2); color:var(--t1); }
+.head { display:flex; align-items:center; gap:12px; padding:9px 24px; border-bottom:1px solid var(--line); color:var(--t2); font-size:12.5px; }
+.head b { color:var(--t1); font-weight:600; } .head .desc { color:var(--t3); max-width:46ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.head .r { margin-left:auto; display:flex; gap:14px; align-items:center; } .head .r .on { color:var(--t1); border-bottom:2px solid var(--accent); padding-bottom:2px; }
+.chip { font-size:11.5px; padding:2px 8px; border-radius:999px; background:var(--bg-2); color:var(--t2); border:1px solid var(--line);
+  white-space:nowrap; display:inline-flex; align-items:center; gap:5px; }
+.chip.amber { background:var(--amber-soft); color:var(--amber); border-color:transparent; }
+.chip.violet { background:var(--violet-soft); color:var(--violet); border-color:transparent; }
+.chip.up { background:var(--green-soft); color:var(--green); border-color:transparent; }
+.btn { background:var(--bg-2); color:var(--t1); border:1px solid var(--line-2); border-radius:var(--r2); padding:4px 10px; font:inherit; font-size:12px; white-space:nowrap; }
+.btn.primary { background:var(--accent); border-color:var(--accent); } .btn.ghost { background:none; }
+
+.page { padding:18px 32px 40px; max-width:1040px; }
+.crumbs { display:flex; gap:14px; align-items:center; color:var(--t2); font-size:12.5px; margin-bottom:14px; }
+.crumbs .on { color:var(--t1); border-bottom:2px solid var(--accent); padding-bottom:2px; }
+.qrow { display:flex; gap:10px; align-items:center; color:var(--t3); font-size:12px; margin:0 0 10px; }
+.qrow .q { color:var(--t2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:80ch; }
+.answer { background:var(--bg-1); border-radius:var(--r3); padding:20px 24px 18px; margin-bottom:26px; }
+.answer h2 { font-size:20px; line-height:1.3; font-weight:600; margin:0 0 12px; letter-spacing:-.005em; max-width:60ch; }
+.figs { display:flex; gap:28px; padding:4px 0 14px; border-bottom:1px solid var(--line); margin-bottom:14px; flex-wrap:wrap; }
+.figs > div { min-width:120px; } .figs .l { font-size:11.5px; color:var(--t3); margin-bottom:2px; }
+.figs .v { font-size:24px; font-weight:600; font-variant-numeric:tabular-nums; line-height:1.1; }
+.figs .m { font-size:11.5px; color:var(--t3); margin-top:3px; } .figs .up { color:var(--green); }
+.figs .meta { margin-left:auto; align-self:flex-end; display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+.prose { font-size:14px; line-height:1.6; color:var(--t1); max-width:72ch; margin:0 0 6px; }
+.prose p { margin:0 0 8px; } .prose b { font-weight:600; font-variant-numeric:tabular-nums; }
+.prose .gap { color:var(--t2); }
+.lbl { font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--t3); margin:18px 0 8px; display:flex; align-items:baseline; gap:10px; }
+.lbl .r { margin-left:auto; letter-spacing:0; text-transform:none; font-size:11.5px; }
+.ex { display:grid; grid-template-columns:minmax(0,1fr); gap:0; padding:12px 0 10px; border-top:1px solid var(--line); }
+.ex .cap { font-size:13.5px; font-weight:500; color:var(--t1); margin:0 0 10px; display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+.ex .cap .n { color:var(--accent-11); font-size:11px; font-weight:600; }
+.ex .cap .chips { margin-left:auto; display:flex; gap:6px; }
+.pair { display:grid; grid-template-columns:1fr 1fr; gap:26px; }
+.bars { display:grid; grid-template-columns:150px minmax(0,1fr) 64px; gap:5px 10px; align-items:center; font-size:12px; color:var(--t2); }
+.bars.narrow { grid-template-columns:96px minmax(0,1fr) 64px; }
+.bars .b { height:9px; border-radius:0 4px 4px 0; background:var(--bg-2); overflow:hidden; }
+.bars .b i { display:block; height:100%; border-radius:0 4px 4px 0; background:var(--accent); }
+.bars .b i.de { background:var(--deemph); }
+.bars .v { text-align:right; font-variant-numeric:tabular-nums; color:var(--t1); } .bars .v.mute { color:var(--t3); }
+.bars .k { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bars .t { grid-column:1 / -1; font-size:11px; color:var(--t3); margin:2px 0 4px; }
+.signed { display:grid; grid-template-columns:150px minmax(0,1fr) 64px; gap:5px 10px; align-items:center; font-size:12px; color:var(--t2); }
+.signed .ax { position:relative; height:9px; } .signed .ax:before { content:""; position:absolute; left:14%; top:-3px; bottom:-3px; width:1px; background:var(--line-2); }
+.signed .ax i { position:absolute; top:0; height:9px; border-radius:0 4px 4px 0; background:var(--accent); left:14%; }
+.signed .ax i.neg { border-radius:4px 0 0 4px; background:var(--deemph); left:auto; right:86%; }
+.signed .v { text-align:right; font-variant-numeric:tabular-nums; color:var(--t1); }
+.cols { display:flex; align-items:flex-end; gap:8px; height:120px; padding:0 0 4px; border-bottom:1px solid var(--line); }
+.cols > div { flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; height:100%; position:relative; }
+.cols i { display:block; width:100%; background:var(--deemph); border-radius:4px 4px 0 0; }
+.cols i.on { background:var(--accent); } .cols i.prev { background:var(--accent); opacity:.55; }
+.cols .lab { position:absolute; top:-16px; font-size:11px; color:var(--t1); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.xax { display:flex; gap:8px; font-size:11px; color:var(--t3); margin-top:4px; } .xax span { flex:1; text-align:center; }
+.trio { display:flex; gap:28px; } .trio > div .l { font-size:11.5px; color:var(--t3); } .trio .v { font-size:18px; font-weight:600; font-variant-numeric:tabular-nums; }
+.trio .v small { font-size:12px; font-weight:400; color:var(--t3); margin:0 6px; } .trio .d { font-size:12px; font-variant-numeric:tabular-nums; }
+.src { display:flex; gap:14px; align-items:center; font-size:11.5px; color:var(--t3); margin-top:8px; flex-wrap:wrap; }
+.src .mono { font-family:"JetBrains Mono", ui-monospace, Menlo, monospace; font-size:11px; } .src a { color:var(--accent-11); text-decoration:none; }
+.src .r { margin-left:auto; display:flex; gap:10px; }
+table.grid { border-collapse:collapse; width:100%; font-size:12px; margin-top:8px; }
+table.grid th { text-align:left; color:var(--t3); font-weight:500; padding:4px 8px; border-bottom:1px solid var(--line); font-size:11.5px; }
+table.grid td { padding:4px 8px; border-bottom:1px solid var(--line); color:var(--t1); }
+table.grid td.n, table.grid th.n { text-align:right; font-variant-numeric:tabular-nums; }
+.next { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 14px; align-items:center; font-size:13px; }
+.next > div { padding:7px 0; border-top:1px solid var(--line); } .next > div:nth-child(-n+2) { border-top:0; }
+.next .why { display:block; font-size:12px; color:var(--t3); margin-top:2px; }
+.ask { display:flex; gap:10px; align-items:center; margin-top:8px; padding:10px 12px; background:var(--bg-1); border-radius:var(--r3); }
+.ask .in { flex:1; color:var(--t3); }
+.sep { font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--t3); margin:30px 0 10px; padding-top:18px; border-top:1px solid var(--line); }
+</style></head><body>
+<div class="note"><b>Mockup</b> · the canvas answer body as P1 draws it · two stored theLook answers, read live. The headline and the answer are the analyst's; each result is drawn once, where the answer cites it, with its claim; the rows and SQL stay one click away.</div>
+<div class="app"><nav class="rail"><div class="it">Home</div><div class="it">Inbox</div><div class="it">Now</div><div class="it on">Data Canvas</div><div class="grp">Intelligence</div><div class="it">Briefing</div><div class="it">Ontology</div><div class="it">Agent runs</div><div class="it">Health</div><div class="it">Documents</div><div class="it">Record</div><div class="grp">Data</div><div class="it">Catalog</div><div class="it">SQL Editor</div><div class="it">Semantic Layer</div><div class="grp">Operations</div><div class="it">Agent Ops</div><div class="it">Monitors</div><div class="it">Notifications</div><div class="it">Integrations</div><div class="it">Spend</div><div class="it">Security &amp; Audit</div><div class="it">Evals</div></nav>
+<div>
+<div class="head">← Data Canvas <b>E-Commerce Operations Overview</b><span class="desc">Contains distribution centers, product inventory, user profiles, orders…</span><span class="chip">theLook</span><span class="chip">All tables</span><span class="r"><span>Chat</span><span class="on">History</span><span>Artifacts</span><span>Tools ▾</span></span></div>
+<div class="page">
+
+<div class="crumbs">← Back <span class="on">Report</span><span>Evidence · 1</span><span style="margin-left:auto">3 Oct 2026 · 14:25</span><span class="chip violet">Agent</span></div>
+<div class="qrow"><span>Asked</span><span class="q">Which 10 product categories brought in the most revenue in the last 6 months, and what is the average order value for each?</span></div>
+
+<div class="answer">
+  <h2>Outerwear &amp; Coats leads six-month revenue at $229.8K; Jeans is a close second</h2>
+  <div class="figs">
+    <div><div class="l">Outerwear &amp; Coats</div><div class="v">$229.8K</div><div class="m">$150.78 an order</div></div>
+    <div><div class="l">Jeans</div><div class="v">$213.2K</div><div class="m">$102.64 an order</div></div>
+    <div><div class="l">Tenth, Dresses</div><div class="v">$80.4K</div><div class="m">$88.03 an order</div></div>
+    <div class="meta"><span class="chip">5 Mar – 4 Sep 2026</span><span class="chip">non-cancelled items</span><span class="chip">order value = revenue ÷ orders</span></div>
+  </div>
+  <div class="prose">
+    <p>Sweaters follow at <b>$139.5K</b>; the other seven sit between <b>$80.4K</b> and <b>$117.3K</b>. Order value does not follow revenue: Suits &amp; Sport Coats average <b>$123.22</b> an order on $105.0K, Dresses <b>$88.03</b> on $80.4K, while Tops &amp; Tees average <b>$43.93</b> on $89.0K.</p>
+  </div>
+
+  <div class="ex">
+    <div class="cap"><span class="n">1</span>Revenue spans $80.4K to $229.8K across the ten; order value runs from $43.93 to $150.78<span class="chips"><span class="chip">10 of 10</span></span></div>
+    <div class="pair">
+      <div class="bars"><span class="t">Revenue</span>
+        <span class="k">Outerwear &amp; Coats</span><span class="b"><i style="width:100%"></i></span><span class="v">$229.8K</span>
+        <span class="k">Jeans</span><span class="b"><i style="width:92.8%"></i></span><span class="v mute">213.2K</span>
+        <span class="k">Sweaters</span><span class="b"><i style="width:60.7%"></i></span><span class="v mute">139.5K</span>
+        <span class="k">Swim</span><span class="b"><i style="width:51%"></i></span><span class="v mute">117.3K</span>
+        <span class="k">Fashion Hoodies &amp; Sweatshirts</span><span class="b"><i style="width:50.4%"></i></span><span class="v mute">115.8K</span>
+        <span class="k">Suits &amp; Sport Coats</span><span class="b"><i style="width:45.7%"></i></span><span class="v mute">105.0K</span>
+        <span class="k">Sleep &amp; Lounge</span><span class="b"><i style="width:42.7%"></i></span><span class="v mute">98.2K</span>
+        <span class="k">Tops &amp; Tees</span><span class="b"><i style="width:38.7%"></i></span><span class="v mute">89.0K</span>
+        <span class="k">Shorts</span><span class="b"><i style="width:36.5%"></i></span><span class="v mute">83.8K</span>
+        <span class="k">Dresses</span><span class="b"><i style="width:35%"></i></span><span class="v">$80.4K</span>
+      </div>
+      <div class="bars"><span class="t">Average order value</span>
+        <span class="k">Outerwear &amp; Coats</span><span class="b"><i style="width:100%"></i></span><span class="v">$150.78</span>
+        <span class="k">Jeans</span><span class="b"><i style="width:68.1%"></i></span><span class="v mute">102.64</span>
+        <span class="k">Sweaters</span><span class="b"><i style="width:51%"></i></span><span class="v mute">76.90</span>
+        <span class="k">Swim</span><span class="b"><i style="width:40%"></i></span><span class="v mute">60.28</span>
+        <span class="k">Fashion Hoodies &amp; Sweatshirts</span><span class="b"><i style="width:37.4%"></i></span><span class="v mute">56.40</span>
+        <span class="k">Suits &amp; Sport Coats</span><span class="b"><i style="width:81.7%"></i></span><span class="v">$123.22</span>
+        <span class="k">Sleep &amp; Lounge</span><span class="b"><i style="width:33.8%"></i></span><span class="v mute">50.91</span>
+        <span class="k">Tops &amp; Tees</span><span class="b"><i style="width:29.1%"></i></span><span class="v">$43.93</span>
+        <span class="k">Shorts</span><span class="b"><i style="width:31%"></i></span><span class="v mute">46.74</span>
+        <span class="k">Dresses</span><span class="b"><i style="width:58.4%"></i></span><span class="v mute">88.03</span>
+      </div>
+    </div>
+    <div class="src"><span class="mono">order_items · products</span><span>10 rows</span><span class="r"><a href="#">Table</a><a href="#">SQL</a><a href="#">Copy</a><a href="#">CSV</a></span></div>
+  </div>
+</div>
+
+<div class="ask"><span class="in">Ask anything about this answer…</span><span class="chip">Quick</span><span class="chip violet">Agent</span><button class="btn primary">Ask</button></div>
+
+<div class="sep">The same body on a diagnose question</div>
+
+<div class="crumbs">← Back <span class="on">Report</span><span>Evidence · 9</span><span style="margin-left:auto">5 Oct 2026 · 21:19</span><span class="chip violet">Agent</span></div>
+<div class="qrow"><span>Asked</span><span class="q">Why did Revenue change by +13% for August 2026, against July 2026?</span></div>
+
+<div class="answer">
+  <h2>August revenue rose 13.2% on more orders, carried by Search traffic and the Men's department</h2>
+  <div class="figs">
+    <div><div class="l">Revenue · August 2026</div><div class="v">$396.6K</div><div class="m"><span class="up">▲ $46.2K · +13.2%</span> vs July</div></div>
+    <div><div class="l">Orders</div><div class="v">4,652</div><div class="m"><span class="up">▲ 499 · +12.0%</span></div></div>
+    <div><div class="l">Average order</div><div class="v">$85.26</div><div class="m">from $84.37 · +1.1%</div></div>
+    <div><div class="l">Against the 12 months before</div><div class="v">z 2.86</div><div class="m">beyond the usual range</div></div>
+    <div class="meta"><span class="chip">August vs July 2026</span><span class="chip">non-cancelled items</span><span class="chip amber">⚠ unmatched users and products fall into a NULL bucket</span><span class="chip amber">cause not independently challenged</span></div>
+  </div>
+  <div class="prose">
+    <p>The gain is volume: orders rose from <b>4,153</b> to <b>4,652</b> while the average order held at <b>$85.26</b> against $84.37. Search traffic carried <b>$34.5K</b> of the $46.2K increase (<b>74.6%</b>) and the Men's department <b>$34.9K</b> (<b>75.5%</b>); across product categories the growth was broad, led by Outerwear &amp; Coats at <b>+$6.4K</b>, with Shorts and Maternity the only declines among the sixteen largest. August is the highest of thirteen months, at the end of a climb from <b>$176.3K</b> in August 2025.</p>
+    <p class="gap">What the data does not show is why Search and Men's moved together in August — campaign spend or stock movements would.</p>
+  </div>
+
+  <div class="lbl">Exhibits<span class="r">5 of 8 results drawn · 3 more in Sources</span></div>
+
+  <div class="ex">
+    <div class="cap"><span class="n">1</span>Thirteen months of revenue; August 2026 is the highest</div>
+    <div class="cols">
+      <div><i style="height:44.4%"></i></div><div><i style="height:47.5%"></i></div><div><i style="height:50.8%"></i></div><div><i style="height:51.1%"></i></div>
+      <div><i style="height:55.5%"></i></div><div><i style="height:59.2%"></i></div><div><i style="height:54.7%"></i></div><div><i style="height:64.7%"></i></div>
+      <div><i style="height:67.2%"></i></div><div><i style="height:73.3%"></i></div><div><i style="height:79.3%"></i></div>
+      <div><i class="prev" style="height:88.3%"></i></div><div><span class="lab">$396.6K</span><i class="on" style="height:100%"></i></div>
+    </div>
+    <div class="xax"><span>Aug 25</span><span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span><span>Jan 26</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span></div>
+    <div class="src"><span class="mono">order_items</span><span>13 rows</span><span class="r"><a href="#">Table</a><a href="#">SQL</a><a href="#">Copy</a><a href="#">CSV</a></span></div>
+  </div>
+
+  <div class="ex">
+    <div class="cap"><span class="n">2</span>Volume, not order value: orders +12%, the average order +1.1%</div>
+    <div class="trio">
+      <div><div class="l">Revenue</div><div class="v">$350.4K<small>→</small>$396.6K</div><div class="d up">+13.2%</div></div>
+      <div><div class="l">Orders</div><div class="v">4,153<small>→</small>4,652</div><div class="d up">+12.0%</div></div>
+      <div><div class="l">Average order</div><div class="v">$84.37<small>→</small>$85.26</div><div class="d">+1.1%</div></div>
+    </div>
+    <div class="src"><span class="mono">order_items</span><span>3 rows · July → August</span><span class="r"><a href="#">Table</a><a href="#">SQL</a><a href="#">Copy</a><a href="#">CSV</a></span></div>
+  </div>
+
+  <div class="ex">
+    <div class="cap"><span class="n">3</span>Search carried 74.6% of the increase<span class="chips"><span class="chip amber">⚠ users without a match counted under NULL</span></span></div>
+    <div class="bars"><span class="t">Change in revenue, July → August, by traffic source</span>
+      <span class="k">Search</span><span class="b"><i style="width:100%"></i></span><span class="v">+$34.5K</span>
+      <span class="k">Organic</span><span class="b"><i style="width:14.9%"></i></span><span class="v mute">+5.1K</span>
+      <span class="k">Facebook</span><span class="b"><i style="width:8.7%"></i></span><span class="v mute">+3.0K</span>
+      <span class="k">Display</span><span class="b"><i style="width:8.3%"></i></span><span class="v mute">+2.9K</span>
+      <span class="k">Email</span><span class="b"><i style="width:2%"></i></span><span class="v mute">+0.7K</span>
+    </div>
+    <div class="src"><span class="mono">order_items · users</span><span>5 rows</span><span class="r"><a href="#">Table</a><a href="#">SQL</a><a href="#">Copy</a><a href="#">CSV</a></span></div>
+  </div>
+
+  <div class="ex">
+    <div class="cap"><span class="n">4</span>The Men's department carried 75.5%; Women's 24.5%<span class="chips"><span class="chip amber">⚠ items without a product counted under NULL</span></span></div>
+    <div class="bars"><span class="t">Change in revenue, July → August, by department</span>
+      <span class="k">Men</span><span class="b"><i style="width:100%"></i></span><span class="v">+$34.9K</span>
+      <span class="k">Women</span><span class="b"><i style="width:32.4%"></i></span><span class="v">+$11.3K</span>
+    </div>
+    <div class="src"><span class="mono">order_items · inventory_items · products</span><span>2 rows</span><span class="r"><a href="#">Table</a><a href="#">SQL</a><a href="#">Copy</a><a href="#">CSV</a></span></div>
+  </div>
+
+  <div class="ex">
+    <div class="cap"><span class="n">5</span>Growth was broad across categories: Outerwear &amp; Coats +$6.4K led; Shorts and Maternity fell<span class="chips"><span class="chip">12 of 26 shown</span></span></div>
+    <div class="signed"><span class="t" style="grid-column:1/-1;font-size:11px;color:var(--t3);margin:2px 0 4px">Change in revenue, July → August, by category</span>
+      <span class="k">Outerwear &amp; Coats</span><span class="ax"><i style="width:86%"></i></span><span class="v">+$6.4K</span>
+      <span class="k">Suits &amp; Sport Coats</span><span class="ax"><i style="width:80.8%"></i></span><span class="v">+6.0K</span>
+      <span class="k">Swim</span><span class="ax"><i style="width:80%"></i></span><span class="v">+5.9K</span>
+      <span class="k">Sweaters</span><span class="ax"><i style="width:54.4%"></i></span><span class="v">+4.0K</span>
+      <span class="k">Fashion Hoodies &amp; Sweatshirts</span><span class="ax"><i style="width:47.5%"></i></span><span class="v">+3.5K</span>
+      <span class="k">Dresses</span><span class="ax"><i style="width:46.9%"></i></span><span class="v">+3.5K</span>
+      <span class="k">Active</span><span class="ax"><i style="width:45.1%"></i></span><span class="v">+3.3K</span>
+      <span class="k">Pants</span><span class="ax"><i style="width:43.3%"></i></span><span class="v">+3.2K</span>
+      <span class="k">Accessories</span><span class="ax"><i style="width:31.4%"></i></span><span class="v">+2.3K</span>
+      <span class="k">Jeans</span><span class="ax"><i style="width:28.7%"></i></span><span class="v">+2.1K</span>
+      <span class="k">Shorts</span><span class="ax"><i class="neg" style="width:13.9%"></i></span><span class="v">−1.0K</span>
+      <span class="k">Maternity</span><span class="ax"><i class="neg" style="width:14%"></i></span><span class="v">−$1.1K</span>
+    </div>
+    <div class="src"><span class="mono">order_items · products</span><span>26 rows</span><span class="r"><a href="#">Table</a><a href="#">SQL</a><a href="#">Copy</a><a href="#">CSV</a></span></div>
+  </div>
+
+  <div class="lbl">Next</div>
+  <div class="next">
+    <div>Audit the August Search campaign logs for what drove the <b>$34.5K</b> rise<span class="why">The volume came through Search; the data here cannot say which campaign or keyword.</span></div><div><button class="btn">Investigate</button></div>
+    <div>Review the Men's department's August inventory and pricing<span class="why">Promotion-driven or organic: stock and price moves would tell.</span></div><div><button class="btn">Investigate</button></div>
+  </div>
+
+  <div class="lbl">Sources<span class="r">8 results · 10 model calls</span></div>
+  <div class="src" style="margin-top:0"><span class="mono">order_items · products · users · inventory_items</span><span>·</span><span>3 results not drawn: growth vs the month and the year before (1 row) · the 12-month baseline (1 row) · contribution by category, capped at 15 rows</span><span class="r"><a href="#">All SQL</a><a href="#">Thought process</a></span></div>
+</div>
+
+<div class="ask"><span class="in">Ask anything about this answer…</span><span class="chip">Quick</span><span class="chip violet">Agent</span><button class="btn primary">Ask</button></div>
+
+</div></div></div>
+</body></html>

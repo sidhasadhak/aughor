@@ -574,3 +574,20 @@ def test_max_context_is_the_declared_window_not_a_name_match(monkeypatch):
                         lambda m: 32_768 if m == "qwen2.5-coder:14b" else None)
     assert _max_context("qwen2.5-coder:14b") == 32_768
     assert _max_context("never/asked") == _DEFAULT_CONTEXT
+
+
+def test_an_anthropic_model_declares_the_providers_context_floor(monkeypatch):
+    """Anthropic's models API carries no context window, so every Claude binding resolved to the
+    BASELINE tier (20k of schema, 12 interpret rows, the long-form prompts) and nothing said so —
+    measured on the live coder, claude-sonnet-5-5, 2026-10-14. The catalogue now records the
+    provider's documented floor, and the tier follows."""
+    import httpx
+
+    class _R:
+        def raise_for_status(self): pass
+        def json(self): return {"data": [{"id": "claude-sonnet-5-5", "display_name": "Claude Sonnet 5.5"}]}
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _R())
+    out = M._anthropic_models("k", timeout=1.0)
+    assert out == [{"id": "claude-sonnet-5-5", "source": "live", "context": 200_000, "label": "Claude Sonnet 5.5"}]
+    from aughor.llm.profile import _CAPABLE_CONTEXT_TOKENS
+    assert out[0]["context"] >= _CAPABLE_CONTEXT_TOKENS

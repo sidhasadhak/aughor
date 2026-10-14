@@ -239,6 +239,16 @@ def _ollama_models(base_url: str, *, timeout: float) -> list[dict]:
     return out
 
 
+#: Anthropic's models API declares no context window, and every model it serves carries at least
+#: this one — the provider's documented floor since the Claude 3 family. Without it a Claude binding
+#: fell to the BASELINE tier (`profile.tier_for`): 20k of schema instead of 60k, 12 interpret rows
+#: instead of 36, the long-form prompts — and nothing said so. Measured on the live coder,
+#: claude-sonnet-5-5, 2026-10-14: the intake read 8,667 prompt tokens before and after a diet that
+#: never reached it. A provider-level fact, not a model list: it is recorded for whatever the
+#: provider lists, and the operator's AUGHOR_MODEL_CONTEXT_TOKENS still wins.
+_ANTHROPIC_CONTEXT_FLOOR = 200_000
+
+
 def _anthropic_models(key: str, *, timeout: float) -> list[dict]:
     import httpx
 
@@ -246,7 +256,7 @@ def _anthropic_models(key: str, *, timeout: float) -> list[dict]:
                   headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
                   timeout=timeout)
     r.raise_for_status()
-    return [{"id": m["id"], "source": "live",
+    return [{"id": m["id"], "source": "live", "context": _ANTHROPIC_CONTEXT_FLOOR,
              **({"label": m["display_name"]} if m.get("display_name") else {})}
             for m in (r.json().get("data") or []) if m.get("id")]
 
