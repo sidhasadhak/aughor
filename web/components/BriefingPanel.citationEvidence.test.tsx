@@ -30,14 +30,14 @@ describe("a citation the Briefing's list does not hold", () => {
     open(MOVE);
     expect(screen.getByText(SQL)).toBeInTheDocument();
     expect(screen.getByText("80%")).toBeInTheDocument();
-    expect(screen.getByText("3/10")).toBeInTheDocument();
+    expect(screen.getByText("3 of 5")).toBeInTheDocument();          // the explorer scores novelty 1–5
     expect(screen.queryByText("— no query recorded —")).toBeNull();
   });
 
   it("says a figure it does not carry is unknown, never 0", () => {
     open(BUILT_BEFORE);
     expect(screen.queryByText("0%")).toBeNull();
-    expect(screen.queryByText("0/10")).toBeNull();
+    expect(screen.queryByText("0 of 5")).toBeNull();
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);      // confidence and novelty (freshness too)
     expect(screen.getByText("— no query recorded —")).toBeInTheDocument();
   });

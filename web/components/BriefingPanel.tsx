@@ -20,6 +20,7 @@ import { GuardChip } from "@/components/ui/trust";
 
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { compactNumber, countNoun, formatCount, formatDateTime, formatMetricValue, formatTimestamp, formatVariance, normalizeNumberPrecision, pct } from "@/lib/format";
+import { noveltyLabel, noveltyOutOf, noveltyShare } from "@/lib/novelty";
 import {
   runDirectQuery,
   getDomainInsights,
@@ -577,18 +578,12 @@ function GenerateBriefButton({
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+/** A novelty score's colour, on the explorer's 1–5 scale (`lib/novelty`). */
 function noveltyColor(n: number): string {
-  if (n >= 7) return "var(--grn3)";
-  if (n >= 5) return "var(--blue4)";
+  if (n >= 5) return "var(--grn3)";
+  if (n >= 4) return "var(--blue4)";
   if (n >= 3) return "var(--amb3)";
   return "var(--t3)";
-}
-
-function noveltyLabel(n: number): string {
-  if (n >= 7) return "High";
-  if (n >= 5) return "Notable";
-  if (n >= 3) return "Mid";
-  return "Low";
 }
 
 function timeAgo(iso: string): string {
@@ -725,16 +720,16 @@ function synthesize(
 
 // ── Visual primitives ────────────────────────────────────────────────────────
 
-/** A compact bar showing a finding's novelty/signal strength (0–10). */
+/** A compact bar showing a finding's novelty, on the explorer's 1–5 scale. */
 function NoveltyMeter({ novelty, width = 56, showValue = true }: { novelty: number; width?: number; showValue?: boolean }) {
-  const pct = Math.max(4, Math.min(100, (novelty / 10) * 100));
+  const pct = Math.max(4, noveltyShare(novelty) * 100);
   const color = noveltyColor(novelty);
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} title={`Novelty ${novelty.toFixed(1)} / 10`}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} title={`Novelty ${noveltyOutOf(novelty)}`}>
       <span style={{ width, height: 5, borderRadius: 3, background: "var(--bg-3)", display: "inline-block", overflow: "hidden", flexShrink: 0 }}>
         <span style={{ display: "block", height: "100%", width: `${pct}%`, background: color, borderRadius: 3, transition: "width .5s ease" }} />
       </span>
-      {showValue && <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color, fontWeight: 600 }}>{novelty.toFixed(1)}</span>}
+      {showValue && <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color, fontWeight: 600 }}>{Math.round(novelty)}</span>}
     </span>
   );
 }
@@ -757,7 +752,7 @@ function DomainCoverageChart({ domains }: { domains: DomainStat[] }) {
             <div style={{ height: 6, borderRadius: 3, background: "var(--bg-3)", overflow: "hidden" }}>
               <div style={{
                 height: "100%", width: `${pct}%`, background: color, borderRadius: 3,
-                opacity: 0.45 + Math.min(0.55, d.maxNovelty / 13), transition: "width .5s ease",
+                opacity: 0.45 + 0.55 * noveltyShare(d.maxNovelty), transition: "width .5s ease",
               }} />
             </div>
           </div>
@@ -1453,7 +1448,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
             <Stat label="Confidence" value={known(insight.confidence, c => `${Math.round(c * 100)}%`)} />
-            <Stat label="Novelty" value={known(insight.novelty, n => `${n}/10`)} />
+            <Stat label="Novelty" value={known(insight.novelty, n => noveltyOutOf(n))} />
             <Stat label="Freshness" value={fresh} />
           </div>
 
