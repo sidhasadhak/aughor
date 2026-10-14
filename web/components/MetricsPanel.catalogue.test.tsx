@@ -168,7 +168,7 @@ describe("opening a row", () => {
     await user.click(screen.getByRole("button", { name: /Remove — sure/i }));
     expect(removeProposal).toHaveBeenCalledWith("c1", "gmv", "*");
     await user.click(await screen.findByRole("button", { name: /Removed here · 1/ }));
-    expect(screen.getByText(/removed by ana@example.com on 2026-10-07/)).toBeInTheDocument();
+    expect(screen.getByText(/removed by you on 2026-10-07/)).toBeInTheDocument(); // the reader removed it
     await user.click(screen.getByRole("button", { name: /Restore/ }));
     expect(restoreProposal).toHaveBeenCalledWith("c1", "gmv", "*");
   });

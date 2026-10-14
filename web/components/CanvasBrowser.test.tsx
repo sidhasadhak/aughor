@@ -96,4 +96,13 @@ describe("the list is this workspace's", () => {
     expect(screen.queryByText("Refunds")).toBeNull();
     expect(screen.getByText("Orders")).toBeInTheDocument();
   });
+
+  it("says a list it could not read, with a retry — never 'No Data Canvases yet'", async () => {
+    api.getCanvases.mockReset().mockRejectedValueOnce(new Error("Failed to fetch canvases")).mockResolvedValue([ORDERS]);
+    render(browser("ws1"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Failed to fetch canvases");
+    expect(screen.queryByText("No Data Canvases yet")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(await screen.findByText("Orders")).toBeInTheDocument();
+  });
 });

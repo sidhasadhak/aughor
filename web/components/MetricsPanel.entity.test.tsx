@@ -52,7 +52,7 @@ describe("EntitySection", () => {
   it("a confirmed key says who, and Clear sends an empty entity", async () => {
     const calls = serve();
     render(<EntitySection metric={{ ...REVENUE, entity: "OrderItem", entity_confirmed_by: "ana" }} onChanged={() => {}} />);
-    expect(await screen.findByText("confirmed by ana")).toBeTruthy();
+    expect(await screen.findByText("confirmed by you")).toBeTruthy(); // the reader is ana
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
     expect(JSON.parse(calls.find((c) => c.method === "PUT")?.body ?? "{}")).toEqual({ entity: "" });

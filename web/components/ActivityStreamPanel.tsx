@@ -20,6 +20,7 @@ import { rangeParams, type TimeRange } from "@/components/agentops/useTimeRange"
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { getActivityEvents, type SessionEvent } from "@/lib/api";
+import { ReadFailed } from "@/components/ui/states";
 import { getApiBase, onApiBaseChange } from "@/lib/config";
 import { fmtMs } from "@/lib/cost";
 import { compactNumber, formatCount, relTime } from "@/lib/format";
@@ -63,6 +64,8 @@ export function ActivityStreamPanel({ onOpenTrace, filter, range }: {
   // Asking for the guardrail kind by name is asking to see its checks.
   const hiding = !showRoutine && kindFilter !== "guardrail";
   const [recording, setRecording] = useState(true);
+  // A failed read is said, never drawn as the quiet "recording is on" line (2026-10-13).
+  const [readError, setReadError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
   const lastSeq = useRef(0);
   const esRef = useRef<EventSource | null>(null);
@@ -97,8 +100,9 @@ export function ActivityStreamPanel({ onOpenTrace, filter, range }: {
         setRecording(d.measured);
         setEvents(d.events);
         lastSeq.current = d.events.reduce((m, e) => Math.max(m, e.seq), lastSeq.current);
+        setReadError(null);
       })
-      .catch(() => {});
+      .catch(e => setReadError(e instanceof Error && e.message ? e.message : "the read failed"));
   }, [kindFilter, errorsOnly, drill, hiding]);
 
   // Live tail — one EventSource per filter combination; poll as fallback.
@@ -169,7 +173,8 @@ export function ActivityStreamPanel({ onOpenTrace, filter, range }: {
 
       {/* ── the stream ── */}
       <div style={{ flex: 1, overflowY: "auto", padding: "8px 20px" }}>
-        {shown.length === 0 ? (
+        {readError && <ReadFailed what="the live events" error={readError} onRetry={load} style={{ padding: "8px 0" }} />}
+        {readError && shown.length === 0 ? null : shown.length === 0 ? (
           <div className="aug-fs-sm" style={{ padding: 32, textAlign: "center", color: "var(--t2)" }}>
             {hidden.length > 0
               ? `Only routine ${checksWord(hidden)} among the newest ${formatCount(events.length)} events.`

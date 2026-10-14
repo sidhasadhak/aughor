@@ -78,6 +78,8 @@ describe("ERDiagram", () => {
     render(<ERDiagram schema={schema} />);
 
     expect(handoff.edges).toHaveLength(1);
+    // straight runs turning square, never rounded or curved (the user, 2026-10-13)
+    expect((handoff.edges[0] as { type?: string }).type).toBe("step");
     expect(handoff.edges[0]).toMatchObject({
       source: "users",  sourceHandle: "id__s",
       target: "orders", targetHandle: "user_id__t",

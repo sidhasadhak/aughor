@@ -29,6 +29,10 @@ def _point_id(canvas_id: str, insight_id: str) -> int:
 
 # ── Public write API ───────────────────────────────────────────────────────────
 
+class OrgIntelUnavailable(RuntimeError):
+    """The org-intelligence store could not be read or written — said, never answered as "none"."""
+
+
 def promote_to_org(
     insight_id: str,
     text: str,
@@ -50,8 +54,11 @@ def promote_to_org(
     every promoted insight blended into every connection's Hub.
     """
     from aughor.semantic.embedder import embed_one
-    from aughor.semantic.vector_store import upsert
+    from aughor.semantic.vector_store import available, upsert
 
+    # `upsert` drops points silently when no index is configured — a promotion that went nowhere. Said instead.
+    if not available():
+        raise OrgIntelUnavailable("no semantic index is available on this install, so Org cannot store findings")
     promoted_at = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     point_id = _point_id(canvas_id, insight_id)
 
@@ -124,17 +131,19 @@ def list_org_intelligence(
         # embedded path) and answered [] as if nothing had ever been promoted.
         from aughor.semantic.vector_store import scroll_points
 
+        # strict: a store that could not be read RAISES — "Nothing promoted yet" over an outage taught the reader
+        # the data does not exist (withheld is said, never implied). A collection never created is still empty.
         results: list[dict] = [
             {"id": p["id"], **p["payload"]}
-            for p in scroll_points(ORG_INTEL_COLLECTION)
+            for p in scroll_points(ORG_INTEL_COLLECTION, strict=True)
         ]
-        if connection_id:
-            results = [r for r in results if r.get("connection_id") == connection_id]
-        if schema:
-            results = [r for r in results if r.get("schema") == schema]
-        return sorted(results, key=lambda x: x.get("promoted_at", ""), reverse=True)
-    except Exception:
-        return []
+    except Exception as exc:
+        raise OrgIntelUnavailable(str(exc)[:200] or type(exc).__name__) from exc
+    if connection_id:
+        results = [r for r in results if r.get("connection_id") == connection_id]
+    if schema:
+        results = [r for r in results if r.get("schema") == schema]
+    return sorted(results, key=lambda x: x.get("promoted_at", ""), reverse=True)
 
 
 def delete_org_insight(point_id: str) -> bool:

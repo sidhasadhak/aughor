@@ -32,6 +32,7 @@ import {
   getGraphReview,
   getGraphTrust,
   listGovernedTags,
+  rebuildContextGraph,
   type GovernedTag,
 } from "@/lib/api";
 import { CARD, Chip, Dot, Empty, Label, MUTED, NUM, ONE_LINE, Page, ROW, RULE, type Tone } from "@/components/clarity/kit";
@@ -175,6 +176,21 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
       .catch((e) => { if (fresh()) setTrustError(e?.message || "Standing unavailable"); });
   }, [connectionId, schema, initialTableId]);
 
+  const [rebuilding, setRebuilding] = useState(false);
+  const [rebuildError, setRebuildError] = useState<string | null>(null);
+  const rebuild = useCallback(async () => {
+    setRebuilding(true);
+    setRebuildError(null);
+    try {
+      await rebuildContextGraph(connectionId, schema);
+      load();
+    } catch (e) {
+      setRebuildError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRebuilding(false);
+    }
+  }, [connectionId, schema, load]);
+
   useEffect(() => { load(); }, [load]);
 
   const fetchTour = useCallback(() => {
@@ -242,7 +258,8 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg-0)" }}>
       <HoldsLine graph={graph} audit={audit} auditError={auditError} review={review} mode={mode}
-        onMode={(m) => (m === "tour" ? openTour() : setMode(m))} onRefresh={load} />
+        onMode={(m) => (m === "tour" ? openTour() : setMode(m))} onRefresh={load}
+        onRebuild={rebuild} rebuilding={rebuilding} rebuildError={rebuildError} />
 
       {loading && <div style={{ padding: "16px 22px" }}><SkeletonRows rows={6} /></div>}
       {error && (
@@ -373,9 +390,11 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
  * then the view and Refresh at its right end. It replaces a strip that named the tab again and a card of the warrant
  * mix the side panel now carries.
  */
-function HoldsLine({ graph, audit, auditError, review, mode, onMode, onRefresh }: {
+function HoldsLine({ graph, audit, auditError, review, mode, onMode, onRefresh, onRebuild, rebuilding, rebuildError }: {
   graph: ConnectionGraph | null; audit: GraphAudit | null; auditError: string | null; review: GraphReview | null;
   mode: Mode; onMode: (m: Mode) => void; onRefresh: () => void;
+  /** "Rebuild owed" said a rebuild was owed with nothing that could do it; this is the doing. */
+  onRebuild: () => void; rebuilding: boolean; rebuildError: string | null;
 }) {
   const holds = graph ? (() => {
     const { joins, measured } = joinsMeasured(graph);
@@ -410,8 +429,15 @@ function HoldsLine({ graph, audit, auditError, review, mode, onMode, onRefresh }
             </Chip>
       )}
       {graph && staleness && (audit?.drift?.drifted ? (
-        <Chip tone="amber" testId="graph-freshness"
-          title={`Schema freshness: ${staleness.word.toLowerCase()}. ${audit.drift.reason}`}>Rebuild owed</Chip>
+        <>
+          <Chip tone="amber" testId="graph-freshness"
+            title={`Schema freshness: ${staleness.word.toLowerCase()}. ${audit.drift.reason}`}>Rebuild owed</Chip>
+          <Button variant="secondary" size="xs" onClick={onRebuild} disabled={rebuilding} data-testid="graph-rebuild"
+            title="Rebuild the graph from the ontology, the Record, the glossary and the Briefings — no model call, no warehouse query">
+            {rebuilding ? "Rebuilding…" : "Rebuild"}
+          </Button>
+          {rebuildError && <span role="alert" className="aug-fs-sm" style={{ color: "var(--red4)" }}>Not rebuilt — {rebuildError}</span>}
+        </>
       ) : (
         <Chip tone={auditError ? "plain" : staleness.tone} testId="graph-freshness"
           title={auditError ? `Schema freshness only — whether a rebuild is owed could not be read (${auditError}).`

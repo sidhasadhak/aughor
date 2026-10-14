@@ -100,6 +100,15 @@ def extract_claims_from_report(
     return claims
 
 
+def _a_run_note(finding: dict) -> bool:
+    """The investigation's own notes ride in its phases as findings: the intake's specification (`intake_spec` — the
+    metric, the window, the table) and a phase that was skipped (`<phase>_skip`). Neither says anything about the
+    data. Taken as claims they were 134 of theLook's last 500, each titled "Investigation Specification" or
+    "Skipped", and the Record booked them as open hypotheses (2026-10-14)."""
+    fid = str(finding.get("finding_id") or "")
+    return fid == "intake_spec" or (fid.endswith("_skip") and not finding.get("sql"))
+
+
 def extract_claims_from_ada_phases(
     investigation_id: str,
     phases: list[dict],
@@ -115,7 +124,7 @@ def extract_claims_from_ada_phases(
         phase_id = phase.get("phase_id") or ""
         for finding in phase.get("findings") or []:
             interp = finding.get("interpretation") or ""
-            if not interp or finding.get("error"):
+            if not interp or finding.get("error") or _a_run_note(finding):
                 continue
 
             sql = finding.get("sql") or None

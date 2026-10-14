@@ -6425,7 +6425,8 @@ export interface paths {
          * @description Promote a connection-scoped Briefing/Hub finding to org-wide intelligence.
          *
          *     Counterpart to the canvas promote endpoint — connection-level findings (the
-         *     default Briefing scope) had no promotion path until now.
+         *     default Briefing scope) had no promotion path until now. Org is written first and the
+         *     finding flagged after, so a failed write leaves nothing saying "promoted" (503, with why).
          */
         post: operations["promote_connection_finding_exploration__connection_id__findings__finding_id__promote_post"];
         delete?: never;
@@ -6874,6 +6875,27 @@ export interface paths {
         get: operations["get_context_graph_lineage_graph_lineage_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/graph/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rebuild Context Graph
+         * @description Rebuild the graph now and re-index it for search. "Rebuild owed" said one was owed and nothing could do it.
+         *     A projection of the ontology, the Record, the glossary and the Briefings — no model call, no warehouse query.
+         */
+        post: operations["rebuild_context_graph_graph_rebuild_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -34451,6 +34473,38 @@ export interface operations {
                 table?: string | null;
                 schema_name?: string | null;
                 column?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rebuild_context_graph_graph_rebuild_post: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
             };
             header?: never;
             path?: never;

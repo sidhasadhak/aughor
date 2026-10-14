@@ -18,8 +18,10 @@ const block = (measured: BriefingRangeMeasure[], unmeasured: { name: string; rea
 describe("a period in a few words", () => {
   it("names a whole month, a day, a span inside a month and one across months — from an exclusive end", () => {
     expect(periodShort("2026-09-01", "2026-10-01", "month")).toBe("Sep 2026");
-    // the comparison the cockpit reads when September is whole: August cut to its first 30 days — said, not hidden
+    // a span inside a month says its days (a month still under way is held to the same days of the one before);
+    // a whole month is compared with the whole month before, which reads as that month (`aughor/briefing/ranges.py`)
     expect(periodShort("2026-08-01", "2026-08-31", "month")).toBe("1–30 Aug");
+    expect(periodShort("2026-08-01", "2026-09-01", "month")).toBe("Aug 2026");
     expect(periodShort("2026-09-24", "2026-09-25", "day")).toBe("Thu 24 Sep");
     expect(periodShort("2026-09-28", "2026-10-05", "week")).toBe("28 Sep – 4 Oct");
     expect(periodShort("2025-01-01", "2026-01-01", "year")).toBe("2025");

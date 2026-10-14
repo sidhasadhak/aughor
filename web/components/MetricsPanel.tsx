@@ -201,7 +201,7 @@ export function EntitySection({ metric, onChanged }: { metric: Metric; onChanged
     <div style={STACK} data-testid="metric-entity">
       <div style={ROW}>
         <Chip tone={confirmed ? "up" : proposal?.entity ? "violet" : "plain"}>
-          {confirmed ? `confirmed by ${metric.entity_confirmed_by ?? "a person"}` : proposal?.entity ? "proposed" : "not keyed"}
+          {confirmed ? `confirmed by ${metric.entity_confirmed_by ? byWho(metric.entity_confirmed_by, me?.actor) : "a person"}` : proposal?.entity ? "proposed" : "not keyed"}
         </Chip>
       </div>
       <p className="aug-fs-sm" style={TEXT}>
@@ -326,7 +326,7 @@ function DatesSection({ metric, proposals, onChanged, startEditing = false, onEd
     <div style={STACK} data-testid="metric-dates">
       {metric.time_kind && (
         <div style={ROW}>
-          <Chip tone={confirmed ? "up" : "plain"}>{confirmed ? `confirmed by ${metric.time_confirmed_by}` : "set automatically"}</Chip>
+          <Chip tone={confirmed ? "up" : "plain"}>{confirmed ? `confirmed by ${byWho(metric.time_confirmed_by, me?.actor)}` : "set automatically"}</Chip>
           <Chip>{`by ${metric.time_grain ?? "month"}`}</Chip>
         </div>
       )}
@@ -1452,6 +1452,7 @@ function NeedsGroup({ need, onOpen, onBind }: {
  *  absent; folded into one line until opened. */
 function RemovedList({ removed, onRestore }: { removed: RemovedProposal[]; onRestore: (r: RemovedProposal) => void }) {
   const [open, setOpen] = useState(false);
+  const me = useMe();
   return (
     <div data-testid="metrics-removed">
       <FoldLine open={open} onToggle={() => setOpen((o) => !o)}>{`Removed here · ${removed.length}`}</FoldLine>
@@ -1461,7 +1462,7 @@ function RemovedList({ removed, onRestore }: { removed: RemovedProposal[]; onRes
             <div key={`${r.schema_name}:${r.name}`} className="aug-fs-sm"
               style={{ ...ROW, padding: "6px 6px", ...(i ? RULE : {}) }}>
               <span style={{ color: "var(--t1)" }}>{r.label || r.name}</span>
-              <span style={MUTED}>· {datasetWords(r.schema_name)} · removed by {r.by} on {r.at.slice(0, 10)}</span>
+              <span style={MUTED}>· {datasetWords(r.schema_name)} · removed by {byWho(r.by, me?.actor)} on {r.at.slice(0, 10)}</span>
               <Button size="xs" variant="ghost" onClick={() => onRestore(r)} style={{ marginLeft: "auto" }}>Restore</Button>
             </div>
           ))}

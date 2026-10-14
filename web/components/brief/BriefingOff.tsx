@@ -5,7 +5,9 @@
  */
 import { Button } from "@/components/ui/button";
 import type { BriefingOff } from "@/lib/api";
+import { byWho } from "@/lib/names";
 import { requestTab } from "@/lib/navigate";
+import { useMe } from "@/lib/useMe";
 
 const REASON_WORDS: Record<string, string> = {
   system_table: "system tables",
@@ -15,8 +17,9 @@ const REASON_WORDS: Record<string, string> = {
 };
 
 export function BriefingOffNotice({ off, connectionId }: { off: BriefingOff; connectionId: string }) {
+  const me = useMe();
   const meta = [
-    off.declared_by ? `Turned off by ${off.declared_by}` : "",
+    off.declared_by ? `Turned off by ${byWho(off.declared_by, me?.actor)}` : "",
     REASON_WORDS[off.reason] ? `Marked ${REASON_WORDS[off.reason]}` : "",
   ].filter(Boolean).join(" · ");
   return (

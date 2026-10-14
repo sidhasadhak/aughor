@@ -161,3 +161,17 @@ def test_a_source_that_could_not_be_read_is_named_never_counted_as_empty(client,
     assert _attention(client)["unread"] == ["agent_alerts"]
     monkeypatch.undo()
     assert _attention(client)["unread"] == []
+
+
+def test_the_counts_do_not_depend_on_how_many_rows_were_asked_for(client, monkeypatch):
+    """The Agent Ops badge asks for ONE row, and the route read each source with that same limit — so it counted at
+    most one of each (2026-10-13). `limit` trims the rows; the counts read further."""
+    import types
+
+    import aughor.obs.agent_alert_store as alerts
+    fired = [types.SimpleNamespace(id=f"e{i}", rule_name="Error rate", reason="crossed 40%", severity="warning",
+                                   fired_at="2026-10-13T08:00:00Z") for i in range(3)]
+    monkeypatch.setattr(alerts, "list_events", lambda unacknowledged_only=True, limit=100: fired[:limit])
+    body = client.get("/control-room/needs-human?limit=1").json()
+    assert body["sources"]["agent_alerts"] == 3
+    assert len(body["rows"]) == 1

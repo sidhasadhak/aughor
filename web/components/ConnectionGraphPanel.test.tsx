@@ -117,6 +117,7 @@ const api = vi.hoisted(() => ({
   getConnectionTour: vi.fn(),
   getGraphLineage: vi.fn(),
   listGovernedTags: vi.fn(),
+  rebuildContextGraph: vi.fn(),
 }));
 vi.mock("@/lib/api", async importOriginal => ({ ...(await importOriginal<Record<string, unknown>>()), ...api }));
 
@@ -134,6 +135,7 @@ beforeEach(() => {
   api.getGraphLineage.mockReset().mockResolvedValue({ connection_id: "c1", node_id: "table:Order", label: "", root: "",
     truncated: false, counts_by_kind: {}, summary: "", dependents: [] });
   api.listGovernedTags.mockReset().mockResolvedValue([]);
+  api.rebuildContextGraph.mockReset().mockResolvedValue({ rebuilt: true, indexed: 9 });
   window.history.replaceState(null, "", "/");
 });
 
@@ -225,5 +227,15 @@ describe("the Graph tab", () => {
     render(<ConnectionGraphPanel connectionId="c1" initialTableId="table:Nope" />);
     expect(await screen.findByTestId("rf")).toBeInTheDocument();
     expect(screen.queryByTestId("graph-table-page")).toBeNull();
+  });
+
+  it("does the rebuild it says is owed — for this schema — then reads the graph again, or says why not", async () => {
+    render(<ConnectionGraphPanel connectionId="c1" schema="s" />);
+    fireEvent.click(await screen.findByTestId("graph-rebuild"));
+    await waitFor(() => expect(api.rebuildContextGraph).toHaveBeenCalledWith("c1", "s"));
+    await waitFor(() => expect(api.getConnectionGraph).toHaveBeenCalledTimes(2));
+    api.rebuildContextGraph.mockRejectedValueOnce(new Error("this connection has no built ontology to project it from"));
+    fireEvent.click(await screen.findByTestId("graph-rebuild"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Not rebuilt — this connection has no built ontology");
   });
 });

@@ -123,6 +123,12 @@ def append_claim(claim: EvidenceClaim) -> None:
             conn.close()
 
 
+#: A claim the linker took from an investigation's own notes before it knew them (`linker._a_run_note`): its spec or a
+#: skipped phase, with no query behind it. Stored ones stay in the ledger and are not read as claims.
+_NOT_A_RUN_NOTE = ("NOT (COALESCE(sql_source, '') = '' AND (claim_text LIKE 'Investigation Specification:%' "
+                   "OR claim_text LIKE 'Skipped:%'))")
+
+
 def get_claims_for_investigation(investigation_id: str) -> list[EvidenceClaim]:
     """Return all claims for a given investigation, in the order they were recorded (it used to be
     by confidence, a column nothing writes now)."""
@@ -131,7 +137,7 @@ def get_claims_for_investigation(investigation_id: str) -> list[EvidenceClaim]:
         try:
             _init_schema(conn)
             rows = conn.execute(
-                "SELECT * FROM evidence_claims WHERE investigation_id = ? ORDER BY created_at, id",
+                f"SELECT * FROM evidence_claims WHERE investigation_id = ? AND {_NOT_A_RUN_NOTE} ORDER BY created_at, id",
                 (investigation_id,),
             ).fetchall()
             return [_row_to_claim(r) for r in rows]
@@ -176,7 +182,7 @@ def get_recent_claims_for_investigations(
             _init_schema(conn)
             placeholders = ",".join("?" * len(investigation_ids))
             rows = conn.execute(
-                f"SELECT * FROM evidence_claims WHERE investigation_id IN ({placeholders}) "
+                f"SELECT * FROM evidence_claims WHERE investigation_id IN ({placeholders}) AND {_NOT_A_RUN_NOTE} "
                 f"ORDER BY created_at DESC LIMIT ?",
                 (*investigation_ids, limit),
             ).fetchall()
@@ -192,7 +198,7 @@ def get_claims_for_metric(metric_name: str) -> list[EvidenceClaim]:
         try:
             _init_schema(conn)
             rows = conn.execute(
-                "SELECT * FROM evidence_claims WHERE metric_used = ? ORDER BY created_at DESC",
+                f"SELECT * FROM evidence_claims WHERE metric_used = ? AND {_NOT_A_RUN_NOTE} ORDER BY created_at DESC",
                 (metric_name,),
             ).fetchall()
             return [_row_to_claim(r) for r in rows]

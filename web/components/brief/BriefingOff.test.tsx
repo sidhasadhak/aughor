@@ -6,6 +6,8 @@
 import { fireEvent, render, screen } from "@/lib/testing";
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/useMe", () => ({ useMe: () => ({ actor: "amit" }) }));
+
 import { BriefingOffNotice } from "@/components/brief/BriefingOff";
 import { NAVIGATE_EVENT } from "@/lib/navigate";
 
@@ -13,10 +15,15 @@ const OFF = { schemas: ["gold_finance"], reason: "out_of_domain", declared_by: "
               said: "gold_finance is turned off for analysis, so no Briefing is written for it." };
 
 describe("a Briefing of a schema turned off", () => {
-  it("says it is off, by whom and marked how, in one line and its meta", () => {
+  it("says it is off, by whom (“you” for the reader) and marked how, in one line and its meta", () => {
     render(<BriefingOffNotice off={OFF} connectionId="dcc63d83" />);
     expect(screen.getByRole("status")).toHaveTextContent(OFF.said);
-    expect(screen.getByText("Turned off by amit · Marked not this business's data")).toBeInTheDocument();
+    expect(screen.getByText("Turned off by you · Marked not this business's data")).toBeInTheDocument();
+  });
+
+  it("names someone else by their name", () => {
+    render(<BriefingOffNotice off={{ ...OFF, declared_by: "ana" }} connectionId="dcc63d83" />);
+    expect(screen.getByText(/^Turned off by ana/)).toBeInTheDocument();
   });
 
   it("leaves out what it was not told", () => {

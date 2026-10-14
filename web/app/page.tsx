@@ -1,6 +1,7 @@
 "use client";
 import { CONNECTORS } from "@/lib/connectors.gen";
 import { ErrorState } from "@/components/ui/states";
+import { toast } from "@/components/ui/toast";
 
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
@@ -1146,28 +1147,9 @@ export default function Home() {
     // roster arrives the tab is restored and the screen it names is blank. That is what
     // made every canvas-workspace link decorative: the URL round-tripped and the pane did
     // not. The wait is held below rather than raced.
-    if (!canvasId) return;
-    let dropped = false;
-    const settle = () => { if (pendingDeepLink.current) pendingDeepLink.current.canvas = null; };
-    getCanvases()
-      .then(all => {
-        if (dropped) return;
-        const found = all.find(c => c.id === canvasId) ?? null;
-        // Only the canvas. The connection is NOT set from it, though clicking a canvas
-        // does exactly that: `?conn=` is already restored by the connections effect
-        // below, which deliberately lets a URL connection outrank the remembered one
-        // ("a shared URL must open on the data it was looking at"). Setting it here too
-        // would be a second async writer to the same state — the winner decided by which
-        // fetch returned last — and on a `?canvas=X&conn=Y` link it would overwrite the Y
-        // the user explicitly asked for.
-        if (found) setActiveCanvas(found);
-        // Settle either way. A canvas that has since been deleted must not hold the URL
-        // hostage forever — the screen falls back to the empty workspace and the stale id
-        // is dropped by the next sync, which is the honest outcome for a dead link.
-        settle();
-      })
-      .catch(settle);
-    return () => { dropped = true; };
+    // `?canvas=` is resolved by the effect below, once the workspace is known: read here — before the shell has
+    // chosen one, so before the transport stamps it — the roster answered with every workspace's canvases and the
+    // link could open a canvas from another workspace.
   }, []);
 
   // SE-4 I — let a nested surface ask to change screens (the query workbench's
@@ -1460,6 +1442,33 @@ export default function Home() {
     setActiveWorkspace(selectedWorkspace);
   }, [selectedWorkspace]);
 
+  // The `?canvas=` deep link, resolved INSIDE the workspace the screen is in. The roster is read for that workspace by
+  // name, never unscoped: a canvas from another workspace — or one since deleted — is said not to be here, and the link
+  // settles so the URL sync it holds can go on. With no workspace at all (none, or the list failed) it settles too.
+  useEffect(() => {
+    const canvasId = pendingDeepLink.current?.canvas;
+    if (!canvasId) return;
+    const settle = () => { if (pendingDeepLink.current) pendingDeepLink.current.canvas = null; };
+    if (!selectedWorkspace) {
+      if (wsLoaded) settle();
+      return;
+    }
+    let dropped = false;
+    getCanvases(selectedWorkspace)
+      .then(all => {
+        if (dropped) return;
+        const found = all.find(c => c.id === canvasId) ?? null;
+        // Only the canvas. The connection is NOT set from it: `?conn=` is restored by the connections effect, which
+        // lets a URL connection outrank the remembered one ("a shared URL must open on the data it was looking at").
+        if (found) setActiveCanvas(found);
+        else toast.info("The linked canvas isn't in this workspace", {
+          description: "It may have been deleted, or it belongs to another workspace." });
+        settle();
+      })
+      .catch(settle);
+    return () => { dropped = true; };
+  }, [selectedWorkspace, wsLoaded]);
+
   // Populate the org-settings cache that the display formatters read (currency symbol,
   // date format) with the active workspace's effective settings; refresh on switch.
   //
@@ -1575,7 +1584,9 @@ export default function Home() {
     // Try to resolve a canvas for this investigation
     let targetCanvas: Canvas | null = null;
     try {
-      const allCanvases = await getCanvases();
+      // Only this workspace's canvases: the run opens in one of them, or in the chat below — never in another
+      // workspace's canvas because an unscoped roster happened to hold it.
+      const allCanvases = selectedWorkspace ? await getCanvases(selectedWorkspace) : [];
       if (canvasId) {
         targetCanvas = allCanvases.find(c => c.id === canvasId) ?? null;
       }

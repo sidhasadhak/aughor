@@ -131,7 +131,14 @@ def keep_slot(state: dict, finding: dict) -> None:
 def _read_once(entry: dict) -> dict:
     found = entry.get(FINDINGS) or []
     unique = one_id_each(found)
-    return entry if len(unique) == len(found) and all(a is b for a, b in zip(unique, found)) else {**entry, FINDINGS: unique}
+    if not (len(unique) == len(found) and all(a is b for a, b in zip(unique, found))):
+        entry = {**entry, FINDINGS: unique}
+    # A lifecycle map stored under an older rule — a city, a JSON payload, a warehouse's name taken for a status — is
+    # not served, here at the one read, so the Profile, the prompts and the ontology merge all see the same maps.
+    from aughor.ontology.lifecycle_states import held_lifecycle_maps
+    maps = entry.get("lifecycle_maps")
+    held = held_lifecycle_maps(maps) if isinstance(maps, dict) else maps
+    return entry if held is maps or len(held) == len(maps) else {**entry, "lifecycle_maps": held}
 
 
 def load(connection_id: str) -> dict:
@@ -525,6 +532,12 @@ def _find_insight_state(connection_id: str, insight_id: str):
                     ins.setdefault("source_schema", key.split("__", 1)[1])
                 return key, state, ins
     return None, None, None
+
+
+def find_connection_finding(connection_id: str, finding_id: str) -> Optional[dict]:
+    """A connection-scoped finding by id (bare or per-schema state), read only — or None. The promote route reads it
+    before writing anything: Org is written first and the finding flagged after, so a failed write flags nothing."""
+    return _find_insight_state(connection_id, finding_id)[2]
 
 
 def promote_insight_conn(connection_id: str, insight_id: str) -> Optional[dict]:

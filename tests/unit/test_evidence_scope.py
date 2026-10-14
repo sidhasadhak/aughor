@@ -51,3 +51,31 @@ def test_recent_claims_unknown_ids_returns_empty(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)
     store.append_claim(_claim("invA", "a", "2026-06-01T00:00:00Z"))
     assert store.get_recent_claims_for_investigations(["ghost"], limit=50) == []
+
+
+# ── an investigation's own notes are not claims (2026-10-14: 134 of theLook's last 500) ──────────
+
+def test_the_spec_and_a_skipped_phase_are_not_claims():
+    from aughor.evidence.linker import extract_claims_from_ada_phases
+    phases = [
+        {"phase_id": "intake", "findings": [
+            {"finding_id": "intake_spec", "title": "Investigation Specification", "sql": "",
+             "interpretation": "Investigating Revenue in last month.", "error": None}]},
+        {"phase_id": "decomposition", "findings": [
+            {"finding_id": "decomposition_skip", "title": "Skipped", "sql": "",
+             "interpretation": "structured output empty: the model returned no content.", "error": None},
+            {"finding_id": "d1", "title": "Revenue by country", "sql": "SELECT 1",
+             "interpretation": "China leads. The rest follow.", "error": None}]},
+    ]
+    claims = extract_claims_from_ada_phases(investigation_id="inv1", phases=phases)
+    assert [c.claim_text for c in claims] == ["Revenue by country: China leads."]
+
+
+def test_a_stored_spec_or_skip_is_not_read_as_a_claim(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    store.append_claim(_claim("invA", "Revenue by country: China leads.", "2026-06-01T00:00:00Z"))
+    for text in ("Investigation Specification: Investigating Revenue.", "Skipped: structured output empty."):
+        store.append_claim(EvidenceClaim(investigation_id="invA", claim_text=text, created_at="2026-06-02T00:00:00Z"))
+    assert [c.claim_text for c in store.get_recent_claims_for_investigations(["invA"])] == [
+        "Revenue by country: China leads."]
+    assert [c.claim_text for c in store.get_claims_for_investigation("invA")] == ["Revenue by country: China leads."]

@@ -130,14 +130,13 @@ def refresh_context_graph(
     """
     from aughor.kernel.errors import tolerate
     from aughor.org.context import current_org_id
-    from aughor.ontology.context_graph_store import load_graphs_for_connection
-    from aughor.ontology.context_graph_search import merge_graphs
+    from aughor.ontology.context_graph_store import committed_graph
 
     org = org_id or current_org_id()
     try:
         from aughor.ontology.store import load_latest_ontology
         cur_ontology = load_latest_ontology(connection_id, schema_name)
-        prev = merge_graphs(load_graphs_for_connection(org, connection_id))
+        prev = committed_graph(org, connection_id, schema_name)
         verdict = classify(prev, cur_ontology)
 
         if not verdict.needs_rebuild and not force:
@@ -168,12 +167,11 @@ def staleness_of(connection_id: str, schema_name: Optional[str] = None, *, org_i
     """The current staleness state of a connection's committed graph (for a UI banner /
     briefing gate). ``unknown`` when nothing is built or the ontology can't be read."""
     from aughor.org.context import current_org_id
-    from aughor.ontology.context_graph_store import load_graphs_for_connection
-    from aughor.ontology.context_graph_search import merge_graphs
+    from aughor.ontology.context_graph_store import committed_graph
     try:
         from aughor.ontology.store import load_latest_ontology
         org = org_id or current_org_id()
-        prev = merge_graphs(load_graphs_for_connection(org, connection_id))
+        prev = committed_graph(org, connection_id, schema_name)
         if prev is None:
             return "unknown"
         return classify(prev, load_latest_ontology(connection_id, schema_name)).staleness
@@ -262,12 +260,11 @@ def content_drift(connection_id: str, schema_name: Optional[str] = None, *,
     read; callers ask for it when they want to know whether a rebuild is owed.
     """
     from aughor.org.context import current_org_id
-    from aughor.ontology.context_graph_search import merge_graphs
-    from aughor.ontology.context_graph_store import load_graphs_for_connection
+    from aughor.ontology.context_graph_store import committed_graph
 
     org = org_id or current_org_id()
     try:
-        committed = merge_graphs(load_graphs_for_connection(org, connection_id))
+        committed = committed_graph(org, connection_id, schema_name)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "reading the committed graph for a drift check is best-effort",

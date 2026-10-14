@@ -312,6 +312,7 @@ export function AgenticOpsWorkspace({
             range={range} onBrush={setBrush} onClearBrush={clearBrush} connections={connections ?? []}
             onOpenAttention={() => onLayerChange("attention")}
             onOpenInvestigation={onOpenInvestigation}
+            onOpenAutomation={openAutomation}
             onOpenAgent={(id, kind) => openAgent(id, kind)} traceFocus={traceFocus} />
         );
       }}

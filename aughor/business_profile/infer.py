@@ -67,20 +67,40 @@ _MODEL_CLAIM_EVIDENCE = {
 }
 
 
+# A claim the sentence DENIES is not a claim: "single-purchase retail, not subscription and not a marketplace" is
+# the schema's own evidence said back. Stripping those words left theLook's model reading "…retail, not and not a ."
+_DENIED = re.compile(r"\b(?:not|no|nor|non|without|never|rather than|instead of)(?:\s+(?:a|an|the|any))?[\s-]*$",
+                     re.IGNORECASE)
+# What removal can leave behind: a clause of nothing but these words.
+_CONNECTIVES = r"(?:not|no|nor|and|or|but|a|an|the)"
+_EMPTY_CLAUSE = re.compile(rf"\s*[,;:\u2014\u2013]\s*(?:\b{_CONNECTIVES}\b[\s,]*)+(?=[.;]|$)", re.IGNORECASE)
+
+
+def tidy_business_model(text: str) -> str:
+    """A business-model sentence without the clause a removal emptied: "…retail, not and not a ." → "…retail."
+    Pure and idempotent; applied where the claims are stripped and again where a stored profile is read, so a
+    sentence broken before this existed reads whole without a re-inference."""
+    out = _EMPTY_CLAUSE.sub("", text or "")
+    out = re.sub(r"\s+([.,;])", r"\1", out)
+    return re.sub(r"\s{2,}", " ", out).strip()
+
+
 def _strip_unsupported_model(profile, schema: str) -> None:
     """F7 — drop business_model clauses the schema can't support (the hallucinated
-    'subscription' on a one-time-purchase warehouse). Mutates profile in place; best-effort."""
-    import re as _re
+    'subscription' on a one-time-purchase warehouse). A claim the sentence denies ("not a
+    marketplace") stays. Mutates profile in place; best-effort."""
     try:
         bm = (getattr(profile, "business_model", "") or "")
         low_schema = schema.lower()
         for claim, evidence in _MODEL_CLAIM_EVIDENCE.items():
-            if _re.search(rf"\b{claim}\b", bm, _re.IGNORECASE) and not any(e in low_schema for e in evidence):
-                bm = _re.sub(rf"\b{claim}\b", "", bm, flags=_re.IGNORECASE)
+            if any(e in low_schema for e in evidence):
+                continue
+            bm = re.sub(rf"\b{claim}\b", lambda m: m.group(0) if _DENIED.search(m.string[:m.start()]) else "",
+                        bm, flags=re.IGNORECASE)
         # tidy dangling connectors/punctuation left by removal
-        bm = _re.sub(r"\s*[&,/]\s*(?=[&,/]|$)", " ", bm)
-        bm = _re.sub(r"^\s*[&,/\-]\s*|\s*[&,/\-]\s*$", "", bm)
-        bm = _re.sub(r"\s{2,}", " ", bm).strip(" -&,/")
+        bm = re.sub(r"\s*[&,/]\s*(?=[&,/]|$)", " ", bm)
+        bm = re.sub(r"^\s*[&,/\-]\s*|\s*[&,/\-]\s*$", "", bm)
+        bm = tidy_business_model(re.sub(r"\s{2,}", " ", bm).strip(" -&,/"))
         if bm:
             profile.business_model = bm
     except Exception as exc:

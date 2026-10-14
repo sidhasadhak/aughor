@@ -436,12 +436,15 @@ def scroll_payloads(collection: str, limit: int = 10_000) -> list[dict]:
         return []
 
 
-def scroll_points(collection: str, limit: int = 10_000) -> list[dict]:
+def scroll_points(collection: str, limit: int = 10_000, *, strict: bool = False) -> list[dict]:
     """All points as ``[{id: str, payload: dict}]`` — `scroll_payloads` plus the id.
 
     Exists for the callers that DELETE by id afterwards (org intelligence's list →
     remove flow): a payload without its point id is a row you can read but never
-    address. Empty list on any error, same contract as `scroll_payloads`."""
+    address. Empty list on any error, same contract as `scroll_payloads` — unless
+    ``strict``: then a collection that does not exist yet is still empty (nothing was ever
+    written to it), and any other failure RAISES, so a reader that must not say "none" over
+    an outage can tell the two apart (the Org layer said "Nothing promoted yet" either way)."""
     try:
         if backend() == "pgvector":
             conn = _pg()
@@ -466,8 +469,17 @@ def scroll_points(collection: str, limit: int = 10_000) -> list[dict]:
             if offset is None:
                 break
         return out
-    except Exception:
+    except Exception as exc:
+        if strict and not _collection_missing(exc):
+            raise
         return []
+
+
+def _collection_missing(exc: BaseException) -> bool:
+    """Whether a read failed only because the collection was never created — Qdrant answers that with a 404 /
+    "doesn't exist"; pgvector has no such error (an absent collection is just no rows)."""
+    said = str(exc).lower()
+    return getattr(exc, "status_code", None) == 404 or "doesn't exist" in said or "not found" in said
 
 
 def delete_ids(collection: str, ids: list) -> bool:
