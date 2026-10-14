@@ -5699,7 +5699,7 @@ def _extra_filters(queries, declared, dialect: str = "") -> list[tuple[str, str]
     paths agree on what a filter is; an unparsed statement names none."""
     out: list[tuple[str, str]] = []
     try:
-        from aughor.agent.analyst import _adhoc_filters
+        from aughor.agent.analyst import value_filters_beyond
     except Exception:
         return out
     for q in queries or []:
@@ -5707,7 +5707,7 @@ def _extra_filters(queries, declared, dialect: str = "") -> list[tuple[str, str]
         if not sql:
             continue
         try:
-            extra = _adhoc_filters(sql, declared or (), dialect or "")
+            extra = value_filters_beyond(sql, declared or (), dialect or "")
         except Exception:
             continue
         if extra:

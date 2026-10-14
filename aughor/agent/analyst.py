@@ -264,6 +264,13 @@ def _adhoc_filters(text: str, declared: Any = (), dialect: str = "") -> list[str
     return list(dict.fromkeys(out))
 
 
+def value_filters_beyond(sql: str, declared: Any = (), dialect: str = "") -> list[str]:
+    """The public reading of a statement's value filters beyond the ones DECLARED — what the phase
+    planners' extra-filter guard (P3, `investigate._extra_filters`) and this module's result titles
+    share, so the two paths agree on what a filter is. See `_adhoc_filters`."""
+    return _adhoc_filters(sql, declared, dialect)
+
+
 #: The column roles a result's title reads — the ones `plottedMeasures` in
 #: web/components/charts/columnRoles.ts reads, so a title names what its chart plots.
 _SHARE_NAME_RE = re.compile(r"(share|pct|percent|rate|ratio|proportion)", re.I)

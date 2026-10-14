@@ -14,7 +14,9 @@ def test_the_prompt_carries_the_writing_contract():
     p = _synthesis_system_prompt()
     assert p.startswith("You are a senior data analyst")   # the base contract survives
     assert "argue like an analyst" in p
-    assert "bold inline" in p
+    # P3 (2026-10-14): the figures ride inline in a sentence, no longer bold — the report strips
+    # every bold before it ships (`_strip_emphasis_deep`), so the ask was formatting work for nothing.
+    assert "appears inline in a sentence" in p and "bold" not in p
     assert "identifier" in p                            # entities named by ID
     assert "verdict sentence FIRST" in p
     assert "hedge honestly" in p
