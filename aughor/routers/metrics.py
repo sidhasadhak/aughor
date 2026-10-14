@@ -514,10 +514,23 @@ def _require_date_on_a_table_read(data: dict) -> None:
     read = tables_read(data)
     if not read:
         return                        # a definition that names no table is checked at measurement
-    if bare_name(table) not in {bare_name(t) for t in read}:
+    if bare_name(table) in {bare_name(t) for t in read}:
+        return
+    # A table read under a name one letter away from the one typed — `order` for `orders` (the
+    # user, 2026-10-14: the SQL was joined to `luxexperience.orders`, the field still said
+    # `luxexperience.order.order_date`, and the refusal told them to add a join they had added).
+    # The near-miss is named, never substituted: the person picks it, the save stays theirs.
+    want = bare_name(table)
+    near = next((t for t in read if bare_name(t) in {want + "s", want + "es", want[:-1], want[:-2],
+                                                     want[:-1] + "ies" if want.endswith("y") else "",
+                                                     want[:-3] + "y" if want.endswith("ies") else ""}), None)
+    if near:
         raise HTTPException(status_code=422, detail=(
-            f"{column} is on {table}, which this definition does not read (it reads "
-            f"{', '.join(read)}). Add the join to {table} in the SQL, then choose the date here."))
+            f"{column} names {table}, which this definition does not read — it reads {near}. "
+            f"Did you mean {near}.{_col}? Choose it from the dates listed under the field."))
+    raise HTTPException(status_code=422, detail=(
+        f"{column} is on {table}, which this definition does not read (it reads "
+        f"{', '.join(read)}). Add the join to {table} in the SQL, then choose the date here."))
 
 
 def _plain_unit(unit: Optional[str]) -> Optional[str]:

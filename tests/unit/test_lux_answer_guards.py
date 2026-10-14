@@ -281,3 +281,13 @@ def test_a_date_on_a_table_the_definition_does_not_read_is_refused_at_the_door(m
     res = client.post("/metrics", json=joined)
     assert res.status_code == 201, res.text
     assert res.json()["time_column"] == "orders.order_date"
+    # The join added, the field still carrying the typo (the user, 2026-10-14): the near-miss is
+    # named, and the save is not told to add a join it has.
+    stale = {**joined, "sql": body["sql"].replace("FROM order_items", "FROM order_items oi JOIN luxexperience.orders o ON o.order_id = oi.order_id"),
+             "time_column": "luxexperience.order.order_date"}
+    res = client.post("/metrics", json=stale)
+    assert res.status_code == 422, res.text
+    assert res.json()["detail"] == ("luxexperience.order.order_date names luxexperience.order, which this definition does not read — "
+                                    "it reads luxexperience.orders. Did you mean luxexperience.orders.order_date? "
+                                    "Choose it from the dates listed under the field.")
+    assert saved and saved[-1].time_column == "orders.order_date"       # only the clean save was written
