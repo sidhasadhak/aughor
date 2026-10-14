@@ -22,6 +22,8 @@ import {
   type DatasetSchema, type DatasetTable, type DatasetsView, type Maturity, type MaturityBar,
 } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
+import { byWho } from "@/lib/names";
+import { useMe } from "@/lib/useMe";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select";
@@ -160,6 +162,7 @@ function OffSwitch({ connId, schema, table, off, reasons, onChanged }: {
   const [reason, setReason] = useState("out_of_domain");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const me = useMe();
   const act = async (turnOff: boolean) => {
     setBusy(true); setErr("");
     try { await setDatasetOff(connId, schema, turnOff, { table, reason }); setAsking(false); onChanged(); }
@@ -177,7 +180,7 @@ function OffSwitch({ connId, schema, table, off, reasons, onChanged }: {
       </label>
       {off && (
         <span className="aug-fs-xs" style={muted}>
-          {REASON_LABEL[off.reason] ?? off.reason}{off.declared_by ? ` · by ${off.declared_by}` : ""} — never explored, never queried
+          {REASON_LABEL[off.reason] ?? off.reason}{off.declared_by ? ` · by ${byWho(off.declared_by, me?.actor)}` : ""} — never explored, never queried
           by Investigation or Quick analysis; the SQL editor still reads it
         </span>
       )}
