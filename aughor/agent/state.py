@@ -449,6 +449,14 @@ class AnswerReport(TypedDict):
     # `{from, text, figures}`. Kept for audit and never rendered — the answer says a sentence was withheld.
     # Absent when nothing was.
     withheld: NotRequired[Optional[list]]
+    # P1 (`analyst.conclude`) — the answer's own structure, from the analyst's `conclude` tool. `exhibits`:
+    # the results the answer cites, in the order it cites them, each `{finding_id, claim}` — the canvas
+    # draws each once, captioned by its claim, and names the rest under Sources. `figures`: the 3–4
+    # figures the answer rests on, each `{label, value, note}`. `gaps`: what the data could not answer.
+    # Absent on every report whose turn did not conclude this way, which renders exactly as before.
+    exhibits: NotRequired[Optional[list]]
+    figures: NotRequired[Optional[list]]
+    gaps: NotRequired[Optional[str]]
 
 
 class AgentState(TypedDict):
@@ -611,6 +619,10 @@ class AgentState(TypedDict):
     # the narrator writes the report from; absent/empty on every phase-script run,
     # so synthesis is byte-identical there.
     _analyst_conclusion: NotRequired[Optional[str]]
+    #: P1 (`analyst.conclude`) — the analyst's structured conclusion, as its `conclude` tool
+    #: returned it: `headline`, `answer`, `exhibits` (the result ids the answer cites, each with
+    #: its claim), `figures`, `gaps`. Absent when the flag is off or the loop ended in prose.
+    _analyst_conclude: NotRequired[Optional[dict]]
     #: Rows the analyst loop gathered through non-phase tools (`run_sql`). Read by the
     #: report's no-data floor, which otherwise counts only phase findings and reads an
     #: ad-hoc-evidence run as a total failure.

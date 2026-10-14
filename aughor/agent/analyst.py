@@ -89,6 +89,9 @@ class AnalystTurn:
     #: ad-hoc statement's literal bounds (`_note_window`) — for `_attach_measured_period`. On
     #: the turn for `frame_breakdowns_ran`'s reason: a private state key must be on AgentState.
     windows_measured: list = field(default_factory=list)
+    #: P1 (`analyst.conclude`) — the conclusion the `conclude` tool accepted: headline, answer, the
+    #: cited results with their claims, figures, gaps. None until it is called and accepted.
+    conclusion: Optional[dict] = None
 
     @property
     def intake(self) -> dict:
@@ -745,6 +748,8 @@ def _record_evidence(turn: "AnalystTurn", args: dict, result: Any) -> Any:
             _dialect = getattr(getattr(turn, "conn", None), "dialect", "") or ""
             title = _adhoc_title(cols, turn.state.get("question", ""), (args or {}).get("sql", ""), rows,
                                  declared=_declared_filters(turn, _dialect), dialect=_dialect)
+            # The id this result is cited by (`conclude`) — the model reads it with the rows.
+            result["result_id"] = f"adhoc_{n}_1"
             turn.merge({"investigation_phases": (turn.state.get("investigation_phases") or []) + [{
                 "phase_id": f"adhoc_{n}",
                 "phase_name": title,
@@ -867,6 +872,9 @@ def _phase_payload(fresh: list[dict]) -> dict:
             "status": p.get("status"),
             "summary": p.get("summary"),
             "evidence": condense_phase_evidence(p),
+            # The ids these results are cited by (`conclude`), beside the evidence they name.
+            "results": [{"result_id": f.get("finding_id"), "title": f.get("title")}
+                        for f in (p.get("findings") or []) if f.get("rows")],
         })
     return {"phases": out}
 
@@ -1259,6 +1267,136 @@ _ANALYST_PLATFORM_TOOLS = frozenset({"propose_context_note"})
 INVESTIGATION_TOOLS = frozenset({"baseline", "decompose", "premise_check", "cross_section"})
 
 
+# ── conclude — the answer with its own structure (P1, `analyst.conclude`) ──────────────────
+
+#: The narrator's own rule for a headline (`SYNTHESIS_CORE_RULES`), held here by a check.
+_HEADLINE_WORDS = 16
+
+_CONCLUDE_PARAMS = {
+    "type": "object",
+    "properties": {
+        "headline": {"type": "string", "description": (
+            f"One line, under {_HEADLINE_WORDS} words: the answer's claim with its decisive figure, "
+            "read from a result. Never a sentence that announces what follows.")},
+        "answer": {"type": "string", "description": (
+            "The answer in plain prose, for the reader: what leads, what trails, by how much; what "
+            "the data could not answer. No tables and no lists of rows — a result the reader should "
+            "see is cited in `exhibits` and drawn there.")},
+        "exhibits": {"type": "array", "description": (
+            "The results the answer rests on, in the order the answer reaches them — each by the "
+            "`result_id` its tool result carried, with the one-line claim the reader should take "
+            "from it. A result not cited here is kept behind Sources, not drawn."),
+            "items": {"type": "object", "properties": {
+                "result": {"type": "string", "description": "The result_id."},
+                "claim": {"type": "string", "description": "What this result shows, in one line."}},
+                "required": ["result", "claim"]}},
+        "figures": {"type": "array", "description": (
+            "At most four figures the answer rests on, each a value read from a result: a short "
+            "label, the value as the result states it, one short note (its change, comparison or period)."),
+            "items": {"type": "object", "properties": {
+                "label": {"type": "string"}, "value": {"type": "string"}, "note": {"type": "string"}},
+                "required": ["label", "value"]}},
+        "gaps": {"type": "string", "description": (
+            "What the question asked that the data could not answer, in a sentence or two. Empty "
+            "when nothing was left unanswered.")},
+    },
+    "required": ["headline", "answer", "exhibits"],
+}
+
+
+def _known_results(turn: "AnalystTurn") -> dict[str, dict]:
+    """Every result id this turn produced, with its finding — what `conclude` may cite."""
+    out: dict[str, dict] = {}
+    for p in turn.state.get("investigation_phases") or []:
+        if p.get("phase_id") == "intake" or p.get("_hidden"):
+            continue
+        for f in p.get("findings") or []:
+            if f.get("finding_id") and (f.get("rows") or f.get("error")):
+                out[str(f["finding_id"])] = f
+    return out
+
+
+def _carries_a_table(text: str) -> bool:
+    from aughor.answer.envelope import table_at
+    lines = (text or "").split("\n")
+    return any(table_at(lines, i) for i in range(len(lines)))
+
+
+def conclude(turn: AnalystTurn, args: dict) -> dict:
+    """The analyst's answer with its own structure; the loop ends on an accepted one.
+
+    A conclusion is checked, not trusted, and nothing in it is cut or guessed by code: a
+    headline over one line, an answer carrying a table, or a cited result this turn never
+    produced goes back as a refusal naming what to fix, and the model writes it again. The
+    first-sentence cut this replaces (`investigate._lead_sentence`) headlined 43 of 88 stored
+    answers with more than 16 words, and 22 opened with "The following table lists…"."""
+    a = args or {}
+    headline = " ".join(str(a.get("headline") or "").split())
+    answer = str(a.get("answer") or "").strip()
+    known = _known_results(turn)
+    problems: list[str] = []
+    if not headline:
+        problems.append("headline is empty")
+    elif len(headline.split()) > _HEADLINE_WORDS:
+        problems.append(f"headline is {len(headline.split())} words; one line, under {_HEADLINE_WORDS}")
+    if not answer:
+        problems.append("answer is empty")
+    elif _carries_a_table(answer):
+        problems.append("the answer carries a table; take it out and cite that result in exhibits — "
+                        "the reader sees its rows there")
+    exhibits: list[dict] = []
+    seen: set[str] = set()
+    for e in a.get("exhibits") or []:
+        if not isinstance(e, dict):
+            continue
+        rid = str(e.get("result") or "").strip()
+        claim = " ".join(str(e.get("claim") or "").split())
+        if rid not in known:
+            problems.append(f"exhibit cites {rid!r}, which is not a result of this turn; the results are: "
+                            + (", ".join(sorted(known)) or "none"))
+            continue
+        if not claim:
+            problems.append(f"exhibit {rid} has no claim")
+            continue
+        if rid not in seen:
+            seen.add(rid)
+            exhibits.append({"finding_id": rid, "claim": claim})
+    if not exhibits and known:
+        problems.append("exhibits is empty; cite at least the result the answer rests on")
+    figures: list[dict] = []
+    for fg in (a.get("figures") or [])[:4]:
+        if isinstance(fg, dict) and str(fg.get("value") or "").strip():
+            figures.append({"label": " ".join(str(fg.get("label") or "").split())[:60],
+                            "value": str(fg.get("value")).strip()[:40],
+                            "note": " ".join(str(fg.get("note") or "").split())[:80]})
+    if problems:
+        return {"refused": "; ".join(problems) + ". Call conclude again with these fixed."}
+    turn.conclusion = {"headline": headline, "answer": answer, "exhibits": exhibits,
+                       "figures": figures, "gaps": " ".join(str(a.get("gaps") or "").split())}
+    return {"concluded": True, **turn.conclusion}
+
+
+def _attach_conclusion(report: Optional[dict], conclusion: Optional[dict]) -> None:
+    """The conclusion's structure on the report: `exhibits` (the cited results, in order, each
+    with its claim — stamped on the finding too, so every renderer captions it), `figures`,
+    `gaps`. A cited id the report no longer holds (pruned) is left out. Nothing on a report
+    whose turn did not conclude, so it renders exactly as before."""
+    if not report or not conclusion:
+        return
+    by_id = {str(f.get("finding_id")): f for p in report.get("phases") or []
+             for f in (p.get("findings") or [])}
+    exhibits: list[dict] = []
+    for e in conclusion.get("exhibits") or []:
+        f = by_id.get(str(e.get("finding_id")))
+        if f is None:
+            continue
+        f["claim"] = str(e.get("claim") or "") or f.get("claim")
+        exhibits.append({"finding_id": str(e["finding_id"]), "claim": str(e.get("claim") or "")})
+    report["exhibits"] = exhibits
+    report["figures"] = list(conclusion.get("figures") or [])
+    report["gaps"] = str(conclusion.get("gaps") or "")
+
+
 def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
                   session_id: str = "", canvas_id: Optional[str] = None,
                   user_question: str = "", shape: str = "diagnose") -> list[ToolSpec]:
@@ -1398,6 +1536,19 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
          if t.name in _ANALYST_PLATFORM_TOOLS]
     if shape == "describe":
         roster = [t for t in roster if t.name not in INVESTIGATION_TOOLS]
+    from aughor.kernel.flags import flag_enabled
+    if flag_enabled("analyst.conclude"):
+        roster.append(ToolSpec(
+            name="conclude",
+            description=(
+                "End the investigation with the answer: its headline, the answer in prose, the "
+                "results it cites (by result_id, each with its claim) and the figures it rests on. "
+                "Call it once the results answer the question; the turn ends on it."
+            ),
+            parameters=_CONCLUDE_PARAMS,
+            run=lambda a: conclude(turn, a),
+            concludes=True,
+        ))
     return roster
 
 
@@ -1533,10 +1684,42 @@ def _measured_preface(turn: "AnalystTurn") -> str:
                       *(f"run_sql: {sql}\n→ {payload}" for sql, payload in turn.measured_by_code)])
 
 
-def _describe_rules(budget: int) -> list[str]:
+def _describe_rules(budget: int, conclude: bool = False) -> list[str]:
     """The stopping rule for a question that asks to SEE the data (item 3). Its conclusion
     is published as the answer (`investigate._conclusion_as_answer`), so it is written for
-    the reader, not for a writer to rework."""
+    the reader, not for a writer to rework. With ``conclude`` (`analyst.conclude`) the
+    answer is handed over through the tool, with its headline and exhibits named."""
+    closing = ([
+        f"When you stop, call `conclude`. Its headline is one line, under {_HEADLINE_WORDS} words, "
+        "stating what leads, what trails and by how much — a figure read from a row; never a "
+        "sentence that announces what follows. Its answer is plain prose for the reader: groups "
+        "within a few percent of each other are alike — say so with their range, the lowest and "
+        "the highest group's own value, each read from a row — and name no leader or laggard the "
+        "data does not separate; then anything the data could not answer, in `gaps`. The figures "
+        "asked for are never a table in the answer: cite the result that holds them in `exhibits`, "
+        "by the result_id its tool result carried, with the claim the reader should take from it, "
+        "and the reader sees its rows there. A "
+        "total or share across rows is quoted from the result's `totals`, never added up by hand, "
+        "and a column under `no_total` is never added up at all; an overall average comes from a "
+        "query that computes it without the GROUP BY — never one group's value, never an average "
+        "of the groups' averages. No recommendations, no speculation about causes.",
+    ] if conclude else [
+        "When you stop, write the answer the reader will read, in plain prose. Open with "
+        "the answer itself in one sentence, with its figures — what leads, what trails, by "
+        "how much — never a definition or a restatement of the question. That sentence is the "
+        "headline the reader sees first: it states a figure read from a row, and one that "
+        "announces what follows (\"The following table lists…\") answers nothing. Groups within a "
+        "few percent of each other are alike: say so with their range — the lowest and the "
+        "highest group's own value, each read from a row — and name no leader or laggard "
+        "the data does not separate. Then "
+        "the figures asked for, as a table when there are several rows, with the period and "
+        "the definition used; then anything the data could not answer. A total or share "
+        "across rows is quoted from the result's `totals`, never added up by hand, and a "
+        "column under `no_total` is never added up at all; an "
+        "overall average comes from a query that computes it without the GROUP BY — never "
+        "one group's value, never an average of the groups' averages. No recommendations, "
+        "no speculation about causes.",
+    ])
     return [
         f"You have at most {budget} tool calls. This question asks to SEE the data, not why "
         "it moved. STOPPING RULE: stop as soon as your results answer every part of it — "
@@ -1556,21 +1739,7 @@ def _describe_rules(budget: int) -> list[str]:
         "(where the data holds it). A result that lists `first_change_missing` left that change "
         "out — measure it before you answer.",
         "",
-        "When you stop, write the answer the reader will read, in plain prose. Open with "
-        "the answer itself in one sentence, with its figures — what leads, what trails, by "
-        "how much — never a definition or a restatement of the question. That sentence is the "
-        "headline the reader sees first: it states a figure read from a row, and one that "
-        "announces what follows (\"The following table lists…\") answers nothing. Groups within a "
-        "few percent of each other are alike: say so with their range — the lowest and the "
-        "highest group's own value, each read from a row — and name no leader or laggard "
-        "the data does not separate. Then "
-        "the figures asked for, as a table when there are several rows, with the period and "
-        "the definition used; then anything the data could not answer. A total or share "
-        "across rows is quoted from the result's `totals`, never added up by hand, and a "
-        "column under `no_total` is never added up at all; an "
-        "overall average comes from a query that computes it without the GROUP BY — never "
-        "one group's value, never an average of the groups' averages. No recommendations, "
-        "no speculation about causes.",
+        *closing,
     ]
 
 
@@ -1585,6 +1754,8 @@ def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
     intake returned nothing still knows the engine and the date. Measured 2026-09-29: the
     analyst was told neither, wrote `DATEADD` and `DATE_TRUNC('month', …)` for BigQuery,
     and with no spec anchored on `CURRENT_DATE` into a month still filling."""
+    from aughor.kernel.flags import flag_enabled
+    _conclude = flag_enabled("analyst.conclude")
     lines = [
         f"You are Aughor's analyst, investigating one question against the connected "
         f"warehouse '{connection_id}'. You work the way a good analyst works: slice, "
@@ -1613,17 +1784,24 @@ def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
         "answer: re-measure the way it says, then answer from that result. Leaving out the "
         "rows a guard flagged is not a re-measure.",
         "",
-        *(_describe_rules(budget) if shape == "describe" else [
+        *(_describe_rules(budget, conclude=_conclude) if shape == "describe" else [
             f"You have at most {budget} tool calls for this investigation. STOPPING RULE: "
             "stop the moment a cause is named WITH ITS SIZE (which segment, how much of "
             "the change it carries) — or, if the data cannot answer, stop and say plainly "
             "what it cannot tell and what to check next. Do not spend remaining budget "
             "re-confirming what the evidence already shows.",
             "",
-            "When you stop, write your conclusion as plain prose: the cause and its size, "
-            "the evidence that carries it, and what you could not test. The report is "
-            "assembled from the phases you ran plus this conclusion — a slice you never "
-            "ran is a claim you cannot make.",
+            (f"When you stop, call `conclude`: the headline (one line, under {_HEADLINE_WORDS} "
+             "words — the cause and its size), the answer in plain prose (the evidence that "
+             "carries it, what you could not test), the exhibits — the results the answer rests "
+             "on, each by the result_id its tool result carried, with the one-line claim the "
+             "reader takes from it — and the figures it rests on. A slice you never ran is a "
+             "claim you cannot make, and a result you do not cite is not drawn."
+             if _conclude else
+             "When you stop, write your conclusion as plain prose: the cause and its size, "
+             "the evidence that carries it, and what you could not test. The report is "
+             "assembled from the phases you ran plus this conclusion — a slice you never "
+             "ran is a claim you cannot make."),
         ]),
     ]
     if extra:
@@ -1884,6 +2062,9 @@ def run_analyst(
 
     answer = (result.answer or "").strip()
     state["_analyst_conclusion"] = answer
+    # P1 — the structured conclusion, when the turn ended on `conclude`; None when it ended in
+    # prose (the flag off, or the budget's tool-free closing request), which is the path as before.
+    state["_analyst_conclude"] = turn.conclusion if result.stop_reason == "concluded" else None
     # What the loop gathered outside the phase tools. Absent/zero ⇒ the floor behaves
     # exactly as it did for the phase script, which never had any.
     state["_analyst_evidence_rows"] = turn.evidence_rows
@@ -1896,6 +2077,7 @@ def run_analyst(
             state.update(synth)
             if report is not None:
                 _attach_measured_period(report, turn.intake, turn.windows_measured)
+                _attach_conclusion(report, state.get("_analyst_conclude"))
         except Exception:
             logger.warning("analyst: synthesis failed; the phases stand without a report",
                            exc_info=True)

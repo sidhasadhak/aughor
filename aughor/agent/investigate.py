@@ -10727,10 +10727,17 @@ def _conclusion_as_answer(state, intake_data: dict, question: str):
     if shape != "describe" or not conclusion:
         return None
     from aughor.agent.prompts_investigate import ADASynthesisModel
-    # The body is what the headline left — nothing when the headline is the whole answer. Q1's
-    # one sentence (2026-10-03) was both, and the page printed it twice.
-    headline, body = _lead_sentence(conclusion, question, _result_values(state))
-    headline = headline or _ranked_headline(state, conclusion)
+    concluded = state.get("_analyst_conclude") or {}
+    if (concluded.get("headline") or "").strip():
+        # P1 (`analyst.conclude`) — the analyst named its own headline and answer; nothing to cut.
+        headline, body = concluded["headline"].strip(), (concluded.get("answer") or conclusion).strip()
+        if (concluded.get("gaps") or "").strip():
+            body = f"{body}\n\n{concluded['gaps'].strip()}".strip()
+    else:
+        # The body is what the headline left — nothing when the headline is the whole answer. Q1's
+        # one sentence (2026-10-03) was both, and the page printed it twice.
+        headline, body = _lead_sentence(conclusion, question, _result_values(state))
+        headline = headline or _ranked_headline(state, conclusion)
     return ADASynthesisModel(
         headline=headline, executive_summary=body, closing_summary="",
         total_change_label="", attribution_waterfall=[], confidence="HIGH",

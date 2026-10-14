@@ -201,9 +201,28 @@ object (today: chat renders the streamed report, History sniffs fields and rende
 Not proposed: a second model call to caption or shorten anything. Every proposal removes an
 ask or moves a rule into a check; none adds a call.
 
-## 7. Calls needed
+## 7. Calls made, and what was built
 
-* P1 changes the report body — the one canvas surface CLARITY never reached. Build straight
-  to it, or mock the body first on `2060e143` and `55e58a3b` (one describe, one diagnose)?
-* Order: P1 then P2 is the reader-first order; P2 then P1 is the cost-first order.
-* The e-commerce DIMENSION PRIORITY list: drop (P3) or keep as a pack-supplied default?
+* The user asked for the body mocked first: `design-mockups/canvas-answer-body.html`, on `2060e143`
+  (describe) and `55e58a3b` (diagnose). Words a reader faces: describe 217 → 227 (nothing said twice,
+  and the asked-for order value now drawn); diagnose 856 → 539, every number and caveat kept. Then
+  "let's go": P1 first; the figure row stays; uncited results are named under Sources.
+* **P1 built (2026-10-14), behind `analyst.conclude`, off by default, byte-identical off:**
+  - `tool_loop.ToolSpec.concludes` — a tool whose accepted result ends the turn (`stop_reason
+    "concluded"`, `LoopResult.conclusion`); `stop_check` hands it back once, as a text answer.
+  - `analyst.conclude(turn, args)` — headline (≤ 16 words), answer (no tables), exhibits (result ids
+    this turn produced, each with its claim), figures (≤ 4), gaps. Each rule is a CHECK: a breach is
+    refused with what to fix and the model writes again; nothing is cut or guessed. `run_sql` results
+    and phase payloads carry the `result_id` a citation uses.
+  - the report carries `exhibits` / `figures` / `gaps` (`AnswerReport`, `_attach_conclusion`); a describe
+    answer takes the conclusion's own headline (`_conclusion_as_answer`), so `_lead_sentence` and
+    `_ranked_headline` are the off-path only.
+  - the canvas (`InvestigationReport.tsx` `ConcludedBody`): headline · figure row · period and caveat
+    chips · the answer · each cited result once, numbered, captioned by its claim, with Table / SQL ·
+    Next · Sources naming the uncited results. The exhibit's grid is one slot (`ExhibitGrid`), so the
+    component study's one-grid consolidation changes one line here.
+  - tests: `tests/unit/test_analyst_conclude.py`, `test_tool_loop.py` (+3),
+    `web/components/InvestigationReport.concluded.test.tsx`.
+* Not yet proven live — a live proof is two Agent questions on theLook with the flag on (model calls;
+  the user's call). Still open from §6: P2–P6, and the 15-row cap that let `55e58a3b` claim "no category
+  above 3.8%" over a truncated slice (P3). The DIMENSION PRIORITY list: undecided.

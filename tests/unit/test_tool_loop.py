@@ -408,3 +408,75 @@ def test_a_spent_budget_still_writes_up_with_the_preface(provider):
     set_responses([FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql"), "7,027 units"])
     run_tool_loop(provider, "sys", "how many units?", [_tool()], max_steps=1, preface="measured: 7027")
     assert faux.calls()[-1].kwargs["messages"][1]["content"] == "how many units?\n\nmeasured: 7027"
+
+
+# ── a concluding tool (P1, `analyst.conclude`) ────────────────────────────────────────────
+
+def _concluding(fn):
+    return ToolSpec(name="conclude", description="end with the answer",
+                    parameters={"type": "object", "properties": {"headline": {"type": "string"}}},
+                    run=fn, concludes=True)
+
+
+def test_an_accepted_conclusion_ends_the_turn_with_its_structure(provider):
+    """The analyst's `conclude` returns the answer WITH its headline and exhibits; the loop
+    ends on it, as it ends on a text answer, and hands the structure back whole."""
+    set_responses([
+        FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql"),
+        FauxToolCall(payload={"headline": "Jeans lead at $213.2K"}, name="conclude"),
+        "this text is never requested",
+    ])
+    result = run_tool_loop(provider, "sys", "which category leads?", [
+        _tool(),
+        _concluding(lambda a: {"concluded": True, "answer": "Jeans lead.", "headline": a["headline"],
+                               "exhibits": [{"finding_id": "adhoc_1_1", "claim": "Jeans lead"}]}),
+    ])
+    assert result.stop_reason == "concluded"
+    assert result.answer == "Jeans lead."
+    assert result.conclusion["headline"] == "Jeans lead at $213.2K"
+    assert [s.tool for s in result.steps] == ["run_sql", "conclude"]
+
+
+def test_a_refused_conclusion_is_an_ordinary_result_the_model_reads(provider):
+    """A conclusion the tool refuses (a headline too long, a table in the answer, a result that
+    does not exist) carries no `concluded` — it goes back like any result, and the model
+    concludes again. Nothing is cut or guessed for it."""
+    seen: list[dict] = []
+
+    def _conclude(a):
+        seen.append(a)
+        if len(seen) == 1:
+            return {"refused": "headline is 20 words; one line, under 16. Call conclude again."}
+        return {"concluded": True, "answer": "Short.", "headline": a["headline"]}
+
+    set_responses([
+        FauxToolCall(payload={"headline": "a " * 20}, name="conclude"),
+        FauxToolCall(payload={"headline": "Short one"}, name="conclude"),
+    ])
+    result = run_tool_loop(provider, "sys", "q", [_concluding(_conclude)])
+    assert len(seen) == 2
+    assert result.stop_reason == "concluded" and result.conclusion["headline"] == "Short one"
+    assert [s.tool for s in result.steps] == ["conclude", "conclude"]
+
+
+def test_a_conclusion_is_handed_back_once_when_the_stop_check_refuses_it(provider):
+    """`stop_check` guards a conclusion exactly as it guards a text answer: once, with the
+    reason, while two calls remain; the second conclusion stands."""
+    set_responses([
+        FauxToolCall(payload={"headline": "First"}, name="conclude"),
+        FauxToolCall(payload={"sql": "SELECT 2"}, name="run_sql"),
+        FauxToolCall(payload={"headline": "Second"}, name="conclude"),
+    ])
+    checks: list[str] = []
+
+    def _not_yet(answer):
+        checks.append(answer)
+        return "Every result you have carries a warning; re-measure first." if len(checks) == 1 else None
+
+    result = run_tool_loop(provider, "sys", "q", [
+        _tool(), _concluding(lambda a: {"concluded": True, "answer": a["headline"] + " answer.",
+                                        "headline": a["headline"]})],
+        max_steps=6, stop_check=_not_yet)
+    assert checks == ["First answer."]        # the second stop is the answer, as for text
+    assert result.conclusion["headline"] == "Second"
+    assert [s.tool for s in result.steps] == ["conclude", "(answer held)", "run_sql", "conclude"]
