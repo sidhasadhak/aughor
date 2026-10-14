@@ -160,7 +160,26 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
         if _no_total:
             out["no_total"] = dict(_no_total)
     if result.error:
-        out["repair"] = route_error(result.error, sql, getattr(conn, "dialect", "") or "")
+        _dialect = getattr(conn, "dialect", "") or ""
+        out["repair"] = route_error(result.error, sql, _dialect)
+        # The real columns of the table the error names, read from the schema the turn may see —
+        # the fixer's own diagnosis (`diagnose_sql_error`). Without it the model got the driver's
+        # text and its HINT ("perhaps you meant o.order_id"), listed the whole schema, and wrote
+        # the same column again (the analyst, 99201af8, 2026-10-14).
+        try:
+            from aughor.db.schema_render import parse_schema_tables
+            from aughor.sql.writer import diagnose_sql_error
+            _diag = diagnose_sql_error(
+                result.error, sql,
+                parse_schema_tables(_visible_schema(connection_id, canvas_id=canvas_id,
+                                                    schema_scope=schema_scope)),
+                dialect=_dialect or "duckdb")
+            if _diag:
+                out["repair"]["diagnosis"] = _diag
+                out["repair"]["instruction"] = f"{_diag}\n{out['repair'].get('instruction') or ''}".strip()
+        except Exception as _exc:  # noqa: BLE001 — the diagnosis is best-effort; the error stands
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "sql diagnosis for a failed run_sql is best-effort", counter="converse.run_sql.diagnosis")
     elif emit is not None:
         _surface_primitive_answer(emit, connection_id, out.get("sql") or sql, result,
                                   out["guard_receipts"],

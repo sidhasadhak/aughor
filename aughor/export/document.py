@@ -521,6 +521,11 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
         _n = lambda s: re.sub(r"\s+", " ", re.sub(r"\*+", "", s or "")).strip()
         if ph.get("summary") and _n(ph["summary"]) not in _n(rep.get("executive_summary") or ""):
             blocks.append(_p(ph["summary"]))
+        # P5 — the code-written significance verdict rides its own slot, not the summary's prose;
+        # printed small under the summary, the way a finding's stat note is.
+        _verdict = ph.get("verdict") if isinstance(ph.get("verdict"), dict) else None
+        if _verdict and str(_verdict.get("text") or "").strip():
+            blocks.append(Block("prose", tag="Verdict", text=str(_verdict["text"]).strip()))
         for _cav in ph.get("caveats") or []:
             blocks.append(Block("prose", tag="Caveat", text=f"⚠ {_cav}"))
         for f in ph["findings"]:

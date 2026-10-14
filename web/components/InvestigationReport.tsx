@@ -85,7 +85,27 @@ interface InvestigationPhase {
   // Machine caveats qualifying this phase (fan-out etc.) — structured, no longer fused
   // into `summary`; absent on older cached phases.
   caveats?: string[];
+  // P5: the code-written significance verdict, structured — drawn as the badge, never read out
+  // of the summary's prose. `significant` null = tested but not assessable (too short a baseline).
+  verdict?: { sigma?: number | null; significant?: boolean | null; text?: string } | null;
   _hidden?: boolean;   // pruned by the relevance pass (nothing that moves the reader) — don't render
+}
+
+/** The phase's code-written verdict as the badge the findings already wear, or a muted line when
+ *  code could not assess it. Older stored phases carry the verdict inside `summary` as
+ *  "[stats.py: σ=…]"; `stripMarker` keeps that bracket out of the reader's prose too. */
+const MARKER = /\s*\[stats\.py:[^\]]*\]/g;
+const stripMarker = (s: string) => (s || "").replace(MARKER, "").trim();
+function PhaseVerdict({ verdict }: { verdict?: InvestigationPhase["verdict"] }) {
+  if (!verdict?.text) return null;
+  if (typeof verdict.significant !== "boolean") {
+    return <div className="aug-fs-xs text-zinc-500" data-testid="phase-verdict">{verdict.text}</div>;
+  }
+  return (
+    <div className="self-end" data-testid="phase-verdict">
+      <SignificanceBadge significant={verdict.significant} note={verdict.text} />
+    </div>
+  );
 }
 
 interface WaterfallEntry {
@@ -359,17 +379,20 @@ const drawn = (f: { interpretation: string; columns: string[]; error?: string })
 function PhaseSection({ phase, onShowSource, execSummary, answer, repeats }: { phase: InvestigationPhase; onShowSource?: ShowSource; execSummary?: string; answer?: string; repeats?: Set<string> }) {
   if (phase.status === "skipped") return null;
   const findings = phase.findings.filter(drawn);
-  if (!phase.summary && findings.length === 0) return null;
-  const summaryRedundant = restated(phase.summary, execSummary);
+  const summary = stripMarker(phase.summary);
+  if (!summary && !phase.verdict?.text && findings.length === 0) return null;
+  const summaryRedundant = restated(summary, execSummary);
 
   return (
     // Clean-output policy (Genie-style): no phase-machinery header ("CROSS-SECTIONAL
     // SCAN", "TEMPORAL TREND — WHEN") — the reader gets a continuous, confident
     // narrative; which internal phase produced a finding is process, not insight.
     <BriefSection>
-      {phase.summary && !summaryRedundant && <BriefProse text={phase.summary} />}
-      {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} onShowSource={onShowSource} answer={answer}
-                                        repeat={repeats?.has(f.finding_id)} />)}
+      {summary && !summaryRedundant && <BriefProse text={summary} />}
+      <PhaseVerdict verdict={phase.verdict} />
+      {withUniqueKeys(findings, f => f.finding_id).map(([key, f]) =>
+        <EvidenceBlock key={key} finding={f} onShowSource={onShowSource} answer={answer}
+                       repeat={repeats?.has(f.finding_id)} />)}
     </BriefSection>
   );
 }
@@ -441,9 +464,10 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
         </span>
         {isSkipped && <span className="aug-fs-xs text-zinc-500 italic">{phase.skipped_reason}</span>}
       </div>
-      {phase.summary && !isSkipped && (
-        <div className="aug-fs-xs text-zinc-500 leading-relaxed">{renderEmphasis(phase.summary)}</div>
+      {stripMarker(phase.summary) && !isSkipped && (
+        <div className="aug-fs-xs text-zinc-500 leading-relaxed">{renderEmphasis(stripMarker(phase.summary))}</div>
       )}
+      {!isSkipped && <PhaseVerdict verdict={phase.verdict} />}
       {/* Phase caveats — the structured home of what used to be a ⚠-prefix fused into the
           summary prose (and once promoted into a report headline). Rendered as an advisory,
           visually distinct from findings. */}
@@ -593,8 +617,10 @@ function ConcludedBody({ report, onShowSource, frame }: { report: AnswerReport; 
       {cited.length > 0 && (
         <BriefSection>
           <Label right={`${cited.length} of ${results.length} results drawn`}>Exhibits</Label>
-          {cited.map((x, i) => (
-            <Exhibit key={x.finding.finding_id} n={i + 1} finding={x.finding} claim={x.claim} answer={answer} onShowSource={onShowSource} />
+          {/* A finding id names a result within its phase; two runs of the same phase tool in one
+              turn (decompose twice, 99201af8) carried the same ids — unique keys, not kinds. */}
+          {withUniqueKeys(cited, x => x.finding.finding_id).map(([key, x], i) => (
+            <Exhibit key={key} n={i + 1} finding={x.finding} claim={x.claim} answer={answer} onShowSource={onShowSource} />
           ))}
         </BriefSection>
       )}
@@ -613,12 +639,12 @@ function ConcludedBody({ report, onShowSource, frame }: { report: AnswerReport; 
           <Label right={`${results.length} results`}>Sources</Label>
           <div className="aug-fs-xs text-zinc-500" style={{ ...ROW, gap: 4 }} data-testid="uncited-results">
             <span>{uncited.length} not drawn:</span>
-            {uncited.map(f => onShowSource ? (
-              <Button key={f.finding_id} variant="ghost" size="xs" title={`Data + SQL behind “${f.title}”`}
+            {withUniqueKeys(uncited, f => f.finding_id).map(([key, f]) => onShowSource ? (
+              <Button key={key} variant="ghost" size="xs" title={`Data + SQL behind “${f.title}”`}
                       onClick={() => onShowSource({ columns: f.columns, rows: f.rows as unknown[][], sql: f.sql || null, title: f.title })}>
                 {sourceLabel(f.title)} · {f.row_count || f.rows.length} rows
               </Button>
-            ) : <span key={f.finding_id}>{sourceLabel(f.title)} · {f.row_count || f.rows.length} rows</span>)}
+            ) : <span key={key}>{sourceLabel(f.title)} · {f.row_count || f.rows.length} rows</span>)}
           </div>
         </BriefSection>
       )}

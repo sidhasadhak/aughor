@@ -247,15 +247,29 @@ _CODE_NOTE_NEG = re.compile(
     r"|not a significance verdict|significance not assessable", re.I)
 
 
-def _phase_significance_signal(p: dict) -> Optional[bool]:
-    """True / False when the phase carries a structured significance verdict — the code-written
-    stats.py marker on its summary, or the `is_significant` flags its findings carry after every
-    code override; None only for a phase with no findings and no marker (prose-only)."""
+def phase_verdict(p: dict) -> Optional[bool]:
+    """The code-written significance verdict a phase carries, or None: the structured `verdict`
+    slot (P5, 2026-10-14) first, else the `[stats.py: σ=…]` marker older stored phases carry
+    on their summary. True = significant anomaly, False = within normal variance; None when
+    code tested nothing or could not assess it (too short a baseline)."""
+    v = p.get("verdict")
+    if isinstance(v, dict) and isinstance(v.get("significant"), bool):
+        return v["significant"]
     summary = str(p.get("summary") or "")
     if _CODE_SIG_POS.search(summary):
         return True
     if _CODE_SIG_NEG.search(summary):
         return False
+    return None
+
+
+def _phase_significance_signal(p: dict) -> Optional[bool]:
+    """True / False when the phase carries a structured significance verdict — the code-written
+    verdict (`phase_verdict`), or the `is_significant` flags its findings carry after every
+    code override; None only for a phase with no findings and no verdict (prose-only)."""
+    coded = phase_verdict(p)
+    if coded is not None:
+        return coded
     findings = [f for f in (p.get("findings") or []) if isinstance(f, dict)]
     if not findings:
         return None
@@ -277,7 +291,7 @@ def _states_normal_variance(p: dict) -> bool:
     contradiction whenever any other phase flagged a finding, and the writer was ordered to resolve a tension nobody
     stated. Replayed over the 254 stored reports of two phases or more (2026-10-01): 155 such contradictions, every
     one naming the Question Intake; 13 once a phase that claims nothing takes no side."""
-    if _CODE_SIG_NEG.search(str(p.get("summary") or "")):
+    if phase_verdict(p) is False:
         return True
     return any(_CODE_NOTE_NEG.search(str(f.get("stat_note") or ""))
                for f in (p.get("findings") or []) if isinstance(f, dict))

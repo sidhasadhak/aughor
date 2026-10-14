@@ -48,6 +48,11 @@ class StatResult:
     #: LLM's evidence and keeps its precision; this is what a report may print verbatim.
     #: Empty when the technical phrasing is already plain enough to show.
     plain: str = ""
+    #: The column the series was read from, for a per-column result (a time series, a
+    #: distribution) — so a caller can take the METRIC's σ rather than the largest σ of any
+    #: column (2f8ad418, 2026-10-14: a baseline result carried revenue, orders and AOV, and the
+    #: orders series' 0.97 was stamped as revenue's verdict while revenue sat at 0.19σ).
+    column: str = ""
 
 
 @dataclass
@@ -898,6 +903,7 @@ def analyze_query_result(columns: list[str], rows: list[list], sql: Optional[str
         if date_idx is not None and date_idx != num_idx and len(values) >= 10:
             stat = _analyze_time_series(col_name, values)
             if stat:
+                stat.column = col_name
                 results.append(stat)
             # Period-over-period: surface the latest material change (additive, gated).
             changes = [c for c in pct_changes(values) if c is not None]
@@ -914,6 +920,7 @@ def analyze_query_result(columns: list[str], rows: list[list], sql: Optional[str
         elif date_idx is None and len(values) >= 5:
             stat = _analyze_distribution(col_name, values)
             if stat:
+                stat.column = col_name
                 results.append(stat)
             # Concentration: surface Pareto-style skew across groups — ONLY for an ADDITIVE
             # measure. Share-of-total is meaningless for an average/rate/ratio (summing

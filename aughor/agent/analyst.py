@@ -105,6 +105,7 @@ class AnalystTurn:
         self.state.update(node_return or {})
         phases = self.state.get("investigation_phases") or []
         fresh = phases[self.emitted_phases:]
+        _unique_phase_ids(phases[:self.emitted_phases], fresh)
         for _ in fresh:
             self.emitted_phases += 1
             self.emit("phase_complete", {"phase": phases[self.emitted_phases - 1],
@@ -112,6 +113,36 @@ class AnalystTurn:
         if fresh:
             self.phase_tools_run.append(tool)
         return fresh
+
+
+def _unique_phase_ids(earlier: list[dict], fresh: list[dict]) -> None:
+    """A second run of the same phase tool gets ids of its own.
+
+    The phase bodies name their findings by kind — `decomp_0`, `decomp_1`, … — because the
+    script runs each once. The analyst may run `decompose` twice (99201af8, Lux, 2026-10-14:
+    once by platform, once by category and brand), and the turn then held two phases called
+    `decomposition` carrying the same three ids: the exhibits' citations were ambiguous (the
+    page drew the second `decomp_1` under the first's claim) and React keyed two children
+    `decomp_2`. The repeat is renamed in place, before the model reads the ids
+    (`_phase_payload`) and before the frame streams: `decomposition_2`, `decomp_0_2`, …"""
+    taken = {str(p.get("phase_id") or "") for p in earlier}
+    ids = {str(f.get("finding_id") or "") for p in earlier for f in (p.get("findings") or [])}
+    for p in fresh:
+        pid = str(p.get("phase_id") or "")
+        fids = [str(f.get("finding_id") or "") for f in (p.get("findings") or [])]
+        if pid not in taken and not any(f in ids for f in fids if f):
+            taken.add(pid)
+            ids.update(f for f in fids if f)
+            continue
+        n = 2
+        while f"{pid}_{n}" in taken or any(f"{f}_{n}" in ids for f in fids if f):
+            n += 1
+        p["phase_id"] = f"{pid}_{n}"
+        taken.add(p["phase_id"])
+        for f in p.get("findings") or []:
+            if f.get("finding_id"):
+                f["finding_id"] = f"{f['finding_id']}_{n}"
+                ids.add(f["finding_id"])
 
 
 #: A date bound in a WHERE clause — its operator, the day, and whatever follows the day inside
@@ -1323,8 +1354,8 @@ _CONCLUDE_PARAMS = {
             "read from a result. Never a sentence that announces what follows.")},
         "answer": {"type": "string", "description": (
             "The answer in plain prose, for the reader: what leads, what trails, by how much; what "
-            "the data could not answer. No tables and no lists of rows — a result the reader should "
-            "see is cited in `exhibits` and drawn there.")},
+            "the data could not answer. In the report's voice, never the first person. No tables and "
+            "no lists of rows — a result the reader should see is cited in `exhibits` and drawn there.")},
         "exhibits": {"type": "array", "description": (
             "The results the answer rests on, in the order the answer reaches them — each by the "
             "`result_id` its tool result carried, with the one-line claim the reader should take "
@@ -1340,11 +1371,38 @@ _CONCLUDE_PARAMS = {
                 "label": {"type": "string"}, "value": {"type": "string"}, "note": {"type": "string"}},
                 "required": ["label", "value"]}},
         "gaps": {"type": "string", "description": (
-            "What the question asked that the data could not answer, in a sentence or two. Empty "
-            "when nothing was left unanswered.")},
+            "What the question asked that the evidence does not settle, in a sentence or two for the "
+            "reader: the hypotheses not tested, the splits not made — in the report's voice ('This "
+            "analysis did not test…'), never the first person, and never the tools, queries or "
+            "errors behind it (those are in the trace). Empty when nothing was left unanswered.")},
     },
     "required": ["headline", "answer", "exhibits"],
 }
+
+#: The machine's words in the reader's prose: the names of the tools and their plumbing, and an
+#: attempt that failed ("the query errored") in place of what is unknown. 99201af8 (2026-10-14):
+#: "I could not run the category and brand cut myself because the query errored. I rely on the
+#: phase tool's summaries for those splits." under the answer, on the page.
+_MACHINERY_RE = re.compile(
+    r"\b(?:phase tools?|tool results?|result_ids?|run_sql|list_tables|describe_table|conclude tool|"
+    r"(?:decompose|baseline|cross[- ]section|profile_column|z_score) tool|the query (?:errored|failed)|"
+    r"(?:my|the) quer(?:y|ies) errored|an? sql error)\b", re.I)
+#: The first person — "I", "my", "myself" — as a word, not inside one (not "AI", not "MY_COL").
+_FIRST_PERSON_RE = re.compile(r"(?<![\w'’])(?:I|[Mm]y|[Mm]yself)(?=['’]|\s|[,.;:!?)]|$)")
+
+
+def _reader_register(field: str, text: str) -> list[str]:
+    """What in ``text`` is not written for the reader: the machinery named, the first person."""
+    out: list[str] = []
+    m = _MACHINERY_RE.search(text or "")
+    if m:
+        out.append(f"{field} names the machinery ({m.group(0)!r}); say what the data could not answer "
+                   "in the reader's words — the hypotheses not tested, the splits not made — never the "
+                   "tools, queries or errors behind it")
+    if _FIRST_PERSON_RE.search(text or ""):
+        out.append(f"{field} speaks in the first person; write in the report's voice ('This analysis did "
+                   "not test…', 'The data does not show…')")
+    return out
 
 
 def _known_results(turn: "AnalystTurn") -> dict[str, dict]:
@@ -1387,6 +1445,8 @@ def conclude(turn: AnalystTurn, args: dict) -> dict:
     elif _carries_a_table(answer):
         problems.append("the answer carries a table; take it out and cite that result in exhibits — "
                         "the reader sees its rows there")
+    gaps = " ".join(str(a.get("gaps") or "").split())
+    problems += _reader_register("the answer", answer) + _reader_register("gaps", gaps)
     exhibits: list[dict] = []
     seen: set[str] = set()
     for e in a.get("exhibits") or []:
@@ -1415,7 +1475,7 @@ def conclude(turn: AnalystTurn, args: dict) -> dict:
     if problems:
         return {"refused": "; ".join(problems) + ". Call conclude again with these fixed."}
     turn.conclusion = {"headline": headline, "answer": answer, "exhibits": exhibits,
-                       "figures": figures, "gaps": " ".join(str(a.get("gaps") or "").split())}
+                       "figures": figures, "gaps": gaps}
     return {"concluded": True, **turn.conclusion}
 
 
@@ -1887,7 +1947,8 @@ class AnalystResult:
 def _base_state(question: str, connection_id: str, investigation_id: str,
                 schema_context: str, *, origin_finding: Optional[dict],
                 scope_schema: str, canvas_id: Optional[str],
-                canvas_schema_context: str, data_catalog: str) -> dict:
+                canvas_schema_context: str, data_catalog: str,
+                full_schema_context: str = "") -> dict:
     """The synthetic AgentState the phase bodies read — the graph's seed shape, minus
     the graph. `_allow_clarify` is False on purpose: an analyst turn never PAUSES for
     a widget; when the question is ambiguous the model asks in prose."""
@@ -1896,6 +1957,7 @@ def _base_state(question: str, connection_id: str, investigation_id: str,
         "investigation_id": investigation_id, "trace_id": "", "agent_id": "",
         "_allow_clarify": False,
         "schema_context": schema_context, "unresolved_tensions": [],
+        "full_schema_context": full_schema_context or schema_context,
         "scan_context": "", "events_context": "",
         "hypotheses": [], "current_hypothesis_idx": 0, "query_history": [],
         "evidence_scores": [], "pitfalls": [],
@@ -1956,9 +2018,14 @@ def build_analyst_context(connection_id: str, question: str, *,
     data_catalog = ""
     _t0 = time.monotonic()
     try:
-        from aughor.db.schema_render import parse_schema_tables
         from aughor.tools.data_catalog import build_data_catalog
-        linked = list(parse_schema_tables(schema).keys())
+        from aughor.tools.schema_linker import complete_join_paths
+        # The linked text plus the tables its joins need — the dated parent of a kept table
+        # above all (99201af8: `orders` for a revenue on `order_items`); the catalog is built
+        # from the same list, as the deep path builds its own.
+        schema, linked = complete_join_paths(question, schema, full_schema,
+                                             connection_id=es.connection_id,
+                                             scope_schema=es.eff_schema or None)
         if linked:
             data_catalog = build_data_catalog(conn, linked, schema=es.eff_schema or None)
     except Exception:
@@ -1971,6 +2038,10 @@ def build_analyst_context(connection_id: str, question: str, *,
     return conn, {
         "connection_id": es.connection_id,
         "schema_context": schema,
+        # The un-linked schema, for the one reader that must see every column: the intake's
+        # date resolver (`_resolve_date_column`), which corrects a column the model invented
+        # against the catalogue — not against the excerpt the model was shown.
+        "full_schema_context": full_schema,
         "scope_schema": es.eff_schema or "",
         "canvas_id": canvas_id,
         "canvas_schema_context": es.schema_context or "",

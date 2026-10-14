@@ -4318,33 +4318,16 @@ async def _stream_investigation(
         data_catalog = ""
         try:
             from aughor.tools.data_catalog import build_data_catalog
-            from aughor.tools.schema import parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
-            linked_tables = list(parse_schema_tables(schema).keys())
+            from aughor.tools.schema_linker import complete_join_paths
+            # Complete the join paths BEFORE building the catalog, and in the schema TEXT too
+            # (`complete_join_paths` — one body with the Agent path): schema-linking picks tables
+            # by keyword, missing the parent that carries the date — `orders` for a revenue on
+            # `order_items`. The catalog was completed this way since 2026-08; the text the intake
+            # and its date resolver read was not (99201af8, 2026-10-14). Pinned temporal
+            # dimensions, then ranked+capped, then FK-completed, scoped to the canvas schema.
+            schema, linked_tables = complete_join_paths(
+                question, schema, full_schema, connection_id=connection_id, scope_schema=scope_schema or None)
             if linked_tables:
-                # Complete the join paths BEFORE building the catalog (mirrors the /chat path):
-                # schema-linking picks ~4 tables by keyword, missing bridge/parent tables a join
-                # needs — e.g. the timestamp on `orders` when revenue is on `invoices`. Without
-                # this the deep-analysis coder can't see the date column and hallucinates one on the metric
-                # table. Expand against the FULL schema, capped at 10 tables.
-                from aughor.llm.profile import profile_for as _pf
-                from aughor.tools.schema_linker import rank_tables_for_context
-                _cat_cap = _pf("coder").context_table_cap
-                # Pinned, then ranked+capped, then FK-completed — see the /chat path for
-                # why the temporal dimension cannot ride along as a plain append.
-                _pinned = [t for t in temporal_dimension_tables(full_schema, linked_tables, question)
-                           if t not in linked_tables]
-                linked_tables = rank_tables_for_context(
-                    question, full_schema, linked_tables + _pinned,
-                    cap=_cat_cap, connection_id=connection_id, pinned=_pinned)
-                linked_tables = fk_neighbor_expand(full_schema, linked_tables, cap=_cat_cap)
-                # Scope the expansion to the canvas schema: temporal/FK expansion walks the
-                # FULL schema and can pull a sibling schema's same-named table (netflix.products
-                # into a missimi investigation), which then becomes a cross-schema reference the
-                # explore planner copies verbatim (bypassing search_path). Drop out-of-scope tables.
-                if scope_schema:
-                    _allow = scope_schema.strip().lower()
-                    linked_tables = [t for t in linked_tables
-                                     if "." not in t or t.split(".")[0].strip().lower() == _allow]
                 data_catalog = await asyncio.to_thread(
                     lambda: build_data_catalog(db, linked_tables, schema=scope_schema or None)
                 )
@@ -4466,6 +4449,8 @@ async def _stream_investigation(
             "agent_id": _current_agent_id(),
             "_allow_clarify": _clarify_gate,
             "schema_context": schema_for_agent, "unresolved_tensions": [], "scan_context": "", "events_context": "",
+            # The un-linked catalogue, for the intake's date resolver (see `full_schema_context` in analyst.py).
+            "full_schema_context": full_schema,
             "hypotheses": [], "current_hypothesis_idx": 0, "query_history": [], "evidence_scores": [],
             "pitfalls": [], "prior_analyses": _seed_priors, "origin_finding": _origin, "iteration": 0,
             "max_iterations": int(os.getenv("AUGHOR_MAX_ITER", "6")),

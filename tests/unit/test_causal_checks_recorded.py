@@ -29,8 +29,10 @@ def test_an_unchallenged_cause_is_recorded_and_said():
     assert checks["licence"] == "causal"
     assert checks["claims"] == [{"sentence": CAUSAL, "verb": "drove"}]
     assert checks["refutation"]["status"] == "not_run"
+    # P5: the reader's half only — the machine's reason stays on `causal_checks.refutation.why`
     assert report["data_gaps"][-1] == ("Not independently challenged: this report names a cause, and "
-                                       "no check tried to refute it — this verdict is MEDIUM.")
+                                       "no check tried to refute it.")
+    assert checks["refutation"]["why"] == "this verdict is MEDIUM"
 
 
 def test_a_cause_that_survived_is_recorded_and_needs_no_caveat():

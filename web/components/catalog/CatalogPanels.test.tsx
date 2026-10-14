@@ -5,7 +5,7 @@
  * the tables) and one table (its figures, the lifecycle beside its columns). Held on theLook's shapes, with the
  * BigQuery connection that lists the same seven tables — said as exactly that, with Compare and no destructive door.
  */
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Theme } from "@radix-ui/themes";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -214,6 +214,21 @@ describe("one catalog", () => {
     await waitFor(() => expect(rows.find(r => r.textContent?.includes("inventory_items"))).toHaveTextContent("Inventory item"));
     fireEvent.click(within(rows[0]).getByRole("button", { name: "events" }));
     expect(p.onOpenTable).toHaveBeenCalledWith("thelook", { name: "events", row_count: 2426096 });
+  });
+
+  it("offers the Diagram as a tab — on a one-schema connection and at schema scope — not as a tool", async () => {
+    // 2026-10-14: #610 had moved the schema's ERD into Tools ▾, and the user read it as removed.
+    scope();
+    expect(screen.getByRole("tab", { name: "Diagram" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByTestId("catalog-tools"), { key: "Enter" });
+    expect(screen.queryByRole("menuitem", { name: "Diagram" })).toBeNull();
+    fireEvent.keyDown(screen.getByTestId("catalog-tools"), { key: "Escape" });
+    cleanup();
+    scope({ schema: THELOOK.schemas[0] });
+    expect(screen.getByRole("tab", { name: "Diagram" })).toBeInTheDocument();
+    cleanup();
+    scope({ entry: entry("two", "Two", "postgres", [{ name: "a", tables: [] }, { name: "b", tables: [] }]) });
+    expect(screen.queryByRole("tab", { name: "Diagram" })).toBeNull();   // which schema? none chosen yet
   });
 
   it("keeps every tool reachable behind Tools ▾ — removing the connection goes to its own confirmation", async () => {

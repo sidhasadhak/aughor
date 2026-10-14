@@ -2506,6 +2506,7 @@ def _phase_result(
     findings: list[InvestigationFinding],
     skipped_reason: Optional[str] = None,
     caveats: Optional[list[str]] = None,
+    verdict: Optional[dict] = None,
 ) -> InvestigationPhaseResult:
     # CA-4 form-by-job: the model names a JOB ("magnitude", "trend", …); the
     # form is resolved here — the one seam every phase's findings pass through —
@@ -2519,7 +2520,7 @@ def _phase_result(
             if _cap:
                 _prior = (_f.get("stat_note") or "").strip()
                 _f["stat_note"] = f"{_prior} {_cap}".strip() if _prior else _cap
-    return InvestigationPhaseResult(
+    out = InvestigationPhaseResult(
         phase_id=phase_id,
         phase_name=phase_name,
         phase_icon=phase_icon,
@@ -2529,6 +2530,63 @@ def _phase_result(
         skipped_reason=skipped_reason,
         caveats=list(caveats or []),
     )
+    if verdict:
+        out["verdict"] = dict(verdict)   # P5 — the code-written verdict, never in `summary`
+    return out
+
+
+_SIGMA_STOP = frozenset({"sum", "avg", "count", "min", "max", "distinct", "as", "of", "the", "by", "and", "total"})
+
+
+def _metric_sigma(stat_results, metric_label: str, metric_sql: str) -> tuple[Optional[float], str]:
+    """The σ of the METRIC's own series among a result's analysed columns, with that column's
+    name — never the largest σ of any column.
+
+    The baseline node took the maximum over every numeric column of its first result; on
+    `2f8ad418` (2026-10-14) that result carried revenue, orders and AOV, the orders series won
+    at 0.97, and the phase's verdict said so about revenue — which sat at 0.19σ, as the
+    finding's own note read. The column is matched to the metric by name: its label's words
+    ("revenue (gross merchandise value)" → revenue), or an identifier its formula reads
+    (`SUM(gmv_eur)` → gmv_eur). With no name match the result's first analysed column is
+    taken — the planners write the metric as the first measure — and a result whose stats
+    carry no column (older callers, tests) keeps the first σ it has."""
+    scored = [sr for sr in (stat_results or []) if getattr(sr, "sigma", None) is not None]
+    if not scored:
+        return None, ""
+    label_tokens = {t for t in re.findall(r"[a-z0-9]+", (metric_label or "").lower()) if len(t) > 1 and t not in _SIGMA_STOP}
+    sql_names = {t for t in re.findall(r"[a-z_][a-z0-9_]*", (metric_sql or "").lower()) if t not in _SIGMA_STOP}
+    for sr in scored:
+        col = str(getattr(sr, "column", "") or "").lower()
+        if not col:
+            continue
+        col_tokens = {t for t in re.findall(r"[a-z0-9]+", col) if len(t) > 1}
+        if col in sql_names or col in label_tokens or (col_tokens & label_tokens):
+            return float(sr.sigma), col
+    first = next((sr for sr in scored if getattr(sr, "column", "")), scored[0])
+    return float(first.sigma), str(getattr(first, "column", "") or "")
+
+
+def baseline_verdict(code_sigma: Optional[float], code_significant: Optional[bool],
+                     n_periods: Optional[int] = None, column: str = "") -> Optional[dict]:
+    """The baseline's code-written significance verdict as the phase's `verdict` slot (P5).
+
+    Until 2026-10-14 this was appended to the phase SUMMARY as "[stats.py: σ=3.88 — significant
+    anomaly]" — a bracket from the machine inside the one sentence of prose the reader sees for
+    the phase, in 16 of 88 stored reports. The same three facts now ride a slot of their own:
+    the σ, the bool, and the words — read by the badge on the page, the contradiction scan and
+    the confidence ceiling. None when code tested nothing (no series long enough to z-score and
+    no short-baseline note to make)."""
+    if code_sigma is not None:
+        significant = bool(code_significant)
+        label = "significant anomaly" if significant else "within normal variance"
+        on = f" on {column}" if column else ""
+        return {"sigma": round(float(code_sigma), 2), "significant": significant, "column": column or "",
+                "text": f"σ = {float(code_sigma):.2f}{on} — {label}"}
+    if n_periods is not None and n_periods < _MIN_BASELINE_PERIODS:
+        return {"sigma": None, "significant": None,
+                "text": (f"significance not assessable — the baseline holds {max(n_periods - 1, 0)} "
+                         f"period(s); at least {_MIN_BASELINE_PERIODS} are needed")}
+    return None
 
 
 def _finding_from_result_and_model(
@@ -2958,9 +3016,15 @@ def _lead_with_verdict(finding: dict, verdict: str) -> None:
     interp = (finding.get("interpretation") or "").strip()
     if not interp or not _makes_unnegated_standout_claim(interp):
         return
-    if interp.startswith(verdict[:40]):
-        return                       # already led with it — don't stack duplicates
-    finding["interpretation"] = f"{verdict} The phase narrator wrote: {interp}"
+    # P5 (2026-10-14): the verdict goes to the finding's `stat_note` — the slot the page draws as
+    # the badge above the sentence, the PDF as the small line under it — and the model's sentence
+    # stays the body, unprefixed. "<verdict> The phase narrator wrote: <sentence>" put two voices
+    # and a stage direction into one paragraph of the reader's prose.
+    note = (finding.get("stat_note") or "").strip()
+    if verdict[:40] in note or verdict[:40] in interp:
+        finding["is_significant"] = False
+        return                       # already carried — don't stack duplicates
+    finding["stat_note"] = f"{verdict} {note}".strip() if note else verdict
     finding["is_significant"] = False
     from aughor.stats import stats as _st
     _st.inc("deep_analysis.finding_contradicted_its_verdict")
@@ -4255,6 +4319,10 @@ def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
         if p.get("_hidden"):
             continue                 # pruned to nothing — its summary was the noise
         lines.append(f"[{p['phase_name']}] {p['summary']}")
+        # P5 — the code-written verdict reaches the narrator in words, from its own slot.
+        _v = p.get("verdict") if isinstance(p.get("verdict"), dict) else None
+        if _v and _v.get("text"):
+            lines.append(f"  ▸ CODE VERDICT: {_v['text']}")
         # Phase caveats render as their own labelled lines, next to the findings they
         # qualify — never fused into the summary prose (which downstream consumers
         # promote into headlines and executive summaries).
@@ -5402,7 +5470,8 @@ def _evidence_confidence_ceiling(phases) -> tuple[str, str]:
                     if (isinstance(row, (list, tuple)) and len(row) >= 2 and str(row[0]).lower() == "comparison"
                             and _NO_PRIOR_PERIOD_RE.search(str(row[1]))):
                         reasons.append("no prior period exists in the data, so the change was described, not compared")
-        if _SIG_NOT_ASSESSABLE_RE.search(str(p.get("summary") or "")):
+        _v = p.get("verdict") if isinstance(p.get("verdict"), dict) else {}
+        if _SIG_NOT_ASSESSABLE_RE.search(str(_v.get("text") or "")) or _SIG_NOT_ASSESSABLE_RE.search(str(p.get("summary") or "")):
             reasons.append("the baseline is too short for a significance verdict")
         for f in p.get("findings") or []:
             if _SIG_NOT_ASSESSABLE_RE.search(str(f.get("stat_note") or "")):
@@ -6947,9 +7016,14 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
 
     # Resolve a hallucinated / non-date `date_column` to a REAL date/timestamp column —
     # often on a joinable table (orders.order_ts) rather than the metric table (invoices).
+    # Checked against the FULL catalogue when the path kept one (`full_schema_context`): the
+    # linked excerpt the model read can lack the very table that carries the date (99201af8 —
+    # `orders` cut, `orders.order_ts` invented, nothing to correct it against), and a column that
+    # does not exist must not pass the resolver because the resolver could not see the table.
     if intake is not None and intake.date_column and intake.date_column.upper() != "NONE":
         _resolved_dc, _dc_changed = _resolve_date_column(
-            intake.date_column, intake.metric_table, state["schema_context"], intake.dimensions
+            intake.date_column, intake.metric_table,
+            state.get("full_schema_context") or state["schema_context"], intake.dimensions
         )
         if _dc_changed:
             intake.date_column = _resolved_dc
@@ -7876,14 +7950,15 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     # that the router can trust unconditionally.
     code_sigma: Optional[float] = None
     code_significant: Optional[bool] = None
+    code_sigma_column = ""
     for _, r in results:
         if r.error or not r.rows or not r.columns:
             continue
         stat_results = analyze_query_result(r.columns, r.rows, r.sql)
-        for sr in stat_results:
-            if sr.sigma is not None:
-                if code_sigma is None or sr.sigma > code_sigma:
-                    code_sigma = float(sr.sigma)  # numpy.float64 → python float
+        # The METRIC's own series, by name — never the largest σ of any column (`_metric_sigma`;
+        # python float, never numpy's).
+        code_sigma, code_sigma_column = _metric_sigma(
+            stat_results, intake_data.get("metric_label") or "", intake_data.get("metric_sql") or "")
         if code_sigma is not None:
             # bool() so a numpy.bool_ never reaches graph state — the LangGraph msgpack
             # checkpointer can't serialize numpy scalars and the whole run crashes.
@@ -7976,17 +8051,17 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     # back to "unknown → proceed" rather than to the model's flag — never to False, which
     # would stop the investigation at the baseline on every short-history dataset.
     _n_periods = _longest_period_series(results)
+    _verdict: Optional[dict] = None
     if code_sigma is None and _n_periods is not None and _n_periods < _MIN_BASELINE_PERIODS:
         if _neutralize_short_baseline_z(findings, _n_periods):
-            summary = (f"{summary} [stats.py: significance not assessable — the baseline holds "
-                       f"{max(_n_periods - 1, 0)} period(s); at least {_MIN_BASELINE_PERIODS} are needed]").strip()
+            _verdict = baseline_verdict(None, None, _n_periods)
             code_significant = None   # unknown → proceed; the model's z is not a verdict
 
-    # Append sigma note to summary if available
+    # P5 — the σ verdict is the phase's `verdict` slot, never a bracket in its summary. The
+    # later planners still read it in words, on the internal hand-off (`_baseline_summary`).
     if code_sigma is not None:
-        sig_label = "significant anomaly" if code_significant else "within normal variance"
-        # .strip(): the Verifier's note must land even when the base summary is empty.
-        summary = f"{summary} [stats.py: σ={code_sigma:.2f} — {sig_label}]".strip()
+        _verdict = baseline_verdict(code_sigma, code_significant, column=code_sigma_column)
+    _handoff_summary = (f"{summary} Code's verdict: {_verdict['text']}." if _verdict else summary).strip()
 
     # ── Premise validation: detect when observation period contradicts the question's intent ──
     # e.g. question asks "why did revenue DROP?" but obs period actually showed a rise.
@@ -8108,11 +8183,11 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     phase = _phase_result(
         "baseline", "Baseline & Anomaly Assessment", "📊",
         "complete" if any(not f["error"] for f in findings) else "partial",
-        summary, findings,
+        summary, findings, verdict=_verdict,
     )
     ret: dict = {
         "investigation_phases": phases + [phase],
-        "_baseline_summary": summary,
+        "_baseline_summary": _handoff_summary,
         "_baseline_passes": passes_to_next,
         "_baseline_significant": code_significant,
         "_baseline_sigma": code_sigma,
@@ -10714,8 +10789,10 @@ def _attach_causal_checks(report: dict, licence: str, refutation: dict) -> None:
               if t == "causal"]
     report["causal_checks"] = {"licence": licence or "", "claims": causal, "refutation": dict(refutation)}
     if causal and refutation.get("status") == "not_run":
-        note = ("Not independently challenged: this report names a cause, and no check tried to "
-                f"refute it — {refutation.get('why') or 'the check did not run'}.")
+        # P5 — the reader's half only. WHY the check did not run ("the check runs only on a
+        # HIGH-confidence verdict, and this one is MEDIUM") is the machine's reason, kept on
+        # `causal_checks.refutation.why` above, not in the caveat under the answer.
+        note = "Not independently challenged: this report names a cause, and no check tried to refute it."
         gaps = list(report.get("data_gaps") or [])
         if note not in gaps:
             gaps.append(note)

@@ -630,13 +630,16 @@ def test_a_clean_result_gets_no_verdict_banner():
     assert "STATISTICAL VERDICT" not in _results_text_with_verdicts([r], max_rows=20)
 
 
-def test_a_contradicting_interpretation_is_led_by_the_verdict():
+def test_a_contradicting_interpretation_carries_the_verdict_on_its_note():
+    """P5 (2026-10-14): the verdict rides `stat_note` — the badge above the sentence on the page,
+    the small line under it in the PDF — and the model's sentence stays the body, unprefixed."""
     from aughor.agent.investigate import _lead_with_verdict
     f = {"interpretation": "The significantly higher delay in Oklahoma suggests a localized "
                            "performance issue.", "is_significant": True}
     _lead_with_verdict(f, "This ordering is not evidence of a difference.")
-    assert f["interpretation"].startswith("This ordering is not evidence of a difference.")
-    assert "Oklahoma" in f["interpretation"]          # the model's sentence is kept, not deleted
+    assert f["stat_note"] == "This ordering is not evidence of a difference."
+    assert f["interpretation"].startswith("The significantly higher delay in Oklahoma")   # kept, not deleted
+    assert "phase narrator wrote" not in f["interpretation"]
     assert f["is_significant"] is False
 
 
@@ -653,11 +656,15 @@ def test_a_descriptive_interpretation_is_left_alone():
 def test_the_verdict_is_not_stacked_twice():
     from aughor.agent.investigate import _lead_with_verdict
     v = "This ordering is not evidence of a difference: the gaps are inside the spread."
-    f = {"interpretation": f"{v} The phase narrator wrote: Oklahoma is significantly higher.",
-         "is_significant": False}
-    before = f["interpretation"]
+    # a finding that already carries the verdict on its note
+    f = {"interpretation": "Oklahoma is significantly higher.", "is_significant": False, "stat_note": v}
     _lead_with_verdict(f, v)
-    assert f["interpretation"] == before
+    assert f["stat_note"] == v and f["interpretation"] == "Oklahoma is significantly higher."
+    # an older stored finding, led by the verdict in its prose — left as it is
+    g = {"interpretation": f"{v} The phase narrator wrote: Oklahoma is significantly higher.", "is_significant": False}
+    before = g["interpretation"]
+    _lead_with_verdict(g, v)
+    assert g["interpretation"] == before and "stat_note" not in g
 
 
 # ── "not significant" may not stand in for "immaterial" ──────────────────────

@@ -85,7 +85,10 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # module under test speaks 'narrator' and 'synthesis' everywhere the word is its own.
          "tests/unit/test_narrator_asks.py",
          # P2's intake tests (2026-10-14) drive the intake node end to end by the same wire name.
-         "tests/unit/test_intake_ask.py"),
+         "tests/unit/test_intake_ask.py",
+         # The Lux-answer guards (2026-10-14) drive the intake node with and without the full
+         # catalogue, by the same wire name.
+         "tests/unit/test_lux_answer_guards.py"),
         "an acronym that expands, in its own docstring, to words it does not spell; "
         "say 'deep analysis'",
     ),

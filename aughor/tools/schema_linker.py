@@ -651,6 +651,67 @@ def link_schema(
 #: `context_table_cap` (llm/profile.py) — "the behaviour everything was measured against" —
 #: rather than a new number: a capable model's larger budget is a budget for tables we have
 #: reason to send, and with no relevance signal we have none.
+def complete_join_paths(question: str, linked_schema: str, full_schema: str, *,
+                        connection_id: str | None = None, scope_schema: str | None = None,
+                        cap: int | None = None) -> tuple[str, list[str]]:
+    """The linked schema with the tables its join paths need, and the table list a data
+    catalog should be built from.
+
+    `link_schema` ranks tables by the words of the question, so the parent that carries the
+    DATE of a kept table — `orders.order_date` for a revenue measured on `order_items` — stays
+    only when the question happens to name it. Live, 99201af8 (LuxExperience, 2026-10-14): the
+    intake saw order_items alone and wrote "the orders columns are not listed, orders.order_ts
+    is an assumption"; the date resolver had no `orders` block to correct it against; the phase
+    planners wrote the column and the SQL fixer repaired it nine times; the analyst's own two
+    cuts failed on it and the answer said so to the reader. The deep path had completed its DATA
+    CATALOG this way since 2026-08 and left the schema TEXT — what the intake and the resolver
+    read — as linked; the Agent path completed neither.
+
+    Pinned temporal dimensions, then ranked and capped, then FK-completed, exactly as the
+    catalog's list is built; a table outside ``scope_schema`` is dropped. The blocks added to
+    the text are the full schema's own (`schema_block`), placed before the join-hint and
+    metrics sections the linker keeps. Nothing is removed from the linked text, and it comes
+    back unchanged when nothing is missing."""
+    from aughor.db.schema_render import parse_schema_tables, schema_block
+    from aughor.tools.schema import fk_neighbor_expand, temporal_dimension_tables
+
+    linked_tables = list(parse_schema_tables(linked_schema).keys())
+    if not linked_tables or not full_schema:
+        return linked_schema, linked_tables
+    if cap is None:
+        try:
+            from aughor.llm.profile import profile_for
+            cap = int(profile_for("coder").context_table_cap)
+        except Exception:  # noqa: BLE001 — the catalog's own fallback
+            cap = 10
+    pinned = [t for t in temporal_dimension_tables(full_schema, linked_tables, question or "")
+              if t not in linked_tables]
+    tables = rank_tables_for_context(question or "", full_schema, linked_tables + pinned,
+                                     cap=cap, connection_id=connection_id, pinned=pinned)
+    tables = fk_neighbor_expand(full_schema, tables, cap=cap)
+    if scope_schema:
+        allow = scope_schema.strip().lower()
+        tables = [t for t in tables if "." not in t or t.split(".")[0].strip().lower() == allow]
+    have = {t.lower() for t in linked_tables}
+    blocks = [b for b in (schema_block(full_schema, t) for t in tables if t.lower() not in have) if b]
+    if not blocks:
+        return linked_schema, tables
+    lines = linked_schema.splitlines()
+    at = len(lines)
+    seen_table = False
+    for i, line in enumerate(lines):
+        if line.startswith("TABLE:"):
+            seen_table = True
+            continue
+        if seen_table and line.strip() and not line.startswith((" ", "\t", "--")):
+            at = i                      # the first section after the tables: join hints, metrics
+            break
+    added = "\n\n".join(blocks)
+    head = "\n".join(lines[:at]).rstrip("\n")
+    tail = "\n".join(lines[at:])
+    return head + "\n\n" + added + ("\n\n" + tail if tail.strip() else "\n"), tables
+
+
 _NO_SIGNAL_TABLE_CAP = 10
 
 

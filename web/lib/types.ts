@@ -192,6 +192,9 @@ export interface InvestigationPhase {
   summary: string;
   findings: InvestigationFinding[];
   skipped_reason?: string;
+  caveats?: string[];
+  /** P5: the code-written significance verdict, structured; `significant` null = not assessable. */
+  verdict?: { sigma?: number | null; significant?: boolean | null; text?: string } | null;
 }
 
 export interface WaterfallEntry {
