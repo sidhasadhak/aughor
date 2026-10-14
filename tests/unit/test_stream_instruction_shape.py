@@ -23,9 +23,14 @@ from aughor.llm.provider import LLMProvider, _json_shape
 
 def _streamed_models():
     """Every response model the codebase hands to `complete_streaming`."""
-    from aughor.agent.prompts_investigate import ADASynthesisModel
+    from aughor.agent.prompts_investigate import ADASynthesisModel, SynthesisAsk
     from aughor.routers.investigations import _ChatAnswer, _PostAnswer
-    return [ADASynthesisModel, _ChatAnswer, _PostAnswer]
+    return [ADASynthesisModel, SynthesisAsk, _ChatAnswer, _PostAnswer]
+
+
+#: A call site that binds its model per call: `synthesis_ask_model(waterfall)` hands the narrator the
+#: full model or the one without a waterfall (P4), so the name at the call stands for both.
+_BOUND_PER_CALL = {"_ask_model": {"ADASynthesisModel", "SynthesisAsk"}}
 
 
 def test_the_models_checked_here_are_every_streamed_call_site():
@@ -36,7 +41,8 @@ def test_the_models_checked_here_are_every_streamed_call_site():
             if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "complete_streaming":
                 names |= {kw.value.id for kw in node.keywords
                           if kw.arg == "response_model" and isinstance(kw.value, ast.Name)}
-    assert names == {m.__name__ for m in _streamed_models()}
+    expanded = set().union(*(_BOUND_PER_CALL.get(n, {n}) for n in names))
+    assert expanded == {m.__name__ for m in _streamed_models()}
 
 
 def _field_names(node: dict, defs: dict, seen: frozenset = frozenset()) -> set[str]:

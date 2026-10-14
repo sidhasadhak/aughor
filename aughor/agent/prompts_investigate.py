@@ -724,8 +724,7 @@ quoted from its TOTAL line; a result with none gets no total.
 cause" and name what to check next. A negligible spread is negligible — say so; never \
 present a tiny sub-segment reversal as the driver.
 - Signs: losses/declines NEGATIVE, gains POSITIVE, the same quantity never flips sign \
-anywhere. Waterfall entries account for ~100% of the change (add "Unexplained / \
-residual" if short); amount_label and pct_of_total share their sign.
+anywhere.
 - confidence: HIGH = phases converge, attribution ~complete · MEDIUM = cause found, \
 gaps remain · LOW = evidence cannot discriminate.
 - recommendations: for controllable causes and material gaps; at least one whenever a \
@@ -933,9 +932,16 @@ class WaterfallEntryModel(BaseModel):
 
 class AnswerRecommendationModel(BaseModel):
     action: str
-    expected_impact: str
-    owner: str
-    timeline: str
+    # P4 (canvas-output study, 2026-10-14): the three were REQUIRED, so the narrator invented them —
+    # "Logistics Operations", "2026-10-30" — and the page printed the inventions. Each is asked only
+    # when the evidence holds it; the page prints only what is there.
+    expected_impact: str = Field(default="", description=(
+        "Only when the evidence supports a figure or a direction for this action; otherwise empty — "
+        "never an estimate."))
+    owner: str = Field(default="", description=(
+        "Only when the data or the question names who owns this; otherwise empty — never a guess at a team."))
+    timeline: str = Field(default="", description=(
+        "Only when the data or the question names when; otherwise empty — never an invented date."))
 
 
 class CausalLinkModel(BaseModel):
@@ -967,6 +973,35 @@ class ADASynthesisModel(BaseModel):
     )
 
 
+#: P4 — what the narrator is asked for when no waterfall can exist: `ADASynthesisModel` minus
+#: `attribution_waterfall`. A waterfall apportions a CHANGE among its CAUSES, so it is asked for
+#: only under a causal licence on a change question; measured on 88 stored reports it was empty
+#: in 86 (forced empty on every cross-sectional run), while three of the seven narrator rules
+#: and two checks governed it. Derived from the full model, like `IntakeAsk`, so the two cannot
+#: drift; `widen_synthesis` turns an answer back into the full model with an empty waterfall.
+def _build_synthesis_ask_model():
+    from pydantic import create_model
+    keep = {n: (f.annotation, f) for n, f in ADASynthesisModel.model_fields.items()
+            if n != "attribution_waterfall"}
+    return create_model("SynthesisAsk", __doc__=ADASynthesisModel.__doc__, **keep)
+
+
+SynthesisAsk = _build_synthesis_ask_model()
+
+
+def synthesis_ask_model(waterfall: bool):
+    """The response model for one narrator call: the full model when a waterfall is asked for,
+    else the same model without that field."""
+    return ADASynthesisModel if waterfall else SynthesisAsk
+
+
+def widen_synthesis(asked) -> ADASynthesisModel:
+    """The narrator's answer as a full `ADASynthesisModel`; a waterfall not asked for is empty."""
+    if asked is None or isinstance(asked, ADASynthesisModel):
+        return asked
+    return ADASynthesisModel(attribution_waterfall=[], **asked.model_dump())
+
+
 # R16 P2 — the argument-style writing contract.
 # Distilled from the report-style study (docs/REPORT_STYLE_STUDY_2026-07-16.md):
 # the strongest analyst reports ARGUE in prose — a verdict first, numbers bold
@@ -980,18 +1015,27 @@ ARGUMENT_STYLE_ADDENDUM = """WRITING STYLE — argue like an analyst, not a dash
 - Causes are hypotheses until proven: hedge honestly ("likely", "consistent with", "operationally impossible → points to a data-quality issue"). Never present a hypothesis as a finding."""
 
 
-def synthesis_system_prompt() -> str:
+#: The waterfall's own rule — in the system prompt only on a call that asks for one (P4).
+WATERFALL_RULE = ("- attribution_waterfall: entries account for ~100% of the change (add \"Unexplained / "
+                  "residual\" if short); amount_label and pct_of_total share their sign.")
+
+
+def synthesis_system_prompt(waterfall: bool = True) -> str:
     """The narrator's system prompt. R16 P2: the argument-style writing contract
     above is appended, so the prose argues like an analyst instead of pointing at a
     dashboard. Lives here (not investigate.py) both because it is a prompt and
     because module-level functions in investigate.py are auto-wrapped by the
-    node-span instrumentation, which expects a `state` argument."""
+    node-span instrumentation, which expects a `state` argument.
+
+    ``waterfall`` says whether this call asks for one (`synthesis_ask_model`); its rule rides
+    only then — a rule for a field the call does not carry is a rule for nothing."""
     base = (
         "You are a senior data analyst writing a board-level investigation report. "
         "Every number must trace to the evidence log. No fabrication. "
         "Be definitive where evidence is strong; honest about uncertainty where it isn't."
     )
-    parts = [base, ARGUMENT_STYLE_ADDENDUM, SYNTHESIS_CORE_RULES]
+    rules = SYNTHESIS_CORE_RULES + ("\n" + WATERFALL_RULE if waterfall else "")
+    parts = [base, ARGUMENT_STYLE_ADDENDUM, rules]
     # PE-2 tiering: the long-form guardrails ride along only for BASELINE-tier
     # narrators. Fail to the conservative register — an unresolvable binding means a
     # bare harness or broken config, exactly where the verbose guidance is safest.

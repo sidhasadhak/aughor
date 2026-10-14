@@ -1054,12 +1054,10 @@ def _claim_licence_section(intake_data: dict, phases: list) -> str:
             why = line.split("—", 1)[-1].strip()
             break
     out = "\n\n" + admissible_verbs_directive(claim_type, why or "by the design of this analysis")
+    # P4 — below a causal licence the waterfall is no longer ASKED for (`synthesis_ask_model`), so
+    # the paragraph that told the model to leave it empty has nothing left to say.
     if not is_at_least(claim_type, "causal"):
-        out += (
-            "\n\nATTRIBUTION WATERFALL — leave `attribution_waterfall` EMPTY and "
-            "`total_change_label` blank. A waterfall decomposes a change into the causes that "
-            "produced it; this analysis measured a relationship, not a change, and has no "
-            "causes to apportion. Inventing an entry to fill the field is a fabricated cause.")
+        out += "\n\nTOTAL CHANGE — leave `total_change_label` blank: this analysis measured a relationship, not a change."
     return out
 
 
@@ -4189,6 +4187,28 @@ def _trim_to_boundary(text: str, budget: int) -> str:
     return (words or cut) + "…"
 
 
+def _phases_cited(phases: list, cited_ids: list[str]) -> tuple[list, list[tuple[str, str]]]:
+    """P4 — the phases as the narrator reads them on an analyst turn that concluded: copies
+    holding only the findings the analyst cited (in their phase order), a phase left with none
+    hidden; and the results it did not cite, as ``(finding_id, title)``. The stored phases are
+    not touched — the report keeps every result, the page names the uncited ones under Sources."""
+    cited = set(cited_ids or [])
+    out: list = []
+    uncited: list[tuple[str, str]] = []
+    for p in phases or []:
+        findings = list(p.get("findings") or [])
+        kept = [f for f in findings if str(f.get("finding_id")) in cited]
+        for f in findings:
+            if str(f.get("finding_id")) not in cited and (f.get("rows") or f.get("error")) and p.get("phase_id") != "intake":
+                uncited.append((str(f.get("finding_id")), str(f.get("title") or "")))
+        copy = dict(p)
+        copy["findings"] = kept
+        if not kept and p.get("phase_id") != "intake":
+            copy["_hidden"] = True
+        out.append(copy)
+    return out, uncited
+
+
 def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
     lines = []
     for p in phases:
@@ -7112,11 +7132,14 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             # the question's wording. A cross-sectional question over dated data still trends.
             has_time_axis=(intake.date_column or "").strip().upper() not in ("", "NONE"),
         )
-        plan_dict = plan.to_dict()
-        from aughor.agent.handoff import emit_handoff
-        emit_handoff("orchestrator", "analyst", "intake",
-                     {"plan": plan.summary(), "planned_ids": plan.planned_ids},
-                     conn_id=state.get("connection_id") or None)
+        # P4 — an analyst turn declares no plan: the analyst chooses its own slices, and a plan
+        # it never follows was reconciled as "skipped" on 87 of 88 stored reports (2026-10-14).
+        plan_dict = None if state.get("analyst_turn") else plan.to_dict()
+        if plan_dict is not None:
+            from aughor.agent.handoff import emit_handoff
+            emit_handoff("orchestrator", "analyst", "intake",
+                         {"plan": plan.summary(), "planned_ids": plan.planned_ids},
+                         conn_id=state.get("connection_id") or None)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "orchestration plan", counter="orchestrator")
@@ -10752,7 +10775,7 @@ def ada_synthesize(state: AgentState) -> dict:
     Phase 8 — Synthesis: Attribution Waterfall + Recommendations.
     Assembles all phase findings into an AnswerReport.
     """
-    from aughor.agent.prompts_investigate import ADA_SYNTHESIZE_PROMPT, ADASynthesisModel
+    from aughor.agent.prompts_investigate import ADA_SYNTHESIZE_PROMPT
     from aughor.agent.state import AnswerReport, WaterfallEntry, AnswerRecommendation
 
     question = state["question"]
@@ -10826,10 +10849,19 @@ def ada_synthesize(state: AgentState) -> dict:
             "must be LOW. recommendations should be empty or advisory only."
         )
 
-    phases_summary = _phases_summary(phases)
+    # P4 — on an analyst turn that concluded, the narrator writes from the results the analyst
+    # CITED: their rows are the evidence, the rest are named by title. Live (5b6fb57c, 2026-10-14)
+    # the narrator read every result and wrote one story over two measurements of "revenue" —
+    # the baseline's $336,383 → $385,389 and an uncited decomposition's $296,916 → $335,733 —
+    # then declared that the uncited split "reconciles to +$49.0K". A figure it cannot see it
+    # cannot state; the grounding check holds the line.
+    _concluded = state.get("_analyst_conclude") or {}
+    _cited_ids = [str(e.get("finding_id")) for e in (_concluded.get("exhibits") or []) if e.get("finding_id")]
+    narr_phases, uncited_results = (_phases_cited(phases, _cited_ids) if _cited_ids else (phases, []))
+    phases_summary = _phases_summary(narr_phases)
     # Budget-aware: phases are kept verbatim (exact numbers, for grounding) up to the budget; any
     # overflow is folded into a number-preserving digest (tree-reduce) instead of being truncated away.
-    evidence_log = _phases_evidence_budgeted(phases)
+    evidence_log = _phases_evidence_budgeted(narr_phases)
 
     # ── Cross-phase contradiction detection (typed) ───────────────────────────
     # Before synthesis, deterministically check phase summaries for contradictions.
@@ -10844,16 +10876,20 @@ def ada_synthesize(state: AgentState) -> dict:
     # Reconcile the Analyst's declared plan against the phases that actually ran, and
     # journal the seam so planned-vs-actual autonomy is legible in the Fleet view.
     orchestration_plan = state.get("_orchestration_plan")
-    plan_reconciliation = reconcile((orchestration_plan or {}).get("planned_ids", []), phase_ids)
-    try:
-        from aughor.agent.handoff import emit_handoff
-        emit_handoff("analyst", "orchestrator", "synthesis",
-                     {"reconciliation": plan_reconciliation,
-                      "contradictions": contradiction_report.severity},
-                     conn_id=state.get("connection_id") or None)
-    except Exception as _exc:
-        from aughor.kernel.errors import tolerate
-        tolerate(_exc, "plan reconciliation journal", counter="orchestrator")
+    # P4 — a run that declared no plan (an analyst turn) reconciles nothing: nothing was planned,
+    # so nothing was "skipped", and the journal records no seam that did not happen.
+    plan_reconciliation = (reconcile(orchestration_plan.get("planned_ids", []), phase_ids)
+                           if orchestration_plan else None)
+    if plan_reconciliation is not None:
+        try:
+            from aughor.agent.handoff import emit_handoff
+            emit_handoff("analyst", "orchestrator", "synthesis",
+                         {"reconciliation": plan_reconciliation,
+                          "contradictions": contradiction_report.severity},
+                         conn_id=state.get("connection_id") or None)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "plan reconciliation journal", counter="orchestrator")
 
     # CA-0 — no prior period: the data holds a single span. The report may describe what the
     # window contains and how the level moved WITHIN it; it may not attribute a change to a
@@ -11013,6 +11049,17 @@ def ada_synthesize(state: AgentState) -> dict:
         "evidence above — weigh it, but cite only what the evidence supports):\n"
         + _analyst_note
     ) if _analyst_note else ""
+    if _cited_ids and analyst_conclusion_section:
+        # P4 — the conclusion's structure rides with its prose: the headline it chose and the
+        # claim it attached to each cited result, and the results it did not cite, by title,
+        # whose figures are not in the evidence above.
+        _claims = "\n".join(f"- {e.get('finding_id')}: {e.get('claim')}" for e in _concluded.get("exhibits") or [])
+        analyst_conclusion_section += (
+            f"\nIts headline: {_concluded.get('headline') or ''}\nThe results it cites, each with its claim:\n{_claims}")
+        if uncited_results:
+            analyst_conclusion_section += (
+                "\nResults it did not cite — their rows are not in the evidence above, so none of "
+                "their figures can be stated: " + "; ".join(f"{t} ({i})" for i, t in uncited_results))
 
     synth_prompt = _agent_brief + ADA_SYNTHESIZE_PROMPT.format(
         clock_section=_clock_section(intake_data),
@@ -11036,8 +11083,16 @@ def ada_synthesize(state: AgentState) -> dict:
     _synth_timeout = float(_os.getenv("AUGHOR_SYNTH_TIMEOUT_S", "120"))
     # R16 P2 — the narrator's system prompt lives with the other prompts and carries
     # the report-style writing contract.
-    from aughor.agent.prompts_investigate import synthesis_system_prompt
-    _synth_system = synthesis_system_prompt()
+    from aughor.agent.prompts_investigate import synthesis_ask_model, synthesis_system_prompt, widen_synthesis
+    # P4 — the waterfall is asked for only where one can exist: a causal licence on a change
+    # question (it is forced empty on every cross-sectional run below). A run that recorded no
+    # licence keeps the full ask it always had.
+    from aughor.agent.claim_type import is_at_least as _licence_at_least
+    _licence = _recorded_claim_licence(intake_data, phases)
+    _ask_waterfall = (not _licence) or (_licence_at_least(_licence, "causal")
+                                        and not intake_data.get("cross_sectional"))
+    _ask_model = synthesis_ask_model(_ask_waterfall)
+    _synth_system = synthesis_system_prompt(waterfall=_ask_waterfall)
     # R6 — stream the report prose (executive_summary) to the client as the narrator
     # writes it, so a multi-minute deep run isn't silent between phase_complete and the
     # final report. Capture the sink emitter HERE (node body, sink visible) so the closure
@@ -11050,11 +11105,11 @@ def ada_synthesize(state: AgentState) -> dict:
     def _run_synth():
         prov = _provider("narrator")
         if _emit_report is not None:
-            return prov.complete_streaming(
-                system=_synth_system, user=synth_prompt, response_model=ADASynthesisModel,
-                text_field="executive_summary", on_text=_emit_report)
-        return prov.complete(system=_synth_system, user=synth_prompt,
-                             response_model=ADASynthesisModel)
+            return widen_synthesis(prov.complete_streaming(
+                system=_synth_system, user=synth_prompt, response_model=_ask_model,
+                text_field="executive_summary", on_text=_emit_report))
+        return widen_synthesis(prov.complete(system=_synth_system, user=synth_prompt,
+                                             response_model=_ask_model))
 
     synth = _as_written
     if synth is not None:
@@ -11080,7 +11135,7 @@ def ada_synthesize(state: AgentState) -> dict:
     # a cheap model writing a real (and still PE-2-checked) report beats a machine
     # stitching summaries every time.
     if synth is None:
-        synth = _fast_synthesis_rescue(_synth_system, synth_prompt, ADASynthesisModel)
+        synth = widen_synthesis(_fast_synthesis_rescue(_synth_system, synth_prompt, _ask_model))
 
     # PE-2 — verify what the prompt used to lecture about. The sign/waterfall/grounding/
     # question-addressed contracts moved out of ~1,700 tokens of per-call prose into
@@ -11106,9 +11161,9 @@ def ada_synthesize(state: AgentState) -> dict:
                                  + "\n\nYOUR PREVIOUS DRAFT FAILED THESE DETERMINISTIC "
                                    "CHECKS — fix exactly these, change nothing else:\n- "
                                  + "\n- ".join(_violations))
-                    _retry = _provider("narrator").complete(
+                    _retry = widen_synthesis(_provider("narrator").complete(
                         system=_synth_system, user=_fix_user,
-                        response_model=ADASynthesisModel)
+                        response_model=_ask_model))
                     if _retry is not None:
                         synth = _retry
                         _violations = run_report_checks(synth, question, evidence_log, phases, _licence)

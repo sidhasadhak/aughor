@@ -223,6 +223,23 @@ ask or moves a rule into a check; none adds a call.
     component study's one-grid consolidation changes one line here.
   - tests: `tests/unit/test_analyst_conclude.py`, `test_tool_loop.py` (+3),
     `web/components/InvestigationReport.concluded.test.tsx`.
-* Not yet proven live — a live proof is two Agent questions on theLook with the flag on (model calls;
-  the user's call). Still open from §6: P2–P6, and the 15-row cap that let `55e58a3b` claim "no category
-  above 3.8%" over a truncated slice (P3). The DIMENSION PRIORITY list: undecided.
+* **Proven live (2026-10-14, 15:05–15:40 UTC)** on `:8000` with the flag on: four Agent questions, two on
+  theLook (`cee3f6ed` describe, `5b6fb57c` diagnose) and two on LuxExperience (`e441d73d`, `34ca1559`),
+  all ended on `conclude`. Headlines 12–14 words; words faced 232 / 554 / 206 / 449; no table in prose; no
+  wordless exhibit. Every figure in all four answers traced to the rows its own queries returned. Accuracy:
+  both describe answers and the Lux diagnose answer correct throughout; the theLook diagnose answer's
+  exhibits (the analyst's) correct, its narrator summary not — it wrote one story over two measurements of
+  revenue (the baseline's $336,383 → $385,389 and an uncited decomposition's $296,916 → $335,733), claimed
+  the uncited split "reconciles to +$49.0K" (it sums to $38.8K), called 14.57% "smaller than +13%", and
+  quoted a caveated z. Also found: the period chip showed the data's coverage when the intake pinned no
+  window (fixed, `5eb66444`); the phase script's `_align_narrator_findings` paired the AOV prose with the
+  segment rows on `34ca1559` (named, not fixed).
+* **P4 built (2026-10-14), the user's call "P4 first":** the waterfall is asked for only under a causal
+  licence on a change question (`synthesis_ask_model`, `widen_synthesis`; the rule rides the system prompt
+  only then); `expected_impact` / `owner` / `timeline` optional, each "never invented"; an analyst turn
+  declares no phase plan (`analyst_turn`) and reconciles none; and on an analyst turn that concluded the
+  narrator writes from the CITED results — their rows are its evidence, the uncited are named by title, so a
+  figure it cannot see it cannot state and the grounding check holds the line (`_phases_cited`). Tests:
+  `tests/unit/test_narrator_asks.py`.
+* Still open from §6: P2, P3 (incl. the 15-row cap that let `55e58a3b` claim "no category above 3.8%" over a
+  truncated slice), P5, P6. The DIMENSION PRIORITY list: undecided.

@@ -79,7 +79,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # the part NAMES a closed, checkable set, so it must spell them exactly as the
         # wire does — renaming one here would silently stop matching the frame it is
         # meant to declare, which is the failure the map was added to prevent.
-        ("web/lib/aughorUIDataTypes.ts",),
+        ("web/lib/aughorUIDataTypes.ts",
+         # P4's narrator tests (2026-10-14) drive the synthesis node end to end, and the node's
+         # name is the one the graph, the telemetry spans and the replay records carry; the
+         # module under test speaks 'narrator' and 'synthesis' everywhere the word is its own.
+         "tests/unit/test_narrator_asks.py"),
         "an acronym that expands, in its own docstring, to words it does not spell; "
         "say 'deep analysis'",
     ),

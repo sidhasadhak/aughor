@@ -623,6 +623,10 @@ class AgentState(TypedDict):
     #: returned it: `headline`, `answer`, `exhibits` (the result ids the answer cites, each with
     #: its claim), `figures`, `gaps`. Absent when the flag is off or the loop ended in prose.
     _analyst_conclude: NotRequired[Optional[dict]]
+    #: P4 — True on an analyst turn (`analyst._base_state`): the intake then declares no five-phase
+    #: plan for it, since the analyst chooses its own slices and a plan nobody follows was being
+    #: reconciled as "skipped" on 87 of 88 stored reports. Absent on the phase script.
+    analyst_turn: NotRequired[bool]
     #: Rows the analyst loop gathered through non-phase tools (`run_sql`). Read by the
     #: report's no-data floor, which otherwise counts only phase findings and reads an
     #: ad-hoc-evidence run as a total failure.

@@ -1878,6 +1878,8 @@ def _base_state(question: str, connection_id: str, investigation_id: str,
         "scope_schema": scope_schema,
         "current_plan": None, "data_catalog": data_catalog,
         "subq_data_portrait": {}, "final_text_answer": "",
+        # P4 — the intake declares no phase plan for an analyst turn (the analyst picks its slices).
+        "analyst_turn": True,
     }
 
 
