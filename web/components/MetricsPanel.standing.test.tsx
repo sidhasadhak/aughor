@@ -66,6 +66,7 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@/lib/navigate", () => ({ requestTab: (...a: unknown[]) => requestTab(...a) }));
 
 import { MetricsPanel } from "@/components/MetricsPanel";
+import * as api from "@/lib/api";
 import { choose, optionsOf } from "@/lib/testing";
 import { forgetMe } from "@/lib/useMe";
 
@@ -298,5 +299,36 @@ describe("the date a metric is measured by", () => {
     expect(away).toHaveTextContent("orders.order_date (on order_id)");
     await userEvent.setup().click(within(away).getByRole("button", { name: "Edit the SQL" }));
     expect(screen.getByRole("tab", { name: /Edit/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("says when the field's value is not a date the SQL's tables carry, and offers the one that is", async () => {
+    // LuxExperience, 2026-10-14: the SQL was joined to `luxexperience.orders`; the field still said
+    // `luxexperience.order.order_date`; the note said "set for you", and every save was refused with the old value.
+    const user = userEvent.setup();
+    getMetrics.mockResolvedValue([metric({
+      name: "gross_margin", label: "Gross Margin %", time_kind: "flow", time_column: "luxexperience.order.order_date",
+      sql: "SELECT SUM(oi.unit_price_eur) AS gm FROM order_items oi JOIN luxexperience.orders o ON oi.order_id = o.order_id",
+    })]);
+    getMetricProposals.mockResolvedValue({ statements: [], statement_note: "", note: "",
+      candidates: [cand("luxexperience.orders.order_date", "date", { primary: true })] });
+    view(<MetricsPanel connId="c1" />);
+    const row = (await screen.findAllByTestId("metric-row")).find(r => r.textContent?.includes("Gross Margin %"))!;
+    await user.click(within(row).getByRole("button"));
+    await user.click(await screen.findByRole("tab", { name: /Dates/ }));
+    const dates = await screen.findByTestId("metric-dates");
+    await user.click(within(dates).getByRole("button", { name: "Correct…" }));
+    const note = await within(dates).findByTestId("metric-date-proposals");
+    await waitFor(() => expect(note).toHaveTextContent(
+      "The field says luxexperience.order.order_date, which is not a date on luxexperience.orders. "
+      + "The only date there is luxexperience.orders.order_date — choose it in the list."));
+    expect(note).not.toHaveTextContent("set for you");
+    await user.click(within(dates).getByRole("button", { name: "Use luxexperience.orders.order_date" }));
+    // the list now shows the chosen date (the trigger carries the option's words), and the typed field is gone
+    await waitFor(() => expect(within(dates).getByRole("combobox", { name: "Date column" })).toHaveTextContent("luxexperience.orders.order_date"));
+    expect(within(dates).queryByRole("textbox", { name: "Date column, typed" })).toBeNull();
+    expect(within(dates).queryByTestId("metric-date-use")).toBeNull();
+    await user.click(within(dates).getByRole("button", { name: "Save dates" }));
+    await waitFor(() => expect(vi.mocked(api.updateMetric)).toHaveBeenCalledWith(
+      "gross_margin", expect.objectContaining({ time_column: "luxexperience.orders.order_date", time_kind: "flow" }), expect.anything()));
   });
 });

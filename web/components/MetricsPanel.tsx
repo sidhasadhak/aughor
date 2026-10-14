@@ -259,6 +259,9 @@ function DateColumnPicker({ value, onChange, candidates, label, placeholder }: {
 }) {
   const known = candidates.some(c => c.grain === value);
   const [typing, setTyping] = useState(!!value.trim() && !known);
+  // A value that becomes one of the listed dates (the "Use …" button beside the note, or typed to the
+  // letter) is shown in the list, not left behind "Another column".
+  useEffect(() => { if (known) setTyping(false); }, [known]);
   if (!candidates.length) {
     return <Input placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)} aria-label={label} />;
   }
@@ -300,6 +303,8 @@ function DatesSection({ metric, proposals, onChanged, startEditing = false, onEd
   const tablesRead = Array.from(new Set(candidates.map((c) => c.table))).join(", ");
   // The one date is SET for the person — derived, so it follows the proposals as they arrive and yields to anything typed.
   const shownColumn = column.trim() ? column : (candidates.length === 1 ? candidates[0].grain : "");
+  // …and a value the SQL's own tables do not carry is said as such, never called "set for you".
+  const stale = !!shownColumn.trim() && candidates.length > 0 && !candidates.some(c => c.grain === shownColumn);
   const [outcome, setOutcome] = useState(metric.outcome_column ?? "");
   const [until, setUntil] = useState(metric.until_column ?? "");
   const [settles, setSettles] = useState(metric.settles_after_days != null ? String(metric.settles_after_days) : "");
@@ -358,12 +363,27 @@ function DatesSection({ metric, proposals, onChanged, startEditing = false, onEd
           <DateColumnPicker value={shownColumn} onChange={setColumn} candidates={candidates} label="Date column"
             placeholder="Date column — schema.table.column" />
           <p className="aug-fs-xs" style={{ ...MUTED, margin: 0 }} data-testid="metric-date-proposals">
-            {listed
-              ? `${candidates.length} dates on ${tablesRead} — choose one`
-              : candidates.length === 1
-                ? `The only date on ${candidates[0].table} is ${candidates[0].grain} — set for you; change it here if that is wrong.`
-                : candidatesNote || "no proposals yet"}
+            {stale
+              // The field carries a value that is not a date on the tables this SQL reads — a stored one the SQL
+              // outgrew, or a typo (the user, 2026-10-14: `luxexperience.order.order_date` beside a SQL that joins
+              // `luxexperience.orders`; the note said "set for you" while the field still said the old value, and
+              // every save was refused with it).
+              ? `The field says ${shownColumn}, which is not a date on ${tablesRead}. ${candidates.length === 1
+                  ? `The only date there is ${candidates[0].grain}`
+                  : `${candidates.length} dates are listed`} — choose it in the list.`
+              : listed
+                ? `${candidates.length} dates on ${tablesRead} — choose one`
+                : candidates.length === 1
+                  ? `The only date on ${candidates[0].table} is ${candidates[0].grain} — set for you; change it here if that is wrong.`
+                  : candidatesNote || "no proposals yet"}
           </p>
+          {stale && candidates.length === 1 && (
+            <div style={ROW}>
+              <Button size="xs" variant="secondary" onClick={() => setColumn(candidates[0].grain)} data-testid="metric-date-use">
+                Use {candidates[0].grain}
+              </Button>
+            </div>
+          )}
           {candidates.find(c => c.grain === shownColumn)?.text && (
             <p className="aug-fs-xs" style={{ ...MUTED, margin: 0 }} data-testid="metric-date-text">
               {shownColumn.split(".").pop()} is kept as text — it is read as a date when a period is measured; a value
