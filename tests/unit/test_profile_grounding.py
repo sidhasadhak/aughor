@@ -38,6 +38,20 @@ class TestStripUnsupportedModel:
         assert "marketplace" not in p.business_model.lower()
 
 
+    def test_a_denied_claim_is_kept(self):
+        # theLook, 2026-10-14: both words were stripped from a sentence that denied them → "…retail, not and not a ."
+        p = _profile(business_model="single-purchase retail, not subscription and not a marketplace.")
+        I._strip_unsupported_model(p, "TABLE: orders\n order_id\n user_id")
+        assert p.business_model == "single-purchase retail, not subscription and not a marketplace."
+
+    def test_a_stored_sentence_left_empty_reads_whole(self):
+        stored = ("Transactional DTC e-commerce: one-off purchases where users place many orders over time "
+                  "(orders.user_id / order_items.user_id), fulfilled from physical distribution_centers, with no plan, "
+                  "renewal, billing-cycle or seller/listing table anywhere in the schema — so it is single-purchase "
+                  "retail, not and not a .")                      # theLook's live profile, as stored
+        assert I.tidy_business_model(stored) == stored.replace(", not and not a .", ".")
+        assert I.tidy_business_model("one-off retail, not a marketplace.") == "one-off retail, not a marketplace."
+
 class TestEnsureCompositeQuestion:
     def test_seeds_composite_when_margin_and_return_metrics(self):
         p = _profile(north_star_metrics=[_metric("Gross Margin Rate"), _metric("Refund Rate")],

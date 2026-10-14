@@ -100,6 +100,18 @@ def _anchor_metric_trends(raw: Optional[dict]) -> Optional[dict]:
     return raw
 
 
+def _tidy_model(raw: Optional[dict]) -> Optional[dict]:
+    """Serve-time: the business-model sentence without a clause an earlier claim-strip emptied — theLook's stored
+    model read "…single-purchase retail, not and not a ." (2026-10-14). Pure text; the stored file is unchanged."""
+    prof = (raw or {}).get("profile") or {}
+    bm = prof.get("business_model")
+    if not isinstance(bm, str) or not bm:
+        return raw
+    from aughor.business_profile.infer import tidy_business_model
+    tidy = tidy_business_model(bm)
+    return raw if tidy == bm else {**raw, "profile": {**prof, "business_model": tidy}}
+
+
 def _without_removed(raw: Optional[dict], connection_id: str) -> Optional[dict]:
     """Serve-time: drop each north-star metric a person REMOVED from this dataset (the user,
     2026-10-07 — *"the right to remove the proposed Metric"*). The explorer re-proposes by name on
@@ -150,13 +162,13 @@ def load_raw(connection_id: str, schema_name: Optional[str] = None) -> Optional[
     Each metric's ``chart_sql`` is re-anchored to the most-recent window on read (see
     ``_anchor_metric_trends``)."""
     if schema_name:
-        return _without_removed(_anchor_metric_trends(_read(_key(connection_id, schema_name))), connection_id)
+        return _without_removed(_tidy_model(_anchor_metric_trends(_read(_key(connection_id, schema_name)))), connection_id)
     conn_level = _read(_key(connection_id))
     if conn_level is not None:
-        return _without_removed(_anchor_metric_trends(conn_level), connection_id)
+        return _without_removed(_tidy_model(_anchor_metric_trends(conn_level)), connection_id)
     scoped = _family().keys_with_prefix(f"{_safe(connection_id)}__")
     if len(scoped) == 1:
-        return _without_removed(_anchor_metric_trends(_read(scoped[0])), connection_id)
+        return _without_removed(_tidy_model(_anchor_metric_trends(_read(scoped[0]))), connection_id)
     return None
 
 
