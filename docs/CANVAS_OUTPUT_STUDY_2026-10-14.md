@@ -252,6 +252,17 @@ ask or moves a rule into a check; none adds a call.
   CHF in the run was the example in the narrator's own style rule. Fixed at the cause (the example lost its
   unit) and guarded (`report_checks.check_currency`: a currency CODE no result, column or label carries is
   refused with the retry; symbols are left alone).
-* Still open from §6: P2, P3 (incl. the 15-row cap that let `55e58a3b` claim "no category above 3.8%" over a
+* **P2 built (2026-10-14), the user's call "Let's do P2":** the premise measured first — every guard in the
+  12.9k-char intake prompt was mapped to its verifier: metric table, dimensions and windows are validated with
+  one named-correction retry; the date column is resolved deterministically; the coverage clamp, `periods_asked`
+  and the cross-sectional / temporal-change routers decide the windows and the route whatever the model said;
+  the canonical pin, the money-coherence and over-count retries and the self-referential-segment drop guard
+  the metric; the loss directive is prepended by code. Only the measure choice, the reading of "loss", the
+  magnitude-vs-flag judgment and the concept-to-column resolution of a relationship's sides are the model's
+  alone. So a capable binding (the live coder, 1M-token context) now reads `INTAKE_ASK` — 3,295 chars, 525
+  words, the seven fields and those judgments, no case law, and the profile block as a section only when there
+  is one; a baseline binding keeps the long form byte for byte (`intake_prompt(capable)`, the narrator's own
+  tiering). 12,951 → 3,295 chars (25%). Tests: `tests/unit/test_intake_ask.py`. Not yet proven live.
+* Still open from §6: P3 (incl. the 15-row cap that let `55e58a3b` claim "no category above 3.8%" over a
   truncated slice, and the `decompose` phase tool measuring revenue on a narrower scope than the governed
   metric), P5, P6. The DIMENSION PRIORITY list: undecided.

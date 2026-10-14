@@ -179,6 +179,86 @@ Be precise. Every answer must be grounded in the schema provided.
 If something is genuinely unknowable from the schema, say so.
 """
 
+# P2 of the canvas-output study (2026-10-14) — the intake on the PE-2 diet. `INTAKE_PROMPT` above
+# is 12.9k chars: seven numbered sections and ten "(critical)" / "all mandatory" guards, each a past
+# failure written out as case law, four of them telling the model to read a PROFILE block that is
+# EMPTY on the analyst path. Nearly every guard has a verifier that runs AFTER the model answers —
+# `_validate_intake_metric_table`, `_validate_intake_dimensions` and `_validate_intake_windows`
+# with one named-correction retry; `_resolve_date_column`; `_clamp_intake_to_coverage`;
+# `periods_asked`; the cross-sectional and temporal-change routers; `_pin_canonical_metric`; the
+# money-coherence and over-count retries; `_drop_self_referential_segment`; the loss directive —
+# so the prose was prophylaxis on top of enforcement. A capable binding gets the ASK: what each
+# field means and the judgments only the model can make (which measure, which reading of "loss",
+# which columns a relationship's words refer to); the checks do the rest. A baseline model keeps
+# the long form, as the narrator's `BASELINE_GUARDRAILS` do.
+INTAKE_ASK = """\
+You are a senior data analyst reading a business question into an investigation specification. \
+The schema below is the whole of what exists: every table and column you name is in it, spelled \
+as it shows them.
+
+QUESTION: {question}
+
+SCHEMA:
+{schema}
+
+{scan_section}{sql_context}
+
+{events_section}
+{origin_finding_section}
+Fill the specification from the question and the schema.
+
+MEASURES — what the question asks to measure. The first goes in metric_label / metric_sql, every \
+other one in other_measures, one aggregate expression each. A CANONICAL METRIC listed below whose \
+name matches is used verbatim, its filters included: the governed formula is the authority. A money \
+question (revenue, sales, cost, margin, losing money) is measured in money, never by a count, a \
+rating or a review. "Losing money" is a negative outcome, not spend: a refund, write-off or \
+chargeback amount; else a margin (revenue minus cost); else the value of reversed transactions \
+(returned, cancelled, refunded); else unsold stock — name the reading you took in intake_notes, \
+because a bare spend total answers only a question about spend. A quantity the question names (a \
+delay, a duration, an amount) is measured as the quantity, not as a 0/1 flag that marks it: the \
+flag answers "how often", the question asked "how much".
+
+OBSERVATION PERIOD — the period the question names, as ISO dates; none when it names none, and \
+the answer then covers all the data. A question about a change that names no period takes the \
+most recent complete period. The clock above says which day is settled.
+
+COMPARISON — only when the question compares periods or asks why something changed: the period of \
+the same length before the observation, and the same period a year earlier when the data reaches \
+it. Otherwise every comparison field stays empty.
+
+WHERE, WHICH and DRIVER questions — cross_sectional is true when the question asks which segment is \
+weakest, strongest or losing, or whether one thing affects another: the answer compares groups, \
+not periods. For a driver or relationship question name both sides: comparison_segment_sql is the \
+condition (a boolean or CASE expression on a column the metric does not already read), and \
+relationship_left_sql / relationship_right_sql are the columns the question's words refer to — \
+the most specific column on the right, the others carrying the same concept in \
+relationship_right_alternatives. An intervention_column only when the data records an assignment \
+someone applied: a treatment arm, a variant, a policy from a date.
+
+DATE COLUMN — the table.column of the primary transaction timestamp, a DATE or TIMESTAMP column. \
+When the metric table has none, one reachable by a join, with the join in intake_notes. Populate \
+it whenever the schema has one, whatever the question's shape.
+
+METRIC TABLE — the table that holds the metric, exactly as the schema names it, prefix included.
+
+DIMENSIONS — the categorical table.columns a reader could cut the metric by, up to 8.
+
+STATUS — when the metric table carries a status column, say in intake_notes which values look \
+terminal; filter on it only when the question asks about completed or valid transactions, and \
+say that you did.
+
+intake_notes carries every judgment above a reader would need to follow. What the schema cannot \
+answer, say.
+"""
+
+
+def intake_prompt(capable: bool) -> str:
+    """The intake template for one binding: the ask for a capable model, the long form for a
+    baseline one (PE-2's tiering rule — prose a stronger model makes unnecessary is a restriction,
+    scaled with the model; the checks run for every tier)."""
+    return INTAKE_ASK if capable else INTAKE_PROMPT
+
+
 # ── Phase 2: Baseline & anomaly detection ────────────────────────────────────
 
 BASELINE_PLAN_PROMPT = """\

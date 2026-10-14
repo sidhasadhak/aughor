@@ -6357,7 +6357,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     (falling back to the schema-string parse) when a connection isn't supplied.
     """
     from aughor.agent.prompts_investigate import (
-        INTAKE_PROMPT, IntakeAsk, IntakeOutput)
+        IntakeAsk, IntakeOutput)
 
     question = state["question"]
     # Size the intake caps to the bound model's window (Layer A, §5b.3): unchanged on a
@@ -6383,10 +6383,21 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # clamp then cut the end to 1 September, and the spec said five months (2026-09-30).
     from aughor.agent.sql_context import learned_settle_days, sql_context as _sql_context
     _settle_days = learned_settle_days(state.get("connection_id") or "")
-    prompt = INTAKE_PROMPT.format(
+    # P2 — a capable binding reads the ask (`INTAKE_ASK`); a baseline one the long form. The
+    # profile block is a section only when there is one: on the analyst path it is empty, and
+    # the long form told the model to read it anyway. Resolution fails to the long form — the
+    # conservative register — exactly as the narrator's tiering does.
+    try:
+        from aughor.llm.profile import profile_for
+        _capable = profile_for("coder").capable
+    except Exception:
+        _capable = False
+    from aughor.agent.prompts_investigate import intake_prompt
+    prompt = intake_prompt(_capable).format(
         question=question,
         schema=schema,
         scan_context=scan,
+        scan_section=f"PROFILE CONTEXT (date ranges, row counts, key columns):\n{scan}\n\n" if scan.strip() else "",
         sql_context=_sql_context(conn, settle_days=_settle_days),
         events_section=events_section,
         origin_finding_section=origin_finding_section,

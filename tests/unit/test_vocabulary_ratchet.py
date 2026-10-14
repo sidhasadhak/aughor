@@ -83,7 +83,9 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # P4's narrator tests (2026-10-14) drive the synthesis node end to end, and the node's
          # name is the one the graph, the telemetry spans and the replay records carry; the
          # module under test speaks 'narrator' and 'synthesis' everywhere the word is its own.
-         "tests/unit/test_narrator_asks.py"),
+         "tests/unit/test_narrator_asks.py",
+         # P2's intake tests (2026-10-14) drive the intake node end to end by the same wire name.
+         "tests/unit/test_intake_ask.py"),
         "an acronym that expands, in its own docstring, to words it does not spell; "
         "say 'deep analysis'",
     ),
