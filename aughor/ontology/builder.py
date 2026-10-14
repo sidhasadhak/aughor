@@ -64,6 +64,8 @@ def _table_to_entity_name(table: str) -> str:
       fact_daily_sales  → DailySale
       bc_orders         → Order
       stg_product_catalog → ProductCatalog
+      countries         → Country        (not "Countrie", LuxExperience 2026-10-14)
+      address / status  → Address / Status
     """
     # Drop schema qualifier (case-preserved leaf — feeds PascalCasing below)
     base = leaf(table)
@@ -77,9 +79,11 @@ def _table_to_entity_name(table: str) -> str:
     words = _WORD_BOUNDARY.split(base)
     # Singularise the last word
     last = words[-1]
-    if last.endswith(("ches", "shes", "xes", "zes", "sses")) and len(last) > 4:
+    if last.lower().endswith("ies") and len(last) > 4:
+        words[-1] = last[:-3] + "y"
+    elif last.endswith(("ches", "shes", "xes", "zes", "sses")) and len(last) > 4:
         words[-1] = last[:-2]
-    elif last.endswith("s") and len(last) > 3:
+    elif last.endswith("s") and len(last) > 3 and not last.lower().endswith(("ss", "us", "is")):
         words[-1] = last[:-1]
     return "".join(w.capitalize() for w in words if w)
 
