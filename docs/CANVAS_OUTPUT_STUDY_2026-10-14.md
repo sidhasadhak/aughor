@@ -280,6 +280,25 @@ ask or moves a rule into a check; none adds a call.
 * **Recorded against myself:** the 16:34 restart ran with an active job in the pre-check — the birth of the
   user's new LuxExperience canvas (`8a93c946`, created 16:24) — and cut it at ten minutes. Its record stays
   RUNNING; the re-run is `POST /exploration/canvas/8a93c946/restart` (model calls, the user's call).
-* Still open from §6: P3 (incl. the 15-row cap that let `55e58a3b` claim "no category above 3.8%" over a
-  truncated slice, and the `decompose` phase tool measuring revenue on a narrower scope than the governed
-  metric), P5, P6. The DIMENSION PRIORITY list: undecided.
+* **P3 built (2026-10-14), the user's "go for P3":** three things the planners' prose hoped for are now
+  checks or facts. (1) **An extra filter is a guard, not a rule**: every planned query's WHERE is read for
+  value filters beyond the spec's declared ones (`_extra_filters`, the analyst's own filter reader); one
+  corrective re-plan names the filter and the declared one; what the re-plan keeps becomes the finding's
+  caveat on the fan-out channel ("extra filter: this query keeps rows by status not in Cancelled,
+  Returned — … over a narrower population than the baseline's"). The four temporal phases pass the
+  governed metric's filters; the live gap on `1f925796` (335,733 vs 385,389) is what it catches. (2) **A
+  capped scan says it is a slice**, to the narrator (a verdict line above the rows) and on the card
+  (`stat_note`): "nothing here says what the largest group is or that no group exceeds a value" — the
+  sentence `55e58a3b`'s 15-row worst-first slice needed. (3) **The planners' diet, tiered like the intake's**:
+  a capable binding reads one 399-char paragraph of SQL rules (`plan_sql_rules`, `_sql_grounding()`
+  empty), a baseline binding keeps each phase's long block; the "DuckDB dialect only" line is gone from
+  every tier (it contradicted the SQL DIALECT line on BigQuery and Postgres); the retail DIMENSION
+  PRIORITY paragraph is gone from every tier (the list the prompt receives is already in order — the
+  question's cuts first, then `_prioritize_dimensions`; a pack-supplied order can replace the sorter
+  later); and no prompt asks for bold the code strips (`_strip_emphasis_deep`). Tests:
+  `tests/unit/test_phase_guards_p3.py`. Not yet proven live.
+* Not done in P3, named: the interpret prompts' SEVERITY GROUNDING / FORBIDDEN paragraphs still ride
+  every tier (their verifiers exist: `_ranking_noise_caveat`, `_lead_with_verdict`,
+  `check_significance_claims`); the lens prompts keep `_ADA_SQL_GROUNDING`; the dimensional scan still
+  sorts worst-first under its cap (the slice now says so).
+* Still open from §6: P5, P6.

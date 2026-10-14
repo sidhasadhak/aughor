@@ -286,8 +286,16 @@ Write 2–3 SQL queries to:
   3. Compute a z-score: how many standard deviations is the observation from the
      trailing baseline mean (EXCLUDE the observation period from baseline stats)?
 
+{sql_rules}
+
+Return the queries with a short title and chart_type for each.
+"""
+
+#: The long-form rules the baseline template carried, kept for a BASELINE-tier model (P3). The
+#: "DuckDB dialect only" line is gone from every tier: the SQL DIALECT line names the engine, and
+#: this one contradicted it on every BigQuery and Postgres connection.
+_BASELINE_SQL_RULES = """\
 SQL RULES:
-  - DuckDB dialect only
   - ALWAYS use the exact table names shown in the SCHEMA, including schema prefix (e.g. ecommerce.orders)
   - DATE_TRUNC for period alignment
   - NULLIF(x, 0) before every division
@@ -306,10 +314,7 @@ SQL RULES:
   - NO EXTRA FILTERS: Only filter on the date range specified above. Do NOT add
     filters on status, amount thresholds, delay days, price bands, or any other column
     unless the investigation spec explicitly requires it. Arbitrary extra WHERE clauses
-    will bias the results by excluding the majority of rows.
-
-Return the queries with a short title and chart_type for each.
-"""
+    will bias the results by excluding the majority of rows."""
 
 BASELINE_INTERPRET_PROMPT = """\
 INVESTIGATION: "{question}"
@@ -383,12 +388,15 @@ Use the CASE WHEN date pattern to compare periods in a single query:
   SUM(CASE WHEN {date_column} >= '{comp_start}' AND {date_column} < date '{comp_end}' + INTERVAL 1 DAY
            THEN metric ELSE 0 END) AS comp_value
 
-SQL RULES: DuckDB, NULLIF, DATE_TRUNC, compact output.
+{sql_rules}
+"""
+
+_DECOMPOSE_SQL_RULES = """\
+SQL RULES: NULLIF, DATE_TRUNC, compact output.
   TABLE NAMES: Use table names exactly as shown in SCHEMA — no added/removed prefixes.
   Never CAST an _id/_key/_code column as DATE. If the date_column is in a joined table, JOIN to reach it.
   NO EXTRA FILTERS: Only filter on the two date ranges above. Do NOT add filters on status, amount,
-  or any other column beyond what the metric_sql expression already includes. All rows count.
-"""
+  or any other column beyond what the metric_sql expression already includes. All rows count."""
 
 DECOMPOSE_INTERPRET_PROMPT = """\
 INVESTIGATION: "{question}"
@@ -405,7 +413,7 @@ For each query, interpret what sub-metric drove the overall change.
 
 Write clear, number-anchored interpretations. Cite values from the data. Use NO markdown emphasis — no bold, no italics.
 State the key_numbers that demonstrate the decomposition.
-phase_summary: "The decline was driven by X (**Y%**), not Z" — bold the share; be definitive if the data supports it.
+phase_summary: "The decline was driven by X (Y%), not Z" — be definitive if the data supports it.
 """
 
 # ── Phase 4: Dimensional drill-down ──────────────────────────────────────────
@@ -439,22 +447,21 @@ Write 1 SQL query per dimension (up to 4 dimensions). Each query must:
 CONTRIBUTION FORMULA (use window function):
   ROUND(100.0 * (obs - comp) / NULLIF(SUM(obs - comp) OVER (), 0), 1) AS contribution_pct
 
-DIMENSION PRIORITY — analyse in this order (the list above is already sorted):
-  1st: Customer type / segment (new vs returning — splits the entire cause tree)
-  2nd: Channel / acquisition source (points to a team or budget)
-  3rd: Product category / business line (assortment or pricing issue)
-  4th: Geography / region (logistics, local competition, macro)
-  Lower priority: device, payment method, price band
+The dimensions above are listed in the order to analyse them; with fewer than 4, analyse what exists.
 
-If fewer than 4 dimensions are available, analyse what exists in priority order.
+{sql_rules}
+"""
 
-SQL RULES: DuckDB, NULLIF, compact output (≤ 15 rows per query).
+#: P3 — the retail "DIMENSION PRIORITY" paragraph (customer type › channel › category › geography)
+#: is gone from both tiers: the list the prompt receives is already in order (`_prioritize_dimensions`,
+#: the question's own cuts first), and the paragraph restated one industry's ranking to every connection.
+_DIMENSIONAL_SQL_RULES = """\
+SQL RULES: NULLIF, compact output (≤ 15 rows per query).
   TABLE NAMES: Use table names exactly as shown in SCHEMA — no added/removed prefixes.
   Never CAST an _id/_key/_code column as DATE. If the date_column is in a joined table, JOIN to reach it.
   NO EXTRA FILTERS: Filter ONLY on the two date ranges above (observation vs comparison).
   Do NOT add filters on status, price range, delay, or any other attribute. All rows count —
-  adding extra filters will silently exclude data and produce biased contribution numbers.
-"""
+  adding extra filters will silently exclude data and produce biased contribution numbers."""
 
 DIMENSIONAL_INTERPRET_PROMPT = """\
 INVESTIGATION: "{question}"
@@ -479,8 +486,8 @@ For each dimension analysed (ONLY when a real baseline is present), interpret th
 
 Write dimension-by-dimension findings with specific numbers. Use NO markdown emphasis.
 Highlight the SINGLE most actionable finding across all dimensions.
-phase_summary: when a baseline exists and concentration exists, "**X%** of the total decline came from
-[dimension: value]" (bold the share); when the baseline is missing, state that no prior-period data is
+phase_summary: when a baseline exists and concentration exists, "X% of the total decline came from
+[dimension: value]"; when the baseline is missing, state that no prior-period data is
 available so the late-period change cannot be attributed to any segment.
 """
 
@@ -634,7 +641,7 @@ For EACH dimension, write a finding:
 Be honest: if a dimension is healthy or evenly spread, say it is NOT a problem area.
 
 phase_summary: one sentence naming where value is most concentrated or weakest — lead with the
-decisive number (bold it), e.g. "Losses concentrate in **11** underperforming franchises (< $1,000 each)."
+decisive number, e.g. "Losses concentrate in 11 underperforming franchises (< $1,000 each)."
 """
 
 # Ratio-metric variant: the metric is a percentage / rate / per-unit ratio, so metric_total must be
@@ -665,7 +672,7 @@ For EACH dimension, write a finding:
     by what the ratio MEASURES — do NOT assume the minimum is the problem. Only call a value
     'weak'/'a problem'/'underperforming' if it is clearly adverse versus a benchmark or a genuine
     outlier far from the rest. If the ratios are tightly clustered, say so and use relative language
-    ("the lowest at **2.2%** vs the ~4.3% of the rest").
+    ("the lowest at 2.2% vs the ~4.3% of the rest").
   - key_numbers: the 1–3 most telling values — include the ratio, and the numerator or denominator
     where it explains the result.
   - chart_type: "magnitude" (a ranked bar), or "change" when the measure is a signed delta
@@ -677,7 +684,7 @@ Be honest: if the ratios are evenly spread, say it is NOT a problem area. If the
 FAVOURABLE direction, say so explicitly rather than framing it as a weakness.
 
 phase_summary: one sentence naming where the ratio is highest/lowest and whether it actually matters
-— lead with the decisive number (bold it) and the correct direction, e.g. "Freight runs **2.2%** of
+— lead with the decisive number and the correct direction, e.g. "Freight runs 2.2% of
 order value in Germany vs ~4.3% elsewhere — the LOWEST cost ratio, a strength rather than a weakness."
 """
 
@@ -728,14 +735,37 @@ Return max 4 queries total. Prioritise TARGETED queries over generic ones.
 If a required table (sessions, refunds, inventory, etc.) does not exist in the schema above,
 set sql to null and provide a one-line explanation in rationale — do NOT fabricate table names.
 
-SQL RULES: DuckDB, NULLIF, compact output (≤ 15 rows per query).
+{sql_rules}
+"""
+
+_BEHAVIORAL_SQL_RULES = """\
+SQL RULES: NULLIF, compact output (≤ 15 rows per query).
   TABLE NAMES: Use table names exactly as shown in SCHEMA — no added/removed prefixes.
   Never CAST an _id/_key/_code column as DATE. If the date_column is in a joined table, JOIN to reach it.
   NO EXTRA FILTERS: Filter only on the date ranges above and the specific segment from the dominant
   finding. Do NOT add filters on amount, status, delay days, price bands, or unrelated attributes.
   Column aliases must match the actual schema column name or a clearly descriptive label — never
-  alias a column with a name that belongs to a different schema column (e.g. don't alias utm_source as plan_type).
-"""
+  alias a column with a name that belongs to a different schema column (e.g. don't alias utm_source as plan_type)."""
+
+#: P3 — what a capable model is told about its SQL, once. Each sentence is a guard that runs on the
+#: planned query: a window anchored on today is re-planned (`_uses_relative_date`), a join that
+#: fans the metric out is re-planned and caveated (the Verifier), a filter the spec does not declare
+#: is re-planned and caveated (`_extra_filters`), and a name the schema lacks fails at execution
+#: and is retried with the hint. The long blocks above repeated these as prose in four prompts.
+_SQL_RULES_ASK = """\
+SQL: the schema's names exactly as shown, prefix included; the metric's own table at its own grain,
+with a dimension reached through its lookup table's unique key; NULLIF before a division; filter only
+on the windows above and the metric's declared filter — a query that anchors on today's date, fans the
+metric out across a join, or keeps rows by any other column is sent back once to be rewritten."""
+
+_PLAN_SQL_RULES = {"baseline": _BASELINE_SQL_RULES, "decompose": _DECOMPOSE_SQL_RULES,
+                   "dimensional": _DIMENSIONAL_SQL_RULES, "behavioral": _BEHAVIORAL_SQL_RULES}
+
+
+def plan_sql_rules(phase: str, capable: bool) -> str:
+    """The SQL rules a phase planner reads: the ask for a capable binding, the phase's long-form
+    block for a baseline one (the narrator's and the intake's tiering, applied to the planners)."""
+    return _SQL_RULES_ASK if capable else _PLAN_SQL_RULES[phase]
 
 BEHAVIORAL_INTERPRET_PROMPT = """\
 INVESTIGATION: "{question}"
@@ -1088,10 +1118,10 @@ def widen_synthesis(asked) -> ADASynthesisModel:
 # inline in sentences, entities named by their identifiers, causes hedged
 # honestly. Always appended to the synthesis system prompt.
 ARGUMENT_STYLE_ADDENDUM = """WRITING STYLE — argue like an analyst, not a dashboard:
-- Every figure that matters appears **bold inline** in a sentence ("operates at **74.5%** capacity vs **77.2%** on short-haul"). Never assume the UI will surface a number for you.
-- Name entities by their identifier exactly as they appear in the data (route GVA-DEL, customer CU0036204). When ranking, list at most three as compact bullets: "**GVA-DEL**: 65.2% load factor (168K per flight)". Figures carry the currency the evidence carries, or none — never a currency it does not.
-- executive_summary: the verdict sentence FIRST, then one sentence per major claim, each carrying its own bolded number. 3-5 sentences total — length discipline is credibility.
-- recommendations: each one is an object whose action is one line — imperative verb + **bold lever**; quantify expected_impact when the evidence supports a number, otherwise omit the number rather than invent one.
+- Every figure that matters appears inline in a sentence ("operates at 74.5% capacity vs 77.2% on short-haul"). Never assume the UI will surface a number for you.
+- Name entities by their identifier exactly as they appear in the data (route GVA-DEL, customer CU0036204). When ranking, list at most three as compact bullets: "GVA-DEL: 65.2% load factor (168K per flight)". Figures carry the currency the evidence carries, or none — never a currency it does not.
+- executive_summary: the verdict sentence FIRST, then one sentence per major claim, each carrying its own number. 3-5 sentences total — length discipline is credibility.
+- recommendations: each one is an object whose action is one line — imperative verb + the lever; quantify expected_impact when the evidence supports a number, otherwise omit the number rather than invent one.
 - Causes are hypotheses until proven: hedge honestly ("likely", "consistent with", "operationally impossible → points to a data-quality issue"). Never present a hypothesis as a finding."""
 
 

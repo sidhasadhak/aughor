@@ -2488,6 +2488,11 @@ def _results_text_with_verdicts(results, max_rows: Optional[int] = None,
                     "STATISTICAL VERDICT for this query — it OVERRIDES what the shares below "
                     "suggest. A PROPORTIONAL split is NOT a finding: do not call it "
                     "concentration, a driver, or a place to act. " + _conc)
+        # P3 — a slice says it is one, to the narrator about to read it as the whole.
+        if not getattr(r, "error", None) and getattr(r, "rows", None) and not (verdict and "capped scan" in verdict):
+            _cap = _capped_scan_note(r)
+            if _cap:
+                parts.append("STATISTICAL VERDICT for this query — it OVERRIDES what the rows below suggest. " + _cap)
         parts.append(format_result_for_llm(r, max_rows=max_rows))
     return "\n\n".join(parts)
 
@@ -2785,6 +2790,21 @@ def _extreme_tie_note(columns, rows) -> Optional[str]:
 _LIMIT_RE = re.compile(r"\blimit\s+(\d+)\s*$", re.I)
 
 
+def _capped_scan_note(result) -> str:
+    """The sentence a result that hit its own LIMIT carries, whatever its shape: the rows are a
+    slice in the query's own order, and the groups beyond it — the largest movers in the other
+    direction among them — are not here. The rate ranking already said this (`_ranking_noise_caveat`);
+    a contribution scan sorted worst-first did not, and `55e58a3b` (2026-10-14) read its 15-row
+    slice as "no category above 3.8% of the change" while the decomposition two cards up showed
+    Outerwear at 13.8%."""
+    if not _hit_row_cap(result):
+        return ""
+    n = int(getattr(result, "row_count", 0) or len(getattr(result, "rows", None) or []))
+    return (f"A capped scan: these {n} rows are a slice in the query's own order, not the whole "
+            "dimension — groups beyond the cap, the largest movers in the other direction among them, "
+            "are not shown, so nothing here says what the largest group is or that no group exceeds a value.")
+
+
 def _hit_row_cap(result) -> bool:
     """True when the result returned exactly as many rows as its own LIMIT allowed — the
     only evidence available here that the reader is looking at a slice rather than the
@@ -2995,6 +3015,12 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
             _tie = _extreme_tie_note(r.columns, r.rows)
             if _tie:
                 f["stat_note"] = _tie
+        # P3 — a capped scan is a slice, and the finding says so where the reader sees it.
+        if not r.error and r.rows and "capped scan" not in (f.get("stat_note") or ""):
+            _cap = _capped_scan_note(r)
+            if _cap:
+                _prior = (f.get("stat_note") or "").strip()
+                f["stat_note"] = f"{_prior} {_cap}".strip() if _prior else _cap
         # Exposure normalisation — the leading group leads almost any additive metric BY BEING
         # LARGEST, so a share-of-total without a share-of-population beside it restates group size
         # and reads as a finding. APPENDED, never conditional on stat_note being empty: a tie note
@@ -5632,6 +5658,63 @@ _ADA_SQL_GROUNDING = (
 )
 
 
+def _coder_capable() -> bool:
+    """Whether the coder binding earned the CAPABLE tier — the switch every prompt diet turns on
+    (the narrator's, the intake's, the planners'). Resolution fails to False, the conservative
+    register, exactly as the narrator's does."""
+    try:
+        from aughor.llm.profile import profile_for
+        return bool(profile_for("coder").capable)
+    except Exception:
+        return False
+
+
+def _sql_grounding() -> str:
+    """P3 — the shared SQL grounding paragraph rides a planner's system prompt only for a
+    BASELINE binding; a capable one reads the one-paragraph ask inside its plan prompt
+    (`prompts_investigate.plan_sql_rules`), and the guards on the planned query do the rest."""
+    return "" if _coder_capable() else _ADA_SQL_GROUNDING
+
+
+def _sql_rules_for(phase: str) -> str:
+    from aughor.agent.prompts_investigate import plan_sql_rules
+    return plan_sql_rules(phase, _coder_capable())
+
+
+#: P3 — the caveat a finding carries when its query kept rows by a filter the spec never
+#: declared and the one corrective re-plan did not remove it. Live (1f925796, 2026-10-14): the
+#: decomposition's query added `status NOT IN ('Cancelled','Returned')` to a metric declared over
+#: `status <> 'Cancelled'`, measured August at 335,733 against the baseline's 385,389, and the
+#: narrator wrote one story over both. The prompt's "NO EXTRA FILTERS" rule was prose; this is
+#: the check.
+_EXTRA_FILTER_CAVEAT = ("extra filter: this query keeps rows by {filters} — a condition the metric's "
+                        "definition does not carry — so its totals are over a narrower population than "
+                        "the baseline's and cannot be reconciled to it.")
+
+
+def _extra_filters(queries, declared, dialect: str = "") -> list[tuple[str, str]]:
+    """``(query title, the filter in words)`` for every planned query whose WHERE keeps rows by a
+    column's values beyond the filters the spec DECLARES (the governed metric's own). Date bounds
+    are the window's and are never named. Read with the analyst's own filter reader, so the two
+    paths agree on what a filter is; an unparsed statement names none."""
+    out: list[tuple[str, str]] = []
+    try:
+        from aughor.agent.analyst import _adhoc_filters
+    except Exception:
+        return out
+    for q in queries or []:
+        sql = getattr(q, "sql", "") or ""
+        if not sql:
+            continue
+        try:
+            extra = _adhoc_filters(sql, declared or (), dialect or "")
+        except Exception:
+            continue
+        if extra:
+            out.append((getattr(q, "title", "") or "", "; ".join(extra)))
+    return out
+
+
 _RELATIVE_DATE_RE = re.compile(
     r"\bcurrent_date\b|\bcurrent_timestamp\b|\bsysdate\b|\b(?:now|getdate|date_sub|date_add|dateadd)\s*\(",
     re.IGNORECASE,
@@ -7274,6 +7357,7 @@ def run_analysis_phase(
     sql_context: str = "",
     sql_transform=None,
     coverage_end: Optional[str] = None,   # CA-0: the data's last date, for the partial-period verdict
+    declared_filters: Optional[list] = None,   # P3: the spec's own filters; None → the extra-filter guard is off
 ) -> "_PhaseRun":
     """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every deep-analysis phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
@@ -7444,6 +7528,49 @@ def run_analysis_phase(
                 _fanout_caveat = _FANOUT_CAVEAT
     except Exception:
         _fanout_caveat = None
+
+    # Extra-filter guard (P3) — a planner that keeps rows by a column the spec never declared
+    # measures a narrower population than the baseline, and the narrator then reconciles two
+    # totals in words (1f925796). The prompt rule is advisory; this detects, re-plans once, and
+    # caveats what the re-plan did not remove — on the same channel the fan-out guard uses.
+    if declared_filters is not None and not _preplanned and plan and plan.queries:
+        try:
+            _dialect_ef = getattr(conn, "dialect", "") or ""
+            _extra = _extra_filters(plan.queries, declared_filters, _dialect_ef)
+            if _extra:
+                from aughor.stats import stats as _sef
+                _sef.inc("deep_analysis.extra_filter_guard_retries")
+                from aughor.agent.progress import emit_guard_receipt as _egr_ef
+                _egr_ef("extra_filter_replan", "replanned_queries",
+                        detail="; ".join(f"{t or 'query'}: {f}" for t, f in _extra)[:400])
+                _declared_words = "; ".join(str(d) for d in declared_filters) or "none"
+                try:
+                    _fixed = _provider("coder").complete(
+                        system=plan_system_eff,
+                        user=plan_user + (
+                            "\n\nCORRECTION REQUIRED — EXTRA FILTER: a previous attempt kept rows by a "
+                            "condition the metric's definition does not carry: "
+                            + "; ".join(f"'{t or 'query'}' keeps {f}" for t, f in _extra)
+                            + f". The metric's declared filter is: {_declared_words}. Filter only on the "
+                            "date windows above and that declared filter; remove every other condition "
+                            "on a column's values. Do not change what the metric measures."),
+                        response_model=PhasePlan)
+                    if _fixed and _fixed.queries:
+                        plan = _fixed
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "extra-filter re-plan is best-effort; the original plan still runs",
+                             counter="deep_analysis.extra_filter_guard.replan_failed")
+                _still = _extra_filters(plan.queries, declared_filters, _dialect_ef)
+                if _still and _fanout_caveat is None:
+                    _sef.inc("deep_analysis.extra_filter_guard_unresolved")
+                    _egr_ef("extra_filter_replan", "caveated",
+                            detail="the re-plan still keeps the filter; the result will carry a caveat")
+                    _fanout_caveat = _EXTRA_FILTER_CAVEAT.format(
+                        filters="; ".join(dict.fromkeys(f for _, f in _still)))
+        except Exception as _ef_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_ef_exc, "extra-filter guard is best-effort", counter="deep_analysis.extra_filter_guard")
 
     # Step 2 — execute (parallel — each query gets its own reader connection)
     # Caller's deterministic per-query pass (e.g. the lifecycle guard). Applied to the FINAL
@@ -7645,6 +7772,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     _no_prior = bool(intake_data.get("no_prior_period")) or not (comp_start and comp_end)
     from aughor.agent.sql_context import window_text
     plan_prompt = BASELINE_PLAN_PROMPT.format(
+        sql_rules=_sql_rules_for("baseline"),
         question=question,
         metric_label=metric_label,
         metric_sql=metric_sql,
@@ -7678,8 +7806,9 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     plan_prompt += render_entity_context(intake_data)
     _run = run_analysis_phase(
         conn, phase_id="baseline", title="Baseline & Anomaly Assessment", emoji="📊", schema=schema,
-        plan_system="Write SQL queries for baseline anomaly detection. Return a JSON object with a 'queries' list." + _ADA_SQL_GROUNDING,
+        plan_system="Write SQL queries for baseline anomaly detection. Return a JSON object with a 'queries' list." + _sql_grounding(),
         plan_user=plan_prompt,
+        declared_filters=list(intake_data.get("metric_filters") or []),
         interpret_system="You are a senior data analyst interpreting query results. Be precise. Cite real numbers.",
         interpret_user_fn=lambda results_text: BASELINE_INTERPRET_PROMPT.format(
             question=question, results_text=results_text, events_section=events_section,
@@ -7976,6 +8105,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
     metric_table = intake_data.get("metric_table", "")
 
     plan_prompt = DECOMPOSE_PLAN_PROMPT.format(
+        sql_rules=_sql_rules_for("decompose"),
         question=question,
         baseline_summary=baseline_summary,
         total_change="(see baseline findings)",
@@ -7994,8 +8124,9 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     _run = run_analysis_phase(
         conn, phase_id="decomposition", title="Metric Decomposition", emoji="🧩", schema=schema,
-        plan_system="Write SQL for metric decomposition. Decompose the metric into additive sub-drivers." + _ADA_SQL_GROUNDING,
+        plan_system="Write SQL for metric decomposition. Decompose the metric into additive sub-drivers." + _sql_grounding(),
         plan_user=plan_prompt,
+        declared_filters=list(intake_data.get("metric_filters") or []),
         interpret_system="Interpret metric decomposition results. State clearly whether volume or value drove the change.",
         interpret_user_fn=lambda results_text: DECOMPOSE_INTERPRET_PROMPT.format(
             question=question, baseline_summary=baseline_summary, results_text=results_text),
@@ -8096,6 +8227,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     ) if prioritized_dims else "  (none identified)"
 
     plan_prompt = DIMENSIONAL_PLAN_PROMPT.format(
+        sql_rules=_sql_rules_for("dimensional"),
         question=question,
         baseline_summary=baseline_summary,
         decomposition_summary=decomp_summary,
@@ -8115,8 +8247,9 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     _run = run_analysis_phase(
         conn, phase_id="dimensional", title="Dimensional Analysis", emoji="🔬", schema=schema,
-        plan_system="Write contribution-analysis SQL for each dimension. Sort by absolute_change ASC." + _ADA_SQL_GROUNDING,
+        plan_system="Write contribution-analysis SQL for each dimension. Sort by absolute_change ASC." + _sql_grounding(),
         plan_user=plan_prompt,
+        declared_filters=list(intake_data.get("metric_filters") or []),
         interpret_system="Interpret contribution analysis. Identify concentrated vs. diffuse decline.",
         interpret_user_fn=lambda results_text: DIMENSIONAL_INTERPRET_PROMPT.format(
             question=question, prior_summary=prior_summary, results_text=results_text),
@@ -8219,6 +8352,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
 
     plan_prompt = BEHAVIORAL_PLAN_PROMPT.format(
+        sql_rules=_sql_rules_for("behavioral"),
         question=question,
         prior_summary=prior_summary,
         dominant_finding=dominant_finding,
@@ -8238,8 +8372,9 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     _run = run_analysis_phase(
         conn, phase_id="behavioral", title="Behavioral & Operational", emoji="👥", schema=schema,
-        plan_system="Write SQL for behavioral and operational diagnostics." + _ADA_SQL_GROUNDING,
+        plan_system="Write SQL for behavioral and operational diagnostics." + _sql_grounding(),
         plan_user=plan_prompt,
+        declared_filters=list(intake_data.get("metric_filters") or []),
         interpret_system="Interpret behavioral and operational findings. Be specific about what changed.",
         interpret_user_fn=lambda results_text: BEHAVIORAL_INTERPRET_PROMPT.format(
             question=question, prior_summary=prior_summary, results_text=results_text),
