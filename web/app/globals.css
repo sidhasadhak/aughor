@@ -300,7 +300,6 @@ a:hover { color: var(--blue4); }
 :root[data-nav="collapsed"] .aug-sidebar { width: var(--sidebar-collapsed); }
 :root[data-nav="collapsed"] .aug-sidebar .aug-nav-item { justify-content: center; gap: 0; padding: 0; }
 :root[data-nav="collapsed"] .aug-sidebar .aug-nav-label,
-:root[data-nav="collapsed"] .aug-sidebar .aug-nav-kbd,
 :root[data-nav="collapsed"] .aug-sidebar .aug-nav-meta,
 :root[data-nav="collapsed"] .aug-sidebar .aug-nav-group { display: none; }
 :root[data-nav="collapsed"] .aug-sidebar .aug-nav-badge {
@@ -734,7 +733,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
   }
   /* The caret is solid, the pulse is its lit colour, the skeleton a flat fill. */
   .aug-caret { animation: none; opacity: 1; }
-  .aug-pulse-dot, .aug-dot-live, .aug-dot-analysing { animation: none; opacity: 1; }
+  .aug-pulse-dot, .aug-dot-live { animation: none; opacity: 1; }
   .aug-skeleton, .aug-shimmer { animation: none; background: var(--bg-4); }
   .aug-shimmer-text { animation: none; background: none; color: var(--t2); }
   .aug-check-pop { animation: none; }
@@ -744,175 +743,15 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 /* ── Intelligence layer sections (Profile · Actions · Memory) ─────────────────────────────────
    A section is set off by a rule, not a number: the numbered 44px gutter came out on 2026-09-14
    (the user: it was not helping), when the Briefing went back to its verdict-first layout. */
-.aug-brief-strip { display: flex; align-items: center; gap: 10px; padding: 6px 16px; border-bottom: 1px solid var(--b1); }
-.aug-brief-sec { display: flex; border-top: 1px solid var(--b1); }
-.aug-brief-sec:first-child { border-top: 0; }
-.aug-brief-body { flex: 1; min-width: 0; padding: 12px 22px 16px 20px; }
-.aug-brief-head { display: flex; align-items: baseline; gap: 10px; min-width: 0; margin-bottom: 8px; }
-.aug-brief-meta {
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 12px; color: var(--t3);
-}
-.aug-brief-eyebrow {
-  font-size: 12px; font-weight: 600; color: var(--t3); white-space: nowrap;
-}
-.aug-brief-eyebrow-row { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 8px; }
-.aug-brief-eyebrow-row > .aug-brief-meta { margin-left: auto; }
-.aug-brief-note { margin: 0; font-size: 12px; line-height: 1.6; color: var(--t3); }
 .aug-cite-ref-open { padding: 0 1px; cursor: pointer; }
 .aug-cite-ref-open:hover { text-decoration: underline; }
 
-/* The compact numeric table — drawn first for the artefact Briefing; the Profile layer's tables read it. */
-.aug-moves-wrap { overflow-x: auto; }
-
-.aug-moves-good { color: var(--grn4); }
-
 /* ── The claim ledger (Aughor Intelligence · 05 Evidence) ─────────────────────────────────────
    A claim is a row, not a card; the selected claim opens in the inspector beside the ledger. */
-.aug-ledger { flex: 1; display: flex; min-height: 0; min-width: 0; }
-.aug-ledger-pad { flex: 1; padding: 16px 20px; }
-.aug-ledger-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.aug-ledger-bar { flex: none; display: flex; align-items: center; gap: 12px; padding: 7px 16px; border-bottom: 1px solid var(--b1); }
-.aug-ledger-meta { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); white-space: nowrap; }
-.aug-ledger-scroll { flex: 1; min-height: 0; overflow: auto; }
-.aug-ledger-text { display: block; font-size: 12px; line-height: 1.5; color: var(--t1); }
-.aug-ledger-query {
-  display: block; max-width: 100%; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: var(--font-mono); font-size: 11px; color: var(--t3);
-}
-.aug-ledger-when { font-size: 11px; color: var(--t3); }
-.aug-ledger-none { color: var(--t3); }
-.aug-ledger-fb-validated { color: var(--grn4); }
-.aug-ledger-fb-disputed { color: var(--red4); }
-.aug-ledger-fb-context { color: var(--amb4); }
-.aug-ledger-col-id { width: 72px; }
-.aug-ledger-col-conf { width: 118px; }
-.aug-ledger-col-fb { width: 104px; }
-.aug-ledger-col-when { width: 68px; }
-.aug-ledger-empty { margin: 0; padding: 14px 16px; font-size: 12px; color: var(--t3); }
-.aug-ledger-foot {
-  flex: none; display: flex; gap: 16px; padding: 7px 16px; border-top: 1px solid var(--b1);
-  font-family: var(--font-mono); font-size: 11px; color: var(--t3);
-}
-.aug-ledger-foot-note { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aug-inspector { width: 340px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b1); }
-.aug-inspector-head { height: 32px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--b1); }
-.aug-inspector-id { font-family: var(--font-mono); font-size: 11px; color: var(--blue4); }
-.aug-inspector-end { margin-left: auto; }
-.aug-inspector-sec { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 11px 14px 12px; border-bottom: 1px solid var(--b1); }
-.aug-inspector-claim { margin: 0; font-size: 13px; line-height: 1.6; color: var(--t1); }
-.aug-inspector-rows { margin: 0; display: flex; flex-direction: column; gap: 4px; }
-.aug-inspector-rows > div { display: flex; justify-content: space-between; gap: 12px; font-family: var(--font-mono); font-size: 11px; }
-.aug-inspector-rows dt { color: var(--t3); }
-.aug-inspector-rows dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t1); }
-.aug-inspector-sub { font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
-.aug-inspector-sql { padding-left: 0; padding-right: 0; }
-.aug-inspector-sql > .aug-inspector-sub, .aug-inspector-sql > .aug-inspector-note { padding: 0 14px; }
-.aug-inspector-pre {
-  margin: 0; padding: 9px 14px; white-space: pre-wrap; word-break: break-word; background: var(--code-bg);
-  font-family: var(--font-mono); font-size: 11px; line-height: 1.7; color: var(--t2);
-}
-.aug-inspector-doors { display: flex; flex-wrap: wrap; gap: 6px; }
 .aug-fb-door[aria-pressed="true"] { font-weight: 600; }
 .aug-fb-door-validated[aria-pressed="true"] { background: var(--grn1); border-color: var(--grn2); color: var(--grn4); }
 .aug-fb-door-disputed[aria-pressed="true"] { background: var(--red1); border-color: var(--red2); color: var(--red4); }
 .aug-fb-door-needs_context[aria-pressed="true"] { background: var(--amb1); border-color: var(--amb2); color: var(--amb4); }
-.aug-inspector-note { margin: 0; font-size: 11px; line-height: 1.6; color: var(--t3); }
-
-/* ── The profile (Aughor Intelligence · 02 Profile) ───────────────────────────────────────────
-   Instrument-dense: sections beside a rail of governed metrics and status columns. */
-.aug-profile { flex: 1; display: flex; min-height: 0; min-width: 0; }
-/* The Profile layer's domain rail: the Hub's categorisation of findings by domain, beside the profile. */
-.aug-profile-layer { flex: 1; display: flex; min-height: 0; min-width: 0; }
-.aug-profile-domains { width: 208px; flex: none; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--b1); background: var(--bg-0); }
-.aug-profile-domains-list { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 0 6px; display: flex; flex-direction: column; gap: 2px; }
-.aug-profile-domain-page { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.aug-profile-hint {
-  position: fixed; bottom: 20px; left: 50%; translate: -50% 0; z-index: 70; max-width: 420px;
-  padding: 10px 16px; border: 1px solid var(--b2); border-radius: var(--r2); background: var(--bg-1); color: var(--t2); box-shadow: var(--shadow-md);
-}
-.aug-profile-main { flex: 1; min-width: 0; overflow-y: auto; }
-.aug-profile-main > .aug-brief-strip + .aug-brief-sec { border-top: 0; }
-.aug-profile-strip-end { margin-left: auto; }
-.aug-profile-prose { margin: 0; max-width: 760px; font-size: 13px; line-height: 1.8; color: var(--t1); }
-.aug-profile-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.aug-profile-why { margin: 10px 0 0; max-width: 760px; font-size: 12px; line-height: 1.6; color: var(--t3); }
-.aug-profile-tname { font-family: var(--font-mono); font-size: 11px; }
-.aug-profile-dim { color: var(--t3); }
-.aug-profile-foot { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--b0); font-size: 11px; line-height: 1.6; color: var(--t3); }
-.aug-profile-rail { width: 340px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b1); }
-.aug-profile-rail-head { height: 32px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--b1); }
-.aug-profile-rail-head > .aug-brief-meta { margin-left: auto; }
-.aug-profile-block { flex: none; display: flex; flex-direction: column; gap: 11px; padding: 10px 14px 12px; border-bottom: 1px solid var(--b1); }
-.aug-profile-metric { display: flex; flex-direction: column; gap: 3px; }
-.aug-profile-metric-head { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; }
-.aug-profile-metric-name { color: var(--t1); }
-.aug-profile-metric-v { color: var(--t3); }
-.aug-profile-metric-state { margin-left: auto; }
-.aug-profile-formula {
-  font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--t3);
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-.aug-profile-lc { display: flex; flex-direction: column; gap: 6px; }
-.aug-profile-lc-name { font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
-.aug-profile-states { display: flex; flex-wrap: wrap; gap: 4px; }
-.aug-profile-state { padding: 1px 6px; border: 1px solid var(--b2); border-radius: var(--r1); font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
-.aug-profile-state-terminal { border-style: dashed; color: var(--t3); }
-.aug-profile-lc-note { font-size: 11px; line-height: 1.5; color: var(--t3); }
-.aug-profile-gap { color: var(--amb4); }
-.aug-profile-rule { max-width: 360px; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
-
-/* ── Org (Aughor Intelligence · 08 Org) — the promoted-findings ledger, beside what Org holds ─── */
-.aug-ledger-bar > .aug-org-meta { margin-left: 0; }
-.aug-org-filter { margin-left: auto; width: 220px; }
-.aug-org-col-domain { width: 140px; }
-.aug-org-col-novelty { width: 72px; }
-.aug-org-col-when { width: 80px; }
-.aug-org-col-door { width: 92px; }
-.aug-org-domain { font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
-.aug-org-novelty { font-size: 11px; color: var(--t3); }
-.aug-org-door { text-align: right; }
-
-/* ── Memory (Aughor Intelligence · 06 Memory) — readings as rows, where memory comes from beside ── */
-.aug-memory-col-source { width: 104px; }
-.aug-memory-col-conn { width: 104px; }
-.aug-memory-col-num { width: 72px; }
-.aug-memory-col-when { width: 72px; }
-.aug-memory-col-door { width: 88px; }
-.aug-memory-subject { color: var(--t2); }
-.aug-memory-source { font-size: 11px; color: var(--t2); }
-.aug-memory-conn { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
-.aug-memory-share { display: flex; flex-direction: column; gap: 4px; }
-.aug-memory-share-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--t2); }
-.aug-memory-share-n { font-family: var(--font-mono); font-size: 11px; color: var(--t1); font-variant-numeric: tabular-nums; }
-.aug-memory-share-rule { height: 3px; overflow: hidden; border-radius: var(--r1); background: var(--bg-4); }
-.aug-memory-share-rule > span { display: block; height: 100%; background: var(--chart-1); }
-
-/* ── Actions (Aughor Intelligence · 07 Actions) — declared actions, overlay edits, approvals ─── */
-.aug-actions-col-id { width: 180px; }
-.aug-actions-col-about { width: 110px; }
-.aug-actions-col-gate { width: 124px; }
-.aug-actions-col-target { width: 220px; }
-.aug-actions-id { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t1); }
-.aug-actions-kind { display: block; margin-top: 2px; color: var(--t3); }
-.aug-actions-about, .aug-actions-target { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
-.aug-actions-gate { font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
-.aug-actions-gate-ask { color: var(--amb4); }
-.aug-actions-err { margin: 6px 0; font-size: 12px; line-height: 1.5; color: var(--red4); }
-.aug-actions-form { margin-top: 12px; padding: 12px; border: 1px solid var(--b1); border-radius: var(--r3); }
-.aug-actions-form-title { margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--t1); }
-.aug-actions-proposals, .aug-approvals { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
-.aug-actions-proposal { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--b1); border-radius: var(--r2); }
-
-.aug-approval-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.aug-approval-head > .aug-brief-meta { margin-left: auto; }
-.aug-approval-kind { font-size: 12px; font-weight: 600; color: var(--amb4); }
-.aug-approval-why { font-size: 12px; line-height: 1.55; color: var(--t1); }
-.aug-approval-params { font-family: var(--font-mono); font-size: 11px; color: var(--t3); word-break: break-all; }
-.aug-actions-perm { margin: 0; display: flex; flex-direction: column; gap: 8px; }
-.aug-actions-perm > div { display: flex; flex-direction: column; gap: 2px; }
-.aug-actions-perm dt { font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
-.aug-actions-perm dd { margin: 0; font-size: 11px; line-height: 1.55; color: var(--t3); }
 
 /* ── Graph (Aughor Intelligence · 04 Graph) — the picture, and beside it what needs a person or the chosen node ── */
 /* One card on the ground (CLARITY §3): the canvas and its side panel share it, split by a row rule. */
@@ -1013,22 +852,6 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
    controls sit left, spaced wider, on the page. */
 .aug-context-bar { gap: 16px; }
 
-/* ── Semantic Layer › metric editor: fields left, governance right (2026-09-25) ──────────
-   The governance report sat above a 36rem form and pushed the first field a screen down
-   while the right half of the row stayed empty. The report now has its own column and
-   stays in view while the form scrolls; under 1100px it stacks back above the fields. */
-.aug-metric-editor {
-  display: grid;
-  grid-template-columns: minmax(0, 36rem) minmax(20rem, 1fr);
-  gap: 24px;
-  align-items: start;
-}
-.aug-metric-governance { position: sticky; top: 8px; }
-@media (max-width: 1100px) {
-  .aug-metric-editor { grid-template-columns: minmax(0, 1fr); }
-  .aug-metric-governance { order: -1; position: static; }
-}
-
 /* ── The 2027 screens (docs/PLATFORM_2027_STUDY_2026-10-04.md §V) — a destination's page at
    reading width, its numbered sections, and a claim cited as one line. Sizes come from the
    type classes in the markup; nothing here sets one. */
@@ -1050,8 +873,6 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-option[data-chosen="true"] { border-color: var(--accent); background: var(--bg-sel); }
 .aug-form-grid { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px 16px; align-items: center; max-width: 720px; }
 .aug-form-grid > label { color: var(--t2); }
-
-.aug-brief-line > .aug-label { flex: 0 0 132px; }
 
 /* ── The inspector · a cited record read beside the page that cites it. It sits over the page's
    own right-hand column, inside the workspace, so the rail and the tabs never move. Each thing it
