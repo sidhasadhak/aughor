@@ -131,7 +131,14 @@ def keep_slot(state: dict, finding: dict) -> None:
 def _read_once(entry: dict) -> dict:
     found = entry.get(FINDINGS) or []
     unique = one_id_each(found)
-    return entry if len(unique) == len(found) and all(a is b for a, b in zip(unique, found)) else {**entry, FINDINGS: unique}
+    if not (len(unique) == len(found) and all(a is b for a, b in zip(unique, found))):
+        entry = {**entry, FINDINGS: unique}
+    # A lifecycle map stored under an older rule — a city, a JSON payload, a warehouse's name taken for a status — is
+    # not served, here at the one read, so the Profile, the prompts and the ontology merge all see the same maps.
+    from aughor.ontology.lifecycle_states import held_lifecycle_maps
+    maps = entry.get("lifecycle_maps")
+    held = held_lifecycle_maps(maps) if isinstance(maps, dict) else maps
+    return entry if held is maps or len(held) == len(maps) else {**entry, "lifecycle_maps": held}
 
 
 def load(connection_id: str) -> dict:

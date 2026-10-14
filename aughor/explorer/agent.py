@@ -39,7 +39,10 @@ from aughor.explorer.models import (
     NullMeaningResult,
 )
 from aughor.explorer import store as _store
-from aughor.ontology.lifecycle_states import is_lifecycle_state, plausible_lifecycle_states
+from aughor.ontology.lifecycle_states import (
+    ACTIVE, ACTIVE_SUBS, TERMINAL, TERMINAL_SUBS, is_lifecycle_state, plausible_lifecycle_states,
+    reads_as_status_column,
+)
 from aughor.explorer.frontier import signature_fields
 from aughor.util.format import rows_for_prompt, round_long_decimals
 from aughor.explorer.episodes import EpisodeCollector
@@ -125,24 +128,8 @@ def _get_explorer_semaphore() -> "asyncio.Semaphore":
         _explorer_semaphores[loop] = sem
     return sem
 
-# State-value vocabulary for lifecycle classification
-_TERMINAL = frozenset({
-    "canceled", "cancelled", "returned", "closed", "archived", "failed",
-    "rejected", "expired", "deleted", "churned", "lost", "void", "voided",
-    "refunded", "bounced", "blocked",
-    # "completed", "done", "delivered", "shipped" removed — these are
-    # context-dependent (e.g. "shipped" is mid-flow in fulfillment).
-    # Terminal classification is now advisory, not filtering.
-})
-_ACTIVE = frozenset({
-    "active", "live", "running", "processing", "open", "pending", "approved",
-    "in_progress", "inprogress", "scheduled", "confirmed", "new", "created",
-    "placed", "accepted", "ready", "invoiced",
-})
-
-# Substring signals for heuristic state classification when exact match fails
-_TERMINAL_SUBS = ("cancel", "fail", "reject", "expir", "close", "archiv", "delet", "return", "void", "refund", "churn")
-_ACTIVE_SUBS   = ("pend", "process", "approv", "creat", "open", "activ", "run", "sched", "place", "accept", "new")
+# State-value vocabulary for lifecycle classification — one list, in ontology/lifecycle_states.py
+_TERMINAL, _ACTIVE, _TERMINAL_SUBS, _ACTIVE_SUBS = TERMINAL, ACTIVE, TERMINAL_SUBS, ACTIVE_SUBS
 
 
 # _NO_DATA_RE moved to explorer/verify.py (with is_degenerate_result, its only user besides revalidate).
@@ -4697,18 +4684,14 @@ def _find_status_col(col_map: dict) -> Optional[str]:
     """Return the most likely lifecycle/status column in a table's column map.
 
     Only values that can BE states are matched (ontology/lifecycle_states.py): the match is by
-    substring, and a one-row JSON column whose text contains "complete" otherwise qualifies."""
+    substring, and a one-row JSON column whose text contains "complete" otherwise qualifies — and a
+    column not named for a lifecycle needs half its values to name a state, not one ("New York")."""
     for col_name, col_p in col_map.items():
         if (
             col_p.semantic_type == "dimension"
             and col_p.is_low_cardinality
             and col_p.top_values
-            and plausible_lifecycle_states(col_p.top_values)
-            and any(
-                v.lower() in _TERMINAL | _ACTIVE
-                or any(s in v.lower() for s in _TERMINAL_SUBS + _ACTIVE_SUBS)
-                for v in col_p.top_values if is_lifecycle_state(v)
-            )
+            and reads_as_status_column(col_name, col_p.top_values)
         ):
             return col_name
     return None

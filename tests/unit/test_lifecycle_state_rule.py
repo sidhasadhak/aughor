@@ -137,3 +137,38 @@ def test_the_profile_cap_says_when_it_cuts_annotations_short():
     out = cap_schema(tables + "\n\n" + trailer, 8_000)
     assert len(out) <= 8_000 and out.startswith("TABLE: t1")
     assert "annotations cut at 2,000 chars" in out
+
+
+# ── a column not named for a lifecycle needs half its values to name a state (2026-10-14) ──────
+
+LIVE_NOT_STATUS = {   # the live maps on LuxExperience and theLook, column → its values
+    "base": ["Dubai", "Milan", "Paris", "New York", "Munich", "London"],
+    "name": ["Shanghai DC", "Bologna Interporto", "Munich Hub", "London Westgate", "New Jersey DC"],
+    "account_name": ["Net sales", "Payment processing", "Cost of sales", "Marketing", "Returns reserve"],
+    "category": ["Intimates", "Jeans", "Tops & Tees", "Swim", "Shorts", "Active"],
+    "description": ["LuxExperience sells THE OUTNET to The O Group LLC (~$30m)"],
+}
+
+
+def test_a_city_an_account_or_a_category_is_not_a_status_column():
+    from aughor.explorer.agent import _find_status_col
+    for col, values in LIVE_NOT_STATUS.items():
+        assert _find_status_col({col: _col(values)}) is None, col
+    assert _find_status_col({"status": _col(["captured", "refunded"])}) == "status"     # Lux payments
+    assert _find_status_col({"status": _col(REAL)}) == "status"                         # theLook orders
+    assert _find_status_col({"fulfilment": _col(["pending", "shipped", "cancelled", "delivered"])}) == "fulfilment"
+
+
+def test_a_map_stored_under_the_old_rule_is_not_served(monkeypatch):
+    from aughor.explorer import store
+
+    class _Family:
+        def get_entry(self, _key):
+            return {"phase": "complete", "lifecycle_maps": {
+                "orders": _ORDERS,
+                "stylists": {"status_column": "base", "states": LIVE_NOT_STATUS["base"],
+                             "active_states": ["New York"], "terminal_states": []},
+                "generator_state": {"status_column": "payload", "states": [BLOB], "terminal_states": [BLOB]},
+            }}
+    monkeypatch.setattr(store, "_family", lambda: _Family())
+    assert list(store.load("c1")["lifecycle_maps"]) == ["orders"]
