@@ -78,6 +78,22 @@ def test_the_verdict_is_the_slowest_day_not_the_typical_one():
     assert settle_lag(obs).lag_days == 7
 
 
+
+def _sampled(mornings: int, window: int = 14) -> list[Observation]:
+    """A source whose days are final the next morning, read once a morning from S over the last ``window`` days —
+    the sampler's own shape. Each day's count is fixed."""
+    s = D0 + timedelta(days=window)
+    return [Observation(day=m - timedelta(days=a), measured_on=m, value=40.0)
+            for m in (s + timedelta(days=i) for i in range(mornings)) for a in range(1, window + 1)]
+
+
+def test_a_day_first_read_old_and_steady_since_does_not_set_the_lag():
+    """LuxExperience 2026-10-14: four mornings in, the oldest days of the first window had been read at ages 12–14
+    only, steady throughout, and the lag was learned as 12. Its days are final the next morning."""
+    assert settle_lag(_sampled(4)).lag_days == 2          # three days shown final from age ≤ 2
+    assert settle_lag(_sampled(5)).lag_days == 1
+    assert "1 day after it ends" in settle_lag(_sampled(5)).reason
+
 def test_a_one_row_restatement_on_a_tiny_day_still_counts_as_movement():
     # 3 rows → 4 rows is one late row, and reading the day as final at age 1 would have been
     # wrong by a third. The absolute floor (50 × 1% = half a row) tolerates nothing an integer

@@ -90,10 +90,16 @@ def settle_lag(observations: Iterable[Observation], *, tolerance: float = DEFAUL
                min_days: int = MIN_DAYS, min_ages: int = MIN_AGES) -> SettlingVerdict:
     """The lag a source needs before a day's number can be read as final.
 
-    Conservative on purpose: the verdict is the LARGEST settle age across the qualifying
-    days, so a source that usually settles in two days but sometimes takes five is read at
+    Conservative on purpose: the verdict is at least the LARGEST settle age of a day SEEN
+    moving, so a source that usually settles in two days but sometimes takes five is read at
     five. A day still moving at the oldest age it was read at withholds the verdict — the
     horizon must grow before anyone can say where it stops.
+
+    A day steady from its first reading says only that it was final by then: first read at
+    age 12, it may have settled at 1. Taken as "settles at 12", LuxExperience — whose days are
+    final the next morning — learned a 12-day lag from its first four readings, the oldest days
+    of the first window (2026-10-14), and its Day Briefing read a day twelve days old. So the
+    lag is also no smaller than the age at which ``min_days`` days are SHOWN final.
     """
     curves = _by_day(observations)
     horizon = max((max(c) for c in curves.values()), default=0)
@@ -104,14 +110,17 @@ def settle_lag(observations: Iterable[Observation], *, tolerance: float = DEFAUL
             f"insufficient evidence: {len(qualifying)} day{'s' if len(qualifying) != 1 else ''} "
             f"read at {min_ages}+ ages (needs {min_days})",
             evidence_days=len(qualifying), horizon_days=horizon, tolerance=tolerance)
-    settle_ages: list[int] = []
+    stable_from: list[int] = []
+    moved_floor = 0      # the slowest day seen moving settled at this age
     unsettled = 0
     for c in qualifying.values():
         age = _settle_age(c, tolerance)
         if age is None:
             unsettled += 1
         else:
-            settle_ages.append(age)
+            stable_from.append(age)
+            if age > min(c):
+                moved_floor = max(moved_floor, age)
     if unsettled:
         return SettlingVerdict(
             None,
@@ -119,7 +128,7 @@ def settle_lag(observations: Iterable[Observation], *, tolerance: float = DEFAUL
             f"the observation horizon must grow before a lag can be named",
             evidence_days=len(qualifying), horizon_days=horizon, tolerance=tolerance,
             still_moving=True)
-    lag = max(settle_ages)
+    lag = max(moved_floor, sorted(stable_from)[min_days - 1])
     return SettlingVerdict(
         lag,
         f"learned from {len(qualifying)} days read at up to {horizon} ages: a day stops "
