@@ -367,4 +367,24 @@ ask or moves a rule into a check; none adds a call.
   the save accepted `luxexperience.order.order_date` (a table the statement never reads, spelled wrong) and
   said nothing. The save now refuses it (422) with the fix. Live: Lux `gross_margin` still carries that
   column — correct it in the editor (join `orders` in the SQL, then choose `orders.order_date`).
+* **P5 and the Lux guards proven live (2026-10-14, 22:30 UTC, `:8000` pid 17362 on `77791271`, nine envs):** the same
+  Lux question re-run as `2f8ad418`. Against `99201af8`: the spec's date column is `orders.order_date` (was the
+  invented `orders.order_ts`); the intake took one model call (was two — the correction retry); **no
+  `aughor.sql.writer:fix` calls (was nine)**; 18 model calls over 141k prompt tokens (was 30); the analyst ran
+  `baseline`, `decompose`, `decompose`, `conclude` — its second decomposition is `decomposition_2` with ids
+  `decomp_0_2 … decomp_2_2`, no duplicate id in the report (was two `decomposition` phases carrying `decomp_0..2`
+  twice); the baseline phase carries `verdict = {sigma 0.97, significant false, "σ = 0.97 — within normal
+  variance"}` and a summary with no bracket; the gaps read "This analysis did not test why the order count
+  rose…" (was "I did not test… I rely on the phase tool's summaries"); no first person and no machinery word
+  in gaps or summary; the "Not independently challenged" caveat carries no machine reason. The analyst's own
+  `run_sql` did not run this time, so the diagnosis path is unit-tested, not live-proven. The intake chose
+  `SUM(orders.gmv_eur)` on `orders` as revenue (the earlier run measured line value on `order_items`); both are
+  defensible readings of an uncatalogued "revenue", and the intake notes say which and why.
+  **Exposed by the proof, not fixed:** the narrator wrote, as a data gap, that code's verdict (σ = 0.97) does not
+  reconcile with the planner's own z (0.011). From the stored 15 monthly rows, September's revenue sits 0.19σ
+  above the 14 prior months and 0.01σ above the 12 prior — so code's 0.97 is not revenue's. The cause is in
+  `ada_baseline`: `code_sigma` is the LARGEST σ `analyze_query_result` returns for any numeric column of the
+  first result — here `baseline_0` carries revenue, orders and AOV, and the orders or AOV series won. The
+  marker carried the same number before; the slot made the narrator able to say so. The fix is to read the
+  metric's own column (the finding's `stat_note` already does: "z = 0.19 (revenue vs 15-month mean)").
 * Still open from §6: P6.
