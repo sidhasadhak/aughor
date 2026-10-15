@@ -53,15 +53,20 @@ def workspace(monkeypatch):
 def test_list_tables_lists_only_the_schema_in_scope(workspace):
     from aughor.agent.converse_tools import list_tables
     out = list_tables("workspace", {}, schema_scope="uber_ncr")
-    assert "uber_ncr.rides" in out["schema"]
-    assert "luxexperience" not in out["schema"] and "data_co" not in out["schema"]
+    assert "uber_ncr.rides" in out["tables"]
+    assert "luxexperience" not in out["tables"] and "data_co" not in out["tables"]
     assert out["scope"].startswith("schema uber_ncr only")
 
 
 def test_an_unscoped_turn_still_sees_the_whole_connection(workspace):
     from aughor.agent.converse_tools import list_tables
     out = list_tables("workspace", {})
-    assert out == {"schema": WORKSPACE_ALL}
+    # A MANIFEST of the whole connection — every table, its row count, its columns and types —
+    # not the schema text itself (`test_list_tables_manifest.py` has the size case).
+    assert out["tables"] == ("luxexperience.orders (5 rows): ship_country VARCHAR\n"
+                             "data_co.data_co_supplychain (9 rows): Order City VARCHAR\n"
+                             "uber_ncr.rides (10 rows): pickup_location VARCHAR")
+    assert "describe_table" in out["detail"] and "scope" not in out
 
 
 def test_describe_table_cannot_reach_another_dataset(workspace):

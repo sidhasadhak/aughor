@@ -108,3 +108,47 @@ def test_detector_stays_silent_without_a_denominator():
     columns = ["segment", "refund_rate"]
     rows = [["a", 0.025], ["b", 0.026], ["c", 0.024]]
     assert _analyze_rate_segments(columns, rows) is None
+
+
+# ── a change is not a proportion (LuxExperience 99201af8, 2026-10-14) ─────────────────────
+
+#: The platform scan's rows as the query returned them: `pct_change` is revenue's movement between
+#: two months, `obs_orders` a count. The detector read the first as a rate over the second,
+#: reconstructed MR PORTER's "successes" as round(0.2278 × 108) = 25 and reported 23.15% beside the
+#: query's 22.78% — the "Statistical output reports … while the query computes …" discrepancy the
+#: narrator then carried into the report as unexplained.
+PLATFORM_COLUMNS = ["platform", "obs_rev", "comp_rev", "abs_change", "pct_change", "pct_of_total_change",
+                    "obs_orders", "comp_orders"]
+PLATFORM_ROWS = [
+    ["MYTHERESA", "300298.70", "243414.95", "56883.75", "23.369045327741784", "60.63094231732003", "338", "288"],
+    ["MR PORTER", "101465.19", "82642.66", "18822.53", "22.775803682988904", "20.062455986042156", "108", "91"],
+    ["NET-A-PORTER", "218274.73", "208725.65", "9549.08", "4.574943232899263", "10.178121496270451", "252", "229"],
+    ["YOOX", "101716.13", "93151.82", "8564.31", "9.193926645770311", "9.128480200367365", "544", "455"],
+]
+
+
+def test_a_pct_change_column_is_never_a_rate():
+    assert _analyze_rate_segments(PLATFORM_COLUMNS, PLATFORM_ROWS) is None
+
+
+def test_the_change_keywords_stand_aside_even_when_the_counts_would_fit():
+    # Named a change, the column is not a proportion whatever its values do.
+    columns = ["segment", "n_orders", "growth_pct"]
+    rows = [["a", 100, 25.0], ["b", 200, 25.0], ["c", 400, 25.0]]
+    assert _analyze_rate_segments(columns, rows) is None
+
+
+def test_a_rate_whose_implied_counts_are_not_whole_is_not_a_proportion_of_that_denominator():
+    # Full precision, so the check can tell: 0.2277580 × 108 = 24.6 is not a count of anything.
+    columns = ["segment", "n_orders", "share_rate"]
+    rows = [["a", 338, "0.23369045327741784"], ["b", 108, "0.22775803682988904"],
+            ["c", 252, "0.04574943232899263"], ["d", 544, "0.09193926645770311"]]
+    assert _analyze_rate_segments(columns, rows) is None
+
+
+def test_a_genuine_full_precision_proportion_still_tests():
+    # successes / n at full precision lands on whole numbers, so the uniformity test runs.
+    columns = ["segment", "n_orders", "refund_rate"]
+    rows = [["a", 338, str(9 / 338)], ["b", 108, str(3 / 108)], ["c", 252, str(6 / 252)], ["d", 544, str(14 / 544)]]
+    stat = _analyze_rate_segments(columns, rows)
+    assert stat is not None and stat.type == "uniformity"

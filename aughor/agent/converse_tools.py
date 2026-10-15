@@ -436,11 +436,23 @@ def list_tables(connection_id: str, args: dict, *, canvas_id: Optional[str] = No
                 schema_scope: Optional[str] = None) -> dict:
     """The schema as a manifest — progressive disclosure, per the plan's Layer 3 table.
 
+    A manifest: one line per table with its row count and its columns' names and types
+    (`schema_render.schema_manifest`). Until 2026-10-15 this returned the whole schema TEXT —
+    descriptions, sample values and column notes included — which on LuxExperience is 82k
+    characters (the analyst's one `list_tables` call on 99201af8 cost more context than the
+    rest of its turn); the manifest is 5.3k, and `describe_table` returns a table's full block
+    for the one or two tables the model goes on to query. The raw text is returned only when
+    it parses to no tables at all, so an unknown schema format hides nothing.
+
     Only the turn's scope: a table the turn may not query is not listed, and the manifest
     says which scope it is, so "this dataset has no city column" is a statement about the
     scope rather than a hunt through every other dataset on the connection."""
-    out: dict = {"schema": _visible_schema(connection_id, canvas_id=canvas_id,
-                                           schema_scope=schema_scope)}
+    from aughor.db.schema_render import schema_manifest
+
+    schema = _visible_schema(connection_id, canvas_id=canvas_id, schema_scope=schema_scope)
+    out: dict = {"tables": schema_manifest(schema) or schema,
+                 "detail": "names, types and row counts only — call describe_table for a "
+                           "table's sample values and column notes before filtering on a value"}
     if schema_scope and not canvas_id:
         out["scope"] = f"schema {schema_scope} only — the tables this conversation may query"
     return out
@@ -565,8 +577,9 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
         ToolSpec(
             name="list_tables",
             description=(
-                "List the tables available, with their columns. Call this before writing "
-                "SQL against a warehouse you have not inspected in this conversation."
+                "A manifest of the tables available — each with its row count and its columns' "
+                "names and types. Call this before writing SQL against a warehouse you have not "
+                "inspected in this conversation; describe_table for one table's sample values."
             ),
             parameters={"type": "object", "properties": {}},
             run=lambda a: list_tables(connection_id, a, canvas_id=canvas_id, schema_scope=schema_scope),

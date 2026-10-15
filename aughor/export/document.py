@@ -316,10 +316,12 @@ def _build_chat(inv: dict, money_symbol: str = "") -> ExportDoc:
 
 
 def _receipt_line(receipt: dict) -> str:
-    """One guard receipt as a line: what ran, what it did, what it found."""
-    parts = [str(receipt.get(k)) for k in ("guard", "action", "detail") if receipt.get(k)]
-    if parts:
-        return " — ".join(parts)
+    """One guard receipt as the reader's line — the web's words for the guard and its action
+    (`answer.receipts`), never the raw field names the page printed until 2026-10-15
+    (``extra_filter_replan — replanned_queries — …``)."""
+    from aughor.answer.receipts import receipt_sentence
+    if receipt.get("guard") or receipt.get("action"):
+        return receipt_sentence(receipt)
     return ", ".join(f"{k}: {v}" for k, v in receipt.items() if k not in ("before", "after"))[:200]
 
 

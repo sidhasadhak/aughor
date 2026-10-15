@@ -139,8 +139,11 @@ _WEIGHT_FACTOR_RE = re.compile(r"sum\s*\([^)]*\b(weight|share|alloc\w*|attributi
 # which silently disabled the numeric-grounding pass in `_align_narrator_findings`,
 # so a finding fell through to positional binding and a card shipped a claim about
 # its neighbour's rows. Bare integers stay OUT: "the last 90 days" is not a claim.
+#: The currency alternative knows the euro and the pound as well as the dollar: on a EUR connection
+#: (LuxExperience, 2026-10-14) "€590.72" was no salient number at all, so a finding written in euros
+#: carried only its percentages into the grounding passes.
 _CLAIM_NUM_RE = re.compile(
-    r"\$\s?\d[\d,]*(?:\.\d+)?"
+    r"[$€£]\s?\d[\d,]*(?:\.\d+)?"
     r"|\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b"
     # `\b` belongs to the SPELLED form only: after "%" the next char is usually a space,
     # and there is no word boundary between two non-word characters — a trailing `\b`
@@ -462,7 +465,7 @@ def _salient_number_pairs(text: str) -> list:
     counts, percentages. The token is kept for human-readable messages."""
     out = []
     for tok in _CLAIM_NUM_RE.findall(text or ""):
-        v = _safe_float(re.sub(r"[\$,%\s]|percent(?:age)?(?:\s*points?)?", "", tok, flags=re.IGNORECASE))
+        v = _safe_float(re.sub(r"[$€£,%\s]|percent(?:age)?(?:\s*points?)?", "", tok, flags=re.IGNORECASE))
         if v is not None:
             out.append((tok, v))
     return out
@@ -617,6 +620,114 @@ def grounded_fraction(finding_text: str, rows) -> float:
         return 0.0
     uniq = _dedup_cells(cells)
     return sum(1 for _, v in pairs if _number_grounded(v, cells, uniq)) / len(pairs)
+
+
+def _cell_match(v: float, cells: list) -> bool:
+    """A number that IS a cell of the result — as written, or its percent↔fraction twin — within 1%."""
+    for c in cells:
+        for cand in (c, c * 100.0, c / 100.0):
+            if cand != 0 and abs(v - cand) <= abs(cand) * 0.01 + 1e-6:
+                return True
+    return False
+
+
+def raw_grounded_fraction(finding_text: str, rows) -> float:
+    """Fraction of the text's salient numbers that are CELLS of the result, with no derivation
+    credit. This is the signal for deciding WHOSE rows a sentence describes: `grounded_fraction`
+    also credits a figure derived from any two cells, and on a wide result that reaches almost
+    any number — on 34ca1559 (2026-10-14) every finding of the decomposition phase scored 1.0
+    against the 85-cell segment grid, the AOV prose written over another query's rows included,
+    so the binding fell through to position and the AOV sentence shipped over the segment rows.
+    A raw cell discriminates (0.83 against the rows that hold them, 0.17 against the others).
+    0.0 when there are no numbers or no cells."""
+    pairs = _salient_number_pairs(finding_text)
+    cells = _result_cells(rows)
+    if not pairs or not cells:
+        return 0.0
+    return sum(1 for _, v in pairs if _cell_match(v, cells)) / len(pairs)
+
+
+def cites_numbers(text: str) -> bool:
+    """Whether the text asserts any salient number (currency, a comma-grouped count, a percentage)."""
+    return bool(_salient_number_pairs(text))
+
+
+#: A number as a FIGURE's value writes it: "€721,754.75", "1,242 vs 1,063", "60.6%", "0.16",
+#: "+$36.7K", "$175,966 → $212,664". Not a run of digits inside a word, a date or a range
+#: ("2026-07-13", "12-month"), and a four-digit year on its own is not a figure.
+_VALUE_NUM_RE = re.compile(r"(?<![\w.\-])[$€£]?\s?(\d[\d,]*(?:\.\d+)?)\s?([kKmMbB])?(?![\w.\-])")
+_MAGNITUDE_SUFFIX = {"k": 1e3, "m": 1e6, "b": 1e9}
+
+
+def figure_numbers(text: str) -> list[tuple[str, float]]:
+    """(token, value) for each number a figure's value states, abbreviations expanded (36.7K → 36,700)."""
+    out: list[tuple[str, float]] = []
+    for m in _VALUE_NUM_RE.finditer(text or ""):
+        raw, suf = m.group(1), (m.group(2) or "").lower()
+        if not suf and re.fullmatch(r"(?:19|20)\d\d", raw):
+            continue
+        v = _safe_float(raw.replace(",", ""))
+        if v is None:
+            continue
+        out.append((m.group(0).strip(), v * _MAGNITUDE_SUFFIX.get(suf, 1.0)))
+    return out
+
+
+def _written_tolerance(token: str, value: float) -> float:
+    """Half the last digit the token writes, in the value's units: "€721.8K" is any value within
+    ±50 of 721,800; "0.01" is anything within ±0.005 — the rounding the author chose, not ours."""
+    m = re.search(r"\d(?:[\d,]*)(?:\.(\d+))?", token)
+    decimals = len(m.group(1)) if m and m.group(1) else 0
+    suf = token.strip()[-1:].lower()
+    return 0.5 * 10 ** (-decimals) * _MAGNITUDE_SUFFIX.get(suf, 1.0)
+
+
+def ungrounded_figure_numbers(value_text: str, results_rows: list) -> tuple[int, list[str]]:
+    """``(numbers stated, the tokens no result grounds)`` for a figure's value.
+
+    A number is grounded when ONE result's rows hold it: as a cell or a derivation of two cells
+    (`_number_grounded`, within 1%), as a column's total (the "Top-10 total revenue" a describe
+    answer sums from its rows), or as a cell or total within the precision the value is written
+    at ("z≈0.01" over a cell of 0.0137). Each result is read on its own, so the pair scan's cap
+    never drops a cell behind a larger result's."""
+    pairs = figure_numbers(value_text)
+    if not pairs:
+        return 0, []
+    missing: list[str] = []
+    for tok, v in pairs:
+        tol = _written_tolerance(tok, v)
+        found = False
+        for rows in results_rows or []:
+            cells = _result_cells(rows)
+            if not cells:
+                continue
+            uniq = _dedup_cells(cells)
+            if _number_grounded(v, cells, uniq):
+                found = True
+                break
+            totals = _column_totals(rows)
+            near = cells + totals
+            if any(abs(v - c) <= tol + 1e-9 or abs(v - c * 100.0) <= tol + 1e-9 for c in near):
+                found = True
+                break
+            if any(abs(v - t) <= abs(t) * 0.01 + 1e-6 for t in totals if t):
+                found = True
+                break
+        if not found:
+            missing.append(tok)
+    return len(pairs), missing
+
+
+def _column_totals(rows) -> list[float]:
+    """The sum of each numeric column over the rows — the total a reader adds up from a table."""
+    totals: dict[int, float] = {}
+    for r in (rows or [])[:200]:
+        row = list(r.values()) if isinstance(r, dict) else list(r)
+        for i, c in enumerate(row):
+            v = _safe_float(c)
+            if v is not None:
+                totals[i] = totals.get(i, 0.0) + v
+    return list(totals.values())
 
 
 # RC4 — implausible ratio/turnover magnitude. A turnover or multiplier is bounded by

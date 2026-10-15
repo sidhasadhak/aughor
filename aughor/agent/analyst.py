@@ -1391,6 +1391,32 @@ _MACHINERY_RE = re.compile(
 _FIRST_PERSON_RE = re.compile(r"(?<![\w'’])(?:I|[Mm]y|[Mm]yself)(?=['’]|\s|[,.;:!?)]|$)")
 
 
+#: A line is a CLAIM about a result when it has a predicate — a verb, a comparison, a stated change
+#: or percentage. A caption with none is a TITLE: what was measured, not what it shows. Two of the
+#: six concluded answers stored on 2026-10-14 (cee3f6ed, e441d73d) captioned their one exhibit
+#: "Top 10 categories by revenue with order counts and AOV, last 6 months, non-cancelled".
+_CLAIM_MARK_RE = re.compile(
+    r"\b(?:is|are|was|were|has|have|had|rose|rises|fell|falls|grew|grows|drove|drives|driven|lead|leads|led|"
+    r"lag|lags|lagged|trail|trails|trailed|explains?|explained|contributes?|contributed|accounts?|accounted|"
+    r"adds?|added|subtracts?|subtracted|offsets?|offset|drops?|dropped|declines?|declined|increases?|increased|"
+    r"decreases?|decreased|remains?|remained|stays?|stayed|sits|sat|holds?|held|carries|carried|exceeds?|exceeded|"
+    r"outweighs?|outweighed|concentrates?|concentrated|makes?|made|shows?|showed|gains?|gained|loses|lost|"
+    r"outperforms?|outperformed|underperforms?|underperformed|reaches|reached|peaks?|peaked|doubled|halved|"
+    r"within|above|below|versus|vs|than|up|down|flat|higher|lower|more|less|most|least|largest|smallest|"
+    r"only|despite|while|but|not|no)\b"
+    r"|(?<!\d)[+\-−]\s?[$€£]?\d|\d\s?%|→|↑|↓", re.I)
+
+
+def _reads_as_a_title(claim: str, finding: dict) -> bool:
+    """A caption that names the measurement instead of stating what it shows: the finding's own
+    title or subtitle restated, or a line with no predicate at all."""
+    def norm(s) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", str(s or "").lower()).strip()
+    if norm(claim) and norm(claim) in {norm(finding.get("title")), norm(finding.get("subtitle"))}:
+        return True
+    return not _CLAIM_MARK_RE.search(claim or "")
+
+
 def _reader_register(field: str, text: str) -> list[str]:
     """What in ``text`` is not written for the reader: the machinery named, the first person."""
     out: list[str] = []
@@ -1461,17 +1487,36 @@ def conclude(turn: AnalystTurn, args: dict) -> dict:
         if not claim:
             problems.append(f"exhibit {rid} has no claim")
             continue
+        if _reads_as_a_title(claim, known[rid]):
+            problems.append(f"exhibit {rid}'s claim reads as a title ({claim!r}); say what the result "
+                            "shows — the leading value and how it compares — not what was measured")
+            continue
         if rid not in seen:
             seen.add(rid)
             exhibits.append({"finding_id": rid, "claim": claim})
     if not exhibits and known:
         problems.append("exhibits is empty; cite at least the result the answer rests on")
+    # A figure is a value READ from a result: each number it states must be in some result's
+    # rows — a cell, a difference or share of two cells, a column's total — at the precision it
+    # is written. Checked here, where the model can still fix it, not after it is on the page.
+    from aughor.explorer.verify import ungrounded_figure_numbers
+    rows_by_result = [f.get("rows") for f in known.values() if f.get("rows")]
     figures: list[dict] = []
     for fg in (a.get("figures") or [])[:4]:
-        if isinstance(fg, dict) and str(fg.get("value") or "").strip():
-            figures.append({"label": " ".join(str(fg.get("label") or "").split())[:60],
-                            "value": str(fg.get("value")).strip()[:40],
-                            "note": " ".join(str(fg.get("note") or "").split())[:80]})
+        if not (isinstance(fg, dict) and str(fg.get("value") or "").strip()):
+            continue
+        label = " ".join(str(fg.get("label") or "").split())[:60]
+        value = str(fg.get("value")).strip()[:40]
+        stated, missing = ungrounded_figure_numbers(value, rows_by_result)
+        if stated == 0:
+            problems.append(f"figure {label!r} has no number in its value ({value!r}); a figure is a "
+                            "value read from a result")
+        elif missing:
+            problems.append(f"figure {label!r} states {', '.join(missing)}, which no result of this turn "
+                            "returned; read figures from the rows — a value in no result is not a figure "
+                            "of this answer, so drop it or cite the result that holds it")
+        figures.append({"label": label, "value": value,
+                        "note": " ".join(str(fg.get("note") or "").split())[:80]})
     if problems:
         return {"refused": "; ".join(problems) + ". Call conclude again with these fixed."}
     turn.conclusion = {"headline": headline, "answer": answer, "exhibits": exhibits,
@@ -1623,7 +1668,8 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
         ),
         ToolSpec(
             name="list_tables",
-            description="List the tables available, with their columns.",
+            description=("A manifest of the tables available — each with its row count and its "
+                         "columns' names and types; describe_table for one table's sample values."),
             parameters={"type": "object", "properties": {}},
             run=lambda a: list_tables(cid, a),
         ),

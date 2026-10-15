@@ -165,7 +165,10 @@ def test_intake_records_the_licence_and_its_reason():
     assert _stamp_claim_type(intake, "Is there a correlation between delay and location?") == \
         "associational"
     assert intake.claim_type_suggestion == "associational"
-    assert intake.intake_notes.startswith("CLAIM LICENCE: associational —")
+    # The typed record for the code that reads it; the reader's sentence in the notes — no tag.
+    assert intake.record[0]["tag"] == "claim_licence" and intake.record[0]["type"] == "associational"
+    assert intake.record[0]["why"] and intake.intake_notes.startswith("Associational by design: ")
+    assert "CLAIM LICENCE" not in intake.intake_notes
     assert "original notes" in intake.intake_notes
 
 

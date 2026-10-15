@@ -415,4 +415,79 @@ ask or moves a rule into a check; none adds a call.
   (five cases), `bots/slack/src/aughor.test.ts`. Not done, named: the web still renders the report, not the
   envelope (the envelope frame stays unrendered there by design — the parts were already drawn from the frames);
   the Slack bot renders the first exhibit only, as its one-grid rule says.
-* §6 is closed: P1–P6 built; the named-not-done items above remain.
+* **The named-not-done items, measured and built (2026-10-15, the user's "Lets do"):**
+  * **`list_tables` dumped the schema text** — 82,232 characters on LuxExperience (33 tables, 262 columns, with
+    descriptions, grain notes, sample values and a note per column). It is a manifest now (`schema_render.
+    schema_manifest`: name, row count, columns with types — 5,346 characters on the same text), and
+    `describe_table` returns a table's full block; the raw text only when nothing parses. Both tool descriptions
+    say so. Tests: `test_list_tables_manifest.py`, `test_brief_ask_scope.py`.
+  * **`orders.order_ts` in the prompts** — `_ADA_SQL_GROUNDING` and the intake's date-column rule now carry
+    placeholders (`<dated_table>.<date_column>`, `<table>.<column>`); `test_sql_context_in_prompts.py` holds
+    that no plausible column on a real table name stands there.
+  * **The intake's ALL-CAPS tags** — nine writers prepended `CLAIM LICENCE: …`, `ROUTING: …`, `TEMPORAL AXIS
+    RECOVERED: …`, `MEASURE WARNING: …`, `NOT OFFERED AS DIMENSIONS: …`, `DRIVER CONTRAST DROPPED: …`, `SPEC
+    STILL INVALID …`, `FEASIBILITY: …` and the coverage note to `intake_notes`, and the licence readers, the
+    coverage reframe and the departure gate parsed them back out of the prose. Each decision is a typed entry
+    on `intake.record` now (`_record_intake_note`: `{"tag": "claim_licence", "type", "why"}`, `routing`,
+    `temporal_axis_recovered`, `coverage` with `duration_mismatch`, …), carried on the intake phase as a
+    `record` slot (the copy that survives to synthesis), and the notes carry the reader's sentence
+    ("Descriptive by design: …", "Read as a change over time — …"). The readers (`_recorded_claim_licence`,
+    `_claim_licence_section`, `_reframe_on_pop_duration_mismatch`, `departure_basis.analysis_claim_facts`)
+    read the record first and still parse an older spec's line. The model is never asked for the field
+    (`IntakeAsk` excludes it). Tests: `test_intake_record.py` and the four updated writer tests.
+  * **The interpret prompts' SEVERITY paragraphs on every tier** — the cross-section interpret templates
+    concatenate the paragraph from a constant, and `cross_section_interpret_prompt(ratio, capable)` swaps it
+    for a one-line ask on a CAPABLE `fast` binding (`_interpreter_capable`); the interpreter's system line
+    (`_cross_section_interpret_system`) and the synthesis note's sentence (`_narrator_capable`) are tiered the
+    same way. Their verifiers run on every tier: the verdict above the rows, `_lead_with_verdict`,
+    `check_noise_findings_not_cited`. The breakdown's FORBIDDEN list stays on both tiers: no verifier reads a
+    descriptive breakdown's judgement words, and the P3 rule is to remove prose only where one does.
+  * **The lens prompts' long grounding** — seven lens planners appended `_ADA_SQL_GROUNDING` on every tier and
+    none carried the ask; `_lens_sql_grounding()` gives a capable coder `plan_sql_rules`' paragraph and a
+    baseline one the block.
+  * **The dimensional scan sorted worst-first under its cap** — `DIMENSIONAL_PLAN_PROMPT` and the phase's plan
+    line order by `ABS(absolute_change) DESC`, so a capped result holds the largest movers in either direction
+    (55e58a3b's slice held the 15 smallest and hid Outerwear's +13.8%); `_capped_scan_note` says so for a
+    magnitude-ordered slice and keeps its wording for the others. Tests in `test_phase_guards_p3.py`.
+  * **Conclude's figures were not grounding-checked; exhibit claims were sometimes titles** — measured on the six
+    stored concluded answers: 2 of 24 figures were in no result's rows or totals, and 2 of 16 claims were titles
+    ("Top 10 categories by revenue with order counts and AOV, last 6 months, non-cancelled" — cee3f6ed,
+    e441d73d). `conclude` now refuses a figure whose numbers no result returned (`verify.ungrounded_figure_
+    numbers`: a cell, a difference or share of two cells, a column's total, each at the value's written
+    precision, result by result) or that states no number, and a claim with no predicate (`_reads_as_a_title`:
+    no verb, comparison, change or percentage, or the finding's own title restated). The 14 real claims and 22
+    grounded figures in the stored answers pass. Tests in `test_analyst_conclude.py`.
+  * **"Mr Porter 23.15% vs 22.78%" — explained.** `stats._analyze_rate_segments` read the platform scan's
+    `pct_change` column (a movement between two months) as a PROPORTION over `obs_orders`, reconstructed MR
+    PORTER's "successes" as round(0.2278 × 108) = 25 and reported 25/108 = 23.15% (NET-A-PORTER 4.76% for 4.57%,
+    the pooled "rate" 13.37%) in the statistical output the narrator reads — which it then carried into the
+    report as an unexplained discrepancy. A change column is never a rate now (`_CHANGE_KEYWORDS`), and a rate
+    whose implied counts are not whole numbers at the precision it is written with is not a proportion of that
+    denominator (`_implied_counts_are_integers`); on the live rows the test stays silent. Tests in
+    `test_rate_uniformity.py`.
+  * **`_align_narrator_findings` misbound on 34ca1559** — the narrator wrote two findings from the orders-vs-AOV
+    result and none from the brand result; the derivation-credited grounding scored 1.0 for every finding
+    against the 85-cell segment grid (on a wide result some pair of cells derives almost any figure), so the AOV
+    prose shipped over the segment rows and the segment prose over the brand rows. `verify.raw_grounded_
+    fraction` (cells only; and "€"/"£" are currency now — on a EUR connection a euro figure was no salient
+    number at all) scores 0.83 against the rows that hold them and 0.17 against the rest. A finding's HOME is
+    the query whose rows hold its numbers raw (`_finding_homes`, best share ≥ 2× the runner-up); it binds
+    nowhere else — not by a shared title token, not by position; a second reading of the same rows folds onto
+    that card (`_fold_second_reading`); a query nobody wrote about keeps its title and no borrowed prose. Tests:
+    `test_narrator_binding_homes.py`; the percent-claims test still holds.
+  * **The export's Checks printed raw receipts** — `answer/receipts.py` carries the web's vocabulary
+    (`GuardReceiptChain.tsx`'s GUARD_LABEL and ACTION_VERB, plus the seven guards neither surface had named:
+    `extra_filter_replan`, `ambiguity_probe`, `count_star_entity_grain`, `repair_recheck`, `time_order`,
+    `day_window`, `declared_filter`); the PDF's line is "Queries re-planned around a filter the metric does not
+    declare — sent the plan back for correction: …". `test_guard_receipt_vocabulary.py` reads the TSX and
+    holds the two maps equal, and holds that every guard the backend writes has a label.
+  * **"The PDF draws tables, not charts, in this environment" — the premise was wrong.** Node, the SSR bundle
+    and resvg are all present, here and in the live process, and the bundle renders a 3-row grid. It returned
+    no chart for 2f8ad418's four exhibits because the decomposition grids carry 11–19 numeric columns, and
+    `isUngraphableGrid` (≥ 4 numeric columns, no date) refuses them — in the browser too, so the screen shows
+    the same tables and the PDF mirrors it, as CA-4's one renderer intends. The same rows with two or three
+    columns render. Not built: a chartable projection of a wide decomposition grid (segment + change) would
+    have to be the finding's own exhibit on both surfaces, which is a planner/grammar decision, not an export
+    fix. Named.
+* §6 is closed: P1–P6 built, and the named-not-done items above are closed as written, bar the wide-grid chart
+  projection, which is named.

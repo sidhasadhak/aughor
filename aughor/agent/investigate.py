@@ -938,9 +938,10 @@ def _drop_identifying_dimensions(intake, connection_id: str = "") -> list[str]:
     dropped = [d for d in dims if identifies(d)]
     if dropped:
         intake.dimensions = [d for d in dims if d not in dropped]
-        intake.intake_notes = (
-            f"NOT OFFERED AS DIMENSIONS: {', '.join(dropped)} — each identifies a person; a cut by one lists "
-            "people, not groups. " + (getattr(intake, "intake_notes", "") or "")).strip()
+        _record_intake_note(
+            intake, "dimensions_dropped",
+            f"{', '.join(dropped)} are not offered as cuts: each identifies a person, and a cut by one "
+            "lists people, not groups.", dropped=list(dropped))
     return dropped
 
 
@@ -966,10 +967,10 @@ def _drop_self_referential_segment(intake) -> Optional[str]:
         return None
     intake.comparison_segment_sql = ""
     intake.comparison_segment_label = ""
-    intake.intake_notes = (
-        f"DRIVER CONTRAST DROPPED: {reason}. Answering by relating the metric to the other "
-        "columns the question names instead. " + (getattr(intake, "intake_notes", "") or "")
-    ).strip()
+    _record_intake_note(
+        intake, "segment_dropped",
+        f"The driver contrast was dropped: {reason}. The metric is related to the other columns the "
+        "question names instead.", reason=reason)
     from aughor.stats import stats as _st
     _st.inc("deep_analysis.self_referential_segment_dropped")
     return reason
@@ -981,6 +982,48 @@ def _drop_self_referential_segment(intake) -> Optional[str]:
 _USER_CAUSAL_ASSUMPTION_RE = re.compile(
     r"\b(?:assum(?:e|ing)|treat(?:ing)?\s+\w+\s+as\s+(?:the\s+)?caus|given\s+that\s+\w+\s+caus"
     r"|take\s+it\s+as\s+given|suppose\s+that)\b[^.?!]*", re.I)
+
+
+def _record_intake_note(intake, tag: str, reader_text: str, *, where: str = "front", **facts) -> None:
+    """A decision the pipeline made about this spec goes to TWO places: `intake.record`, as a typed
+    entry ``{"tag": tag, **facts}`` for every reader in code (the licence readers, the coverage
+    reframe, the departure gate), and `intake_notes`, as the READER's sentence — never as an
+    ALL-CAPS tag in the prose. Until 2026-10-15 nine writers prepended ``CLAIM LICENCE: …``,
+    ``ROUTING: …``, ``TEMPORAL AXIS RECOVERED: …``, ``MEASURE WARNING: …`` to the notes the spec
+    card and the PDF print and the analyst reads, and the code then parsed its own tags back out
+    of the prose. Idempotent: an entry already recorded, or a sentence already in the notes, is
+    not written twice. ``where`` puts the sentence before ("front") or after ("back") the notes."""
+    entry = {"tag": tag, **{k: v for k, v in facts.items() if v not in (None, "", [])}}
+    record = list(getattr(intake, "record", None) or [])
+    if entry not in record:
+        record.append(entry)
+        try:
+            intake.record = record
+        except Exception as exc:             # a frozen model: the sentence still reaches the notes
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "intake record is best-effort on this intake object", counter="intake.record_unwritable")
+    sentence = " ".join(str(reader_text or "").split())
+    notes = (getattr(intake, "intake_notes", "") or "").strip()
+    if not sentence or sentence in notes:
+        return
+    intake.intake_notes = (f"{notes} {sentence}" if where == "back" else f"{sentence} {notes}").strip()
+
+
+def _intake_record(intake_data, tag: str, phases: list | None = None) -> dict:
+    """The typed entry ``tag`` recorded on this spec — from the intake dict, else from the intake
+    phase's `record` slot (the copy that survives to synthesis, as the licence reader found the
+    phase prose does) — or ``{}``."""
+    for r in ((intake_data or {}).get("record") or []) if isinstance(intake_data, dict) else []:
+        if isinstance(r, dict) and r.get("tag") == tag:
+            return r
+    for phase in (phases or []):
+        ph = phase if isinstance(phase, dict) else getattr(phase, "__dict__", {})
+        if (ph.get("phase_id") or "") != "intake":
+            continue
+        for r in (ph.get("record") or []):
+            if isinstance(r, dict) and r.get("tag") == tag:
+                return r
+    return {}
 
 
 def _recorded_claim_licence(intake_data: dict, phases: list | None = None) -> str:
@@ -1006,6 +1049,9 @@ def _recorded_claim_licence(intake_data: dict, phases: list | None = None) -> st
     declared = (data.get("claim_type_suggestion") or "").strip()
     if declared:
         return declared
+    recorded = str(_intake_record(data, "claim_licence", phases).get("type") or "").strip().lower()
+    if recorded:
+        return recorded                      # the typed record (2026-10-15); the lines below read older specs
     for line in (data.get("intake_notes") or "").split(". "):
         if line.strip().startswith("CLAIM LICENCE:"):
             return _licence_word(line)
@@ -1048,11 +1094,12 @@ def _claim_licence_section(intake_data: dict, phases: list) -> str:
     claim_type = _recorded_claim_licence(intake_data, phases)
     if not claim_type:
         return ""
-    why = ""
+    why = str(_intake_record(intake_data, "claim_licence", phases).get("why") or "").strip()
     for line in ((intake_data or {}).get("intake_notes") or "").split(". "):
-        if line.startswith("CLAIM LICENCE:"):
-            why = line.split("—", 1)[-1].strip()
+        if why:
             break
+        if line.startswith("CLAIM LICENCE:"):            # older specs carry the line in the prose
+            why = line.split("—", 1)[-1].strip()
     out = "\n\n" + admissible_verbs_directive(claim_type, why or "by the design of this analysis")
     # P4 — below a causal licence the waterfall is no longer ASKED for (`synthesis_ask_model`), so
     # the paragraph that told the model to leave it empty has nothing left to say.
@@ -1398,9 +1445,8 @@ def _stamp_claim_type(intake, question: str) -> str:
         declared=(getattr(intake, "claim_type_suggestion", "") or ""),
     )
     intake.claim_type_suggestion = claim_type
-    intake.intake_notes = (
-        f"CLAIM LICENCE: {claim_type} — {why}. " + (getattr(intake, "intake_notes", "") or "")
-    ).strip()
+    _record_intake_note(intake, "claim_licence", f"{claim_type.capitalize()} by design: {why}.",
+                        type=claim_type, why=why)
     from aughor.stats import stats as _st
     _st.inc(f"deep_analysis.claim_type.{claim_type}")
     return claim_type
@@ -2507,6 +2553,7 @@ def _phase_result(
     skipped_reason: Optional[str] = None,
     caveats: Optional[list[str]] = None,
     verdict: Optional[dict] = None,
+    record: Optional[list] = None,
 ) -> InvestigationPhaseResult:
     # CA-4 form-by-job: the model names a JOB ("magnitude", "trend", …); the
     # form is resolved here — the one seam every phase's findings pass through —
@@ -2532,6 +2579,8 @@ def _phase_result(
     )
     if verdict:
         out["verdict"] = dict(verdict)   # P5 — the code-written verdict, never in `summary`
+    if record:
+        out["record"] = [dict(r) for r in record if isinstance(r, dict)]   # the intake's typed decisions
     return out
 
 
@@ -2655,78 +2704,125 @@ def _label_tokens(label: str, extra_stop=frozenset()) -> set:
     }
 
 
+def _finding_homes(narrator_findings, result_rows) -> list[Optional[int]]:
+    """For each narrator finding, the index of the query whose rows hold its numbers — or None.
+
+    Judged on RAW cells (`raw_grounded_fraction`): the query where the largest share of the
+    finding's figures are cells of the result, when that share is above zero and at least twice
+    the runner-up's. A finding that cites no numbers, or whose numbers no result clearly holds,
+    has no home and is bound the old ways (a shared title token, then position)."""
+    m = len(narrator_findings)
+    if not result_rows or not m:
+        return [None] * m
+    from aughor.explorer.verify import raw_grounded_fraction
+    homes: list[Optional[int]] = []
+    for fi in range(m):
+        text = getattr(narrator_findings[fi], "interpretation", "") or ""
+        scores = [raw_grounded_fraction(text, rows) for rows in result_rows]
+        ranked = sorted(range(len(scores)), key=lambda qi: -scores[qi])
+        best = scores[ranked[0]] if ranked else 0.0
+        second = scores[ranked[1]] if len(ranked) > 1 else 0.0
+        homes.append(ranked[0] if best > 0.0 and (second == 0.0 or best >= 2 * second) else None)
+    return homes
+
+
 def _align_narrator_findings(queries, narrator_findings, extra_stop=frozenset(), result_rows=None):
-    """Bind each query to the narrator finding describing its SAME dimension.
+    """Bind each query to the narrator finding describing its SAME rows.
     Returns (aligned, by_token): aligned[i] is the finding model for queries[i] (or
-    None when no trustworthy match exists); by_token[i] is True when the match was
-    made on a shared dimension token (so the query's own title is authoritative).
+    None when no trustworthy match exists); by_token[i] is True when the match is
+    authoritative (so the query's own title names the card). See
+    `_align_narrator_findings_with_orphans` for the passes and the orphans."""
+    aligned, by_token, _orphans = _align_narrator_findings_with_orphans(
+        queries, narrator_findings, extra_stop, result_rows)
+    return aligned, by_token
 
-    When ``result_rows`` is given, ties on dimension-token overlap are broken by NUMERIC
-    grounding — each finding binds to the query whose result cells actually contain its
-    numbers. Without this, two queries over the SAME dimension but a different measure
-    (e.g. a z-score-by-tier and a PoP-change-by-tier) tie on {tier} and the finding can bind
-    to the wrong measure, so a z-score card inherits the PoP finding's figures (its title is
-    then overwritten to the query's, masking the swap).
 
-    Three passes, strongest evidence first: shared dimension token, then numeric grounding
-    for whatever the tokens left unbound, then position. The middle pass matters because
-    zero token overlap is not a rare edge — it is the NORM when the narrator names findings
-    by value and the planner names queries by dimension."""
+def _align_narrator_findings_with_orphans(queries, narrator_findings, extra_stop=frozenset(),
+                                          result_rows=None):
+    """Bind each query to the narrator finding describing its rows, and return the findings
+    that describe rows already bound: ``(aligned, by_token, orphans)``, ``orphans`` being
+    ``{query index: [finding model, …]}`` — a second reading of the same result, folded onto
+    that result's card by the caller rather than shipped over another query's rows.
+
+    A finding's HOME is the query whose rows hold its numbers raw (`_finding_homes`); a
+    finding with a home binds nowhere else. Three passes, strongest evidence first: a shared
+    title token (admissible only at the finding's home, or anywhere when it has none), then
+    the home itself for whatever the tokens left unbound, then position for findings without
+    a home. Zero token overlap is the NORM when the narrator names findings by value and the
+    planner names queries by dimension, which is why the numbers decide.
+
+    Live (f916ff3a, the leakage phase): position bound the region rows to the discount-band
+    interpretation and vice versa, shipping a band chart under the "East and Central"
+    heading, while the grounding matrix had the answer the whole time (0.20/0.17 against
+    0.00/0.00). Live again (34ca1559, 2026-10-14): the narrator wrote two findings from the
+    orders-vs-AOV result and none from the brand result; the derivation-credited fraction
+    scored 1.0 for every finding against the wide segment grid, so the AOV prose bound by
+    position to the segment rows and the segment prose to the brand rows. Raw cells score
+    0.83 and 0.17 there, so the AOV reading now folds onto its own result and the brand
+    result keeps the planner's title and no borrowed prose."""
     n, m = len(queries), len(narrator_findings)
     aligned = [None] * n
     by_token = [False] * n
     if m == 0:
-        return aligned, by_token
+        return aligned, by_token, {}
     q_tok = [_label_tokens(getattr(q, "title", ""), extra_stop) for q in queries]
     f_tok = [_label_tokens(getattr(f, "title", ""), extra_stop) for f in narrator_findings]
-    gmat = None
-    if result_rows:
-        from aughor.explorer.verify import grounded_fraction
-        gmat = [[grounded_fraction(getattr(narrator_findings[fi], "interpretation", "") or "",
-                                   result_rows[qi] if qi < len(result_rows) else None)
-                 for fi in range(m)] for qi in range(n)]
-    used = set()
+    homes = _finding_homes(narrator_findings, result_rows) if result_rows else [None] * m
+
+    def admissible(qi: int, fi: int) -> bool:
+        return homes[fi] is None or homes[fi] == qi
+
+    used: set[int] = set()
     cands = sorted(
-        ((len(q_tok[qi] & f_tok[fi]), (gmat[qi][fi] if gmat else 0.0), qi, fi)
-         for qi in range(n) for fi in range(m) if q_tok[qi] & f_tok[fi]),
-        key=lambda c: (-c[0], -c[1], c[2], c[3]),
+        ((len(q_tok[qi] & f_tok[fi]), qi, fi)
+         for qi in range(n) for fi in range(m) if q_tok[qi] & f_tok[fi] and admissible(qi, fi)),
+        key=lambda c: (-c[0], c[1], c[2]),
     )
-    for _ov, _g, qi, fi in cands:
+    for _ov, qi, fi in cands:
         if aligned[qi] is None and fi not in used:
             aligned[qi] = narrator_findings[fi]
             by_token[qi] = True
             used.add(fi)
-    # NUMERIC pass — for queries the token pass left unbound. The candidate list above
-    # is filtered to pairs sharing at least one title token, so `gmat` is consulted only
-    # as a tie-break and is DISCARDED in exactly the case it would settle: when the token
-    # sets are disjoint. They are disjoint whenever the narrator titles a finding by its
-    # VALUES ("Leakage rate is concentrated in East and Central") while the query names
-    # its DIMENSION ("leakage rate by region") — no shared token, so binding fell through
-    # to position, and the narrator's order is not the planner's.
-    #
-    # Live (inv f916ff3a, the leakage phase): position bound the region rows to the
-    # discount-band interpretation and vice versa, shipping a band chart under the
-    # "East and Central" heading. The grounding matrix had the answer the whole time —
-    # the correct pairing scored 0.20/0.17 and the positional one scored 0.00/0.00.
-    # A binding whose text cites NO number present in its own rows is the signal.
-    if gmat:
-        for _g, qi, fi in sorted(
-                ((gmat[qi][fi], qi, fi) for qi in range(n) for fi in range(m)
-                 if aligned[qi] is None and fi not in used and gmat[qi][fi] > 0.0),
-                key=lambda c: (-c[0], c[1], c[2])):
-            if aligned[qi] is None and fi not in used:
-                aligned[qi] = narrator_findings[fi]
-                # Evidence-grounded, so the query that produced the rows names them —
-                # the same authority a shared token confers, for a stronger reason.
-                by_token[qi] = True
-                used.add(fi)
+    # HOME pass — a finding whose numbers are cells of one query's rows belongs to that query,
+    # in the narrator's order when two describe the same rows (the first is the lead reading).
+    for fi in range(m):
+        qi = homes[fi]
+        if qi is not None and fi not in used and aligned[qi] is None:
+            aligned[qi] = narrator_findings[fi]
+            # Evidence-grounded, so the query that produced the rows names them —
+            # the same authority a shared token confers, for a stronger reason.
+            by_token[qi] = True
+            used.add(fi)
     # Positional fallback: fill a leftover query from the SAME-index narrator finding
-    # only when that finding is still unused. Never clamp to the last one (old bug).
+    # only when that finding is still unused and has no other home. Never clamp to the
+    # last one (old bug).
     for qi in range(n):
-        if aligned[qi] is None and qi < m and qi not in used:
+        if aligned[qi] is None and qi < m and qi not in used and admissible(qi, qi):
             aligned[qi] = narrator_findings[qi]
             used.add(qi)
-    return aligned, by_token
+    orphans: dict[int, list] = {}
+    for fi in range(m):
+        if fi not in used and homes[fi] is not None:
+            orphans.setdefault(homes[fi], []).append(narrator_findings[fi])
+    return aligned, by_token, orphans
+
+
+def _fold_second_reading(finding: dict, model) -> None:
+    """A narrator finding that describes rows already carrying a finding joins that card as
+    a further paragraph, its key numbers after the lead's — nothing the narrator wrote over
+    these rows is lost, and none of it sits over rows that do not hold its numbers."""
+    extra = " ".join(str(getattr(model, "interpretation", "") or "").split())
+    if extra and extra not in (finding.get("interpretation") or ""):
+        lead = (finding.get("interpretation") or "").rstrip()
+        finding["interpretation"] = f"{lead}\n\n{extra}".strip() if lead else extra
+    seen = {(k.get("label"), k.get("value")) for k in (finding.get("key_numbers") or [])}
+    for kn in getattr(model, "key_numbers", None) or []:
+        key = (getattr(kn, "label", None), getattr(kn, "value", None))
+        if key in seen:
+            continue
+        finding.setdefault("key_numbers", []).append(PhaseKeyNumber(
+            label=kn.label, value=kn.value, delta=kn.delta, context=kn.context))
+        seen.add(key)
 
 
 def _has_usable_data(results) -> bool:
@@ -2872,6 +2968,13 @@ def _capped_scan_note(result) -> str:
     if not _hit_row_cap(result):
         return ""
     n = int(getattr(result, "row_count", 0) or len(getattr(result, "rows", None) or []))
+    if re.search(r"ORDER\s+BY\s+ABS\s*\(", getattr(result, "sql", "") or "", re.I):
+        # Ordered by magnitude (the dimensional scan since 2026-10-15): the slice holds the largest
+        # movers in either direction, so what it cannot say is how many groups there are or what
+        # the rest sum to — not which group moved most.
+        return (f"A capped scan: these {n} rows are the largest movers in either direction, not the whole "
+                "dimension — the groups beyond the cap each moved less, so nothing here says how many "
+                "groups there are or what they sum to.")
     return (f"A capped scan: these {n} rows are a slice in the query's own order, not the whole "
             "dimension — groups beyond the cap, the largest movers in the other direction among them, "
             "are not shown, so nothing here says what the largest group is or that no group exceeds a value.")
@@ -3036,7 +3139,7 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
     query that produced the rows whenever the match is dimension-certain, so a card can
     never describe a different slice than its chart."""
     extra = _label_tokens(metric_label)
-    aligned, by_token = _align_narrator_findings(
+    aligned, by_token, orphans = _align_narrator_findings_with_orphans(
         [q for q, _ in results], narrator_findings, extra,
         result_rows=[getattr(r, "rows", None) for _, r in results],
     )
@@ -3047,6 +3150,8 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
             f = _finding_from_result_and_model(f"{id_prefix}_{i}", r, model, q.chart_type)
             if by_token[i]:
                 f["title"] = q.title  # ground the label to the query that produced the rows
+            for second in orphans.get(i, []):
+                _fold_second_reading(f, second)   # a second reading of THESE rows stays with them
         else:
             f = InvestigationFinding(
                 finding_id=f"{id_prefix}_{i}", title=q.title, sql=r.sql,
@@ -5601,7 +5706,8 @@ def _reframe_on_pop_duration_mismatch(synth, intake_data, question: str = "") ->
     stable signature so it fires exactly when the deterministic guard did. Returns True when it acted."""
     if not synth or not intake_data:
         return False
-    if _POP_MISMATCH_SIGNATURE not in (intake_data.get("intake_notes") or ""):
+    if not (_intake_record(intake_data, "coverage").get("duration_mismatch")
+            or _POP_MISMATCH_SIGNATURE in (intake_data.get("intake_notes") or "")):   # older specs: the prose
         return False
     # an absolute-change waterfall between mismatched-length windows is meaningless
     synth.attribution_waterfall = []
@@ -5721,18 +5827,22 @@ _AGG_RE = r"(?:SUM|AVG|COUNT|MIN|MAX|MEDIAN|STDDEV|VARIANCE)"
 # Shared grounding rule appended to every deep-analysis plan node's terse system prompt so the
 # coder treats the SCHEMA as authoritative and JOINs to reach columns on other tables
 # (e.g. a timestamp on `orders` when the metric is on `invoices`) instead of inventing one.
+# Its examples are PLACEHOLDERS (`<dated_table>.<date_column>`), never a plausible column on a
+# real table name: `orders.order_ts` stood here until 2026-10-15, and on LuxExperience (99201af8)
+# the intake wrote exactly that column — which does not exist — into the spec, nine SQL repairs
+# followed, and the analyst copied it twice more. A placeholder form is not copied.
 _ADA_SQL_GROUNDING = (
     " SCHEMA FIDELITY: use ONLY table and column names that appear EXPLICITLY in the SCHEMA — "
     "never invent or rename a column. If a column you need (a date/timestamp, a dimension, or a "
     "key) is not on the metric table, find the table in the SCHEMA that HAS it and JOIN to it "
     "using the DETECTED JOIN PATHS; never attach a date column to a table that lacks one. "
-    "CRITICAL: when a column is given as table.column (e.g. orders.order_ts), reference it with "
-    "THAT EXACT table qualifier everywhere (SELECT, WHERE, GROUP BY) — do NOT re-qualify it to the "
-    "metric table. Writing `invoices.order_ts` when the column lives on `orders` is the #1 error; "
-    "join orders and write `orders.order_ts`."
+    "CRITICAL: when a column is given as table.column, reference it with THAT EXACT table "
+    "qualifier everywhere (SELECT, WHERE, GROUP BY) — do NOT re-qualify it to the metric table. "
+    "Writing `<metric_table>.<date_column>` when the column lives on another table is the #1 error; "
+    "join that table and qualify the column with it."
     " TEMPORAL GROUNDING: the observation and comparison periods are given to you as EXPLICIT date "
-    "ranges, each with its filter written out — e.g. `WHERE orders.order_ts >= '2023-03-10' AND "
-    "orders.order_ts < '2024-03-10'`. Use that filter verbatim: the end bound is EXCLUSIVE (the day "
+    "ranges, each with its filter written out — e.g. `WHERE <dated_table>.<date_column> >= '2023-03-10' "
+    "AND <dated_table>.<date_column> < '2024-03-10'`. Use that filter verbatim: the end bound is EXCLUSIVE (the day "
     "after the period's last day), so a TIMESTAMP column keeps the whole last day — `<= '2024-03-09'` "
     "would keep only its first instant — and a quoted date compares with DATE and TIMESTAMP columns "
     "alike. NEVER use CURRENT_DATE, NOW(), GETDATE(), SYSDATE, or DATE_SUB/DATE_ADD/DATEADD interval "
@@ -5752,11 +5862,75 @@ def _coder_capable() -> bool:
         return False
 
 
+def _interpreter_capable() -> bool:
+    """Whether the `fast` binding — the phase interpreter — earned the CAPABLE tier. Resolution
+    fails to False, the conservative register, as `_coder_capable` does."""
+    try:
+        from aughor.llm.profile import profile_for
+        return bool(profile_for("fast").capable)
+    except Exception:
+        return False
+
+
+def _narrator_capable() -> bool:
+    """Whether the narrator binding earned the CAPABLE tier (the switch `synthesis_system_prompt`
+    already turns on); False when unresolvable."""
+    try:
+        from aughor.llm.profile import profile_for
+        return bool(profile_for("narrator").capable)
+    except Exception:
+        return False
+
+
+def _cross_section_interpret_system(is_ratio: bool, capable: bool) -> str:
+    """The cross-section interpreter's system line: what the scan is and how to read its ranking.
+    The SEVERITY sentence rides the baseline tier only (P3, closed 2026-10-15): the verdict above
+    the rows (`_ranking_noise_caveat`), `_lead_with_verdict` and `check_noise_findings_not_cited`
+    hold a capable binding to the same rule without the lecture."""
+    if is_ratio:
+        head = ("Interpret a cross-sectional ranking scan of a RATIO / percentage metric. Read "
+                "metric_total AS that ratio in its own units — NEVER as a dollar total or per-record "
+                "average. DIRECTION matters: a LOW ratio is often GOOD (low cost-%, low defect-rate); "
+                "judge by what the ratio measures, do not assume the minimum is the problem.")
+        tail = (" Only call a value 'weak'/'underperforming' if clearly adverse vs a benchmark or a real "
+                "outlier; otherwise use relative language and say the spread is tight/healthy.")
+    else:
+        head = ("Interpret a cross-sectional ranking scan. Name the LOWEST-RANKED values and any "
+                "concentration.")
+        tail = (" SEVERITY GROUNDING: only call a value 'weak', 'critically low', 'underperforming', or "
+                "'the weakest' if it is below a stated benchmark/target or far below the in-result "
+                "average — being the minimum of a ranking is NOT, by itself, evidence it is unhealthy. "
+                "Otherwise use relative language ('the lowest at X vs the ~Y average'). Be explicit when "
+                "the spread is tight and all values are healthy.")
+    return head if capable else head + tail
+
+
+#: The synthesis narrator's SEVERITY sentence for a cross-sectional report — baseline tier only; the
+#: capable tier is held to it by `check_noise_findings_not_cited` and `_lead_with_verdict`.
+_SYNTHESIS_SEVERITY_SENTENCE = (
+    "SEVERITY GROUNDING: do NOT label the lowest-ranked value 'weak', 'critically low', or "
+    "'underperforming' unless it is below a benchmark/target or far below the average — if "
+    "the spread is tight and all values are healthy, say the dimension is healthy and DROP "
+    "the weakness framing (an empty waterfall is correct when nothing is actually weak).")
+
+
 def _sql_grounding() -> str:
     """P3 — the shared SQL grounding paragraph rides a planner's system prompt only for a
     BASELINE binding; a capable one reads the one-paragraph ask inside its plan prompt
     (`prompts_investigate.plan_sql_rules`), and the guards on the planned query do the rest."""
     return "" if _coder_capable() else _ADA_SQL_GROUNDING
+
+
+def _lens_sql_grounding() -> str:
+    """The lens planners' SQL grounding, tiered as the phase planners' is (P3): the one-paragraph
+    ask (`plan_sql_rules`) for a CAPABLE coder, the long block for a baseline one. The seven lens
+    prompts — the WHERE scan, the WHEN trend, the returns lenses, the parallel multi-lens node —
+    appended `_ADA_SQL_GROUNDING` on every tier until 2026-10-15, and none of them carried the ask,
+    so a capable coder read the long block and nothing else."""
+    if _coder_capable():
+        from aughor.agent.prompts_investigate import plan_sql_rules
+        return " " + plan_sql_rules("lens", True)
+    return _ADA_SQL_GROUNDING
 
 
 def _sql_rules_for(phase: str) -> str:
@@ -6726,11 +6900,10 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                 _left, _left_kinds = _spec_errors(intake)
                 if _left:
                     _stats.inc("deep_analysis.spec_repair.still_invalid")
-                    intake.intake_notes = (
-                        (intake.intake_notes or "").rstrip()
-                        + " SPEC STILL INVALID AFTER ONE CORRECTION ("
-                        + ", ".join(_left_kinds) + "): " + " ".join(_left)
-                    ).strip()
+                    _record_intake_note(
+                        intake, "spec_errors_left",
+                        "Parts of this specification could not be corrected (" + ", ".join(_left_kinds)
+                        + "): " + " ".join(_left), where="back", kinds=list(_left_kinds), errors=list(_left))
                 else:
                     _stats.inc("deep_analysis.spec_repair.repaired")
 
@@ -6745,9 +6918,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         except Exception:
             _feas = None
         if _feas:
-            intake.intake_notes = (
-                (intake.intake_notes or "").rstrip() + f" FEASIBILITY: {_feas}"
-            ).strip()
+            _record_intake_note(intake, "feasibility", str(_feas), where="back", gap=str(_feas))
 
     # Temporal-feasibility recovery — when the intake declares NO usable time axis, a real
     # PURCHASE/population date may still be JOIN-REACHABLE: the metric sits on an event/child
@@ -6767,11 +6938,10 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             _axis = None
         if _axis and _axis.get("date_column"):
             intake.date_column = _axis["date_column"]
-            intake.intake_notes = (
-                f"TEMPORAL AXIS RECOVERED: the metric table carries no date of its own, but "
-                f"{_axis['date_column']} is join-reachable — trending on it instead of treating the "
-                f"question as non-temporal. " + (intake.intake_notes or "")
-            ).strip()
+            _record_intake_note(
+                intake, "temporal_axis_recovered",
+                f"The metric's table carries no date of its own; {_axis['date_column']} reaches it through "
+                "a join, so the question is read over time.", date_column=_axis["date_column"])
 
     # MEASURE INTERROGATION — a loss question that resolved to a bare SPEND total. The prompt's
     # LOSS GUARD asks for a margin / reversal / write-off reading; this is the deterministic
@@ -6783,14 +6953,13 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     if intake is not None and _spend_measured_as_loss(question, getattr(intake, "metric_sql", "")):
         from aughor.stats import stats as _stats
         _stats.inc("deep_analysis.measure.spend_as_loss")
-        intake.intake_notes = (
-            f"MEASURE WARNING: the question asks where money is being LOST, but the metric resolved "
-            f"to a bare spend total ({intake.metric_sql}). Spend is not loss — the segment that "
-            f"spends the most is the LARGEST segment, not the leakiest. Read the ranking below as "
-            f"COST CONCENTRATION, not as where value is being destroyed. A margin (revenue − cost) "
-            f"or a reversed-transaction (returned / cancelled / refunded) measure would answer the "
-            f"question that was asked. " + (intake.intake_notes or "")
-        ).strip()
+        _record_intake_note(
+            intake, "measure_warning",
+            f"The question asks where money is being lost, but the metric resolved to a bare spend total "
+            f"({intake.metric_sql}). Spend is not loss — the segment that spends the most is the largest "
+            "segment, not the leakiest. Read the ranking below as cost concentration, not as where value is "
+            "being destroyed. A margin (revenue − cost) or a reversed-transaction (returned, cancelled, "
+            "refunded) measure would answer the question that was asked.", metric_sql=intake.metric_sql)
 
     # Deterministic cross-sectional trigger — the intake LLM is unreliable at
     # setting the flag, so force it for diagnostic "where/which is weakest / where
@@ -6848,12 +7017,12 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             # G3 — make the displayed spec self-consistent with the route we forced: lead with an
             # authoritative routing statement and strip the LLM's now-contradicted cross-sectional
             # conclusion, so the intake doesn't argue "compare across dimensions" above a temporal run.
-            intake.intake_notes = (
-                "ROUTING: this is a temporal-change question (\"what drove the change\") — running a "
-                "period-over-period analysis of the most recent period vs the prior period. An initial "
-                "cross-sectional lean was overridden because the data has a usable time axis. "
-                + _scrub_xsec_reasoning(intake.intake_notes or "")
-            ).strip()
+            intake.intake_notes = _scrub_xsec_reasoning(intake.intake_notes or "")
+            _record_intake_note(
+                intake, "routing",
+                "Read as a change over time — the most recent period against the one before it.",
+                route="temporal_change", overrode="cross_sectional",
+                why="the question asks what drove a change and the data has a usable time axis")
 
     # Post-process: ensure all table references are fully-qualified when the schema uses them
     if intake is not None:
@@ -7067,7 +7236,9 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         _cov_note = _clamp_intake_to_coverage(intake, _cmin, _cmax, question=state.get("question", ""),
                                               settle_days=_settle_days)
         if _cov_note and intake.cross_sectional:
-            intake.intake_notes = f"{_cov_note} {intake.intake_notes or ''}".strip()
+            _record_intake_note(
+                intake, "coverage", _cov_note.replace(_POP_MISMATCH_SIGNATURE, _POP_MISMATCH_SIGNATURE.lower()),
+                duration_mismatch=_POP_MISMATCH_SIGNATURE in _cov_note, note=_cov_note)
         # No period named: the answer covers all the data, and its window says so — explicit
         # for the SQL writer, plain for the reader.
         if not intake.period_named and _cmin and _cmax:
@@ -7096,7 +7267,11 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         )
         _notes = " ".join(n for n in (_cov_note, _dens_note, _tp_note) if n)
         if _notes:
-            intake.intake_notes = f"{_notes} {intake.intake_notes or ''}".strip()
+            # The coverage facts as a typed entry (the reframe reads `duration_mismatch`), the
+            # sentences as the reader's — the signature phrase in its lower case there.
+            _record_intake_note(
+                intake, "coverage", _notes.replace(_POP_MISMATCH_SIGNATURE, _POP_MISMATCH_SIGNATURE.lower()),
+                duration_mismatch=_POP_MISMATCH_SIGNATURE in _notes, note=_notes)
 
     if intake is None:
         phase = _phase_result(
@@ -7223,6 +7398,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             f"Measuring {intake.metric_label} in {intake.observation_label} vs {intake.comparison_label}."
         ),
         [finding],
+        record=list(getattr(intake, "record", None) or []),
     )
     # Build a JOIN-COMPLETE filtered schema. Keeping only the metric + dimension tables
     # (the old behaviour) drops the table that actually holds the date/join columns — e.g.
@@ -8367,7 +8543,8 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     _run = run_analysis_phase(
         conn, phase_id="dimensional", title="Dimensional Analysis", emoji="🔬", schema=schema,
-        plan_system="Write contribution-analysis SQL for each dimension. Sort by absolute_change ASC." + _sql_grounding(),
+        plan_system=("Write contribution-analysis SQL for each dimension. ORDER BY ABS(absolute_change) DESC — "
+                     "the largest movers first, in either direction." + _sql_grounding()),
         plan_user=plan_prompt,
         declared_filters=_declared_conditions(intake_data),
         interpret_system="Interpret contribution analysis. Identify concentrated vs. diffuse decline.",
@@ -8725,9 +8902,9 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     default to the full-dimension "cross_section" phase (byte-identical to before), so the parallel
     multi-lens node can reuse this exact scan (guards and all) as a themed lens over one group."""
     from aughor.agent.prompts_investigate import (
-        CROSS_SECTION_PLAN_PROMPT, CROSS_SECTION_INTERPRET_PROMPT,
+        CROSS_SECTION_PLAN_PROMPT,
         CROSS_SECTION_ADDITIVE_BLOCK, CROSS_SECTION_RATIO_BLOCK, CROSS_SECTION_AVG_BLOCK,
-        CROSS_SECTION_RATIO_INTERPRET_PROMPT,
+        cross_section_interpret_prompt,
     )
     _phase_id, _phase_title, _phase_emoji = phase_meta or ("cross_section", "Cross-Sectional Scan", "🧭")
     question = state["question"]
@@ -8949,7 +9126,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     # report can't show 40% (per order) in one card and 76% (per line item) in another for one concept.
     _grain_plan = _grain_plan_directive(grain) if grain else ""
     _plan_system = (f"Write one ranking query per dimension. Rank the metric ascending (weakest first). "
-                    f"{_time_rule}" + _ADA_SQL_GROUNDING)
+                    f"{_time_rule}" + _lens_sql_grounding())
 
     def _do_run(_sat_note=""):
         return run_analysis_phase(
@@ -8962,26 +9139,13 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
             metric_computation_block=metric_computation_block,
             comparison_segment_section=comparison_segment_section,
             premise_check_section=premise_check_section) + _direction_plan + _period_plan + (extra_directive or "") + _grain_plan,
-        interpret_system=(
-            "Interpret a cross-sectional ranking scan of a RATIO / percentage metric. Read "
-            "metric_total AS that ratio in its own units — NEVER as a dollar total or per-record "
-            "average. DIRECTION matters: a LOW ratio is often GOOD (low cost-%, low defect-rate); "
-            "judge by what the ratio measures, do not assume the minimum is the problem. Only call a "
-            "value 'weak'/'underperforming' if clearly adverse vs a benchmark or a real outlier; "
-            "otherwise use relative language and say the spread is tight/healthy."
-            if is_ratio else
-            "Interpret a cross-sectional ranking scan. Name the LOWEST-RANKED values and any "
-            "concentration. SEVERITY GROUNDING: only call a value 'weak', 'critically low', "
-            "'underperforming', or 'the weakest' if it is below a stated benchmark/target or far "
-            "below the in-result average — being the minimum of a ranking is NOT, by itself, "
-            "evidence it is unhealthy. Otherwise use relative language ('the lowest at X vs the ~Y "
-            "average'). Be explicit when the spread is tight and all values are healthy."
-        ) + _direction_interp + _magnitude_interp,
-        interpret_user_fn=(lambda results_text: CROSS_SECTION_RATIO_INTERPRET_PROMPT.format(
+        interpret_system=_cross_section_interpret_system(is_ratio, _interpreter_capable())
+        + _direction_interp + _magnitude_interp,
+        interpret_user_fn=(lambda results_text: cross_section_interpret_prompt(True, _interpreter_capable()).format(
             question=question, metric_label=metric_label, results_text=results_text,
             population_note=_population_note(_orient_top, True)))
         if is_ratio else
-        (lambda results_text: CROSS_SECTION_INTERPRET_PROMPT.format(
+        (lambda results_text: cross_section_interpret_prompt(False, _interpreter_capable()).format(
             question=question, metric_label=metric_label, results_text=results_text,
             population_note=_population_note(_orient_top, False))),
         plan_error_msg="Cross-sectional planning failed.",
@@ -9845,7 +10009,7 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
                          "month or quarter (choose per the data's span). Restrict to the question's "
                          "subject. Order by the period ASC. Return EXACTLY three columns aliased "
                          f"`period`, `metric_value`, `n` (n = COUNT(*) of {_grain_n} in that period).")
-                        + _ADA_SQL_GROUNDING + _grain_plan,
+                        + _lens_sql_grounding() + _grain_plan,
             plan_user=(
                 f"QUESTION: {question}\n"
                 f"METRIC: {metric_label} = {metric_sql}\n"
@@ -9969,7 +10133,7 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
                          "COUNT(*) per dimension value AND its percentage of the total events "
                          "(100.0*COUNT(*)/SUM(COUNT(*)) OVER ()). Aggregate the EVENT table itself; "
                          "restrict to the question's subject; ORDER BY count DESC. Return exactly three "
-                         "columns aliased `<dimension>`, `event_count`, `pct_of_total`.") + _ADA_SQL_GROUNDING,
+                         "columns aliased `<dimension>`, `event_count`, `pct_of_total`.") + _lens_sql_grounding(),
             plan_user=(f"QUESTION: {question}\nMETRIC CONTEXT: {metric_label}\n"
                        f"EVENT DIMENSIONS (compose the events/returns by each):\n{dims_list}\n\n"
                        f"SCHEMA:\n{schema}\n\n"
@@ -10082,7 +10246,7 @@ def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
                 "segment dimension (this may require joining through orders / order_items / products). "
                 "ORDER BY leading_reason_share DESC. Return exactly three columns: the segment, "
                 "leading_reason_share, n. This is a SHARE within the subject — do NOT drop the subject "
-                "filter and do NOT compute an overall return rate.") + _ADA_SQL_GROUNDING,
+                "filter and do NOT compute an overall return rate.") + _lens_sql_grounding(),
             plan_user=(
                 f"QUESTION: {question}\nMETRIC: {metric_label}\n"
                 f"WHERE scan found (the segment that concentrates the metric — cross with THIS):\n"
@@ -10175,7 +10339,7 @@ def _run_reason_benchmark_lens(state: AgentState, conn: "DatabaseConnection", wh
                 "ELSE 0 END) / NULLIF(COUNT(*), 0) AS leading_reason_share, plus COUNT(*) AS n. ORDER BY "
                 "leading_reason_share DESC. Return exactly three columns: the subject-dimension value, "
                 "leading_reason_share, n. This tests whether the leading reason is abnormally high for "
-                "the subject or a brand-wide baseline.") + _ADA_SQL_GROUNDING,
+                "the subject or a brand-wide baseline.") + _lens_sql_grounding(),
             plan_user=(
                 f"QUESTION: {question}\nMETRIC: {metric_label}\n"
                 f"WHY scan found (the leading reason + its share of the SUBJECT's returns):\n  {why_summary}\n\n"
@@ -10229,7 +10393,7 @@ def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_su
                 "per value AS event_count, plus its share of the leading-reason returns "
                 "(100.0 * COUNT(*) / SUM(COUNT(*)) OVER () AS pct_of_total). ORDER BY event_count DESC. "
                 "Return exactly three columns: the product dimension, event_count, pct_of_total. This "
-                "localises WHICH products the leading reason concentrates in — the fix target.") + _ADA_SQL_GROUNDING,
+                "localises WHICH products the leading reason concentrates in — the fix target.") + _lens_sql_grounding(),
             plan_user=(
                 f"QUESTION: {question}\nMETRIC: {metric_label}\n"
                 f"WHY scan found (the leading reason to drill into):\n  {why_summary}\n\n"
@@ -10475,7 +10639,7 @@ def _run_loss_lens_phases(state: AgentState, conn: "DatabaseConnection") -> list
                     plan_system=(spec["plan_system"]
                                  + (f"\n{_lifecycle}" if spec.get("lifecycle_filter") else "")
                                  + (f"\n{_contra_directive}" if spec["kind"] == "leakage" else "")
-                                 + _ADA_SQL_GROUNDING),
+                                 + _lens_sql_grounding()),
                     plan_user=(f"QUESTION: {question}\n\nSCHEMA:\n{schema}\n\n"
                                f"{spec['plan_ask']}"),
                     interpret_system=spec["interpret_system"],
@@ -11176,10 +11340,7 @@ def ada_synthesize(state: AgentState) -> dict:
             "metric total or 'N/A'; the attribution_waterfall should attribute the weakness across "
             "those dimensions (signed negative as loss contributors); recommendations target the "
             "weakest areas. Be honest about which areas are healthy and NOT a problem. "
-            "SEVERITY GROUNDING: do NOT label the lowest-ranked value 'weak', 'critically low', or "
-            "'underperforming' unless it is below a benchmark/target or far below the average — if "
-            "the spread is tight and all values are healthy, say the dimension is healthy and DROP "
-            "the weakness framing (an empty waterfall is correct when nothing is actually weak)."
+            + ("" if _narrator_capable() else _SYNTHESIS_SEVERITY_SENTENCE)
         )
         if intake_data.get("metric_is_ratio") or _metric_is_ratio(
             intake_data.get("metric_sql", ""), intake_data.get("metric_label", "")

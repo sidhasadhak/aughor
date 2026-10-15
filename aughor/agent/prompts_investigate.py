@@ -155,7 +155,8 @@ TASK: Parse this question into a precise investigation specification.
    - Only use columns whose schema type contains DATE, TIMESTAMP, or TIME.
    - If the primary metric table has a "⚠ No date/timestamp columns" annotation (check schema),
      look in directly joinable tables (via foreign key) for a DATE/TIMESTAMP column.
-   - Set date_column to the ACTUAL date column found (e.g. order_items.order_ts, NOT invoices.order_id).
+   - Set date_column to the ACTUAL date column found, written `<table>.<column>` exactly as the SCHEMA
+     spells both — never an `_id` column, never a column the SCHEMA does not list for that table.
    - If a join is required to reach the date column, document the join path in intake_notes.
    - If NO date column exists anywhere reachable by join, set date_column to "NONE" and explain in intake_notes.
 
@@ -442,7 +443,9 @@ Write 1 SQL query per dimension (up to 4 dimensions). Each query must:
   1. Group by the dimension
   2. Compute metric for BOTH observation and comparison period
   3. Compute absolute change and CONTRIBUTION to total change (as % of total absolute change)
-  4. Sort by absolute_change ASC (worst performers first)
+  4. ORDER BY ABS(absolute_change) DESC — the largest movers first, in either direction. A capped
+     result then holds the biggest contributors to the change; sorted worst-first under a cap, a
+     scan showed the 15 smallest movers and hid the largest gain (55e58a3b, 2026-10-14).
 
 CONTRIBUTION FORMULA (use window function):
   ROUND(100.0 * (obs - comp) / NULLIF(SUM(obs - comp) OVER (), 0), 1) AS contribution_pct
@@ -607,6 +610,38 @@ phase_summary: one sentence saying what the breakdown covers and at what grain.
 """
 
 
+#: P3, closed 2026-10-15 — the SEVERITY GROUNDING paragraph the cross-section interpret prompts
+#: carried on every tier, and the one-line ask a CAPABLE binding reads instead. The verifiers run
+#: either way: `_ranking_noise_caveat` writes a STATISTICAL VERDICT above the rows the model reads,
+#: `_lead_with_verdict` moves a standout claim the verdict denies into the stat note, and
+#: `check_noise_findings_not_cited` refuses a headline built on a noise-level ranking. The long
+#: paragraph was prophylaxis on top of that; a capable model gets the contract in one line.
+_SEVERITY_GROUNDING_LONG = """\
+    SEVERITY GROUNDING: "lowest in the ranking" is NOT the same as "weak". Only call a value
+    'weak', 'critically low', 'underperforming', or 'a problem' if it is below a stated
+    benchmark/target OR far below the in-result average. If the values are tightly clustered
+    and all healthy (e.g. margins all 47–55%), say so and use relative language ("the lowest
+    at 47% vs the ~51% average") — never an absolute superlative.
+"""
+_SEVERITY_GROUNDING_RATIO_LONG = """\
+    DIRECTION + SEVERITY GROUNDING: "lowest in the ranking" is NOT "weak". For many ratios LOW is
+    GOOD (a low cost-%, a low defect-rate, a low freight-%); for others HIGH is good. Judge direction
+    by what the ratio MEASURES — do NOT assume the minimum is the problem. Only call a value
+    'weak'/'a problem'/'underperforming' if it is clearly adverse versus a benchmark or a genuine
+    outlier far from the rest. If the ratios are tightly clustered, say so and use relative language
+    ("the lowest at 2.2% vs the ~4.3% of the rest").
+"""
+SEVERITY_GROUNDING_ASK = """\
+    SEVERITY: the lowest value in a ranking is the lowest, not "weak" — call a value weak, underperforming
+    or a problem only against a benchmark or far below the others; a tight spread is healthy, say so.
+"""
+SEVERITY_GROUNDING_RATIO_ASK = """\
+    DIRECTION + SEVERITY: judge direction by what the ratio measures (a low cost-% is good); the lowest
+    of a tight spread is the lowest, not weak — call a value adverse only against a benchmark or far from
+    the rest.
+"""
+
+
 CROSS_SECTION_INTERPRET_PROMPT = """\
 DIAGNOSTIC QUESTION: "{question}"
 METRIC: {metric_label}
@@ -627,11 +662,7 @@ For EACH dimension, write a finding:
     lenses diverge (e.g. "11 franchises bill under $1,000; the worst, X, also averages just
     $4.20/order vs the ~$9 typical"). Use NO markdown emphasis.
     Cite real values only.
-    SEVERITY GROUNDING: "lowest in the ranking" is NOT the same as "weak". Only call a value
-    'weak', 'critically low', 'underperforming', or 'a problem' if it is below a stated
-    benchmark/target OR far below the in-result average. If the values are tightly clustered
-    and all healthy (e.g. margins all 47–55%), say so and use relative language ("the lowest
-    at 47% vs the ~51% average") — never an absolute superlative.
+""" + _SEVERITY_GROUNDING_LONG + """\
   - key_numbers: the 1–3 most telling values — include a TOTAL and an AVERAGE where the
     average reveals something the total hides.
   - chart_type: "magnitude" (a ranked bar), or "change" when the measure is a signed delta
@@ -667,12 +698,7 @@ For EACH dimension, write a finding:
     denominator_total explain WHY a ratio is high or low (a low cost-ratio can come from a low
     numerator OR a large denominator). Use NO markdown emphasis. Cite real
     values only.
-    DIRECTION + SEVERITY GROUNDING: "lowest in the ranking" is NOT "weak". For many ratios LOW is
-    GOOD (a low cost-%, a low defect-rate, a low freight-%); for others HIGH is good. Judge direction
-    by what the ratio MEASURES — do NOT assume the minimum is the problem. Only call a value
-    'weak'/'a problem'/'underperforming' if it is clearly adverse versus a benchmark or a genuine
-    outlier far from the rest. If the ratios are tightly clustered, say so and use relative language
-    ("the lowest at 2.2% vs the ~4.3% of the rest").
+""" + _SEVERITY_GROUNDING_RATIO_LONG + """\
   - key_numbers: the 1–3 most telling values — include the ratio, and the numerator or denominator
     where it explains the result.
   - chart_type: "magnitude" (a ranked bar), or "change" when the measure is a signed delta
@@ -687,6 +713,18 @@ phase_summary: one sentence naming where the ratio is highest/lowest and whether
 — lead with the decisive number and the correct direction, e.g. "Freight runs 2.2% of
 order value in Germany vs ~4.3% elsewhere — the LOWEST cost ratio, a strength rather than a weakness."
 """
+
+
+def cross_section_interpret_prompt(ratio: bool, capable: bool) -> str:
+    """The cross-section interpret template for one binding: the long SEVERITY GROUNDING paragraph
+    for a BASELINE interpreter, the one-line ask for a CAPABLE one (the narrator's and the planners'
+    tiering, applied to the phase interpreters). `ratio` picks the ratio-metric variant."""
+    template = CROSS_SECTION_RATIO_INTERPRET_PROMPT if ratio else CROSS_SECTION_INTERPRET_PROMPT
+    if not capable:
+        return template
+    long_, ask = ((_SEVERITY_GROUNDING_RATIO_LONG, SEVERITY_GROUNDING_RATIO_ASK) if ratio
+                  else (_SEVERITY_GROUNDING_LONG, SEVERITY_GROUNDING_ASK))
+    return template.replace(long_, ask)
 
 # ── Phase 5: Behavioral & operational ────────────────────────────────────────
 
@@ -923,6 +961,7 @@ class IntakeOutput(BaseModel):
     intervention_column: str = Field(default="", description="A column recording an INTERVENTION or ASSIGNMENT that was applied to units — a treatment arm, an A/B variant, a campaign flag deliberately assigned, a policy applied from a date. This is what makes a causal contrast identifiable. Empty unless the data genuinely records an assignment; a column that merely correlates with an outcome is NOT an intervention.")
     claim_type_suggestion: str = Field(default="", description="Optional: the weakest claim this question needs — one of 'descriptive', 'associational', 'predictive'. Never 'causal'; a causal licence comes from the design, not from this field. Leave empty unless the question is clearly weaker than the design allows.")
     intake_notes: str = Field(description="Any caveats about the schema or question interpretation")
+    record: list[dict] = Field(default_factory=list, description="What the pipeline decided about this spec — the claim licence, the routing, a dropped cut, the coverage — as typed entries for the code that reads them (set by code; leave empty).")
 
 
 #: What the MODEL is actually asked for: `IntakeOutput` minus the fields code overwrites

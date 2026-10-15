@@ -319,6 +319,40 @@ def assess_rate_uniformity(
 # meaningless "45 of 48 segments differ from the pooled 2.08% rate (Bonferroni)".
 _RATE_KEYWORDS = ("rate", "ratio", "pct", "percent", "proportion", "conversion", "frac")
 _DENOM_KEYWORDS = ("total", "count", "tickets", "orders", "n_", "volume", "rows", "customers", "users", "_n")
+#: A CHANGE is not a proportion. `pct_change`, `delta_pct`, `growth_rate`, `yoy_pct` measure how
+#: much a figure moved between two periods — the "pct" names a unit, not successes over trials — and
+#: no count column in the result is their denominator. Live (LuxExperience 99201af8, 2026-10-14): a
+#: platform scan's `pct_change` (22.78% for MR PORTER) was read as a rate over `obs_orders` (108),
+#: its "successes" reconstructed as round(24.6) = 25, and the narrator was shown "MR PORTER (23.15%)"
+#: beside the query's 22.78% — a discrepancy it then reported as unexplained.
+_CHANGE_KEYWORDS = ("change", "delta", "growth", "diff", "yoy", "mom", "pop_", "_pop", "effect", "vs_", "_vs")
+
+
+def _implied_counts_are_integers(rows: list[list], rate_idx: int, denom_idx: int, scale: float) -> bool:
+    """Whether ``rate × n`` lands on a whole number in every row, judged at the precision the rate
+    is WRITTEN with. A genuine proportion of ``n`` trials is ``successes / n``, so at full precision
+    the product is an integer; a figure that is not a proportion of this denominator misses by a
+    fraction (24.6 above). A rate rounded to a few decimals cannot be checked this way — its
+    rounding or truncation alone moves the product by up to ``n × 10⁻ᵈ`` — so the check stands aside (True)
+    whenever that bound is not well inside one count."""
+    for row in rows:
+        try:
+            raw = row[rate_idx]
+            rate = float(raw) / scale
+            n = float(row[denom_idx])
+        except (ValueError, TypeError, IndexError):
+            continue
+        if n <= 0:
+            continue
+        text = str(raw).strip().lower()
+        decimals = 15 if "e" in text else (len(text.split(".", 1)[1]) if "." in text else 0)
+        bound = n * 10 ** (-decimals) / scale        # one written unit: rounding OR truncation
+        if bound >= 0.3:
+            continue                      # too coarse to tell — the old behaviour stands
+        product = rate * n
+        if abs(product - round(product)) > max(bound, 1e-6 * n, 1e-9):
+            return False
+    return True
 
 
 def _analyze_rate_segments(columns: list[str], rows: list[list]) -> Optional[StatResult]:
@@ -327,7 +361,9 @@ def _analyze_rate_segments(columns: list[str], rows: list[list]) -> Optional[Sta
 
     Reconstructs successes = round(rate × denominator) so the numerator column need not
     be identified explicitly. Returns a StatResult only when a confident detection +
-    assessment is possible; otherwise None (stays silent rather than guess)."""
+    assessment is possible; otherwise None (stays silent rather than guess). A change
+    column (`pct_change`) is never the rate, and a rate whose reconstructed counts are not
+    whole numbers is not a proportion of the denominator chosen — both stay silent."""
     if not rows or len(rows) < 3 or not columns:
         return None
     lower = [c.lower() for c in columns]
@@ -338,6 +374,8 @@ def _analyze_rate_segments(columns: list[str], rows: list[list]) -> Optional[Sta
         vals = _extract_floats(rows, i)
         if not vals:
             continue
+        if any(kw in c for kw in _CHANGE_KEYWORDS):
+            continue                      # a movement between periods, not successes over trials
         named = any(kw in c for kw in _RATE_KEYWORDS)
         in_unit = all(0.0 <= v <= 1.0001 for v in vals)
         in_pct = all(0.0 <= v <= 100.0 for v in vals) and max(vals) > 1.5
@@ -377,6 +415,8 @@ def _analyze_rate_segments(columns: list[str], rows: list[list]) -> Optional[Sta
             denom_idx = i
     if denom_idx is None:
         return None
+    if not _implied_counts_are_integers(rows, rate_idx, denom_idx, scale):
+        return None                       # not a proportion of this denominator — say nothing
 
     # label column: first non-rate, non-denominator column (else synthesize indices)
     label_idx = next((i for i in range(len(columns)) if i not in (rate_idx, denom_idx)), None)

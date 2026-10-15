@@ -389,6 +389,12 @@ class InvestigationPhaseResult(TypedDict):
     # the badge it already has; the routers and the contradiction scan read it here first and
     # fall back to the bracket on older phases. Absent on a phase code did not test.
     verdict: NotRequired[dict]
+    # 2026-10-15 — the intake phase's typed decisions (`_record_intake_note`): the claim licence
+    # with its reason, the routing, a recovered date axis, a dropped cut, the coverage facts — each
+    # ``{"tag": …, …}``. The code that used to parse ``CLAIM LICENCE: …`` back out of the intake's
+    # prose reads this slot; the prose carries the reader's sentence. Absent on other phases and on
+    # older reports, whose prose the readers still parse.
+    record: NotRequired[list[dict]]
 
 
 class WaterfallEntry(TypedDict):

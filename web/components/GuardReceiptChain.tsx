@@ -26,7 +26,9 @@ import type { GuardReceipt } from "@/lib/chatTurn";
 
 /** Human labels per guard id — the backend names the mechanism; the surface
  *  names what the reader gains. Unknown guards fall back to their raw id, so a
- *  new backend guard is visible before this map learns its nice name. */
+ *  new backend guard is visible before this map learns its nice name.
+ *  ONE vocabulary: `aughor/answer/receipts.py` carries the same maps for the export and the
+ *  other Python doors, and `tests/unit/test_guard_receipt_vocabulary.py` holds the two equal. */
 const GUARD_LABEL: Record<string, string> = {
   fanout_defan: "Join over-count prevented",
   preflight_repair: "SQL repaired before execution",
@@ -40,6 +42,13 @@ const GUARD_LABEL: Record<string, string> = {
   concentration_pareto: "Chart switched to Pareto for a concentration question",
   fanout_replan: "Queries re-planned around a join fan-out",
   fanout_detected: "Join over-count flagged",
+  extra_filter_replan: "Queries re-planned around a filter the metric does not declare",
+  ambiguity_probe: "The question's readings were probed",
+  count_star_entity_grain: "Row count checked against the entity asked for",
+  repair_recheck: "A repair was re-checked before adoption",
+  time_order: "Timestamps that run backwards flagged",
+  day_window: "A period's last day read whole",
+  declared_filter: "The metric's declared filter applied",
 };
 
 /** The mechanism's short name, for its chip. */
@@ -56,6 +65,13 @@ const GUARD_SHORT: Record<string, string> = {
   concentration_pareto: "chart form",
   fanout_replan: "fan-out",
   fanout_detected: "fan-out",
+  extra_filter_replan: "filter",
+  ambiguity_probe: "ambiguity",
+  count_star_entity_grain: "grain",
+  repair_recheck: "recheck",
+  time_order: "time order",
+  day_window: "day window",
+  declared_filter: "declared filter",
 };
 
 /** A repair means the check ran and the figure survived it; a flag or a caveat means the check
@@ -76,6 +92,7 @@ const ACTION_VERB: Record<string, string> = {
   hinted: "returned a repair hint to the model",
   caveated: "carried a caveat instead of asserting",
   flagged: "flagged it — no provable rewrite exists",
+  kept_original: "kept the original query",
 };
 
 function truncate(s: string, n = 90): string {

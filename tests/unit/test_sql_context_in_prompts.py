@@ -111,8 +111,11 @@ def test_an_analyst_with_no_spec_still_knows_the_engine_and_the_date():
 
 def test_the_shared_grounding_shows_a_half_open_window_and_claims_no_engine():
     from aughor.agent.investigate import _ADA_SQL_GROUNDING as G
-    assert "orders.order_ts >= '2023-03-10' AND orders.order_ts < '2024-03-10'" in G
+    assert "<dated_table>.<date_column> >= '2023-03-10' AND <dated_table>.<date_column> < '2024-03-10'" in G
     assert "EXCLUSIVE" in G and "DATE '" not in G
+    # The examples are placeholders: a plausible column on a real table name gets copied into a
+    # spec (LuxExperience 99201af8 wrote `orders.order_ts`, which does not exist).
+    assert "order_ts" not in G and "invoices." not in G
     assert "DuckDB" not in G                                    # the SQL DIALECT line says which engine
 
 

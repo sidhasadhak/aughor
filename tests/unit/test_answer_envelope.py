@@ -568,7 +568,9 @@ def test_the_export_takes_every_field_of_the_envelope(monkeypatch):
     table = next(b for b in doc.blocks if b.kind == "table")
     assert table.columns == ["Product Category", "Revenue"] and table.rows[0][0] == "Outerwear & Coats"
     checks = [b for b in doc.blocks if b.kind == "bullets"][-1]
-    assert checks.items == ["numeric grounding — rewrote the answer — number(s) not present in the result: 99"]
+    # The reader's line (`answer.receipts`): label — verb: detail. This fixture's guard and action are
+    # already words, so they pass through; a mechanism id is named from the shared vocabulary.
+    assert checks.items == ["numeric grounding — rewrote the answer: number(s) not present in the result: 99"]
     code = next(b for b in doc.blocks if b.kind == "code")
     assert code.text.startswith("SELECT product_category")
 

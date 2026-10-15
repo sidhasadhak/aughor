@@ -430,6 +430,26 @@ def parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
     return _parse_schema_tables(schema_str)
 
 
+#: A table header's row count as the renderer writes it: ``TABLE: orders  (5,210 rows)``.
+_HEADER_ROWS_RE = re.compile(r"^(?:TABLE:|##)\s+([\w.]+)\s*\(([^)]*?rows?)\)", re.M)
+
+
+def schema_manifest(schema_str: str) -> str:
+    """The schema as a MANIFEST — one line per table: its name, its row count when the text
+    carries one, and its columns with their types. Nothing else: no table descriptions, no
+    sample values, no column notes — those are a table's own block (`schema_block`), paid for
+    when a caller asks for that table. On the LuxExperience text (82k characters, 33 tables,
+    262 columns) the manifest is 5.3k. "" when the text parses to no tables."""
+    typed = _parse_schema_typed(schema_str or "")
+    counts = dict(_HEADER_ROWS_RE.findall(schema_str or ""))
+    lines: list[str] = []
+    for table, cols in typed.items():
+        head = f"{table} ({counts[table]})" if counts.get(table) else table
+        body = ", ".join(f"{name} {kind}".strip() for name, kind in cols)
+        lines.append(f"{head}: {body}" if body else head)
+    return "\n".join(lines)
+
+
 def parse_schema_column_types(schema_str: str) -> dict[str, dict[str, str]]:
     """The schema string → {table: {column: type}}, by the same parser — "" where the text gives no type."""
     return {t: dict(cols) for t, cols in _parse_schema_typed(schema_str or "").items()}

@@ -80,7 +80,8 @@ def test_temporal_change_question_recovers_axis_and_routes_temporal(monkeypatch)
     spec = out["_ada_intake"]
     assert spec["date_column"] == "shop.orders.order_date"      # axis recovered
     assert spec["cross_sectional"] is False                     # temporal route restored
-    assert "TEMPORAL AXIS RECOVERED" in spec["intake_notes"]
+    assert any(r["tag"] == "temporal_axis_recovered" and r["date_column"] == "shop.orders.order_date" for r in spec["record"])
+    assert "reaches it through a join" in spec["intake_notes"] and "RECOVERED" not in spec["intake_notes"]
 
 
 def test_diagnostic_question_keeps_cross_sectional_but_spec_is_truthful(monkeypatch):
@@ -95,7 +96,8 @@ def test_diagnostic_question_keeps_cross_sectional_but_spec_is_truthful(monkeypa
     spec = out["_ada_intake"]
     assert spec["date_column"] == "shop.orders.order_date"
     assert spec["cross_sectional"] is True                      # no temporal-change premise → unchanged
-    assert "TEMPORAL AXIS RECOVERED" in spec["intake_notes"]
+    assert any(r["tag"] == "temporal_axis_recovered" and r["date_column"] == "shop.orders.order_date" for r in spec["record"])
+    assert "reaches it through a join" in spec["intake_notes"] and "RECOVERED" not in spec["intake_notes"]
 
 
 def test_no_reachable_axis_leaves_everything_unchanged(monkeypatch):
@@ -110,7 +112,8 @@ def test_no_reachable_axis_leaves_everything_unchanged(monkeypatch):
     spec = out["_ada_intake"]
     assert (spec["date_column"] or "").upper() == "NONE"
     assert spec["cross_sectional"] is True                      # no_time still forces cross-sectional
-    assert "TEMPORAL AXIS RECOVERED" not in (spec["intake_notes"] or "")
+    assert not any(r["tag"] == "temporal_axis_recovered" for r in spec.get("record") or [])
+    assert "through a join" not in (spec["intake_notes"] or "")
 
 
 def test_recovery_skipped_when_intake_already_has_a_date(monkeypatch):
@@ -125,7 +128,8 @@ def test_recovery_skipped_when_intake_already_has_a_date(monkeypatch):
     spec = out["_ada_intake"]
     assert spec["date_column"] == "shop.orders.order_date"      # untouched by recovery
     assert "conn" not in calls                                  # resolver never called
-    assert "TEMPORAL AXIS RECOVERED" not in (spec["intake_notes"] or "")
+    assert not any(r["tag"] == "temporal_axis_recovered" for r in spec.get("record") or [])
+    assert "through a join" not in (spec["intake_notes"] or "")
 
 
 def test_resolver_receives_the_bound_conn_and_intake_spec(monkeypatch):

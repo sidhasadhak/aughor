@@ -155,7 +155,59 @@ def test_every_phase_stamps_the_slice_note_on_its_cards():
     whole = {**capped, "finding_id": "decomp_0", "sql": "SELECT p, d FROM t", "stat_note": None}
     phase = I._phase_result("decomposition", "Metric Decomposition", "", "complete", "s", [capped, whole])
     notes = {f["finding_id"]: f.get("stat_note") or "" for f in phase["findings"]}
-    assert notes["decomp_1"].startswith("z = 1.2 A capped scan: these 20 rows are a slice")
+    # Ordered by magnitude, the slice holds the largest movers — the note says that, not "a slice in
+    # the query's own order" (the wording an ascending or descending scan keeps).
+    assert notes["decomp_1"].startswith("z = 1.2 A capped scan: these 20 rows are the largest movers in either direction")
     assert "capped" not in notes["decomp_0"]
     again = I._phase_result("decomposition", "Metric Decomposition", "", "complete", "s", phase["findings"])
     assert again["findings"][0]["stat_note"].count("capped scan") == 1          # idempotent
+
+
+# ── P3 closed (2026-10-15): the lens grounding, the SEVERITY paragraphs, the scan's order ────────
+
+def test_the_lens_grounding_is_tiered_like_the_planners(monkeypatch):
+    """Seven lens prompts appended the long block on every tier and carried no ask."""
+    import aughor.llm.profile as PR
+    monkeypatch.setattr(PR, "profile_for", lambda role: NS(capable=True))
+    assert I._lens_sql_grounding().strip() == P._SQL_RULES_ASK.strip()
+    monkeypatch.setattr(PR, "profile_for", lambda role: NS(capable=False))
+    assert I._lens_sql_grounding() == I._ADA_SQL_GROUNDING
+
+
+def test_the_severity_paragraph_rides_only_a_baseline_interpreter():
+    for ratio in (False, True):
+        long_ = P.cross_section_interpret_prompt(ratio, False)
+        short = P.cross_section_interpret_prompt(ratio, True)
+        assert "SEVERITY GROUNDING" in long_ and "SEVERITY GROUNDING" not in short
+        assert ("DIRECTION + SEVERITY:" if ratio else "SEVERITY:") in short
+        paragraph = P._SEVERITY_GROUNDING_RATIO_LONG if ratio else P._SEVERITY_GROUNDING_LONG
+        ask = P.SEVERITY_GROUNDING_RATIO_ASK if ratio else P.SEVERITY_GROUNDING_ASK
+        assert long_.replace(paragraph, ask) == short                     # only the paragraph differs
+        assert short.count("{results_text}") == 1 and "{population_note}" in short
+        # the templates themselves are the baseline form, so every caller that formats them still can
+        assert (P.CROSS_SECTION_RATIO_INTERPRET_PROMPT if ratio else P.CROSS_SECTION_INTERPRET_PROMPT) == long_
+    assert "FORBIDDEN" in P.BREAKDOWN_INTERPRET_PROMPT   # no verifier reads a breakdown's judgement words — stays on every tier
+
+
+def test_the_interpreter_system_line_and_the_synthesis_sentence_are_tiered(monkeypatch):
+    for ratio in (False, True):
+        base, cap = I._cross_section_interpret_system(ratio, False), I._cross_section_interpret_system(ratio, True)
+        assert base.startswith(cap) and len(cap) < len(base)
+        assert "weak" in base and "weak" not in cap
+    import aughor.llm.profile as PR
+    monkeypatch.setattr(PR, "profile_for", lambda role: NS(capable=True))
+    assert I._interpreter_capable() and I._narrator_capable()
+    monkeypatch.setattr(PR, "profile_for", lambda role: NS(capable=False))
+    assert not I._interpreter_capable() and not I._narrator_capable()
+    assert "SEVERITY GROUNDING" in I._SYNTHESIS_SEVERITY_SENTENCE
+
+
+def test_the_dimensional_scan_orders_by_magnitude_and_its_cap_note_says_so():
+    assert "ORDER BY ABS(absolute_change) DESC" in P.DIMENSIONAL_PLAN_PROMPT
+    assert "worst performers first" not in P.DIMENSIONAL_PLAN_PROMPT
+    capped = NS(sql="SELECT c, obs - comp AS absolute_change FROM t ORDER BY ABS(absolute_change) DESC LIMIT 15",
+                columns=["c", "absolute_change"], rows=[[f"c{i}", float(15 - i)] for i in range(15)],
+                row_count=15, error=None, stats={}, truncated=False)
+    note = I._capped_scan_note(capped)
+    assert "largest movers in either direction" in note and "other direction" not in note
+    assert "how many groups there are" in note
