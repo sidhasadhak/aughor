@@ -291,3 +291,22 @@ def test_a_date_on_a_table_the_definition_does_not_read_is_refused_at_the_door(m
                                     "it reads luxexperience.orders. Did you mean luxexperience.orders.order_date? "
                                     "Choose it from the dates listed under the field.")
     assert saved and saved[-1].time_column == "orders.order_date"       # only the clean save was written
+
+
+def test_an_edit_that_leaves_a_stored_date_as_it_was_is_not_refused_for_it():
+    """The trap of 2026-10-14: with the typo stored, the SQL could not be saved with its join (the stored
+    date rode along and was refused) and the date could not be corrected (the Dates form saved the stored
+    SQL). Only a date this edit SETS is held to the tables the SQL reads."""
+    import aughor.routers.metrics as MR
+    from fastapi import HTTPException
+    stored = NS(time_column="luxexperience.order.order_date", sql="SELECT 1 FROM order_items")
+    joined = {"sql": "SELECT SUM(oi.unit_price_eur) AS gm FROM order_items oi JOIN luxexperience.orders o ON oi.order_id = o.order_id",
+              "tables": [], "time_column": "luxexperience.order.order_date"}
+    MR._require_date_on_a_table_read(joined, stored)                      # the SQL edit goes through
+    with pytest.raises(HTTPException) as e:
+        MR._require_date_on_a_table_read(joined, None)                    # a creation sets the date: checked
+    assert "Did you mean luxexperience.orders.order_date" in e.value.detail
+    with pytest.raises(HTTPException) as e:
+        MR._require_date_on_a_table_read({**joined, "time_column": "luxexperience.order.order_day"}, stored)   # changed: checked
+    assert e.value.status_code == 422
+    MR._require_date_on_a_table_read({**joined, "time_column": "luxexperience.orders.order_date"}, stored)      # the fix saves

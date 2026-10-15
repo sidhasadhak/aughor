@@ -259,6 +259,9 @@ function DateColumnPicker({ value, onChange, candidates, label, placeholder }: {
 }) {
   const known = candidates.some(c => c.grain === value);
   const [typing, setTyping] = useState(!!value.trim() && !known);
+  // A value that becomes one of the listed dates (the "Use …" button beside the note, or typed to the
+  // letter) is shown in the list, not left behind "Another column".
+  useEffect(() => { if (known) setTyping(false); }, [known]);
   if (!candidates.length) {
     return <Input placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)} aria-label={label} />;
   }
@@ -280,12 +283,16 @@ function DateColumnPicker({ value, onChange, candidates, label, placeholder }: {
   );
 }
 
-function DatesSection({ metric, proposals, onChanged, startEditing = false, onEditSql }: {
+function DatesSection({ metric, proposals, onChanged, startEditing = false, onEditSql, draftSql }: {
   metric: Metric; proposals: MetricProposals | null; onChanged: () => void;
   /** Open straight on the form — the door from "Needs you" for a metric with no date column. */
   startEditing?: boolean;
   /** Open the definition's SQL — where a date one join away is made usable, by reading its table. */
   onEditSql?: () => void;
+  /** The SQL as it stands on the Edit tab. The proposals are read from it, so a date chosen here is saved WITH it:
+   *  saving the stored SQL instead refused the date the Edit tab's join had made possible, while the Edit tab's own
+   *  save was refused for the stored date — each tab blocking the other (LuxExperience, 2026-10-14). */
+  draftSql?: string;
 }) {
   const [editing, setEditing] = useState(startEditing);
   const [kind, setKind] = useState(metric.time_kind ?? "flow");
@@ -300,6 +307,8 @@ function DatesSection({ metric, proposals, onChanged, startEditing = false, onEd
   const tablesRead = Array.from(new Set(candidates.map((c) => c.table))).join(", ");
   // The one date is SET for the person — derived, so it follows the proposals as they arrive and yields to anything typed.
   const shownColumn = column.trim() ? column : (candidates.length === 1 ? candidates[0].grain : "");
+  // …and a value the SQL's own tables do not carry is said as such, never called "set for you".
+  const stale = !!shownColumn.trim() && candidates.length > 0 && !candidates.some(c => c.grain === shownColumn);
   const [outcome, setOutcome] = useState(metric.outcome_column ?? "");
   const [until, setUntil] = useState(metric.until_column ?? "");
   const [settles, setSettles] = useState(metric.settles_after_days != null ? String(metric.settles_after_days) : "");
@@ -308,12 +317,14 @@ function DatesSection({ metric, proposals, onChanged, startEditing = false, onEd
   const [err, setErr] = useState("");
   const me = useMe();
 
+  // The Edit tab's statement, when it differs from the stored one: the dates are saved with it, as they were proposed from it.
+  const sqlEdited = !!draftSql?.trim() && draftSql.trim() !== (metric.sql ?? "").trim();
   // No name is asked: the confirmation is stamped by the server with the person signed in.
   const save = async (fields: Partial<Metric>) => {
     setErr("");
     setBusy(true);
     try {
-      await updateMetric(metric.name, { ...metric, ...fields }, homeOf(metric));
+      await updateMetric(metric.name, { ...metric, ...(sqlEdited ? { sql: draftSql!.trim() } : {}), ...fields }, homeOf(metric));
       setEditing(false);
       onChanged();
     } catch (e) {
@@ -358,12 +369,27 @@ function DatesSection({ metric, proposals, onChanged, startEditing = false, onEd
           <DateColumnPicker value={shownColumn} onChange={setColumn} candidates={candidates} label="Date column"
             placeholder="Date column — schema.table.column" />
           <p className="aug-fs-xs" style={{ ...MUTED, margin: 0 }} data-testid="metric-date-proposals">
-            {listed
-              ? `${candidates.length} dates on ${tablesRead} — choose one`
-              : candidates.length === 1
-                ? `The only date on ${candidates[0].table} is ${candidates[0].grain} — set for you; change it here if that is wrong.`
-                : candidatesNote || "no proposals yet"}
+            {stale
+              // The field carries a value that is not a date on the tables this SQL reads — a stored one the SQL
+              // outgrew, or a typo (the user, 2026-10-14: `luxexperience.order.order_date` beside a SQL that joins
+              // `luxexperience.orders`; the note said "set for you" while the field still said the old value, and
+              // every save was refused with it).
+              ? `The field says ${shownColumn}, which is not a date on ${tablesRead}. ${candidates.length === 1
+                  ? `The only date there is ${candidates[0].grain}`
+                  : `${candidates.length} dates are listed`} — choose it in the list.`
+              : listed
+                ? `${candidates.length} dates on ${tablesRead} — choose one`
+                : candidates.length === 1
+                  ? `The only date on ${candidates[0].table} is ${candidates[0].grain} — set for you; change it here if that is wrong.`
+                  : candidatesNote || "no proposals yet"}
           </p>
+          {stale && candidates.length === 1 && (
+            <div style={ROW}>
+              <Button size="xs" variant="secondary" onClick={() => setColumn(candidates[0].grain)} data-testid="metric-date-use">
+                Use {candidates[0].grain}
+              </Button>
+            </div>
+          )}
           {candidates.find(c => c.grain === shownColumn)?.text && (
             <p className="aug-fs-xs" style={{ ...MUTED, margin: 0 }} data-testid="metric-date-text">
               {shownColumn.split(".").pop()} is kept as text — it is read as a date when a period is measured; a value
@@ -397,6 +423,11 @@ function DatesSection({ metric, proposals, onChanged, startEditing = false, onEd
               {GRAINS.map(g => <option key={g} value={g}>{g}</option>)}
             </SelectField>
           </label>
+          {sqlEdited && (
+            <p className="aug-fs-xs" style={{ ...MUTED, margin: 0 }} data-testid="metric-date-with-sql">
+              Saved together with the SQL as it stands on the Edit tab.
+            </p>
+          )}
           <div style={ROW}>
             <Button size="sm" variant="secondary" disabled={busy || !shownColumn.trim()}
               onClick={() => save({
@@ -1179,7 +1210,7 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
           {detailTab === "dates" && (
             <DatesSection key={`${sm.name}:${sm.time_column ?? ""}:${sm.time_confirmed_by ?? ""}`}
               metric={sm} proposals={proposals} onChanged={() => { setDatesEditing(false); load(); }} startEditing={datesEditing}
-              onEditSql={() => setDetailTab("edit")} />
+              onEditSql={() => setDetailTab("edit")} draftSql={form.sql} />
           )}
           {detailTab === "measures" && <EntitySection key={`${sm.name}:${sm.entity ?? ""}`} metric={sm} onChanged={load} />}
           {detailTab === "edit" && editorForm}

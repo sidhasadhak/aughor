@@ -496,21 +496,30 @@ def _stamp_time_edit(existing, req: MetricRequest) -> dict:
         raise HTTPException(status_code=422, detail=str(exc))
 
 
-def _require_date_on_a_table_read(data: dict) -> None:
-    """A metric's date must be on a table its definition reads.
+def _require_date_on_a_table_read(data: dict, existing=None) -> None:
+    """A metric's date must be on a table its definition reads — checked when the DATE is set
+    or changed, never against a date the edit left as it was.
 
     The user, 2026-10-14: Gross Margin % (LuxExperience) is measured on `order_items`, which has
     no date, and was saved with `luxexperience.order.order_date` — a table the statement never
     reads, and one spelled wrong (`orders`). The save said nothing; the first period measured
     would have said "its statement does not read luxexperience.order" (`scoped_statement`).
     Refused at the door instead, with the fix the editor already names beside the field: a
-    period filters the date's own table INSIDE the statement, so the statement must read it."""
+    period filters the date's own table INSIDE the statement, so the statement must read it.
+
+    Then the trap (the same evening): with that date stored, the SQL could not be saved with the
+    join (the stored date rode along and was refused), and the date could not be corrected (the
+    Dates form saves the stored SQL, which reads no `orders`). Each tab blocked the other. An edit
+    that does not touch the date is let through — the date's state is said on the Dates tab, where
+    it always was — and only a date the person sets here is held to the tables the SQL reads."""
     from aughor.semantic.metric_statement import split_grain
     from aughor.semantic.metric_time import bare_name, tables_read
     column = str(data.get("time_column") or "").strip()
     table, _col = split_grain(column)
     if not column or not table:
         return                        # unset, or a bare column: nothing to check it against
+    if existing is not None and column == str(getattr(existing, "time_column", "") or "").strip():
+        return                        # the date is as it was: this edit is not the one that set it
     read = tables_read(data)
     if not read:
         return                        # a definition that names no table is checked at measurement
@@ -614,7 +623,7 @@ def update_metric(name: str, req: MetricRequest, schema: Optional[str] = None):
     data = {k: v for k, v in req.model_dump().items() if k not in _SERVER_OWNED}
     data.update({"name": new_name, "schema_name": target_ds, "unit": _plain_unit(data.get("unit"))})
     data.update(_stamp_time_edit(existing, req))
-    _require_date_on_a_table_read(data)
+    _require_date_on_a_table_read(data, existing)
     audit = None
     if existing is not None:
         # Governance state is owned by the transition workflow (B-8), not by edits —
