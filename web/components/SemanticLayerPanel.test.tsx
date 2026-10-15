@@ -8,7 +8,8 @@ import { render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/components/MetricsPanel", () => ({ MetricsPanel: () => <div data-testid="metrics-stub" /> }));
+// The stub prints the connection it was handed, so a test can see which one the panel reads for.
+vi.mock("@/components/MetricsPanel", () => ({ MetricsPanel: ({ connId }: { connId: string }) => <div data-testid="metrics-stub">{connId}</div> }));
 vi.mock("@/components/intake/IntakePanel", () => ({ IntakePanel: () => <div data-testid="intake-stub" /> }));
 // One object, as the shared cache hands out: a new one per render would loop the panel's mirroring effect.
 const SCHEMA = { schema: { tables: [{ name: "orders" }, { name: "customers" }] }, loading: false };
@@ -40,6 +41,22 @@ describe("the frame", () => {
     view(<SemanticLayerPanel connectionId="c1" connections={CONNS} />);
     expect(await screen.findByText("No annotations yet.")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Table" })).toBeInTheDocument();
+  });
+});
+
+describe("the connection in scope", () => {
+  it("follows the shell's connection when it changes, as on a workspace switch", () => {
+    /** 2026-10-15: visited on the Default workspace, the panel kept `workspace` after the switch to Luxeperience —
+     *  the cockpit on the Lux connection, the Metrics tab still on Workspace's sixteen rows, the picker blank. */
+    const both = [{ id: "c1", name: "theLook" }, { id: "c2", name: "PostgreSQL" }];
+    const { rerender } = view(<SemanticLayerPanel connectionId="c1" connections={both} />);
+    expect(screen.getByTestId("metrics-stub")).toHaveTextContent("c1");
+    rerender(<Theme><SemanticLayerPanel connectionId="c2" connections={[both[1]]} /></Theme>);
+    expect(screen.getByTestId("metrics-stub")).toHaveTextContent("c2");
+    expect(screen.getByRole("combobox", { name: "Connection" })).toHaveTextContent("PostgreSQL");   // a Radix select: its text
+    // A transient empty connection (the shell fails closed while a workspace resolves) does not blank the panel.
+    rerender(<Theme><SemanticLayerPanel connectionId="" connections={[both[1]]} /></Theme>);
+    expect(screen.getByTestId("metrics-stub")).toHaveTextContent("c2");
   });
 });
 
