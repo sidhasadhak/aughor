@@ -154,9 +154,11 @@ export function NeedsYou({ right, children, testId, waiting, empty }: {
 }) {
   const rows = empty !== undefined ? Children.toArray(children).filter(Boolean) : null;
   const on = rows ? rows.length > 0 : waiting ?? true;
+  // The amber edge overrides CARD's `border` SHORTHAND, never a `borderColor` longhand beside it: React warns
+  // when a longhand is removed on rerender while the shorthand stays (the Metrics tab, 2026-10-15).
   return (
     <section aria-label="Needs you" data-testid={testId} data-waiting={on ? "true" : "false"}
-      style={on ? { ...CARD, background: "var(--amb1)", borderColor: "var(--amb2)" } : CARD}>
+      style={on ? { ...CARD, background: "var(--amb1)", border: "1px solid var(--amb2)" } : CARD}>
       <Label tone={on ? "amber" : undefined} right={right}>Needs you</Label>
       {rows ? (rows.length ? rows : <Empty>{empty}</Empty>) : children}
     </section>
