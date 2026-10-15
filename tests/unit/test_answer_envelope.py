@@ -231,6 +231,43 @@ def test_the_export_prints_the_figures_each_exhibit_under_its_claim_and_the_gaps
     assert len(tables) == 2 and tables[0].columns == ["Platform", "Delta"]
 
 
+def test_a_stored_version_one_envelope_is_brought_up_to_its_concluded_report_on_read():
+    """A run before P6 stored a prose-only fold under a report that carries figures, exhibits and
+    gaps; a reader gets the projection the report supports, with the stream's provenance kept."""
+    from aughor.answer.envelope import envelope_of_report
+    v1 = fold_frames([{"type": "sql", "sql": "SELECT 1"}, {"type": "receipt_id", "receipt_id": "r-1"},
+                      {"type": "answer_report", "answer_report": {k: v for k, v in CONCLUDED.items() if k not in ("figures", "exhibits", "gaps")}}],
+                     question="why?").model_dump()
+    v1["version"] = 1
+    rep = {**CONCLUDED, "envelope": v1}
+    env = envelope_of_report(rep)
+    assert env["version"] == 2 and len(env["figures"]) == 2 and len(env["exhibits"]) == 2
+    assert env["gaps"] == "This analysis did not test why the order count rose."
+    assert env["grid"]["caption"] == "Mytheresa and Mr Porter carry four-fifths of the rise"
+    assert env["provenance"]["sql"] == ["SELECT 1"] and env["provenance"]["receipt_id"] == "r-1"   # kept from the stream
+    assert env["question"] == "why?" and env["headline"] == CONCLUDED["headline"]
+    assert rep["envelope"]["version"] == 1                                 # a read rewrote nothing
+    # a stored fold that already carries the structure, and a report without one, come back as stored
+    v2 = fold_frames([{"type": "answer_report", "answer_report": CONCLUDED}]).model_dump()
+    assert envelope_of_report({**CONCLUDED, "envelope": v2}) == v2
+    plain = {k: v for k, v in CONCLUDED.items() if k not in ("figures", "exhibits", "gaps")}
+    assert envelope_of_report({**plain, "envelope": v1}) == v1
+    assert envelope_of_report({**plain}) == {}
+    # no stored envelope at all: the fold from the report is the envelope
+    assert envelope_of_report(dict(CONCLUDED), question="why?")["exhibits"][0]["claim"].startswith("Mytheresa")
+
+
+def test_the_export_of_a_run_stored_before_p6_reads_in_the_canvas_order():
+    from aughor.export.document import build_export_doc
+    v1 = fold_frames([{"type": "answer_report", "answer_report": {k: v for k, v in CONCLUDED.items() if k not in ("figures", "exhibits", "gaps")}}]).model_dump()
+    v1["version"] = 1
+    inv = {"id": "inv-old", "kind": "investigation", "question": "why?", "connection_id": "c1",
+           "completed_at": "2026-10-14T00:00:00", "report": {**CONCLUDED, "_report_type": "investigate", "envelope": v1}}
+    doc = build_export_doc(inv)
+    assert [b.text for b in doc.blocks if b.kind == "heading"] == ["Summary", "Evidence", "Caveats"]
+    assert next(b for b in doc.blocks if b.kind == "keynums").keynums[0].value == "€721,755"
+
+
 def test_a_concluded_deep_run_is_exported_as_the_canvas_draws_it_with_what_comes_next():
     """The phase-by-phase builder is for a run the phase script wrote; a concluded answer (P1)
     exports in its own order — and keeps the report's recommendations as "Next"."""

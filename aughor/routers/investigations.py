@@ -6581,8 +6581,11 @@ def investigation_envelope(inv_id: str, principal=Depends(get_principal)) -> dic
     inv = get_investigation(inv_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Investigation not found")
-    env = (inv.get("report") or {}).get("envelope")
-    if not isinstance(env, dict):
+    # P6 — the envelope the report supports today: a version-1 fold under a concluded report is
+    # brought up to the report's figures, exhibits and gaps on read (`envelope_of_report`).
+    from aughor.answer.envelope import envelope_of_report
+    env = envelope_of_report(inv.get("report") or {}, question=str(inv.get("question") or ""))
+    if not env:
         raise HTTPException(status_code=404, detail="This answer carries no envelope")
     return env
 

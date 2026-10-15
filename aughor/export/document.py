@@ -331,8 +331,9 @@ def _build_envelope(inv: dict, money_symbol: str = "") -> ExportDoc:
     (query and checks) the thread drops. Same envelope, different selection: nothing here
     re-derives a sentence, and nothing here needs a model.
     """
+    from aughor.answer.envelope import envelope_of_report
     rep = inv.get("report") or {}
-    env = rep.get("envelope") or {}
+    env = envelope_of_report(rep, question=str(inv.get("question") or ""))
     prov = env.get("provenance") or {}
     headline = env.get("headline") or rep.get("headline") or inv.get("question") or "Answer"
     meta = [m for m in (
@@ -731,8 +732,9 @@ def build_export_doc(inv: dict, *, narrate: bool = False, money_symbol: str = ""
 
     The stored `kind` is a coarse hint; the report dict's own `_report_type` /
     field set is authoritative (an 'investigation' row often holds a deep-analysis report)."""
+    from aughor.answer.envelope import envelope_of_report
     rep = inv.get("report") or {}
-    env = rep.get("envelope") if isinstance(rep.get("envelope"), dict) else {}
+    env = envelope_of_report(rep, question=str(inv.get("question") or ""))
     if rep.get("exhibits") and env.get("exhibits"):
         # P6 (2026-10-15) — a concluded answer (P1) is exported as the canvas draws it: the
         # headline, the figures it rests on, the answer, what it could not answer, each cited

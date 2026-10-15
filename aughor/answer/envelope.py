@@ -453,6 +453,33 @@ def _exhibits_of(rep: dict) -> list[Exhibit]:
     return out
 
 
+def envelope_of_report(rep: Any, *, question: str = "") -> dict:
+    """The envelope a reader of a STORED answer selects from: the one folded at the run's end,
+    brought up to the report's own structure when the fold predates it.
+
+    A run before P6 stored a version-1 envelope — no figures, no exhibits, no gaps — under a
+    concluded report that carries all three (`2f8ad418`, 2026-10-15). The report is the
+    record; the envelope is a projection of it, so a reader folds the projection the report
+    supports today instead of serving the one made yesterday. The stream's provenance (its
+    SQL, receipts, ids) is kept from the stored fold, which the report alone cannot supply.
+    Nothing is written: a read never rewrites the row. ``{}`` for a report with no envelope
+    and no structure to fold one from."""
+    rep = rep if isinstance(rep, dict) else {}
+    stored = rep.get("envelope") if isinstance(rep.get("envelope"), dict) else {}
+    if not rep.get("exhibits") or stored.get("exhibits"):
+        return dict(stored)
+    folded = fold_frames([{"type": "answer_report", "answer_report": rep}],
+                         question=question or str(stored.get("question") or "")).model_dump()
+    if not stored:
+        return folded
+    out = dict(stored)
+    for key in ("version", "figures", "exhibits", "gaps"):
+        out[key] = folded[key]
+    if not out.get("grid"):
+        out["grid"], out["chart"] = folded["grid"], folded["chart"]
+    return out
+
+
 def fold_frames(frames: Any, *, question: str = "", connection_id: str = "",
                 session_id: str = "") -> AnswerEnvelope:
     """Fold an iterable of ``{"type": …, …}`` frame dicts — the test-facing entry."""
