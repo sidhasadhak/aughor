@@ -345,7 +345,9 @@ def _build_envelope(inv: dict, money_symbol: str = "") -> ExportDoc:
     # The body is what follows the headline, never the headline again — so the summary
     # opens with the sentence and continues with the rest.
     body = str(env.get("body") or "").strip()
-    blocks: list[Block] = [_h("Summary"), _p(f"{headline}\n\n{body}" if body else headline)]
+    # The headline is the document's title; the Summary is the body alone. Printing both ran
+    # them together as one paragraph on the page (the live Lux export, 2026-10-15).
+    blocks: list[Block] = [_h("Summary"), _p(body or headline)]
     # P6 — the concluded answer's own structure, as the canvas draws it: the figures it rests
     # on, each cited result captioned by its claim, and what it could not answer.
     figures = [f for f in (env.get("figures") or []) if isinstance(f, dict) and str(f.get("value") or "").strip()]

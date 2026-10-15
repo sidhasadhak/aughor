@@ -338,12 +338,21 @@ class EnvelopeFolder:
         if rep.get("confidence"):
             self._confidence = str(rep["confidence"])
         self._caveats.extend(_strs(rep.get("data_gaps")))
+        # A concluded answer's caveats are those of the results it cites — what the canvas shows
+        # as chips — never a note on a result the answer did not draw ("every value in this
+        # result is identical…" on an uncited one-row probe, the live Lux export, 2026-10-15).
+        # A report that cites nothing (the phase script) keeps every phase's and finding's.
+        cited = {str(e.get("finding_id")) for e in (rep.get("exhibits") or [])
+                 if isinstance(e, dict) and e.get("finding_id")}
         for phase in rep.get("phases") or []:
             if not isinstance(phase, dict):
                 continue
+            findings = [f for f in (phase.get("findings") or []) if isinstance(f, dict)]
+            if cited and not any(str(f.get("finding_id")) in cited for f in findings):
+                continue
             self._caveats.extend(_strs(phase.get("caveats")))
-            for finding in phase.get("findings") or []:
-                if isinstance(finding, dict) and finding.get("trust_caveat"):
+            for finding in findings:
+                if finding.get("trust_caveat") and (not cited or str(finding.get("finding_id")) in cited):
                     self._caveats.append(str(finding["trust_caveat"]))
         # P6 — the concluded answer's structure (P1): the figures it rests on, the results it
         # cites with their claims, and what it could not answer. A report without them (an

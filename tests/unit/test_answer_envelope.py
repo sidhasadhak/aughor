@@ -162,7 +162,8 @@ CONCLUDED = {
         {"phase_id": "baseline", "caveats": [], "findings": [
             _finding("baseline_0", "Monthly revenue", ["month", "revenue"], [["2026-08", 627935], ["2026-09", 721755]], "line")]},
         {"phase_id": "decomposition", "caveats": ["extra filter: this query keeps rows by status not in Cancelled"], "findings": [
-            _finding("decomp_0", "Orders vs value", ["driver", "share"], [["orders", 112.7], ["aov", -12.7]]),
+            {**_finding("decomp_0", "Orders vs value", ["driver", "share"], [["orders", 112.7], ["aov", -12.7]]),
+             "trust_caveat": "every value in this result is identical, empty, or pinned at a boundary"},   # not cited
             _finding("decomp_1", "By platform", ["platform", "delta"], [["Mytheresa", 56884], ["Mr Porter", 18000], ["NAP", 9000], ["Farfetch", 9900]]),
             {**_finding("decomp_2", "By brand", ["brand", "delta"], [[f"b{i}", -i] for i in range(60)]), "row_count": 60}]},
     ],
@@ -184,7 +185,12 @@ def test_a_concluded_report_folds_its_figures_exhibits_and_gaps():
     # the grid a one-grid door takes is the first exhibit, under its claim
     assert env.grid == first.grid and env.chart == first.chart
     assert env.body == "Order count carried the change; average order value fell."
-    assert env.caveats[0] == "The Event table holds events only to 2024-12-11."
+    # the caveats are the narrator's gaps and those of the results the answer cites — a note on a
+    # result it did not draw (decomp_0's) stays off every door, as it stays off the canvas
+    assert env.caveats == ["The Event table holds events only to 2024-12-11.",
+                           "extra filter: this query keeps rows by status not in Cancelled"]
+    plain = fold_frames([{"type": "answer_report", "answer_report": {k: v for k, v in CONCLUDED.items() if k != "exhibits"}}])
+    assert "every value in this result is identical, empty, or pinned at a boundary" in plain.caveats   # cites nothing: every note
 
 
 def test_a_cited_results_rows_are_capped_as_the_canvas_caps_them():
@@ -223,6 +229,7 @@ def test_the_export_prints_the_figures_each_exhibit_under_its_claim_and_the_gaps
     keynums = next(b for b in doc.blocks if b.kind == "keynums")
     assert [(k.label, k.value, k.context) for k in keynums.keynums] == [("Sep 2026 revenue", "€721,755", "+14.9% vs Aug"), ("Orders", "1,242 vs 1,063", None)]
     prose = [b.text for b in doc.blocks if b.kind == "prose"]
+    assert prose[0] == "Order count carried the change; average order value fell."   # the headline is the title, once
     assert "This analysis did not test why the order count rose." in prose
     # each exhibit is captioned by its claim — on the chart when one renders, else on its table
     captions = [b.caption for b in doc.blocks if b.kind in ("chart", "table") and b.caption]
