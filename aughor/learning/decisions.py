@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS decision_record (
     id         TEXT PRIMARY KEY,
     ts         TEXT NOT NULL DEFAULT '',
     org_id     TEXT NOT NULL DEFAULT 'default',
-    site       TEXT NOT NULL DEFAULT '',    -- ask.route | converse.tool | framing.definition | ...
+    site       TEXT NOT NULL DEFAULT '',    -- ask.shape | converse.tool | framing.definition | ...
     conn_id    TEXT NOT NULL DEFAULT '',
     trace_id   TEXT NOT NULL DEFAULT '',
     context    TEXT NOT NULL DEFAULT '',

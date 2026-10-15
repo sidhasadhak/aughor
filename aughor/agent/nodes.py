@@ -12,8 +12,8 @@ from aughor.agent.prompts import (
     DECOMPOSE_PROMPT,
     FIX_SQL_PROMPT,
     PLAN_QUERIES_PROMPT,
+    QUESTION_SHAPE_PROMPT,
     REPLAN_PROMPT,
-    ROUTE_QUESTION_PROMPT,
     SCORE_EVIDENCE_PROMPT,
     SYNTHESIZE_PROMPT,
     format_pitfall_section,
@@ -32,6 +32,7 @@ from aughor.agent.state import (
     QueryResult,
     ReplanDecision,
     RouteDecision,
+    ShapeDecision,
     SQLFix,
     planner_failure_result,
 )
@@ -107,38 +108,47 @@ _DRIVER_RELATIONSHIP_RE = re.compile(
 
 def classify_question(question: str, *, conn_id: str = "", trace_id: str = "",
                       inv_id: str = "") -> tuple[str, RouteDecision]:
-    """Pure classifier — calls LLM and returns (effective_mode, decision).
+    """The body a question runs as in the graph, from its SHAPE — returns (effective_mode, decision).
 
-    Separated from route_question so it can be called and tested independently
-    without constructing a full AgentState. The three provenance ids are optional for
-    exactly that reason and default to empty; a caller that has a run around it passes
-    them so the decision it records can be attributed to a connection and closed by a
-    later human verdict.
-    Low-confidence direct falls back to investigate: false-direct (shallow
-    answer) is worse than false-investigate (extra thoroughness).
+    Code reads the shape first (`agent/question_shape.question_shape`, the one vocabulary for a
+    question's kind), and a model is asked only on the borderline — a question no rule reads —
+    speaking the same four words (`ShapeDecision`). The body (`RouteDecision.mode`, one of the four
+    frozen ``STRUCTURAL_MODES``) is then derived: a describe or a check runs direct, a diagnosis
+    investigates, a survey explores. A low-confidence model shape is read as diagnose — a shallow
+    answer to a deep question is the worse error — and a definitional describe the knowledge
+    base holds takes final_text, without a query.
 
-    final_text path: if the question is definitional/ontological
-    and the KB has a strong match, route to final_text without generating SQL.
+    Separated from route_question so it can be called and tested independently without
+    constructing a full AgentState. The three provenance ids are optional for exactly that
+    reason and default to empty; a caller that has a run around it passes them so the decision
+    it records can be attributed to a connection and closed by a later human verdict.
     """
-    # Cost-tiered routing (test-time scaling): a deterministic complexity assessment
-    # picks the inference role — a simple question is classified by the cheap "fast"
-    # model, a harder one by the frontier "coder" model (it never downgrades a hard
-    # question). See docs/NL2SQL_WINNING_FORMULA_2026.md.
-    from aughor.agent.complexity import assess_complexity, model_role_for
-    _verdict = assess_complexity(question)
-    llm = get_provider(model_role_for(_verdict))
-    decision: RouteDecision = llm.complete(
-        system="You are a routing classifier for a business intelligence agent. Classify questions precisely.",
-        user=ROUTE_QUESTION_PROMPT.format(question=question),
-        response_model=RouteDecision,
-    )
-    effective_mode = decision.mode if decision.confidence >= 0.65 else "investigate"
-
-    # Driver/relationship questions go to investigate (fast cross-sectional comparison), not the
-    # slower explore decomposition — consistent routing for the same question shape.
-    if effective_mode == "explore" and _DRIVER_RELATIONSHIP_RE.search(question or ""):
-        decision.mode = "investigate"
-        effective_mode = "investigate"
+    from aughor.agent.question_shape import SHAPES, body_for, default_depth, question_shape, shape_reading
+    shape = question_shape(question or "", default=None)
+    model_chose, confidence, reasoning = False, 1.0, shape_reading(shape)
+    if shape is None:
+        # Cost-tiered routing (test-time scaling): a deterministic complexity assessment
+        # picks the inference role — a simple question is classified by the cheap "fast"
+        # model, a harder one by the frontier "coder" model (it never downgrades a hard
+        # question). See docs/NL2SQL_WINNING_FORMULA_2026.md.
+        from aughor.agent.complexity import assess_complexity, model_role_for
+        llm = get_provider(model_role_for(assess_complexity(question)))
+        said: ShapeDecision = llm.complete(
+            system="You are a routing classifier for a business intelligence agent. Classify questions precisely.",
+            user=QUESTION_SHAPE_PROMPT.format(question=question),
+            response_model=ShapeDecision,
+        )
+        shape = said.shape if said.confidence >= 0.65 else "diagnose"
+        # Driver/relationship questions are investigations (a fast cross-sectional comparison),
+        # not the slower explore decomposition — consistent routing for the same question shape.
+        if shape == "survey" and _DRIVER_RELATIONSHIP_RE.search(question or ""):
+            shape = "diagnose"
+        model_chose = shape == said.shape
+        confidence = float(said.confidence) if model_chose else 0.0
+        reasoning = said.reasoning
+    effective_mode = body_for(shape, default_depth(shape))
+    decision = RouteDecision(mode=effective_mode, confidence=confidence, reasoning=reasoning,
+                             shape=shape)
 
     # Final-text path: definitional questions that the KB can answer without SQL
     if effective_mode == "direct":
@@ -167,26 +177,22 @@ def classify_question(question: str, *, conn_id: str = "", trace_id: str = "",
         tolerate(_exc, "declarative-mode route override is best-effort; keep the code route",
                  counter="modes.route_override")
 
-    # Decision record: the FINAL route (confidence floor, driver regex, KB path and
-    # manifest overrides included), because that is what a reflex would have to
-    # reproduce — the LLM's raw pick alone is only one input to it. The menu is derived
-    # from RouteDecision's own Literal, never hand-listed beside it.
+    # Decision record: the FINAL shape (the code rules, the confidence floor and the driver
+    # regex included), because that is what a reflex would have to reproduce — the LLM's raw
+    # pick alone is only one input to it. The body is derived from the shape, not chosen, so
+    # it is not recorded as a decision. The menu is the shapes, never hand-listed beside them.
     #
     # The probability must describe the LABEL, not a different one. The model's own
-    # confidence belongs to `decision.mode`; once the 0.65 floor, the driver regex, the KB
-    # path or a manifest override has moved the route, the recorded pick is no longer the
-    # model's and carrying its number across would be a corpus that trains on a number
-    # about some other answer. So an overridden route records as `rule` with no
-    # probability — which is the honest reading, and also the one that keeps
+    # confidence belongs to the shape it said; once the 0.65 floor or the driver regex has
+    # moved it, the recorded pick is no longer the model's and carrying its number across
+    # would be a corpus that trains on a number about some other answer. So an overridden
+    # shape — and one code decided with no model asked — records as `rule` with no
+    # probability, which is the honest reading, and also the one that keeps
     # `corpus_yield`'s with_probability count meaningful.
-    from typing import get_args as _get_args
     from aughor.learning.decisions import record_decision
-    _model_chose = effective_mode == decision.mode
-    record_decision("ask.route", question,
-                    list(_get_args(RouteDecision.model_fields["mode"].annotation)),
-                    chosen=effective_mode,
-                    source="llm" if _model_chose else "rule",
-                    confidence=float(decision.confidence) if _model_chose else 0.0,
+    record_decision("ask.shape", question, list(SHAPES), chosen=shape,
+                    source="llm" if model_chose else "rule",
+                    confidence=confidence if model_chose else 0.0,
                     conn_id=conn_id, trace_id=trace_id, inv_id=inv_id)
     return effective_mode, decision
 

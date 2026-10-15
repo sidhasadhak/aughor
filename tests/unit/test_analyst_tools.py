@@ -627,11 +627,16 @@ def test_the_answer_carries_its_questions_shape(monkeypatch, traffic_db, faux_ll
 
 
 def test_the_route_frame_names_the_shape_the_analyst_serves():
-    """Said before the report lands, so the trace is right while the run streams."""
+    """Said before the report lands, so the trace is right while the run streams — on every
+    turn's route receipt, and the analyst is handed that same shape rather than reading the
+    question again at its own door."""
     import inspect
+    from aughor.agent.ask_router import decide_ask_route
     from aughor.routers import investigations
+    assert decide_ask_route("Do these keys really join?").to_event()["question_shape"] == "check"
+    assert decide_ask_route("Why did revenue fall?", depth_override="deep").to_event()["question_shape"] == "diagnose"
     src = inspect.getsource(investigations)
-    assert '_route_ev["question_shape"] = _shape_of(req.question or "")' in src
+    assert "shape=route.shape" in src and "purpose=purpose, shape=shape" in src
 
 
 def test_a_column_named_for_a_measure_code_measured_is_marked_when_counted_elsewhere():
@@ -896,3 +901,27 @@ def test_a_check_runs_no_intake_and_keeps_the_engine_and_the_clock(monkeypatch, 
     assert "SQL DIALECT" in seen["intake"]["sql_context"] and "TODAY" in seen["intake"]["sql_context"]
     assert [p["phase_id"] for p in seen["phases"]] == ["adhoc_1"]          # no intake phase
     assert [t for t, _ in frames].count("phase_complete") == 1
+
+
+def test_the_analyst_serves_the_shape_the_door_handed_it(monkeypatch, traffic_db, faux_llm):
+    """Decided once, carried: "Revenue in August" reads as diagnose by the shape rules, but the
+    door's classifier read it as a describe — the intake sees that shape in the state, and the
+    report wears it; nothing re-reads the question at the analyst's door."""
+    seen = {}
+
+    def _fake_intake(state, conn=None):
+        seen["state_shape"] = state.get("question_shape")
+        return {"_ada_intake": {**_q1_intake(), "question_shape": state.get("question_shape")},
+                "investigation_phases": []}
+
+    _patch_seams(monkeypatch, traffic_db, intake=_fake_intake,
+                 synthesize=lambda state: {"answer_report": {"headline": "h", "phases": []}})
+    monkeypatch.setattr("aughor.agent.converse_tools.run_sql", lambda cid, args, **kw: {
+        "columns": ["revenue"], "rows": [["7027"]], "row_count": 1, "caveats": []})
+    faux_llm.set_responses(["August revenue: 7,027."])
+    frames: list[tuple] = []
+    an.run_analyst("conn-t", "Revenue in August", persist=False, shape="describe",
+                   emit=lambda t, p: frames.append((t, p)))
+    assert seen["state_shape"] == "describe"
+    reports = [p["answer_report"] for t, p in frames if t == "answer_report"]
+    assert [r.get("question_shape") for r in reports] == ["describe"]

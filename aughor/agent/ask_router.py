@@ -8,12 +8,17 @@ dispatched behind one endpoint without changing either.
 
 Design invariants (from Aughor's prior conclusions — see the design doc §2/§9):
 
-* **Deterministic spine.** ``assess_complexity`` (pure, µs, no model) decides the
-  obvious cases — a clear lookup goes ``quick``; a causal / complex question goes
-  ``deep``. The LLM intent classifier (``classify_question``) is a *secondary signal*
-  invoked **only on the borderline**, so the latency-sensitive quick path pays for no
-  extra model round-trip on the clear cases, and an LLM never sits alone in the
-  decision path (the R4 ablation lesson).
+* **The shape decides, by code first.** A question's SHAPE — describe, check, diagnose,
+  survey (`agent/question_shape.py`, the one vocabulary for a question's kind) — is read
+  from its words with no model; the depth follows the shape (a describe or a check is
+  quick, a diagnosis or a survey is deep), and the body mode is derived from both. The
+  LLM classifier (``classify_question``) is a *secondary signal* consulted **only on the
+  borderline** — a question no rule reads, or a read-ask the complexity assessment finds
+  under-specified — and it speaks the same four words, so the latency-sensitive quick
+  path pays for no extra model round-trip on the clear cases and an LLM never sits alone
+  in the decision path (the R4 ablation lesson).
+* **Agent versus Quick is depth only.** An explicit depth changes the budget, never the
+  frame: a check at ``deep`` is still a check.
 * **License-safe.** ``deep`` requires the ``DEEP_ANALYSIS`` capability; when it is
   absent the route *degrades gracefully* to ``quick`` with a transparent reason
   instead of bypassing the gate or hard-failing.
@@ -30,6 +35,7 @@ from dataclasses import dataclass
 from typing import Callable, Literal, Optional
 
 from aughor.agent.complexity import ComplexityVerdict, assess_complexity
+from aughor.agent.question_shape import body_for, is_wide, question_shape, shape_for_body, shape_reading
 
 Depth = Literal["quick", "deep"]
 
@@ -43,7 +49,7 @@ class AskRoute:
     event the frontend renders as a depth banner with a one-click re-run."""
 
     depth: Depth
-    mode: str                 # door intent: direct | final_text | investigate | explore
+    mode: str                 # body mode (frozen): direct | final_text | investigate | explore
     tier: str                 # complexity tier: simple | moderate | complex
     score: float              # 0..1 difficulty
     confidence: float         # 1.0 for deterministic/explicit; classifier conf on tiebreak
@@ -52,6 +58,7 @@ class AskRoute:
     forced: Optional[str] = None           # override that decided it (not auto)
     downgraded_from: Optional[str] = None  # "deep" when capability-gated down to quick
     used_classifier: bool = False          # did the LLM tiebreak run?
+    shape: str = ""                        # the question's shape: describe | check | diagnose | survey
 
     def to_event(self) -> dict:
         """Serialize for the ``route`` SSE event."""
@@ -67,11 +74,15 @@ class AskRoute:
             "alternatives": alternatives,
             "forced": self.forced,
             "downgraded_from": self.downgraded_from,
+            # The question's shape, on the receipt for every turn — the trace reads it while the
+            # run streams, and the body it is handed to serves it (no re-reading at the door).
+            "question_shape": self.shape,
         }
 
 
 # A classifier returns ``(effective_mode, decision)`` where decision carries
-# ``.confidence`` and ``.reasoning`` — exactly ``classify_question``'s contract.
+# ``.confidence`` and ``.reasoning`` — exactly ``classify_question``'s contract — and,
+# since the two classifiers speak one vocabulary, ``.shape`` when it knows it.
 Classifier = Callable[[str], tuple]
 
 
@@ -85,38 +96,18 @@ def _default_classifier(question: str) -> tuple:
 # ── Wide / landscape detection → the explore wave (R9) ────────────────────────
 # A genuinely BROAD question — "characterize / profile / map the landscape / how does X
 # vary across …" — is answered best by the multi-cut explore subgraph (independent cuts of
-# one landscape), not a single ADA investigation. This is a DETERMINISTIC signal (no model
-# in the routing decision — the R4 ablation lesson) and it YIELDS to causal/driver questions,
-# which are investigations, so it never poaches a real "why". Gated behind `explore.route_wide`
-# (default-off); the already-built explore subgraph is simply unreachable from /ask without it.
-_WIDE_MARKERS = (
-    "overview of", "an overview", "give an overview", "high-level view", "high level view",
-    "landscape", "lay of the land",
-    "characteristics of", "characteristic of", "characterize", "characterise",
-    "profile of", "profile the", "a profile of",
-    "what patterns", "patterns in", "any patterns",
-    "explore the", "explore our", "explore how", "exploring the", "explore ",
-    "map out", "map of the",
-    "vary with", "varies with", "vary across", "varies across",
-    "segment the", "segment our", "customer segments", "what segments", "which segments",
-    "what factors", "which factors", "factors that",
-    "optimal ", "sweet spot", "break-even", "break even", "what is a good",
-)
+# one landscape), not a single ADA investigation. This is the SURVEY shape
+# (`question_shape.is_wide`): deterministic (no model in the routing decision — the R4 ablation
+# lesson), and it yields to causal/driver questions, which are investigations, so it never
+# poaches a real "why". Gated behind `explore.route_wide` (default-off); the already-built
+# explore subgraph is simply unreachable from /ask without it.
 
 
 def is_wide_question(question: str, verdict: ComplexityVerdict) -> bool:
     """Deterministically decide whether a question is a broad *landscape* scan best served by
-    the explore wave. Yields to causal/driver questions (a ``why`` / ``cause`` / ``driver`` is an
-    investigation, never a landscape scan), so a real investigation is never re-routed away."""
-    q = (question or "").strip().lower()
-    if not q:
-        return False
-    if verdict.signals.get("causal", 0) > 0:
-        return False
-    # Imperative "Profile our / characterize the …" — the leading verb IS the landscape ask.
-    if q.startswith(("profile ", "characterize ", "characterise ")):
-        return True
-    return any(m in q for m in _WIDE_MARKERS)
+    the explore wave — the survey shape. ``verdict`` is accepted for the callers that pass it;
+    the causal yield reads the same lexicon the verdict counted."""
+    return is_wide(question)
 
 
 def _route_wide_enabled() -> bool:
@@ -154,9 +145,13 @@ def decide_ask_route(
     and unlike the R9 gate it needs no flag (it is explicit per request).
     """
     verdict = assess_complexity(question or "")
+    # The question's shape, read once by code. None on the borderline — a question no rule
+    # reads — which is the only case the model classifier is asked about.
+    shape = question_shape(question or "", default=None)
 
     def _route(depth: Depth, mode: str, why: str, *, forced: Optional[str] = None,
-               confidence: float = 1.0, used: bool = False) -> AskRoute:
+               confidence: float = 1.0, used: bool = False,
+               shape_said: Optional[str] = None) -> AskRoute:
         downgraded: Optional[str] = None
         if depth == "deep" and not has_deep:
             # Cannot grant deep compute without the licence — degrade, don't bypass.
@@ -169,9 +164,13 @@ def decide_ask_route(
             depth=depth, mode=mode, tier=verdict.tier, score=verdict.score,
             confidence=confidence, ambiguous=verdict.ambiguous, why=why,
             forced=forced, downgraded_from=downgraded, used_classifier=used,
+            # The shape is the question's, whatever body an override pinned; when the
+            # question's words read as none, the body implies one.
+            shape=shape or shape_said or shape_for_body(mode),
         )
 
-    # 1) Explicit overrides — deterministic, no model call. ───────────────────────
+    # 1) Explicit overrides — deterministic, no model call. A forced depth changes the budget,
+    #    never the frame: the shape rides the route and the body keeps it. ─────────────────
     if mode_override in ("investigate", "explore"):
         return _route("deep", mode_override,
                       "running the starter's chosen research path", forced="mode")
@@ -185,37 +184,41 @@ def decide_ask_route(
         return _route("quick", "direct", "answering directly, as you asked",
                       forced="quick")
     if depth_override == "deep":
-        return _route("deep", "investigate", "investigating, as you asked",
+        return _route("deep", body_for(shape or "diagnose", "deep"), "investigating, as you asked",
                       forced="deep")
 
-    # A check — do these keys join, are there orphans, does one table agree with another — is
-    # answered in a step or two with a verdict and its counts; left to the classifier it was
-    # "investigate", and the deep body framed a metric, a date and a window for it (LuxExperience
-    # d14f276b, 2026-10-15). Decided by code from the question, like the Agent turn's own shape.
-    from aughor.agent.investigate import question_shape
-    if question_shape(question or "") == "check":
-        return _route("quick", "direct", "checking the data directly — a verdict and its counts")
+    # 2) Auto — the shape decides, by code first. The obvious cases never touch the model. ──
 
-    # 2) Auto — deterministic-first. The obvious cases never touch the model. ──────
+    # 2a) A survey → the explore wave (R9, deterministic, flag-gated). The flag is read only
+    #     AFTER the (pure) shape read says survey — so a normal question never touches the
+    #     flag store. Degrades to quick with no capability via ``_route``. With the wave off,
+    #     a survey is read for depth like any question before it was named (2c below).
+    if shape == "survey" and (route_wide if route_wide is not None else _route_wide_enabled()):
+        return _route("deep", "explore", shape_reading("survey"))
+
+    # 2b) A check is a verdict and its counts — a step or two; a diagnosis is an investigation.
+    #     Left to the classifier a check was "investigate", and the deep body framed a metric, a
+    #     date and a window for it (LuxExperience d14f276b, 2026-10-15).
+    if shape == "check":
+        return _route("quick", "direct", shape_reading("check"))
+    if shape == "diagnose":
+        return _route("deep", "investigate", shape_reading("diagnose"))
+
+    # 2c) A describe is quick — unless the complexity assessment reads a multi-step question,
+    #     which takes the analyst's budget and keeps its frame (depth, not kind). An
+    #     under-specified read-ask ("how is performance lately?") is the borderline below.
+    #     A survey with the wave off follows the same depth rule.
     causal = verdict.signals.get("causal", 0) > 0
+    if shape in ("describe", "survey") and not verdict.ambiguous:
+        if causal or verdict.tier == "complex":
+            return _route("deep", "investigate",
+                          "this asks for a multi-step read — measured with the deeper budget")
+        if verdict.tier == "simple" or shape == "describe":
+            return _route("quick", "direct", "a direct lookup")
 
-    # 2a) Wide / landscape scan → the explore wave (R9, deterministic, flag-gated). A broad
-    #     "characterize / map the landscape / how does X vary across …" question fans out
-    #     better than one ADA investigation. is_wide_question already excludes causal 'why's,
-    #     and the flag is read only AFTER the (pure) wide check matches — so a normal question
-    #     never touches the flag store. Degrades to quick with no capability via ``_route``.
-    if is_wide_question(question, verdict) and (
-            route_wide if route_wide is not None else _route_wide_enabled()):
-        return _route("deep", "explore", "mapping this out as a landscape scan")
-
-    if causal or verdict.tier == "complex":
-        return _route("deep", "investigate",
-                      "this asks for a cause or a multi-step breakdown")
-    if verdict.tier == "simple" and not verdict.ambiguous:
-        return _route("quick", "direct", "a direct lookup")
-
-    # 3) Borderline (moderate, or simple-but-ambiguous) — the LLM intent classifier
-    #    breaks the tie. This is the only path that pays for a routing model call.
+    # 3) Borderline — a question no rule reads, an ambiguous read-ask, or a moderate survey with
+    #    the wave off: the LLM classifier breaks the tie, speaking the same four shapes. This is
+    #    the only path that pays for a routing model call.
     classify = classifier or _default_classifier
     try:
         effective_mode, decision = classify(question)
@@ -227,4 +230,4 @@ def decide_ask_route(
         "investigating" if depth == "deep" else "answering directly")
     return _route(depth, effective_mode, why,
                   confidence=float(getattr(decision, "confidence", 1.0) or 1.0),
-                  used=True)
+                  used=True, shape_said=getattr(decision, "shape", "") or None)

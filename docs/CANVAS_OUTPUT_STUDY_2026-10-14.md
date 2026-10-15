@@ -511,3 +511,32 @@ ask or moves a rule into a check; none adds a call.
   share in code. Tests: `test_question_shape.py` (check cases, roster, rules, the door, the router),
   `test_analyst_tools.py` (a check runs no intake), `InvestigationReport.concluded.test.tsx`,
   `chartTypeInference.test.ts`. Not proven live (a run costs a model call).
+* **One taxonomy (2026-10-15, the user: "one taxonomy for both classifiers, so the word for a question's kind means
+  one thing everywhere").** Measured: the quick router's model classifier spoke the body it would dispatch to
+  (`RouteDecision.mode`: direct · investigate · explore · final_text — the four frozen `STRUCTURAL_MODES`, persisted
+  on every checkpointed run), the Agent turn spoke its own shape (describe · check · diagnose), and the ask router
+  consulted the model on every "moderate" question while the Agent read the same question by code. Built: a
+  question's **shape** is the one word for its kind — describe · check · diagnose · **survey** (the wide/landscape
+  detector, moved in from the router) — in one light module, `aughor/agent/question_shape.py`, with the rules in
+  order (why outranks everything; a landscape ask is a survey; advice or a weakness hunt is a diagnosis; a check's own
+  words make a check; a clear ask to read is a describe) and a caller-chosen `default` for a question no rule reads:
+  the Agent keeps its investigation, the router asks the model. The body is DERIVED — `body_for(shape, depth)`,
+  `default_depth(shape)` — never asked of a model: the classifier the router consults on the borderline answers in the
+  same four words (`ShapeDecision`, `QUESTION_SHAPE_PROMPT`), the floor reads a low-confidence shape as diagnose, and
+  the decision is recorded under `ask.shape` against the four-shape menu (a shape code decided records as `rule` with
+  no probability). `decide_ask_route` is shape-first: a check is quick, a diagnosis is deep, a describe is quick unless
+  the complexity tier is complex (depth is budget, not kind), a survey takes the explore wave under its flag, and the
+  model is asked only for a question no rule reads or an under-specified read-ask — so "Compare revenue by region …"
+  now routes quick with no model call where it used to pay for one. Decided ONCE and carried: the route receipt names
+  `question_shape` on every turn; the analyst is handed `shape=route.shape` (`run_analyst(shape=…)`, into the state
+  the intake reads) instead of re-reading the question at its door; the conversation body carries the check's
+  stopping rule (`CHECK_RULE`, stated once for both bodies) for a check; the quick page draws a check's one-row result
+  as a table of its counts, not metric tiles, and charts a check only on a real dimension (a count by platform is a
+  bar); the trace reads all four shapes. Behaviour named: "what drives X" (a why-word) is a diagnosis at both doors
+  where the router's wide markers had sent it to the wave; a weakness hunt ("which category is weakest") is a
+  diagnosis and so deep under auto, where the complexity tier had read it as a simple ranking. GLOSSARY: **Shape**
+  row; the frozen modes are bodies. Tests: `test_question_shape.py` (survey, default, body table, one shape at both
+  doors, depth by shape, the rule stated once), `test_ask_router.py` (the borderline is a shape-less question; a
+  moderate describe needs no model; the shape rides the route), `test_classify_question_re.py`,
+  `test_decision_records.py` (`ask.shape`), `test_analyst_tools.py` (the analyst serves the shape it is handed),
+  `ThinkingTrace.shape.test.ts`, `ChatMessage.check.test.tsx`. Not proven live (a run costs a model call).

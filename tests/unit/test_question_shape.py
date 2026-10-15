@@ -380,3 +380,95 @@ def test_the_ask_router_answers_a_check_quickly_unless_told_otherwise():
     assert (auto.depth, auto.mode) == ("quick", "direct") and "verdict" in auto.why
     forced = decide_ask_route("Do Event and Platform really join on these keys?", depth_override="deep")
     assert forced.depth == "deep" and forced.forced == "deep"
+
+
+# ── One vocabulary for a question's kind (2026-10-15) ─────────────────────────────────────────
+# Until this date the quick router's classifier spoke the body it dispatched to (direct /
+# investigate / explore) and the Agent turn spoke its shape (describe / diagnose); the same
+# question was read differently at the two doors. The shape is now decided once, by code first,
+# in `agent/question_shape.py`, and the body is derived from it.
+
+from aughor.agent.question_shape import (  # noqa: E402
+    CHECK_RULE, SHAPES, body_for, default_depth, is_wide, question_shape, shape_for_body,
+)
+
+
+def _no_model(q):
+    raise AssertionError(f"no model is asked for a question code reads: {q!r}")
+
+
+def _routed_by_code(route) -> bool:
+    """The router swallows a failing classifier into "investigating to be thorough" — so a route is
+    code's only when it says no classifier ran (the mutation-test lesson: a guard can pass for the
+    wrong reason)."""
+    return route.used_classifier is False and route.why != "investigating to be thorough"
+
+
+@pytest.mark.parametrize("q", [
+    "How does conversion vary across channels and regions?",
+    "Profile our product catalog",
+    "What are the characteristics of our highest-LTV customers?",
+    "Give an overview of the customer base",
+])
+def test_a_landscape_question_is_a_survey(q):
+    assert question_shape(q) == "survey"
+
+
+def test_asking_why_outranks_the_survey_words():
+    assert question_shape("Explore why customer churn is rising") == "diagnose"
+    assert is_wide("Explore why customer churn is rising") is False
+
+
+@pytest.mark.parametrize("q", ["Revenue in August", "total revenue by region last month",
+                               "Net revenue by region versus last quarter"])
+def test_a_question_no_rule_reads_takes_the_caller_s_default(q):
+    assert question_shape(q) == "diagnose"            # the Agent turn keeps its investigation
+    assert question_shape(q, default=None) is None    # the router asks the model
+
+
+def test_the_body_is_derived_from_the_shape_and_the_depth():
+    assert SHAPES == ("describe", "check", "diagnose", "survey")
+    assert [body_for(s, "quick") for s in SHAPES] == ["direct"] * 4
+    assert [body_for(s, "deep") for s in SHAPES] == ["investigate", "investigate", "investigate", "explore"]
+    assert [default_depth(s) for s in SHAPES] == ["quick", "quick", "deep", "deep"]
+    assert [shape_for_body(m) for m in ("direct", "investigate", "explore", "final_text")] == \
+        ["describe", "diagnose", "survey", "describe"]
+
+
+def test_the_router_and_the_agent_read_one_shape():
+    """The same function at both doors: the route's shape is the analyst's shape, and a
+    question code reads costs no model call at the door."""
+    from aughor.agent.ask_router import decide_ask_route
+    for q in ASKED + CHECKS + ["Why did revenue drop in August?", "Profile our product catalog",
+                               "Which product category is weakest by revenue?"]:
+        route = decide_ask_route(q, classifier=_no_model)
+        assert _routed_by_code(route) and route.shape == question_shape(q), q
+
+
+def test_depth_follows_the_shape_under_auto():
+    from aughor.agent.ask_router import decide_ask_route
+    routes = [decide_ask_route(q, classifier=_no_model) for q in
+              (ASKED[0], CHECKS[0], "Why did revenue drop in August?")]
+    assert all(_routed_by_code(r) for r in routes)
+    assert [r.depth for r in routes] == ["quick", "quick", "deep"]
+    r = decide_ask_route("Profile our product catalog", classifier=_no_model, route_wide=True)
+    assert _routed_by_code(r) and (r.depth, r.mode, r.shape) == ("deep", "explore", "survey")
+    # The wave off: a survey is read for depth like any question before it was named.
+    off = decide_ask_route("Profile our product catalog", classifier=_no_model, route_wide=False)
+    assert _routed_by_code(off) and (off.depth, off.shape) == ("quick", "survey")
+    # An under-specified read-ask is the borderline: the classifier is asked, and a failing one
+    # leaves the turn deep rather than shallow.
+    vague = decide_ask_route("How is performance lately?", classifier=_no_model)
+    assert vague.ambiguous and not _routed_by_code(vague) and vague.depth == "deep"
+
+
+def test_the_check_rule_is_stated_once_for_every_body():
+    """The analyst's system prompt and the conversation's carry the same stopping rule for a
+    check — and the conversation's prompt for any other shape does not."""
+    from aughor.agent.converse_tools import converse_system_prompt
+    assert CHECK_RULE in analyst_system_prompt("c", {}, 12, shape="check")
+    with_check = converse_system_prompt("c", question=CHECKS[0])
+    assert CHECK_RULE in with_check and "verdict first" in with_check
+    assert CHECK_RULE not in converse_system_prompt("c", question=ASKED[0])
+    # The door's decision wins over the question's words: a borderline the model read as a check.
+    assert CHECK_RULE in converse_system_prompt("c", question="Revenue in August", shape="check")

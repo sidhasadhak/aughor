@@ -1854,14 +1854,10 @@ def _check_rules(budget: int, conclude: bool = False) -> list[str]:
         "found, each figure read from a row; then what you did not check. No cause, no recommendation, "
         "no period the question did not name.",
     ])
+    from aughor.agent.question_shape import CHECK_RULE
     return [
-        f"You have at most {budget} tool calls. This question asks you to VERIFY a property of the data — "
-        "whether keys join, whether rows match, whether values are present, unique or consistent — not "
-        "to measure a business figure or to explain a movement. STOPPING RULE: decide what would make "
-        "the answer yes or no, measure exactly that with counts (rows, matches, orphans, duplicates, "
-        "nulls — one query can carry several), and stop when the verdict is evidenced. Read a table's "
-        "columns first when you are unsure of a key (`describe_table`). Frame no metric, no period and "
-        "no baseline, and look for no cause or anomaly the question did not ask about.",
+        f"You have at most {budget} tool calls. {CHECK_RULE} Read a table's columns first when you are "
+        "unsure of a key (`describe_table`).",
         "",
         *closing,
     ]
@@ -2146,8 +2142,14 @@ def run_analyst(
     max_steps: Optional[int] = None,
     persist: bool = True,
     purpose: str = "",
+    shape: Optional[str] = None,
 ) -> AnalystResult:
     """One deep turn as the analyst: intake once, then the loop, then the narrator.
+
+    ``shape`` is the question's shape the door decided (`agent/question_shape`) — describe,
+    check, diagnose or survey — carried in so the roster, the stopping rule, the report and the
+    trace all serve the shape the route named. None when the turn came through a door that
+    decided none; the shape is then read from the question here.
 
     ``emit`` receives the turn's frames — ``phase_complete`` per phase a tool lands,
     the run_sql receipts, and the terminal ``answer_report`` — in the exact wire
@@ -2185,8 +2187,10 @@ def run_analyst(
         # Intake — once. The spec anchor: metric resolution, the coverage clamp, the
         # no-prior-period verdict, the origin/follow-up anchoring. Its phase streams
         # like any other so the user sees the spec land.
-        from aughor.agent.investigate import question_shape
-        if question_shape(question) == "check":
+        from aughor.agent.question_shape import question_shape
+        shape = shape or question_shape(question)
+        state["question_shape"] = turn.state["question_shape"] = shape
+        if shape == "check":
             # A check frames no metric, no date and no window, so the intake has nothing to decide:
             # its spec for one was an invention (LuxExperience d14f276b, 2026-10-15: "event
             # attendance records (rows available to join)", a date, the data's whole span). The
@@ -2216,9 +2220,8 @@ def run_analyst(
                                  investigation_id=inv_id, context_timings=context_timings)
 
         budget = max_steps if max_steps is not None else profile_for("coder").deep_loop_steps
-        # Item 3: measure-and-state or investigate, decided by code from the question.
-        from aughor.agent.investigate import question_shape
-        shape = (turn.intake or {}).get("question_shape") or question_shape(question)
+        # Item 3: measure-and-state, check or investigate — the shape the door carried in.
+        shape = (turn.intake or {}).get("question_shape") or shape
         tools = analyst_tools(turn, emit=emit, session_id=session_id,
                               canvas_id=canvas_id, user_question=question, shape=shape)
         # A further measure tied to a governed metric is measured by code before the analyst's

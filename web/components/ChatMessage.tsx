@@ -378,10 +378,15 @@ function ResultFigure({
   // Only chart once every row is shaped to the column count — a half-streamed
   // row would otherwise feed the chart malformed points.
   const chartDataReady = rows.length > 0 && rows.every(r => Array.isArray(r) && r.length >= columns.length);
+  // A check (route shape "check") verifies the data: its results are tables — the counts a verdict
+  // rests on are read, not plotted — unless one has a real dimension; a count by platform is a bar.
+  const isCheck = turn.route?.shape === "check";
   const explicitChart = chartType && chartType !== "auto";
-  const showChart = (explicitChart
-    ? hasNum
-    : rows.length >= 3 && hasNum && (hasDate || hasCat)) && chartDataReady;
+  const showChart = (isCheck
+    ? rows.length >= 2 && hasNum && hasCat
+    : explicitChart
+      ? hasNum
+      : rows.length >= 3 && hasNum && (hasDate || hasCat)) && chartDataReady;
 
   const sourceTitle = inferSourceTitle(columns, rows);
 
@@ -394,7 +399,7 @@ function ResultFigure({
     });
   }
 
-  if (isSingleRow && hasNum) {
+  if (isSingleRow && hasNum && !isCheck) {
     return <BriefMetrics metrics={columnsToMetrics(columns, rows)} />;
   }
 
@@ -402,7 +407,7 @@ function ResultFigure({
     return (
       <div className="flex flex-col gap-1.5">
         <BriefFigure caption={sourceTitle} source={source}>
-          <ResultChartCard columns={columns} rows={rows} chartType={chartType} chartConfig={turn.chartConfig} title={sourceTitle} />
+          <ResultChartCard columns={columns} rows={rows} chartType={isCheck ? "bar" : chartType} chartConfig={turn.chartConfig} title={sourceTitle} />
         </BriefFigure>
         {onShowSource && (
           <Button

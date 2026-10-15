@@ -79,7 +79,7 @@ def _read_for_its_shape(frame: Optional[Frame]) -> Optional[Frame]:
     """A question that asks to SEE the data tests no driver, and its reading names none: Q3's ended "Starting from
     Order (orders); testing revenue, gender, status." over a table of monthly revenue (2026-10-03)."""
     if frame is not None and frame.defines:
-        from aughor.agent.investigate import question_shape
+        from aughor.agent.question_shape import question_shape
         if question_shape(frame.question) in ("describe", "check"):
             frame.reading = frame_reading(frame, tests=False)
     return frame

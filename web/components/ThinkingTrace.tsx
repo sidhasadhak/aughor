@@ -37,10 +37,17 @@ export function turnToTraceState(turn: ChatTurn, running: boolean): Investigatio
   };
 }
 
-/** What the route step says of a question's shape: a describe answer measured what was asked and
- *  tested no hypotheses — "Multi-hypothesis analysis" was said of every Agent answer. */
+/** What the route step says of a question's shape — describe · check · diagnose · survey, the one
+ *  vocabulary for a question's kind. A describe answer measured what was asked and tested no
+ *  hypotheses; "Multi-hypothesis analysis" was once said of every Agent answer. */
 export function shapeReading(shape?: string | null): string | null {
-  return shape === "describe" ? "Measured what was asked" : null;
+  switch (shape) {
+    case "describe": return "Measured what was asked";
+    case "check":    return "Checked the data — a verdict and its counts";
+    case "diagnose": return "Looked for the cause";
+    case "survey":   return "Mapped the landscape";
+    default:         return null;
+  }
 }
 
 type StepStatus = "pending" | "running" | "done" | "error";

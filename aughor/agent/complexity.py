@@ -65,6 +65,12 @@ def _hits(text: str, lexicon) -> list[str]:
     return [w for w in lexicon if w in text]
 
 
+def causal_hits(text: str) -> list[str]:
+    """The causal words ``text`` carries — the one lexicon the depth signal here and the question's
+    shape (`agent/question_shape.is_wide`, which yields to a cause) both read."""
+    return _hits((text or "").lower(), _CAUSAL)
+
+
 @dataclass(frozen=True)
 class ComplexityVerdict:
     """The deterministic assessment of a question's difficulty."""
@@ -93,7 +99,7 @@ def assess_complexity(question: str, schema_context: str = "") -> ComplexityVerd
     words = re.findall(r"[a-z0-9_]+", q)
     n_words = len(words)
 
-    causal = _hits(q, _CAUSAL)
+    causal = causal_hits(q)
     compare = _hits(q, _COMPARE)
     aggregate = _hits(q, _AGGREGATE)
     temporal = _hits(q, _TEMPORAL)

@@ -22,6 +22,7 @@ from aughor.agent.state import (
 )
 from aughor.tools.executor import format_result_for_llm
 from aughor.agent.progress import emit_phase_progress
+from aughor.agent.question_shape import is_diagnostic_question, question_shape
 from aughor.agent.sql_context import window_filter
 from aughor.tools.stats import analyze_query_result
 from aughor.tools.table_names import bare as _bare  # aliased — local vars named `bare` shadow it
@@ -1199,69 +1200,19 @@ def _is_descriptive_question(question: str) -> bool:
     to see the data.
     """
     q = question or ""
-    if _is_temporal_change_question(q) or _is_diagnostic_question(q):
+    if _is_temporal_change_question(q) or is_diagnostic_question(q):
         return False
     if _CAUSE_WORDS_RE.search(q):
         return False
     return bool(_DESCRIPTIVE_ASK_RE.search(q))
 
 
-#: Words that ask WHY — for a cause, a driver or an explanation. Narrower than
-#: `_CAUSE_WORDS_RE` on purpose: "which months grew or shrank the most" asks WHAT moved,
-#: which is still a question about the data, and that class counts "grew" as a cause.
-_ASKS_WHY_RE = re.compile(
-    r"\b(why|reasons?|caus\w*|drove|drive[sn]?|driv(?:er|ers|ing)|behind|explain\w*|"
-    r"contribut\w*|attribut\w*|responsible|root)\b", re.I)
-#: Words that ask what to DO about the data, or where something is wrong in it.
-_ASKS_ADVICE_RE = re.compile(
-    r"\b(should|optimi[sz]\w*|improve\w*|recommend\w*|opportunit\w*|anomal\w*|unusual|"
-    r"reduce)\b|\bhow (?:can|could|should) we\b", re.I)
-#: The ask to read the data: a question word, or a request to see or compare it.
-_ASKS_TO_READ_RE = re.compile(
-    r"\b(what|what's|which|who|when|where|how (?:many|much|long|often|has|have|had|did|does|"
-    r"do|is|are|was|were)|show|list|give me|display|compare|rank)\b", re.I)
-#: The ask to VERIFY a property of the data or the model — do these keys join, are there duplicates
-#: or orphans, does one table agree with another, is a value ever null or out of range — in a
-#: check's own words. Customers who "joined in March" name no key and are not one. Conservative,
-#: like the read-ask: a question that could be read either way keeps the investigation.
-_ASKS_TO_VERIFY_RE = re.compile(
-    r"\b(?:verif\w*|validat\w*|confirm(?:s|ed)?\s+(?:that|whether|if)|sanity[- ]check\w*|"
-    r"check(?:s|ed|ing)?\s+(?:whether|that|if|for)|is\s+it\s+true|"
-    r"really\s+(?:join|match|agree|correspond|belong|exist)\w*|"
-    r"duplicat\w*|dupes?|orphan\w*|nulls?|missing\s+(?:values?|rows?|keys?|ids?|records?)|"
-    r"uniqueness|unique\s+(?:keys?|ids?|values?)|referential\s+integrity|(?:foreign|primary|join)\s+keys?|"
-    r"join(?:s|ed|ing)?\s+(?:on|to|with|cleanly|correctly|properly)|"
-    r"(?:match(?:es)?|agree(?:s)?|line\s+up|reconcil\w*|consistent)\s+(?:with|to|between|on|across|each\s+other)|"
-    r"out\s+of\s+range|invalid|malformed|data\s+quality|integrity)\b", re.I)
-
-
-def question_shape(question: str) -> str:
-    """How an Agent turn should work the question: ``"describe"``, ``"check"`` or ``"diagnose"``.
-
-    A describe question asks to SEE the data — a figure, a ranking, a trend, a comparison
-    across segments or periods. It is answered by measuring what was asked and stating it.
-    A check question asks to VERIFY a property of the data or the model — whether keys join,
-    whether rows match, whether values are present, unique or consistent (`_ASKS_TO_VERIFY_RE`).
-    It frames no metric, no window and no cause: it is answered with a verdict and the counts
-    that carry it. Measured 2026-10-15 on LuxExperience (d14f276b): "Do Event and Platform
-    really join on these keys?" fell to diagnose, and the intake invented a metric, a date and
-    a window for it; the quick path answered the same question in one step with a verdict.
-    Everything else keeps the investigation it always had: asking why, asking what to do,
-    or hunting where value is weak or lost (`_is_diagnostic_question`).
-
-    Measured 2026-09-29 on five theLook questions, all of the describe shape: the analyst,
-    told to stop only "when a cause is named with its size", answered an unasked 2024-vs-2025
-    comparison; and where it did answer — a table of all ten distribution centres, a table
-    of twelve months — the writer replaced it with speculation, a recommendation over a
-    0.15-day spread and data gaps nobody asked about. Decided by code from the question
-    alone, like `descriptive_only`, and conservative: only a clear ask to read, with no why,
-    advice or weakness vocabulary, is "describe" — anything unclear keeps the investigation."""
-    q = question or ""
-    if _ASKS_WHY_RE.search(q) or _ASKS_ADVICE_RE.search(q) or _is_diagnostic_question(q):
-        return "diagnose"
-    if _ASKS_TO_VERIFY_RE.search(q):
-        return "check"
-    return "describe" if _ASKS_TO_READ_RE.search(q) else "diagnose"
+#: A question's SHAPE — describe · check · diagnose · survey — is one vocabulary for the whole
+#: platform, decided in `agent/question_shape.py` (imported at the top of this module) and read here
+#: under the names this module always used. The Agent turn's default for a question no rule reads
+#: is "diagnose": an unclear question keeps the investigation it always had (measured 2026-09-29 on
+#: five theLook questions — the cost of the other error was a writer replacing a table of ten
+#: centres with speculation).
 
 
 #: A period the question NAMES: a year, a month, a quarter, a date, or a relative window
@@ -1285,7 +1236,7 @@ _COMPARISON_ASKED_RE = re.compile(
     r"yoy|mom|qoq|wow)\b", re.I)
 
 
-def periods_asked(question: str) -> tuple[bool, bool]:
+def periods_asked(question: str, shape: Optional[str] = None) -> tuple[bool, bool]:
     """``(period_named, comparison_asked)`` — what a question that asks to SEE the data
     says about time. Item 4, decided by code from the question like `question_shape`.
 
@@ -1301,7 +1252,7 @@ def periods_asked(question: str) -> tuple[bool, bool]:
     comparison word keeps the comparison, and a change question names its period implicitly
     (the most recent complete one)."""
     q = question or ""
-    if question_shape(q) not in ("describe", "check"):
+    if (shape or question_shape(q)) not in ("describe", "check"):
         return True, True
     asked = bool(_COMPARISON_ASKED_RE.search(q)) or _is_temporal_change_question(q)
     return asked or bool(_PERIOD_NAMED_RE.search(q)), asked
@@ -5751,24 +5702,13 @@ def _reframe_on_pop_duration_mismatch(synth, intake_data, question: str = "") ->
     return True
 
 
-_DIAGNOSTIC_RE = re.compile(
-    r"where are we losing|losing money|\b(where|which|what)\b[^?]*\b(losing|lose|lost|leak\w*|"
-    r"weak\w*|worst|lowest|underperform\w*|hurting|dragging|bleeding|inefficien\w*)\b",
-    re.IGNORECASE,
-)
-
-
-def _is_diagnostic_question(q: str) -> bool:
-    """Cross-sectional 'where/which is weakest / where are we losing money' questions — these ask
-    WHICH SEGMENT, so they run a dimensional weakness scan.
-
-    They do NOT imply the data has no time axis. That sentence used to live here (and in the intake
-    prompt) and it was load-bearing in the wrong direction: it turned a property of the QUESTION into
-    a claim about the SCHEMA, and a "where are we losing money?" run over a warehouse carrying ten
-    date columns skipped the entire temporal battery. Whether a time axis exists is resolved
-    deterministically by `_resolve_temporal_axis`; this predicate answers a different question.
-    """
-    return bool(_DIAGNOSTIC_RE.search(q or ""))
+#: `is_diagnostic_question` — cross-sectional "where/which is weakest / where are we losing money"
+#: questions, which ask WHICH SEGMENT and so run a dimensional weakness scan — lives with the
+#: question's shape (`agent/question_shape.py`) and is read here under its own name. It does NOT
+#: imply the data has no time axis: that sentence used to live beside it and was load-bearing in
+#: the wrong direction, turning a property of the QUESTION into a claim about the SCHEMA, so a
+#: "where are we losing money?" run over ten date columns skipped the temporal battery. Whether a
+#: time axis exists is resolved deterministically by `_resolve_temporal_axis`.
 
 
 #: A question about money being LOST — a negative outcome — rather than money being SPENT.
@@ -6752,6 +6692,9 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         IntakeAsk, IntakeOutput)
 
     question = state["question"]
+    # The question's shape — the door decided it and the analyst carried it into the state, or
+    # this turn came through a door that decided none and the question's words say it here.
+    _shape = state.get("question_shape") or question_shape(question)
     # Size the intake caps to the bound model's window (Layer A, §5b.3): unchanged on a
     # large context, tighter on a small BYO model so the curated payload fits instead of
     # overflowing. Defaults preserved exactly when the window is generous.
@@ -7025,7 +6968,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         # A populated comparison_segment_sql means intake recognised a DRIVER question —
         # force cross-sectional so it routes to the group comparison, never a blind trend.
         has_segment = bool((getattr(intake, "comparison_segment_sql", "") or "").strip())
-        if _is_diagnostic_question(question) or no_time or has_segment:
+        if is_diagnostic_question(question) or no_time or has_segment:
             intake.cross_sectional = True
 
         # F1 — temporal-change premise OVERRIDES the cross-sectional flag. "What drove the CHANGE /
@@ -7245,7 +7188,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         # Every path, cross-sectional included: the window reaches the SQL prompts either way.
         # Item 4: the periods the question asked for, and no others — decided before the clamp,
         # which reads `comparison_asked` and would otherwise supply a preceding window.
-        intake.period_named, intake.comparison_asked = periods_asked(question)
+        intake.period_named, intake.comparison_asked = periods_asked(question, _shape)
         if not intake.comparison_asked:
             intake.comparison_start = intake.comparison_end = intake.comparison_label = ""
             intake.yoy_start = intake.yoy_end = None
@@ -7342,7 +7285,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     # A question that asks to SEE the data is measured across its groups, not scanned for a weakness it never
     # named: "which centres are slowest" read "rank the metric … to find where value is weakest, and trend it …
     # whether the weakness is growing" (theLook fulfilment, 2026-10-01), and nothing of the kind ran.
-    _describe = question_shape(question) == "describe"
+    _describe = _shape == "describe"
     if intake.cross_sectional:
         _spec_rows = [
             ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
@@ -7471,8 +7414,9 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     intake_dict["sql_context"] = sql_context(conn, coverage_end=_cov_max or "",
                                              settle_days=_settle_days)
     # Item 3: how an Agent turn works this question — measure and state it ("describe"), or
-    # investigate it ("diagnose"). Decided by code from the question, like `descriptive_only`.
-    intake_dict["question_shape"] = question_shape(question)
+    # investigate it ("diagnose"). The shape the door decided and carried in, or read from the
+    # question here when the turn came through a door that decided none.
+    intake_dict["question_shape"] = _shape
 
     # Enrich with ontology entity context (best-effort — never crash the intake)
     try:
