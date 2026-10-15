@@ -390,4 +390,29 @@ ask or moves a rule into a check; none adds a call.
   identifier the formula reads; else the first analysed column, which the planners write first), and the
   verdict names it: "σ = 0.19 on revenue — within normal variance". Unit-tested on measured series
   (`test_phase_verdict_p5.py`), not re-proven live.
-* Still open from §6: P6.
+* **P6 built (2026-10-15, the user's "lets take P6 next") — the premise re-measured first.** §6 said the History
+  panel and the chat turn render two objects. Measured on `2f8ad418`: the `answer_report` frame the chat turn
+  renders and the stored report History renders are field-identical (the store adds `_report_type` and
+  `envelope`), and both go through `InvestigationReportView`; History reads the stored `_report_type` before it
+  sniffs a field. That half of P6 was closed by construction. What was still rendered twice was the answer and
+  its **envelope** — the folded object the doors that are not the canvas read (Slack, the export, a scheduled
+  send, the fact-checker): headline, the executive summary as body, the data gaps as caveats, a grid only when
+  the model had tabulated in prose. For a concluded answer (P1) that is a prose-only fold: `2f8ad418`'s stored
+  envelope carried 0 figures, 0 exhibits, no grid and no gaps sentence while the canvas drew four of each.
+  Built: the envelope is **version 2** and carries the concluded answer's structure — `figures`, `exhibits`
+  (each cited result with its claim as the grid's caption, its chart decision and its phase's caveats, rows capped
+  as the canvas caps them, a pruned citation left out as the canvas leaves it out) and `gaps` — folded from the
+  report once (`_exhibits_of`); the one-grid door takes the first exhibit under its claim; the Slack selection
+  reads headline · figures line · body · gaps and prints the claim over the fenced table; the export routes a
+  concluded report to the envelope builder — Summary (headline, figures as key numbers, the answer, the gaps) ·
+  Evidence (each exhibit under its claim) · Caveats · Next (the report's recommendations) — and keeps the
+  phase-by-phase builder for a phase-script run, which names no exhibits; the Slack bot prints the figures line
+  and the gaps from the `answer_report` frame as it prints the headline. A report without the structure folds as
+  before. Proof without a model call: `2f8ad418`'s stored report folded through the new fold → 4 figures, 4
+  exhibits (z-score, orders-vs-AOV, by channel, by region), the gaps sentence, the first exhibit as the grid; its
+  Slack message and its export read in the canvas's order. The envelope stored on a run is the one folded at its
+  end, so runs before this carry v1; a new run folds v2 — not re-proven live. Tests: `test_answer_envelope.py`
+  (five cases), `bots/slack/src/aughor.test.ts`. Not done, named: the web still renders the report, not the
+  envelope (the envelope frame stays unrendered there by design — the parts were already drawn from the frames);
+  the Slack bot renders the first exhibit only, as its one-grid rule says.
+* §6 is closed: P1–P6 built; the named-not-done items above remain.

@@ -54,9 +54,23 @@ class SlackSelection:
     chart: Optional[ChartDecision] = None
 
 
+def figures_line(env: AnswerEnvelope) -> str:
+    """The figures the answer rests on, in one line — `label value (note) · …` — as the canvas
+    shows them in its figure row. Empty for an answer that stated none."""
+    parts = []
+    for f in env.figures:
+        if not f.value.strip():
+            continue
+        head = f"{f.label.strip()} {f.value.strip()}".strip()
+        parts.append(f"{head} ({f.note.strip()})" if f.note.strip() else head)
+    return " · ".join(parts)
+
+
 def select_for_slack(env: AnswerEnvelope, *, money_symbol: str = "") -> SlackSelection:
-    """Headline + body + the grid once + the top caveats. Nothing else."""
-    text = "\n\n".join(p for p in (env.headline.strip(), env.body.strip()) if p)
+    """Headline + the figures line + body + what was left unanswered + the grid once + the top
+    caveats. Nothing else. P6 (2026-10-15): the grid is the first result the answer cites,
+    captioned by its claim, so a thread reads the exhibit the canvas draws first."""
+    text = "\n\n".join(p for p in (env.headline.strip(), figures_line(env), env.body.strip(), env.gaps.strip()) if p)
     if env.error and not text:
         text = f"⚠️ {env.error}"
     grid = env.grid if worth_showing(env.grid) else None
@@ -71,10 +85,12 @@ def select_for_slack(env: AnswerEnvelope, *, money_symbol: str = "") -> SlackSel
 
 def slack_message(env: AnswerEnvelope, *, money_symbol: str = "") -> str:
     """One string for a door that posts raw text (`post_as_bot`). Slack renders no
-    markdown table, so the grid rides in a fenced block — an encoding, local to this door."""
+    markdown table, so the grid rides in a fenced block — an encoding, local to this door —
+    under the claim the reader takes from it, when the grid is a cited exhibit."""
     sel = select_for_slack(env, money_symbol=money_symbol)
     parts = [sel.text]
     if sel.table:
-        parts.append(f"```\n{sel.table}\n```")
+        caption = (sel.grid.caption or "").strip() if sel.grid is not None else ""
+        parts.append((f"{caption}\n" if caption else "") + f"```\n{sel.table}\n```")
     parts.extend(f"⚠️ {c}" for c in sel.caveats)
     return "\n\n".join(p for p in parts if p).strip()

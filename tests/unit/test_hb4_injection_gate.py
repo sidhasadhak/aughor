@@ -4,9 +4,15 @@ Plus the lockstep guard: the receipt's block list and the live prompt's prepend 
 must not disagree about the hub-notes block (grounding.py admits the drift risk)."""
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from aughor.ontology.agent_notes import propose_note
+
+#: A conversation note lives OBSERVATION_TTL_DAYS past `observed_at` (hub/provenance.py). The
+#: fixture used to say 2026-09-15T08:00Z, and at 08:00 UTC on 2026-10-15 the gate's own tests
+#: went red for nobody's change: the note had expired. Observed a week ago, whenever "now" is.
+_OBSERVED = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _file_a_note(conn="hb4conn"):
@@ -18,7 +24,7 @@ def _file_a_note(conn="hb4conn"):
         confidence="low",
         provenance={"source_kind": "conversation", "authority": "said",
                     "author": "Ana", "where": "#ops",
-                    "observed_at": "2026-09-15T08:00:00Z",
+                    "observed_at": _OBSERVED,
                     "verification": "unverified"})
     assert out.ok and out.action == "staged"
     return out

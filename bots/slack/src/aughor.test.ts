@@ -70,6 +70,26 @@ describe("createAskStream", () => {
     expect(chunks.join("")).toBe("Discounts drove the dip.\n\nMachines discounting explains most of it.");
   });
 
+  it("a concluded turn lands with the figures it rests on and what it could not answer (P6)", async () => {
+    const ask = createAskStream({}, async () =>
+      sseResponse([
+        { type: "answer_report", answer_report: {
+          headline: "September revenue rose €93,820 (+14.9%) on order volume, not basket value",
+          summary: "Order count carried the change; average order value fell.",
+          figures: [{ label: "Sep 2026 revenue", value: "€721,755", note: "+14.9% vs Aug" }, { label: "Orders", value: "1,242 vs 1,063" }, { label: "empty", value: "" }],
+          gaps: "This analysis did not test why the order count rose.",
+        } },
+        { type: "done" },
+      ]),
+    );
+    const chunks = await drain(ask("q", { sessionId: "s" }));
+    expect(chunks.join("")).toBe(
+      "September revenue rose €93,820 (+14.9%) on order volume, not basket value\n\n"
+      + "Sep 2026 revenue €721,755 (+14.9% vs Aug) · Orders 1,242 vs 1,063\n\n"
+      + "Order count carried the change; average order value fell.\n\n"
+      + "This analysis did not test why the order count rose.");
+  });
+
   it("an error frame ends the stream honestly", async () => {
     const ask = createAskStream({}, async () =>
       sseResponse([

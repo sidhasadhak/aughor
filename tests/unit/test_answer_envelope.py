@@ -139,6 +139,166 @@ def test_a_deep_report_contributes_its_caveats_and_confidence():
                            "revenue is not the governed definition"]
 
 
+# ── P6 (2026-10-15): the concluded answer's structure rides the envelope ───────────────────
+
+def _finding(fid, title, columns, rows, chart="bar"):
+    return {"finding_id": fid, "title": title, "sql": "SELECT 1", "columns": columns, "rows": rows,
+            "row_count": len(rows), "error": None, "interpretation": "", "key_numbers": [], "chart_type": chart}
+
+
+CONCLUDED = {
+    "headline": "September revenue rose €93,820 (+14.9%) on order volume, not basket value",
+    "executive_summary": "Order count carried the change; average order value fell.",
+    "confidence": "MEDIUM",
+    "data_gaps": ["The Event table holds events only to 2024-12-11."],
+    "figures": [{"label": "Sep 2026 revenue", "value": "€721,755", "note": "+14.9% vs Aug"},
+                {"label": "Orders", "value": "1,242 vs 1,063", "note": ""}, {"label": "blank", "value": " "}],
+    "gaps": "This analysis did not test why the order count rose.",
+    "exhibits": [{"finding_id": "decomp_1", "claim": "Mytheresa and Mr Porter carry four-fifths of the rise"},
+                 {"finding_id": "baseline_0", "claim": "September sits inside the 13-month range"},
+                 {"finding_id": "decomp_9", "claim": "a result the report no longer holds"}],
+    "phases": [
+        {"phase_id": "intake", "findings": [_finding("intake_spec", "Spec", ["field", "value"], [["Metric", "revenue"]])]},
+        {"phase_id": "baseline", "caveats": [], "findings": [
+            _finding("baseline_0", "Monthly revenue", ["month", "revenue"], [["2026-08", 627935], ["2026-09", 721755]], "line")]},
+        {"phase_id": "decomposition", "caveats": ["extra filter: this query keeps rows by status not in Cancelled"], "findings": [
+            {**_finding("decomp_0", "Orders vs value", ["driver", "share"], [["orders", 112.7], ["aov", -12.7]]),
+             "trust_caveat": "every value in this result is identical, empty, or pinned at a boundary"},   # not cited
+            _finding("decomp_1", "By platform", ["platform", "delta"], [["Mytheresa", 56884], ["Mr Porter", 18000], ["NAP", 9000], ["Farfetch", 9900]]),
+            {**_finding("decomp_2", "By brand", ["brand", "delta"], [[f"b{i}", -i] for i in range(60)]), "row_count": 60}]},
+    ],
+}
+
+
+def test_a_concluded_report_folds_its_figures_exhibits_and_gaps():
+    env = fold_frames([{"type": "start", "investigation_id": "inv-p6", "connection_id": "c1", "question": "why?"},
+                       {"type": "answer_report", "answer_report": CONCLUDED}, {"type": "done", "body": "analyst"}])
+    assert env.version == 2
+    assert [(f.label, f.value, f.note) for f in env.figures] == [("Sep 2026 revenue", "€721,755", "+14.9% vs Aug"), ("Orders", "1,242 vs 1,063", "")]
+    assert env.gaps == "This analysis did not test why the order count rose."
+    assert [x.claim for x in env.exhibits] == ["Mytheresa and Mr Porter carry four-fifths of the rise", "September sits inside the 13-month range"]
+    first = env.exhibits[0]
+    assert first.grid.columns == ["platform", "delta"] and first.grid.rows[0] == ["Mytheresa", 56884]
+    assert first.grid.caption == first.claim and first.chart.chart_type == "bar"
+    assert first.caveats == ["extra filter: this query keeps rows by status not in Cancelled"]
+    assert env.exhibits[1].chart.chart_type == "line" and env.exhibits[1].caveats == []
+    # the grid a one-grid door takes is the first exhibit, under its claim
+    assert env.grid == first.grid and env.chart == first.chart
+    assert env.body == "Order count carried the change; average order value fell."
+    # the caveats are the narrator's gaps and those of the results the answer cites — a note on a
+    # result it did not draw (decomp_0's) stays off every door, as it stays off the canvas
+    assert env.caveats == ["The Event table holds events only to 2024-12-11.",
+                           "extra filter: this query keeps rows by status not in Cancelled"]
+    plain = fold_frames([{"type": "answer_report", "answer_report": {k: v for k, v in CONCLUDED.items() if k != "exhibits"}}])
+    assert "every value in this result is identical, empty, or pinned at a boundary" in plain.caveats   # cites nothing: every note
+
+
+def test_a_cited_results_rows_are_capped_as_the_canvas_caps_them():
+    rep = {**CONCLUDED, "exhibits": [{"finding_id": "decomp_2", "claim": "spread across many brands"}]}
+    env = fold_frames([{"type": "answer_report", "answer_report": rep}])
+    assert len(env.exhibits) == 1 and len(env.exhibits[0].grid.rows) == 50
+
+
+def test_a_report_without_the_structure_folds_as_before():
+    rep = {k: v for k, v in CONCLUDED.items() if k not in ("figures", "exhibits", "gaps")}
+    env = fold_frames([{"type": "answer_report", "answer_report": rep}])
+    assert env.figures == [] and env.exhibits == [] and env.gaps == "" and env.grid is None
+
+
+def test_slack_reads_the_figures_the_claim_and_the_gaps_of_a_concluded_answer():
+    env = fold_frames([{"type": "answer_report", "answer_report": CONCLUDED}])
+    sel = select_for_slack(env)
+    assert sel.text == ("September revenue rose €93,820 (+14.9%) on order volume, not basket value\n\n"
+                        "Sep 2026 revenue €721,755 (+14.9% vs Aug) · Orders 1,242 vs 1,063\n\n"
+                        "Order count carried the change; average order value fell.\n\n"
+                        "This analysis did not test why the order count rose.")
+    assert sel.table.startswith("| Platform | Delta |") and sel.chart.chart_type == "bar"
+    msg = slack_message(env)
+    assert "Mytheresa and Mr Porter carry four-fifths of the rise\n```\n| Platform | Delta |" in msg
+    assert "⚠️ The Event table holds events only to 2024-12-11." in msg
+
+
+def test_the_export_prints_the_figures_each_exhibit_under_its_claim_and_the_gaps():
+    from aughor.export.document import build_export_doc
+    env = fold_frames([{"type": "answer_report", "answer_report": CONCLUDED}], question="why?").model_dump()
+    inv = {"id": "inv-p6", "kind": "chat", "question": "why?", "connection_id": "c1",
+           "completed_at": "2026-10-15T00:00:00", "report": {"headline": "old", "envelope": env}}
+    doc = build_export_doc(inv)
+    headings = [b.text for b in doc.blocks if b.kind == "heading"]
+    assert headings == ["Summary", "Evidence", "Caveats"]
+    keynums = next(b for b in doc.blocks if b.kind == "keynums")
+    assert [(k.label, k.value, k.context) for k in keynums.keynums] == [("Sep 2026 revenue", "€721,755", "+14.9% vs Aug"), ("Orders", "1,242 vs 1,063", None)]
+    prose = [b.text for b in doc.blocks if b.kind == "prose"]
+    assert prose[0] == "Order count carried the change; average order value fell."   # the headline is the title, once
+    assert "This analysis did not test why the order count rose." in prose
+    # each exhibit is captioned by its claim — on the chart when one renders, else on its table
+    captions = [b.caption for b in doc.blocks if b.kind in ("chart", "table") and b.caption]
+    assert captions == ["Mytheresa and Mr Porter carry four-fifths of the rise", "September sits inside the 13-month range"]
+    tables = [b for b in doc.blocks if b.kind == "table"]
+    assert len(tables) == 2 and tables[0].columns == ["Platform", "Delta"]
+
+
+def test_a_stored_version_one_envelope_is_brought_up_to_its_concluded_report_on_read():
+    """A run before P6 stored a prose-only fold under a report that carries figures, exhibits and
+    gaps; a reader gets the projection the report supports, with the stream's provenance kept."""
+    from aughor.answer.envelope import envelope_of_report
+    v1 = fold_frames([{"type": "sql", "sql": "SELECT 1"}, {"type": "receipt_id", "receipt_id": "r-1"},
+                      {"type": "answer_report", "answer_report": {k: v for k, v in CONCLUDED.items() if k not in ("figures", "exhibits", "gaps")}}],
+                     question="why?").model_dump()
+    v1["version"] = 1
+    rep = {**CONCLUDED, "envelope": v1}
+    env = envelope_of_report(rep)
+    assert env["version"] == 2 and len(env["figures"]) == 2 and len(env["exhibits"]) == 2
+    assert env["gaps"] == "This analysis did not test why the order count rose."
+    assert env["grid"]["caption"] == "Mytheresa and Mr Porter carry four-fifths of the rise"
+    assert env["provenance"]["sql"] == ["SELECT 1"] and env["provenance"]["receipt_id"] == "r-1"   # kept from the stream
+    assert env["question"] == "why?" and env["headline"] == CONCLUDED["headline"]
+    # the caveats are re-projected too: the v1 fold carried the uncited result's machine note
+    assert any("every value in this result" in c for c in v1["caveats"])
+    assert not any("every value in this result" in c for c in env["caveats"])
+    assert rep["envelope"]["version"] == 1                                 # a read rewrote nothing
+    # a stored fold that already carries the structure, and a report without one, come back as stored
+    v2 = fold_frames([{"type": "answer_report", "answer_report": CONCLUDED}]).model_dump()
+    assert envelope_of_report({**CONCLUDED, "envelope": v2}) == v2
+    plain = {k: v for k, v in CONCLUDED.items() if k not in ("figures", "exhibits", "gaps")}
+    assert envelope_of_report({**plain, "envelope": v1}) == v1
+    assert envelope_of_report({**plain}) == {}
+    # no stored envelope at all: the fold from the report is the envelope
+    assert envelope_of_report(dict(CONCLUDED), question="why?")["exhibits"][0]["claim"].startswith("Mytheresa")
+
+
+def test_the_export_of_a_run_stored_before_p6_reads_in_the_canvas_order():
+    from aughor.export.document import build_export_doc
+    v1 = fold_frames([{"type": "answer_report", "answer_report": {k: v for k, v in CONCLUDED.items() if k not in ("figures", "exhibits", "gaps")}}]).model_dump()
+    v1["version"] = 1
+    inv = {"id": "inv-old", "kind": "investigation", "question": "why?", "connection_id": "c1",
+           "completed_at": "2026-10-14T00:00:00", "report": {**CONCLUDED, "_report_type": "investigate", "envelope": v1}}
+    doc = build_export_doc(inv)
+    assert [b.text for b in doc.blocks if b.kind == "heading"] == ["Summary", "Evidence", "Caveats"]
+    assert next(b for b in doc.blocks if b.kind == "keynums").keynums[0].value == "€721,755"
+
+
+def test_a_concluded_deep_run_is_exported_as_the_canvas_draws_it_with_what_comes_next():
+    """The phase-by-phase builder is for a run the phase script wrote; a concluded answer (P1)
+    exports in its own order — and keeps the report's recommendations as "Next"."""
+    from aughor.export.document import build_export_doc
+    rep = {**CONCLUDED, "_report_type": "investigate",
+           "recommendations": [{"action": "Split the 179 extra orders by customer type.", "expected_impact": "", "owner": "", "timeline": ""}]}
+    env = fold_frames([{"type": "answer_report", "answer_report": rep}], question="why?").model_dump()
+    inv = {"id": "inv-p6d", "kind": "investigation", "question": "why?", "connection_id": "c1",
+           "completed_at": "2026-10-15T00:00:00", "report": {**rep, "envelope": env}}
+    doc = build_export_doc(inv)
+    assert doc.kind == "investigation"
+    assert [b.text for b in doc.blocks if b.kind == "heading"] == ["Summary", "Evidence", "Caveats", "Next"]
+    recs = next(b for b in doc.blocks if b.kind == "recs")
+    assert recs.recs[0]["action"] == "Split the 179 extra orders by customer type."
+    # a phase-script run — no exhibits — keeps the phase-by-phase builder
+    plain = {k: v for k, v in rep.items() if k not in ("exhibits", "figures", "gaps")}
+    plain_env = fold_frames([{"type": "answer_report", "answer_report": plain}]).model_dump()
+    doc2 = build_export_doc({**inv, "report": {**plain, "envelope": plain_env}})
+    assert "Executive summary" in [b.text for b in doc2.blocks if b.kind == "heading"]
+
+
 def test_an_error_frame_is_the_envelope_error_not_a_headline():
     env = fold_frames([{"type": "error", "message": "boom · boom", "hint": "the provider timed out"}])
     assert env.error == "the provider timed out"
