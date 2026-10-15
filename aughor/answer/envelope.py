@@ -75,8 +75,27 @@ class Provenance(BaseModel):
     folded_at: str = ""
 
 
+class Figure(BaseModel):
+    """One figure the answer rests on, as the analyst stated it (P1's `figures`)."""
+    label: str = ""
+    value: str = ""
+    note: str = ""
+
+
+class Exhibit(BaseModel):
+    """A result the answer cites, with the claim the reader takes from it (P1's `exhibits`):
+    the grid, the picture it wants, and the caveats of the phase that produced it."""
+    claim: str = ""
+    grid: Grid = Field(default_factory=Grid)
+    chart: ChartDecision = Field(default_factory=ChartDecision)
+    caveats: list[str] = Field(default_factory=list)
+
+
 class AnswerEnvelope(BaseModel):
-    version: int = 1
+    #: 2 (P6, 2026-10-15): the concluded answer's own structure rides the envelope — `figures`,
+    #: `exhibits`, `gaps` — so a door that is not the canvas (Slack, the export, a scheduled send)
+    #: renders the answer the canvas renders, not a prose-only fold of it.
+    version: int = 2
     question: str = ""
     headline: str = ""
     body: str = ""
@@ -84,6 +103,10 @@ class AnswerEnvelope(BaseModel):
     chart: Optional[ChartDecision] = None
     caveats: list[str] = Field(default_factory=list)
     follow_ups: list[str] = Field(default_factory=list)
+    figures: list[Figure] = Field(default_factory=list)
+    exhibits: list[Exhibit] = Field(default_factory=list)
+    #: What the question asked that the evidence does not settle, in the analyst's sentence.
+    gaps: str = ""
     provenance: Provenance = Field(default_factory=Provenance)
     error: str = ""
     #: How many tables the model wrote into its prose this turn. Zero is the goal; the
@@ -225,6 +248,9 @@ class EnvelopeFolder:
         self._receipts: list[dict[str, Any]] = []
         self._caveats: list[str] = []
         self._followups: list[str] = []
+        self._figures: list[Figure] = []
+        self._exhibits: list[Exhibit] = []
+        self._gaps = ""
         self._inv_id = ""
         self._receipt_id = ""
         self._mode = ""
@@ -319,6 +345,14 @@ class EnvelopeFolder:
             for finding in phase.get("findings") or []:
                 if isinstance(finding, dict) and finding.get("trust_caveat"):
                     self._caveats.append(str(finding["trust_caveat"]))
+        # P6 — the concluded answer's structure (P1): the figures it rests on, the results it
+        # cites with their claims, and what it could not answer. A report without them (an
+        # older run, the phase script) folds as before.
+        self._figures = [Figure(label=str(f.get("label") or ""), value=str(f.get("value") or ""),
+                                note=str(f.get("note") or ""))
+                         for f in (rep.get("figures") or []) if isinstance(f, dict) and str(f.get("value") or "").strip()]
+        self._gaps = " ".join(str(rep.get("gaps") or "").split())
+        self._exhibits = _exhibits_of(rep)
 
     # ── the envelope ──
     def finish(self) -> AnswerEnvelope:
@@ -348,6 +382,10 @@ class EnvelopeFolder:
         if grid is not None:
             chart = ChartDecision(chart_type=self._chart_type or "auto",
                                   chart_config=self._chart_config)
+        elif self._exhibits:
+            # A door that takes "the grid once" (Slack) takes the first result the answer
+            # rests on, captioned by its claim — the exhibit the canvas draws first.
+            grid, chart = self._exhibits[0].grid, self._exhibits[0].chart
 
         caveats: list[str] = []
         for c in self._caveats:
@@ -362,6 +400,9 @@ class EnvelopeFolder:
             chart=chart,
             caveats=caveats,
             follow_ups=list(self._followups),
+            figures=list(self._figures),
+            exhibits=list(self._exhibits),
+            gaps=self._gaps,
             provenance=Provenance(
                 investigation_id=self._inv_id, receipt_id=self._receipt_id,
                 connection_id=self.connection_id, session_id=self.session_id,
@@ -374,6 +415,42 @@ class EnvelopeFolder:
             error=self._error,
             lifted_tables=len(lifted),
         )
+
+
+#: How many rows an exhibit carries on the envelope — the canvas's own cap for a finding.
+EXHIBIT_ROWS = 50
+
+
+def _exhibits_of(rep: dict) -> list[Exhibit]:
+    """The results a concluded report cites (`exhibits`), in the order the answer reaches them,
+    each with its claim, its rows (capped as the canvas caps them), the picture the finding
+    wants, and the caveats of the phase that produced it. A cited id the report no longer holds
+    (pruned) is left out, as the canvas leaves it out."""
+    cited = [e for e in (rep.get("exhibits") or []) if isinstance(e, dict) and e.get("finding_id")]
+    if not cited:
+        return []
+    by_id: dict[str, tuple[dict, dict]] = {}
+    for phase in rep.get("phases") or []:
+        if not isinstance(phase, dict) or phase.get("_hidden") or phase.get("phase_id") == "intake":
+            continue
+        for f in phase.get("findings") or []:
+            if isinstance(f, dict) and f.get("finding_id") and str(f["finding_id"]) not in by_id:
+                by_id[str(f["finding_id"])] = (f, phase)
+    out: list[Exhibit] = []
+    for e in cited:
+        hit = by_id.get(str(e["finding_id"]))
+        if not hit:
+            continue
+        f, phase = hit
+        columns = [str(c) for c in (f.get("columns") or [])]
+        rows = _positional(columns, list(f.get("rows") or [])[:EXHIBIT_ROWS]) if columns else []
+        if not columns or not rows:
+            continue
+        claim = " ".join(str(e.get("claim") or "").split())
+        out.append(Exhibit(claim=claim, grid=Grid(columns=columns, rows=rows, caption=claim),
+                           chart=ChartDecision(chart_type=str(f.get("chart_type") or "auto")),
+                           caveats=[c for c in _strs(phase.get("caveats")) if c]))
+    return out
 
 
 def fold_frames(frames: Any, *, question: str = "", connection_id: str = "",

@@ -345,9 +345,28 @@ def _build_envelope(inv: dict, money_symbol: str = "") -> ExportDoc:
     # opens with the sentence and continues with the rest.
     body = str(env.get("body") or "").strip()
     blocks: list[Block] = [_h("Summary"), _p(f"{headline}\n\n{body}" if body else headline)]
+    # P6 — the concluded answer's own structure, as the canvas draws it: the figures it rests
+    # on, each cited result captioned by its claim, and what it could not answer.
+    figures = [f for f in (env.get("figures") or []) if isinstance(f, dict) and str(f.get("value") or "").strip()]
+    if figures:
+        blocks.append(Block("keynums", keynums=[
+            KeyNumber(label=str(f.get("label") or ""), value=str(f.get("value") or ""),
+                      context=str(f.get("note") or "") or None) for f in figures]))
+    gaps = str(env.get("gaps") or "").strip()
+    if gaps:
+        blocks.append(_p(gaps))
+    exhibits = [x for x in (env.get("exhibits") or []) if isinstance(x, dict)
+                and isinstance(x.get("grid"), dict) and x["grid"].get("columns") and x["grid"].get("rows")]
     grid = env.get("grid") if isinstance(env.get("grid"), dict) else {}
     chart = env.get("chart") if isinstance(env.get("chart"), dict) else {}
-    if grid.get("columns") and grid.get("rows"):
+    if exhibits:
+        blocks.append(_h("Evidence"))
+        for x in exhibits:
+            g, c = x["grid"], x.get("chart") if isinstance(x.get("chart"), dict) else {}
+            blocks.extend(_chart_or_table(g["columns"], g["rows"], c.get("chart_type") or "auto",
+                                          str(x.get("claim") or "").strip() or _exhibit_caption(g["columns"]) or headline,
+                                          money_symbol=money_symbol))
+    elif grid.get("columns") and grid.get("rows"):
         blocks.append(_h("Evidence"))
         blocks.extend(_chart_or_table(grid["columns"], grid["rows"],
                                       chart.get("chart_type") or "auto",
@@ -356,6 +375,13 @@ def _build_envelope(inv: dict, money_symbol: str = "") -> ExportDoc:
     if env.get("caveats"):
         blocks.append(_h("Caveats"))
         blocks.append(_bul([str(c) for c in env["caveats"]]))
+    recs = [r for r in (rep.get("recommendations") or []) if isinstance(r, dict) and str(r.get("action") or "").strip()]
+    if recs:
+        # the canvas's "Next" — a concluded deep run's recommendations ride the report, not the envelope
+        blocks.append(_h("Next"))
+        blocks.append(Block("recs", recs=[
+            {"action": r.get("action", ""), "expected_impact": r.get("expected_impact", ""),
+             "owner": r.get("owner", ""), "timeline": r.get("timeline", "")} for r in recs]))
     if env.get("follow_ups"):
         blocks.append(_h("Questions to ask next"))
         blocks.append(_bul([str(q) for q in env["follow_ups"]]))
@@ -367,7 +393,7 @@ def _build_envelope(inv: dict, money_symbol: str = "") -> ExportDoc:
         blocks.append(_h("Checks"))
         blocks.append(_bul([_receipt_line(r) for r in prov["guard_receipts"] if isinstance(r, dict)]))
     return ExportDoc(title=headline, subtitle=env.get("question") or inv.get("question") or "",
-                     meta=meta, kind="chat", blocks=blocks)
+                     meta=meta, kind="investigation" if rep.get("phases") else "chat", blocks=blocks)
 
 
 def _strip_planner_notes(text: str) -> str:
@@ -706,7 +732,14 @@ def build_export_doc(inv: dict, *, narrate: bool = False, money_symbol: str = ""
     The stored `kind` is a coarse hint; the report dict's own `_report_type` /
     field set is authoritative (an 'investigation' row often holds a deep-analysis report)."""
     rep = inv.get("report") or {}
-    if rep.get("_report_type") == "investigate" or "phases" in rep:
+    env = rep.get("envelope") if isinstance(rep.get("envelope"), dict) else {}
+    if rep.get("exhibits") and env.get("exhibits"):
+        # P6 (2026-10-15) — a concluded answer (P1) is exported as the canvas draws it: the
+        # headline, the figures it rests on, the answer, what it could not answer, each cited
+        # result under its claim, then what comes next. The phase-by-phase builder below is for
+        # a run the phase script wrote, which names no exhibits.
+        builder = _build_envelope
+    elif rep.get("_report_type") == "investigate" or "phases" in rep:
         builder = _build_ada
     elif rep.get("_report_type") == "explore" or "subq_answers" in rep:
         builder = _build_explore

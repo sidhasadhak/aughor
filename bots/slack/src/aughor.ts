@@ -40,6 +40,23 @@ export interface AnswerEnvelope {
   provenance: Record<string, unknown>;
   error: string;
   lifted_tables: number;
+  /** P6 (envelope v2): the concluded answer's own structure — absent on an older fold. */
+  figures?: { label: string; value: string; note?: string }[];
+  exhibits?: { claim: string; grid: { columns: string[]; rows: unknown[][]; caption?: string }; chart: { chart_type: string } }[];
+  gaps?: string;
+}
+
+/** The figures an answer rests on, in one line — `label value (note) · …` — as the canvas's figure row. */
+export function figuresLine(figures: unknown): string {
+  if (!Array.isArray(figures)) return "";
+  return figures
+    .filter((f): f is { label?: unknown; value?: unknown; note?: unknown } => !!f && typeof f === "object" && asText((f as { value?: unknown }).value) !== "")
+    .map((f) => {
+      const head = `${asText(f.label)} ${asText(f.value)}`.trim();
+      const note = asText(f.note);
+      return note ? `${head} (${note})` : head;
+    })
+    .join(" · ");
 }
 
 /** What the turn produced besides prose — the visual half of the answer. */
@@ -260,7 +277,8 @@ export function createAskStream(
               const rep = (frame.answer_report ?? frame.report ?? frame.explore_report ?? {}) as Record<string, unknown>;
               const head = asText(rep.headline) || asText(rep.answer) || asText(rep.summary);
               const body = asText(rep.summary) !== head ? asText(rep.summary) : "";
-              const text = [head, body].filter(Boolean).join("\n\n")
+              // P6 — the figures the answer rests on and what it could not answer, as the canvas shows them.
+              const text = [head, figuresLine(rep.figures), body, asText(rep.gaps)].filter(Boolean).join("\n\n")
                 || "Deep analysis complete — open Aughor for the full report.";
               yield (sawText ? "\n\n" : "") + text;
               sawText = true;

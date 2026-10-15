@@ -6,5 +6,5 @@ door takes is its own policy; what the core produces is not, and nothing here ne
 call to shorten what it was handed. Platform-level: this package imports no agent package.
 """
 from aughor.answer.envelope import (  # noqa: F401
-    AnswerEnvelope, ChartDecision, EnvelopeFolder, Grid, Provenance, lift_tables,
+    AnswerEnvelope, ChartDecision, EnvelopeFolder, Exhibit, Figure, Grid, Provenance, lift_tables,
 )
