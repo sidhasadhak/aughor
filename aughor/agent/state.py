@@ -52,7 +52,22 @@ class Hypothesis(BaseModel):
 
 
 class RouteDecision(BaseModel):
+    """The BODY a question runs as — one of the four frozen ``STRUCTURAL_MODES`` (`docs/GLOSSARY.md`,
+    "Names that are frozen"): ``query_mode`` on the checkpointed graph state. Since 2026-10-15 the
+    mode is derived from the question's shape (`agent/question_shape.body_for`), never asked of
+    a model; the model is asked for the shape (:class:`ShapeDecision`)."""
     mode: Literal["direct", "investigate", "explore", "final_text"]
+    confidence: float = Field(ge=0.0, le=1.0, description="Classification confidence (0–1)")
+    reasoning: str = Field(description="One sentence explaining the classification")
+    #: The shape the mode was derived from; "" on a decision built before the shape was carried.
+    shape: str = ""
+
+
+class ShapeDecision(BaseModel):
+    """What the model classifier says of a question's SHAPE on the borderline — the same four
+    words code decides with (`agent/question_shape.question_shape`), so a question's kind means
+    one thing at every door."""
+    shape: Literal["describe", "check", "diagnose", "survey"]
     confidence: float = Field(ge=0.0, le=1.0, description="Classification confidence (0–1)")
     reasoning: str = Field(description="One sentence explaining the classification")
 
@@ -389,6 +404,12 @@ class InvestigationPhaseResult(TypedDict):
     # the badge it already has; the routers and the contradiction scan read it here first and
     # fall back to the bracket on older phases. Absent on a phase code did not test.
     verdict: NotRequired[dict]
+    # 2026-10-15 — the intake phase's typed decisions (`_record_intake_note`): the claim licence
+    # with its reason, the routing, a recovered date axis, a dropped cut, the coverage facts — each
+    # ``{"tag": …, …}``. The code that used to parse ``CLAIM LICENCE: …`` back out of the intake's
+    # prose reads this slot; the prose carries the reader's sentence. Absent on other phases and on
+    # older reports, whose prose the readers still parse.
+    record: NotRequired[list[dict]]
 
 
 class WaterfallEntry(TypedDict):
@@ -529,6 +550,9 @@ class AgentState(TypedDict):
 
     # Routing: set by route_question node; None until classified
     query_mode: Optional[Literal["direct", "investigate", "explore", "final_text"]]
+    # The question's shape — describe · check · diagnose · survey — decided once at the door
+    # and carried into the body; a run entered without one reads it from the question.
+    question_shape: NotRequired[str]
     # An EXPLICIT user mode choice (the /investigate Deep Analysis surface). When set,
     # route_question honors it verbatim — the LLM classifier must never downgrade a
     # deliberate deep-mode selection to a 'direct' lookup.

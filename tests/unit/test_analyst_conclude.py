@@ -129,3 +129,36 @@ def test_a_describe_answer_takes_the_conclusions_own_headline():
     synth = _conclusion_as_answer(state, {"question_shape": "describe"}, "Which category leads?")
     assert synth.headline == "Jeans lead at $213.2K"
     assert synth.executive_summary == "Jeans lead; Swim trails.\n\nThe data holds no cost."
+
+
+# ── a claim states what the result shows; a figure is read from a result (2026-10-15) ──────────
+
+def test_a_claim_that_is_a_title_is_refused():
+    """Two of six concluded answers (cee3f6ed, e441d73d) captioned their exhibit with what was
+    measured — "Top 10 categories by revenue with order counts and AOV, last 6 months" — not
+    with what it shows. The finding's own title restated is refused the same way."""
+    turn = _turn()
+    for title in ("Top 10 categories by revenue with order counts and AOV, last 6 months, non-cancelled",
+                  "Revenue by category", "Top 10 ship countries by GMV, 2026-07-13 to 2026-10-12"):
+        out = conclude(turn, {**GOOD, "exhibits": [{"result": "adhoc_1_1", "claim": title}]})
+        assert "reads as a title" in out["refused"], title
+    # Predicates make a claim — a verb, a comparison, a stated change.
+    for claim in ("Jeans lead Swim by $95.9K", "Jeans €213.2K vs Swim €117.3K", "Europe drove the gain, Asia offset it",
+                  "All categories grew; Jeans added the most", "Jeans +82% on Swim"):
+        assert "concluded" in conclude(_turn(), {**GOOD, "exhibits": [{"result": "adhoc_1_1", "claim": claim}]}), claim
+
+
+def test_a_figure_no_result_returned_is_refused_and_a_read_one_is_kept():
+    turn = _turn()
+    out = conclude(turn, {**GOOD, "figures": [{"label": "Z-score", "value": "2.9"}]})
+    assert "figure 'Z-score' states 2.9" in out["refused"] and "no result of this turn returned" in out["refused"]
+    assert turn.conclusion is None
+    # Read from the rows: a cell abbreviated, two cells side by side, their difference, the column's total.
+    for value in ("$213.2K", "213,177.98 vs 117,253.8", "+$95.9K", "$330.4K", "117,254"):
+        out = conclude(_turn(), {**GOOD, "figures": [{"label": "f", "value": value}]})
+        assert "concluded" in out, (value, out.get("refused"))
+
+
+def test_a_figure_without_a_number_is_refused():
+    out = conclude(_turn(), {**GOOD, "figures": [{"label": "Leader", "value": "Jeans"}]})
+    assert "has no number in its value" in out["refused"]

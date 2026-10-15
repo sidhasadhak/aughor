@@ -291,7 +291,9 @@ def test_columns_that_identify_people_are_not_offered_as_dimensions(monkeypatch)
     assert I._drop_identifying_dimensions(intake, "c") == ["users.email", "users.first_name", "users.contact",
                                                           "users.user_email"]
     assert intake.dimensions == ["users.country", "users.traffic_source", "orders.status", "products.brand"]
-    assert intake.intake_notes.startswith("NOT OFFERED AS DIMENSIONS: users.email")
+    assert intake.intake_notes.startswith("users.email, users.first_name, users.contact, users.user_email are not offered as cuts")
+    assert intake.record == [{"tag": "dimensions_dropped",
+                              "dropped": ["users.email", "users.first_name", "users.contact", "users.user_email"]}]
     assert I._drop_identifying_dimensions(SimpleNamespace(intake_notes="", dimensions=["users.state"]), "") == []
     # a flag or a domain is a cut, not a person
     kept = SimpleNamespace(intake_notes="", dimensions=["events.is_mobile", "users.email_opt_in", "users.email_domain",

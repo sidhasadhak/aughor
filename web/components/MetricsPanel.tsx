@@ -58,7 +58,7 @@ import {
 } from "@/lib/api";
 import { countNoun, formatCount, formatDateTime, formatTimestamp } from "@/lib/format";
 import {
-  ALL, datasetWords, datesSentence, dayWords, figures as figuresOf, grouped, homeOf, lastDecision, missingRoles,
+  ALL, datasetWords, datesProblem, datesSentence, dayWords, figures as figuresOf, grouped, homeOf, lastDecision, missingRoles,
   needs as needsOf, packsOf, place, sameDataset, shortColumn, shortUnit, standingChip, storedFor,
   type Need, type Placed,
 } from "@/lib/semanticMetrics";
@@ -341,9 +341,14 @@ function DatesSection({ metric, proposals, onChanged, startEditing = false, onEd
           <Chip>{`by ${metric.time_grain ?? "month"}`}</Chip>
         </div>
       )}
-      <p className="aug-fs-sm" style={metric.time_kind && metric.time_column ? TEXT : { ...TEXT, color: "var(--amb4)" }}>
+      <p className="aug-fs-sm" style={metric.time_kind && metric.time_column && !datesProblem(metric) ? TEXT : { ...TEXT, color: "var(--amb4)" }}>
         {datesSentence(metric)}
       </p>
+      {datesProblem(metric) && (
+        <p className="aug-fs-xs" style={{ margin: 0, color: "var(--amb4)" }} data-testid="metric-dates-problem">
+          {datesProblem(metric)}
+        </p>
+      )}
       {metric.time_kind && (
         <p className="aug-fs-xs" style={{ ...MUTED, margin: 0 }}>{KIND_WORDS[metric.time_kind] ?? ""}{metric.time_source ? ` · ${metric.time_source}` : ""}</p>
       )}
@@ -1133,7 +1138,7 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
     const tabs: { id: DetailTab; label: string; badge?: number }[] = [
       { id: "overview", label: "Overview" },
       { id: "approval", label: "Approval", badge: status === "proposed" ? 1 : 0 },
-      { id: "dates", label: "Dates", badge: p.standing === "no_date" ? 1 : 0 },
+      { id: "dates", label: "Dates", badge: p.standing === "no_date" || p.standing === "date_unread" ? 1 : 0 },
       ...(keyed ? [{ id: "measures" as DetailTab, label: "Measures" }] : []),
       { id: "edit", label: "Edit", badge: p.standing === "no_sql" ? 1 : 0 },
     ];
@@ -1238,7 +1243,7 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
   const groups = grouped(placed);
   const last = lastDecision(placed.map(p => p.stored).filter((m): m is Metric => !!m), removed);
   const proposedAt = placed.filter(p => p.standing === "proposed").map(p => p.stored?.proposed_at).filter((a): a is string => !!a).sort();
-  const unmeasured = f.noDate + f.noSql;
+  const unmeasured = f.noDate + f.dateUnread + f.noSql;
 
   return (
     <Page testId="metrics-tab">
@@ -1259,8 +1264,9 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
               title="Approved, but with no SQL, or no date column — so no figure for a period"
               sub={registryError ? "the definitions could not be read"
                 : unmeasured === 0 ? (f.approved ? "every approved one has SQL and a date" : "nothing approved yet")
-                : [f.noDate ? `${f.noSql ? `${formatCount(f.noDate)} ` : ""}no date column` : "",
-                   f.noSql ? `${f.noDate ? `${formatCount(f.noSql)} ` : ""}no SQL` : ""].filter(Boolean).join(" · ")} />
+                : [f.noDate ? `${unmeasured > f.noDate ? `${formatCount(f.noDate)} ` : ""}no date column` : "",
+                   f.dateUnread ? `${unmeasured > f.dateUnread ? `${formatCount(f.dateUnread)} ` : ""}date on a table the SQL doesn't read` : "",
+                   f.noSql ? `${unmeasured > f.noSql ? `${formatCount(f.noSql)} ` : ""}no SQL` : ""].filter(Boolean).join(" · ")} />
             <Figure label="Last decision" value={last ? dayWords(last.at) : "—"} testId="fig-last"
               title={last ? formatTimestamp(last.at) : "Approvals, proposals and removals are dated; an edit is not"}
               sub={last
@@ -1436,7 +1442,15 @@ function NeedsGroup({ need, onOpen, onBind }: {
       break;
     case "no_date":
       title = one ? `${name(one)} can't be measured for a period` : `${formatCount(n)} approved metrics can't be measured for a period`;
-      detail = one ? "it has no date column — set one" : "none has a date column — set one on each";
+      detail = one
+        ? (one.standing === "date_unread"
+            ? `${one.stored?.measurable_why || "its date is on a table its SQL does not read"} — join that table in the SQL, then choose the date`
+            : "it has no date column — set one")
+        : need.items.every(p => p.standing === "date_unread")
+          ? "each has its date on a table its SQL does not read — join that table, then choose the date"
+          : need.items.some(p => p.standing === "date_unread")
+            ? "some have no date column, some a date on a table the SQL does not read — set one on each"
+            : "none has a date column — set one on each";
       actions = one
         ? <Button size="xs" variant="secondary" onClick={() => onOpen(one, "dates", true)}>Set its date</Button>
         : names("Set the date of", "dates", true);

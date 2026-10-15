@@ -40,6 +40,23 @@ const REPORT = {
   ],
 } as never;
 
+describe("a check wears no investigation chrome", () => {
+  it("draws the verdict and its counts, but no period chip and no Next", () => {
+    const CHECK = { ...(REPORT as object), question_shape: "check",
+      headline: "Yes: event_id joins all 1,642 attendance rows, and platform agrees on every match",
+      observation_period: "2020-01-22 → 2024-12-11", comparison_basis: "No prior period exists in the data",
+      recommendations: [{ action: "Correct the stale metadata notes", expected_impact: "", owner: "", timeline: "" }],
+    } as never;
+    render(<ReportView report={CHECK} />);
+    expect(screen.getByText(/event_id joins all 1,642 attendance rows/)).toBeInTheDocument();
+    expect(screen.getByTestId("answer-figures")).toHaveTextContent("$229.8K");
+    expect(screen.queryByText(/2020-01-22/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No prior period/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Next")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Correct the stale metadata/)).not.toBeInTheDocument();
+  });
+});
+
 describe("a concluded answer is drawn as it said", () => {
   it("leads with the headline and the figures it rests on", () => {
     render(<ReportView report={REPORT} />);

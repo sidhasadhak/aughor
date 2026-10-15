@@ -76,14 +76,27 @@ def analysis_claim_facts(investigation_id: str) -> tuple[str, bool]:
     report = inv.get("report") if inv and isinstance(inv.get("report"), dict) else {}
     if not report:
         return "", False
-    m = _LICENCE_RE.search(json.dumps(report, default=str))
+    licence = _recorded_licence(report)
+    m = None if licence else _LICENCE_RE.search(json.dumps(report, default=str))   # older reports: the prose
     checks = report.get("causal_checks") if isinstance(report.get("causal_checks"), dict) else {}
     if checks:                      # the typed record; the prose match below is for older reports
         refuted = (checks.get("refutation") or {}).get("status") == "refuted"
     else:
         refuted = any("adversarial verification challenged" in str(g).lower()
                       for g in (report.get("data_gaps") or []))
-    return (m.group(1) if m else ""), refuted
+    return (licence or (m.group(1) if m else "")), refuted
+
+
+def _recorded_licence(report: dict) -> str:
+    """The licence the intake phase RECORDED as a typed entry (`record`, 2026-10-15) — the same fact
+    the ``CLAIM LICENCE:`` line carried in the prose before, read where it is written."""
+    for ph in report.get("phases") or []:
+        if not isinstance(ph, dict) or ph.get("phase_id") != "intake":
+            continue
+        for r in ph.get("record") or []:
+            if isinstance(r, dict) and r.get("tag") == "claim_licence" and r.get("type"):
+                return str(r["type"]).strip().lower()
+    return ""
 
 
 def analysis_refutation(investigation_id: str) -> dict:

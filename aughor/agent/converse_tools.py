@@ -436,11 +436,23 @@ def list_tables(connection_id: str, args: dict, *, canvas_id: Optional[str] = No
                 schema_scope: Optional[str] = None) -> dict:
     """The schema as a manifest — progressive disclosure, per the plan's Layer 3 table.
 
+    A manifest: one line per table with its row count and its columns' names and types
+    (`schema_render.schema_manifest`). Until 2026-10-15 this returned the whole schema TEXT —
+    descriptions, sample values and column notes included — which on LuxExperience is 82k
+    characters (the analyst's one `list_tables` call on 99201af8 cost more context than the
+    rest of its turn); the manifest is 5.3k, and `describe_table` returns a table's full block
+    for the one or two tables the model goes on to query. The raw text is returned only when
+    it parses to no tables at all, so an unknown schema format hides nothing.
+
     Only the turn's scope: a table the turn may not query is not listed, and the manifest
     says which scope it is, so "this dataset has no city column" is a statement about the
     scope rather than a hunt through every other dataset on the connection."""
-    out: dict = {"schema": _visible_schema(connection_id, canvas_id=canvas_id,
-                                           schema_scope=schema_scope)}
+    from aughor.db.schema_render import schema_manifest
+
+    schema = _visible_schema(connection_id, canvas_id=canvas_id, schema_scope=schema_scope)
+    out: dict = {"tables": schema_manifest(schema) or schema,
+                 "detail": "names, types and row counts only — call describe_table for a "
+                           "table's sample values and column notes before filtering on a value"}
     if schema_scope and not canvas_id:
         out["scope"] = f"schema {schema_scope} only — the tables this conversation may query"
     return out
@@ -565,8 +577,9 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
         ToolSpec(
             name="list_tables",
             description=(
-                "List the tables available, with their columns. Call this before writing "
-                "SQL against a warehouse you have not inspected in this conversation."
+                "A manifest of the tables available — each with its row count and its columns' "
+                "names and types. Call this before writing SQL against a warehouse you have not "
+                "inspected in this conversation; describe_table for one table's sample values."
             ),
             parameters={"type": "object", "properties": {}},
             run=lambda a: list_tables(connection_id, a, canvas_id=canvas_id, schema_scope=schema_scope),
@@ -779,7 +792,8 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
              provider=None, max_steps: Optional[int] = None,
              on_step=None, tool_emit: Optional[Emit] = None,
              session_id: str = "", canvas_id: Optional[str] = None, agent: Any = None,
-             trace_id: str = "", schema_scope: Optional[str] = None):
+             trace_id: str = "", schema_scope: Optional[str] = None,
+             shape: Optional[str] = None):
     """Answer one question as a conversation rather than a compiled query spec.
 
     The whole body in one place: state-not-instructions prompt, the connection's tools,
@@ -798,7 +812,7 @@ def converse(connection_id: str, question: str, *, extra_context: Optional[str] 
 
     return run_tool_loop(
         provider or get_provider("coder"),
-        converse_system_prompt(connection_id, extra_context, question=question, agent=agent),
+        converse_system_prompt(connection_id, extra_context, question=question, agent=agent, shape=shape),
         question,
         converse_tools(connection_id, emit=tool_emit, session_id=session_id,
                        canvas_id=canvas_id, user_question=question, agent=agent,
@@ -854,8 +868,14 @@ def _engine_and_clock(connection_id: str) -> str:
 
 
 def converse_system_prompt(connection_id: str, extra: Optional[str] = None,
-                           question: str = "", agent: Any = None) -> str:
+                           question: str = "", agent: Any = None,
+                           shape: Optional[str] = None) -> str:
     """State, not instructions (the plan's rule for this prompt).
+
+    ``shape`` is the question's shape the door decided (`agent/question_shape`); a check — a
+    yes/no about the data itself — carries its own stopping rule, so the conversation answers
+    it with a verdict and its counts rather than a figure and a story. Read from the question
+    when the caller decided none; absent for every other shape, so that prompt is unchanged.
 
     It says what is true — who the assistant is, what latitude it has, what the tools
     guarantee, what to do when a guard fires — and does not script the conversation.
@@ -903,6 +923,13 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None,
         tolerate(settle_exc, "the settling note is additive; the conversation stands without it",
                  counter="converse.settling_note")
     sql_note = _engine_and_clock(connection_id)
+    check_note = ""
+    from aughor.agent.question_shape import CHECK_RULE, question_shape
+    if (shape or (question_shape(question, default=None) if question else None)) == "check":
+        check_note = (
+            f"{CHECK_RULE} Answer with the verdict first — yes, no or partly, with the decisive count "
+            "read from a row — then each check you ran and what it found; then what you did not check. "
+            "No cause, no recommendation, no period the question did not name.")
     lines = [
         "You are Aughor's analyst — the conversation over the whole platform: the "
         f"connected data warehouse '{connection_id}' and everything Aughor has "
@@ -925,6 +952,7 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None,
         "",
         "If a result carries caveats, the number may be misleading even though the "
         "query succeeded — report the caveat alongside the number, not instead of it.",
+        *(["", check_note] if check_note else []),
         "",
         "Do not write markdown tables. The rows a query returned travel with the answer "
         "as its exhibit, and a table in your prose would be shown twice; name the "

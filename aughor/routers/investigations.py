@@ -3610,6 +3610,7 @@ async def _stream_converse(
     surface: str = "",
     schema_scope: Optional[str] = None,
     brief_period: str = "",
+    shape: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Serve one `/ask` turn as a CONVERSATION (`ask.converse`, default on since SP-14).
 
@@ -3759,7 +3760,7 @@ async def _stream_converse(
                               extra_context=_memory,
                               on_step=_on_step, tool_emit=_forward,
                               session_id=session_id, canvas_id=canvas_id, agent=_agent_rec,
-                              trace_id=_decision_trace, schema_scope=schema_scope)
+                              trace_id=_decision_trace, schema_scope=schema_scope, shape=shape)
         except _CoreCancelled:
             raise
         except Exception as _exc:
@@ -3897,6 +3898,7 @@ async def _stream_analyst(
     schema_scope: Optional[str] = None,
     origin_finding: Optional[dict] = None,
     purpose: str = "",
+    shape: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Serve one deep `/ask` turn as the ANALYST (CA-3) — the phase library as tools,
     the sequence as the model's, under the deep step budget.
@@ -3977,7 +3979,7 @@ async def _stream_analyst(
                 origin_finding=origin_finding,
                 extra_context=_memory or None,
                 session_id=session_id, canvas_id=canvas_id, schema_scope=schema_scope,
-                emit=_forward, on_step=_on_step, purpose=purpose,
+                emit=_forward, on_step=_on_step, purpose=purpose, shape=shape,
             )
         finally:
             clear_progress_sink(token)
@@ -5726,8 +5728,6 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         _route_ev["body"] = "converse"
     if _use_analyst:
         _route_ev["body"] = "analyst"
-        from aughor.agent.investigate import question_shape as _shape_of
-        _route_ev["question_shape"] = _shape_of(req.question or "")
     # The route receipt measures the memory it injected — turns and chars — the same
     # discipline PE-1 applied to prompt spend: a feature you cannot see the size of is
     # one you cannot tell is working. `reconstructed` distinguishes server-rebuilt memory
@@ -5762,6 +5762,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             session_id=req.session_id, canvas_id=req.canvas_id,
             schema_scope=req.schema_name, origin_finding=_origin,
             purpose=req.purpose,
+            shape=route.shape,   # decided once at the door; the analyst serves this shape
         )
         # FL-1b — the analyst runs through the same K1 bridge as the graph path:
         # a supervised job (so a closed tab no longer kills it mid-run and
@@ -5802,6 +5803,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
                              session_id=req.session_id, canvas_id=req.canvas_id,
                              surface=req.surface, schema_scope=req.schema_name,
                              brief_period=req.brief_period,
+                             shape=route.shape,   # a check answers as a verdict and its counts
                              # CI-4 — a seeded/dossier turn hands its finding to the
                              # conversation instead of bypassing it; SP-15 — a turn
                              # summoned from an object hands that object's live state.

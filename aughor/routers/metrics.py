@@ -114,12 +114,18 @@ def get_metrics(connection_id: Optional[str] = None):
     `list_metrics` records for its own default). Unscoped, with identity on, the list is the
     caller's organisation's: the global rows, its `org:` rows and its visible connections' —
     never another organisation's (the 2027 study §E item 2)."""
+    from aughor.semantic.metric_time import measurable
     rows = list_metrics(connection_id=connection_id)
     # `home_schema` — the dataset each belongs to, resolved as the store resolves it (a definition
     # that names none belongs to the one its SQL reads), so a client matches a catalogue row to its
-    # definition by dataset and name, never by name alone.
-    return [{**m.model_dump(), "home_schema": home_schema(m)}
-            for m in (rows if connection_id else organisation_visible(rows))]
+    # definition by dataset and name, never by name alone. `measurable` — whether its dates can
+    # measure it, and why not: a date on a table the statement does not read stood as "✓ measured"
+    # on the Metrics tab for two days (Gross Margin %, LuxExperience, 2026-10-15).
+    out = []
+    for m in (rows if connection_id else organisation_visible(rows)):
+        ok, why = measurable(m)
+        out.append({**m.model_dump(), "home_schema": home_schema(m), "measurable": ok, "measurable_why": why})
+    return out
 
 
 # The path parameter is `conn_id`, not `connection_id`: `require_capability` (the `gate`

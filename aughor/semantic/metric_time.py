@@ -64,6 +64,35 @@ def declared(m: Any) -> bool:
     return True
 
 
+def unreachable_date(m: Any) -> str:
+    """Why the metric's date cannot measure it — "its statement does not read orders, the table
+    its date is on" — or "" when it can, or when nothing is set to check.
+
+    A period filters the date's own table INSIDE the statement (`scoped_statement`), so a date on
+    a table the statement never reads measures nothing. Gross Margin % (LuxExperience) stood as
+    "✓ measured" on the Metrics tab with exactly that date for two days (2026-10-13 → 15): the
+    row read `declared` — a kind and a column — and nothing read whether the column could be
+    reached. The same words the measurement would have said, said before it runs."""
+    from aughor.semantic.metric_statement import split_grain
+    column = str(_get(m, "time_column") or "").strip()
+    table, _col = split_grain(column)
+    if not column or not table:
+        return ""
+    read = tables_read(m)
+    if not read or bare_name(table) in {bare_name(t) for t in read}:
+        return ""
+    return f"its statement does not read {table}, the table its date is on"
+
+
+def measurable(m: Any) -> tuple[bool, str]:
+    """Whether the metric can be measured for a range, and why not when it cannot: its dates
+    unset (`declared`), or set on a table its statement does not read (`unreachable_date`)."""
+    if not declared(m):
+        return False, "its dates are not set"
+    why = unreachable_date(m)
+    return (not why), why
+
+
 def merge_time_edit(existing: Any, sent: dict) -> dict:
     """The time fields an edit writes: the existing ones, overlaid by what the edit SENT. A
     sent change is a person's — ``time_source`` says so and ``time_confirmed_by`` names them.

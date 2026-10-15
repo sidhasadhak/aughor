@@ -129,6 +129,8 @@ export interface AnswerReport {
   metric: string;
   observation_period: string;
   comparison_basis: string;
+  /** How the Agent turn worked the question — describe · check · diagnose (2026-10-15). */
+  question_shape?: string | null;
   total_change_label: string;
   phases: InvestigationPhase[];
   attribution_waterfall: WaterfallEntry[];
@@ -588,8 +590,12 @@ function ConcludedBody({ report, onShowSource, frame }: { report: AnswerReport; 
   ].map(c => c.trim()).filter(Boolean)));
   const answer = [report.headline, report.executive_summary].filter(Boolean).join("\n");
   const says = (s?: string | null) => !!s && answer.toLowerCase().includes(s.toLowerCase());
-  const periodStr = (says(report.observation_period) || namesPeriod(answer, report.observation_period ?? ""))
-    && (!report.comparison_basis || says(report.comparison_basis))
+  // A check (question_shape "check", 2026-10-15) verifies a property of the data: it has no period
+  // and no next step — a verdict, its counts, what was not checked. The chrome of an investigation
+  // (the period chip, Next) stays off it even on a report that carries those fields.
+  const isCheck = report.question_shape === "check";
+  const periodStr = isCheck || ((says(report.observation_period) || namesPeriod(answer, report.observation_period ?? ""))
+    && (!report.comparison_basis || says(report.comparison_basis)))
     ? ""
     : [report.observation_period, report.comparison_basis ? `vs ${report.comparison_basis}` : ""].filter(Boolean).join(" ");
   const figures = (report.figures ?? []).filter(f => f.value?.trim()).slice(0, 4);
@@ -627,7 +633,7 @@ function ConcludedBody({ report, onShowSource, frame }: { report: AnswerReport; 
 
       <RuleOutsSection ruleOuts={report.rule_outs} />
 
-      {report.recommendations && report.recommendations.length > 0 && (
+      {!isCheck && report.recommendations && report.recommendations.length > 0 && (
         <BriefSection className="border-t border-zinc-800/60 pt-4">
           <Label>Next</Label>
           <RecommendationsList recs={report.recommendations} />
@@ -711,8 +717,9 @@ export function InvestigationReportView({
   const repeats = repeatedCharts(analysisPhases.flatMap((p) => p.findings.filter((f) => drawn(f) && !f.claim?.trim())
     .map((f) => ({ id: f.finding_id, columns: f.columns, rows: f.rows as unknown[][], chartType: f.chart_type }))));
 
-  const periodStr = (says(report.observation_period) || namesPeriod(answer, report.observation_period ?? ""))
-    && (!report.comparison_basis || says(report.comparison_basis))
+  const periodStr = report.question_shape === "check"
+    || ((says(report.observation_period) || namesPeriod(answer, report.observation_period ?? ""))
+    && (!report.comparison_basis || says(report.comparison_basis)))
     ? ""
     : [
       report.observation_period,

@@ -243,7 +243,7 @@ export interface ChatTurn {
     ambiguous: boolean;
     forced: string | null;
     downgradedFrom: string | null;
-    /** The question's shape when the analyst serves it — "describe" measures what was asked. */
+    /** The question's shape — describe · check · diagnose · survey — on every turn's route. */
     shape?: string;
   } | null;
 

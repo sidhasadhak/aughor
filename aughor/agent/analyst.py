@@ -1391,6 +1391,32 @@ _MACHINERY_RE = re.compile(
 _FIRST_PERSON_RE = re.compile(r"(?<![\w'’])(?:I|[Mm]y|[Mm]yself)(?=['’]|\s|[,.;:!?)]|$)")
 
 
+#: A line is a CLAIM about a result when it has a predicate — a verb, a comparison, a stated change
+#: or percentage. A caption with none is a TITLE: what was measured, not what it shows. Two of the
+#: six concluded answers stored on 2026-10-14 (cee3f6ed, e441d73d) captioned their one exhibit
+#: "Top 10 categories by revenue with order counts and AOV, last 6 months, non-cancelled".
+_CLAIM_MARK_RE = re.compile(
+    r"\b(?:is|are|was|were|has|have|had|rose|rises|fell|falls|grew|grows|drove|drives|driven|lead|leads|led|"
+    r"lag|lags|lagged|trail|trails|trailed|explains?|explained|contributes?|contributed|accounts?|accounted|"
+    r"adds?|added|subtracts?|subtracted|offsets?|offset|drops?|dropped|declines?|declined|increases?|increased|"
+    r"decreases?|decreased|remains?|remained|stays?|stayed|sits|sat|holds?|held|carries|carried|exceeds?|exceeded|"
+    r"outweighs?|outweighed|concentrates?|concentrated|makes?|made|shows?|showed|gains?|gained|loses|lost|"
+    r"outperforms?|outperformed|underperforms?|underperformed|reaches|reached|peaks?|peaked|doubled|halved|"
+    r"within|above|below|versus|vs|than|up|down|flat|higher|lower|more|less|most|least|largest|smallest|"
+    r"only|despite|while|but|not|no)\b"
+    r"|(?<!\d)[+\-−]\s?[$€£]?\d|\d\s?%|→|↑|↓", re.I)
+
+
+def _reads_as_a_title(claim: str, finding: dict) -> bool:
+    """A caption that names the measurement instead of stating what it shows: the finding's own
+    title or subtitle restated, or a line with no predicate at all."""
+    def norm(s) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", str(s or "").lower()).strip()
+    if norm(claim) and norm(claim) in {norm(finding.get("title")), norm(finding.get("subtitle"))}:
+        return True
+    return not _CLAIM_MARK_RE.search(claim or "")
+
+
 def _reader_register(field: str, text: str) -> list[str]:
     """What in ``text`` is not written for the reader: the machinery named, the first person."""
     out: list[str] = []
@@ -1461,17 +1487,36 @@ def conclude(turn: AnalystTurn, args: dict) -> dict:
         if not claim:
             problems.append(f"exhibit {rid} has no claim")
             continue
+        if _reads_as_a_title(claim, known[rid]):
+            problems.append(f"exhibit {rid}'s claim reads as a title ({claim!r}); say what the result "
+                            "shows — the leading value and how it compares — not what was measured")
+            continue
         if rid not in seen:
             seen.add(rid)
             exhibits.append({"finding_id": rid, "claim": claim})
     if not exhibits and known:
         problems.append("exhibits is empty; cite at least the result the answer rests on")
+    # A figure is a value READ from a result: each number it states must be in some result's
+    # rows — a cell, a difference or share of two cells, a column's total — at the precision it
+    # is written. Checked here, where the model can still fix it, not after it is on the page.
+    from aughor.explorer.verify import ungrounded_figure_numbers
+    rows_by_result = [f.get("rows") for f in known.values() if f.get("rows")]
     figures: list[dict] = []
     for fg in (a.get("figures") or [])[:4]:
-        if isinstance(fg, dict) and str(fg.get("value") or "").strip():
-            figures.append({"label": " ".join(str(fg.get("label") or "").split())[:60],
-                            "value": str(fg.get("value")).strip()[:40],
-                            "note": " ".join(str(fg.get("note") or "").split())[:80]})
+        if not (isinstance(fg, dict) and str(fg.get("value") or "").strip()):
+            continue
+        label = " ".join(str(fg.get("label") or "").split())[:60]
+        value = str(fg.get("value")).strip()[:40]
+        stated, missing = ungrounded_figure_numbers(value, rows_by_result)
+        if stated == 0:
+            problems.append(f"figure {label!r} has no number in its value ({value!r}); a figure is a "
+                            "value read from a result")
+        elif missing:
+            problems.append(f"figure {label!r} states {', '.join(missing)}, which no result of this turn "
+                            "returned; read figures from the rows — a value in no result is not a figure "
+                            "of this answer, so drop it or cite the result that holds it")
+        figures.append({"label": label, "value": value,
+                        "note": " ".join(str(fg.get("note") or "").split())[:80]})
     if problems:
         return {"refused": "; ".join(problems) + ". Call conclude again with these fixed."}
     turn.conclusion = {"headline": headline, "answer": answer, "exhibits": exhibits,
@@ -1623,7 +1668,8 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
         ),
         ToolSpec(
             name="list_tables",
-            description="List the tables available, with their columns.",
+            description=("A manifest of the tables available — each with its row count and its "
+                         "columns' names and types; describe_table for one table's sample values."),
             parameters={"type": "object", "properties": {}},
             run=lambda a: list_tables(cid, a),
         ),
@@ -1637,7 +1683,7 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
         ),
     ] + [t for t in platform_tools(cid, session_id=session_id)
          if t.name in _ANALYST_PLATFORM_TOOLS]
-    if shape == "describe":
+    if shape in ("describe", "check"):
         roster = [t for t in roster if t.name not in INVESTIGATION_TOOLS]
     from aughor.kernel.flags import flag_enabled
     if flag_enabled("analyst.conclude"):
@@ -1787,6 +1833,36 @@ def _measured_preface(turn: "AnalystTurn") -> str:
                       *(f"run_sql: {sql}\n→ {payload}" for sql, payload in turn.measured_by_code)])
 
 
+def _check_rules(budget: int, conclude: bool = False) -> list[str]:
+    """The rules for a question that asks to VERIFY a property of the data or the model — do these
+    keys join, are there orphans, does one table agree with another (the check shape, 2026-10-15).
+    A check frames no metric, no window and no cause: it decides what would make the answer yes or
+    no, measures exactly that, and states the verdict with the counts that carry it. Its conclusion
+    is the answer (`investigate._conclusion_as_answer`), written for the reader."""
+    closing = ([
+        f"When you stop, call `conclude`. Its headline is the VERDICT in one line, under {_HEADLINE_WORDS} "
+        "words — yes, no or partly, with the decisive count read from a row ('Yes: event_id joins all "
+        "1,642 attendance rows; 0 orphans'). Its answer is plain prose for the reader: each check you ran "
+        "and what it found, each figure read from a row. Its figures are the checks' counts — rows, "
+        "matches, orphans, duplicates, nulls — each read from a result; its exhibits the results those "
+        "counts came from, by the result_id each tool result carried, with the claim the reader takes "
+        "from it. In `gaps`, what you did not check, in the report's voice. No cause, no recommendation, "
+        "no period the question did not name.",
+    ] if conclude else [
+        "When you stop, write the answer the reader will read: the verdict first, in one sentence — yes, "
+        "no or partly, with the decisive count read from a row — then each check you ran and what it "
+        "found, each figure read from a row; then what you did not check. No cause, no recommendation, "
+        "no period the question did not name.",
+    ])
+    from aughor.agent.question_shape import CHECK_RULE
+    return [
+        f"You have at most {budget} tool calls. {CHECK_RULE} Read a table's columns first when you are "
+        "unsure of a key (`describe_table`).",
+        "",
+        *closing,
+    ]
+
+
 def _describe_rules(budget: int, conclude: bool = False) -> list[str]:
     """The stopping rule for a question that asks to SEE the data (item 3). Its conclusion
     is published as the answer (`investigate._conclusion_as_answer`), so it is written for
@@ -1887,7 +1963,8 @@ def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
         "answer: re-measure the way it says, then answer from that result. Leaving out the "
         "rows a guard flagged is not a re-measure.",
         "",
-        *(_describe_rules(budget, conclude=_conclude) if shape == "describe" else [
+        *(_describe_rules(budget, conclude=_conclude) if shape == "describe"
+          else _check_rules(budget, conclude=_conclude) if shape == "check" else [
             f"You have at most {budget} tool calls for this investigation. STOPPING RULE: "
             "stop the moment a cause is named WITH ITS SIZE (which segment, how much of "
             "the change it carries) — or, if the data cannot answer, stop and say plainly "
@@ -2065,8 +2142,14 @@ def run_analyst(
     max_steps: Optional[int] = None,
     persist: bool = True,
     purpose: str = "",
+    shape: Optional[str] = None,
 ) -> AnalystResult:
     """One deep turn as the analyst: intake once, then the loop, then the narrator.
+
+    ``shape`` is the question's shape the door decided (`agent/question_shape`) — describe,
+    check, diagnose or survey — carried in so the roster, the stopping rule, the report and the
+    trace all serve the shape the route named. None when the turn came through a door that
+    decided none; the shape is then read from the question here.
 
     ``emit`` receives the turn's frames — ``phase_complete`` per phase a tool lands,
     the run_sql receipts, and the terminal ``answer_report`` — in the exact wire
@@ -2104,7 +2187,19 @@ def run_analyst(
         # Intake — once. The spec anchor: metric resolution, the coverage clamp, the
         # no-prior-period verdict, the origin/follow-up anchoring. Its phase streams
         # like any other so the user sees the spec land.
-        turn.merge(ada_intake(state, conn), tool="intake")
+        from aughor.agent.question_shape import question_shape
+        shape = shape or question_shape(question)
+        state["question_shape"] = turn.state["question_shape"] = shape
+        if shape == "check":
+            # A check frames no metric, no date and no window, so the intake has nothing to decide:
+            # its spec for one was an invention (LuxExperience d14f276b, 2026-10-15: "event
+            # attendance records (rows available to join)", a date, the data's whole span). The
+            # turn keeps what every SQL-writing prompt needs — the engine and the clock.
+            from aughor.agent.sql_context import learned_settle_days as _settle, sql_context as _ctx
+            turn.state["_ada_intake"] = {"question_shape": "check",
+                                         "sql_context": _ctx(conn, settle_days=_settle(eff_conn_id))}
+        else:
+            turn.merge(ada_intake(state, conn), tool="intake")
         if turn.state.get("_intake_failed"):
             # Stopped here, as the deep path stops (`investigate.route_after_intake`): the
             # guards that keep a window inside the data and a month still filling out of a
@@ -2125,9 +2220,8 @@ def run_analyst(
                                  investigation_id=inv_id, context_timings=context_timings)
 
         budget = max_steps if max_steps is not None else profile_for("coder").deep_loop_steps
-        # Item 3: measure-and-state or investigate, decided by code from the question.
-        from aughor.agent.investigate import question_shape
-        shape = (turn.intake or {}).get("question_shape") or question_shape(question)
+        # Item 3: measure-and-state, check or investigate — the shape the door carried in.
+        shape = (turn.intake or {}).get("question_shape") or shape
         tools = analyst_tools(turn, emit=emit, session_id=session_id,
                               canvas_id=canvas_id, user_question=question, shape=shape)
         # A further measure tied to a governed metric is measured by code before the analyst's

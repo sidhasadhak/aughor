@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -57,8 +58,15 @@ from aughor.control_plane.contracts.execution import QueryResult
 _CACHE_PATH = resolve_db_path("AUGHOR_MATCACHE_DB", Path("data") / "mat_cache.duckdb")
 DEFAULT_TTL: float = 3_600.0   # 1 hour
 
-# Module-level connection — opened lazily once, reused.
+# Module-level connection — opened lazily once, reused — and SERIALISED: a DuckDB connection object
+# is not safe to use from two threads at once, and this one is used from every worker thread the API
+# has (each `/query/run`, the Briefing desk's metric moves, the period brief) and from the monitors
+# scheduler's eviction. On 2026-10-15 at 17:37 UTC the live API died with a segmentation fault inside
+# `_duckdb` on a worker thread (crash report python3.11-2026-10-15-193753.ips) while sixteen `/query/run`
+# calls measured a cockpit at once. Every use of the handle holds `_LOCK`; each operation is a single
+# small statement, so serialising them costs nothing a reader can see.
 _conn: duckdb.DuckDBPyConnection | None = None
+_LOCK = threading.Lock()
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS mat_cache (
@@ -78,6 +86,7 @@ _MIGRATE = "ALTER TABLE mat_cache ADD COLUMN IF NOT EXISTS extra_json TEXT"
 
 
 def _db() -> duckdb.DuckDBPyConnection:
+    """The handle — call it, and use what it returns, only while holding `_LOCK`."""
     global _conn
     if _conn is None:
         _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -134,19 +143,20 @@ def get_cached_entry(
     if refusal_for(conn_id, "", sql, None):
         return None
     try:
-        c = _db()
         key = _cache_key(conn_id, sql, tenancy, variant)
-        row = c.execute(
-            "SELECT columns_json, rows_json, row_count, stored_at, extra_json "
-            "FROM mat_cache WHERE cache_key = ?",
-            [key],
-        ).fetchone()
-        if row is None:
-            return None
-        columns_json, rows_json, row_count, stored_at, extra_json = row
-        if time.time() - stored_at > ttl:
-            c.execute("DELETE FROM mat_cache WHERE cache_key = ?", [key])
-            return None
+        with _LOCK:
+            c = _db()
+            row = c.execute(
+                "SELECT columns_json, rows_json, row_count, stored_at, extra_json "
+                "FROM mat_cache WHERE cache_key = ?",
+                [key],
+            ).fetchone()
+            if row is None:
+                return None
+            columns_json, rows_json, row_count, stored_at, extra_json = row
+            if time.time() - stored_at > ttl:
+                c.execute("DELETE FROM mat_cache WHERE cache_key = ?", [key])
+                return None
         res = QueryResult(
             hypothesis_id="__cache__",
             sql=sql,
@@ -189,24 +199,18 @@ def put_cache(conn_id: str, sql: str, result: QueryResult, *, tenancy: str | Non
     caller reads back exactly what it wrote. ``extra`` carries format-specific payload (typed
     columns, truncation) alongside the rows. See the module docstring."""
     try:
-        c = _db()
         key = _cache_key(conn_id, sql, tenancy, variant)
-        c.execute(
-            """
-            INSERT OR REPLACE INTO mat_cache
-                (cache_key, conn_id, columns_json, rows_json, row_count, stored_at, extra_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                key,
-                conn_id,
-                json.dumps(result.columns),
-                json.dumps(result.rows),
-                result.row_count,
-                time.time(),
-                json.dumps(extra) if extra else None,
-            ],
-        )
+        params = [key, conn_id, json.dumps(result.columns), json.dumps(result.rows), result.row_count,
+                  time.time(), json.dumps(extra) if extra else None]
+        with _LOCK:
+            _db().execute(
+                """
+                INSERT OR REPLACE INTO mat_cache
+                    (cache_key, conn_id, columns_json, rows_json, row_count, stored_at, extra_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                params,
+            )
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "materialized-cache write is non-fatal; the query just recomputes next time",
@@ -216,8 +220,8 @@ def put_cache(conn_id: str, sql: str, result: QueryResult, *, tenancy: str | Non
 def invalidate(conn_id: str) -> int:
     """Delete all cache entries for a connection. Returns number of rows deleted."""
     try:
-        c = _db()
-        c.execute("DELETE FROM mat_cache WHERE conn_id = ?", [conn_id])
+        with _LOCK:
+            _db().execute("DELETE FROM mat_cache WHERE conn_id = ?", [conn_id])
         # DuckDB cursor doesn't expose rowcount reliably; return 0 as sentinel
         return 0
     except Exception:
@@ -231,13 +235,14 @@ def evict_expired(ttl: float = DEFAULT_TTL) -> int:
     until this runs — call it on a schedule (see monitors.scheduler) so the file
     can't grow unbounded on a long-running server."""
     try:
-        c = _db()
         cutoff = time.time() - ttl
-        n = c.execute(
-            "SELECT COUNT(*) FROM mat_cache WHERE stored_at < ?", [cutoff]
-        ).fetchone()
-        evicted = int(n[0]) if n and n[0] is not None else 0
-        c.execute("DELETE FROM mat_cache WHERE stored_at < ?", [cutoff])
+        with _LOCK:
+            c = _db()
+            n = c.execute(
+                "SELECT COUNT(*) FROM mat_cache WHERE stored_at < ?", [cutoff]
+            ).fetchone()
+            evicted = int(n[0]) if n and n[0] is not None else 0
+            c.execute("DELETE FROM mat_cache WHERE stored_at < ?", [cutoff])
         return evicted
     except Exception:
         return 0
@@ -246,10 +251,10 @@ def evict_expired(ttl: float = DEFAULT_TTL) -> int:
 def cache_stats() -> dict:
     """Return aggregate stats about the cache."""
     try:
-        c = _db()
-        row = c.execute(
-            "SELECT COUNT(*), MIN(stored_at), MAX(stored_at) FROM mat_cache"
-        ).fetchone()
+        with _LOCK:
+            row = _db().execute(
+                "SELECT COUNT(*), MIN(stored_at), MAX(stored_at) FROM mat_cache"
+            ).fetchone()
         return {
             "entries": row[0],
             "oldest_at": row[1],

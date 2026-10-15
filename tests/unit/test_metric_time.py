@@ -45,6 +45,23 @@ def _with(metric: dict, **fields) -> dict:
     return {**metric, **mt.infer(metric, PROFILE).fields, **fields}
 
 
+def test_a_date_on_a_table_the_statement_does_not_read_cannot_measure_the_metric():
+    """Gross Margin % (LuxExperience) stood as "✓ measured" for two days with its date on `orders`,
+    a table its statement never read (2026-10-15): `declared` read a kind and a column, and nothing
+    read whether the column could be reached. The row says it now, before a period is measured."""
+    gm = {"name": "gross_margin", "tables": [], "time_kind": "flow", "time_column": "luxexperience.orders.order_date",
+          "sql": "SELECT SUM(unit_price_eur * quantity) AS gm FROM order_items"}
+    assert mt.unreachable_date(gm) == "its statement does not read luxexperience.orders, the table its date is on"
+    assert mt.measurable(gm) == (False, "its statement does not read luxexperience.orders, the table its date is on")
+    joined = {**gm, "sql": "SELECT SUM(oi.unit_price_eur) AS gm FROM order_items oi JOIN luxexperience.orders o ON oi.order_id = o.order_id"}
+    assert mt.unreachable_date(joined) == "" and mt.measurable(joined) == (True, "")
+    assert mt.measurable({**gm, "time_column": None}) == (False, "its dates are not set")
+    # a bare column names no table to check; an expression metric reads its declared tables
+    assert mt.unreachable_date({**gm, "time_column": "order_date"}) == ""
+    assert mt.measurable(_with(REVENUE, time_column="order_items.created_at")) == (True, "")
+    assert mt.unreachable_date(_with(REVENUE, time_column="orders.created_at")).startswith("its statement does not read orders")
+
+
 def test_the_rules_set_the_dates_a_person_would():
     assert {k: v for k, v in mt.infer(REVENUE, PROFILE).fields.items() if k != "time_source"} == {
         "time_kind": "flow", "time_column": "created_at", "outcome_column": None, "until_column": None}

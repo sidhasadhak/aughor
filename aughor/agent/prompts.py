@@ -1,52 +1,62 @@
-ROUTE_QUESTION_PROMPT = """\
-You are a routing classifier for an analytics agent.
-Classify the user's business question into one of three modes based on the TYPE OF REASONING required.
+# The question's SHAPE — the one vocabulary for a question's kind (`agent/question_shape.py`). Code
+# reads the shape from the question's words first; this prompt is asked only on the borderline, a
+# question no rule reads, and it answers in the same four words.
+QUESTION_SHAPE_PROMPT = """\
+You classify a business question by its SHAPE — the kind of answer it asks for — for an analytics agent.
+The question's words carried no clear signal; you decide the borderline.
 
 QUESTION: {question}
 
-MODES:
+SHAPES:
 
-1. "direct"
-   Use when the user primarily wants: facts, metrics, aggregations, rankings, comparisons, summaries, or filtered/sliced data.
-   The answer mainly involves RETRIEVING and PRESENTING information.
-   A question can require 5+ SQL queries and still be "direct" — complexity does not determine the mode, intent does.
+1. "describe"
+   The user wants to SEE the data: facts, figures, aggregations, rankings, comparisons, trends, summaries,
+   filtered or sliced data. The answer RETRIEVES and PRESENTS. A question can need several queries and still
+   be a describe — the number of steps does not decide the shape, the ask does.
 
-2. "investigate"
-   Use when the user wants: root-cause analysis, diagnosis, anomaly investigation, or causal reasoning.
-   The question asks WHY something happened, and the answer requires evaluating competing explanations.
+2. "check"
+   The user wants to VERIFY a property of the data or the model: whether keys join, whether rows match between
+   tables, whether values are present, unique, consistent or in range — any yes/no about the data itself.
+   The answer is a verdict with the counts that carry it.
 
-3. "explore"
-   Use when the question asks about: characterisation, optimisation, relationship-mapping, or "what is a good/optimal X?"
-   The answer requires building understanding SEQUENTIALLY — each finding informs the next question.
-   Key signals: "what is the relationship between", "what is a good/moderate/optimal", "how does X vary with Y",
-   "what are the characteristics of", "what drives", "where is the threshold/cliff/break-even".
-   Explore questions are NOT about WHY something went wrong — they're about UNDERSTANDING a structure.
+3. "diagnose"
+   The user wants a CAUSE, a DIAGNOSIS or ADVICE: why something happened, what is behind a movement, which
+   segment is losing value, what to do about it. The answer weighs competing explanations.
+
+4. "survey"
+   The user wants to UNDERSTAND A LANDSCAPE: characterise, profile, map how X varies with Y, what is a
+   good/optimal X, where the threshold is. The answer is built from many cuts of one scene, each informing
+   the next. A survey is not about WHY something went wrong — that is a diagnose.
 
 KEYWORD GUIDANCE (semantic hints, not strict rules):
-   direct:      "what", "how much", "how many", "show", "list", "top", "compare", "breakdown", "summary", "trend"
-   investigate: "why", "cause", "reason", "diagnose", "what changed", "what's behind", "what's causing"
-   explore:     "relationship", "optimal", "moderate", "good rate", "characteristics", "how does X vary", "threshold",
-                "what drives", "break-even", "what is a [adjective] X", "explore", "understand"
+   describe: "what", "how much", "how many", "show", "list", "top", "compare", "breakdown", "summary", "trend"
+   check:    "do these join", "duplicates", "orphans", "nulls", "does X match Y", "is it true that", "verify"
+   diagnose: "why", "cause", "reason", "diagnose", "what changed", "what's behind", "what's causing", "should we"
+   survey:   "relationship", "optimal", "good rate", "characteristics", "how does X vary", "threshold",
+             "break-even", "what is a [adjective] X", "explore", "understand"
 
 CLASSIFICATION EXAMPLES:
-   Q: "Why did revenue drop 8% last week?"                                    → investigate
-   Q: "What is our MRR this month?"                                           → direct
-   Q: "Top 10 customers by revenue"                                           → direct
-   Q: "What is a moderate discount rate to balance sales and profitability?"  → explore
-   Q: "How does churn vary with pricing tier?"                                → explore
-   Q: "What are the characteristics of our highest-LTV customers?"           → explore
-   Q: "What's behind the APAC revenue decline?"                              → investigate
-   Q: "Which discount level maximises profit per order?"                     → explore
-   Q: "Revenue by region this quarter"                                        → direct
-   Q: "Is the APAC decline a trend or a one-time event?"                    → investigate
+   Q: "Why did revenue drop 8% last week?"                                    → diagnose
+   Q: "What is our MRR this month?"                                           → describe
+   Q: "Top 10 customers by revenue"                                           → describe
+   Q: "Revenue by region this quarter"                                        → describe
+   Q: "Do order_items and orders join cleanly on order_id?"                   → check
+   Q: "Are there customers with no orders?"                                   → check
+   Q: "Does the revenue in orders agree with order_items?"                    → check
+   Q: "What's behind the APAC revenue decline?"                              → diagnose
+   Q: "Is the APAC decline a trend or a one-time event?"                    → diagnose
+   Q: "What is a moderate discount rate to balance sales and profitability?"  → survey
+   Q: "How does churn vary with pricing tier?"                                → survey
+   Q: "What are the characteristics of our highest-LTV customers?"           → survey
+   Q: "Which discount level maximises profit per order?"                     → survey
 
 CONFIDENCE GUIDANCE:
-   Return confidence >= 0.75 only when the mode is unambiguous.
-   For gray-zone questions, prefer explore over investigate when the question is about STRUCTURE/RELATIONSHIP
-   rather than DIAGNOSIS/CAUSATION. False-direct is the worst failure — never classify an explore/investigate
-   question as direct.
+   Return confidence >= 0.75 only when the shape is unambiguous.
+   Between survey and diagnose, prefer survey when the question is about STRUCTURE or a RELATIONSHIP and
+   diagnose when it is about a MOVEMENT or a CAUSE. Calling a diagnose or a survey a describe is the worst
+   failure — a shallow answer to a deep question — never do it when in doubt.
 
-Return: mode, confidence (0.0–1.0), and a one-sentence reasoning explaining the classification.
+Return: shape, confidence (0.0–1.0), and a one-sentence reasoning explaining the classification.
 """
 
 # Answer-shape discipline (SOMA-SQL "projection minimality", adapted to be product-good):

@@ -115,35 +115,50 @@ def test_a_single_tool_roster_is_not_a_choice_and_records_nothing():
     assert decisions.list_decisions(site="converse.tool") == []
 
 
-def test_the_route_classifier_records_the_final_route_not_the_raw_pick(monkeypatch):
-    """The confidence floor re-routes a low-confidence 'direct' to 'investigate'; the
-    record must carry the route the platform actually took — that is what a reflex
-    would have to reproduce.
+def test_the_route_classifier_records_the_final_shape_not_the_raw_pick(monkeypatch):
+    """The confidence floor re-reads a low-confidence 'describe' as 'diagnose'; the record
+    must carry the shape the platform actually took — that is what a reflex would have to
+    reproduce. The body (investigate) is derived from the shape, not chosen, so it is not a
+    decision and is not recorded.
 
-    And the probability must describe THAT label. The model said 0.4 about `direct`; once
-    the floor moved the route, carrying 0.4 across would file a number about one answer
-    against a different one. An overridden route is therefore `rule` with no probability —
+    And the probability must describe THAT label. The model said 0.4 about `describe`; once
+    the floor moved the shape, carrying 0.4 across would file a number about one answer
+    against a different one. An overridden shape is therefore `rule` with no probability —
     the pick was the platform's, not the model's."""
     _wipe()
     import aughor.agent.nodes as nodes
-    from aughor.agent.state import RouteDecision
+    from aughor.agent.question_shape import SHAPES
+    from aughor.agent.state import ShapeDecision
 
     class _Stub:
         def complete(self, **kw):
-            return RouteDecision(mode="direct", confidence=0.4, reasoning="uncertain")
+            return ShapeDecision(shape="describe", confidence=0.4, reasoning="uncertain")
 
     monkeypatch.setattr(nodes, "get_provider", lambda role: _Stub())
     effective, _ = nodes.classify_question("total revenue by region last month")
     assert effective == "investigate"
 
-    [row] = decisions.list_decisions(site="ask.route")
-    assert row["chosen"] == "investigate"
-    assert row["options"] == ["direct", "investigate", "explore", "final_text"]
-    assert row["label"] == row["options"].index("investigate")
-    # The model's 0.4 was about "direct". The floor chose this label, so the row says so
+    [row] = decisions.list_decisions(site="ask.shape")
+    assert row["chosen"] == "diagnose"
+    assert row["options"] == list(SHAPES) == ["describe", "check", "diagnose", "survey"]
+    assert row["label"] == row["options"].index("diagnose")
+    # The model's 0.4 was about "describe". The floor chose this label, so the row says so
     # and carries no probability — rather than filing 0.4 against an answer nobody gave it.
     assert row["source"] == "rule"
     assert row["confidence"] == 0.0
+
+
+def test_a_shape_code_decided_records_as_a_rule_with_no_model_asked(monkeypatch):
+    """Most turns never reach the model: the shape rules read the question, and the record says
+    so — `rule`, no probability — so the corpus never credits a model with a choice code made."""
+    _wipe()
+    import aughor.agent.nodes as nodes
+    monkeypatch.setattr(nodes, "get_provider",
+                        lambda role: (_ for _ in ()).throw(AssertionError("no model for a clear question")))
+    effective, decision = nodes.classify_question("Why did revenue drop in August?")
+    assert effective == "investigate" and decision.shape == "diagnose"
+    [row] = decisions.list_decisions(site="ask.shape")
+    assert (row["chosen"], row["source"], row["confidence"]) == ("diagnose", "rule", 0.0)
 
 
 def test_the_definition_chooser_records_the_listing_it_showed(monkeypatch):

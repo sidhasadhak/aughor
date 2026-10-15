@@ -974,6 +974,11 @@ export interface Metric {
   time_source?: string | null;
   /** Stamped by the server with the person signed in — never sent. */
   time_confirmed_by?: string | null;
+  /** Whether its dates can measure it, and why not when they cannot — read by the server from the definition
+   *  (`metric_time.measurable`): dates unset, or a date on a table the statement does not read. Absent on an
+   *  older client of the list. */
+  measurable?: boolean | null;
+  measurable_why?: string | null;
   /** Arc OC-3 — the entity whose objects it measures, confirmed by a person through its own door
    *  (`confirmMetricEntity`); never sent with an edit, which keeps it. */
   entity?: string | null;

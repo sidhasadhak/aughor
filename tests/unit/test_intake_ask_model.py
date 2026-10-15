@@ -40,7 +40,7 @@ class TestTheSubsetIsDerived:
         assert _CODE_SET_INTAKE_FIELDS == {"descriptive_only", "no_prior_period",
                                            "named_dimensions", "metric_filters",
                                            "period_named", "comparison_asked", "measure_definitions",
-                                           "framed_metric"}
+                                           "framed_metric", "record"}
         assert set(IntakeOutput.model_fields) - set(IntakeAsk.model_fields) == _CODE_SET_INTAKE_FIELDS
 
     def test_the_marker_is_what_selects_them(self):

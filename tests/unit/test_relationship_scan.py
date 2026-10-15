@@ -80,7 +80,8 @@ def test_the_contrast_is_dropped_with_a_receipt():
     assert intake.comparison_segment_label == ""
     # The reason has to reach the reader: a contrast that silently disappears is as hard
     # to debug as one that lies.
-    assert "DRIVER CONTRAST DROPPED" in intake.intake_notes
+    assert "The driver contrast was dropped:" in intake.intake_notes and "DROPPED" not in intake.intake_notes
+    assert intake.record[0]["tag"] == "segment_dropped" and intake.record[0]["reason"]
     assert "original notes" in intake.intake_notes
 
 

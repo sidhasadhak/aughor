@@ -72,33 +72,65 @@ def test_complex_question_routes_deep_without_classifier():
 
 
 # ── Borderline path consults the classifier ───────────────────────────────────
+# The borderline is a question whose words no shape rule reads (`question_shape(…, default=None)`
+# is None): here a bare noun phrase — no question word, no "compare", no "show". Until 2026-10-15
+# "Compare revenue by region …" stood here; code now reads it as a describe and routes it with
+# no model call (see the test below).
+
+BORDERLINE = "Revenue by region versus last quarter, broken down by channel"
+
 
 def test_moderate_noncausal_question_uses_classifier_investigate():
     clf = _RecordingClassifier(mode="investigate", confidence=0.8)
-    r = decide_ask_route(
-        "Compare revenue by region versus last quarter, and break it down by channel",
-        classifier=clf,
-    )
+    r = decide_ask_route(BORDERLINE, classifier=clf)
     assert r.depth == "deep" and r.used_classifier is True
     assert r.confidence == 0.8 and len(clf.calls) == 1
 
 
 def test_moderate_noncausal_question_classifier_direct_routes_quick():
     clf = _RecordingClassifier(mode="direct")
-    r = decide_ask_route(
-        "Compare revenue by region versus last quarter, and break it down by channel",
-        classifier=clf,
-    )
+    r = decide_ask_route(BORDERLINE, classifier=clf)
     assert r.depth == "quick" and r.used_classifier is True
 
 
 def test_explore_mode_routes_deep():
     clf = _RecordingClassifier(mode="explore")
-    r = decide_ask_route(
-        "Compare revenue by region versus last quarter, and break it down by channel",
-        classifier=clf,
-    )
+    r = decide_ask_route(BORDERLINE, classifier=clf)
     assert r.depth == "deep"
+
+
+def test_a_moderate_describe_is_read_by_code_and_routes_quick_without_the_classifier():
+    """The shape decides first: "compare … by region" asks to SEE the data, and a moderate
+    complexity tier is a budget question, not a kind question — quick, no model asked."""
+    r = _route("Compare revenue by region versus last quarter, and break it down by channel")
+    assert r.depth == "quick" and r.mode == "direct" and r.shape == "describe"
+    assert r.used_classifier is False
+
+
+def test_the_route_carries_the_shape_the_body_is_handed():
+    """One decision per turn: the receipt names the shape, and the shape stays under a forced
+    depth — Agent versus Quick is depth only, the frame is the question's."""
+    check = _route("Do Event and Platform really join on these keys?")
+    assert (check.depth, check.mode, check.shape) == ("quick", "direct", "check")
+    assert check.to_event()["question_shape"] == "check"
+    forced = _route("Do Event and Platform really join on these keys?", depth_override="deep")
+    assert (forced.depth, forced.shape, forced.forced) == ("deep", "check", "deep")
+    why = _route("Why did revenue drop last week?")
+    assert (why.depth, why.shape) == ("deep", "diagnose")
+
+
+def test_the_classifier_s_shape_rides_the_route_on_the_borderline():
+    @dataclass
+    class _Said:
+        confidence: float = 0.9
+        reasoning: str = "a yes/no about the data"
+        shape: str = "check"
+
+    r = decide_ask_route(BORDERLINE, classifier=lambda q: ("direct", _Said()))
+    assert r.used_classifier and r.shape == "check" and r.depth == "quick"
+    # A classifier that knows no shape leaves the body to imply one.
+    r2 = decide_ask_route(BORDERLINE, classifier=_RecordingClassifier(mode="investigate"))
+    assert r2.shape == "diagnose"
 
 
 def test_ambiguous_simple_question_falls_through_to_classifier():
@@ -113,10 +145,7 @@ def test_classifier_failure_falls_back_to_deep():
     def _raise(_q):
         raise RuntimeError("llm down")
 
-    r = decide_ask_route(
-        "Compare revenue by region versus last quarter, and break it down by channel",
-        classifier=_raise,
-    )
+    r = decide_ask_route(BORDERLINE, classifier=_raise)
     assert r.depth == "deep" and r.used_classifier is False
 
 
@@ -173,7 +202,7 @@ def test_to_event_shape_for_deep():
     ev = r.to_event()
     assert ev["depth"] == "deep" and ev["alternatives"] == ["quick"]
     assert set(ev) >= {"depth", "mode", "tier", "score", "confidence", "ambiguous",
-                       "why", "alternatives", "forced", "downgraded_from"}
+                       "why", "alternatives", "forced", "downgraded_from", "question_shape"}
 
 
 def test_to_event_shape_for_quick():

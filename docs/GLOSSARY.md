@@ -17,6 +17,7 @@ fall, never rise.
 |---|---|---|
 | **Deep analysis** | The autonomous multi-phase path — *both* the mode you pick and the record it produces (plural: deep analyses) | ADA, Agentic, "investigation" *in anything a user reads* |
 | **Quick answer** | The fast NL→SQL→answer path | "Insight" as a mode, chat, `direct` as a user word |
+| **Shape** | The kind of question, read from its words before any body runs — **describe** · **check** · **diagnose** · **survey** (`aughor/agent/question_shape.py`); the same four words at every door, in the model classifier, on the route receipt, in the report and the trace | "mode" or "intent" for the kind; `direct` / `investigate` / `explore` as the kind of a question (those are bodies) |
 | **Survey** | A wide question answered by many cuts at once | "landscape", "wide wave"; `explore` in anything a user reads |
 | **Knowledge answer** | A definitional answer from the knowledge base | `final_text` |
 | **Overview** | The first-look tour of a newly connected schema | — (Home is Home; the catalog's per-table tab is "Summary") |
@@ -241,7 +242,9 @@ the boundary. If you are tempted to rename one, you are about to orphan history.
 - **The four `STRUCTURAL_MODES`** — `direct`, `investigate`, `explore`, `final_text`.
   `query_mode` is a field on the checkpointed graph state and the checkpointer writes to
   `data/checkpoints.db`, so these values sit on disk in every paused run. Display words map
-  at the boundary: Quick answer · Deep analysis · **Survey** · Knowledge answer.
+  at the boundary: Quick answer · Deep analysis · **Survey** · Knowledge answer. They are
+  BODIES, derived from the question's **shape** and the depth (`question_shape.body_for`) —
+  never asked of a model and never the word for a question's kind.
   `aughor/agent/explore.py` keeps its name deliberately — renaming it to `survey.py` while
   the mode id stays `explore` would trade one mismatch for another
 - The licence capability **value** `"analysis.deep"`
