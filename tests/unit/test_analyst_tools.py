@@ -861,3 +861,38 @@ def test_the_agent_run_states_the_window_its_phase_ran_on(monkeypatch, traffic_d
     result = an.run_analyst("conn-t", "why did sessions move in August?", persist=False)
     assert result.report["observation_period"] == "1–18 Jul 2026"
     assert any("read as August 2026" in g for g in result.report["data_gaps"])
+
+
+
+def test_a_check_runs_no_intake_and_keeps_the_engine_and_the_clock(monkeypatch, traffic_db, faux_llm):
+    """A check frames no metric, no date and no window (2026-10-15): the intake is not called, the
+    turn still knows its engine and clock, and synthesis sees the shape."""
+    from aughor.llm.faux import FauxToolCall
+
+    seen = {}
+
+    def _no_intake(state, conn=None):
+        raise AssertionError("the intake must not run for a check")
+
+    def _fake_synthesize(state):
+        seen["intake"] = state.get("_ada_intake")
+        seen["phases"] = state.get("investigation_phases") or []
+        return {}
+
+    _patch_seams(monkeypatch, traffic_db, intake=_no_intake, synthesize=_fake_synthesize)
+    monkeypatch.setattr("aughor.agent.converse_tools.run_sql",
+                        lambda cid, a, **kw: {"columns": ["dupes"], "rows": [[0]]})
+    faux_llm.set_responses([
+        FauxToolCall(payload={"sql": "SELECT COUNT(*) - COUNT(DISTINCT route) AS dupes FROM traffic"},
+                     name="run_sql"),
+        "No: every route is unique; 0 duplicates.",
+    ])
+
+    frames: list[tuple] = []
+    an.run_analyst("conn-t", "Are there duplicate routes in traffic?", persist=False,
+                   emit=lambda t, p: frames.append((t, p)))
+
+    assert seen["intake"]["question_shape"] == "check"
+    assert "SQL DIALECT" in seen["intake"]["sql_context"] and "TODAY" in seen["intake"]["sql_context"]
+    assert [p["phase_id"] for p in seen["phases"]] == ["adhoc_1"]          # no intake phase
+    assert [t for t, _ in frames].count("phase_complete") == 1

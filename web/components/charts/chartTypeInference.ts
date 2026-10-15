@@ -227,8 +227,15 @@ export function inferChartType(
   const catIdx  = catIdxs[0];
   const numIdx  = numericIdxs[0];
 
+  // A per-category SUMMARY — one row per category, with date BOUNDS beside the measure (first and
+  // last event, min and max date) — is not a time series: the dates describe each row's range, and
+  // plotting the measure against one of them drew a five-dot scatter for a count by platform
+  // (LuxExperience d14f276b, 2026-10-15). It reads as a category grid; the bounds stay in the table.
+  const perCategorySummary = dateIdx !== undefined && catIdx !== undefined
+    && dateIdxs.length >= 2 && countUnique(rows, catIdx) === rows.length;
+
   // ── TIME SERIES (date column present) ────────────────────────────────────
-  if (dateIdx !== undefined) {
+  if (dateIdx !== undefined && !perCategorySummary) {
     // No category → pure single line — unless the result measures a CHANGE per period. Then the
     // change is what it adds, and it reads as one bar per period, signed: Q3's growth result drew a
     // line of monthly revenue, a copy of the trend above it, and never the growth the question asked

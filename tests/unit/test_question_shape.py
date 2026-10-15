@@ -318,3 +318,65 @@ def test_the_describe_rules_give_an_answer_no_figure_to_copy():
 def test_the_describe_rule_never_adds_up_a_column_under_no_total():
     from aughor.agent.analyst import analyst_system_prompt
     assert "a column under `no_total` is never added up at all" in analyst_system_prompt("c", {}, 10, shape="describe")
+
+
+# ── The check shape (2026-10-15) ───────────────────────────────────────────────────────
+
+CHECKS = [
+    "Do Event and Platform really join on these keys?",          # LuxExperience d14f276b
+    "Are there duplicate order_ids in order_items?",
+    "Does revenue in orders agree with order_items?",
+    "Check whether every return has an order.",
+    "Are any customer_ids null in orders?",
+    "Is it true that each session maps to one order?",
+    "Verify the foreign keys between returns and orders",
+]
+
+
+@pytest.mark.parametrize("q", CHECKS)
+def test_a_question_that_asks_to_verify_the_data_is_a_check(q):
+    assert I.question_shape(q) == "check"
+
+
+@pytest.mark.parametrize("q, shape", [
+    ("Which customers joined in March?", "describe"),             # a verb, not a key
+    ("How many orders did we have in March?", "describe"),
+    ("Why are there orphan returns?", "diagnose"),                  # why outranks the check words
+    ("Should we fix the duplicate keys?", "diagnose"),               # advice outranks them too
+])
+def test_the_check_words_do_not_take_a_question_that_is_not_one(q, shape):
+    assert I.question_shape(q) == shape
+
+
+def test_a_check_is_not_offered_the_tools_that_explain_a_movement():
+    turn = SimpleNamespace(connection_id="test-conn")
+    checked = {t.name for t in analyst_tools(turn, session_id="s", shape="check")}
+    assert not (INVESTIGATION_TOOLS & checked)
+    assert {"run_sql", "describe_table", "profile_column"} <= checked
+
+
+def test_the_check_rule_asks_for_a_verdict_and_its_counts_not_a_cause():
+    checked = analyst_system_prompt("c", {}, 12, shape="check")
+    assert "VERIFY a property of the data" in checked and "verdict" in checked.lower()
+    assert "orphans, duplicates, nulls" in checked
+    assert "cause is named WITH ITS SIZE" not in checked and "asks to SEE the data" not in checked
+    assert "No cause, no recommendation" in checked
+
+
+def test_a_check_takes_the_no_writer_door_like_a_describe():
+    """The verdict and its counts are the analyst's own; a writer would add causes and advice."""
+    state = {"_analyst_conclusion": "Yes: event_id joins all 1,642 rows.",
+             "_analyst_conclude": {"headline": "Yes: event_id joins all 1,642 attendance rows", "answer": "All match.",
+                                   "exhibits": [], "figures": [], "gaps": "customer_id was not checked."}}
+    out = I._conclusion_as_answer(state, {"question_shape": "check"}, "Do these keys join?")
+    assert out is not None and out.headline.startswith("Yes:") and out.recommendations == []
+    assert "customer_id was not checked" in out.executive_summary
+    assert I._conclusion_as_answer(state, {"question_shape": "diagnose"}, "Why?") is None
+
+
+def test_the_ask_router_answers_a_check_quickly_unless_told_otherwise():
+    from aughor.agent.ask_router import decide_ask_route
+    auto = decide_ask_route("Do Event and Platform really join on these keys?")
+    assert (auto.depth, auto.mode) == ("quick", "direct") and "verdict" in auto.why
+    forced = decide_ask_route("Do Event and Platform really join on these keys?", depth_override="deep")
+    assert forced.depth == "deep" and forced.forced == "deep"

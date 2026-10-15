@@ -1683,7 +1683,7 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
         ),
     ] + [t for t in platform_tools(cid, session_id=session_id)
          if t.name in _ANALYST_PLATFORM_TOOLS]
-    if shape == "describe":
+    if shape in ("describe", "check"):
         roster = [t for t in roster if t.name not in INVESTIGATION_TOOLS]
     from aughor.kernel.flags import flag_enabled
     if flag_enabled("analyst.conclude"):
@@ -1833,6 +1833,40 @@ def _measured_preface(turn: "AnalystTurn") -> str:
                       *(f"run_sql: {sql}\n→ {payload}" for sql, payload in turn.measured_by_code)])
 
 
+def _check_rules(budget: int, conclude: bool = False) -> list[str]:
+    """The rules for a question that asks to VERIFY a property of the data or the model — do these
+    keys join, are there orphans, does one table agree with another (the check shape, 2026-10-15).
+    A check frames no metric, no window and no cause: it decides what would make the answer yes or
+    no, measures exactly that, and states the verdict with the counts that carry it. Its conclusion
+    is the answer (`investigate._conclusion_as_answer`), written for the reader."""
+    closing = ([
+        f"When you stop, call `conclude`. Its headline is the VERDICT in one line, under {_HEADLINE_WORDS} "
+        "words — yes, no or partly, with the decisive count read from a row ('Yes: event_id joins all "
+        "1,642 attendance rows; 0 orphans'). Its answer is plain prose for the reader: each check you ran "
+        "and what it found, each figure read from a row. Its figures are the checks' counts — rows, "
+        "matches, orphans, duplicates, nulls — each read from a result; its exhibits the results those "
+        "counts came from, by the result_id each tool result carried, with the claim the reader takes "
+        "from it. In `gaps`, what you did not check, in the report's voice. No cause, no recommendation, "
+        "no period the question did not name.",
+    ] if conclude else [
+        "When you stop, write the answer the reader will read: the verdict first, in one sentence — yes, "
+        "no or partly, with the decisive count read from a row — then each check you ran and what it "
+        "found, each figure read from a row; then what you did not check. No cause, no recommendation, "
+        "no period the question did not name.",
+    ])
+    return [
+        f"You have at most {budget} tool calls. This question asks you to VERIFY a property of the data — "
+        "whether keys join, whether rows match, whether values are present, unique or consistent — not "
+        "to measure a business figure or to explain a movement. STOPPING RULE: decide what would make "
+        "the answer yes or no, measure exactly that with counts (rows, matches, orphans, duplicates, "
+        "nulls — one query can carry several), and stop when the verdict is evidenced. Read a table's "
+        "columns first when you are unsure of a key (`describe_table`). Frame no metric, no period and "
+        "no baseline, and look for no cause or anomaly the question did not ask about.",
+        "",
+        *closing,
+    ]
+
+
 def _describe_rules(budget: int, conclude: bool = False) -> list[str]:
     """The stopping rule for a question that asks to SEE the data (item 3). Its conclusion
     is published as the answer (`investigate._conclusion_as_answer`), so it is written for
@@ -1933,7 +1967,8 @@ def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
         "answer: re-measure the way it says, then answer from that result. Leaving out the "
         "rows a guard flagged is not a re-measure.",
         "",
-        *(_describe_rules(budget, conclude=_conclude) if shape == "describe" else [
+        *(_describe_rules(budget, conclude=_conclude) if shape == "describe"
+          else _check_rules(budget, conclude=_conclude) if shape == "check" else [
             f"You have at most {budget} tool calls for this investigation. STOPPING RULE: "
             "stop the moment a cause is named WITH ITS SIZE (which segment, how much of "
             "the change it carries) — or, if the data cannot answer, stop and say plainly "
@@ -2150,7 +2185,17 @@ def run_analyst(
         # Intake — once. The spec anchor: metric resolution, the coverage clamp, the
         # no-prior-period verdict, the origin/follow-up anchoring. Its phase streams
         # like any other so the user sees the spec land.
-        turn.merge(ada_intake(state, conn), tool="intake")
+        from aughor.agent.investigate import question_shape
+        if question_shape(question) == "check":
+            # A check frames no metric, no date and no window, so the intake has nothing to decide:
+            # its spec for one was an invention (LuxExperience d14f276b, 2026-10-15: "event
+            # attendance records (rows available to join)", a date, the data's whole span). The
+            # turn keeps what every SQL-writing prompt needs — the engine and the clock.
+            from aughor.agent.sql_context import learned_settle_days as _settle, sql_context as _ctx
+            turn.state["_ada_intake"] = {"question_shape": "check",
+                                         "sql_context": _ctx(conn, settle_days=_settle(eff_conn_id))}
+        else:
+            turn.merge(ada_intake(state, conn), tool="intake")
         if turn.state.get("_intake_failed"):
             # Stopped here, as the deep path stops (`investigate.route_after_intake`): the
             # guards that keep a window inside the data and a month still filling out of a

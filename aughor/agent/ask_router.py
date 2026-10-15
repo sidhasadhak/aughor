@@ -188,6 +188,14 @@ def decide_ask_route(
         return _route("deep", "investigate", "investigating, as you asked",
                       forced="deep")
 
+    # A check — do these keys join, are there orphans, does one table agree with another — is
+    # answered in a step or two with a verdict and its counts; left to the classifier it was
+    # "investigate", and the deep body framed a metric, a date and a window for it (LuxExperience
+    # d14f276b, 2026-10-15). Decided by code from the question, like the Agent turn's own shape.
+    from aughor.agent.investigate import question_shape
+    if question_shape(question or "") == "check":
+        return _route("quick", "direct", "checking the data directly — a verdict and its counts")
+
     # 2) Auto — deterministic-first. The obvious cases never touch the model. ──────
     causal = verdict.signals.get("causal", 0) > 0
 

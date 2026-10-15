@@ -491,3 +491,23 @@ ask or moves a rule into a check; none adds a call.
     fix. Named.
 * §6 is closed: P1–P6 built, and the named-not-done items above are closed as written, bar the wide-grid chart
   projection, which is named.
+* **The check shape (2026-10-15, the user: "the nature of the question must be first interpreted and then the
+  output structure adopted — what's the whole point of being Agentic then?").** Measured on LuxExperience
+  `d14f276b`: "Do Event and Platform really join on these keys?" matched neither the read-ask nor a why-word, fell to
+  `diagnose`, and the intake invented a metric ("event attendance records (rows available to join)", `COUNT(*)`), a
+  date and a window for it; two ad-hoc queries then answered it correctly in 1m14s, and the page wore the
+  investigation's clothes — period chip, a scatter of a five-row count by platform drawn off its date bounds, three
+  recommended actions. The quick path's own router sent the same question to "direct" and answered it in 9 s. Built:
+  a third shape, **`check`** — a question that asks to VERIFY a property of the data or the model (keys that join,
+  duplicates, orphans, nulls, one table agreeing with another; `_ASKS_TO_VERIFY_RE`, conservative, why and advice
+  outrank it). A check runs no intake (the turn keeps the engine and the clock), gets the roster without the phase
+  tools, the check rules (decide what makes the answer yes or no, measure exactly that with counts, stop when the
+  verdict is evidenced; the headline is the verdict with its decisive count; no cause, no recommendation, no period
+  the question did not name) and the no-writer door a describe takes; the page draws no period chip and no Next on it;
+  `decide_ask_route` answers a check quickly under auto depth, so "Agent" means depth, not frame. Adjacent, fixed: the
+  chart inference read a per-category summary with date bounds (one row per platform, first and last event date) as a
+  time series — it is a category grid now. Not unified: the quick router's taxonomy (direct · investigate · explore)
+  and the Agent turn's (describe · check · diagnose) are still two vocabularies; the check is the first word they
+  share in code. Tests: `test_question_shape.py` (check cases, roster, rules, the door, the router),
+  `test_analyst_tools.py` (a check runs no intake), `InvestigationReport.concluded.test.tsx`,
+  `chartTypeInference.test.ts`. Not proven live (a run costs a model call).
