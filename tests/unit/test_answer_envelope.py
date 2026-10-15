@@ -253,6 +253,9 @@ def test_a_stored_version_one_envelope_is_brought_up_to_its_concluded_report_on_
     assert env["grid"]["caption"] == "Mytheresa and Mr Porter carry four-fifths of the rise"
     assert env["provenance"]["sql"] == ["SELECT 1"] and env["provenance"]["receipt_id"] == "r-1"   # kept from the stream
     assert env["question"] == "why?" and env["headline"] == CONCLUDED["headline"]
+    # the caveats are re-projected too: the v1 fold carried the uncited result's machine note
+    assert any("every value in this result" in c for c in v1["caveats"])
+    assert not any("every value in this result" in c for c in env["caveats"])
     assert rep["envelope"]["version"] == 1                                 # a read rewrote nothing
     # a stored fold that already carries the structure, and a report without one, come back as stored
     v2 = fold_frames([{"type": "answer_report", "answer_report": CONCLUDED}]).model_dump()

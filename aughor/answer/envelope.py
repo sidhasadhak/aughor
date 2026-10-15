@@ -482,7 +482,8 @@ def envelope_of_report(rep: Any, *, question: str = "") -> dict:
     if not stored:
         return folded
     out = dict(stored)
-    for key in ("version", "figures", "exhibits", "gaps"):
+    # the structure AND the caveats are projections of the report; the provenance is the stream's
+    for key in ("version", "figures", "exhibits", "gaps", "caveats"):
         out[key] = folded[key]
     if not out.get("grid"):
         out["grid"], out["chart"] = folded["grid"], folded["chart"]
