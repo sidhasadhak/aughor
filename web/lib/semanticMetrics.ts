@@ -32,6 +32,7 @@ export const rowKey = (r: CatalogueMetric) => `${r.source}:${r.schema ?? ALL}:${
 export type Standing =
   | "measured"      // approved, with SQL and a date column: a figure for any period
   | "no_date"       // approved, with SQL, no date column: it cannot be measured for a period
+  | "date_unread"   // approved, with SQL and a date on a table the SQL does not read: it cannot be measured for a period
   | "no_sql"        // approved, with no SQL: it cannot be measured at all
   | "unchecked"     // approved, but its stored definition could not be read — whether it is measured is not known
   | "proposed"      // waiting for a person's review
@@ -55,7 +56,7 @@ export const GROUPS: readonly { id: Group; label: string; folded?: boolean }[] =
 ];
 
 const GROUP_OF: Record<Standing, Group> = {
-  measured: "approved", no_date: "approved", no_sql: "approved", unchecked: "approved",
+  measured: "approved", no_date: "approved", date_unread: "approved", no_sql: "approved", unchecked: "approved",
   proposed: "review", draft: "draft", retired: "retired",
   suggested: "suggested", needs_sql: "suggested", sql_rejected: "suggested",
   not_bound: "not_bound",
@@ -84,7 +85,10 @@ export function standingOf(row: CatalogueMetric, stored: Metric | null | undefin
   const sql = (stored?.sql ?? row.sql ?? "").trim();
   if (!sql) return "no_sql";
   if (!stored) return "unchecked";
-  return hasDates(stored) ? "measured" : "no_date";
+  if (!hasDates(stored)) return "no_date";
+  // The server read whether the date can measure it: a date on a table the SQL does not read stood as
+  // "✓ measured" for two days (Gross Margin %, 2026-10-15). An older list without the field keeps the old reading.
+  return stored.measurable === false ? "date_unread" : "measured";
 }
 
 /** A row with where it stands and the stored definition behind it. */
@@ -127,6 +131,8 @@ export interface StandingFigures {
   approved: number;
   measured: number;
   noDate: number;
+  /** Approved, dated, but the date is on a table the SQL does not read — not measurable for a period either. */
+  dateUnread: number;
   noSql: number;
   /** Approved, but the registry could not be read, so whether each is measured is not known. */
   unchecked: number;
@@ -140,8 +146,8 @@ export interface StandingFigures {
 export function figures(placed: Placed[]): StandingFigures {
   const n = (...s: Standing[]) => placed.filter(p => s.includes(p.standing)).length;
   return {
-    approved: n("measured", "no_date", "no_sql", "unchecked"),
-    measured: n("measured"), noDate: n("no_date"), noSql: n("no_sql"), unchecked: n("unchecked"),
+    approved: n("measured", "no_date", "date_unread", "no_sql", "unchecked"),
+    measured: n("measured"), noDate: n("no_date"), dateUnread: n("date_unread"), noSql: n("no_sql"), unchecked: n("unchecked"),
     review: n("proposed"), drafts: n("draft"), suggested: n("suggested", "needs_sql", "sql_rejected"),
     notBound: n("not_bound"), retired: n("retired"),
   };
@@ -162,7 +168,7 @@ export function needs(placed: Placed[]): Need[] {
   return [
     ...of("review", placed.filter(p => p.standing === "proposed")),
     ...of("no_sql", placed.filter(p => p.standing === "no_sql")),
-    ...of("no_date", placed.filter(p => p.standing === "no_date")),
+    ...of("no_date", placed.filter(p => p.standing === "no_date" || p.standing === "date_unread")),
     ...of("not_bound", placed.filter(p => p.standing === "not_bound")),
     ...of("duplicate", placed.filter(p => p.duplicate)),
   ];
@@ -255,6 +261,12 @@ export function datesSentence(m: Metric): string {
   return `Flow — a row counts on the day of ${m.time_column}.`;
 }
 
+/** Why the dates, as set, cannot measure the metric — the server's reading — or "". Said beside the dates sentence. */
+export function datesProblem(m: Metric): string {
+  if (m.measurable !== false || !m.time_kind || !m.time_column) return "";
+  return `${m.measurable_why || "its date is on a table its SQL does not read"} — it can't be measured for a period until the SQL reads it.`;
+}
+
 // ── A row's state, as a chip ────────────────────────────────────────────────────────────────────────────────────────
 
 /** Where a suggestion came from, in a few words. */
@@ -280,6 +292,9 @@ export function standingChip(p: Placed): { tone: ChipTone; text: string; title: 
       return { tone: "up", text: "✓ measured", title: m ? datesSentence(m) : "Approved, with SQL and a date column." };
     case "no_date":
       return { tone: "amber", text: "no date column", title: "Approved, but it has no date column — it can't be measured for a period." };
+    case "date_unread":
+      return { tone: "amber", text: "date on a table it doesn't read",
+        title: `Approved, but ${m?.measurable_why || "its date is on a table its SQL does not read"} — it can't be measured for a period. Join that table in the SQL, then choose the date.` };
     case "no_sql":
       return { tone: "amber", text: "no SQL", title: "Approved, but it has no SQL — it can't be measured." };
     case "unchecked":

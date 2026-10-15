@@ -293,6 +293,25 @@ def test_a_date_on_a_table_the_definition_does_not_read_is_refused_at_the_door(m
     assert saved and saved[-1].time_column == "orders.order_date"       # only the clean save was written
 
 
+def test_the_metrics_list_says_whether_each_can_be_measured_and_why_not(monkeypatch):
+    """The row read "✓ measured" from a kind and a column alone (Gross Margin %, 2026-10-15)."""
+    from fastapi.testclient import TestClient
+    import aughor.routers.metrics as MR
+    from aughor.api import app
+    from aughor.semantic.metrics import MetricDefinition
+    gm = MetricDefinition(name="gross_margin", label="Gross Margin %", connection="lux-list-conn", tables=[],
+                          sql="SELECT SUM(unit_price_eur * quantity) AS gm FROM order_items",
+                          time_kind="flow", time_column="luxexperience.orders.order_date")
+    aov = MetricDefinition(name="aov", label="AOV", connection="lux-list-conn", tables=[],
+                           sql="SELECT SUM(gmv_eur) / NULLIF(COUNT(DISTINCT order_id), 0) AS aov FROM orders",
+                           time_kind="flow", time_column="orders.order_date")
+    monkeypatch.setattr(MR, "list_metrics", lambda connection_id=None: [gm, aov])
+    rows = {r["name"]: r for r in TestClient(app).get("/metrics?connection_id=lux-list-conn").json()}
+    assert rows["gross_margin"]["measurable"] is False
+    assert rows["gross_margin"]["measurable_why"] == "its statement does not read luxexperience.orders, the table its date is on"
+    assert rows["aov"]["measurable"] is True and rows["aov"]["measurable_why"] == ""
+
+
 def test_an_edit_that_leaves_a_stored_date_as_it_was_is_not_refused_for_it():
     """The trap of 2026-10-14: with the typo stored, the SQL could not be saved with its join (the stored
     date rode along and was refused) and the date could not be corrected (the Dates form saved the stored

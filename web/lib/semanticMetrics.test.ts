@@ -11,8 +11,8 @@ import { describe, expect, it } from "vitest";
 import type { CatalogueMetric, Metric, RemovedProposal } from "@/lib/api";
 
 import {
-  dayWords, figures, grouped, lastDecision, missingRoles, needs, packsOf, place, shortColumn, shortUnit, standingChip,
-  standingOf,
+  datesProblem, dayWords, figures, grouped, lastDecision, missingRoles, needs, packsOf, place, shortColumn, shortUnit,
+  standingChip, standingOf,
 } from "./semanticMetrics";
 
 function row(over: Partial<CatalogueMetric> = {}): CatalogueMetric {
@@ -88,6 +88,26 @@ describe("where one row stands", () => {
   it("an approved definition with SQL and a date is measured; without a date it is not", () => {
     expect(standingOf(row(), metric(dated))).toBe("measured");
     expect(standingOf(row(), metric())).toBe("no_date");
+  });
+
+  it("a date on a table the SQL does not read is not measured, and says so — the server read it", () => {
+    // Gross Margin % stood as "✓ measured" for two days (2026-10-15) with its date on `orders`, a table its
+    // statement never read.
+    const why = "its statement does not read luxexperience.orders, the table its date is on";
+    const gm = metric({ name: "gross_margin", label: "Gross Margin %", time_kind: "flow",
+                        time_column: "luxexperience.orders.order_date", measurable: false, measurable_why: why });
+    expect(standingOf(row({ name: "gross_margin" }), gm)).toBe("date_unread");
+    expect(standingOf(row(), metric({ ...dated, measurable: true }))).toBe("measured");
+    expect(standingOf(row(), metric(dated))).toBe("measured");                       // an older list: no field, old reading
+    const placed = place([row({ name: "gross_margin", label: "Gross Margin %" })], [gm]);
+    expect(figures(placed)).toMatchObject({ approved: 1, measured: 0, noDate: 0, dateUnread: 1 });
+    expect(needs(placed).map(n => [n.kind, n.items.length])).toEqual([["no_date", 1]]);   // the same door: the Dates tab
+    const chip = standingChip(placed[0]);
+    expect(chip.tone).toBe("amber");
+    expect(chip.text).toBe("date on a table it doesn't read");
+    expect(chip.title).toContain(why);
+    expect(datesProblem(gm)).toBe(`${why} — it can't be measured for a period until the SQL reads it.`);
+    expect(datesProblem(metric({ ...dated, measurable: true }))).toBe("");
   });
 
   it("no SQL comes before no date — nothing can be dated without a statement", () => {
