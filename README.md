@@ -19,8 +19,8 @@
     <a href="FEATURES.md"><strong>Features</strong></a>
   </p>
 
-  <a href="docs/readme/aughor-launch.mp4"><img src="docs/readme/hero.png" width="900" alt="Aughor — Connect to your data. Let insights find you. The Briefing, Agent Ops and the Semantic Layer on the Superstore sample data" /></a>
-  <p><a href="docs/readme/aughor-launch.mp4"><strong>▶ Watch the 96-second tour</strong></a> — filmed on the Superstore sample data, every screen live</p>
+  <a href="docs/readme/aughor-launch.mp4?raw=true"><img src="docs/readme/hero.png" width="900" alt="Aughor — Connect to your data. Let insights find you. The Briefing, Agent Ops and the Semantic Layer on the Superstore sample data" /></a>
+  <p><a href="docs/readme/aughor-launch.mp4?raw=true"><strong>▶ Watch the 96-second tour</strong></a> — filmed on the Superstore sample data, every screen live</p>
 </div>
 
 ---
