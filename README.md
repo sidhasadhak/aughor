@@ -19,8 +19,8 @@
     <a href="FEATURES.md"><strong>Features</strong></a>
   </p>
 
-  <a href="docs/readme/aughor-launch.mp4?raw=true"><img src="docs/readme/hero.png" width="900" alt="Aughor — Connect to your data. Let insights find you. The Briefing, Agent Ops and the Semantic Layer on the Superstore sample data" /></a>
-  <p><a href="docs/readme/aughor-launch.mp4?raw=true"><strong>▶ Watch the 96-second tour</strong></a> — filmed on the Superstore sample data, every screen live</p>
+  <a href="#the-96-second-tour"><img src="docs/readme/hero.png" width="900" alt="Aughor — Connect to your data. Let insights find you. The Briefing, Agent Ops and the Semantic Layer on the Superstore sample data" /></a>
+  <p><a href="#the-96-second-tour"><strong>▶ Watch the 96-second tour</strong></a> — filmed on the Superstore sample data, every screen live</p>
 </div>
 
 ---
@@ -37,6 +37,12 @@ Aughor connects to your warehouse and **keeps learning from it**. It explores th
 - 📒 **It keeps a record.** Inquiries, decisions, missions, claims and corrections: what is established, what was chosen and what became of it, and what the platform was wrong about.
 - 🏭 **It adapts to your industry.** An airline gets load-factor and on-time performance; a retailer gets AOV and return rate — an industry pack guides, the data decides.
 - 🔌 **It runs fully local.** Your warehouse, your models — nothing has to leave your machine.
+
+### The 96-second tour
+
+https://github.com/user-attachments/assets/0f66b544-4d82-4059-9e08-2153fa4def5e
+
+<sub>Filmed on the Superstore sample data, every screen live · <a href="docs/readme/aughor-launch.mp4?raw=true">full quality (19 MB)</a></sub>
 
 <p align="center">
   <img src="docs/readme/briefing.png" width="900" alt="The Briefing on the Superstore sample data: Furniture Discounting Erodes Hidden Profit — the lead story with every figure cited, and the record in numbers" />
