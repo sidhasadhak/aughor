@@ -1,8 +1,8 @@
 <div align="center">
   <img src="web/public/aughor-logo.jpeg" width="110" alt="Aughor" />
   <h1>Aughor</h1>
-  <p><strong>The autonomous intelligence platform for your data warehouse.</strong></p>
-  <p><em>Your warehouse, always thinking.</em></p>
+  <p><strong>The agentic data intelligence platform.</strong></p>
+  <p><em>Connect to your data. Let insights find you.</em></p>
 
   <p>
     <a href="https://github.com/sidhasadhak/aughor/actions/workflows/ci.yml"><img src="https://github.com/sidhasadhak/aughor/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
@@ -19,21 +19,28 @@
     <a href="FEATURES.md"><strong>Features</strong></a>
   </p>
 
-  <img src="docs/readme/briefing.png" width="900" alt="Aughor's intelligence briefing on LuxExperience — the verdict, the numbers that moved, and a grounded chart, every figure backed by a query" />
+  <a href="docs/readme/aughor-launch.mp4?raw=true"><img src="docs/readme/hero.png" width="900" alt="Aughor — Connect to your data. Let insights find you. The Briefing, Agent Ops and the Semantic Layer on the Superstore sample data" /></a>
+  <p><a href="docs/readme/aughor-launch.mp4?raw=true"><strong>▶ Watch the 96-second tour</strong></a> — filmed on the Superstore sample data, every screen live</p>
 </div>
 
 ---
 
-Aughor connects to your warehouse and **keeps learning from it**. It builds a living map of your business — entities, relationships, governed metrics, lifecycles — explores the data on its own, and answers hard analytical questions in plain English with **evidence, citations, and computed confidence**.
+Aughor connects to your warehouse and **keeps learning from it**. It explores the data on its own, learns what the business is, writes the metrics into a governed semantic layer for you to review and approve, and briefs you with every number cited. When you do ask — in plain English, in the SQL editor or as an analyst agent you built — the answer comes with **evidence, guards and a receipt**.
 
 > **The thesis:** most AI data tools are query wrappers — you ask, they translate. Aughor explores your data in the background, forms a business ontology, and is engineered so the numbers it reports are **trustworthy, not just plausible**: deterministic guards sit between the model and every figure you see.
 
-- 🔭 **It explores on its own.** Connect a warehouse and it starts learning — no prompts — keeping a frontier of what it has already covered and re-exploring as schema and data move (governed per connection).
-- 🧠 **It builds an ontology, not a dashboard.** Entities, relationships, metrics, and lifecycles inferred from real data, human-editable with override-wins semantics, version-controllable.
-- 🏭 **It adapts to your industry.** An airline gets load-factor and on-time performance; a retailer gets AOV and return-rate — from a per-industry metric knowledge base, not one generic lens.
-- 🛡 **It refuses to be confidently wrong.** Engine-driven trust guards (grain, fan-out, numeral grounding, premise validation, adversarial refutation) run on every answer.
-- 🕰 **It discovers *when* matters.** You never pick a date range; the window anchors to the data's own activity.
+- 🔭 **It explores on its own.** Connect a warehouse and it starts learning — no prompts — keeping a frontier of what it has already covered and re-exploring as schema and data move. An interrupted run says so and offers to continue.
+- 🧠 **It learns the business, then writes the metrics.** A business profile inferred from the data proposes the metrics that matter. You customise one into a draft, see the checks before you decide (what it changes, whether it runs, what it declares, what could be compared), and approve it through an approval gate.
+- 📰 **It briefs you.** A morning paper per dataset: the lead story, the trends, the gaps and what to decide today — every figure cited and one click from the query behind it, for what is known or for a day, week, month or year.
+- 🤖 **Agentic, not agreeable.** Ask a hard question and it plans, runs the queries and tests your hunch before it agrees with it — a deep, multi-phase run you can steer, or a quick straight answer.
+- 🛡 **It refuses to be confidently wrong.** Engine-driven trust guards (grain, fan-out, numeral grounding, premise validation, adversarial refutation) run on the answers; a statement that would change data is refused before it runs, and every query is on the record in Security & Audit.
+- 📒 **It keeps a record.** Inquiries, decisions, missions, claims and corrections: what is established, what was chosen and what became of it, and what the platform was wrong about.
+- 🏭 **It adapts to your industry.** An airline gets load-factor and on-time performance; a retailer gets AOV and return rate — an industry pack guides, the data decides.
 - 🔌 **It runs fully local.** Your warehouse, your models — nothing has to leave your machine.
+
+<p align="center">
+  <img src="docs/readme/briefing.png" width="900" alt="The Briefing on the Superstore sample data: Furniture Discounting Erodes Hidden Profit — the lead story with every figure cited, and the record in numbers" />
+</p>
 
 ## Quick start
 
@@ -150,33 +157,38 @@ AUGHOR_EMBED_MODEL=nomic-embed-text
 One corpus of intelligence behind many surfaces — the depth, mechanisms, and trade-offs live in **[FEATURES.md](FEATURES.md)**.
 
 **Intelligence**
-- **Briefing** — conclusion-first and impact-ranked: a verdict, the numbers that moved, grounded charts, live industry KPIs. Interrogable (Explain / Drill / Ask; click a number to re-run its query) and gated on the governed metric layer before anything can headline.
-- **Chat** — **Agent mode is the default**: a deep, multi-phase run with a plan you can edit, streamed progress, and interrupt-anytime input. Quick mode for a straight answer. Deep runs execute as supervised jobs that survive a closed tab; reload-and-reattach ships behind the `ask.resume_stream` flag, and every conversation — quick and deep turns alike — restores from history.
+- **Briefing** — a morning paper per dataset: the lead story, trends, gaps and "decide today", conclusion-first and impact-ranked, every number cited and one click from its query; for what is known or for a period, gated on the governed metric layer before anything can headline. Ask a follow-up and it stays in the Briefing's dataset and period.
+- **Home, Inbox and Now** — Home prepares a desk from what is on record and takes a question; Inbox holds what deep analyses recommended and what became of each; Now is what needs you this week — sent, waiting, held, corrected.
+- **Data Canvas** — **Agent mode is the default**: a deep, multi-phase run with a plan you can edit, streamed progress, and interrupt-anytime input; Quick mode for a straight answer. Runs are supervised jobs that survive a closed tab and reattach, every conversation restores from History, and you can answer as one of your own agents.
 - **Deep analysis** — intake → baseline → decompose → dimensional → synthesize, with premise validation, period-over-period decomposition anchored to the data's real window, loss-intent and multi-lens scans, and a report that is honest by construction (one canonical grain, consistent units, charts that match their prose).
 - **Autonomous exploration** — phase-structured, frontier-incremental, grounded in the actual schema by construction; findings prove themselves with confirming queries and land in the Evidence Ledger.
-- **Ontology & semantic layer** — auto-built, human-editable, compiled into docs; governed metrics resolve through one precedence-ranked contract that chat, deep analysis, and the explorer all read.
+- **Semantic layer & governed metrics** — metrics proposed from the business profile, customised into drafts, reviewed against their checks and approved through an approval gate, each dated and marked measured; one precedence-ranked contract that chat, deep analysis and the explorer all read.
+- **Ontology** — auto-built and human-editable with override-wins semantics: entities, relationships, lifecycles, and the processes and actions on them, versioned in releases and compiled into docs.
+- **Record** — five ledgers (Inquiries, Decisions, Missions, Claims, Corrections), editable: add a hypothesis, mark a claim wrong, reopen a decision.
 - **Trust guards** — the layer that separates Aughor from a plausible demo: grain/fan-out/numeral/premise/refutation guards, one shared SQL-safety pipeline across every mode, earned-confidence computed (never asserted), snapshot-pinned receipts.
 - **Adaptive temporal scope** — four tiers from activity-anchored recency to a cost governor for TB-scale warehouses.
 
 **Data**
-- **Connectors** — DuckDB · PostgreSQL · **BigQuery** (run live in production against a real warehouse) · Snowflake · MySQL · local upload (CSV/Parquet/Excel) · S3 · Google Sheets · Stripe / HubSpot / Salesforce · Confluence / Notion. Credentials Fernet-encrypted at rest; a per-dialect capability contract keeps generated SQL runnable on each engine.
-- **SQL Editor & Data Canvas** — a first-class SQL surface with results, charts, and open-in-editor from any answer; a canvas for composing analyses.
-- **Catalog & Semantic Layer** — browsable schema intelligence, glossary, metric governance.
+- **Connectors** — DuckDB · MotherDuck · PostgreSQL · **BigQuery** (run live in production against a real warehouse) · Snowflake · MySQL · SQLite · Exasol · Trino · local upload (CSV/Parquet/Excel) · S3 · Google Sheets · Stripe / HubSpot / Salesforce · Confluence / Notion, and federated queries across them. Credentials Fernet-encrypted at rest; a per-dialect capability contract keeps generated SQL runnable on each engine.
+- **SQL Editor** — SQL or a visual composer; type `/ask` and a question and it writes the SQL; every statement is checked by the guards before it runs; results, charts, and open-in-editor from any answer.
+- **Catalog & Documents** — browsable schema intelligence and glossary; a searchable corpus of the documents your agents read.
 
 **Operations**
-- **Agents & Agent Ops** — user-defined analyst personas with scoped bindings, run history, and a control room; approvals are risk-graded and audited.
-- **Monitors & notifications** — findings become monitors; alerts deliver to Slack/webhook on guarded evaluations.
-- **Evals** — NL2SQL validated against TPC-H / TPC-DS / ClickBench / a golden set, running the full pipeline (the number reflects the product, not a harness).
-- **MCP server** — Aughor's governed answers as [MCP](https://modelcontextprotocol.io) tools (`python -m aughor.mcp`): Claude Desktop / Claude Code / Cursor get a verified answer with a Trust Receipt, not raw SQL.
+- **Agents & Agent Ops** — build your own analyst agents (instructions, a connection, the documents they read) and ask as them; a control room with an overview, the roster, what needs attention, automations and an action centre. Approvals are risk-graded and audited.
+- **Monitors, notifications & integrations** — findings become monitors; alerts deliver to Slack, webhooks and Jira on guarded evaluations; Slack and Microsoft Teams bots, where "that's wrong" becomes a correction.
+- **Spend** — usage and model cost by run, caps that stop a run and open a budget editor, and a governance feed.
+- **Security & Audit** — every query checked and recorded, by person or agent: what was blocked, what was flagged, what was masked, and the gate map.
+- **Evals** — suites, runs and experiments in the app; golden-set, Spider 2 and ablation harnesses in `evals/`.
+- **MCP server** — Aughor's governed answers as [MCP](https://modelcontextprotocol.io) tools (`python -m aughor.mcp`): Claude Desktop / Claude Code / Cursor get a verified answer with a Trust Receipt, not raw SQL. An administrator can also open doors through which outside agents read the ontology and propose its actions.
 - **Agent skill & catalog** — [`SKILL.md`](SKILL.md) teaches a coding agent the governed workflow; [`llms.txt`](llms.txt) and a machine-readable connector catalog ([`aughor/connectors/catalog.json`](aughor/connectors/catalog.json), secrets flagged) make the platform legible to tools.
-- **Security & RBAC** — fail-closed SQL safety gate, read-only Postgres, SSRF allowlist, prompt-injection fencing; flag-gated org tenancy with a viewer ⊂ analyst ⊂ owner ladder and row-level policy compiled into every connector's WHERE.
+- **Security & RBAC** — fail-closed SQL safety gate, read-only Postgres, SSRF allowlist, prompt-injection fencing; flag-gated org tenancy with a viewer ⊂ analyst ⊂ owner ladder, row-level policy compiled into every connector's WHERE, and row and property security on the ontology.
 
 ## Stack
 
 | Layer | Technology |
 |---|---|
 | Backend | Python 3.11+, FastAPI, LangGraph |
-| Frontend | Next.js 16 (App Router, Turbopack), TypeScript, Tailwind |
+| Frontend | Next.js 16 (App Router, Turbopack), TypeScript, Tailwind, Radix Themes |
 | Analytics | DuckDB, PostgreSQL, BigQuery |
 | Charts | Vega-Lite — one grammar for screen and PDF/PPTX export |
 | LLM runtime | Ollama · LM Studio · Groq · Together · Anthropic · Gemini · OpenRouter, per-role, with a chosen fallback chain |
@@ -190,16 +202,22 @@ One corpus of intelligence behind many surfaces — the depth, mechanisms, and t
 aughor/
 ├── aughor/
 │   ├── agent/        # LangGraph investigative loop + phase prompts
+│   ├── briefing/     # The Briefing — periods, ranges, the morning paper
+│   ├── canvas/       # Data Canvas — scoped workspaces and their answers
 │   ├── connectors/   # DuckDB, Postgres, BigQuery, Snowflake, Stripe, …
 │   ├── evidence/     # Evidence ledger — claims, confidence, feedback
 │   ├── explorer/     # Background exploration, grounding, cost/watermark
 │   ├── kernel/       # Jobs, ledger, flags, metering — the supervision spine
+│   ├── mcp/          # The MCP server and its doors
 │   ├── ontology/     # Ontology builder, enricher, validator, store
+│   ├── record/       # Inquiries, decisions, missions, claims, corrections
 │   ├── routers/      # FastAPI domain routers (async, SSE)
+│   ├── security/     # SQL safety gate, auth, credentials, audit
 │   ├── semantic/     # Glossary, metrics, compiler, canonical resolver
 │   ├── sql/          # SqlWriter, shared safety pipeline, guards
-│   └── tools/        # schema-linker, data catalog, profiler, stats
-├── evals/            # TPC-H / TPC-DS / ClickBench / golden / real-DB harnesses
+│   ├── tools/        # schema-linker, data catalog, profiler, stats
+│   └── …             # 66 packages in all
+├── evals/            # golden-set, Spider 2 and ablation harnesses
 ├── web/              # Next.js app — components, lib, design tokens
 ├── docs/             # architecture, roadmaps, audits
 └── tests/            # pytest suite — hermetic, offline, failure-path + chaos
@@ -215,7 +233,7 @@ aughor/
 | `AUGHOR_CODER_MODEL` / `AUGHOR_NARRATOR_MODEL` | — | Per-role models (Settings → Models overrides env) |
 | `AUGHOR_FALLBACK_BACKENDS` | Settings choice | Pin the failover chain order (`none` disables it) |
 | `AUGHOR_DEFAULT_POSTGRES_DSN` | — | Pre-loads a Postgres connection on startup |
-| `AUGHOR_QDRANT_PATH` | `data/qdrant` | Embedded vector store for semantic search (`semantic` extra) — in-process, no server |
+| `AUGHOR_QDRANT_PATH` | `qdrant/` in the state directory | Embedded vector store for semantic search (`semantic` extra) — in-process, no server |
 | `AUGHOR_QDRANT_URL` | — | Set to pin a Qdrant *server* instead of the embedded store (e.g. `http://localhost:6333`) |
 | `AUGHOR_PUBLIC_API_URL` | — | This API's public HTTPS origin, when it has one. It turns a Slack install into a button (the OAuth callback), gives a Teams bot its messaging endpoint, and puts absolute URLs on an agent's doors and A2A card. Unset, those say what is missing instead of guessing. |
 | `AUGHOR_MODEL_PRICES` | — | Rates for a provider whose API publishes none, so spend tiles say a number instead of **unpriced**: `provider:model=input/output@date`, USD per 1M tokens, `;`-separated. Google publishes no price endpoint; for the default install's model the list price carried by the aggregators on 2026-09-15 was `gemini:gemini-3.1-flash-lite=0.25/1.50@2026-09-15` — re-check it, the date is part of the claim. A declared rate outranks the catalogue; the product itself ships no model id. |
@@ -247,11 +265,11 @@ Every extra degrades with a message naming the install command, and a footprint 
 
 **Alpha.** No tagged release; `main` is the only supported branch.
 
-What is real today: **8,000+ backend tests**, green on Python 3.11–3.13, hermetic and offline; `ruff` at a zero baseline; CI additionally gates codegen drift for the typed API client. The frontend typechecks under `strict`, carries **300+ vitest tests** (pure-logic and jsdom component projects), and runs six focused lint gates. What is not: `eslint` reports pre-existing findings and is not a CI gate; there is no container image (the only Docker asset composes Qdrant); deployment beyond a local machine and a Vercel data plane is young.
+What is real today: **12,000+ backend tests**, run by CI on Python 3.11 for every change and on 3.11–3.13 weekly; `ruff` at a zero baseline; CI additionally gates codegen drift for the typed API client. The frontend typechecks under `strict`, and CI runs six focused lint gates, two bundle-drift checks and a production build; its **2,400+ vitest tests** (pure-logic and jsdom component projects) run locally, not in CI. What is not: `eslint` reports pre-existing findings and is not a CI gate; there is no container image (`docker-compose.yml` brings up Qdrant, MLflow and Jaeger); deployment beyond a local machine and a Vercel data plane is young.
 
 ## Roadmap, contributing, security
 
-- **[ROADMAP.md](ROADMAP.md)** — prioritized backlog and shipped milestones · **[FEATURES.md](FEATURES.md)** — the living reference (160+ features, mechanisms, and files) · **[docs/PLATFORM_ARCHITECTURE.md](docs/PLATFORM_ARCHITECTURE.md)** — tenancy, catalog, and the control/data-plane split.
+- **[ROADMAP.md](ROADMAP.md)** — prioritized backlog and shipped milestones · **[FEATURES.md](FEATURES.md)** — the living reference, by capability (mechanisms and files) · **[docs/PLATFORM_ARCHITECTURE.md](docs/PLATFORM_ARCHITECTURE.md)** — tenancy, catalog, and the control/data-plane split.
 - Contributions welcome — start with **[CONTRIBUTING.md](CONTRIBUTING.md)**; the load-bearing conventions (default-off flags, guards that ship with a test proving they fire, never raising a ratchet baseline) are documented there. [Code of Conduct](CODE_OF_CONDUCT.md) applies.
 - Report vulnerabilities **privately** — see [SECURITY.md](SECURITY.md).
 
