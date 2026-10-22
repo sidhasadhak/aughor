@@ -165,11 +165,15 @@ export function ProfilePanel({ connectionId, canvasId, schema, workspaceId }: {
     for (const m of metrics.data) {
       const scope = m.connection ?? "*";
       if (scope !== "*" && scope !== connectionId) continue;
+      // A schema's profile shows the metrics of THAT dataset: the Olist profile listed the Uber and airline
+      // schemas' metrics under "Governed metrics" because the three share one connection (2026-10-22).
+      const dataset = m.home_schema ?? m.schema_name ?? null;
+      if (schema && dataset && dataset !== "*" && dataset !== schema) continue;
       const prev = byName.get(m.name);
       if (!prev || ((prev.connection ?? "*") === "*" && scope !== "*")) byName.set(m.name, m);
     }
     return [...byName.values()];
-  }, [metrics, connectionId]);
+  }, [metrics, connectionId, schema]);
   const allGlobal = governed.length > 0 && governed.every(m => (m.connection ?? "*") === "*");
   const live = governed.filter(m => m.status !== "deprecated");
   const deprecated = governed.filter(m => m.status === "deprecated");

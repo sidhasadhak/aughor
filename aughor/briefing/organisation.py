@@ -21,7 +21,12 @@ def _visible_connections() -> list[dict]:
     is on, every registered connection when it is off (one tenant)."""
     try:
         from aughor.db.registry import list_connections
-        return list(list_connections() or [])
+        from aughor.metastore import accessible_catalog_ids
+        # The reader's workspace, not the org: the Now page showed every connection's Briefing inside a
+        # one-connection workspace (the Olist run, 2026-10-22). `accessible_catalog_ids(None)` reads the
+        # workspace bound to this request (the X-Aughor-Workspace header) and is None when none is.
+        allowed = accessible_catalog_ids(None)
+        return [c for c in (list_connections() or []) if allowed is None or c.get("id") in allowed]
     except Exception as exc:  # noqa: BLE001 — a registry that cannot answer folds nothing, and says so
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the connections could not be listed for the organisation's Briefing", counter="briefing.organisation")
