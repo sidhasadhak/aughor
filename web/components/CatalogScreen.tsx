@@ -239,10 +239,16 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
     if (!(connId in datasets) && !inFlight.current.has(connId)) loadDatasets(connId);
   };
 
+  // Only the NEWEST tree request may land. The page fires one read before it knows the workspace (its id is ""
+  // until the workspace list arrives) and one after; the first is org-wide and the heavier, and it used to answer
+  // last and overwrite the scoped tree — six catalogs on an Olist screen (2026-10-22).
+  const treeReq = useRef(0);
   const loadTree = () => {
     setTreeL(true);
+    const seq = ++treeReq.current;
     return getCatalogTree(workspaceId)
       .then(t => {
+        if (seq !== treeReq.current) return t;   // a newer request is in flight; its answer is the one that counts
         setTree(t);
         setTreeError(null);
         const uc = t.sections.find(s => s.id === "connections");
@@ -257,8 +263,8 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         }
         return t;   // callers await this to confirm a new connection is really listed
       })
-      .catch(err => { console.error("[CatalogScreen] tree load failed:", err); setTreeError(String(err?.message ?? err)); return null; })
-      .finally(() => setTreeL(false));
+      .catch(err => { if (seq !== treeReq.current) return null; console.error("[CatalogScreen] tree load failed:", err); setTreeError(String(err?.message ?? err)); return null; })
+      .finally(() => { if (seq === treeReq.current) setTreeL(false); });
   };
 
   // Refetch when the set of connections changes, not only on workspace switch. The tree

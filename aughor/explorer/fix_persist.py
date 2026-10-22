@@ -9,7 +9,7 @@ fix should be saved like any successful explorer query:
      fix as a successful query (append-only; never rewrites history).
   2. **Store a finding** — for domain-intelligence queries, interpret the result and
      store it as an insight that flows into Briefing / Hub / Domains — but through the
-     *same* Phase-8 guards (degenerate / grounding / de-temporalisation). A fix that
+     *same* questions-pass guards (degenerate / grounding / de-temporalisation). A fix that
      trips a guard is still stored (the user made the effort) but flagged
      ``unverified`` with a note, so it is visible yet down-weighted and never
      auto-promotable. A genuinely empty (degenerate) result has no finding to store.
@@ -48,7 +48,7 @@ class _Interp(BaseModel):
     angle_covered: str = ""
 
 
-# Phase-8 encodes its episode `think` as "Domain X | angle=Y | <question>".
+# The questions pass encodes its episode `think` as "Domain X | angle=Y | <question>".
 _THINK_RE = re.compile(
     r"Domain\s+(?P<domain>[^|]+?)\s*\|\s*angle=(?P<angle>[^|]+?)\s*\|\s*(?P<question>.+)",
     re.S,
@@ -67,7 +67,7 @@ def _is_domain_intel(phase: str, think: str) -> bool:
 
 
 def _interpret(llm, *, domain: str, question: str, sql: str, rows, columns) -> _Interp:
-    """Interpret a result into a finding — same grounding-aware prompt as Phase 8."""
+    """Interpret a result into a finding — same grounding-aware prompt as the questions pass."""
     cells = numeric_cells_block(rows)
     result_text = "\n".join(str(r) for r in rows[:20])
     sys = (
@@ -98,7 +98,7 @@ def persist_fixed_finding(
     canvas_id: Optional[str] = None,
 ) -> dict:
     """Repair ``original_sql``, and on a successful run heal the episode and (for
-    domain-intelligence queries) store a finding through the Phase-8 guards. Never
+    domain-intelligence queries) store a finding through the questions-pass guards. Never
     generates new questions. Returns a result dict (see module docstring)."""
     out: dict = {"ok": False, "stored": False, "corrected_sql": original_sql}
     try:

@@ -1,6 +1,6 @@
 """Grounded probe generation — the SOTA fix for column hallucination.
 
-Phase 8 used to generate SQL free-form; the model's prior overrode the schema and
+The questions pass used to generate SQL free-form; the model's prior overrode the schema and
 it invented columns (``line_total``, ``quantity``) that don't exist, caught only by
 a post-hoc gate that discarded ~40% of the token budget. The fix: the LLM never
 writes a column name into SQL. It fills a STRUCTURED :class:`Probe` by CHOOSING

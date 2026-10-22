@@ -1,4 +1,5 @@
 import type { EvalBasis } from "./agentEval";
+import { getActiveWorkspace } from "./workspace";
 import { getApiBase } from "./config";
 import { installUpsellInterceptor } from "./upsell";
 import { installApprovalInterceptor } from "./approval";
@@ -910,7 +911,10 @@ export interface CatalogTree {
 }
 
 export async function getCatalogTree(workspaceId?: string): Promise<CatalogTree> {
-  const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
+  // The workspace the reader stands in, unless the caller names one. The header does the same
+  // for the server, but the parameter is what the request log and a test can see.
+  const ws = workspaceId || getActiveWorkspace();
+  const qs = ws ? `?workspace_id=${encodeURIComponent(ws)}` : "";
   const res = await fetch(`${getApiBase()}/catalog/tree${qs}`);
   if (!res.ok) throw new Error("Failed to fetch catalog tree");
   return res.json();

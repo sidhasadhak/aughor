@@ -1436,7 +1436,7 @@ async def retry_query(conn_id: str, body: RetryQueryRequest):
 @router.post("/exploration/{conn_id}/fix-episode", dependencies=[gate(Capability.FIX_SAVE)])
 def fix_episode(conn_id: str, body: FixEpisodeRequest):
     """Repair an errored episode and, on a successful run, SAVE it: heal the episode and
-    (for domain-intelligence queries) store a finding through the same Phase-8 guards.
+    (for the questions pass) store a finding through the same questions-pass guards.
     Unlike /retry-query this persists; it never generates new questions."""
     from aughor.explorer.fix_persist import persist_fixed_finding
     try:
@@ -1504,7 +1504,7 @@ async def start_exploration(conn_id: str, schema: str | None = None, run_anyway:
 
 @router.post("/exploration/{conn_id}/trigger-intel", dependencies=[gate(Capability.DOMAIN_INTEL)])
 async def trigger_domain_intelligence(conn_id: str, schema: str | None = None, run_anyway: bool = False):
-    """Run only Phase 8 (domain intelligence) where phases 3-7 are already complete.
+    """Run only the questions pass where the structure passes are already complete.
 
     A multi-schema connection's runs live under per-schema keys (``{conn}__{schema}``), so
     resolve the same schema targets ``start``/``kickoff`` use — reading the per-schema state,
@@ -1526,14 +1526,14 @@ async def trigger_domain_intelligence(conn_id: str, schema: str | None = None, r
         key = f"{conn_id}__{sch}" if sch else conn_id
         state = _expl_store.load(key)
         phase = state.get("phase", "pending")
-        # Foundation (phases 3-7) is done once a run reaches domain_intel — accept that as well as
-        # 'complete', so an incremental Phase-8 run works after a budget-cancel left it at
+        # Foundation (the structure passes) is done once a run reaches domain_intel — accept that as well as
+        # 'complete', so an incremental questions-only run works after a budget-cancel left it at
         # domain_intel rather than 'complete' (the run still has its cached foundation).
         _foundation_done = (ExplorationPhase.DOMAIN_INTEL.value, ExplorationPhase.SYNTHESIS.value,
                             ExplorationPhase.COMPLETE.value)
         if phase not in _foundation_done:
             results.append({"schema": sch, "ok": False,
-                            "reason": f"phases 3-7 not complete (current: {phase}) — run /start or /restart first"})
+                            "reason": f"the structure passes are not complete yet (the run is at {phase}) — run /start or /restart first"})
             continue
         existing = _explorers.get(key)
         if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
@@ -1714,7 +1714,7 @@ async def restart_canvas_exploration(canvas_id: str, run_anyway: bool = False):
 
 @router.post("/exploration/canvas/{canvas_id}/trigger-intel", dependencies=[gate(Capability.DOMAIN_INTEL)])
 async def trigger_canvas_domain_intelligence(canvas_id: str, run_anyway: bool = False):
-    """Run only Phase 8 (domain intelligence) for a Canvas if phases 3-7 are already
+    """Run only the questions pass for a Canvas if the structure passes are already
     complete — the canvas-scoped counterpart to the connection `trigger-intel`. Drives
     the *canvas* explorer (scoped to the canvas's curated tables), not the connection.
     spawn_explorer guards the already-running case."""
@@ -1726,7 +1726,7 @@ async def trigger_canvas_domain_intelligence(canvas_id: str, run_anyway: bool = 
     state = _expl_store.load_canvas(canvas_id)
     phase = state.get("phase", "pending")
     if phase not in ("complete", ExplorationPhase.COMPLETE.value):
-        return {"ok": False, "reason": f"phases 3-7 not complete (current: {phase}) — run /resume or /restart first"}
+        return {"ok": False, "reason": f"the structure passes are not complete yet (the run is at {phase}) — run /resume or /restart first"}
 
     conn_id = canvas.scopes[0].connection_id
     tables  = canvas.scopes[0].tables or None

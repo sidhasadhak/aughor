@@ -12,6 +12,7 @@
  * (a DuckDB-backed scratch space) as new tables.
  */
 
+import { createUploadTarget, resolveUploadTarget, type UploadTarget } from "@/lib/uploadTarget";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatCount } from "@/lib/format";
 import { CONNECTORS } from "@/lib/connectors.gen";
@@ -42,7 +43,6 @@ import { Input } from "@/components/ui/input";
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
 const SVG_SIZE_AUTO = "[&_svg:not([class*='size-'])]:size-auto";
 
-const WORKSPACE_ID = "workspace";
 
 // ── Display metadata per connector ────────────────────────────────────────────
 
@@ -167,7 +167,31 @@ const baseType = (t: string) => t.toUpperCase().replace(/\(.*\)/, "").trim();
 
 type Staged = { file: File; analysis: FileAnalysis };
 
-function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
+function WorkspaceUploader({ onAdded, workspaceId }: {
+  onAdded: (connId?: string) => void | Promise<boolean>;
+  workspaceId?: string;
+}) {
+  // Where the files land: the workspace's own uploads connection (see lib/uploadTarget.ts). `undefined` while
+  // resolving; `null` when the workspace has none yet — it is made on the first upload, not on opening the panel.
+  const [target, setTarget]     = useState<UploadTarget | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    resolveUploadTarget(workspaceId).then(t => { if (live) setTarget(t); })
+      .catch(() => { if (live) setTarget(null); });
+    return () => { live = false; };
+  }, [workspaceId]);
+  const targetRef = useRef<UploadTarget | null | undefined>(undefined);
+  targetRef.current = target;
+  /** The connection to write to — made now if this workspace has none yet, and shown in the catalogue at once. */
+  const ensureTarget = useCallback(async (): Promise<UploadTarget> => {
+    if (targetRef.current) return targetRef.current;
+    if (!workspaceId) throw new Error("No workspace is selected, so there is nowhere to upload to.");
+    const made = await createUploadTarget(workspaceId);
+    targetRef.current = made; setTarget(made);
+    await onAdded(made.id);
+    return made;
+  }, [workspaceId, onAdded]);
+  const label = target ? target.label : "this workspace's uploads";
   const [files, setFiles]       = useState<ConnectionFile[]>([]);
   const [schemas, setSchemas]   = useState<string[]>(["main"]);
   const [drag, setDrag]         = useState(false);
@@ -200,10 +224,12 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
   const bulkInputRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(() => {
-    listConnectionFiles(WORKSPACE_ID).then(setFiles).catch(() => setFiles([]));
-    listConnectionSchemas(WORKSPACE_ID).then(setSchemas).catch(() => setSchemas(["main"]));
+    const id = targetRef.current?.id;
+    if (!id) { setFiles([]); setSchemas(["main"]); return; }
+    listConnectionFiles(id).then(setFiles).catch(() => setFiles([]));
+    listConnectionSchemas(id).then(setSchemas).catch(() => setSchemas(["main"]));
   }, []);
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { if (target !== undefined) reload(); }, [reload, target]);
 
   // Analyze the next queued file and open the review panel.
   const analyzeNext = useCallback(async (nextQueue: File[]) => {
@@ -212,7 +238,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
     setQueue(rest);
     setAnalyzing(true); setError("");
     try {
-      const analysis = await analyzeConnectionFile(WORKSPACE_ID, head);
+      const analysis = await analyzeConnectionFile((await ensureTarget()).id, head);
       setStaged({ file: head, analysis });
       setTableName(analysis.suggested_table_name);
       setSchema("main");
@@ -225,7 +251,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
     } finally {
       setAnalyzing(false);
     }
-  }, []);
+  }, [ensureTarget]);
 
   const handleFiles = useCallback((list: FileList | null) => {
     if (!list || list.length === 0) return;
@@ -244,7 +270,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         const pick = chosen[c.name];
         if (pick && pick !== baseType(c.detected_type)) columnTypes[c.name] = pick;
       }
-      await uploadFileToConnection(WORKSPACE_ID, staged.file, {
+      await uploadFileToConnection((await ensureTarget()).id, staged.file, {
         tableName: tableName.trim() || staged.analysis.suggested_table_name,
         schema,
         columnTypes,
@@ -256,7 +282,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
     } finally {
       setCommitting(false);
     }
-  }, [staged, chosen, tableName, schema, queue, reload, onAdded, analyzeNext]);
+  }, [staged, chosen, tableName, schema, queue, reload, onAdded, analyzeNext, ensureTarget]);
 
   const cancelReview = () => { setStaged(null); setQueue([]); setError(""); };
 
@@ -266,8 +292,9 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
     if (!name) return;
     setAddingSchema(true);
     try {
-      const created = await createConnectionSchema(WORKSPACE_ID, name);
-      const next = await listConnectionSchemas(WORKSPACE_ID);
+      const t = await ensureTarget();
+      const created = await createConnectionSchema(t.id, name);
+      const next = await listConnectionSchemas(t.id);
       setSchemas(next); select(created); setNewSchema("");
     } catch (ex: unknown) { setError((ex as Error).message); }
     finally { setAddingSchema(false); }
@@ -280,7 +307,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
     const arr = Array.from(list);
     setBulkBusy(true); setError(""); setBulkResults(null);
     try {
-      const res = await bulkUploadFilesToConnection(WORKSPACE_ID, arr, bulkSchema);
+      const res = await bulkUploadFilesToConnection((await ensureTarget()).id, arr, bulkSchema);
       setBulkResults(res.results);
       reload(); onAdded();
     } catch (ex: unknown) {
@@ -289,10 +316,10 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
       setBulkBusy(false);
       setPickerKey(k => k + 1);      // same reason as the review picker
     }
-  }, [bulkSchema, reload, onAdded]);
+  }, [bulkSchema, reload, onAdded, ensureTarget]);
 
   const remove = async (f: ConnectionFile) => {
-    try { await deleteConnectionFile(WORKSPACE_ID, f.filename, f.schema); reload(); onAdded(); }
+    try { await deleteConnectionFile((await ensureTarget()).id, f.filename, f.schema); reload(); onAdded(); }
     catch (ex: unknown) { setError((ex as Error).message); }
   };
 
@@ -460,7 +487,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         <div>
           <p style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Create or modify table</p>
           <p style={{ fontSize: 12, color: "var(--t3)", marginTop: 1 }}>
-            Upload files into your <strong style={{ color: "var(--t2)" }}>Workspace</strong> — a DuckDB-backed
+            Upload files into <strong style={{ color: "var(--t2)" }}>{label}</strong> — a DuckDB-backed
             space. {mode === "review"
               ? "Review column types and pick a schema before each table is created."
               : "Drop many files at once — all land in the chosen schema with inferred types."}
@@ -575,7 +602,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
 
       {/* Existing tables, grouped by schema */}
       <div>
-        <p style={sectionLabel}>Tables in Workspace{files.length ? ` · ${files.length}` : ""}</p>
+        <p style={sectionLabel}>Tables in {label}{files.length ? ` · ${files.length}` : ""}</p>
         {files.length === 0 ? (
           <p style={{ fontSize: 12, color: "var(--t3)" }}>No tables yet. Upload a file to create your first one.</p>
         ) : (
@@ -771,7 +798,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
           </>
         ) : isUpload ? (
           <div style={{ maxWidth: 760 }}>
-            <WorkspaceUploader onAdded={onAdded} />
+            <WorkspaceUploader onAdded={onAdded} workspaceId={workspaceId} />
           </div>
         ) : (
           <form onSubmit={submit} style={{ maxWidth: 520, display: "flex", flexDirection: "column", gap: 16 }}>

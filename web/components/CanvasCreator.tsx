@@ -92,6 +92,19 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
     () => allTables.filter(t => t.toLowerCase().includes(search.toLowerCase())),
     [allTables, search],
   );
+  // Tables grouped by their schema (the part before the first dot). On a connection whose schemas are
+  // unrelated customers' uploads, scoping a canvas was untick-all then find nine names among 33 with
+  // the search box (the Olist run, 2026-10-22); a schema row ticks them in one go.
+  const schemaGroups = useMemo(() => {
+    const groups = new Map<string, string[]>();
+    for (const t of filteredTables) {
+      const i = t.indexOf(".");
+      const key = i > 0 ? t.slice(0, i) : "";
+      groups.set(key, [...(groups.get(key) ?? []), t]);
+    }
+    return [...groups.entries()];
+  }, [filteredTables]);
+  const multiSchema = schemaGroups.some(([name]) => name !== "") && schemaGroups.length > 1;
 
   const openConnection = (id: string) => {
     setConnId(id);
@@ -119,6 +132,15 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
 
   const isChecked = (t: string) =>
     selection?.kind === "tables" && selection.tables.has(t);
+
+  const toggleSchema = (names: string[]) => {
+    setSelection(prev => {
+      const next = new Set(prev?.kind === "tables" ? prev.tables : []);
+      const allIn = names.every(n => next.has(n));
+      for (const n of names) { if (allIn) next.delete(n); else next.add(n); }
+      return next.size ? { kind: "tables", tables: next } : null;
+    });
+  };
 
   const canCreate = !!connId && selection !== null && !saving;
 
@@ -291,13 +313,37 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                   {search ? "No matching tables" : "No tables found"}
                 </div>
               ) : (
-                filteredTables.map(t => {
-                  const checked = isChecked(t);
+                schemaGroups.flatMap(([schemaName, names]) => {
+                  const rows = names.map(t => {
+                    const checked = isChecked(t);
+                    const dimmed = selection?.kind === "all";
+                    return (
+                      <Button variant="ghost" size="xs"
+                        key={t}
+                        onClick={() => toggleTable(t)}
+                        style={{
+                          width: "100%", display: "flex", alignItems: "center", gap: 12,
+                          padding: "10px 8px", background: "transparent", border: "none",
+                          borderRadius: "var(--r2)", cursor: "pointer", textAlign: "left",
+                          opacity: dimmed ? 0.4 : 1,
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
+                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <Checkbox checked={checked} />
+                        <Icon name={TABLE_ICON} size={15} color="var(--blue4)" />
+                        <span style={{ flex: 1, fontSize: 15, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{t}</span>
+                      </Button>
+                    );
+                  });
+                  if (!multiSchema || !schemaName) return rows;
+                  const allIn = selection?.kind === "tables" && names.every(n => selection.tables.has(n));
                   const dimmed = selection?.kind === "all";
-                  return (
+                  return [
                     <Button variant="ghost" size="xs"
-                      key={t}
-                      onClick={() => toggleTable(t)}
+                      key={`schema:${schemaName}`}
+                      onClick={() => toggleSchema(names)}
+                      title={`${allIn ? "Untick" : "Tick"} every table in ${schemaName}`}
                       style={{
                         width: "100%", display: "flex", alignItems: "center", gap: 12,
                         padding: "10px 8px", background: "transparent", border: "none",
@@ -307,11 +353,13 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                       onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
                       onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     >
-                      <Checkbox checked={checked} />
-                      <Icon name={TABLE_ICON} size={15} color="var(--blue4)" />
-                      <span style={{ flex: 1, fontSize: 15, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{t}</span>
-                    </Button>
-                  );
+                      <Checkbox checked={allIn} />
+                      <Icon name={DB_ICON} size={15} color="var(--t3)" />
+                      <span className="aug-fs-sm" style={{ flex: 1, color: "var(--t2)", fontFamily: "var(--font-mono)" }}>{schemaName}</span>
+                      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{names.length} tables</span>
+                    </Button>,
+                    ...rows,
+                  ];
                 })
               )}
             </>

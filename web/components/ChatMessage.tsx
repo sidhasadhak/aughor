@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { ErrorState, Loading } from "@/components/ui/states";
 import type { ChatTurn, CompiledFrame } from "@/lib/chatTurn";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
-import { validateQuery, sendChatFeedback, recordVerdict, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, pinQueryToDashboard, type QueryValidation, type GroundingReceipt } from "@/lib/api";
+import { validateQuery, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, pinQueryToDashboard, type QueryValidation, type GroundingReceipt } from "@/lib/api";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { OverviewReportView } from "@/components/OverviewReport";
@@ -44,7 +44,6 @@ import { ToolTrail } from "@/components/ToolTrail";
 import { ProposalCardById } from "@/components/ProposalCard";
 import { approverName } from "@/lib/auth";
 import { AnswerParts } from "@/components/chat/AnswerParts";
-import { FixItForm } from "@/components/FixItForm";
 import { InFlightFindings } from "@/components/RunProgressCard";
 import { ContextRibbon } from "@/components/ContextRibbon";
 import { PlanGateCard } from "@/components/PlanGateCard";
@@ -1234,17 +1233,12 @@ function CompiledBadge({ compiled }: { compiled: CompiledFrame }) {
   );
 }
 
-// ── Opt-in actions on a chat answer: re-validate the query + a feedback signal ──────
+// ── Opt-in actions on a chat answer's query: validate, copy, annotate. The feedback
+// control (thumbs + the what-was-wrong form) is AnswerFeedback at the answer's foot,
+// once per answer — it is not repeated here (2026-10-22). ──
 function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?: string }) {
   const [verdict, setVerdict] = useState<QueryValidation | null>(null);
   const [busy, setBusy] = useState(false);
-  const [feedback, setFeedback] = useState<"helpful" | "unhelpful" | null>(null);
-  const [accepted, setAccepted] = useState(false);
-  // S3 fix-it: a thumbs-down opens the typed what-was-wrong form; the correction
-  // flows through record_verdict into the ledger, so the next answer cites it.
-  const [fixItOpen, setFixItOpen] = useState(false);
-  const [fixItBusy, setFixItBusy] = useState(false);
-  const [fixItDone, setFixItDone] = useState(false);
   const sql = (turn.sql || "").trim();
   if (!sql || !connectionId) return null;
 
@@ -1253,15 +1247,6 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
     try { setVerdict(await validateQuery(connectionId, sql)); }
     catch { setVerdict(null); }
     finally { setBusy(false); }
-  };
-  const rate = (v: "helpful" | "unhelpful") => {
-    setFeedback(v);
-    setAccepted(false);
-    // A 👍 is the chat's accept: the server records it with the SQL this turn ran (PENDING item 23), and the
-    // thanks line says so only when it did.
-    if (turn.receiptId) void sendChatFeedback(connectionId, turn.receiptId, v).then(r => setAccepted(v === "helpful" && r.accepted));
-    // The lightweight receipt signal stays; the STRUCTURED correction is opt-in.
-    if (v === "unhelpful") setFixItOpen(true);
   };
   // K5 — "annotate this cell": a human note pinned to the answer's primary table,
   // written to the K3 overlay (merged onto future reads; never mutates source).
@@ -1281,21 +1266,6 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
     } catch { /* stays open to retry */ }
     finally { setAnnotateBusy(false); }
   };
-  const submitFixIt = async (note: string, correctedSql: string) => {
-    setFixItBusy(true);
-    try {
-      await recordVerdict({
-        verdict: correctedSql ? "correct" : "reject",
-        connectionId, investigationId: turn.investigationId ?? "",
-        headline: turn.headline ?? "", note,
-        sqlSource: sql, correctedSql,
-      });
-      setFixItDone(true);
-      setFixItOpen(false);
-    } catch { /* the receipt signal already landed; the form stays open to retry */ }
-    finally { setFixItBusy(false); }
-  };
-
   const issues = verdict
     ? [...verdict.fanout_hits,
        ...verdict.join_warnings.map(w => `Join ${w.table_a}.${w.col_a} ↔ ${w.table_b}.${w.col_b}: only ${Math.round(w.overlap * 100)}% value overlap`),
@@ -1321,20 +1291,7 @@ function InsightActions({ turn, connectionId }: { turn: ChatTurn; connectionId?:
           </>
         )}
         {annotateDone && <span className="text-zinc-600 italic">note pinned to {annotateTarget}</span>}
-        <span className="text-zinc-700">·</span>
-        <Button variant="ghost" size="xs" onClick={() => rate("helpful")}
-          className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "helpful" ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Helpful — records this answer as accepted">👍</Button>
-        <Button variant="ghost" size="xs" onClick={() => rate("unhelpful")}
-          className={`h-auto p-0 hover:bg-transparent dark:hover:bg-transparent ${feedback === "unhelpful" ? "text-amber-400" : "text-zinc-500 hover:text-zinc-300"}`} title="Not helpful">👎</Button>
-        {feedback && !fixItOpen && !fixItDone && (
-          <span className="text-zinc-600 italic">{accepted ? "thanks — recorded as accepted" : "thanks — noted"}</span>
-        )}
-        {fixItDone && <span className="text-zinc-600 italic">correction recorded — future answers cite it</span>}
       </div>
-      {fixItOpen && (
-        <FixItForm withSql busy={fixItBusy}
-                   onSubmit={submitFixIt} onCancel={() => setFixItOpen(false)} />
-      )}
       {annotateOpen && (
         <div className="flex flex-col gap-1.5 rounded-[var(--r2)] p-2 my-1"
              style={{ background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
@@ -1458,7 +1415,7 @@ function InsightDetails({
         </BriefDetailBlock>
       )}
       {hasActions && (
-        <BriefDetailBlock label="Validate &amp; feedback">
+        <BriefDetailBlock label="Validate">
           <InsightActions turn={turn} connectionId={connectionId} />
         </BriefDetailBlock>
       )}

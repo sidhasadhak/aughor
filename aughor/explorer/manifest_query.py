@@ -1,9 +1,9 @@
 """Deterministic baseline SQL for an L2 manifest cell — the Tier-1 #4 keystone.
 
-The cold-run experiment proved Phase 8 spends ~14 LLM calls per finding because it generates
+The cold-run experiment proved the questions pass spends ~14 LLM calls per finding because it generates
 questions by LLM trial-and-error (most produce failing or redundant SQL). A manifest cell
 (`metric × dimension × time-axis`) is already a precise query spec — so we synthesize its
-baseline SQL **mechanically, with zero LLM calls**, and let the existing Phase-8 pipeline
+baseline SQL **mechanically, with zero LLM calls**, and let the existing questions-pass pipeline
 (deterministic identifier/semantic repair → `dry_run` bind-check + skip → join value-domain
 guard → fan-out/grain/ratio guards → execute → interpret) enforce correctness.
 

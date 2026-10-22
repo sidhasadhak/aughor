@@ -194,7 +194,11 @@ async def create_connection(req: AddConnectionRequest,
     # and cancellable via POST /exploration/{id}/stop.
     explorer_started = False
     try:
-        explorer_started = _kickoff_exploration(conn_id, auto=True)
+        # A local-upload connection is born EMPTY (a workspace's own uploads space, made on its first
+        # upload); exploring it now would only record "nothing to read". The upload routes start the
+        # explorer when the first file lands.
+        if req.conn_type != "local_upload":
+            explorer_started = _kickoff_exploration(conn_id, auto=True)
     except Exception:
         logger.warning("create_connection: explorer kickoff failed for %s", conn_id, exc_info=True)
 

@@ -1,5 +1,5 @@
 """Per-dataset domain-pass construction — the "every dataset gets understood"
-guarantee. Extracted from explorer/agent._phase8_domain_intelligence so the
+guarantee. Extracted from explorer/agent._pass_questions so the
 dataset-split algorithm is unit-testable on its own.
 
 Origin: on a multi-dataset connection a domain's entities can span unrelated

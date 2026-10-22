@@ -76,7 +76,9 @@ function Overview({ entries, views, dups, label, status, onOpenCatalog, onRetryV
   const f = homeFigures(entries, dups, views);
   const rows = catalogRows(entries, dups, views, label);
   const largest = largestTables(entries, dups, 8);
-  const docs = unsearchable(status);
+  // The index speaks for the whole org; NEEDS YOU on this page speaks for the catalogs listed on it ("2 baef6c3e
+  // documents can't be searched" reached a workspace that never held baef6c3e, 2026-10-22).
+  const docs = unsearchable(status).filter(g => g.connId === null || entries.some(e => e.conn_id === g.connId));
   const nameOf = (id: string | null) => entries.find(e => e.conn_id === id)?.name ?? id ?? "";
   const failed = entries.filter(e => views[e.conn_id] === null);
   const schemas = entries.reduce((a, e) => a + e.schemas.length, 0);

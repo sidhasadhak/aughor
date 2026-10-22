@@ -101,5 +101,5 @@ def test_reading_back_an_unchanged_pinned_finding_keeps_one_copy(monkeypatch):
     monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role: None)
     profile = SimpleNamespace(key_questions=["Which category leads profit?"], key_question_sql=[])
     for _ in range(3):                                                   # three runs, the data unchanged
-        asyncio.run(ex._phase8_pinned_questions(profile, SimpleNamespace(table_cols={}), ""))
+        asyncio.run(ex._pass_pinned_questions(profile, SimpleNamespace(table_cols={}), ""))
     assert [f["id"] for f in ex._state[store.FINDINGS]] == ["pinned__0"]

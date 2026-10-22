@@ -1,4 +1,4 @@
-"""Phase-8 feasibility predicates — don't propose what the schema can't honestly answer.
+"""questions-pass feasibility predicates — don't propose what the schema can't honestly answer.
 
 Extracted from the explorer/agent.py god-file (K4 code-health split). Two
 deterministic, high-precision gates that keep the question generator and the SQL
@@ -15,7 +15,7 @@ repair loop honest:
     *shape* answering nothing. Deterministic on purpose (an LLM rated that drift
     faithful; cf. 5ba0fbe).
 
-All four are pure regex/substring predicates. See the Phase-8 feasibility gates
+All four are pure regex/substring predicates. See the questions-pass feasibility gates
 (#1) in the explorer.
 """
 from __future__ import annotations

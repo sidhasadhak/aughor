@@ -516,3 +516,19 @@ describe("toErrorDetail — the budget stop", () => {
     expect(toErrorDetail({ reason: "budget_exceeded", recovery: "raise_budget" })?.agentId).toBeUndefined();
   });
 });
+
+describe("the thinking row names a step, never its id", () => {
+  it("says the step's name when it has one, and nothing internal when it has not", async () => {
+    const named = await messageFrom([
+      { event: "phase_complete", data: { phase: { phase_id: "adhoc_3", phase_name: "Revenue by month, 2018", findings: [] } } },
+    ]);
+    expect(projectTurn("q", named, { streaming: true }).statusText).toBe("Analyzing Revenue by month, 2018…");
+
+    const bare = await messageFrom([
+      { event: "phase_complete", data: { phase: { phase_id: "adhoc_3", findings: [] } } },
+    ]);
+    const text = projectTurn("q", bare, { streaming: true }).statusText ?? "";
+    expect(text).not.toContain("adhoc_3");
+    expect(text).toBe("Analyzing…");
+  });
+});

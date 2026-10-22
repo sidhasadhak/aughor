@@ -38,7 +38,7 @@ _NO_DATA_RE = re.compile(
 
 
 def is_degenerate_result(rows, finding_text: str = "", sql: str = "", metric_ranges=None) -> bool:
-    """True when a Phase-8 result carries no trustworthy data — so it never becomes a
+    """True when a questions-pass result carries no trustworthy data — so it never becomes a
     finding (and so never reaches the Briefing). Cases:
 
       1. the whole result is NULL (empty join/filter matched nothing), OR
@@ -781,7 +781,7 @@ def _implausible_ratio_claim(finding_text: str, cap: float = _IMPLAUSIBLE_RATIO_
 
 
 # Named-metric ↔ SQL coherence + relabel/drift guards live in metric_coherence.py (extracted
-# from this god-file). verify_insight (below) and the Phase-8 emission sites import them.
+# from this god-file). verify_insight (below) and the questions-pass emission sites import them.
 
 def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=None, conn=None, *, columns=None, industry: str = "", diagnose_conn=None) -> tuple[bool, str]:
     """THE pre-emission trust gate: a candidate finding is surfaced ONLY if it passes every

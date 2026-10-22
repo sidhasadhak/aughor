@@ -144,7 +144,7 @@ def test_a_heartbeats_budget_kill_is_a_budget_stop_not_a_persons(monkeypatch):
         async def cancel(*a, **k):
             raise asyncio.CancelledError()
 
-        monkeypatch.setattr(ex, "_phase8_domain_intelligence", cancel)
+        monkeypatch.setattr(ex, "_pass_questions", cancel)
         with pytest.raises(asyncio.CancelledError):
             asyncio.run(ex._explore_run(domain_intel_only=True))
         return ex

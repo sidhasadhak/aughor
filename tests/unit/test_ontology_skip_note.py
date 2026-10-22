@@ -5,7 +5,7 @@ from aughor.explorer.agent import _ontology_skip_note
 
 def test_stage_and_error_is_specific():
     note = _ontology_skip_note({"ok": False, "stage": "enrichment", "error": "LLM 404"})
-    assert "enrichment failed" in note and "LLM 404" in note
+    assert "enrichment stage failed" in note and "LLM 404" in note
 
 
 def test_stage_only():

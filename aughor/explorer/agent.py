@@ -72,7 +72,7 @@ from aughor.explorer.feasibility import (
 
 logger = logging.getLogger(__name__)
 
-# Lease on one Phase-8 domain pass (slice claims — Phase 2 durable execution).
+# Lease on one questions-pass domain pass (slice claims — durable execution).
 # Sized above the worst observed domain pass so a live worker is never stolen from;
 # a dead worker's domain frees itself within this window. AUGHOR_DOMAIN_LEASE_S
 # overrides for slicing experiments.
@@ -87,9 +87,22 @@ _COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate
 _QUIET_LAYERS = frozenset({"raw", "integration", "uploads", "system"})
 #: What `_next_question` answers when an automatic re-run has asked every uncovered cell it may.
 _NO_MORE_QUESTIONS = object()
-SYNTH_RESERVE_FRACTION = 0.80  # stop Phase 8 at this share of the token budget, leaving the rest for Phase 9 synthesis
-# (0.80 not 0.85: a single Phase-8 iteration can overshoot the threshold by a few %, and
-#  the now-higher-yield Phase 8 + synthesis was crossing 100% and getting heartbeat-cancelled
+# The run's passes, by what they do (2026-10-23 — these used to be "Phase 3" … "Phase 9", numbers that
+# reached the log, the job titles and the Catalog without saying anything; PENDING 53):
+#   structure  — the five structure passes, no model call: null meaning (what a blank means),
+#                join verification, lifecycle mapping, distribution profiling, cross-table patterns
+#                (`_pass_null_meaning` … `_pass_patterns`; journaled as null_meaning, join_verification,
+#                lifecycle_mapping, distribution, cross_table)
+#   questions  — what the explorer asks each dataset once a person set its layer: the pinned key
+#                questions, the industry manifest's baseline questions, then the curiosity loop
+#                (`_pass_pinned_questions`, `_pass_questions`; journaled as domain_intel — the persisted
+#                key keeps its old spelling so history still reads)
+#   synthesis  — pairs of findings composed into one neither holds (`_pass_synthesis`)
+# A job is one of structure · questions · full (`self._job`); the log and every surface say these
+# words, never a phase number. docs/GLOSSARY.md › The explorer's passes.
+SYNTH_RESERVE_FRACTION = 0.80  # stop the questions pass at this share of the token budget, leaving the rest for synthesis
+# (0.80 not 0.85: a single questions-pass iteration can overshoot the threshold by a few %, and
+#  the now-higher-yield the questions pass + synthesis was crossing 100% and getting heartbeat-cancelled
 #  at the very end — 20% headroom lets synthesis finish cleanly.)
 _NEG_PCT_RE = re.compile(r"-\s*\d+(?:\.\d+)?\s*%")  # an impossible negative percentage in a share/rate claim
 
@@ -181,7 +194,7 @@ def _semantic_metric_drift(original_sql: str, fixed_sql: str) -> bool:
 
 # Column/table names the SQL engine reported as nonexistent — harvested generically from
 # DuckDB *and* Postgres binder errors and fed back to the question generator so it stops
-# re-proposing the same hallucinated names (the dominant Phase-8 failure class: a generator
+# re-proposing the same hallucinated names (the dominant questions-pass failure class: a generator
 # that "expects" a region/campaign_id/touchpoint_id column the schema doesn't have). This is
 # negative knowledge accumulated from the live engine — no schema or connection specifics.
 # Ambiguous-column errors are deliberately NOT harvested: that column DOES exist, it just
@@ -224,7 +237,7 @@ def _recipe_binds(formula: str, real_cols: set, real_tables: set, *, min_frac: f
     (``SUM(revenue - cogs)``, ``customer_id``, ``ecommerce.orders``) don't bind to a
     connection whose real columns are ``unit_price``/``customer_unique_id`` on
     ``missimi.*``; injecting them verbatim steers the generator to INVENT those names
-    (the dominant Phase-8 token sink). Drop the non-binding ones. Fail-open (keep) when
+    (the dominant questions-pass token sink). Drop the non-binding ones. Fail-open (keep) when
     the formula has no judgeable identifiers."""
     import re as _re
     fake_table = False
@@ -286,18 +299,18 @@ def _org_identity(connection_id: str, profile_industry: str = "") -> tuple[str, 
 
 
 def _ontology_skip_note(last_build: Optional[dict]) -> str:
-    """An actionable 'why domain intelligence is empty' message, from the build outcome the
+    """An actionable 'why the questions found nothing' message, from the build outcome the
     connection recorded (which stage failed + why). Turns a silent empty Hub into a clear,
     retryable status. Falls back to a generic note when no build detail is available."""
     lb = last_build or {}
     stage, err = lb.get("stage"), lb.get("error")
     if stage and err:
-        return f"Domain intelligence couldn't be built — {stage} failed: {err}"
+        return f"The questions couldn't start — the ontology's {stage} stage failed: {err}"
     if stage:
-        return f"Domain intelligence couldn't be built — the {stage} stage produced no object model."
+        return f"The questions couldn't start — the ontology's {stage} stage produced no object model."
     return (
-        "Ontology unavailable — the object model that domain intelligence is "
-        "derived from could not be built (the schema may be too sparse to model)."
+        "Ontology unavailable — the object model the questions are asked from "
+        "could not be built (the schema may be too sparse to model)."
     )
 
 
@@ -345,7 +358,7 @@ class SchemaExplorer:
         # schema gets its OWN intelligence (the missimi=0 fix). None = connection-level (the
         # single-schema / 'All schemas' case) — fully backward-compatible.
         self.schema_name = schema_name
-        self.tables_filter = tables_filter  # non-empty list = restrict phases 3-7 to these tables
+        self.tables_filter = tables_filter  # non-empty list = restrict the structure passes to these tables
         self._conn = conn
         self._status = ExplorationStatus(
             connection_id=connection_id,
@@ -362,7 +375,7 @@ class SchemaExplorer:
             _store_key = connection_id
         self._store_key = _store_key
         self._episodes = EpisodeCollector(_store_key)
-        # Identity for slice claims (Phase 2 durable execution): stable per explorer
+        # Identity for slice claims (durable execution): stable per explorer
         # instance, distinct across processes. Claims are released by EXPIRY, not by
         # hand — completion is recorded in domain_coverage/budgets state, so a claim
         # outliving its finished domain only shields it briefly; a claim whose worker
@@ -429,7 +442,7 @@ class SchemaExplorer:
 
     def _release_held_claim(self) -> None:
         """Release the domain claim this worker currently holds, if any. Called
-        before claiming the next domain and when Phase 8 exits — a completed run
+        before claiming the next domain and when the questions pass exits — a completed run
         must free its slices immediately, not by lease expiry (a successor within
         the lease window would skip them all). Best-effort."""
         held, self._held_claim = self._held_claim, None
@@ -543,14 +556,14 @@ class SchemaExplorer:
 
     def _emit_insight(self, insight: dict, sql: str, *, dossier: dict | None = None,
                       journal_extra: dict | None = None) -> None:
-        """Common emission tail for a discovered insight, shared by Phase 7
-        (cross-table) and Phase 8 (domain intel). Bumps counters, writes the K3
+        """Common emission tail for a discovered insight, shared by the cross-table pass
+        (cross-table) and the questions pass. Bumps counters, writes the K3
         ledger artifact (Trust-Receipt provenance), fires the live
         `exploration.insight` event so subscribed panels surface it immediately,
         and stamps the TTFI milestone. The caller has already appended the
         insight to `self._state["insights"]`.
 
-        Before this helper, Phase 7 insights bumped only the counters — they had
+        Before this helper, the cross-table pass insights bumped only the counters — they had
         no artifact and emitted no event, so the *earliest* findings never
         surfaced live (the panels saw them only on the slow 60s fallback poll or
         at completion). Routing both phases here closes that built-not-wired gap.
@@ -703,7 +716,7 @@ class SchemaExplorer:
         generate-and-execute path in the system still executing unguarded.
 
         DETERMINISTIC-ONLY by construction: no ``fix_prompt_template``/``provider_factory`` is
-        passed, so the shared runner never adds an LLM retry — Phase 8 has its own repair loop
+        passed, so the shared runner never adds an LLM retry — the questions pass has its own repair loop
         and a second one would double the cost and fight the first.
 
         Without ``schema`` the raw path is kept, deliberately: the profiling / percentile /
@@ -780,7 +793,7 @@ class SchemaExplorer:
     def _contra_units(self, cp: dict, schema_text: str) -> None:
         """Settle whether each contra-revenue column holds a RATE or an AMOUNT, once.
 
-        Reuses the profiles Phase 2 already computed — `ColumnProfile.value_range` is the
+        Reuses the profiles the profiler already computed — `ColumnProfile.value_range` is the
         measured (min, max) — so this costs no warehouse query. The classification itself
         lives in `loss_signals`, which is the one module allowed to decide it; duplicating
         the rule here is how the two paths would drift apart.
@@ -841,7 +854,7 @@ class SchemaExplorer:
         contra RATE as if it were money.
 
         The deep-analysis path has carried this pair since PR #255; the explorer writes its
-        own SQL in Phase 8 and consulted neither, so it reproduced the exact defect the
+        own SQL in the questions pass and consulted neither, so it reproduced the exact defect the
         guard exists to stop — `SUM(Discount * Quantity)` on Tableau Superstore, where
         `Discount` is a fraction 0.00–0.80. A rate times a unit count is a number in no
         unit at all, and it reads as a small amount of money rather than an error.
@@ -876,7 +889,7 @@ class SchemaExplorer:
         so the agent that writes the Briefing was the one generating SQL with no access to the
         library describing the mistakes it kept making. The KB carries a "Fan-out Detection and
         Prevention" entry (pre-aggregate the child before joining) and a "Return Rate" entry
-        whose misconception note is exactly the ratio-of-sums rule; Phase 8 has been rediscovering
+        whose misconception note is exactly the ratio-of-sums rule; the questions pass has been rediscovering
         both the hard way, one guard rejection at a time.
 
         Bounded and fail-open by construction — `retrieve_for_planning` already returns "" on any
@@ -1077,8 +1090,8 @@ class SchemaExplorer:
                            gaps_only: bool = False, reason: str = "") -> None:
         """Full exploration run.
 
-        If domain_intel_only=True (triggered by "Explore 5 more") skips phases 3-7
-        and runs only Phase 8, consuming the extended budget.
+        If domain_intel_only=True (triggered by "Explore 5 more") skips the structure passes
+        and runs only the questions pass, consuming the extended budget.
 
         The exploration principles' three jobs (§2, 2026-10-08): ``structure_only`` learns the
         structure — profiles, empty-value meanings, joins, lifecycles, distributions, cross-table
@@ -1091,7 +1104,13 @@ class SchemaExplorer:
         self._gaps_only = bool(gaps_only)
         self._job = "structure" if structure_only else ("questions" if domain_intel_only else "full")
         self._job_reason = reason
-        logger.info(f"[explorer:{self.connection_id}] Starting (domain_intel_only={domain_intel_only})")
+        _job_words = {
+            "structure": "structure only — no model call",
+            "questions": "questions only — the structure is already learned",
+            "full": "full run — structure, then questions, then synthesis",
+        }[self._job] + (" (only the questions not yet asked)" if gaps_only else "")
+        logger.info("[explorer:%s] Starting — %s%s", self.connection_id, _job_words,
+                    f" · {reason}" if reason else "")
         _loop = asyncio.get_running_loop()
         await _loop.run_in_executor(None, self._rescope_findings)
         self._findings_at_start = self._findings_made()
@@ -1186,30 +1205,30 @@ class SchemaExplorer:
                 # Phases 3-7: schema cartography — run as fast as the DB allows
                 self._rate_seconds = _RATE_SECONDS_SCHEMA
 
-                # Phase 3 — Null meaning resolution
+                # structure pass — null meaning
                 self._status.phase = ExplorationPhase.NULL_MEANING
                 self._journal("exploration.phase", {"phase": "null_meaning"})
-                await self._phase3_null_meaning(tp, cp)
+                await self._pass_null_meaning(tp, cp)
 
-                # Phase 4 — Join verification
+                # structure pass — join verification
                 self._status.phase = ExplorationPhase.JOIN_VERIFICATION
                 self._journal("exploration.phase", {"phase": "join_verification"})
-                await self._phase4_joins(jmap, tp)
+                await self._pass_joins(jmap, tp)
 
-                # Phase 5 — Lifecycle mapping
+                # structure pass — lifecycle mapping
                 self._status.phase = ExplorationPhase.LIFECYCLE_MAPPING
                 self._journal("exploration.phase", {"phase": "lifecycle_mapping"})
-                await self._phase5_lifecycle(tp, cp)
+                await self._pass_lifecycle(tp, cp)
 
-                # Phase 6 — Distribution profiling
+                # structure pass — distribution profiling
                 self._status.phase = ExplorationPhase.DISTRIBUTION
                 self._journal("exploration.phase", {"phase": "distribution"})
-                await self._phase6_distributions(cp, tp)
+                await self._pass_distributions(cp, tp)
 
-                # Phase 7 — Cross-table pattern discovery
+                # structure pass — cross-table patterns
                 self._status.phase = ExplorationPhase.CROSS_TABLE
                 self._journal("exploration.phase", {"phase": "cross_table"})
-                await self._phase7_patterns(cp, jmap, tp)
+                await self._pass_patterns(cp, jmap, tp)
                 self._state["structure_learned"] = {"at": datetime.now(timezone.utc).isoformat(),
                                                     "fp": self._state.get("dataset_fingerprint")}
                 self._save_state()
@@ -1220,50 +1239,50 @@ class SchemaExplorer:
                 self._status.domain_intel_note = (self._job_reason or
                     "structure learned; its questions wait for this dataset's layer to be set")
             else:
-                # ── Ontology gate: Phase 8 needs the ontology; build it now if it
-                # hasn't been created yet.  On a fresh connection, phases 3-7 can
+                # ── Ontology gate: the questions pass needs the ontology; build it now if it
+                # hasn't been created yet.  On a fresh connection, the structure passes can
                 # finish in <10 s while the ontology build (triggered by the first
                 # /ontology API request) may not have happened yet.  get_schema()
                 # is idempotent + cached — instant on the second call.
                 from aughor.ontology.store import load_latest_ontology as _load_onto
                 if not _load_onto(self.connection_id, self.schema_name):
                     logger.info(
-                        "[explorer:%s] Ontology not found before Phase 8 — building now…",
+                        "[explorer:%s] Ontology not found before the questions — building now…",
                         self.connection_id,
                     )
                     try:
                         await _loop.run_in_executor(None, self._conn.build_intelligence)
                         logger.info(
-                            "[explorer:%s] Ontology build complete, proceeding to Phase 8",
+                            "[explorer:%s] Ontology build complete, proceeding to the questions",
                             self.connection_id,
                         )
                     except Exception as _onto_exc:
                         logger.warning(
-                            "[explorer:%s] Ontology build failed — Phase 8 will be skipped: %s",
+                            "[explorer:%s] Ontology build failed — the questions will be skipped: %s",
                             self.connection_id, _onto_exc,
                         )
 
-                # Phase 8 — Domain intelligence: slow down to avoid overloading the DB
+                # the questions: slow down to avoid overloading the DB
                 # and to allow the user to stop between queries if needed
                 self._rate_seconds = _RATE_SECONDS_INTEL
                 self._status.phase = ExplorationPhase.DOMAIN_INTEL
                 self._journal("exploration.phase", {"phase": "domain_intel"})
-                self._status.domain_intel_skipped = False   # cleared; set by Phase 8 if it bails
+                self._status.domain_intel_skipped = False   # cleared; set by the questions pass if it bails
                 self._status.domain_intel_note = None
-                await self._phase8_domain_intelligence(cp, tp)
+                await self._pass_questions(cp, tp)
 
-                # Phase 9 — Synthesis: compose pairs of existing findings into emergent
+                # synthesis: compose pairs of existing findings into emergent
                 # insights neither parent holds (build on what we know; zero new scans for
                 # discovery). Runs at end-of-run over the full ledger. Best-effort — a
                 # synthesis failure must never fail the run or block COMPLETE.
                 try:
                     self._status.phase = ExplorationPhase.SYNTHESIS
                     self._journal("exploration.phase", {"phase": "synthesis"})
-                    await self._phase9_synthesis(cp, tp)
+                    await self._pass_synthesis(cp, tp)
                 except asyncio.CancelledError:
                     raise
                 except Exception as _se:
-                    logger.warning("[explorer:%s] Phase 9 synthesis failed (non-fatal): %s",
+                    logger.warning("[explorer:%s] synthesis failed (non-fatal): %s",
                                    self.connection_id, _se)
 
             # Done — persist runtime counters so the status fallback can restore them
@@ -1368,7 +1387,7 @@ class SchemaExplorer:
             return nq
         if getattr(self, "_gaps_only", False):
             return _NO_MORE_QUESTIONS
-        # Phase 8 INVENTS the question, so retrieval cannot key on one — the steer keys on the domain
+        # the questions pass INVENTS the question, so retrieval cannot key on one — the steer keys on the domain
         # and its tables, which are known before generation.
         nq = await self._grounded_probe_nq(domain, domain_table_cols, cp, NQ, llm, steer_of())
         if nq is not None:
@@ -1525,9 +1544,9 @@ class SchemaExplorer:
             logger.warning(f"[explorer:{self.connection_id}] _load_profiler_data failed: {e}")
             return {}, {}, {}
 
-    # ── Phase 3: Null meaning resolution ─────────────────────────────────────
+    # ── Structure pass · null meaning (what a blank means) ─────────────────────────────────────
 
-    async def _phase3_null_meaning(self, tp: dict, cp: dict) -> None:
+    async def _pass_null_meaning(self, tp: dict, cp: dict) -> None:
         """
         For each column with a non-trivial null rate (1%–99%), determine whether
         the null is business-meaningful or a data quality problem.
@@ -1624,9 +1643,9 @@ class SchemaExplorer:
             meaning=meaning, business_rule=business_rule, evidence_sql=sql,
         )
 
-    # ── Phase 4: Join verification ────────────────────────────────────────────
+    # ── Structure pass · join verification ────────────────────────────────────────────
 
-    async def _phase4_joins(self, jmap: dict, tp: dict | None = None) -> None:
+    async def _pass_joins(self, jmap: dict, tp: dict | None = None) -> None:
         """
         Verify each inferred FK relationship with an orphan check.
         A verified join has orphan_count == 0.
@@ -1734,9 +1753,9 @@ class SchemaExplorer:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "phase4 joinable cache seed best-effort", counter="join_guard.precompute")
 
-    # ── Phase 5: Lifecycle mapping ────────────────────────────────────────────
+    # ── Structure pass · lifecycle mapping ────────────────────────────────────────────
 
-    async def _phase5_lifecycle(self, tp: dict, cp: dict) -> None:
+    async def _pass_lifecycle(self, tp: dict, cp: dict) -> None:
         """
         For each table with a status/lifecycle column, extract the state
         distribution and (when possible) state-transition frequencies.
@@ -1821,9 +1840,9 @@ class SchemaExplorer:
             self._status.facts_discovered += 1
             self._save_state()
 
-    # ── Phase 6: Distribution profiling ──────────────────────────────────────
+    # ── Structure pass · distribution profiling ──────────────────────────────────────
 
-    async def _phase6_distributions(self, cp: dict, tp: dict = None) -> None:
+    async def _pass_distributions(self, cp: dict, tp: dict = None) -> None:
         """
         Characterise the value distribution of every measure column.
         Uses basic stats + percentiles to classify shape.
@@ -1922,9 +1941,9 @@ class SchemaExplorer:
         self._state["phase6_done"] = True
         self._save_state()
 
-    # ── Phase 7: Cross-table pattern discovery ────────────────────────────────
+    # ── Structure pass · cross-table patterns ────────────────────────────────
 
-    async def _phase7_patterns(self, cp: dict, jmap: dict, tp: dict = None) -> None:
+    async def _pass_patterns(self, cp: dict, jmap: dict, tp: dict = None) -> None:
         """
         For each verified join, check if a dimension in the PK table (t2)
         meaningfully explains variation in a measure in the FK table (t1).
@@ -2029,9 +2048,9 @@ class SchemaExplorer:
                         continue
 
 
-    # ── Phase 8: pinned key-questions (deterministic must-ask) ─────────────────
+    # ── Questions · the pinned key questions (deterministic must-ask) ─────────────────
 
-    async def _phase8_pinned_questions(self, profile, sql_writer, profile_block: str) -> int:
+    async def _pass_pinned_questions(self, profile, sql_writer, profile_block: str) -> int:
         """Deterministically ASK each of the profile's curated `key_questions` — the
         must-ask analyst questions for this vertical (e.g. "which SKUs have >90% margin
         but >10% WRONG_SHADE returns?") — so the high-value angles are covered EVERY run
@@ -2135,7 +2154,7 @@ class SchemaExplorer:
                                        journal_extra={"pinned": True, "reproduced": True})
                     stored += 1
                     from aughor.stats import stats as _s; _s.inc("explorer.pinned_reproduced")
-                    logger.info("[explorer:%s] Phase 8 (pinned): reproduced Q%d from ledger "
+                    logger.info("[explorer:%s] questions (pinned): reproduced Q%d from ledger "
                                 "(activity unchanged — no re-run)", self.connection_id, qi)
                     continue
 
@@ -2171,7 +2190,7 @@ class SchemaExplorer:
                          or measure_times_key_arithmetic(sql, _tc, dialect=_dialect)
                          or avg_of_row_ratios(sql, _tc, dialect=_dialect))
                 if grain:
-                    logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — grain bug: %s",
+                    logger.info("[explorer:%s] questions (pinned): skipping Q%d — grain bug: %s",
                                 self.connection_id, qi, grain)
                     continue
 
@@ -2194,12 +2213,12 @@ class SchemaExplorer:
                 if not rows:
                     continue
                 if self._leaks_schema(sql):
-                    logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — SQL escapes schema %s",
+                    logger.info("[explorer:%s] questions (pinned): skipping Q%d — SQL escapes schema %s",
                                 self.connection_id, qi, self.schema_name)
                     continue
                 _ok, _why = verify_insight(rows, q, sql, _mranges, conn=self._conn)
                 if not _ok:
-                    logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — %s",
+                    logger.info("[explorer:%s] questions (pinned): skipping Q%d — %s",
                                 self.connection_id, qi, _why)
                     continue
                 if has_fabricated_dimension(sql):
@@ -2231,12 +2250,12 @@ class SchemaExplorer:
                     continue
                 _rl = relabel_mislabeled_finding(interp.finding, sql, metric_vocab_for(self._conn), rows)
                 if _rl:
-                    logger.info("[explorer:%s] Phase 8 (pinned): relabeled a mislabeled metric, keeping the signal",
+                    logger.info("[explorer:%s] questions (pinned): relabeled a mislabeled metric, keeping the signal",
                                 self.connection_id)
                     interp.finding = _rl
                 _ok, _why = verify_insight(rows, interp.finding, sql, _mranges, conn=self._conn)
                 if not _ok:
-                    logger.info("[explorer:%s] Phase 8 (pinned): dropping interpreted finding — %s",
+                    logger.info("[explorer:%s] questions (pinned): dropping interpreted finding — %s",
                                 self.connection_id, _why)
                     continue
                 _prior_findings = [i.get("finding", "") for i in self._state.get("insights", [])]
@@ -2248,7 +2267,7 @@ class SchemaExplorer:
                     from aughor.semantic.finding_dedup import embed_text, is_paraphrase_duplicate
                     _pvec = embed_text(interp.finding)
                     if is_paraphrase_duplicate(_pvec, getattr(self, "_insight_vecs", [])):
-                        logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — paraphrase of an existing insight",
+                        logger.info("[explorer:%s] questions (pinned): skipping Q%d — paraphrase of an existing insight",
                                     self.connection_id, qi)
                         continue
                 except Exception:
@@ -2286,12 +2305,12 @@ class SchemaExplorer:
 
         if stored:
             self._save_state()
-            logger.info("[explorer:%s] Phase 8: pinned pass stored %d/%d key-question findings",
+            logger.info("[explorer:%s] questions: pinned pass stored %d/%d key-question findings",
                         self.connection_id, stored, len(questions))
         return stored
 
 
-    # ── Phase 8: Domain intelligence curiosity loop ───────────────────────────
+    # ── Questions · the curiosity loop ───────────────────────────
 
     def _manifest_nq(self, domain_table_cols, NQ):
         """Tier-1 #4: pop the next uncovered manifest cell whose table is in this domain's scope
@@ -2440,18 +2459,18 @@ class SchemaExplorer:
         return NQ(question=probe.question or "grounded probe", sql=sql,
                   angle=probe.angle or "grounded", why=probe.why or "grounded generation")
 
-    async def _phase8_domain_intelligence(self, *args, **kwargs) -> int:
-        """Wrapper: however Phase 8 exits — completion, early return, cancellation —
+    async def _pass_questions(self, *args, **kwargs) -> int:
+        """Wrapper: however the questions pass exits — completion, early return, cancellation —
         this worker's held domain claim is released. A finished run leaving claims
         starves its successor within the lease window ('Explore 5 more' would skip
         every domain the previous run claimed; caught live by the integration suite,
         where a session-shared ledger crosses tests exactly like sequential runs)."""
         try:
-            return await self._phase8_domain_intelligence_inner(*args, **kwargs)
+            return await self._pass_questions_inner(*args, **kwargs)
         finally:
             self._release_held_claim()
 
-    async def _phase8_domain_intelligence_inner(
+    async def _pass_questions_inner(
         self,
         cp: dict | None = None,
         tp: dict | None = None,
@@ -2477,7 +2496,7 @@ class SchemaExplorer:
         from aughor.sql.writer import SqlWriter
 
         # Tier-1 #4: manifest-driven deterministic generation — permanent (flag endgame
-        # Wave 5, 2026-08-06): Phase 8 covers the L2 baseline cells with SYNTHESISED SQL
+        # Wave 5, 2026-08-06): the questions pass covers the L2 baseline cells with SYNTHESISED SQL
         # (no generation LLM call) and the existing guards enforce correctness; the LLM
         # curiosity loop handles cells/domains the manifest doesn't cover, and a manifest
         # build failure fails closed to that loop (the flip below).
@@ -2504,7 +2523,7 @@ class SchemaExplorer:
                 _cov = self._state.get("manifest_covered") or {}
                 if isinstance(_cov, dict):
                     self._manifest_attempted = {tuple(k) for k in _cov.get("cells", [])}
-                logger.info("[explorer:%s] Phase 8 manifest-driven ON — %d baseline cells (%d already covered)",
+                logger.info("[explorer:%s] questions: the industry manifest sets %d baseline questions (%d already asked)",
                             self.connection_id, len(self._manifest_cells), len(self._manifest_attempted))
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
@@ -2526,7 +2545,7 @@ class SchemaExplorer:
             # Surface the SPECIFIC failure the build recorded (stage + reason) so the user
             # gets an actionable message + Retry instead of a silent empty Hub.
             note = _ontology_skip_note(getattr(self._conn, "last_build", None))
-            logger.warning("[explorer:%s] Phase 8: skipping — %s", self.connection_id, note)
+            logger.warning("[explorer:%s] questions: skipping — %s", self.connection_id, note)
             self._status.domain_intel_skipped = True
             self._status.domain_intel_note = note
             return
@@ -2574,7 +2593,7 @@ class SchemaExplorer:
 
         llm = get_provider("coder")
         sql_writer = SqlWriter(self._conn)
-        # Settle contra-revenue UNITS before a single question is generated. Phase 2 has
+        # Settle contra-revenue UNITS before a single question is generated. the profiler has
         # already measured every column's range, so this is free — and it must happen
         # before generation, because the directive it produces is the belt and
         # `_repair_contra_amount` (wired at the guarded execute seam) is the braces.
@@ -2610,7 +2629,7 @@ class SchemaExplorer:
             return dataset_of(tbl) or _bare2dataset.get(str(tbl).split(".")[-1].lower(), "")
 
         if multi_dataset:
-            logger.info("[explorer:%s] Phase 8: multi-dataset connection %s — isolating datasets",
+            logger.info("[explorer:%s] questions: multi-dataset connection %s — isolating datasets",
                         self.connection_id, sorted(_all_datasets))
 
         # ── Per-dataset domain passes (the "every dataset gets understood" guarantee) ──
@@ -2634,13 +2653,13 @@ class SchemaExplorer:
         passes, _pass_splits = _build_domain_passes(domain_entities, multi_dataset, _entity_ds)
         for _split_domain, _split_datasets in _pass_splits:
             logger.info(
-                "[explorer:%s] Phase 8: %s domain spans %s — splitting into one pass per dataset",
+                "[explorer:%s] questions: %s domain spans %s — splitting into one pass per dataset",
                 self.connection_id, _split_domain, _split_datasets,
             )
 
         # ── Industry-aware steering (Business Profile) ──────────────────────────
         # The keystone for industry-aware intelligence. Load the connection's
-        # Business Profile and let it DRIVE Phase 8: (a) DERIVE extra angles from its
+        # Business Profile and let it DRIVE questions: (a) DERIVE extra angles from its
         # north-star metrics — the per-domain column-feasibility gate below trims any
         # that don't fit a domain's tables — and (b) INJECT an authoritative industry
         # block into the question prompt so generated SQL targets what matters for
@@ -2691,7 +2710,7 @@ class SchemaExplorer:
                 # Drop recipes whose formula columns don't exist in THIS schema: a generic
                 # profile recipe (SUM(revenue - cogs), customer_id, ecommerce.orders) doesn't
                 # bind to missimi (unit_price/customer_unique_id), and injecting it verbatim
-                # steers the generator to INVENT those names — the dominant Phase-8 token sink.
+                # steers the generator to INVENT those names — the dominant questions-pass token sink.
                 if _recipes:
                     _real_cols: set = set()
                     _real_tbls: set = set()
@@ -2704,7 +2723,7 @@ class SchemaExplorer:
                         _recipes = [r for r in _recipes
                                     if _recipe_binds(r.get("formula", ""), _real_cols, _real_tbls)]
                         if len(_recipes) < _n_before:
-                            logger.info("[explorer:%s] Phase 8: dropped %d/%d unbound recipe(s) "
+                            logger.info("[explorer:%s] questions: dropped %d/%d unbound recipe(s) "
                                         "(formula columns absent from this schema)",
                                         self.connection_id, _n_before - len(_recipes), _n_before)
                 _rlines = ""
@@ -2794,7 +2813,7 @@ class SchemaExplorer:
                     f"QUESTIONS THAT MATTER for this industry:\n{_qlines}\n\n"
                 )
                 logger.info(
-                    "[explorer:%s] Phase 8: industry-aware steering — %r (%d priority metrics, %d recipes)",
+                    "[explorer:%s] questions: industry-aware steering — %r (%d priority metrics, %d recipes)",
                     self.connection_id, _eff_industry, len(profile_angles), len(_recipes),
                 )
         except Exception as _exc:
@@ -2807,7 +2826,7 @@ class SchemaExplorer:
         _pb_scope = industry_scope(self.connection_id, self.schema_name, industry=_eff_industry_seen)
 
         # Embedding vectors for paraphrase dedup, aligned to self._state["insights"].
-        # Seed from any insights already present (e.g. Phase-7 cross-table) so Phase-8
+        # Seed from any insights already present (e.g. cross-table cross-table) so questions-pass
         # dedups against them too. Fail-open: no embed model → empty list, dedup is a no-op.
         try:
             from aughor.semantic.finding_dedup import embed_text as _embf
@@ -2822,7 +2841,7 @@ class SchemaExplorer:
         # which then dedups against them instead of re-deriving them.
         if _profile_for_pin is not None:
             try:
-                await self._phase8_pinned_questions(_profile_for_pin, sql_writer, profile_block)
+                await self._pass_pinned_questions(_profile_for_pin, sql_writer, profile_block)
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "pinned key-questions pass is best-effort; on failure the free "
@@ -2849,14 +2868,14 @@ class SchemaExplorer:
                                                    cut=None, source="profile", sql=_vs))
             if _kpi_cells:
                 self._manifest_cells = _kpi_cells + list(self._manifest_cells)
-                logger.info("[explorer:%s] Phase 8: +%d KPI cells (value_sql, bind-validated) → %d cells",
+                logger.info("[explorer:%s] questions: +%d KPI cells (value_sql, bind-validated) → %d cells",
                             self.connection_id, len(_kpi_cells), len(self._manifest_cells))
 
-        # Reserve a slice of the token budget for Phase 9 (synthesis): synthesis is the
+        # Reserve a slice of the token budget for synthesis: synthesis is the
         # cheapest, highest-value phase (it composes findings already in hand), yet it runs
-        # last — so without a reserve, a token-hungry Phase 8 exhausts the budget and the
-        # heartbeat hard-cancels the run BEFORE synthesis ever fires. Stop Phase 8 once it
-        # has spent SYNTH_RESERVE_FRACTION of the budget, leaving the remainder for Phase 9.
+        # last — so without a reserve, a token-hungry the questions pass exhausts the budget and the
+        # heartbeat hard-cancels the run BEFORE synthesis ever fires. Stop the questions pass once it
+        # has spent SYNTH_RESERVE_FRACTION of the budget, leaving the remainder for synthesis.
         _reserve_hit = False
 
         for domain, _base_domain, entities in passes:
@@ -2866,7 +2885,7 @@ class SchemaExplorer:
             if self._stopped:
                 return
 
-            # Phase 2 durable execution: one DOMAIN is the unit of sliced work. A
+            # durable execution: one DOMAIN is the unit of sliced work. A
             # worker claims `explore:{store_key}:{domain}` before touching it, so two
             # workers sharing the database split the domain list between them instead
             # of double-running it — and a domain whose worker died is reclaimable
@@ -2888,7 +2907,7 @@ class SchemaExplorer:
                     _claim_ledger.lapsed_claim_owner(_claim_scope))
                 if not _claim_ledger.try_claim(_claim_scope, self._worker_id,
                                                lease_s=_DOMAIN_LEASE_S):
-                    logger.info("[explorer:%s] Phase 8: domain %s is another worker's slice — skipping",
+                    logger.info("[explorer:%s] questions: domain %s is another worker's slice — skipping",
                                 self.connection_id, domain)
                     continue
                 self._held_claim = (_claim_ledger, _claim_scope)
@@ -2941,7 +2960,7 @@ class SchemaExplorer:
                     _scoped = [e for e in entities if any(_ds(t) == _primary_ds for t in e.source_tables)]
                     if _scoped and len(_scoped) < len(entities):
                         logger.info(
-                            "[explorer:%s] Phase 8: %s domain spans %s — scoping entities to '%s' "
+                            "[explorer:%s] questions: %s domain spans %s — scoping entities to '%s' "
                             "(%d→%d entities)",
                             self.connection_id, domain, sorted(_ent_tbl_ds), _primary_ds,
                             len(entities), len(_scoped),
@@ -2958,7 +2977,7 @@ class SchemaExplorer:
                 if any(e.id == r.from_entity or e.id == r.to_entity for e in entities)
             )[:2000]
 
-            logger.info(f"[explorer:{self.connection_id}] Phase 8: {domain} domain — {len(entities)} entities, used={used}")
+            logger.info(f"[explorer:{self.connection_id}] questions: {domain} domain — {len(entities)} entities, used={used}")
 
             # Playbook hypotheses (Layer 2): consult the org playbook — the causal
             # "when metric X behaves like Y, investigate Z" knowledge — for this domain's
@@ -3000,14 +3019,14 @@ class SchemaExplorer:
                 if self._stopped:
                     return
 
-                # Budget reserve for synthesis: once Phase 8 has spent its share of the
-                # token budget, stop here (and skip the remaining domains) so Phase 9 has
+                # Budget reserve for synthesis: once the questions pass has spent its share of the
+                # token budget, stop here (and skip the remaining domains) so synthesis has
                 # headroom to run instead of being hard-cancelled by the heartbeat.
                 from aughor.kernel.jobs import budget_fraction_used
                 _bf = budget_fraction_used()
                 if _bf is not None and _bf >= SYNTH_RESERVE_FRACTION:
                     _reserve_hit = True
-                    logger.info("[explorer:%s] Phase 8: budget %.0f%% spent — reserving the rest "
+                    logger.info("[explorer:%s] questions: budget %.0f%% spent — reserving the rest "
                                 "for synthesis, stopping domain intel", self.connection_id, _bf * 100)
                     break
 
@@ -3023,7 +3042,7 @@ class SchemaExplorer:
                 if not _frontier_remains and len(domain_insights) >= 3:
                     recent_novelty = [i.get("novelty", 3) for i in domain_insights[-3:]]
                     if sum(recent_novelty) / 3 < 2.0:
-                        logger.info(f"[explorer:{self.connection_id}] Phase 8: {domain} — novelty decay, stopping")
+                        logger.info(f"[explorer:{self.connection_id}] questions: {domain} — novelty decay, stopping")
                         break
 
                 existing_findings = "\n".join(
@@ -3109,7 +3128,7 @@ class SchemaExplorer:
                         primary = max(sorted(counts), key=lambda d: counts[d])
                         domain_tables = {t for t in domain_tables if _ds(t) == primary}
                         logger.info(
-                            "[explorer:%s] Phase 8: %s domain spans %s — restricting tables to '%s'",
+                            "[explorer:%s] questions: %s domain spans %s — restricting tables to '%s'",
                             self.connection_id, domain, sorted(counts), primary,
                         )
 
@@ -3195,7 +3214,7 @@ class SchemaExplorer:
                         domain_cols.update(str(c).lower() for c in cols)
 
                 if not domain_table_cols:
-                    logger.info("[explorer:%s] Phase 8: %s — domain_table_cols EMPTY; "
+                    logger.info("[explorer:%s] questions: %s — domain_table_cols EMPTY; "
                                 "domain_tables=%s writer_keys=%s",
                                 self.connection_id, domain, sorted(domain_tables)[:8],
                                 sorted(sql_writer.table_cols.keys())[:8])
@@ -3221,7 +3240,7 @@ class SchemaExplorer:
                     _feasible = [a for a in uncovered if angle_feasible(a, domain_cols)]
                     if _feasible and len(_feasible) < len(uncovered):
                         logger.info(
-                            "[explorer:%s] Phase 8: %s — dropping infeasible angles %s (required column absent)",
+                            "[explorer:%s] questions: %s — dropping infeasible angles %s (required column absent)",
                             self.connection_id, domain,
                             [a for a in uncovered if a not in _feasible],
                         )
@@ -3315,7 +3334,7 @@ class SchemaExplorer:
                     + "\n"
                 ) if join_rules else ""
 
-                # Build prior-phases context (phases 3-7 findings) — SCOPED to this domain's
+                # Build prior-phases context (the structure passes findings) — SCOPED to this domain's
                 # DATASET (not its individual tables). The phase-3/4/5 facts are connection-wide;
                 # left unscoped a bakehouse domain is handed ecommerce lifecycles and bakehouse↔
                 # ecommerce "join issues" (the cross-dataset leak). But SAME-dataset facts are
@@ -3334,7 +3353,7 @@ class SchemaExplorer:
                                   if v.get("meaning") not in ("not_applicable", "unknown")
                                   and _pp_same_ds(k.split(":")[0])}
                     if meaningful:
-                        prior_phases_lines.append("NULL SEMANTICS (from Phase 3):")
+                        prior_phases_lines.append("NULL SEMANTICS (from the null-meaning pass):")
                         for k, v in list(meaningful.items())[:8]:
                             prior_phases_lines.append(f"  {k.replace(':', '.')}: NULL = {v.get('meaning', '?')} ({v.get('null_rate', 0):.0%})")
                 jv = self._state.get("join_verifications", [])
@@ -3344,14 +3363,14 @@ class SchemaExplorer:
                     orphans = [j for j in jv if j.get("orphan_count", 0) > 0
                                and _pp_same_ds(j.get("from_table", "")) and _pp_same_ds(j.get("to_table", ""))]
                     if orphans:
-                        prior_phases_lines.append("JOIN ISSUES (from Phase 4):")
+                        prior_phases_lines.append("JOIN ISSUES (from join verification):")
                         for j in orphans[:5]:
                             prior_phases_lines.append(f"  {j.get('key', '?')}: {j.get('orphan_count', 0)} orphan rows")
                 lm = self._state.get("lifecycle_maps", {})
                 if lm:
                     _scoped_lm = [(tbl, m) for tbl, m in lm.items() if _pp_same_ds(tbl)]
                     if _scoped_lm:
-                        prior_phases_lines.append("LIFECYCLES (from Phase 5):")
+                        prior_phases_lines.append("LIFECYCLES (from lifecycle mapping):")
                         for tbl, m in _scoped_lm[:5]:
                             prior_phases_lines.append(f"  {tbl}.{m.get('status_column', '?')}: {', '.join(m.get('active_states', [])[:4])} → {', '.join(m.get('terminal_states', [])[:3])}")
                 prior_phases_block = "\n".join(prior_phases_lines) + "\n\n" if prior_phases_lines else ""
@@ -3507,7 +3526,7 @@ class SchemaExplorer:
                     # generator when no manifest cell applies (deeper/cross-cutting tail).
                     def _steer_of() -> str:
                         # read only when the model is to invent the question (a cell of the question list
-                        # needs no steer): Phase 8 INVENTS it, so retrieval keys on the domain and its tables
+                        # needs no steer): the questions pass INVENTS it, so retrieval keys on the domain and its tables
                         _kb_steer = self._kb_context(
                             f"{domain} " + " ".join(list(domain_table_cols)[:8]))
                         return (f"DOMAIN: {domain}\n\n{_kb_steer}{frontier_block}{playbook_block}{_followup_hint}"
@@ -3517,7 +3536,7 @@ class SchemaExplorer:
                     if nq is _NO_MORE_QUESTIONS:
                         break
                 except Exception as e:
-                    logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM question gen failed for {domain}: {e}")
+                    logger.warning(f"[explorer:{self.connection_id}] questions: LLM question gen failed for {domain}: {e}")
                     break
 
                 # Qualify bare table names to their unique schema FIRST: on a multi-dataset
@@ -3541,7 +3560,7 @@ class SchemaExplorer:
                 # only return garbage (the bakehouse ⋈ ecommerce class).
                 if multi_dataset and crosses_datasets(nq.sql):
                     logger.info(
-                        "[explorer:%s] Phase 8: %s/%s — skipping cross-dataset join: %s",
+                        "[explorer:%s] questions: %s/%s — skipping cross-dataset join: %s",
                         self.connection_id, domain, nq.angle, sorted(tables_in_sql(nq.sql)),
                     )
                     used += 1
@@ -3555,7 +3574,7 @@ class SchemaExplorer:
                 # covers the checklist; the LLM can free-propose any angle).
                 if has_fabricated_dimension(nq.sql):
                     logger.info(
-                        "[explorer:%s] Phase 8: %s/%s — skipping fabricated-dimension question (constant grouping key)",
+                        "[explorer:%s] questions: %s/%s — skipping fabricated-dimension question (constant grouping key)",
                         self.connection_id, domain, nq.angle,
                     )
                     used += 1
@@ -3583,7 +3602,7 @@ class SchemaExplorer:
                     _feas = None
                 if _feas:
                     logger.info(
-                        "[explorer:%s] Phase 8: %s/%s — skipping unsupported-metric question: %s",
+                        "[explorer:%s] questions: %s/%s — skipping unsupported-metric question: %s",
                         self.connection_id, domain, nq.angle, _feas[:90],
                     )
                     used += 1
@@ -3626,7 +3645,7 @@ class SchemaExplorer:
                     if sql != _pre_sem:
                         from aughor.stats import stats as _s; _s.inc("explorer.semantic_repairs")
                         logger.info(
-                            "[explorer:%s] Phase 8: %s/%s — semantic column repair applied "
+                            "[explorer:%s] questions: %s/%s — semantic column repair applied "
                             "(mapped an invented column to the schema's real one)",
                             self.connection_id, domain, nq.angle,
                         )
@@ -3653,7 +3672,7 @@ class SchemaExplorer:
                         self._dead_refs |= _bad_cols | _bad_tbls
                         from aughor.stats import stats as _s; _s.inc("explorer.invention_skips")
                         logger.info(
-                            "[explorer:%s] Phase 8: %s/%s — skipping invented identifiers "
+                            "[explorer:%s] questions: %s/%s — skipping invented identifiers "
                             "(cols=%s tables=%s); harvested to negative knowledge",
                             self.connection_id, domain, nq.angle,
                             sorted(_bad_cols), sorted(_bad_tbls),
@@ -3682,7 +3701,7 @@ class SchemaExplorer:
                         sql = _bound
                         from aughor.stats import stats as _s; _s.inc("explorer.filter_bound")
                         logger.info(
-                            "[explorer:%s] Phase 8: %s/%s — filter literal bound to the live "
+                            "[explorer:%s] questions: %s/%s — filter literal bound to the live "
                             "column domain (wrong-case/near-miss value corrected)",
                             self.connection_id, domain, nq.angle,
                         )
@@ -3731,14 +3750,14 @@ class SchemaExplorer:
                             None, lambda: sql_writer.fix(sql, _berr, max_retries=2))
                         if _fix.ok and _fix.sql:
                             logger.info(
-                                "[explorer:%s] Phase 8: %s/%s — pre-flight bind-fix applied: %s",
+                                "[explorer:%s] questions: %s/%s — pre-flight bind-fix applied: %s",
                                 self.connection_id, domain, nq.angle, _fix.explanation,
                             )
                             sql = _fix.sql
                         else:
                             from aughor.stats import stats as _s; _s.inc("explorer.bindcheck_skips")
                             logger.info(
-                                "[explorer:%s] Phase 8: %s/%s — skipping unbindable question (%s)",
+                                "[explorer:%s] questions: %s/%s — skipping unbindable question (%s)",
                                 self.connection_id, domain, nq.angle,
                                 (_berr.splitlines()[0] if _berr else "bind error")[:90],
                             )
@@ -3767,7 +3786,7 @@ class SchemaExplorer:
                     if _jw:
                         from aughor.stats import stats as _s; _s.inc("explorer.join_domain_skips")
                         logger.info(
-                            "[explorer:%s] Phase 8: %s/%s — skipping fabricated join (no value overlap): %s",
+                            "[explorer:%s] questions: %s/%s — skipping fabricated join (no value overlap): %s",
                             self.connection_id, domain, nq.angle,
                             "; ".join(str(w) for w in _jw[:3]),
                         )
@@ -3794,7 +3813,7 @@ class SchemaExplorer:
                     self._dead_refs |= _extract_dead_refs(error_msg)
                     if attempt >= MAX_ATTEMPTS - 1:
                         logger.warning(
-                            f"[explorer:{self.connection_id}] Phase 8: all {MAX_ATTEMPTS} attempts "
+                            f"[explorer:{self.connection_id}] questions: all {MAX_ATTEMPTS} attempts "
                             f"failed for {domain}/{nq.angle}"
                         )
                         break
@@ -3803,12 +3822,12 @@ class SchemaExplorer:
                     )
                     if not fix.ok:
                         logger.warning(
-                            f"[explorer:{self.connection_id}] Phase 8: fix failed at attempt "
+                            f"[explorer:{self.connection_id}] questions: fix failed at attempt "
                             f"{attempt+1} for {domain}/{nq.angle}: {fix.final_error}"
                         )
                         break
                     logger.info(
-                        f"[explorer:{self.connection_id}] Phase 8: fix attempt {attempt+1} "
+                        f"[explorer:{self.connection_id}] questions: fix attempt {attempt+1} "
                         f"for {domain}/{nq.angle} — {fix.explanation}"
                     )
                     sql = fix.sql
@@ -3818,7 +3837,7 @@ class SchemaExplorer:
                 self._state["domain_budgets"] = budgets
 
                 if not rows or len(rows) == 0:
-                    logger.debug(f"[explorer:{self.connection_id}] Phase 8: empty result for {nq.question}")
+                    logger.debug(f"[explorer:{self.connection_id}] questions: empty result for {nq.question}")
                     continue
 
                 # ── Fan-out de-fan (deterministic, #1 correctness lever) ─────────
@@ -3837,7 +3856,7 @@ class SchemaExplorer:
                             _rerows = await self._run(_rw, think=f"[de-fan] {think_str}")
                             if _rerows:
                                 logger.info(
-                                    "[explorer:%s] Phase 8: %s/%s — de-fanned over-counting SUM (%s ⋈ %s)",
+                                    "[explorer:%s] questions: %s/%s — de-fanned over-counting SUM (%s ⋈ %s)",
                                     self.connection_id, domain, nq.angle, _ff.satellites, _ff.children,
                                 )
                                 sql, rows = _rw, _rerows
@@ -3859,7 +3878,7 @@ class SchemaExplorer:
                     _vacuous = has_vacuous_temporal(sql)
                     if _detemporalised or _vacuous:
                         logger.info(
-                            "[explorer:%s] Phase 8: %s/%s — dropping finding; repair %s a time-based "
+                            "[explorer:%s] questions: %s/%s — dropping finding; repair %s a time-based "
                             "question (removed %s, added %s)",
                             self.connection_id, domain, nq.angle,
                             "neutered (DATE_DIFF of identical dates → constant)" if _vacuous else "de-temporalised",
@@ -3914,7 +3933,7 @@ class SchemaExplorer:
                                             # Only flag if this looks like a "per-X" misread
                                             if col_n.endswith("_id") and not getattr(col_p, "is_low_cardinality", True):
                                                 logger.info(
-                                                    "[explorer:%s] Phase 8: skipping likely grain-confused result "
+                                                    "[explorer:%s] questions: skipping likely grain-confused result "
                                                     "— result cell %d matches global cardinality of %s.%s (%d). "
                                                     "SQL had JOIN+COUNT(DISTINCT)/COUNT(*).",
                                                     self.connection_id, val, tbl_p, col_n, dc,
@@ -3955,7 +3974,7 @@ class SchemaExplorer:
                         if _grain:
                             from aughor.stats import stats as _s; _s.inc("explorer.grain_skips")
                             logger.info(
-                                "[explorer:%s] Phase 8: %s/%s — skipping (SQL grain bug: %s)",
+                                "[explorer:%s] questions: %s/%s — skipping (SQL grain bug: %s)",
                                 self.connection_id, domain, nq.angle, _grain,
                             )
                             _skip_result = True
@@ -3967,7 +3986,7 @@ class SchemaExplorer:
 
                 if _skip_result:
                     logger.info(
-                        "[explorer:%s] Phase 8: %s/%s — result skipped (grain-confused ratio detected)",
+                        "[explorer:%s] questions: %s/%s — result skipped (grain-confused ratio detected)",
                         self.connection_id, domain, nq.angle,
                     )
                     continue
@@ -4016,7 +4035,7 @@ class SchemaExplorer:
                         lambda: llm.complete(system=_sys3, user=_usr3, response_model=_Interpretation),
                     )
                 except Exception as e:
-                    logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM interpretation failed for {domain}: {e}")
+                    logger.warning(f"[explorer:{self.connection_id}] questions: LLM interpretation failed for {domain}: {e}")
                     continue
 
                 interp.finding = round_long_decimals(interp.finding)   # number hygiene at the source
@@ -4024,18 +4043,18 @@ class SchemaExplorer:
                 # Drop "no data" findings — an empty/all-NULL result or an interpretation
                 # that says as much. They pollute the Briefing and turn into broken monitors.
                 if self._leaks_schema(sql):
-                    logger.info("[explorer:%s] Phase 8: %s/%s — dropping finding: SQL escapes schema %s",
+                    logger.info("[explorer:%s] questions: %s/%s — dropping finding: SQL escapes schema %s",
                                 self.connection_id, domain, nq.angle, self.schema_name)
                     continue
                 _rl = relabel_mislabeled_finding(interp.finding, sql, metric_vocab_for(self._conn), rows)
                 if _rl:
-                    logger.info("[explorer:%s] Phase 8: %s/%s — relabeled a mislabeled metric, keeping the signal",
+                    logger.info("[explorer:%s] questions: %s/%s — relabeled a mislabeled metric, keeping the signal",
                                 self.connection_id, domain, nq.angle)
                     interp.finding = _rl
                 _ok, _why = verify_insight(rows, interp.finding, sql, _metric_ranges, conn=self._conn)
                 if not _ok:
                     logger.info(
-                        "[explorer:%s] Phase 8: %s/%s — dropping finding: %s",
+                        "[explorer:%s] questions: %s/%s — dropping finding: %s",
                         self.connection_id, domain, nq.angle, _why,
                     )
                     continue
@@ -4046,7 +4065,7 @@ class SchemaExplorer:
                 # dresses up as a real category ("the only channel represented").
                 if has_fabricated_dimension(sql):
                     logger.info(
-                        "[explorer:%s] Phase 8: %s/%s — skipping fabricated-dimension finding (constant grouping key)",
+                        "[explorer:%s] questions: %s/%s — skipping fabricated-dimension finding (constant grouping key)",
                         self.connection_id, domain, nq.angle,
                     )
                     continue
@@ -4057,7 +4076,7 @@ class SchemaExplorer:
                 # only the metric name is wrong (the $467-AOV-vs-$1108 case).
                 if mislabeled_per_grain(sql, interp.finding):
                     logger.info(
-                        "[explorer:%s] Phase 8: %s/%s — skipping per-grain mislabel (line-item AVG sold as a per-order metric)",
+                        "[explorer:%s] questions: %s/%s — skipping per-grain mislabel (line-item AVG sold as a per-order metric)",
                         self.connection_id, domain, nq.angle,
                     )
                     continue
@@ -4071,7 +4090,7 @@ class SchemaExplorer:
                 _inv = inverted_universal_claim(interp.finding, rows)
                 if _inv:
                     logger.info(
-                        "[explorer:%s] Phase 8: %s/%s — skipping narration inversion (%s)",
+                        "[explorer:%s] questions: %s/%s — skipping narration inversion (%s)",
                         self.connection_id, domain, nq.angle, _inv,
                     )
                     continue
@@ -4082,7 +4101,7 @@ class SchemaExplorer:
                 # wrong thing. Compare the original draft (nq.sql) to what actually ran.
                 if sql != nq.sql and _semantic_metric_drift(nq.sql, sql):
                     logger.info(
-                        "[explorer:%s] Phase 8: %s/%s — skipping semantic metric drift (repair changed WHAT is measured)",
+                        "[explorer:%s] questions: %s/%s — skipping semantic metric drift (repair changed WHAT is measured)",
                         self.connection_id, domain, nq.angle,
                     )
                     continue
@@ -4095,7 +4114,7 @@ class SchemaExplorer:
                 _g = verify_finding(interp.finding, rows)
                 if not _g.grounded:
                     logger.info(
-                        "[explorer:%s] Phase 8: %s/%s — ungrounded number(s) %s; re-grounding",
+                        "[explorer:%s] questions: %s/%s — ungrounded number(s) %s; re-grounding",
                         self.connection_id, domain, nq.angle, _g.ungrounded,
                     )
                     try:
@@ -4126,12 +4145,12 @@ class SchemaExplorer:
                             _g = GroundingResult(grounded=True)
                     except Exception as e:
                         logger.warning(
-                            "[explorer:%s] Phase 8: re-grounding failed for %s: %s",
+                            "[explorer:%s] questions: re-grounding failed for %s: %s",
                             self.connection_id, domain, e,
                         )
                 if not _g.grounded:
                     logger.info(
-                        "[explorer:%s] Phase 8: %s/%s — dropping finding with unverifiable "
+                        "[explorer:%s] questions: %s/%s — dropping finding with unverifiable "
                         "number(s) %s",
                         self.connection_id, domain, nq.angle, _g.ungrounded,
                     )
@@ -4159,7 +4178,7 @@ class SchemaExplorer:
                     if is_redundant_insight(sql, _all_prior_sqls, getattr(self._conn, "dialect", "duckdb")):
                         from aughor.stats import stats as _s; _s.inc("explorer.redundant_skips")
                         logger.info(
-                            "[explorer:%s] Phase 8: %s/%s — dropping cross-domain redundant finding "
+                            "[explorer:%s] questions: %s/%s — dropping cross-domain redundant finding "
                             "(same grain+measures as an existing insight)",
                             self.connection_id, domain, nq.angle,
                         )
@@ -4183,7 +4202,7 @@ class SchemaExplorer:
                     if is_semantically_redundant(interp.finding, _prior_findings):
                         from aughor.stats import stats as _s; _s.inc("explorer.semantic_dup_skips")
                         logger.info(
-                            "[explorer:%s] Phase 8: %s/%s — dropping semantically-redundant finding "
+                            "[explorer:%s] questions: %s/%s — dropping semantically-redundant finding "
                             "(same claim as an existing insight, different SQL)",
                             self.connection_id, domain, nq.angle,
                         )
@@ -4206,7 +4225,7 @@ class SchemaExplorer:
                     if is_paraphrase_duplicate(_fvec, getattr(self, "_insight_vecs", [])):
                         from aughor.stats import stats as _s; _s.inc("explorer.embed_dup_skips")
                         logger.info(
-                            "[explorer:%s] Phase 8: %s/%s — dropping paraphrase-redundant finding "
+                            "[explorer:%s] questions: %s/%s — dropping paraphrase-redundant finding "
                             "(embedding match to an existing insight)",
                             self.connection_id, domain, nq.angle,
                         )
@@ -4226,13 +4245,13 @@ class SchemaExplorer:
                         _dup_streak += 1
                         from aughor.stats import stats as _s; _s.inc("explorer.duplicate_skips")
                         logger.info(
-                            "[explorer:%s] Phase 8: %s/%s — dropping structural-duplicate finding "
+                            "[explorer:%s] questions: %s/%s — dropping structural-duplicate finding "
                             "(same tables/grain/measures as a prior one); streak=%d",
                             self.connection_id, domain, nq.angle, _dup_streak,
                         )
                         if _dup_streak >= 3:
                             logger.info(
-                                "[explorer:%s] Phase 8: %s — 3 consecutive duplicates, stopping domain",
+                                "[explorer:%s] questions: %s — 3 consecutive duplicates, stopping domain",
                                 self.connection_id, domain,
                             )
                             break
@@ -4332,7 +4351,7 @@ class SchemaExplorer:
 
                 self._save_state()
                 logger.info(
-                    f"[explorer:{self.connection_id}] Phase 8: {domain}/{angle_key} — "
+                    f"[explorer:{self.connection_id}] questions: {domain}/{angle_key} — "
                     f"novelty={interp.novelty} — \"{interp.finding[:80]}…\""
                 )
 
@@ -4356,8 +4375,8 @@ class SchemaExplorer:
                     _drill_parent = None
                     _chain_depth = 0
 
-    async def _phase9_synthesis(self, cp, tp, *, max_findings: int = 8, max_pairs: int = 24) -> int:
-        """Phase 9 — cross-finding SYNTHESIS. Compose pairs of existing findings that
+    async def _pass_synthesis(self, cp, tp, *, max_findings: int = 8, max_pairs: int = 24) -> int:
+        """synthesis — cross-finding SYNTHESIS. Compose pairs of existing findings that
         share a join key into emergent claims neither parent holds (the five operators
         in ``explorer/synthesis.py``). This is where Scout *builds on what it knows*:
         discovery costs ZERO new scans — only the ONE confirming query per surviving
@@ -4385,9 +4404,9 @@ class SchemaExplorer:
             return 0
         candidates = candidate_pairs(insights, max_pairs=max_pairs)
         if not candidates:
-            logger.info("[explorer:%s] Phase 9: no combinable finding-pairs", self.connection_id)
+            logger.info("[explorer:%s] synthesis: no combinable finding-pairs", self.connection_id)
             return 0
-        logger.info("[explorer:%s] Phase 9: %d candidate pairs from %d findings",
+        logger.info("[explorer:%s] synthesis: %d candidate pairs from %d findings",
                     self.connection_id, len(candidates), len(insights))
 
         class _SynthPlan(_BM):
@@ -4429,11 +4448,11 @@ class SchemaExplorer:
         for c in candidates:
             if stored >= max_findings:
                 break
-            # Self-limit: stop synthesis just shy of the token cap so a productive Phase 9
+            # Self-limit: stop synthesis just shy of the token cap so a productive synthesis
             # finishes cleanly instead of being heartbeat-cancelled at the very end.
             _bf9 = budget_fraction_used()
             if _bf9 is not None and _bf9 >= 0.97:
-                logger.info("[explorer:%s] Phase 9: budget %.0f%% spent — stopping synthesis "
+                logger.info("[explorer:%s] synthesis: budget %.0f%% spent — stopping synthesis "
                             "short of the cap", self.connection_id, _bf9 * 100)
                 break
             if frozenset(c.parent_ids) in _done_pairs:
@@ -4451,7 +4470,7 @@ class SchemaExplorer:
                     ),
                 )
             except Exception:
-                logger.debug("[explorer:%s] Phase 9: plan LLM call failed for pair %s",
+                logger.debug("[explorer:%s] synthesis: plan LLM call failed for pair %s",
                              self.connection_id, c.parent_ids, exc_info=True)
                 continue
             if not plan.applies or not (plan.confirm_question or "").strip():
@@ -4473,7 +4492,7 @@ class SchemaExplorer:
                 sql = await _loop.run_in_executor(
                     None, lambda: sql_writer.write(plan.confirm_question, extra_context=_ctx))
             except Exception:
-                logger.debug("[explorer:%s] Phase 9: confirm-SQL write failed (%s)",
+                logger.debug("[explorer:%s] synthesis: confirm-SQL write failed (%s)",
                              self.connection_id, ctype, exc_info=True)
                 continue
             if not sql or not sql.strip():
@@ -4495,7 +4514,7 @@ class SchemaExplorer:
                      or measure_times_key_arithmetic(sql, _tc, dialect=_dialect)
                      or avg_of_row_ratios(sql, _tc, dialect=_dialect))
             if grain:
-                logger.info("[explorer:%s] Phase 9: dropping %s pair — grain bug: %s",
+                logger.info("[explorer:%s] synthesis: dropping %s pair — grain bug: %s",
                             self.connection_id, ctype, grain)
                 continue
             try:
@@ -4534,13 +4553,13 @@ class SchemaExplorer:
                     ),
                 )
             except Exception:
-                logger.debug("[explorer:%s] Phase 9: interpret call failed (%s)",
+                logger.debug("[explorer:%s] synthesis: interpret call failed (%s)",
                              self.connection_id, ctype, exc_info=True)
                 continue
 
             interp.finding = round_long_decimals(interp.finding)   # number hygiene at the source
 
-            # Plausibility hardening (same authorities Phase 8 applies): fix a mislabeled
+            # Plausibility hardening (same authorities the questions pass applies): fix a mislabeled
             # metric against the real vocab, then reject an impossible value. A share or
             # concentration is a rate — a NEGATIVE share/% is self-contradictory and signals
             # a mis-derived confirming query or a mislabel (the live "-4.33% repeat share"
@@ -4549,25 +4568,25 @@ class SchemaExplorer:
             if _rl:
                 interp.finding = _rl
             if ctype in ("share", "concentration") and _NEG_PCT_RE.search(interp.finding or ""):
-                logger.info("[explorer:%s] Phase 9: dropping %s finding — implausible negative "
+                logger.info("[explorer:%s] synthesis: dropping %s finding — implausible negative "
                             "share/rate", self.connection_id, ctype)
                 continue
 
             _ok, _why = verify_insight(rows, interp.finding, sql, None, conn=self._conn)
             if not _ok:
-                logger.info("[explorer:%s] Phase 9: dropping %s finding — %s",
+                logger.info("[explorer:%s] synthesis: dropping %s finding — %s",
                             self.connection_id, ctype, _why)
                 continue
             _g = verify_finding(interp.finding, rows)
             if not _g.grounded:
-                logger.info("[explorer:%s] Phase 9: dropping %s finding — ungrounded number(s) %s",
+                logger.info("[explorer:%s] synthesis: dropping %s finding — ungrounded number(s) %s",
                             self.connection_id, ctype, _g.ungrounded)
                 continue
             # Synthesis exists to surface NOVEL composed views — drop a trivial one (the
             # interpreter rating it ≤1, e.g. "repeat AOV $69.39 vs $69.34") rather than
             # spend a briefing slot on a non-insight.
             if clamp_novelty(interp.novelty) < 2:
-                logger.info("[explorer:%s] Phase 9: dropping %s finding — trivial (novelty<2)",
+                logger.info("[explorer:%s] synthesis: dropping %s finding — trivial (novelty<2)",
                             self.connection_id, ctype)
                 continue
             _prior_findings = [i.get("finding", "") for i in self._state.get("insights", [])]
@@ -4627,9 +4646,9 @@ class SchemaExplorer:
             _done_pairs.add(frozenset(c.parent_ids))
             self._state["synthesized_pairs"] = [sorted(p) for p in _done_pairs]
             self._save_state()
-            logger.info("[explorer:%s] Phase 9: SYNTH %s from (%s + %s) — \"%s…\"",
+            logger.info("[explorer:%s] synthesis: SYNTH %s from (%s + %s) — \"%s…\"",
                         self.connection_id, ctype, c.a.id, c.b.id, interp.finding[:80])
-        logger.info("[explorer:%s] Phase 9: synthesized %d findings", self.connection_id, stored)
+        logger.info("[explorer:%s] synthesis: synthesized %d findings", self.connection_id, stored)
         return stored
 
 

@@ -173,6 +173,28 @@ a thing that wave builds — the word is fixed before the thing exists, so it ar
 The agent that runs deep analyses stays **Analyst**; the human RBAC role renamed to
 **Editor** so the word means one thing. The stored grant value is still `"analyst"`.
 
+## The explorer's passes
+
+An exploration run is one of three **jobs**, and every surface — the log, the job title, the Catalog's
+maturity bars, the API — says the job and the pass by name, never a number. "Phase 8", "domain_intel_only",
+"manifest-driven" and "baseline cells" reached the log and the user on 2026-10-22 (PENDING item 53); the map
+from the old numbers lives at the top of `aughor/explorer/agent.py`.
+
+| Use this | For | Don't use |
+|---|---|---|
+| **structure** (the job) | Learning the structure with no model call: the five passes below | foundation, "phases 3-7" |
+| **null meaning** · **join verification** · **lifecycle mapping** · **distribution profiling** · **cross-table patterns** | The five structure passes (`_pass_null_meaning` … `_pass_patterns`; journaled as `null_meaning`, `join_verification`, `lifecycle_mapping`, `distribution`, `cross_table`) | Phase 3 … Phase 7 |
+| **questions** (the job) | What the explorer asks each dataset once a person has set its layer: the **pinned key questions**, the industry manifest's **baseline questions**, then the **curiosity loop** (`_pass_pinned_questions`, `_pass_questions`) | Phase 8, domain intel(ligence), manifest-driven, baseline cells |
+| **synthesis** | Pairs of findings composed into one neither holds (`_pass_synthesis`) | Phase 9 |
+| **full** (the job) | structure, then questions, then synthesis | — |
+
+The persisted phase key `domain_intel` — the explorer's state and journal, `ExplorationPhase.DOMAIN_INTEL`, the
+`domain_intel_only` keyword, the `/trigger-intel` route — keeps its spelling: renaming a persisted identity
+orphans history, exactly as `investigation` does above. Its reader label is "asking its questions".
+
+A deep analysis step is shown by its **name** (`phase_name`), never its id: `adhoc_3` is the conversation
+agent's third query, and the thinking row says what that query was.
+
 ## Platform internals
 
 These are the package names on disk. Every rename below has landed; the old names do not

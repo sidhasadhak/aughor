@@ -55,7 +55,7 @@ def _schema_text(table_cols: dict) -> str:
 
 
 def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
-    """Drive the REAL `_phase8_domain_intelligence` loop with the coder forced to
+    """Drive the REAL `_pass_questions` loop with the coder forced to
     emit `forced_sql` (and a fake interpreter, reached only if the guard fails to
     drop). Returns the captured `aughor.explorer.agent` log messages. Only the LLM
     is forced — the question→execute→lint→drop path is the real one."""
@@ -138,7 +138,7 @@ def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
                     "Model it in FakeLLM, or neutralise its call site (see get_or_infer above).")
 
         monkeypatch.setattr(prov, "get_provider", lambda role="coder": FakeLLM())
-        asyncio.run(asyncio.wait_for(ex._phase8_domain_intelligence(), timeout=120))
+        asyncio.run(asyncio.wait_for(ex._pass_questions(), timeout=120))
     finally:
         lg.removeHandler(handler)
     return records
@@ -166,7 +166,7 @@ def test_explorer_phase7_emits_cross_table_insight(monkeypatch) -> None:
     """Runtime LEVERAGE proof for the Phase-7 emit fix (T2): a cross-table insight
     must fire a LIVE `exploration.insight` event tagged phase=cross_table. Before
     the fix Phase-7 only bumped counters (no event, no artifact), so the earliest
-    findings never surfaced live. Drives the REAL `_phase7_patterns` method — only
+    findings never surfaced live. Drives the REAL `_pass_patterns` method — only
     the DB query (`_run`) and rate-gate are stubbed; the insight creation + the
     `_emit_insight` call site are the real ones."""
     import aughor.kernel.ledger as ledger_mod
@@ -200,7 +200,7 @@ def test_explorer_phase7_emits_cross_table_insight(monkeypatch) -> None:
     }
     jmap = {"joins": [{"t1": "orders", "t2": "customers", "c1": "customer_id", "c2": "id"}]}
 
-    asyncio.run(asyncio.wait_for(ex._phase7_patterns(cp, jmap, {}), timeout=30))
+    asyncio.run(asyncio.wait_for(ex._pass_patterns(cp, jmap, {}), timeout=30))
 
     xt = [p for k, p in journal if k == "exploration.insight" and p.get("phase") == "cross_table"]
     assert xt, "Phase-7 cross-table insight did not emit a live exploration.insight event"
