@@ -76,12 +76,13 @@ import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
 import { RangeControl, RangeFigures, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
 import {
-  AskBar, DeskColumns, InBrief, PaperDateline, PaperFront, PaperLead, PaperMasthead, PaperNumbers, PaperSources,
+  AskBar, DeskColumns, InBrief, PaperDateline, PaperEdgeNotice, PaperFront, PaperLead, PaperMasthead, PaperNumbers, PaperSources,
   numberDesk, openDeskAction, paperDate, rangeNumbers, type PaperNumber,
 } from "@/components/brief/BriefPaper";
 import { getBriefingDesk, type BriefingDesk } from "@/lib/api";
 import { buildRangeBriefing, isRangeBlock, readRangeBriefing, type BriefingOff, type BriefingRange, type BriefingRangeBlock } from "@/lib/api";
 import { StatTile } from "@/components/brief/StatTile";
+import { EditionCovers, scrollToCovers } from "@/components/brief/EditionCovers";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
 import { claimBriefingEntrance } from "@/components/brief/firstOpen";
 import { PinnedCards } from "@/components/brief/PinnedCards";
@@ -3239,7 +3240,9 @@ export function BriefingPanel({
   const editionBlock = rangeBlock ?? (editionFor && editionFor.key === rangeKey ? editionFor.block : null);
   const numbersTitle = rangeBlock ? `The ${rangeBlock.period && rangeBlock.period !== "custom" ? rangeBlock.period : "range"} in numbers`
     : rangeSelected ? "In numbers" : "The record, in numbers";
-  const numbersNote = rangeBlock
+  const numbersNote = rangeBlock?.compare_withheld
+    ? `Not compared: ${rangeBlock.compare_withheld}.`
+    : rangeBlock
     ? `Each against ${rangeBlock.compared_with}${rangeBlock.measured.some(m => m.anchored) ? ", unless its own months are named" : ""}.`
     : rangeSelected ? (narrativeLoading ? "Measuring this edition…" : undefined)
     : "Pick Day, Week or Month for the business's own figures.";
@@ -3374,7 +3377,13 @@ export function BriefingPanel({
       />
       <PaperDateline today={paperDate(new Date())}
         covers={editionBlock ? `covering ${editionBlock.covers}` : rangeSelected ? "covering this range" : "everything recorded, not tied to dates"}
-        lagDays={editionBlock?.lag_days} records={paperRefs.length} />
+        lagDays={editionBlock?.lag_days} records={paperRefs.length}
+        endedOn={rangeSelected && editionBlock?.data_ended ? editionBlock.data_through ?? null : null} />
+      {/* The data ENDED (design-mockups/briefing-data-ended.html): one line saying where, and what this
+          edition became because of it; the table below lists where every edition landed. */}
+      {rangeSelected && editionBlock?.data_ended && editionBlock.edge_note && (
+        <PaperEdgeNotice note={editionBlock.edge_note} onCovers={scrollToCovers} />
+      )}
       {(explorerError || explorerPending || birthStep) && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
           {explorerError && (
@@ -3477,6 +3486,9 @@ export function BriefingPanel({
     return (
       <>
         {on("verdict") && <PaperFront lead={lead} side={<PaperNumbers title={numbersTitle} rows={numberRows} note={numbersNote} />} />}
+        {rangeSelected && editionBlock?.data_ended && (
+          <EditionCovers connectionId={connectionId} schema={schema} workspaceId={workspaceId} current={editionBlock.preset} />
+        )}
         {!canvasId && (
           <DeskColumns desk={desk ? desk.data : undefined} error={desk?.error ?? null} refs={deskRefs} connectionId={connectionId} />
         )}

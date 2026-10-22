@@ -18,7 +18,7 @@ import { getDepartures, getNeedsHuman, type Connection, type Departure, type Nee
 import { approverName } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { owes, sourceName, summaryLine, whenText } from "@/lib/departures";
-import { countNoun, formatCount, normalizeNumberPrecision } from "@/lib/format";
+import { countNoun, endedDay, formatCount, normalizeNumberPrecision } from "@/lib/format";
 import { dayWords } from "@/lib/home";
 import { connectionLabel, destinationLabel, needsYouTitle } from "@/lib/names";
 import {
@@ -51,6 +51,10 @@ interface OrgBriefingRow {
   as_of?: string;
   headline_theme?: string;
   lede?: string;
+  /** What the kept edition covers, and — for data that ENDED — the day it ended (2026-10-23). */
+  covers?: string;
+  data_ended?: boolean;
+  data_through?: string | null;
 }
 interface OrgBriefing { briefings: OrgBriefingRow[]; with_briefing: number; connections: number }
 
@@ -846,7 +850,13 @@ function BriefingLines({ fold, doors }: { fold: OrgBriefing; doors: NowDoors }) 
           <div style={{ minWidth: 0 }} title={k!.lede || k!.headline}>
             <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)", fontWeight: 500 }}>{k!.headline || firstLine(k!.lede)}</div>
             <div className="aug-fs-xs" style={{ ...ONE_LINE, color: "var(--t2)" }}>
-              {b.connection_name}{k!.as_of ? ` · as of ${dayWords(k!.as_of)}` : ""}
+              {b.connection_name}
+              {/* An edition about data that ENDED names its days and where the data ended, so it is not
+                  read as this week's news: "Olist · September 2018 · data ended Wed 17 Oct 2018". */}
+              {b.data_ended && b.covers ? ` · ${b.covers}` : ""}
+              {b.data_ended && b.data_through
+                ? <span data-testid="now-data-ended"> · data ended {endedDay(b.data_through)}</span>
+                : k!.as_of ? ` · as of ${dayWords(k!.as_of)}` : ""}
             </div>
           </div>
           <Button size="xs" variant="secondary" onClick={() => doors.onOpenBriefing(b.connection_id)}>Read</Button>

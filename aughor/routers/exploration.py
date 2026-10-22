@@ -1012,6 +1012,22 @@ def measure_range_metrics(conn_id: str, schema: str | None = None, workspace_id:
             "measured_at": datetime.now(timezone.utc).isoformat(), "scope_key": scope_key}
 
 
+@router.post("/exploration/{conn_id}/briefing/covers")
+def read_edition_covers(conn_id: str, schema: str | None = None, workspace_id: str | None = None):
+    """What each of the Briefing's six editions covers, what it is compared with, and the lead approved
+    metric's figure for each — shown when the data has ENDED, so a reader sees where every edition
+    landed. No narrative is written and no model is called; the figures are measured now (a POST, as the
+    measures door is: it runs warehouse queries)."""
+    from aughor.briefing import ranges
+    from aughor.kernel.flags import flag_enabled
+
+    if not flag_enabled("briefing.ranges"):
+        raise HTTPException(status_code=404, detail=(
+            "briefings for any date range are off on this install — they need the 'briefing.ranges' flag"))
+    return ranges.edition_covers(conn_id, schema=schema, workspace_id=workspace_id,
+                                 profile=_load_business_profile(conn_id, schema))
+
+
 @router.post("/exploration/{conn_id}/briefing/metric/{metric}")
 def read_metric_trend(conn_id: str, metric: str, schema: str | None = None, workspace_id: str | None = None,
                       preset: str | None = None, start: str | None = None, end: str | None = None):

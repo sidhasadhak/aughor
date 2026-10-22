@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { changeOf } from "@/components/brief/MetricDetail";
+import { endedDay } from "@/lib/format";
 import { requestTab } from "@/lib/navigate";
 import type { BriefingDesk, BriefingRangeBlock, DeskColumn, DeskItem } from "@/lib/api";
 
@@ -51,20 +52,47 @@ export function PaperMasthead({ scope, edition, tools }: { scope: string; editio
   );
 }
 
-export function PaperDateline({ today, covers, lagDays, records }: {
+export function PaperDateline({ today, covers, lagDays, records, endedOn }: {
   today: string; covers: string; lagDays?: number | null; records: number;
+  /** The data ENDED on this day: the edition is final, and no settling lag is said. */
+  endedOn?: string | null;
 }) {
   return (
     <div className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", padding: "7px 0",
       borderBottom: RULE, color: "var(--t3)" }}>
       <b style={{ color: "var(--t2)", fontWeight: 500 }}>{today}</b>
       <span>{covers}</span>
-      {typeof lagDays === "number" && lagDays >= 7 && (
+      {endedOn && (
+        <>
+          <span className="aug-fs-xs" data-testid="paper-final"
+            style={{ padding: "2px 8px", borderRadius: "var(--r-pill)", background: "var(--grn1)", color: "var(--grn4)" }}>
+            final
+          </span>
+          <span className="aug-fs-xs" data-testid="paper-ended"
+            style={{ padding: "2px 8px", borderRadius: "var(--r-pill)", border: RULE, color: "var(--t2)" }}>
+            data ended {endedDay(endedOn)}
+          </span>
+        </>
+      )}
+      {!endedOn && typeof lagDays === "number" && lagDays >= 7 && (
         <span className="aug-fs-xs" style={{ padding: "2px 8px", borderRadius: "var(--r-pill)", background: "var(--amb1)", color: "var(--amb4)" }}>
           data settles {lagDays} days late
         </span>
       )}
       {records > 0 && <span style={{ marginLeft: "auto" }}>grounded in {records} record{records === 1 ? "" : "s"}</span>}
+    </div>
+  );
+}
+
+/** The data ENDED: one line saying where, and what the edition became because of it
+ *  (design-mockups/briefing-data-ended.html, approved 2026-10-23). */
+export function PaperEdgeNotice({ note, onCovers }: { note: string; onCovers?: () => void }) {
+  return (
+    <div data-testid="paper-edge-notice" className="aug-fs-sm"
+      style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", padding: "9px 12px", marginTop: 10,
+        background: "var(--bg-1)", borderRadius: "var(--r2)", color: "var(--t2)" }}>
+      <span style={{ flex: 1, minWidth: 0 }}>{note}</span>
+      {onCovers && <Button variant="ghost" size="xs" onClick={onCovers}>What each edition covers ↓</Button>}
     </div>
   );
 }

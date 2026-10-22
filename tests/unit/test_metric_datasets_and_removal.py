@@ -217,7 +217,7 @@ def test_a_dataset_that_ended_reads_its_last_month_and_an_empty_count_is_no_figu
 
     def run_sql(sql):
         if "MAX(" in sql.upper():
-            return ["last_day"], [("2024-12-30",)], ""
+            return ["first_day", "last_day"], [("2024-01-01", "2024-12-30")], ""   # the edge reads both ends
         if "current=2024-12-01" in sql:
             return [], [("current", 4100, date(2024, 12, 1), date(2024, 12, 30), 4100),
                         ("previous", 3900, date(2024, 11, 1), date(2024, 11, 30), 3900)], ""
@@ -233,7 +233,7 @@ def test_a_dataset_that_ended_reads_its_last_month_and_an_empty_count_is_no_figu
     # The same metric where its data does not end before the range: an empty month is not 0.
     def empty(sql):
         if "MAX(" in sql.upper():
-            return ["last_day"], [("2026-10-06",)], ""
+            return ["first_day", "last_day"], [("2024-01-01", "2026-10-06")], ""
         return [], [("current", 0, None, None, 0), ("previous", 0, None, None, 0)], ""
     out = ranges.measure_range("c", spec, run_sql=empty, dialect="duckdb")
     assert out["measured"] == []

@@ -66,7 +66,13 @@ def organisation_briefing(*, now: Optional[str] = None) -> dict[str, Any]:
             continue
         payload = dict(art.get("payload") or {})
         brief = dict(payload.get("briefing") or {})
+        period = dict(brief.get("period") or {})
         row.update({
+            # What the kept edition covers, and — for data that ENDED — where it ended: Now says "the data
+            # ended 17 Oct 2018" beside an edition about 2018, so it is not read as this week's news.
+            "covers": str(period.get("covers") or ""),
+            "data_ended": bool(period.get("data_ended")),
+            "data_through": period.get("data_through") if period.get("data_ended") else None,
             "as_of": str(payload.get("as_of") or art.get("created_at") or "")[:10],
             "version": int(art.get("version") or 0),
             "scope_key": str(payload.get("scope_key") or ""),

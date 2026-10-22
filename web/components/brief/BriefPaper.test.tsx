@@ -7,7 +7,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 
-import { DeskColumns, InBrief, PaperNumbers, PaperSources, numberDesk, paperDate, rangeNumbers } from "@/components/brief/BriefPaper";
+import { DeskColumns, InBrief, PaperDateline, PaperEdgeNotice, PaperNumbers, PaperSources, numberDesk, paperDate, rangeNumbers } from "@/components/brief/BriefPaper";
 import { firstSentence } from "@/components/BriefingPanel";
 import type { BriefingDesk, BriefingRangeBlock, BriefingRangeMeasure, DeskItem } from "@/lib/api";
 
@@ -22,6 +22,30 @@ const DESK: BriefingDesk = {
   gaps: { items: [item("disagree", "2025 revenue has three answers", { action: { verb: "Settle it", kind: "inquiry", ref: "q1" } })], more: 2 },
   decide: { items: [], more: 0 },
 };
+
+describe("the paper on data that ended (design-mockups/briefing-data-ended.html)", () => {
+  it("marks the edition final, names the day the data ended, and says no settling lag", () => {
+    render(<PaperDateline today="Friday 23 October 2026" covers="covering September 2018" lagDays={9} records={0}
+      endedOn="2018-10-17" />);
+    expect(screen.getByTestId("paper-final")).toHaveTextContent("final");
+    expect(screen.getByTestId("paper-ended")).toHaveTextContent("data ended Wed 17 Oct 2018");
+    expect(screen.queryByText(/settles/)).toBeNull();
+  });
+
+  it("keeps the settling chip on live data", () => {
+    render(<PaperDateline today="Friday 23 October 2026" covers="covering 20 October" lagDays={29} records={0} />);
+    expect(screen.getByText("data settles 29 days late")).toBeInTheDocument();
+    expect(screen.queryByTestId("paper-final")).toBeNull();
+  });
+
+  it("says where the data ended in one line, with a door to the editions table", () => {
+    const onCovers = vi.fn();
+    render(<PaperEdgeNotice note="The data ended on 2018-10-17 (Wednesday)." onCovers={onCovers} />);
+    expect(screen.getByTestId("paper-edge-notice")).toHaveTextContent("The data ended on 2018-10-17 (Wednesday).");
+    fireEvent.click(screen.getByText("What each edition covers ↓"));
+    expect(onCovers).toHaveBeenCalledOnce();
+  });
+});
 
 describe("numberDesk", () => {
   it("numbers the desk's stories on from the lead's citations, in reading order", () => {

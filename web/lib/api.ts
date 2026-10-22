@@ -7567,7 +7567,7 @@ export interface BriefingRangeBlock {
   last_year_end: string | null;
   as_of: string;
   lag_days: number;
-  lag_source: "learned" | "beyond_horizon" | "default";
+  lag_source: "learned" | "beyond_horizon" | "default" | "data_ended";
   still_moving: string[];
   covers: string;
   compared_with: string;
@@ -7578,6 +7578,14 @@ export interface BriefingRangeBlock {
   edge_note?: string;
   /** The period holding the range goes on past it: a period so far. */
   under_way?: boolean;
+  /** The data ENDED (its newest day is more than a month old): the range was read as if today were
+   *  the day after `data_through`, and every figure in it is final. */
+  data_ended?: boolean;
+  /** The first day the data holds, when the edge was read. */
+  data_from?: string | null;
+  /** Why the range is not compared with the one before ("" when it is): the earlier range starts
+   *  before the data does. */
+  compare_withheld?: string;
   measured: BriefingRangeMeasure[];
   unmeasured: { name: string; reason: string }[];
   /** Arc BR-4 — the recipe that wrote it, and its own sections. */
@@ -7731,6 +7739,45 @@ export interface RangeMeasuresResponse {
   from_briefing: boolean;
   measured_at: string | null;
   scope_key: string;
+}
+
+/** One of the Briefing's six editions, as "What each edition covers" lists it. */
+export interface EditionCover {
+  preset: RangePreset;
+  label: string;
+  /** Why the edition has no range or no figure; "" when it has both. */
+  why: string;
+  start?: string;
+  last_day?: string;
+  covers?: string;
+  compared_with?: string;
+  compare_withheld?: string;
+  current_text?: string | null;
+  previous_text?: string | null;
+  rel?: number | null;
+}
+
+export interface EditionCovers {
+  data_ended: boolean;
+  data_through: string | null;
+  data_from: string | null;
+  /** The lead approved metric each edition's figure is read for; null when none is approved. */
+  metric: { name: string; label: string } | null;
+  editions: EditionCover[];
+}
+
+/** What each of the six editions covers and the lead metric's figure for each — shown when the data
+ *  has ENDED. Measured now (warehouse queries, no model call), so it is a POST, as the measures door is. */
+export async function readEditionCovers(connectionId: string, schema?: string, workspaceId?: string): Promise<EditionCovers> {
+  const q = new URLSearchParams();
+  if (schema) q.set("schema", schema);
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/covers?${q}`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "What each edition covers could not be read"));
+  }
+  return res.json();
 }
 
 export async function measureRange(

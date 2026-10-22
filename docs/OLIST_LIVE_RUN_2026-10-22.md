@@ -570,12 +570,19 @@ Record, Inbox and the closed loop; the agent wizard's draft, scope and honesty a
 ## Next
 
 1. Decide A: either uploads create a connection per workspace, or a workspace scopes by schema everywhere a
-   page says "Workspace".
-2. Teach the Briefing (and Now) the data's last settled day (B).
+   page says "Workspace". **Done 2026-10-23 (#623):** an uploads connection per workspace; Catalog, Now's
+   Briefing fold, Needs-you docs and profile metrics scoped. Still org-wide: agent-wizard documents,
+   Monitors' and Notifications' lists.
+2. Teach the Briefing (and Now) the data's last settled day (B). **Built 2026-10-23** on the user's decision
+   (mockup `design-mockups/briefing-data-ended.html`): data whose newest row is more than a month old has
+   ENDED; every edition reads as if today were the day after its last row (Olist: 17 Oct 2018), is final,
+   says so in one line, and lists where each edition landed; a comparison whose earlier range starts before
+   the data does is withheld and says why; nothing is predicted after the end; a scheduled send pauses
+   while the edge does not move; Now names the days and the end.
 3. A workspace currency that adopts the Profile's inference; one number formatter for money and ratios (C).
 4. "Adopt the explorer's eight" as one door with the right dates (D); composite keys (Gap 13).
 5. One answer to "what ran" across Now, Agent runs, History, Agent Ops; a monitor shows what it read (E).
-6. The user's own item: rename "Phase 8"-style names (PENDING 53).
+6. The user's own item: rename "Phase 8"-style names (PENDING 53). **Done 2026-10-23 (#623).**
 Not done in this run: the other seven Olist metrics, Health targets, a document upload, Slack reach, the
 Default workspace's `data/metrics.json` drift from this run.
 

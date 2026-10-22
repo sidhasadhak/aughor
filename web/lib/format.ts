@@ -278,6 +278,14 @@ export function formatPoints(from: number | null | undefined, to: number | null 
 }
 
 /** Signed variance percent for scorecards: +12.5% / -3.0%. Input is a ratio. */
+/** A day with its year, for data that ended long ago: "Wed 17 Oct 2018". */
+export function endedDay(iso: string): string {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  if (isNaN(d.getTime())) return iso;
+  const part = (o: Intl.DateTimeFormatOptions) => d.toLocaleDateString("en-GB", { ...o, timeZone: "UTC" });
+  return `${part({ weekday: "short" })} ${part({ day: "numeric", month: "short", year: "numeric" })}`;
+}
+
 export function formatVariance(ratio: number | null | undefined, digits = 1): string {
   if (ratio === null || ratio === undefined || isNaN(ratio)) return "";
   const p = (ratio * 100).toFixed(digits);

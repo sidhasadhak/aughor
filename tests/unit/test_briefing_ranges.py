@@ -568,7 +568,8 @@ def test_where_the_data_ends_is_the_earliest_live_table_read_once_each(monkeypat
             yield (lambda sql: (seen.append(sql), run_sql(sql))[1]), d
     edge = ranges.data_edge("c1", today=OCT8, runner=counting)
     # the table that stopped in 2024 is not holding today back, and a level does not count
-    assert edge == {"through": date(2026, 10, 5), "held_by": ["returns"], "why": "",
+    # each table holds one day, so the data starts where the later-starting live table does: orders
+    assert edge == {"through": date(2026, 10, 5), "from": date(2026, 10, 7), "held_by": ["returns"], "why": "",
                     "tables": {"orders": date(2026, 10, 7), "returns": date(2026, 10, 5)}}
     assert len(seen) == 3                                       # orders once, though two metrics read it
     # read again inside ten minutes, it is not read again
@@ -593,14 +594,19 @@ def test_where_the_data_ends_says_why_when_it_cannot_be_read(monkeypatch):
     assert day.last_day == date(2026, 10, 7) and day.edge_note.startswith("Whether data has arrived after 2026-10-07 was not read")
 
 
-def test_only_the_current_and_last_periods_and_recent_custom_ranges_read_the_edge(monkeypatch):
+def test_every_range_reads_the_edge_and_live_data_resolves_as_before(monkeypatch):
+    """Until 2026-10-23 only the Cockpit's periods and a recent custom range read where the data ends,
+    so a dataset that ENDED was never known as one (the Olist run). Every range reads it now — and on
+    live data, which has not ended, each resolves exactly as it did."""
     asked: list[str] = []
     monkeypatch.setattr(ranges, "data_edge", lambda conn_id, schema=None, today=None: asked.append(conn_id) or LOADING)
-    ranges.resolve_for("c1", "last_month", today=OCT8)
-    ranges.resolve_for("c1", "custom", start=date(2025, 1, 1), end=date(2025, 1, 31), today=OCT8)
-    assert asked == []
-    spec, _ = ranges.resolve_for("c1", "current_day", today=OCT8)
-    assert asked == ["c1"] and spec.last_day == date(2026, 10, 7)
+    month, _ = ranges.resolve_for("c1", "last_month", today=OCT8)
+    old, _ = ranges.resolve_for("c1", "custom", start=date(2025, 1, 1), end=date(2025, 1, 31), today=OCT8)
+    day, _ = ranges.resolve_for("c1", "current_day", today=OCT8)
+    assert asked == ["c1"] * 3
+    assert (month.start, month.end, month.data_ended) == (date(2026, 9, 1), date(2026, 10, 1), False)
+    assert (old.start, old.last_day, old.data_ended) == (date(2025, 1, 1), date(2025, 1, 31), False)
+    assert day.last_day == date(2026, 10, 7) and not day.data_ended
 
 
 def test_a_flows_earlier_ranges_are_not_said_to_be_read_at_one_age(con, approved):

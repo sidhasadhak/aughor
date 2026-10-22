@@ -83,6 +83,17 @@ def deliveries_of(conn_id: str, briefing: dict, *, scope_key: str, limit: int = 
     return {"deliveries": mine, "current_version": current}
 
 
+def sent_at_for(conn_id: str, subscription_id: str, covers: str) -> Optional[str]:
+    """When this subscription last sent the Briefing that covers ``covers``, or None if it never has.
+    A send pauses on it while data that ENDED does not move: the next edition would cover the same days."""
+    if not (subscription_id and covers):
+        return None
+    rows = [_row(a) for a in _ledger().artifacts_of_kind(KIND, conn_id=conn_id, limit=500)]
+    sent = sorted(str(r.get("sent_at") or "") for r in rows
+                  if r.get("subscription_id") == subscription_id and r.get("covers") == covers)
+    return sent[-1] if sent else None
+
+
 def delivery(delivery_id: str) -> Optional[dict[str, Any]]:
     """One delivery with the Briefing as it was sent — the kept version it cites, read by id, never
     the latest under its key."""

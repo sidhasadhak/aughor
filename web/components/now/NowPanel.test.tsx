@@ -162,6 +162,18 @@ describe("Now", () => {
   });
 });
 
+describe("an edition about data that ended", () => {
+  it("names the days it covers and where the data ended, never 'as of' today", async () => {
+    routes.briefing = { connections: 1, with_briefing: 1, briefings: [{
+      connection_id: "w", connection_name: "Olist", as_of: "2026-10-23", headline_theme: "September GMV fell",
+      lede: "x", covers: "September 2018", data_ended: true, data_through: "2018-10-17" }] };
+    mount();
+    const [row] = await screen.findAllByTestId("now-briefing-row");
+    expect(row).toHaveTextContent("Olist · September 2018 · data ended Wed 17 Oct 2018");
+    expect(row).not.toHaveTextContent("as of");
+  });
+});
+
 describe("keptBriefing", () => {
   it("reads both shapes, and a row with none as none", () => {
     expect(keptBriefing({ connection_id: "a", connection_name: "A", as_of: "2026-10-11", headline_theme: "Up", lede: "x" }))

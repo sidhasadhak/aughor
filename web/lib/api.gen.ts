@@ -5873,6 +5873,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/{conn_id}/briefing/covers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read Edition Covers
+         * @description What each of the Briefing's six editions covers, what it is compared with, and the lead approved
+         *     metric's figure for each — shown when the data has ENDED, so a reader sees where every edition
+         *     landed. No narrative is written and no model is called; the figures are measured now (a POST, as the
+         *     measures door is: it runs warehouse queries).
+         */
+        post: operations["read_edition_covers_exploration__conn_id__briefing_covers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/{conn_id}/briefing/desk": {
         parameters: {
             query?: never;
@@ -32823,6 +32846,40 @@ export interface operations {
                 preset?: string | null;
                 start?: string | null;
                 end?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_edition_covers_exploration__conn_id__briefing_covers_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                workspace_id?: string | null;
             };
             header?: never;
             path: {
