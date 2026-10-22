@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Briefing Data Ended</title>
+<!-- Mockup for approval (2026-10-23): the Briefing anchored to where the data ends, on Olist. Figures: DuckDB over the raw CSVs (scratchpad olist_anchor_truth.json). Not app code. -->
+<style>
+:root { --bg-0:#111; --bg-1:#191919; --bg-2:#222; --line:#2e2e2e; --line-2:#3a3a3a; --t1:#eee; --t2:#b4b4b4;
+  --t3:#8a8a8a; --accent:#3e63dd; --accent-11:#9eb1ff; --accent-soft:rgba(62,99,221,.16); --violet:#baa7ff;
+  --violet-soft:rgba(110,86,207,.22); --green:#3dd68c; --green-soft:rgba(61,214,140,.12); --amber:#ffc53d;
+  --amber-soft:rgba(255,197,61,.12); --red:#ff9592; --deemph:#4E5A6A; --r2:6px; --r3:12px;
+  --serif:"Newsreader","Iowan Old Style","Source Serif Pro",Georgia,serif; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg-0); color:var(--t1); font:13px/1.45 Inter, system-ui, -apple-system, sans-serif; }
+.note { padding:8px 16px; font-size:12px; color:var(--t2); background:var(--accent-soft); border-bottom:1px solid var(--line); }
+.note b { color:var(--accent-11); }
+.app { display:grid; grid-template-columns:196px 1fr; }
+.rail { border-right:1px solid var(--line); padding:12px 8px; color:var(--t2); font-size:12.5px; min-height:100vh; }
+.rail .grp { margin:14px 8px 4px; font-size:11px; color:var(--t3); }
+.rail .it { padding:4px 8px; border-radius:var(--r2); } .rail .it.on { background:var(--bg-2); color:var(--t1); }
+.connbar { display:flex; align-items:center; gap:10px; padding:9px 24px; border-bottom:1px solid var(--line); color:var(--t2); font-size:12.5px; }
+.sel { background:var(--bg-2); border:1px solid var(--line-2); border-radius:var(--r2); padding:3px 10px; color:var(--t1); }
+.tabs { display:flex; gap:22px; padding:10px 24px 0; border-bottom:1px solid var(--line); color:var(--t2); }
+.tabs span { padding-bottom:8px; } .tabs .on { color:var(--t1); border-bottom:2px solid var(--accent); }
+.chip { font-size:11.5px; padding:2px 8px; border-radius:999px; background:var(--bg-2); color:var(--t2); border:1px solid var(--line);
+  white-space:nowrap; display:inline-flex; align-items:center; gap:5px; }
+.chip.amber { background:var(--amber-soft); color:var(--amber); border-color:transparent; }
+.chip.up { background:var(--green-soft); color:var(--green); border-color:transparent; }
+.chip.violet { background:var(--violet-soft); color:var(--violet); border-color:transparent; }
+.btn { background:var(--bg-2); color:var(--t1); border:1px solid var(--line-2); border-radius:var(--r2); padding:4px 10px; font:inherit; font-size:12px; white-space:nowrap; }
+.btn.primary { background:var(--accent); border-color:var(--accent); } .btn.ghost { background:none; }
+.seg { display:inline-flex; background:var(--bg-1); border-radius:var(--r2); padding:2px; gap:2px; }
+.seg span { padding:3px 11px; border-radius:5px; color:var(--t2); font-size:12px; } .seg .on { background:var(--bg-2); color:var(--t1); }
+
+.paper { padding:22px 32px 40px; }
+.mast { display:flex; align-items:flex-end; gap:16px; padding-bottom:10px; border-bottom:2px solid var(--t1); }
+.mast h1 { font-family:var(--serif); font-weight:600; font-size:34px; margin:0; letter-spacing:-.01em; line-height:1; }
+.mast .ed { color:var(--t2); font-size:12.5px; } .mast .r { margin-left:auto; display:flex; gap:8px; align-items:center; }
+.dateline { display:flex; gap:14px; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); color:var(--t3); font-size:12px; }
+.dateline b { color:var(--t2); font-weight:500; }
+.kicker { font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--accent-11); margin-bottom:6px; }
+.kicker.amber { color:var(--amber); } .kicker.green { color:var(--green); }
+.front { display:grid; grid-template-columns:minmax(0,2.1fr) minmax(0,1fr); gap:0; padding:20px 0 18px; border-bottom:1px solid var(--line); }
+.lead { padding-right:28px; border-right:1px solid var(--line); }
+.lead h2 { font-family:var(--serif); font-size:31px; line-height:1.15; font-weight:600; margin:0 0 12px; max-width:30ch; }
+.lead .stand { font-size:16.5px; line-height:1.55; color:var(--t1); max-width:68ch; margin:0 0 12px; }
+.lead p { font-size:15px; line-height:1.6; color:var(--t2); max-width:68ch; margin:0 0 10px; }
+.lead p em { font-style:normal; color:var(--t1); font-weight:500; }
+.lead .fig { display:grid; grid-template-columns:96px minmax(0,1fr) 54px; gap:6px 10px; align-items:center; font-size:12.5px; max-width:520px; margin:14px 0 4px; }
+.lead .fig .b { height:10px; border-radius:5px; background:var(--bg-2); overflow:hidden; } .lead .fig .b i { display:block; height:100%; border-radius:5px; }
+.lead .fig .band { position:relative; height:10px; border-radius:5px; background:var(--bg-2); }
+.lead .fig .band u { position:absolute; top:0; bottom:0; background:rgba(78,90,106,.55); border-radius:3px; text-decoration:none; }
+.lead .fig .band s { position:absolute; top:-3px; width:3px; height:16px; background:var(--accent-11); border-radius:2px; }
+.lead .cap { color:var(--t3); font-size:11.5px; max-width:520px; }
+.box { padding-left:24px; }
+.box h3, .col h3 { font-family:var(--serif); font-size:17px; font-weight:600; margin:0 0 8px; }
+.nums { display:grid; grid-template-columns:minmax(0,1fr) auto; font-size:13px; }
+.nums > span { padding:6px 0; border-top:1px solid var(--line); } .nums > span:nth-child(-n+2) { border-top:0; }
+.nums .v { text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
+.nums .v small { font-weight:400; color:var(--t3); margin-left:6px; } .nums .up { color:var(--green); }
+.nums .unk { color:var(--t3); font-weight:400; background:repeating-linear-gradient(135deg, #2a2f37 0 4px, transparent 4px 8px); padding:0 6px; border-radius:3px; }
+.cols { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:0; padding:18px 0; border-bottom:1px solid var(--line); }
+.col { padding:0 22px; border-left:1px solid var(--line); } .col:first-child { padding-left:0; border-left:0; } .col:last-child { padding-right:0; }
+.story { padding:10px 0; border-top:1px solid var(--line); } .story:first-of-type { border-top:0; padding-top:2px; }
+.story b { display:block; font-family:var(--serif); font-size:16px; font-weight:600; line-height:1.3; margin-bottom:4px; }
+.story p { margin:0; font-size:13.5px; line-height:1.55; color:var(--t2); }
+.story .act { display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+.col.decide { background:linear-gradient(var(--amber-soft), var(--amber-soft)); border-radius:var(--r3); padding:14px 18px; border-left:0; margin-left:22px; }
+.col.decide .story { border-top-color:rgba(255,197,61,.2); }
+sup { font-size:10px; color:var(--accent-11); margin-left:1px; }
+.brief { display:grid; grid-template-columns:1fr 1fr; gap:4px 34px; padding:16px 0; border-bottom:1px solid var(--line); }
+.brief h3 { grid-column:1 / -1; font-family:var(--serif); font-size:17px; margin:0 0 6px; display:flex; align-items:baseline; gap:10px; }
+.brief h3 span { margin-left:auto; font-family:Inter, sans-serif; font-size:12px; font-weight:400; }
+.brief div { font-size:13.5px; line-height:1.5; color:var(--t2); padding:6px 0; border-top:1px solid var(--line); }
+.brief div b { color:var(--t1); font-weight:600; font-variant-numeric:tabular-nums; }
+.sources { padding:14px 0 0; color:var(--t3); font-size:11.5px; line-height:1.7; columns:2; column-gap:34px; }
+.sources span { color:var(--accent-11); margin-right:4px; }
+.ask { display:flex; gap:10px; align-items:center; margin-top:18px; padding:10px 12px; background:var(--bg-1); border-radius:var(--r3); }
+.ask .in { flex:1; color:var(--t3); }
+</style>
+<style>
+.edge { display:flex; gap:10px; align-items:baseline; padding:9px 12px; margin:10px 0 0; background:var(--bg-1); border-radius:var(--r2); font-size:13px; color:var(--t2); }
+.edge b { color:var(--t1); font-weight:600; } .edge a { color:var(--accent-11); text-decoration:none; white-space:nowrap; margin-left:auto; }
+.chip.final { background:var(--green-soft); color:var(--green); border-color:transparent; }
+.cover { padding:16px 0; border-bottom:1px solid var(--line); }
+.cover h3 { font-family:var(--serif); font-size:17px; margin:0 0 8px; }
+table.led { width:100%; border-collapse:collapse; font-size:13px; }
+table.led th { text-align:left; font-weight:500; color:var(--t3); font-size:11.5px; padding:5px 10px 5px 0; border-bottom:1px solid var(--line); }
+table.led td { padding:7px 10px 7px 0; border-bottom:1px solid var(--line); color:var(--t2); vertical-align:top; }
+table.led td.n { text-align:right; font-variant-numeric:tabular-nums; color:var(--t1); white-space:nowrap; }
+table.led tr.on td { color:var(--t1); } table.led tr.on td:first-child { box-shadow:inset 2px 0 0 var(--accent); padding-left:8px; }
+.dn { color:var(--red); } .up2 { color:var(--green); } .mute { color:var(--t3); }
+.nowcard { display:flex; gap:12px; align-items:baseline; padding:10px 12px; background:var(--bg-1); border-radius:var(--r2); font-size:13px; }
+.nowcard b { font-weight:600; } .nowcard .r { margin-left:auto; color:var(--t3); font-size:12px; }
+.decide2 { margin-top:18px; padding:14px 18px; border-radius:var(--r3); background:linear-gradient(var(--amber-soft), var(--amber-soft)); }
+.decide2 h3 { font-family:var(--serif); font-size:17px; margin:0 0 4px; }
+.decide2 p { margin:4px 0; color:var(--t2); font-size:13px; line-height:1.55; max-width:110ch; }
+.decide2 .opt { padding:9px 0; border-top:1px solid rgba(255,197,61,.2); }
+.decide2 .opt:first-of-type { border-top:0; }
+.decide2 .opt b { color:var(--t1); }
+.tag { font-size:11px; padding:1px 7px; border-radius:999px; background:var(--accent-soft); color:var(--accent-11); margin-left:6px; }
+</style></head><body>
+<div class="note"><b>Mockup</b> · the Briefing on data that has ended · Olist (workspace Olist, dataset <code>olist</code>), Month selected. Every figure is DuckDB over the nine raw CSVs with GMV's approved definition (item price, excluding canceled and unavailable orders). The prose is written here the way the narrator would write it from those figures. Not app code.</div>
+<div class="app"><nav class="rail"><div class="it">Home</div><div class="it">Inbox</div><div class="it">Now</div><div class="it">Data Canvas</div><div class="grp">Intelligence</div><div class="it on">Briefing</div><div class="it">Ontology</div><div class="it">Agent runs</div><div class="it">Health</div><div class="it">Documents</div><div class="it">Record</div><div class="grp">Data</div><div class="it">Catalog</div><div class="it">SQL Editor</div><div class="it">Semantic Layer</div><div class="grp">Operations</div><div class="it">Agent Ops</div><div class="it">Monitors</div><div class="it">Notifications</div><div class="it">Integrations</div><div class="it">Spend</div><div class="it">Security &amp; Audit</div><div class="it">Evals</div></nav><div>
+<div class="connbar">Workspace <span class="sel">Olist ▾</span> Connection <span class="sel">Workspace ▾</span> Dataset <span class="sel">olist ▾</span></div>
+<div class="tabs"><span class="on">Briefing</span><span>Cockpit</span><span>Profile</span><span>Ontology</span><span>Graph</span><span>Evidence</span><span>Memory</span><span>Actions</span><span>Org</span></div>
+<div class="paper">
+ <div class="mast"><h1>The Briefing</h1><span class="ed">Olist</span><span class="r"><span class="seg"><span>What we know</span><span>Day</span><span>Week</span><span class="on">Month</span><span>Year</span><span>Month to date</span><span>Year to date</span><span>Custom</span></span><button class="btn ghost">Tools ▾</button></span></div>
+ <div class="dateline"><b>Friday 23 October 2026</b><span>covering July 2018</span><span class="chip final">final</span><span class="chip">data ended Wed 22 Aug 2018</span><span style="margin-left:auto">scheduled sends pause while the data does not move · every figure links to its query</span></div>
+ <div class="edge"><span><b>The data ended on Wednesday 22 August 2018.</b> Each edition reads as if today were the day after, so Month is July 2018, the newest whole month. The 535 orders dated after 22 August, the last on 17 October 2018, are too few to read and are left out.</span><a href="#cover">What each edition covers ↓</a></div>
+
+ <div class="front"><div class="lead">
+  <div class="kicker">Lead · performance</div>
+  <h2>July 2018 GMV edged up 1.7% on June, to BRL 878,044</h2>
+  <p class="stand">Gross merchandise value for July 2018 was BRL 878,044 across 6,233 orders, up from BRL 863,266 in June<sup>1</sup>.</p>
+  <p><em>Final.</em> The data stopped arriving long ago, so nothing in July will change and there is no settling window to wait for.</p>
+  <p><em>August, as far as it goes.</em> The first 22 days of August came to BRL 793,008, 42.8% above the same days of July<sup>2</sup>. August is not read as a month because the data ends inside it.</p>
+  <div class="fig"><span>June 2018</span><span class="b"><i style="width:98.3%;background:var(--deemph)"></i></span><span>863K</span><span>July 2018</span><span class="b"><i style="width:100%;background:var(--accent)"></i></span><span>878K</span></div>
+  <div class="cap">GMV by month, BRL. Both months are whole and final.</div>
+ </div>
+ <div class="box"><h3>The month in numbers</h3>
+  <div class="nums"><span>Gross merchandise value</span><span class="v">BRL 878,044<small class="up">▲ 1.7%</small></span><span>7 more metrics</span><span class="v"><span class="mute" style="font-weight:400">proposed, not approved</span></span></div>
+  <div style="margin-top:10px;color:var(--t3);font-size:11.5px">Compared with June 2018. One approved metric is measured; the profile's other seven wait for approval.</div>
+ </div></div>
+
+ <div class="cover" id="cover"><h3>What each edition covers</h3>
+  <table class="led"><thead><tr><th>Edition</th><th>Covers</th><th>Compared with</th><th style="text-align:right">GMV</th><th style="text-align:right">Change</th><th>Said beside it</th></tr></thead><tbody>
+   <tr><td>Day</td><td>Wed 22 Aug 2018</td><td>Wed 15 Aug 2018</td><td class="n">BRL 20,297</td><td class="n dn">▼ 55.3%</td><td>The data was already thinning: this day holds 69% of the orders of the 28 days before it.</td></tr>
+   <tr><td>Week</td><td>13–19 Aug 2018</td><td>6–12 Aug 2018</td><td class="n">BRL 244,676</td><td class="n dn">▼ 11.3%</td><td class="mute">—</td></tr>
+   <tr class="on"><td>Month</td><td>July 2018</td><td>June 2018</td><td class="n">BRL 878,044</td><td class="n up2">▲ 1.7%</td><td class="mute">—</td></tr>
+   <tr><td>Year</td><td>2017</td><td class="mute">not compared</td><td class="n">BRL 6,108,492</td><td class="n mute">—</td><td>2016 is not compared: the data starts on 4 Sep 2016, so it holds four months of that year.</td></tr>
+   <tr><td>Month to date</td><td>1–22 Aug 2018</td><td>1–22 Jul 2018</td><td class="n">BRL 793,008</td><td class="n up2">▲ 42.8%</td><td>To the data's last day, not to today.</td></tr>
+   <tr><td>Year to date</td><td>1 Jan – 22 Aug 2018</td><td>1 Jan – 22 Aug 2017</td><td class="n">BRL 7,285,185</td><td class="n up2">▲ 150.7%</td><td>To the data's last day, not to today.</td></tr>
+  </tbody></table>
+ </div>
+
+ <div class="cover"><h3>Now, for the same workspace</h3>
+  <div class="nowcard"><b>Olist</b><span>July 2018 · GMV BRL 878,044, up 1.7% on June</span><span class="chip">data ended 22 Aug 2018</span><span class="r">the newest kept edition, not today's</span></div>
+ </div>
+
+ <div class="sources"><div><span>1</span>Month Briefing for July 2018 · GMV, approved v1, by purchase date</div><div><span>2</span>Month to date to 22 Aug 2018 · GMV, same definition</div></div>
+
+ <div class="decide2"><div class="kicker amber">Decision for you · where does the data end?</div>
+  <h3>The last row is 17 October 2018, but the data stops being whole in late August</h3>
+  <p>Orders run near 270 a day through mid-August 2018, fall to 187 on 22 August and 99 on 24 August, then 20 stragglers span September and October. Which day an edition anchors to changes what every edition says.</p>
+  <div class="opt"><b>1 · The last row, 17 Oct 2018.</b> Month becomes September 2018, one order worth BRL 145, and the headline reads <span class="dn">"GMV fell 100% on August"</span>. Day and Week read days holding one order or none.</div>
+  <div class="opt"><b>2 · The last whole day, 22 Aug 2018</b><span class="tag">drawn above · recommended</span> The last day holding at least three quarters of a usual day's orders, where a usual day is the median over the data's final year (201 orders). Month is July (+1.7%). Day and Week sit in the data's last, thinning days, and say so.</div>
+  <div class="opt"><b>3 · The last whole month, July 2018.</b> Every edition reads July or earlier: Day 31 Jul (BRL 45,063, +8.5% on 24 Jul), Week 23–29 Jul (BRL 239,833, +9.3%), Month July. The cleanest figures, but 1–22 August, which looks whole, is never read.</div>
+  <p style="margin-top:8px">Live data is unchanged in all three: it still reads to today minus its settling lag. The "ended" voice, the paused sends and the withheld Year comparison apply only when the newest whole day is more than a month before today.</p>
+ </div>
+</div></div></div></body></html>
