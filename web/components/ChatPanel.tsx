@@ -16,6 +16,7 @@ import { WhyThisNumber } from "./WhyThisNumber";
 
 import { getApiBase } from "@/lib/config";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
+import { AnswerFeedback } from "@/components/AnswerFeedback";
 import { Icon } from "@/components/ui/icon";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -657,8 +658,6 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   const [suggestionsMissing, setSuggestionsMissing] = useState("");
   const [showDebug, setShowDebug]   = useState(false);
   const [feedbackDone, setFeedbackDone] = useState<Set<string>>(new Set());
-  // R10 — thumbs on quick answers: turn receiptId → the verdict sent (one per turn).
-  const [thumbsDone, setThumbsDone] = useState<Map<string, "helpful" | "unhelpful">>(new Map());
   const [sourcePanel, setSourcePanel] = useState<SourcePanelData | null>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   // CA-5 — attachments land NOW, not at send: a file whose upload is deferred to the
@@ -975,17 +974,6 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
   const isEmpty = messages.length === 0;
 
-  // R10 — THUMBS→priors: a helpful verdict teaches the learned table prior
-  // (the same counter overview drills + query popularity feed). Fire-and-forget.
-  const handleThumbs = useCallback((turnId: string, verdict: "helpful" | "unhelpful") => {
-    setThumbsDone(prev => new Map(prev).set(turnId, verdict));
-    fetch(`${getApiBase()}/chat/feedback`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conn_id: connectionId, turn_id: turnId, verdict }),
-    }).catch(() => {});
-  }, [connectionId]);
-
   // ── Feedback submission ───────────────────────────────────────────────────────
   async function handleFeedbackSubmit(invId: string, feedback: string) {
     try {
@@ -1260,26 +1248,11 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                         receipt now carries what only the old one showed — resolved
                         readings, the Learning Receipt, activations and "Add as eval case" —
                         so the duplicate could go without losing evidence. */}
+                    {/* The ONE feedback control on an answer (2026-10-22): a second thumbs pair
+                        used to sit inside the answer's "Methodology & details" and post the same
+                        verdict for the same receipt. It lives here, at the foot, once. */}
                     {turn.status === "done" && turn.receiptId && (
-                      <div className="flex items-center gap-1.5">
-                        {/* R10 — thumbs: helpful teaches the learned table prior */}
-                        {thumbsDone.has(turn.receiptId) ? (
-                          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
-                            {thumbsDone.get(turn.receiptId) === "helpful" ? "Thanks — noted 👍" : "Noted 👎"}
-                          </span>
-                        ) : (
-                          <>
-                            <Button variant="ghost" size="icon-xs" aria-label="Helpful"
-                                    onClick={() => handleThumbs(turn.receiptId!, "helpful")}>
-                              👍
-                            </Button>
-                            <Button variant="ghost" size="icon-xs" aria-label="Not helpful"
-                                    onClick={() => handleThumbs(turn.receiptId!, "unhelpful")}>
-                              👎
-                            </Button>
-                          </>
-                        )}
-                      </div>
+                      <AnswerFeedback turn={turn} connectionId={connectionId} />
                     )}
                     {/* WP-10 — "Why this number": opens the unified signed receipt (GET /receipt/{id}). */}
                     {turn.status === "done" && turn.publicReceiptId && (
