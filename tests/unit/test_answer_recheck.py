@@ -248,8 +248,10 @@ def test_a_restored_turn_carries_the_recheck_only_once_one_found_a_change(con, l
 def test_a_query_relative_to_today_is_not_rechecked(con, lag):
     """"Revenue yesterday" re-run tomorrow measures another day; telling the difference as a
     correction would be false."""
+    # The window must still hold the fixture's September rows on the day the suite runs: a 30-day
+    # lookback emptied on 2026-10-21 and the answer then failed the earlier "no query result" check.
     answer = answer_from(con, sql="SELECT CAST(created_at AS DATE) AS day, COUNT(*) AS orders FROM orders "
-                                  "WHERE created_at >= CURRENT_DATE - INTERVAL 30 DAY GROUP BY 1")
+                                  "WHERE created_at <= CURRENT_DATE GROUP BY 1")
     entry = recheck.measure_answer(answer, run_sql=run_on(con), now=LATER)
     assert entry["status"] == "unchecked" and "relative to today" in entry["reason"]
 
