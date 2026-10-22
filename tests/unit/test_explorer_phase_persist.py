@@ -131,7 +131,7 @@ def test_cancelled_run_marks_status_terminal(monkeypatch):
     async def _cancel(*a, **k):
         raise asyncio.CancelledError()
 
-    monkeypatch.setattr(ex, "_phase8_domain_intelligence", _cancel)
+    monkeypatch.setattr(ex, "_pass_questions", _cancel)
 
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(ex._explore_run(domain_intel_only=True))   # skips 3-7, cancels in Phase 8
@@ -174,7 +174,7 @@ def test_budget_exceeded_in_context_is_handled_like_a_cancel(monkeypatch):
     async def _over(*a, **k):
         raise BudgetExceeded("token budget (200,000 tokens)")
 
-    monkeypatch.setattr(ex, "_phase8_domain_intelligence", _over)
+    monkeypatch.setattr(ex, "_pass_questions", _over)
 
     with pytest.raises(BudgetExceeded):
         asyncio.run(ex._explore_run(domain_intel_only=True))

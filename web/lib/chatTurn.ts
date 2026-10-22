@@ -522,7 +522,10 @@ const PART_PROJECTORS: Record<string, (t: ChatTurn, d: Payload) => void> = {
   phase_complete: (t, d) => {
     const phase = d.phase as InvestigationPhase;
     t.phases = [...t.phases, phase];
-    t.statusText = `Analyzing ${phase?.phase_id}…`;
+    // The row names the step by what it is for, never by its id — "Analyzing adhoc_3…" reached the
+    // screen on 2026-10-22 (PENDING 53). A step with no name shows no name.
+    const name = (phase?.phase_name || "").trim();
+    t.statusText = name ? `Analyzing ${name}…` : "Analyzing…";
   },
   phase_progress: (t, d) => {
     const done = d.done as number, total = d.total as number;

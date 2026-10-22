@@ -119,7 +119,7 @@ def test_a_pinned_answer_reading_another_schema_is_not_reproduced(monkeypatch):
         wrote.append(1)
         raise RuntimeError("no model here")
 
-    asyncio.run(ex._phase8_pinned_questions(profile, SimpleNamespace(table_cols={}, schema="", write=_write), ""))
+    asyncio.run(ex._pass_pinned_questions(profile, SimpleNamespace(table_cols={}, schema="", write=_write), ""))
     assert wrote == [1] and emitted == [] and ex._state[store.FINDINGS] == []
 
 

@@ -38,7 +38,7 @@ def _bare(table: str) -> str:
 
 
 def _structural_ctx(state: dict, tables: Iterable[str]) -> dict:
-    """Slice the explorer's Phase 3-7 structural facts down to just the tables
+    """Slice the explorer's structure-pass facts down to just the tables
     this finding touches. Keyed off the tables in the finding's SQL (the honest
     signal), not entity ids. Pure dict-filtering — no probing, no SQL."""
     tset = {_bare(t) for t in (tables or [])}
@@ -194,7 +194,7 @@ def build_dossier(
             "checked": g_checked,
             "ungrounded": g_ungrounded,
         },
-        # Phase 3-7 facts scoped to this finding's tables — the structural ground
+        # structure-pass facts scoped to this finding's tables — the structural ground
         # the claim stands on (joins verified, NULL semantics, lifecycle, shape).
         "structural_ctx": _structural_ctx(state or {}, tables),
         # Freshness anchors — Phase 4 (re-validate) compares live data against these.

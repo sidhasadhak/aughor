@@ -189,7 +189,7 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
                     "Model it in FakeLLM, or neutralise its call site (see get_or_infer above).")
 
         monkeypatch.setattr(prov, "get_provider", lambda role="coder": FakeLLM())
-        asyncio.run(asyncio.wait_for(ex._phase8_domain_intelligence(), timeout=120))
+        asyncio.run(asyncio.wait_for(ex._pass_questions(), timeout=120))
     finally:
         lg.removeHandler(handler)
 

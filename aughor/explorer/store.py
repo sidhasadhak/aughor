@@ -9,7 +9,7 @@ transactional, Postgres-capable behind AUGHOR_DB_URL):
 
 Legacy layout was one file per key (``data/exploration_{key}.json``); each key
 imports on first touch and the file stays as the on-disk record until purge. This
-state is what Phase 2's sliced execution resumes from, so it must be readable
+state is what the durable execution's sliced runs resumes from, so it must be readable
 across processes — a local file was the last single-process assumption here.
 """
 from __future__ import annotations

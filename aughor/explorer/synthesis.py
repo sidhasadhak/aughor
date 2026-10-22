@@ -10,7 +10,7 @@ The insight lives in the **relationship between knowns**, so the structure is a
 *findings graph*: nodes are findings, edges are shared join keys (a common table /
 dimension / measure). This module is the PURE, deterministic half — it builds
 claims, finds combinable pairs, and tags each pair with the composition operators
-it is structurally eligible for. The agent's ``_phase9_synthesis`` does the
+it is structurally eligible for. The agent's ``_pass_synthesis`` does the
 LLM articulation and — crucially — re-derives every emergent number with ONE
 confirming query that passes the same guards a normal finding does. Composition is
 a hypothesis; the confirming query is the proof.

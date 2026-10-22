@@ -5779,7 +5779,7 @@ export interface paths {
         put?: never;
         /**
          * Trigger Canvas Domain Intelligence
-         * @description Run only Phase 8 (domain intelligence) for a Canvas if phases 3-7 are already
+         * @description Run only the questions pass for a Canvas if the structure passes are already
          *     complete — the canvas-scoped counterpart to the connection `trigger-intel`. Drives
          *     the *canvas* explorer (scoped to the canvas's curated tables), not the connection.
          *     spawn_explorer guards the already-running case.
@@ -6198,7 +6198,7 @@ export interface paths {
         /**
          * Fix Episode
          * @description Repair an errored episode and, on a successful run, SAVE it: heal the episode and
-         *     (for domain-intelligence queries) store a finding through the same Phase-8 guards.
+         *     (for the questions pass) store a finding through the same questions-pass guards.
          *     Unlike /retry-query this persists; it never generates new questions.
          */
         post: operations["fix_episode_exploration__conn_id__fix_episode_post"];
@@ -6376,7 +6376,7 @@ export interface paths {
         put?: never;
         /**
          * Trigger Domain Intelligence
-         * @description Run only Phase 8 (domain intelligence) where phases 3-7 are already complete.
+         * @description Run only the questions pass where the structure passes are already complete.
          *
          *     A multi-schema connection's runs live under per-schema keys (``{conn}__{schema}``), so
          *     resolve the same schema targets ``start``/``kickoff`` use — reading the per-schema state,

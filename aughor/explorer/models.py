@@ -154,13 +154,13 @@ class ExplorationStatus:
 
     started_at: Optional[str] = None
     # Time-to-first-insight KPI (B-6): when the FIRST insight from any phase
-    # (cross-table Phase 7 or domain-intel Phase 8) was discovered. Lets the
+    # (the cross-table pass or domain-intel the questions pass) was discovered. Lets the
     # connect→first-insight funnel be measured instead of being all-or-nothing.
     first_insight_at: Optional[str] = None
     completed_at: Optional[str] = None
     error: Optional[str] = None
 
-    # Phase 8 (domain intelligence) can be skipped when its prerequisite ontology
+    # the questions pass can be skipped when its prerequisite ontology
     # fails to build — without this the run still completes with 0 insights and the
     # UI can't tell "never generated" from "couldn't generate". Surface the reason.
     domain_intel_skipped: bool = False

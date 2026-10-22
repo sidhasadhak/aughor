@@ -202,7 +202,7 @@ AGENTS: tuple[AgentCharter, ...] = (
                              "budget."),
                 default=60_000, min=2_000, max=400_000, unit="chars",
                 applies_to=("the business-profile inference at connection birth, on Profile "
-                            "refresh, and when the explorer's Phase 8 needs a profile"),
+                            "refresh, and when the explorer's questions need a profile"),
             ),
         )),
 )

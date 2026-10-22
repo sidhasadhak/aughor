@@ -2372,7 +2372,7 @@ const PHASE_LABELS: Record<string, string> = {
   lifecycle_mapping: "mapping lifecycles",
   distribution:      "profiling distributions",
   cross_table:       "finding cross-table patterns",
-  domain_intel:      "synthesising domain intelligence",
+  domain_intel:      "asking its questions",
   synthesis:         "composing cross-domain findings",
 };
 

@@ -1,7 +1,7 @@
 """
 Numeral grounding for autonomous-explorer findings.
 
-Phase-8 findings are 1-2 sentence business insights an LLM writes from a SQL
+questions-pass findings are 1-2 sentence business insights an LLM writes from a SQL
 result. The LLM free-forms numbers into that prose, and it sometimes fabricates
 the *magnitude* or *unit* — the canonical bug was a finding that read
 ``"2.49M attribution credit"`` when the underlying result cell was ``2.49`` (off

@@ -9,7 +9,7 @@ This module enumerates the manifest instead — the set of *material* baseline q
 data supports — so completeness can be measured as a fraction of it and each run can advance
 the frontier rather than redo the checklist. It is the L2 layer (KPI baselines) of the
 ground-up knowledge stack (L0 structure → L1 metric defs → **L2 baselines** → L3 anomalies →
-L4 explanation); the foundational layers (phases 3-7) already exist.
+L4 explanation); the foundational layers (the structure passes) already exist.
 
 Sourcing is **profile-led with a profiled-measure fallback** (the design call): the business
 profile's north-star KPIs lead, and any profiled *measure* the profile didn't name is added
