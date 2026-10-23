@@ -5,13 +5,17 @@ The app-level ``OrgSettings`` is a singleton persisted as JSON in
 live on the Workspace row (``settings_override``). ``effective_settings(workspace_id)``
 merges them with precedence: **workspace override > app default > model default**.
 
-``resolve_industry`` implements override-wins over the inference; ``resolve_currency``
-deliberately does NOT — a currency is a property of the figure, not of the reader, and
-nothing here converts. See its docstring. Otherwise, override-wins over the
+``resolve_industry`` implements override-wins over the inference; a figure's currency
+deliberately does NOT — it is a property of the figure, not of the reader, nothing here
+converts, and since 2026-10-23 only a person's confirmation per dataset labels one
+(``data_currency`` / ``figure_currency``). Otherwise, override-wins over the
 per-connection ``BusinessProfile``: an explicitly-set org/workspace value is
 authoritative; otherwise the inferred value stands.
 """
 from __future__ import annotations
+
+import datetime as _dt
+import re
 
 import json
 from pathlib import Path
@@ -75,44 +79,84 @@ _SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "CNY": "¥", "IN
 
 def currency_symbol(code: Optional[str]) -> str:
     """Display symbol for an ISO currency code; falls back to the bare code so an
-    unmapped currency still reads as '<CODE> 1,234' rather than a wrong '$'."""
+    unmapped currency still reads as '<CODE> 1,234' rather than a wrong '$'.
+
+    No code is no symbol (2026-10-23, the user's decision on the Olist study's Gap 14): a figure
+    whose currency no person has confirmed prints as a plain amount, never under a default "$"."""
     if not code:
-        return "$"
+        return ""
     return _SYMBOLS.get(code.upper(), f"{code.upper()} ")
 
 
-def resolve_currency(profile_currency: str = "", workspace_id: Optional[str] = None) -> str:
-    """The currency a FIGURE from this data is denominated in — the data's own, else the
-    org's declared reporting currency, else USD.
+#: Where a person's confirmed currency is kept: the connection's settings (a person's own
+#: declarations about a connection), one entry per dataset — "" is the connection as a whole.
+CURRENCIES_KEY = "currencies"
+_ISO = re.compile(r"^[A-Z]{3}$")
 
-    This order is the reverse of `resolve_industry` below, and deliberately so.
 
-    A currency symbol in front of a number is not a preference. It is a claim about what
-    that number IS, and it is only true if the number is in that currency. **Nothing in
-    this tree converts anything** — `grep` for an exchange rate finds two comments in the
-    profiler about column NAMING and no converter at all. So applying a declared reporting
-    currency to a warehouse value does not report it in that currency; it relabels it, and
-    the figure is then wrong by whatever the rate happens to be.
+def data_currency(conn_id: str, schema: Optional[str] = None) -> dict:
+    """The currency a figure from one DATASET (a connection and schema) is in, and whose word it is.
 
-    Measured 2026-09-23: theLook, a USD dataset, rendered revenue axes and prose in EUR
-    because the workspace declares EUR — a real chart went to a real Slack channel reading
-    "€20.0K" over dollars. The answer beside it even said it had applied no conversion.
+    ``code`` is set only when a PERSON confirmed it — then it labels every figure from the dataset.
+    The business profile's ``currency_code`` is the model's inference: a PROPOSAL (``inferred``),
+    shown beside a Confirm door and never printed in front of a number. Until a person confirms,
+    figures print as plain amounts and the page says the currency is unconfirmed (the user's
+    decisions of 2026-10-23: proposed by the Profile, confirmed by a person, per dataset — one
+    connection held Olist in reais and a franchise in euros, so a workspace currency would mislabel one).
 
-    The org setting keeps every meaning it was given that does not require converting
-    anything: `org_context` still says "reports in EUR", because that is a true statement
-    about the ORGANISATION, and it is read straight from the settings rather than through
-    here. What changes is only this — the unit printed against a number the platform read
-    out of a warehouse and did not touch. When a converter exists, the org preference can
-    win again, because then it will be true.
+    The org setting describes the ORGANISATION ("reports in EUR", ``org_context``) and labels no
+    warehouse figure: nothing in this tree converts currency, so it would relabel (2026-09-23)."""
+    from aughor.db.registry import get_connection_settings
+    key = schema or ""
+    held = dict(((get_connection_settings(conn_id) or {}).get(CURRENCIES_KEY) or {}).get(key) or {})
+    inferred, profile_confidence = "", None
+    try:
+        from aughor.business_profile import store as pstore
+        prof = ((pstore.load_raw(conn_id, schema) or {}).get("profile") or {})
+        inferred = str(prof.get("currency_code") or "").strip().upper()
+        profile_confidence = prof.get("confidence")
+    except Exception as exc:  # noqa: BLE001 — no proposal is said as none, never guessed
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the profile's currency could not be read", counter="orgsettings.currency.profile")
+    code = str(held.get("code") or "").strip().upper()
+    return {"connection_id": conn_id, "schema_name": schema, "code": code,
+            "status": "confirmed" if code else ("inferred" if inferred else "unknown"),
+            "inferred": inferred, "profile_confidence": profile_confidence,
+            "confirmed_by": str(held.get("by") or ""), "confirmed_at": str(held.get("at") or "")}
 
-    ``profile_currency`` is itself inferred and can be wrong (see `BusinessProfile`), which
-    is a separate defect with a separate fix; this function's job is to prefer the claim
-    that is ABOUT the data over the one that is about the reader.
-    """
-    data_currency = (profile_currency or "").strip().upper()
-    if data_currency:
-        return data_currency
-    return effective_settings(workspace_id).currency_code or "USD"
+
+def figure_currency(conn_id: str, schema: Optional[str] = None) -> str:
+    """The code that labels a figure from this dataset — a person's confirmed one, or "" (a plain
+    amount, said to be unconfirmed). Never the model's inference and never the org's preference."""
+    if not conn_id:
+        return ""
+    try:
+        return data_currency(conn_id, schema)["code"]
+    except Exception as exc:  # noqa: BLE001 — unknown is unconfirmed, never a default
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the dataset's currency could not be read; figures print unlabelled",
+                 counter="orgsettings.currency.read")
+        return ""
+
+
+def confirm_currency(conn_id: str, schema: Optional[str], code: str, *, actor: str) -> dict:
+    """A person states the dataset's currency (or clears it with ""). Kept with who said it and
+    when — provenance is required, and this is the only door that writes it."""
+    from aughor.db.registry import get_connection_settings, update_connection_settings
+    code = (code or "").strip().upper()
+    if code and not _ISO.match(code):
+        raise ValueError("a currency is a three-letter ISO 4217 code, e.g. BRL")
+    held = dict((get_connection_settings(conn_id) or {}).get(CURRENCIES_KEY) or {})
+    key = schema or ""
+    if code:
+        before = dict(held.get(key) or {})
+        held[key] = {"code": code, "by": actor or "", "at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+                     "inferred": data_currency(conn_id, schema)["inferred"],
+                     **({"was": before.get("code")} if before.get("code") and before.get("code") != code else {})}
+    else:
+        held.pop(key, None)
+    update_connection_settings(conn_id, {CURRENCIES_KEY: held})
+    return data_currency(conn_id, schema)
 
 
 def resolve_industry(profile_industry: str = "", workspace_id: Optional[str] = None) -> str:

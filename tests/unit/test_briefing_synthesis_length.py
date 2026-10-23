@@ -99,6 +99,8 @@ def test_currency_rewrite_does_not_eat_paragraphs(monkeypatch):
     business, the case where that substitution actually runs."""
     fp = FakeProvider("Revenue hit $1.2M [1].\n\nMargins held.")
     monkeypatch.setattr(prov, "get_provider", lambda role=None: fp)
+    # a person confirmed EUR for the dataset (2026-10-23: the profile's code alone labels nothing)
+    monkeypatch.setattr("aughor.orgsettings.figure_currency", lambda conn_id, schema=None: "EUR")
     result = generate_narrative({"sales": [{"id": "s0", "finding": "f", "sql": "SELECT 1"}]},
                                 patterns=[], connection_id="c",
                                 profile={"currency_code": "EUR"})

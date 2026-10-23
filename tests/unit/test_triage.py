@@ -318,5 +318,5 @@ def test_currency_symbol():
     assert currency_symbol("EUR") == "€"
     assert currency_symbol("USD") == "$"
     assert currency_symbol("GBP") == "£"
-    assert currency_symbol(None) == "$"
+    assert currency_symbol(None) == ""          # no confirmed currency is no symbol, never "$" (2026-10-23)
     assert currency_symbol("SEK") == "SEK "

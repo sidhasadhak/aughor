@@ -274,7 +274,8 @@ def test_the_weekly_brief_is_built_from_the_weeks_evidence_and_told_its_version(
     assert "This is the WEEKLY briefing. It covers the week 2026-09-14 to 2026-09-20" in user
     assert "Refunds on the Lisbon warehouse" in user            # recorded inside the week
     assert "Premium share" not in user                         # a standing finding is not news
-    assert "Revenue moved from $70,000 to $119,000 (+70%)" in user     # measured for the week
+    # measured for the week — plain amounts: no person confirmed c1's currency (2026-10-23)
+    assert "Revenue moved from 70,000 to 119,000 (+70%)" in user
     assert "Not measured for this week: Top statuses" in user
     block = brief["period"]
     assert (block["start"], block["last_day"], block["label"]) == ("2026-09-14", "2026-09-20", "Weekly")

@@ -168,7 +168,7 @@ def test_a_card_reads_with_the_record_it_was_made_from_and_its_metrics_unit(clie
         "metric", "ratio 0-1 (typically 0.10-0.40)", {"kind": "ratio01", "lo": 0.0, "hi": 1.0})
     assert (by[desk.net]["made_from"], by[desk.net]["unit"], by[desk.net]["stated_range"]) == ("trusted_query", "", None)
     assert (by[desk.chart]["made_from"], by[desk.chart]["stated_range"]) == ("", None)
-    assert read["currency_symbol"] == "$"
+    assert read["currency_symbol"] == ""       # nobody confirmed this connection's currency (2026-10-23)
 
 
 @needs_rules

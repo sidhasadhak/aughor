@@ -927,9 +927,11 @@ def say_figures(measured: list[dict], currency: Optional[str]) -> None:
             m[f"{k}_text"] = _figure_text(m.get(k), m["name"], m["unit"], currency)
 
 
-def _currency(profile: Any, workspace_id: Optional[str]) -> Optional[str]:
-    from aughor.orgsettings import resolve_currency
-    return resolve_currency(getattr(profile, "currency_code", None) or "", workspace_id)
+def _currency(conn_id: str, schema: Optional[str]) -> Optional[str]:
+    """The dataset's currency as a PERSON confirmed it, or "" — its figures print as plain amounts
+    (2026-10-23: never the profile's inferred code, never a default "$")."""
+    from aughor.orgsettings import figure_currency
+    return figure_currency(conn_id, schema)
 
 
 def measured_block(conn_id: str, spec: RangeSpec, *, profile: Any = None, workspace_id: Optional[str] = None,
@@ -950,7 +952,7 @@ def measured_block(conn_id: str, spec: RangeSpec, *, profile: Any = None, worksp
         tolerate(exc, "the range measurement could not open the connection", counter="briefing.range.measure")
         return {**block, "unmeasured": [{"name": "headline metrics",
                                          "reason": f"the connection could not be opened ({type(exc).__name__})"}]}
-    say_figures(got["measured"], _currency(profile, workspace_id))
+    say_figures(got["measured"], _currency(conn_id, schema))
     return {**block, **got}
 
 
@@ -984,7 +986,7 @@ def edition_covers(conn_id: str, *, schema: Optional[str] = None, workspace_id: 
                         "current_text": None, "previous_text": None, "rel": None})
         rows.append(row)
     if lead is not None:
-        currency = _currency(profile, workspace_id)
+        currency = _currency(conn_id, schema)
         try:
             with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
                 for row, (_p, spec, _why) in zip(rows, specs):
@@ -1126,7 +1128,7 @@ def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: An
     got = {r["window"]: r for r in rows}
     values = [read_value(got.get(w.label)) for w in windows]
     unit = _read_unit(m.time_kind, m.unit or "", values)
-    currency, slack = _currency(profile, workspace_id), _slack(spec.days)
+    currency, slack = _currency(conn_id, schema), _slack(spec.days)
     settled_by = spec.as_of - timedelta(days=max(int(spec.lag_days or 1), 1))
     series = []
     for w, v in zip(windows, values):
@@ -1159,7 +1161,7 @@ def build_range_briefing(conn_id: str, spec: RangeSpec, *, scope_key: str, domai
     block = {**range_block(spec), "recipe": recipe_for(spec.preset),
              "sections": list(SECTIONS[recipe_for(spec.preset)])}
     north = list(getattr(profile, "north_star_metrics", None) or []) if profile is not None else []
-    currency = _currency(profile, workspace_id)
+    currency = _currency(conn_id, scope_key.split(":", 1)[1] if ":" in scope_key else None)
 
     def measure() -> dict:
         from aughor.briefing import recipes

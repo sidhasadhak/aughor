@@ -258,8 +258,19 @@ def execution_claim(metric: Any, db: Any) -> Claim:
                               f"ran {result.sql!r}, no value"),),
             detail={"sql": result.sql, "value": None},
         )
-    return Claim(CLEAN, f"The definition executes and currently reads {result.value:g}.",
+    return Claim(CLEAN, f"The definition executes and currently reads {plain_reading(result.value)}.",
                  detail={"sql": result.sql, "value": result.value})
+
+
+def plain_reading(v: float) -> str:
+    """A reading as a person reads one: separators, never scientific notation. `{:g}` printed Olist's
+    GMV as "1.34944e+07" where the decision to approve it was taken (Gap 23; it was 13,494,400.74)."""
+    v = float(v)
+    if v == int(v):
+        return f"{int(v):,}"
+    if abs(v) >= 1:
+        return f"{v:,.2f}"
+    return f"{v:.4f}".rstrip("0").rstrip(".")
 
 
 def declaration_claim(metric: Any, table_cols: Optional[Mapping[str, Sequence[str]]] = None

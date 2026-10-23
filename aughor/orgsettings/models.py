@@ -16,7 +16,7 @@ everything that DESCRIBES the organisation — ``org_context`` still says "repor
 but it no longer decides the symbol printed against a figure read out of a warehouse.
 Nothing in this tree converts currency, so a reporting preference applied to an
 unconverted number is a relabel, and a EUR workspace put euro signs on theLook's dollars.
-``resolve_currency`` has the full reasoning; when a converter exists this can be revisited.
+``store.data_currency`` has the rule (a person's confirmation per dataset labels a figure); when a converter exists this can be revisited.
 """
 from __future__ import annotations
 
@@ -58,8 +58,8 @@ class OrgSettings(BaseModel):
         description=(
             "ISO 4217 reporting currency, e.g. 'GBP'. Describes the ORGANISATION and is "
             "stated as such (org_context: 'reports in GBP'). It does NOT relabel figures "
-            "read from a warehouse — nothing converts, so the data's own currency wins "
-            "there; see resolve_currency. Empty = unset."
+            "read from a warehouse — nothing converts; a figure carries the currency a "
+            "person confirmed for its dataset (store.data_currency). Empty = unset."
         ),
     )
     timezone: str = Field(default="", description="IANA timezone, e.g. 'Europe/London'. Empty = UTC.")

@@ -107,29 +107,38 @@ def test_lead_flips_off_the_noise_level_roas_split(monkeypatch):
     assert "repeat-purchase rate" in after_lead
 
 
-def test_currency_is_eur_in_prompt(monkeypatch):
+def _confirmed(monkeypatch, code: str) -> None:
+    """A person confirmed ``code`` for the dataset (2026-10-23: only that labels a figure)."""
+    monkeypatch.setattr("aughor.orgsettings.figure_currency", lambda conn_id, schema=None: code)
+
+
+def test_a_confirmed_currency_is_in_prompt(monkeypatch):
+    _confirmed(monkeypatch, "EUR")
     out = _run(monkeypatch)
     assert out["currency_code"] == "EUR"
     assert "€" in _StubProvider.last_user
 
 
-def test_the_brief_reports_the_DATAS_currency_not_the_orgs(monkeypatch):
-    """INVERTED 2026-09-23. This asserted a set org currency (GBP) overrode the profile's
-    EUR, which is what a EUR workspace did to theLook's dollars in a live Slack channel.
-    Nothing converts, so an org preference cannot restate a figure's unit — the brief now
-    reports what the DATA is in, and the narrator is instructed in that."""
+def test_the_brief_prints_no_currency_nobody_confirmed(monkeypatch):
+    """INVERTED twice. 2026-09-23: an org GBP no longer relabelled the data's EUR (nothing converts).
+    2026-10-23 (the Olist study's Gap 14, the user's decision): the profile's EUR is the model's
+    inference, a proposal — until a person confirms a currency for the dataset the brief prints plain
+    amounts and the narrator is told to say so, never a default "$" and never the guess."""
     _orgstore.save_org_settings(OrgSettings(currency_code="GBP"))
-    out = _run(monkeypatch)
-    assert out["currency_code"] == "EUR"
-    assert "€" in _StubProvider.last_user
-    assert "£" not in _StubProvider.last_user
+    out = _run(monkeypatch)                                   # PROFILE says EUR; nothing confirmed
+    assert out["currency_code"] == ""
+    prompt = _StubProvider.last_user
+    assert "No person has confirmed this data's currency" in prompt
+    assert "€" not in prompt and "£" not in prompt
 
 
-def test_org_currency_rewrites_dollar_figures_in_narrative(monkeypatch):
-    # The post-synthesis $→symbol rewrite uses the RESOLVED currency, which since
-    # 2026-09-23 is the data's own (EUR here) rather than the org's declared GBP — the
-    # rewrite still happens, it just normalises to the unit the numbers are actually in.
+@pytest.mark.parametrize("confirmed, expected", [("EUR", "€1.2M"), ("", "1.2M")])
+def test_dollar_figures_follow_the_confirmed_currency(monkeypatch, confirmed, expected):
+    # The post-synthesis "$" rewrite uses the dataset's CONFIRMED currency: a confirmed EUR turns
+    # "$1.2M" into "€1.2M"; none drops the "$" — the amount stands plain, never in dollars it was
+    # never shown to be in. The org's declared GBP plays no part.
     _orgstore.save_org_settings(OrgSettings(currency_code="GBP"))
+    _confirmed(monkeypatch, confirmed)
 
     class _DollarNarrator:
         def complete(self, system, user, response_model=None, temperature=0.0):
@@ -142,7 +151,7 @@ def test_org_currency_rewrites_dollar_figures_in_narrative(monkeypatch):
 
     monkeypatch.setattr(provider_mod, "get_provider", lambda *_a, **_k: _DollarNarrator())
     out = generate_narrative(MISSIMI, patterns=[], connection_id="missimi", profile=PROFILE)
-    assert "€1.2M" in out["narrative"]
+    assert expected in out["narrative"]
     assert "$" not in out["narrative"]
 
 

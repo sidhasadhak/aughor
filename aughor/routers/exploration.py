@@ -750,10 +750,9 @@ def _metric_moves_provider(conn_id: str, profile, schema: str | None = None):
     metrics = getattr(profile, "north_star_metrics", None) or []
     if not metrics:
         return None
-    from aughor.orgsettings import resolve_currency
-    # Override-wins: an explicitly-set org currency is authoritative over the
-    # per-connection inferred currency_code (else the inferred value, else USD).
-    currency = resolve_currency(getattr(profile, "currency_code", None) or "")
+    from aughor.orgsettings import figure_currency
+    # The dataset's currency as a PERSON confirmed it, else none — a plain amount (2026-10-23).
+    currency = figure_currency(conn_id, schema)
 
     def _provider():
         from aughor.knowledge.metric_moves import compute_metric_moves

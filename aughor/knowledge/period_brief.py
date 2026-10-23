@@ -443,8 +443,9 @@ def build_period_briefing(conn_id: str, period: str, *, scope_key: str, domain_d
                                                       today=today)
     block = window_block(window, lag_source, still_moving)
     metrics = list(getattr(profile, "north_star_metrics", None) or []) if profile is not None else []
-    from aughor.orgsettings import resolve_currency
-    currency = resolve_currency(getattr(profile, "currency_code", None) or "", workspace_id)
+    from aughor.orgsettings import figure_currency
+    # the dataset's currency as a person confirmed it, else a plain amount (2026-10-23)
+    currency = figure_currency(conn_id, scope_key.split(":", 1)[1] if ":" in scope_key else None)
 
     def measure() -> dict:
         if not metrics:
