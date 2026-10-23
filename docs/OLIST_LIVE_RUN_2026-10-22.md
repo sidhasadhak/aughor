@@ -592,6 +592,11 @@ Record, Inbox and the closed loop; the agent wizard's draft, scope and honesty a
    deadline); `order_status = ['delivered']` reads as its value; a key may be several columns, and Olist's three
    pairs each measure unique over every row. Not approved live: the seven Olist proposals wait for a person.
 5. One answer to "what ran" across Now, Agent runs, History, Agent Ops; a monitor shows what it read (E).
+   **Built 2026-10-23:** Now has "Running now" and Agent runs says what else is running, both from the kernel's
+   jobs on the workspace's connections (Agent runs stays the person's history); a budget stop reads "stopped at
+   its budget" in Agent Ops; a monitor says what it read — live, Olist's GMV floor reads the ALL-TIME total
+   (13,494,400.74), which is why it never fires against a monthly 900,000 line (a monitor over a metric reading its
+   all-time value is the next defect to name). Gap 30 did not reproduce.
 6. The user's own item: rename "Phase 8"-style names (PENDING 53). **Done 2026-10-23 (#623).**
 Not done in this run: the other seven Olist metrics, Health targets, a document upload, Slack reach, the
 Default workspace's `data/metrics.json` drift from this run.
