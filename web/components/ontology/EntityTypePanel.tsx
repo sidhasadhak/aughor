@@ -19,7 +19,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import Link from "next/link";
 
-import { MakeCockpit } from "@/components/cockpit/MakeCockpit";
+import { MakeDashboard } from "@/components/dashboards/MakeDashboard";
 import { DerivedList } from "@/components/ontology/ProcessPanel";
 import { Label, NeedsRow, ProcessFlow, SetChips, TypeFigures, UsedBy } from "@/components/ontology/TypeOverview";
 import { Button } from "@/components/ui/button";
@@ -311,7 +311,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
           <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
             {/* a cockpit started from this object — not for one the platform holds, nor across an organisation's connections */}
             {!detail.platform && !inDomain && (
-              <MakeCockpit connectionId={connectionId} schema={schema} entity={detail.object_type} name={detail.display_name} />
+              <MakeDashboard connectionId={connectionId} schema={schema} entity={detail.object_type} name={detail.display_name} />
             )}
             <Button variant={editing ? "secondary" : "ghost"} size="xs" aria-pressed={editing} data-testid="entity-edit"
               onClick={() => setEditing((v) => !v)}

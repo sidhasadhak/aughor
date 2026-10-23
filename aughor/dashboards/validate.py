@@ -6,7 +6,7 @@ Two halves, and the split is by who can know:
 1. **What the spec says on its own** — its shape, the props of each component, what a
    condition may read, and the refusals (``watch``, ``on``, an expression in a prop, a state
    the spec seeds beyond the open tab). These are checked by the web's OWN rules,
-   ``web/lib/cockpit/rules.ts``, bundled by ``npm run build:cockpit-validate`` into
+   ``web/lib/dashboards/rules.ts``, bundled by ``npm run build:dashboard-validate`` into
    ``validate.bundle.mjs`` beside this module and run as a node subprocess — the arrangement
    ``export/echarts.py`` uses for charts, for the same reason: the server checks a spec with
    the function the browser draws it with, so the two cannot come to disagree.
@@ -75,7 +75,7 @@ def _run(payload: dict[str, Any]) -> tuple[Optional[dict], str]:
     if not node:
         return None, "node was not found on this machine"
     if not _BUNDLE.exists():
-        return None, f"{_BUNDLE.name} is missing; build it with `npm run build:cockpit-validate`"
+        return None, f"{_BUNDLE.name} is missing; build it with `npm run build:dashboard-validate`"
     try:
         proc = subprocess.run(
             [node, str(_BUNDLE)], input=json.dumps(payload).encode("utf-8"),
@@ -108,7 +108,7 @@ def vocabulary() -> Optional[dict]:
 
 def wiring(spec: Any) -> Optional[dict]:
     """Arc AP-2 and AP-3 — each set of ``spec`` as the object door would read it, and each button's parameters with the
-    kind and entity of their source, as the web reads them (`web/lib/cockpit/sets.ts`) — or None when the rules cannot
+    kind and entity of their source, as the web reads them (`web/lib/dashboards/sets.ts`) — or None when the rules cannot
     run. The server compiles each set before a keep; it keeps no second copy of what a set reads."""
     out, _why = _run({"op": "wiring", "spec": spec})
     return out if isinstance(out, dict) else None

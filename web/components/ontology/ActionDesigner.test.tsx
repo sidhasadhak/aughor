@@ -25,7 +25,7 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
 }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
-  getDeclaredActions: calls.declared, listCockpits: calls.cockpits, getCockpit: calls.cockpit, keepCockpit: calls.keep,
+  getDeclaredActions: calls.declared, listDashboards: calls.cockpits, getDashboard: calls.cockpit, keepDashboard: calls.keep,
   getActionTriggers: calls.triggers,
 }));
 vi.mock("@/lib/navigate", () => ({ requestTab: calls.tab }));
@@ -137,8 +137,8 @@ describe("the action designer", () => {
     await waitFor(() => expect(screen.getByTestId("action-designer-state").textContent).toBe("Published in release 5"));
     await user.click(screen.getByTestId("action-place"));
     await waitFor(() => expect(calls.keep).toHaveBeenCalled());
-    const [conn, cockpitId, spec, note] = calls.keep.mock.calls[0];
-    expect([conn, cockpitId, note]).toEqual(["c1", "late-dispatch", "Added the action Escalate to carrier"]);
+    const [conn, dashboardId, spec, note] = calls.keep.mock.calls[0];
+    expect([conn, dashboardId, note]).toEqual(["c1", "late-dispatch", "Added the action Escalate to carrier"]);
     const els = (spec as typeof LATE).elements as Record<string, { type: string; props: Record<string, unknown>; children: string[] }>;
     const button = els["detail-table-overdue_dispatch"].children.map(k => els[k]);
     expect(button).toEqual([{ type: "ActionButton", props: { action: "escalate_to_carrier" }, children: [] }]);
@@ -197,7 +197,7 @@ describe("the action designer", () => {
 describe("where an action's button can sit", () => {
   it("is each object detail beside a table of the type — matched by id or name, in any case", () => {
     expect(placesIn("late-dispatch", "Late dispatch", LATE, ["order"])).toEqual([{
-      cockpitId: "late-dispatch", title: "Late dispatch", detailKey: "detail-table-overdue_dispatch",
+      dashboardId: "late-dispatch", title: "Late dispatch", detailKey: "detail-table-overdue_dispatch",
       tableKey: "table-overdue_dispatch", segment: "overdue_dispatch" }]);
     expect(placesIn("late-dispatch", "Late dispatch", LATE, ["User"])).toEqual([]);
   });

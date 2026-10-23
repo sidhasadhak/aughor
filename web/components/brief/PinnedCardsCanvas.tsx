@@ -23,7 +23,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { getCockpitLayout, saveCockpitLayout } from "@/lib/api";
+import { getDashboardLayout, saveDashboardLayout } from "@/lib/api";
 import { PinnedCardBody, cardKind, type CardState, type Kind } from "@/components/brief/PinnedCardBody";
 import {
   GRID, boxToCell, cellPos, cellSize, packTopLeft, bottomRow,
@@ -208,7 +208,7 @@ function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSour
   useEffect(() => {
     let cancelled = false;
     setLoaded(null);
-    getCockpitLayout(connectionId).then(l => {
+    getDashboardLayout(connectionId).then(l => {
       if (cancelled) return;
       savedRef.current = (l as Layout) || {};
       setLoaded(savedRef.current);
@@ -308,7 +308,7 @@ function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSour
         if (w && h) l[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y), w: Math.round(w), h: Math.round(h) };
       });
       savedRef.current = l;
-      saveCockpitLayout(connectionId, l);
+      saveDashboardLayout(connectionId, l);
       dirtyRef.current = false;
     }, 500);
     return () => clearTimeout(t);

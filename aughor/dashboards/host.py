@@ -10,9 +10,9 @@ status is read off the dates.
     provisional  the range is over, and some of its days have not settled yet
     to_date      the range is still under way
 
-The four words are the web's (``web/lib/cockpit/hostState.ts``); a test holds the two lists
+The four words are the web's (``web/lib/dashboards/hostState.ts``); a test holds the two lists
 together. A card's own status — within, over, unmeasured — is read off the card's run, which
-happens in the browser, so it is said there (``web/lib/cockpit/hostStatus.ts``).
+happens in the browser, so it is said there (``web/lib/dashboards/hostStatus.ts``).
 """
 from __future__ import annotations
 

@@ -118,7 +118,7 @@ const BEFORE = /\b(before|above)\s+(?:the\s+)?(.+)$/;
 const AFTER = /\b(after|below|under|beneath)\s+(?:the\s+)?(.+)$/;
 const NO_STRIP = /\b(no|none|without|remove|hide)\b.*\b(dashboard|cockpit|strip)\b|\b(dashboard|cockpit|strip)\b.*\b(off|away|none)\b/;
 
-export interface CockpitChoice { id: string; title: string }
+export interface DashboardChoice { id: string; title: string }
 
 export type SwitchProposal =
   | { kind: "proposal"; lines: string[]; next: BriefingSectionsPref }
@@ -132,7 +132,7 @@ function sectionIn(text: string): SectionId | null {
 /** The words, read as switches: hide or show a section, put one first, last, before or after
  *  another, and name the cockpit that rides with the Briefing. Several at once, separated by a
  *  comma, "and" or "then". */
-export function proposeFromWords(words: string, pref: BriefingSectionsPref, cockpits: CockpitChoice[]): SwitchProposal {
+export function proposeFromWords(words: string, pref: BriefingSectionsPref, cockpits: DashboardChoice[]): SwitchProposal {
   const lines: string[] = [];
   let next: BriefingSectionsPref = { ...pref, sections: pref.sections.map(s => ({ ...s })) };
   const clauses = words.toLowerCase().replace(/[.!?]+$/g, "").split(/\s*(?:,|;|\bthen\b|\band\b)\s*/).map(c => c.trim()).filter(Boolean);

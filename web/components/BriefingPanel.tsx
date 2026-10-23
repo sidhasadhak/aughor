@@ -19,7 +19,7 @@ import { GuardChip } from "@/components/ui/trust";
  */
 
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
-import { ownFigures } from "@/lib/cockpit/figures";
+import { ownFigures } from "@/lib/dashboards/figures";
 import { compactNumber, countNoun, formatCount, formatDateTime, formatMetricValue, formatTimestamp, formatVariance, normalizeNumberPrecision, pct } from "@/lib/format";
 import { noveltyLabel, noveltyOutOf, noveltyShare } from "@/lib/novelty";
 import {
@@ -99,9 +99,9 @@ import { BriefingSections, HiddenSection } from "@/components/brief/BriefingSect
 import { BriefingStrip } from "@/components/brief/BriefingStrip";
 import { BriefingOffNotice } from "@/components/brief/BriefingOff";
 import { NewCardComposer } from "@/components/brief/NewCardComposer";
-import { getMyPreferences, listCockpits, putMyPreference } from "@/lib/api";
+import { getMyPreferences, listDashboards, putMyPreference } from "@/lib/api";
 import {
-  DEFAULT_SECTIONS, isPart, normalizeSections, toggled, type BriefingSectionsPref, type CockpitChoice, type SectionId,
+  DEFAULT_SECTIONS, isPart, normalizeSections, toggled, type BriefingSectionsPref, type DashboardChoice, type SectionId,
 } from "@/lib/briefingSections";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
@@ -2579,28 +2579,28 @@ export function BriefingPanel({
   // Arc CT-7 — with `dashboard.composed` on, the person's cockpits are a tab beside the Briefing
   // (IntelligenceWorkspace), so the standing layer below is not drawn. A canvas's Briefing has
   // no such tab and keeps the layer. Until the flags answer, and when they cannot, it is off.
-  const [cockpitFlag, setCockpitFlag]       = useState(false);
-  const cockpitsOn = cockpitFlag && !canvasId;
+  const [dashboardFlag, setDashboardFlag]       = useState(false);
+  const dashboardsOn = dashboardFlag && !canvasId;
   // The canvas (B1) — the Briefing's switches: which sections this person shows, in what order,
   // and which cockpit of theirs rides with it. A preference, kept on the server; the content of
   // a section is never theirs to change. Until the store answers, the product's order.
   const [sections, setSections]             = useState<BriefingSectionsPref>(DEFAULT_SECTIONS);
   const [sectionsOpen, setSectionsOpen]     = useState(false);
   const [sectionsBusy, setSectionsBusy]     = useState(false);
-  const [myCockpits, setMyCockpits]         = useState<CockpitChoice[]>([]);
+  const [myDashboards, setMyDashboards]         = useState<DashboardChoice[]>([]);
   useEffect(() => {
     let alive = true;
     getMyPreferences().then(p => { if (alive) setSections(normalizeSections(p.preferences.briefing_sections)); }).catch(() => {});
     return () => { alive = false; };
   }, []);
   useEffect(() => {
-    if (!cockpitsOn) { setMyCockpits([]); return; }
+    if (!dashboardsOn) { setMyDashboards([]); return; }
     let alive = true;
-    listCockpits(connectionId).then(l => {
-      if (alive && l) setMyCockpits(l.cockpits.filter(c => !c.retired).map(c => ({ id: c.cockpit_id, title: c.title || c.cockpit_id })));
+    listDashboards(connectionId).then(l => {
+      if (alive && l) setMyDashboards(l.cockpits.filter(c => !c.retired).map(c => ({ id: c.cockpit_id, title: c.title || c.cockpit_id })));
     }).catch(() => {});
     return () => { alive = false; };
-  }, [connectionId, cockpitsOn]);
+  }, [connectionId, dashboardsOn]);
   const saveSections = useCallback(async (next: BriefingSectionsPref, said: string) => {
     const before = sections;
     setSections(next);
@@ -2652,7 +2652,7 @@ export function BriefingPanel({
       if (!alive) return;
       setPeriodsOn(!!f["briefing.by_period"]?.value);
       setRangesOn(!!f["briefing.ranges"]?.value);
-      setCockpitFlag(!!f["dashboard.composed"]?.value);
+      setDashboardFlag(!!f["dashboard.composed"]?.value);
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -3410,7 +3410,7 @@ export function BriefingPanel({
       {showSchedule && <BriefSchedule connId={connectionId} />}
       {sectionsOpen && (
         <BriefingSections pref={sections} onChange={(next, said) => void saveSections(next, said)}
-          cockpits={myCockpits} cockpitsOn={cockpitsOn} busy={sectionsBusy} />
+          cockpits={myDashboards} dashboardsOn={dashboardsOn} busy={sectionsBusy} />
       )}
 
       {isEmpty ? (
@@ -3648,24 +3648,24 @@ export function BriefingPanel({
           beside the Briefing, and this layer is not drawn here. Off, it is drawn as it always was.
           The canvas (B1): on, the cockpit of theirs they chose under Sections rides here, read for
           the Briefing's range and arranged in its own tab. */}
-      {cockpitsOn && sections.strip && (
+      {dashboardsOn && sections.strip && (
         <div style={{ marginTop: 16, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
-          <BriefingStrip connectionId={connectionId} schema={schema} cockpitId={sections.strip}
+          <BriefingStrip connectionId={connectionId} schema={schema} dashboardId={sections.strip}
             range={rangeSelected ? range : null} />
         </div>
       )}
-      {cockpitsOn && !sections.strip && (
+      {dashboardsOn && !sections.strip && (
         <div className="aug-fs-sm" data-testid="briefing-strip-none" style={{ color: "var(--t3)", borderTop: "1px solid var(--vio2)", paddingTop: 12 }}>
           No dashboard rides with your Briefing. Choose one of yours under Sections; it is arranged in the Dashboards tab.
         </div>
       )}
-      {!cockpitsOn && (
+      {!dashboardsOn && (
         <div style={{ marginTop: 16, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
           <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 12 }}>
             Your dashboard
             {/* BR-9 — under a range each card runs cut to it and says what it covers (or that it
                 could not be); the label names the range the cards were asked for. */}
-            {rangeSelected ? <span data-testid="cockpit-note" style={{ fontWeight: 400, color: "var(--t3)" }}>{rangeBlock ? ` · asked for ${rangeBlock.covers}` : " · asked for this range"}</span> : null}
+            {rangeSelected ? <span data-testid="dashboard-note" style={{ fontWeight: 400, color: "var(--t3)" }}>{rangeBlock ? ` · asked for ${rangeBlock.covers}` : " · asked for this range"}</span> : null}
           </div>
           {/* Door 3 (inline authoring) sits at the top so the first card can be composed even when empty. */}
           <NewCardComposer connectionId={connectionId} schema={schema}

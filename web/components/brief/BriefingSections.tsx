@@ -19,19 +19,19 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  isPart, labelOf, moved, proposeFromWords, toggled, type BriefingSectionsPref, type CockpitChoice, type SectionId, type SwitchProposal,
+  isPart, labelOf, moved, proposeFromWords, toggled, type BriefingSectionsPref, type DashboardChoice, type SectionId, type SwitchProposal,
 } from "@/lib/briefingSections";
 
 const NONE = "__none__";
 
-export function BriefingSections({ pref, onChange, cockpits, cockpitsOn, busy }: {
+export function BriefingSections({ pref, onChange, cockpits, dashboardsOn, busy }: {
   pref: BriefingSectionsPref;
   /** Keep this as the person's preference. */
   onChange: (next: BriefingSectionsPref, said: string) => void;
   /** The person's own cockpits, which may ride with the Briefing. */
-  cockpits: CockpitChoice[];
+  cockpits: DashboardChoice[];
   /** Whether cockpits are on at all; off, the standing cockpit layer rides as it always did. */
-  cockpitsOn: boolean;
+  dashboardsOn: boolean;
   busy?: boolean;
 }) {
   const [words, setWords] = useState("");
@@ -76,7 +76,7 @@ export function BriefingSections({ pref, onChange, cockpits, cockpitsOn, busy }:
           );
         })}
       </ul>
-      {cockpitsOn && (
+      {dashboardsOn && (
         <label style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>The dashboard that rides with it</span>
           <Select value={pref.strip || NONE} items={items} disabled={busy}

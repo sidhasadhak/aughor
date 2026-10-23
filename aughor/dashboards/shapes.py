@@ -13,7 +13,7 @@ refused. A shape is offered when the ontology says it fits, with one sentence of
 
 The starter offers one to three, the one that fits best first, and the person picks; every piece can be changed after.
 What a shape holds is read here — the sets, the coordinates, the moments, the links, the actions with how each parameter
-is filled — and laid out by the web (`web/lib/cockpit/shapes.ts`), so a person keeps a spec its rules accept. Nothing is
+is filled — and laid out by the web (`web/lib/dashboards/shapes.ts`), so a person keeps a spec its rules accept. Nothing is
 offered that the install cannot build: a queue and one object need wiring, a map, a timeline and one object the pieces
 the picker adds. No model is asked.
 """

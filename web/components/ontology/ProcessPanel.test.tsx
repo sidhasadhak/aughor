@@ -29,10 +29,10 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   declareImpact: (...a: unknown[]) => declareImpact(...a),
 }));
 
-const keepCockpit = vi.fn(async (..._args: unknown[]) => ({ status: "kept", kept: true, version: 1 }));
+const keepDashboard = vi.fn(async (..._args: unknown[]) => ({ status: "kept", kept: true, version: 1 }));
 const requestTab = vi.fn();
 vi.mock("@/lib/api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/api")>()), keepCockpit: (...a: unknown[]) => keepCockpit(...a),
+  ...(await importOriginal<typeof import("@/lib/api")>()), keepDashboard: (...a: unknown[]) => keepDashboard(...a),
 }));
 vi.mock("@/lib/navigate", () => ({ requestTab: (...a: unknown[]) => requestTab(...a) }));
 
@@ -150,30 +150,30 @@ describe("ProcessPanel — a process as the data counted it", () => {
 
 describe("ProcessPanel — a dashboard for a process published earlier", () => {
   // The walk-through (2026-10-09): Start a cockpit was offered only in the designer's session, right after publishing.
-  beforeEach(() => { keepCockpit.mockClear(); requestTab.mockClear(); });
+  beforeEach(() => { keepDashboard.mockClear(); requestTab.mockClear(); });
 
   it("starts one from the panel — the board, the objects past its first promise, one beside them — and opens on it", async () => {
     const dispatching = structuredClone(olist);
     dispatching.stages[2].promise!.overdue_segment = "overdue_dispatch";
     listed.processes = [dispatching];
     panel();
-    await userEvent.click(await screen.findByTestId("process-start-cockpit"));
-    await waitFor(() => expect(keepCockpit).toHaveBeenCalled());
-    const [conn, id, spec, note] = keepCockpit.mock.calls[0] as [string, string, { elements: Record<string, { type: string; props: Record<string, unknown> }> }, string];
+    await userEvent.click(await screen.findByTestId("process-start-dashboard"));
+    await waitFor(() => expect(keepDashboard).toHaveBeenCalled());
+    const [conn, id, spec, note] = keepDashboard.mock.calls[0] as [string, string, { elements: Record<string, { type: string; props: Record<string, unknown> }> }, string];
     expect([conn, note]).toEqual(["c1", "Started from the process Order to delivery"]);
     expect(id).toMatch(/^order-to-delivery-[0-9a-f]{6}$/);
     expect(Object.values(spec.elements).map(e => e.type)).toEqual(["Cockpit", "Section", "ProcessBoard", "ObjectTable", "ObjectDetail"]);
     expect(Object.values(spec.elements)[3].props).toMatchObject({ entity: "Order", segment: "overdue_dispatch" });
-    expect(requestTab).toHaveBeenCalledWith("cockpit", { conn: "c1" });
+    expect(requestTab).toHaveBeenCalledWith("dashboards", { conn: "c1" });
   });
 
   it("is the board alone for a process whose promises name no overdue list, and says why — not that it promises nothing", async () => {
     listed.processes = [olist];
     panel();
     expect(await screen.findByText("Its board — its promises' overdue lists are not offered on this install.")).toBeTruthy();
-    await userEvent.click(screen.getByTestId("process-start-cockpit"));
-    await waitFor(() => expect(keepCockpit).toHaveBeenCalled());
-    const spec = keepCockpit.mock.calls[0][2] as { elements: Record<string, { type: string }> };
+    await userEvent.click(screen.getByTestId("process-start-dashboard"));
+    await waitFor(() => expect(keepDashboard).toHaveBeenCalled());
+    const spec = keepDashboard.mock.calls[0][2] as { elements: Record<string, { type: string }> };
     expect(Object.values(spec.elements).map(e => e.type)).toEqual(["Cockpit", "Section", "ProcessBoard"]);
   });
 

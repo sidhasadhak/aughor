@@ -4,7 +4,7 @@ Every refusal below is asserted by a token of ITS OWN sentence. ``accepted is Fa
 proves nothing: a spec refused for a different reason than the one under test would pass as
 proof of a rule that never ran.
 
-The premise spec is the web's own fixture (``web/lib/cockpit/premise.fixture.json``), so the
+The premise spec is the web's own fixture (``web/lib/dashboards/premise.fixture.json``), so the
 browser's tests and these are held to the same spec.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ import pytest
 from aughor.dashboards import validate as V
 
 REPO = Path(__file__).resolve().parents[2]
-FIXTURE = REPO / "web" / "lib" / "cockpit" / "premise.fixture.json"
+FIXTURE = REPO / "web" / "lib" / "dashboards" / "premise.fixture.json"
 CARDS = {"c7f3a001", "c91b2002"}
 
 needs_rules = pytest.mark.skipif(
@@ -245,7 +245,7 @@ def test_a_node_that_cannot_start_is_not_checked(premise, monkeypatch):
 
 def test_a_missing_bundle_is_not_checked_and_says_how_to_build_it(premise, monkeypatch, tmp_path):
     monkeypatch.setattr(V, "_BUNDLE", tmp_path / "validate.bundle.mjs")
-    _never_accepted(V.check_spec(premise, known_cards=CARDS), "npm run build:cockpit-validate")
+    _never_accepted(V.check_spec(premise, known_cards=CARDS), "npm run build:dashboard-validate")
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="needs node")

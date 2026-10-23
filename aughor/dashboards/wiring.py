@@ -4,7 +4,7 @@ and §4.5).
 A wired dashboard names sets its pieces read and values its sets read, a table names what a click chooses and what its
 ticks collect, a figure switches a list, and action buttons run declared actions on what a reader chose or ticked. The
 web's rules hold the wiring's shape — every name resolves, no ring of sets — from the same file the browser draws with
-(`web/lib/cockpit/rules.ts`), and what a set reads comes from one function there too (`web/lib/cockpit/sets.ts`, run here
+(`web/lib/dashboards/rules.ts`), and what a set reads comes from one function there too (`web/lib/dashboards/sets.ts`, run here
 through the validator bundle). What only the platform knows is checked here before a spec is kept:
 
   - that wiring is on here — off, a spec that says any of it is refused, and the dashboard is what it was;

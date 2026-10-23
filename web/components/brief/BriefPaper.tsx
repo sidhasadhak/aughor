@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { changeOf } from "@/components/brief/MetricDetail";
-import { endsWords, ownFigures, sentence } from "@/lib/cockpit/figures";
+import { endsWords, ownFigures, sentence } from "@/lib/dashboards/figures";
 import { endedDay } from "@/lib/format";
 import { requestTab } from "@/lib/navigate";
 import type { BriefingDesk, BriefingRangeBlock, DeskColumn, DeskItem } from "@/lib/api";

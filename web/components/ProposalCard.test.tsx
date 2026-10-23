@@ -221,7 +221,7 @@ describe("cockpit_draft (Arc CT-5)", () => {
     expect(screen.getByText("dashboard")).toBeInTheDocument();                   // the chip
     expect(screen.getByText("Returns")).toBeInTheDocument();
     expect(screen.getByText("Returns desk")).toBeInTheDocument();
-    const outline = screen.getByTestId("cockpit-outline");
+    const outline = screen.getByTestId("dashboard-outline");
     expect(outline).toHaveTextContent("Tab · Overview");
     expect(outline).toHaveTextContent("Needs a look · shown when \"Return rate\" is over its limit");
     expect(outline).toHaveTextContent("Return rate · new");
@@ -233,7 +233,7 @@ describe("cockpit_draft (Arc CT-5)", () => {
 
   it("says what each new card is made from, and never shows a query or the spec", () => {
     const { container } = render(<ProposalCard proposal={draft()} actor="tester" />);
-    const made = screen.getByTestId("cockpit-new-cards");
+    const made = screen.getByTestId("dashboard-new-cards");
     expect(made).toHaveTextContent("2 cards are made");
     expect(made).toHaveTextContent(
       "Return rate — from the approved metric return_rate, version 3 · limit: critical at or above 12");
@@ -250,7 +250,7 @@ describe("cockpit_draft (Arc CT-5)", () => {
     const p = draft();
     (p.params.cards as Record<string, unknown>[])[0].limit = { warning: 95, critical: 90, direction: "below" };
     render(<ProposalCard proposal={p} actor="tester" />);
-    expect(screen.getByTestId("cockpit-new-cards"))
+    expect(screen.getByTestId("dashboard-new-cards"))
       .toHaveTextContent("limit: at or below 95, critical at or below 90");
   });
 
@@ -264,11 +264,11 @@ describe("cockpit_draft (Arc CT-5)", () => {
           { title: "Return rate", new: false, tone: "", shown: "" }] }] }] },
     })} actor="tester" />);
     expect(screen.getByText(/version 4 · of its elements, 1 removed · 2 changed/)).toBeInTheDocument();
-    expect(screen.queryByTestId("cockpit-moved")).toBeNull();          // this outline marks nothing
-    expect(screen.queryByTestId("cockpit-taken-off")).toBeNull();      // and its record names nothing taken off
+    expect(screen.queryByTestId("dashboard-moved")).toBeNull();          // this outline marks nothing
+    expect(screen.queryByTestId("dashboard-taken-off")).toBeNull();      // and its record names nothing taken off
     // No card is made, so the card does not speak of cards that were run.
     expect(screen.queryByText(/was run once/)).toBeNull();
-    expect(screen.queryByTestId("cockpit-new-cards")).toBeNull();
+    expect(screen.queryByTestId("dashboard-new-cards")).toBeNull();
     expect(screen.queryByText(/Tab ·/)).toBeNull();
     expect(screen.getByText(/accepting keeps this arrangement/)).toBeInTheDocument();
   });
@@ -293,7 +293,7 @@ describe("cockpit_draft (Arc CT-5)", () => {
               { title: "Net merchandise revenue", new: false, change: "added", tone: "", shown: "" }] }] },
         ] },
     })} actor="tester" />);
-    const outline = screen.getByTestId("cockpit-outline");
+    const outline = screen.getByTestId("dashboard-outline");
     expect(outline).toHaveTextContent("Tab · Asked for · added");
     expect(outline).toHaveTextContent("At a glance · changed");
     expect(outline).toHaveTextContent("From approved records · added");
@@ -303,7 +303,7 @@ describe("cockpit_draft (Arc CT-5)", () => {
     expect(outline).not.toHaveTextContent("Tab · Overview ·");
     expect(outline).not.toHaveTextContent("Trend ·");
     expect(outline).not.toHaveTextContent("Return rate ·");
-    expect(screen.getAllByTestId("cockpit-moved")).toHaveLength(4);
+    expect(screen.getAllByTestId("dashboard-moved")).toHaveLength(4);
   });
 
   it("an edit names what it takes off, and where each was", () => {
@@ -320,7 +320,7 @@ describe("cockpit_draft (Arc CT-5)", () => {
         outline: [{ tab: "", change: "", sections: [{ title: "Headline", change: "", shown: "", cards: [
           { title: "Return rate", new: false, change: "", tone: "", shown: "" }] }] }] },
     })} actor="tester" />);
-    const gone = screen.getByTestId("cockpit-taken-off");
+    const gone = screen.getByTestId("dashboard-taken-off");
     expect(gone).toHaveTextContent("Taken off the dashboard. A card taken off is kept, and other dashboards may place it:");
     expect(gone).toHaveTextContent("CardReturns by week — it was in Where and when");
     expect(gone).toHaveTextContent("SectionWhere and when — it was in Detail");
@@ -329,7 +329,7 @@ describe("cockpit_draft (Arc CT-5)", () => {
 
   it("a new dashboard names nothing taken off", () => {
     render(<ProposalCard proposal={draft()} actor="tester" />);
-    expect(screen.queryByTestId("cockpit-taken-off")).toBeNull();
+    expect(screen.queryByTestId("dashboard-taken-off")).toBeNull();
     expect(screen.getByText(/Every new card was run once and passed the guards/)).toBeInTheDocument();
   });
 

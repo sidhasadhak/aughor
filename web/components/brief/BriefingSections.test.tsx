@@ -11,12 +11,12 @@ import { describe, expect, it, vi } from "vitest";
 import { BriefingSections, HiddenSection } from "@/components/brief/BriefingSections";
 import { DEFAULT_SECTIONS, type BriefingSectionsPref } from "@/lib/briefingSections";
 
-const COCKPITS = [{ id: "growth-1", title: "Growth review" }, { id: "returns-2", title: "Returns" }];
+const DASHBOARDS = [{ id: "growth-1", title: "Growth review" }, { id: "returns-2", title: "Returns" }];
 const order = (p: BriefingSectionsPref) => p.sections.map(s => `${s.id}${s.on ? "" : ":off"}`);
 
-function show(pref = DEFAULT_SECTIONS, cockpitsOn = true) {
+function show(pref = DEFAULT_SECTIONS, dashboardsOn = true) {
   const onChange = vi.fn();
-  render(<BriefingSections pref={pref} onChange={onChange} cockpits={COCKPITS} cockpitsOn={cockpitsOn} />);
+  render(<BriefingSections pref={pref} onChange={onChange} cockpits={DASHBOARDS} dashboardsOn={dashboardsOn} />);
   return onChange;
 }
 

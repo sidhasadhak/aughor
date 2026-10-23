@@ -19,7 +19,7 @@
     "lint:palette": "node scripts/check-chart-palette.mjs",
     "lint:icons": "node scripts/check-icons.mjs",
     "build:chart-ssr": "npx -y esbuild@0.25.5 scripts/chart-ssr-entry.ts --bundle --platform=node --format=esm --minify --alias:@=. --outfile=../aughor/export/chart_ssr.bundle.mjs",
-    "build:cockpit-validate": "npx -y esbuild@0.25.5 scripts/cockpit-validate-entry.ts --bundle --platform=node --format=esm --minify --alias:@=. --outfile=../aughor/dashboards/validate.bundle.mjs",
+    "build:dashboard-validate": "npx -y esbuild@0.25.5 scripts/dashboard-validate-entry.ts --bundle --platform=node --format=esm --minify --alias:@=. --outfile=../aughor/dashboards/validate.bundle.mjs",
     "test": "vitest run",
     "gen:api": "uv run --project .. python ../scripts/dump_openapi.py .openapi.gen.json && npx -y openapi-typescript@7.13.0 .openapi.gen.json -o lib/api.gen.ts && rm .openapi.gen.json"
   },

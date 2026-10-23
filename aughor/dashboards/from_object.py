@@ -8,7 +8,7 @@ offered; nor is a property the reader may not read, or a number the compiler ref
 is offered.
 
 No model is asked and nothing is kept here: the person ticks what they want, and the web keeps it as their own first
-version (`web/lib/cockpit/start.ts`). The three pieces it adds — a filter column, a figure and a chart — read through
+version (`web/lib/dashboards/start.ts`). The three pieces it adds — a filter column, a figure and a chart — read through
 `POST /objects/query` like every other object read, so a row policy and a masked property hold on them as they do
 everywhere else.
 """

@@ -27,7 +27,7 @@ removal is the one delete in this arc, and it is of cards that were never approv
 
 **A refusal names everything it can.** The writer is a model, and each round it spends
 learning of one fault is a model call. So every card is resolved and run before the draft is
-refused, and the rules name every kind of fault at once (``web/lib/cockpit/rules.ts``).
+refused, and the rules name every kind of fault at once (``web/lib/dashboards/rules.ts``).
 """
 from __future__ import annotations
 

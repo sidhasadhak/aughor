@@ -2,7 +2,7 @@
 
 A process board names a declared process, an objects table an entity (and perhaps a segment of it), an object detail
 the table it follows, and an action button a declared action — each by id, never by copying what the id means
-(`web/lib/cockpit/catalog.ts`). The web's rules check the shape; what they cannot know is checked here before a spec
+(`web/lib/dashboards/catalog.ts`). The web's rules check the shape; what they cannot know is checked here before a spec
 is kept: that building dashboards from the ontology is on, and that every id resolves in the ontology this connection
 serves now. A piece whose id stops resolving later says so where it is drawn.
 

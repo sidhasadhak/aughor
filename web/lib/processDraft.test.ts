@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  cockpitIdFor, draftFromProcess, dropDraft, emptyDraft, freshId, idFrom, keepDraft, keptDraft, notReady, toSpec,
+  dashboardIdFor, draftFromProcess, dropDraft, emptyDraft, freshId, idFrom, keepDraft, keptDraft, notReady, toSpec,
   toggledMoves, type ProcessDraft,
 } from "@/lib/processDraft";
 
@@ -38,11 +38,11 @@ describe("ids made from a person's words", () => {
 
 describe("a new dashboard's id", () => {
   it("is the server's shape — lower-case words joined by hyphens, then a random suffix", () => {
-    expect(cockpitIdFor("Order delivery", () => "a1b2c3")).toBe("order-delivery-a1b2c3");
-    expect(cockpitIdFor("Délai d'expédition — 2 jours", () => "000000")).toBe("delai-d-expedition-2-jours-000000");
-    expect(cockpitIdFor("—", () => "ffffff")).toBe("cockpit-ffffff");
-    expect(cockpitIdFor("x".repeat(80))).toMatch(/^x{32}-[0-9a-f]{6}$/);
-    expect(cockpitIdFor("Order delivery")).not.toBe(cockpitIdFor("Order delivery"));   // never counted, never the same
+    expect(dashboardIdFor("Order delivery", () => "a1b2c3")).toBe("order-delivery-a1b2c3");
+    expect(dashboardIdFor("Délai d'expédition — 2 jours", () => "000000")).toBe("delai-d-expedition-2-jours-000000");
+    expect(dashboardIdFor("—", () => "ffffff")).toBe("cockpit-ffffff");
+    expect(dashboardIdFor("x".repeat(80))).toMatch(/^x{32}-[0-9a-f]{6}$/);
+    expect(dashboardIdFor("Order delivery")).not.toBe(dashboardIdFor("Order delivery"));   // never counted, never the same
   });
 });
 

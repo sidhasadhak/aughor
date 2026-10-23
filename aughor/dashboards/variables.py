@@ -7,7 +7,7 @@ property of the object a reader chose. A set compares any value as its kind allo
 one as a bound parameter, never pasted into its statement (`queries.py`).
 
 The web's rules hold a value's shape — what each kind holds, that a count counts a set the dashboard has, that a choice a
-value reads is made, that no value counts a set that reads it back (`web/lib/cockpit/rules.ts`). What only the platform
+value reads is made, that no value counts a set that reads it back (`web/lib/dashboards/rules.ts`). What only the platform
 knows is checked here before a spec is kept: that variables are on here — off, a spec that says any of it is refused and
 the dashboard is what it was — and that the property a value reads off a chosen object is one its entity has.
 """

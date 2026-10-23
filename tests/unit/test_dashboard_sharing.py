@@ -25,7 +25,7 @@ from aughor.rbac.groups import add_member, upsert_group
 from aughor.rbac.store import assign_role
 
 REPO = Path(__file__).resolve().parents[2]
-FIXTURE = REPO / "web" / "lib" / "cockpit" / "premise.fixture.json"
+FIXTURE = REPO / "web" / "lib" / "dashboards" / "premise.fixture.json"
 
 needs_rules = pytest.mark.skipif(
     shutil.which("node") is None or not V._BUNDLE.exists(),

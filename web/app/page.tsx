@@ -160,7 +160,7 @@ type NavTab =
   | "intel"             // legacy deep-link → intelligence/domains layer
   | "org-intel"         // legacy deep-link → intelligence/org layer
   | "ontology"          // legacy deep-link → intelligence/ontology layer
-  | "cockpit"           // deep-link → intelligence/cockpit layer (the process designer hands a new cockpit over)
+  | "dashboards"        // deep-link → intelligence/dashboards layer (the process designer hands a new dashboard over)
   | "operations"        // unified Operations workspace (Monitors / Action Hub / Security)
   | "agentic-ops"       // Agentic Ops — runs · agents · attention · activity · run graphs
   | "control-room"      // legacy deep-link → agentic-ops (Wave CR's original id)
@@ -912,7 +912,7 @@ const VALID_TABS = new Set<NavTab>([
   "now", "record", "inquiries", "decisions", "missions", "claims", "corrections", "action-centre", "developer",
   "home", "spend", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
   "inbox", "briefing", "intelligence", "intel-hub", "intel", "org-intel",
-  "ontology", "cockpit", "operations", "agentic-ops", "control-room", "evals", "data",
+  "ontology", "dashboards", "operations", "agentic-ops", "control-room", "evals", "data",
   "health", "playbook", "documents", "catalog", "builder", "query", "connections", "metrics",
   // AO-4 — `integrations` is an Operations layer alias like `monitors`; it was missing
   // here, so `?tab=integrations` (the link every Slack door hands out) opened Home.
@@ -963,7 +963,7 @@ const OPS_LAYER_FOR_TAB: Partial<Record<NavTab, OpsLayer>> = {
 const INTEL_LAYER_FOR_TAB: Partial<Record<NavTab, IntelLayer>> = {
   briefing:    "briefing",
   ontology:    "ontology",
-  cockpit:     "cockpit",
+  dashboards:  "dashboards",
   "intel-hub": "hub",
   intel:       "hub",   // the former Domains layer folded into the Hub (Data Profile)
   "org-intel":  "org",
@@ -1012,8 +1012,8 @@ function resolveDeepLinkTab(t: NavTab): ResolvedTab {
   return none;
 }
 
-/** Dashboards were called cockpits until 2026-10-23: a link may name either, and both open the same screen. */
-const LINK_ALIASES: Record<string, string> = { dashboards: "cockpit" };
+/** Dashboards were called cockpits until 2026-10-23: an old `?tab=cockpit` / `?layer=cockpit` link still opens them. */
+const LINK_ALIASES: Record<string, string> = { cockpit: "dashboards" };
 
 function tabFromUrl(): NavTab | null {
   if (typeof window === "undefined") return null;
@@ -1023,7 +1023,7 @@ function tabFromUrl(): NavTab | null {
 }
 
 const VALID_LAYERS = new Set<IntelLayer>([
-  "briefing", "cockpit", "hub", "ontology", "graph", "evidence", "memory", "kinetic", "org", "brain",
+  "briefing", "dashboards", "hub", "ontology", "graph", "evidence", "memory", "kinetic", "org", "brain",
 ]);
 
 /** PX-0 (§3.14) — every workspace's layer is addressable, not only Intelligence's
@@ -1222,9 +1222,8 @@ export default function Home() {
     // is deliberately never written, so its forced visual mode stays a property of
     // real legacy links only.
     const writeTab: NavTab = tab === "data" ? (dataLayer as NavTab) : tab;
-    // A link says what a person reads: the cockpit layer is written as `dashboards` (read back by LINK_ALIASES).
     const wantLayer =
-      tab === "intelligence" ? (intelLayer === "cockpit" ? "dashboards" : intelLayer)
+      tab === "intelligence" ? intelLayer
       : tab === "operations" ? opsLayer
       : tab === "evals" ? evalsLayer
       : tab === "agentic-ops" ? agentsLayer

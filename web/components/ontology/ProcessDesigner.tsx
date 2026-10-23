@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
-import { processCockpitSpec, startCockpit as keepNewCockpit } from "@/lib/cockpit/start";
+import { processDashboardSpec, startDashboard as keepNewDashboard } from "@/lib/dashboards/start";
 import { formatCount, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { requestTab } from "@/lib/navigate";
@@ -102,7 +102,7 @@ function days(n: number | null | undefined): string {
 
 /** A fresh cockpit holding the process's board, its open-and-overdue objects and one object beside them — the same
  *  cockpit a process's own panel and *+ New cockpit* start (`lib/cockpit/start`). */
-export const cockpitSpecFor = processCockpitSpec;
+export const dashboardSpecFor = processDashboardSpec;
 
 type Phase = { at: "draft" } | { at: "declared"; id: string } | { at: "published"; id: string; release: number };
 
@@ -250,13 +250,13 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
   };
 
   const segment = preview?.creates.find(c => c.kind === "segment");
-  const startCockpit = async () => {
+  const startDashboard = async () => {
     if (phase.at !== "published" || !segment) return;
     setBusy("cockpit");
     try {
-      await keepNewCockpit(connectionId, draft.name, processCockpitSpec(draft.name, phase.id, cands?.entity ?? draft.entity, segment.name),
+      await keepNewDashboard(connectionId, draft.name, processDashboardSpec(draft.name, phase.id, cands?.entity ?? draft.entity, segment.name),
         `Started from the process ${draft.name.trim()}`);
-      requestTab("cockpit", { conn: connectionId });
+      requestTab("dashboards", { conn: connectionId });
     } catch (e) {
       toast.error("The dashboard was not made", { description: errorText(e).slice(0, 240) });
     } finally { setBusy(""); }
@@ -474,8 +474,8 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
           </div>
         ) : <p className="aug-fs-sm" style={{ ...HINT, margin: 0 }}>A promise on a stage makes a list of what is late, its rate and its typical duration.</p>}
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
-          <Button size="xs" variant="outline" data-testid="designer-cockpit" disabled={phase.at !== "published" || !segment || !!busy}
-            onClick={() => void startCockpit()}>
+          <Button size="xs" variant="outline" data-testid="designer-dashboard" disabled={phase.at !== "published" || !segment || !!busy}
+            onClick={() => void startDashboard()}>
             <Icon name="gauge" size={12} /> {busy === "cockpit" ? "Making it…" : "Start a dashboard for this process"}
           </Button>
           {phase.at !== "published" && (

@@ -3,7 +3,7 @@
 
 A section holds pieces on its own grid, or is laid out in columns, rows or tabs of sections of its own; a section may
 hold nothing yet, for a builder to offer it a piece; and a section split into sections may go untitled. The web's rules
-hold the structure's shape from the catalog the browser draws with (`web/lib/cockpit/rules.ts`, `checkStructure`).
+hold the structure's shape from the catalog the browser draws with (`web/lib/dashboards/rules.ts`, `checkStructure`).
 What they cannot know is whether the structure is on here, so the server refuses a spec that says any of it while
 `dashboard.app_pieces` is off — an install that has not turned it on keeps the dashboard it had, and its writer is told
 nothing about it (`validate.grammar`).

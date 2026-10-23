@@ -214,7 +214,7 @@ def engine_name(name: str) -> str:
     return "v_" + name.replace("-", "_")
 
 
-#: What a value's kind is (`web/lib/cockpit/catalog.ts` VALUE_KINDS), and the longest word a value holds there. Arc AP-8c
+#: What a value's kind is (`web/lib/dashboards/catalog.ts` VALUE_KINDS), and the longest word a value holds there. Arc AP-8c
 #: — yes or no, bound as the engine's boolean; and a list, bound one item to a placeholder (`IN ({{countries}})`).
 VALUE_KINDS = ("days", "number", "text", "date", "yesno", "list")
 MAX_WORD = 120

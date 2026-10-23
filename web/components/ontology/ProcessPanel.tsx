@@ -21,7 +21,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
 import { toast } from "@/components/ui/toast";
-import { overdueSegmentOf, processCockpitHolds, processCockpitSpec, startCockpit } from "@/lib/cockpit/start";
+import { overdueSegmentOf, processDashboardHolds, processDashboardSpec, startDashboard } from "@/lib/dashboards/start";
 import { formatCount } from "@/lib/format";
 import { requestTab } from "@/lib/navigate";
 import {
@@ -136,28 +136,28 @@ export function ProcessPanel({ connectionId, schema, processId, version, onOpenT
 
 /** A cockpit for this process — its board, its open-and-overdue objects and one of them beside the table (2026-10-09).
  *  The walk-through found it offered only in the designer's own session, never for a process published earlier. */
-function StartCockpitFor({ process, connectionId }: { process: ProcessDetail; connectionId: string }) {
+function StartDashboardFor({ process, connectionId }: { process: ProcessDetail; connectionId: string }) {
   const [busy, setBusy] = useState(false);
   const segment = overdueSegmentOf(process);
   const start = async () => {
     setBusy(true);
     try {
-      await startCockpit(connectionId, process.display_name,
-        processCockpitSpec(process.display_name, process.id, process.entity_id, segment),
+      await startDashboard(connectionId, process.display_name,
+        processDashboardSpec(process.display_name, process.id, process.entity_id, segment),
         `Started from the process ${process.display_name}`);
-      requestTab("cockpit", { conn: connectionId });
+      requestTab("dashboards", { conn: connectionId });
     } catch (e) {
       toast.error("The dashboard was not made", { description: errorText(e).slice(0, 240) });
     } finally { setBusy(false); }
   };
   return (
     <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-      <Button size="xs" variant="outline" data-testid="process-start-cockpit" disabled={busy || process.verified === false}
+      <Button size="xs" variant="outline" data-testid="process-start-dashboard" disabled={busy || process.verified === false}
         onClick={() => void start()}>
         <Icon name="plus" size={12} /> {busy ? "Starting…" : "Start a dashboard for this process"}
       </Button>
       <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-        {process.verified === false ? "Not until it counts — see the note above." : processCockpitHolds(process)}
+        {process.verified === false ? "Not until it counts — see the note above." : processDashboardHolds(process)}
       </span>
     </div>
   );
@@ -211,7 +211,7 @@ function ProcessView({ process, connectionId, schema, onOpenType, onClose, onCha
         {process.measured_at && (
           <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2 }}>counted {process.measured_at}</div>
         )}
-        <StartCockpitFor process={process} connectionId={connectionId} />
+        <StartDashboardFor process={process} connectionId={connectionId} />
         {onChangeProcess && (
           <div style={{ marginTop: 8 }}>
             <Button size="xs" variant="outline" data-testid="process-change" onClick={() => onChangeProcess(process)}>

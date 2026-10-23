@@ -11,24 +11,24 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { CardState } from "@/components/brief/PinnedCardBody";
-import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/ComposedCockpit";
-import type { ImageStamp } from "@/components/cockpit/StaticTile";
+import { ComposedDashboard, type DashboardDoors } from "@/components/dashboards/ComposedDashboard";
+import type { ImageStamp } from "@/components/dashboards/StaticTile";
 import { Button } from "@/components/ui/button";
 import { Loading } from "@/components/ui/states";
-import { cockpitImageUrl, getCockpit, runCard, type BriefingRange, type PersonCockpit } from "@/lib/api";
-import { valuesRead } from "@/lib/cockpit/values";
-import { cardsPlaced } from "@/lib/cockpit/edit";
-import { hostStateOf } from "@/lib/cockpit/hostStatus";
+import { dashboardImageUrl, getDashboard, runCard, type BriefingRange, type PersonDashboard } from "@/lib/api";
+import { valuesRead } from "@/lib/dashboards/values";
+import { cardsPlaced } from "@/lib/dashboards/edit";
+import { hostStateOf } from "@/lib/dashboards/hostStatus";
 
-export function BriefingStrip({ connectionId, schema, cockpitId, range, onOpenCockpit }: {
+export function BriefingStrip({ connectionId, schema, dashboardId, range, onOpenDashboard }: {
   connectionId: string;
   schema?: string;
-  cockpitId: string;
+  dashboardId: string;
   range: BriefingRange | null;
   /** Open the Cockpit tab, where this cockpit is arranged. */
-  onOpenCockpit?: () => void;
+  onOpenDashboard?: () => void;
 }) {
-  const [data, setData] = useState<PersonCockpit | null>(null);
+  const [data, setData] = useState<PersonDashboard | null>(null);
   const [cards, setCards] = useState<CardState[]>([]);
   const [problem, setProblem] = useState("");
   const [tick, setTick] = useState(0);
@@ -39,7 +39,7 @@ export function BriefingStrip({ connectionId, schema, cockpitId, range, onOpenCo
     setProblem("");
     (async () => {
       try {
-        const read = await getCockpit(connectionId, cockpitId, range);
+        const read = await getDashboard(connectionId, dashboardId, range);
         const placed = new Set(read.cockpit.spec ? cardsPlaced(read.cockpit.spec) : []);
         const runs = await Promise.all(read.cards.filter(c => placed.has(c.id)).map(async (card): Promise<CardState> => {
           // Arc AP-8 — a query reading the cockpit's values is run by its own cell, with them
@@ -55,9 +55,9 @@ export function BriefingStrip({ connectionId, schema, cockpitId, range, onOpenCo
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
-  }, [connectionId, cockpitId, rangeKey, tick]);
+  }, [connectionId, dashboardId, rangeKey, tick]);
 
-  const doors = useMemo<CockpitDoors>(() => ({
+  const doors = useMemo<DashboardDoors>(() => ({
     onRefresh: async (id: string) => {
       try {
         const run = await runCard(id, range, { compare: true });
@@ -68,18 +68,18 @@ export function BriefingStrip({ connectionId, schema, cockpitId, range, onOpenCo
   }), [rangeKey]);
   const host = useMemo(() => hostStateOf(data?.range.status ?? "standing", cards), [data?.range.status, cards]);
   const images = useMemo<Record<string, ImageStamp>>(() => Object.fromEntries(
-    Object.entries(data?.images ?? {}).map(([id, s]) => [id, { ...s, url: cockpitImageUrl(connectionId, id) }])), [data?.images, connectionId]);
+    Object.entries(data?.images ?? {}).map(([id, s]) => [id, { ...s, url: dashboardImageUrl(connectionId, id) }])), [data?.images, connectionId]);
 
   const kept = data?.cockpit;
   const title = kept?.spec ? String((kept.spec as { elements?: Record<string, { props?: { title?: string } }>; root?: string }).elements?.[(kept.spec as { root: string }).root]?.props?.title ?? "") : "";
   return (
-    <div data-testid="briefing-strip" data-cockpit={cockpitId}>
+    <div data-testid="briefing-strip" data-dashboard={dashboardId}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
         <span className="aug-label" style={{ color: "var(--vio4)" }}>Your dashboard{title ? ` · ${title}` : ""}</span>
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
           read for {data?.range.covers || "the Briefing's range"} · arranged in the Dashboards tab
         </span>
-        {onOpenCockpit && <Button size="xs" variant="ghost" onClick={onOpenCockpit}>Open it</Button>}
+        {onOpenDashboard && <Button size="xs" variant="ghost" onClick={onOpenDashboard}>Open it</Button>}
         {data && <Button size="xs" variant="ghost" style={{ marginLeft: "auto" }} onClick={() => setTick(t => t + 1)}>↻ Refresh</Button>}
       </div>
       {problem ? (
@@ -93,7 +93,7 @@ export function BriefingStrip({ connectionId, schema, cockpitId, range, onOpenCo
           This dashboard was retired. Choose another under Sections.
         </div>
       ) : (
-        <ComposedCockpit spec={kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}
+        <ComposedDashboard spec={kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}
           images={images} range={range} schema={schema} connectionId={connectionId} />
       )}
     </div>

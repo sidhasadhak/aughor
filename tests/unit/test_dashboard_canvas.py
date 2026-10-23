@@ -21,7 +21,7 @@ from aughor.cards.models import StoredCard
 from aughor.kernel.flags import flag_overrides
 
 REPO = Path(__file__).resolve().parents[2]
-FIXTURE = REPO / "web" / "lib" / "cockpit" / "premise.fixture.json"
+FIXTURE = REPO / "web" / "lib" / "dashboards" / "premise.fixture.json"
 
 needs_rules = pytest.mark.skipif(
     shutil.which("node") is None or not V._BUNDLE.exists(),

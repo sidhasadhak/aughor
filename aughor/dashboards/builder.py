@@ -2,7 +2,7 @@
 
 A dashboard built in place says more than one arranged by name: a section laid on the twelve-column grid, each element's
 room in columns and rows (`w`, `h`), the filter column's width, and a chart's measure and split. The web's rules hold
-their shape, from the same catalog the browser draws with (`web/lib/cockpit/catalog.ts`). What they cannot know is
+their shape, from the same catalog the browser draws with (`web/lib/dashboards/catalog.ts`). What they cannot know is
 whether building in place is on here, so the server refuses a spec that says any of it while `dashboard.builder` is
 off — an install that has not turned it on keeps the dashboard it had, and its writer is told nothing about the grid
 (`validate.grammar`).

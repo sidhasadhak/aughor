@@ -2670,7 +2670,7 @@ export class QueryRefused extends Error {
   constructor(public reasons: string[]) { super(reasons.join(" ")); }
 }
 
-export async function previewCockpitQuery(connectionId: string, asked: QueryAsked): Promise<QueryPreview> {
+export async function previewDashboardQuery(connectionId: string, asked: QueryAsked): Promise<QueryPreview> {
   const res = await fetch(`${getApiBase()}/dashboards/queries/preview?connection_id=${encodeURIComponent(connectionId)}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(asked),
   });
@@ -2678,7 +2678,7 @@ export async function previewCockpitQuery(connectionId: string, asked: QueryAske
   return res.json();
 }
 
-export async function keepCockpitQuery(connectionId: string, asked: QueryAsked): Promise<{ card: CockpitCard; preview: QueryPreview }> {
+export async function keepDashboardQuery(connectionId: string, asked: QueryAsked): Promise<{ card: DashboardCard; preview: QueryPreview }> {
   const res = await fetch(`${getApiBase()}/dashboards/queries?connection_id=${encodeURIComponent(connectionId)}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(asked),
   });
@@ -2829,7 +2829,7 @@ export async function runCard(cardId: string, range?: BriefingRange | null,
 // ── A person's cockpits in the Briefing (Arc CT-7 to CT-10, flag `dashboard.composed`) ───────────
 
 /** One kept version of a cockpit. The newest carries its `spec`; a history entry does not. */
-export interface CockpitVersion {
+export interface DashboardVersion {
   version: number;
   artifact_id: string;
   kept_at: string;
@@ -2855,7 +2855,7 @@ export interface CockpitVersion {
 
 /** Arc OC-4 — for a cockpit holding pieces bound to the ontology: the release it was composed against, the one in
  *  force, and every change published between them that touches what its pieces read. */
-export interface CockpitPin {
+export interface DashboardPin {
   pinned: string;
   current: string;
   changes: { release: string; number: number; kind: string; target_id: string; change: string;
@@ -2863,28 +2863,28 @@ export interface CockpitPin {
 }
 
 /** One of a person's cockpits, as the strip lists it. */
-export interface CockpitListed extends CockpitVersion {
+export interface DashboardListed extends DashboardVersion {
   cockpit_id: string;
   title: string;
   started_at: string;
 }
 
 /** A canvas's cockpit from before the home moved, waiting to be moved to the Briefing. */
-export interface CanvasCockpitLeft extends CockpitVersion {
+export interface CanvasDashboardLeft extends DashboardVersion {
   canvas_id: string;
   title: string;
 }
 
-export interface CockpitList {
+export interface DashboardList {
   person: string;
-  cockpits: CockpitListed[];
+  cockpits: DashboardListed[];
   /** Cards pinned for everyone on the connection, and the person's own — what "My cockpit" starts from. */
   shared_cards: number;
   own_cards: number;
-  from_canvases: CanvasCockpitLeft[];
+  from_canvases: CanvasDashboardLeft[];
 }
 
-export interface CockpitRange {
+export interface DashboardRange {
   status: "standing" | "final" | "provisional" | "to_date";
   preset: RangePreset | null;
   start: string | null;
@@ -2900,7 +2900,7 @@ export interface CockpitRange {
 /** A card a cockpit may place: the person's own, or one pinned for the connection — with the
  *  record it was made from ("metric", "trusted_query", "finding", or "" for a query of its own)
  *  and, for a card made from a metric, the metric's unit and the range that unit states. */
-export type CockpitCard = StoredCard & {
+export type DashboardCard = StoredCard & {
   own: boolean;
   /** Why the cockpit does not offer this card back — superseded, made from a deprecated metric,
    *  or a copy of one already placed; "" when it is offered. */
@@ -2913,7 +2913,7 @@ export type CockpitCard = StoredCard & {
 /** What the cockpit's read says of an image it places: its stamps from the volume's own row, and
  *  whether this reader may see its bytes. An image that is gone, or not this connection's,
  *  stands as its caption with `why`. */
-export interface CockpitImageStamp {
+export interface DashboardImageStamp {
   object: string;
   file_name: string;
   uploaded_by: string;
@@ -2924,33 +2924,33 @@ export interface CockpitImageStamp {
   why: string;
 }
 
-export interface PersonCockpit {
+export interface PersonDashboard {
   connection_id: string;
   owner: string;
   cockpit_id: string;
-  cockpit: CockpitVersion;
-  cards: CockpitCard[];
-  range: CockpitRange;
+  cockpit: DashboardVersion;
+  cards: DashboardCard[];
+  range: DashboardRange;
   ranges_on: boolean;
-  history: CockpitVersion[];
+  history: DashboardVersion[];
   /** The symbol a money figure is written with, as the Briefing resolves it. */
   currency_symbol?: string;
   /** The images the spec places, by object id (the canvas, 2026-10-08). */
-  images?: Record<string, CockpitImageStamp>;
-  ontology?: CockpitPin;
+  images?: Record<string, DashboardImageStamp>;
+  ontology?: DashboardPin;
 }
 
 /** Where an image placed on a cockpit is read from: the API, with the reader's own access. */
-export function cockpitImageUrl(connectionId: string, objectId: string): string {
+export function dashboardImageUrl(connectionId: string, objectId: string): string {
   return `${getApiBase()}/dashboards/images/${encodeURIComponent(objectId)}?connection_id=${encodeURIComponent(connectionId)}`;
 }
 
 /** Upload an image into this connection's cockpit volume, to be placed on a cockpit by its object
  *  id. PNG, JPEG, SVG, GIF or WebP up to 5 MB; a refusal says which it failed. */
-export async function uploadCockpitImage(connectionId: string, file: File): Promise<CockpitImageStamp> {
+export async function uploadDashboardImage(connectionId: string, file: File): Promise<DashboardImageStamp> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(cockpitUrl("/dashboards/images", connectionId), { method: "POST", body: form });
+  const res = await fetch(dashboardUrl("/dashboards/images", connectionId), { method: "POST", body: form });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(fastApiError(err, "The image could not be uploaded"));
@@ -2959,7 +2959,7 @@ export async function uploadCockpitImage(connectionId: string, file: File): Prom
 }
 
 /** What a write answered: kept, unchanged — or a refusal, which arrives as an error. */
-export interface CockpitKept {
+export interface DashboardKept {
   status: "kept" | "unchanged" | "refused" | "not_checked" | "failed";
   kept: boolean;
   version: number | null;
@@ -2969,7 +2969,7 @@ export interface CockpitKept {
 }
 
 /** What a draft for an area came to: one proposal to keep, or the reasons none was drafted. */
-export interface CockpitDrafted {
+export interface DashboardDrafted {
   staged: boolean;
   proposal_id: string;
   cockpit_id: string;
@@ -2979,7 +2979,7 @@ export interface CockpitDrafted {
   sentences: string[];
 }
 
-export interface CockpitMoved {
+export interface DashboardMoved {
   moved: boolean;
   connection_id?: string;
   owner?: string;
@@ -2991,24 +2991,24 @@ export interface CockpitMoved {
 }
 
 /** A cockpit write that was refused. `sentences` are the validator's own, to show as they are. */
-export class CockpitRefused extends Error {
-  constructor(public readonly outcome: CockpitKept) {
+export class DashboardRefused extends Error {
+  constructor(public readonly outcome: DashboardKept) {
     super(outcome.sentences.join(" ") || "The dashboard was not kept.");
-    this.name = "CockpitRefused";
+    this.name = "DashboardRefused";
   }
 }
 
-async function cockpitWrite(res: Response, fallback: string): Promise<CockpitKept> {
+async function dashboardWrite(res: Response, fallback: string): Promise<DashboardKept> {
   const body = await res.json().catch(() => ({}));
-  if (res.ok) return body as CockpitKept;
+  if (res.ok) return body as DashboardKept;
   const detail = (body as { detail?: unknown }).detail;
-  if (detail && typeof detail === "object" && Array.isArray((detail as CockpitKept).sentences)) {
-    throw new CockpitRefused(detail as CockpitKept);
+  if (detail && typeof detail === "object" && Array.isArray((detail as DashboardKept).sentences)) {
+    throw new DashboardRefused(detail as DashboardKept);
   }
   throw new Error(fastApiError(body, fallback));
 }
 
-function cockpitUrl(path: string, connectionId: string, extra?: URLSearchParams): string {
+function dashboardUrl(path: string, connectionId: string, extra?: URLSearchParams): string {
   const q = new URLSearchParams(extra);
   q.set("connection_id", connectionId);
   return `${getApiBase()}${path}?${q.toString()}`;
@@ -3025,8 +3025,8 @@ function rangeParams(range?: BriefingRange | null): URLSearchParams {
 
 /** The asker's cockpits on this connection. Null when the flag is off (the route answers 404),
  *  so a caller need not know the flag's name — and the Briefing draws its cockpit as before. */
-export async function listCockpits(connectionId: string): Promise<CockpitList | null> {
-  const res = await fetch(cockpitUrl("/dashboards", connectionId));
+export async function listDashboards(connectionId: string): Promise<DashboardList | null> {
+  const res = await fetch(dashboardUrl("/dashboards", connectionId));
   if (res.status === 404) return null;
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -3036,8 +3036,8 @@ export async function listCockpits(connectionId: string): Promise<CockpitList | 
 }
 
 /** One of the asker's cockpits as it stands, read for a range when one is chosen. */
-export async function getCockpit(connectionId: string, cockpitId: string, range?: BriefingRange | null): Promise<PersonCockpit> {
-  const res = await fetch(cockpitUrl(`/dashboards/${encodeURIComponent(cockpitId)}`, connectionId, rangeParams(range)));
+export async function getDashboard(connectionId: string, dashboardId: string, range?: BriefingRange | null): Promise<PersonDashboard> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}`, connectionId, rangeParams(range)));
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(fastApiError(err, "Failed to read the dashboard"));
@@ -3046,26 +3046,26 @@ export async function getCockpit(connectionId: string, cockpitId: string, range?
 }
 
 /** Keep a spec the person wrote — a card moved, a section renamed — as the next version. */
-export async function keepCockpit(
-  connectionId: string, cockpitId: string, spec: unknown, note = "", repin = false,
-): Promise<CockpitKept> {
-  const res = await fetch(cockpitUrl(`/dashboards/${encodeURIComponent(cockpitId)}`, connectionId), {
+export async function keepDashboard(
+  connectionId: string, dashboardId: string, spec: unknown, note = "", repin = false,
+): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}`, connectionId), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(repin ? { spec, note, repin } : { spec, note }),
   });
-  return cockpitWrite(res, "Failed to keep the dashboard");
+  return dashboardWrite(res, "Failed to keep the dashboard");
 }
 
 /** Start "My cockpit" from the cards pinned in the Briefing, in the order they were arranged. No model. */
-export async function startMyCockpit(connectionId: string): Promise<CockpitKept> {
-  const res = await fetch(cockpitUrl("/dashboards/start", connectionId), { method: "POST" });
-  return cockpitWrite(res, "Failed to start your dashboard");
+export async function startMyDashboard(connectionId: string): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl("/dashboards/start", connectionId), { method: "POST" });
+  return dashboardWrite(res, "Failed to start your dashboard");
 }
 
 /** What a cockpit started from an object is offered (2026-10-10, `aughor/dashboards/from_object.py`): each piece with a
  *  preview the object door measured. Nothing is kept and no model is asked. */
-export interface CockpitFromObject {
+export interface DashboardFromObject {
   connection_id: string;
   schema_name: string;
   entity: string;
@@ -3123,15 +3123,15 @@ export interface ShapeLink {
 export async function getSuggestedShapes(connectionId: string, schema?: string): Promise<{ entity: string; type_id: string; name: string; shape: ShapeName; short: string }[]> {
   const q = new URLSearchParams();
   if (schema) q.set("schema_name", schema);
-  const res = await fetch(cockpitUrl("/dashboards/shapes", connectionId, q));
+  const res = await fetch(dashboardUrl("/dashboards/shapes", connectionId, q));
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return ((await res.json()) as { objects: { entity: string; type_id: string; name: string; shape: ShapeName; short: string }[] }).objects;
 }
 
-export async function getCockpitFromObject(connectionId: string, entity: string, schema?: string): Promise<CockpitFromObject> {
+export async function getDashboardFromObject(connectionId: string, entity: string, schema?: string): Promise<DashboardFromObject> {
   const q = new URLSearchParams({ entity });
   if (schema) q.set("schema_name", schema);
-  const res = await fetch(cockpitUrl("/dashboards/from-object", connectionId, q));
+  const res = await fetch(dashboardUrl("/dashboards/from-object", connectionId, q));
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
     const d = body?.detail;
@@ -3141,8 +3141,8 @@ export async function getCockpitFromObject(connectionId: string, entity: string,
 }
 
 /** ⚑ Spends model calls. Draft a new cockpit for an area the person names. */
-export async function draftCockpit(connectionId: string, area: string, schema?: string): Promise<CockpitDrafted> {
-  const res = await fetch(cockpitUrl("/dashboards/draft", connectionId), {
+export async function draftDashboard(connectionId: string, area: string, schema?: string): Promise<DashboardDrafted> {
+  const res = await fetch(dashboardUrl("/dashboards/draft", connectionId), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ area, schema_name: schema || null }),
@@ -3155,33 +3155,33 @@ export async function draftCockpit(connectionId: string, area: string, schema?: 
 }
 
 /** Move a canvas's cockpit to the asker's Briefing. */
-export async function moveCanvasCockpit(connectionId: string, canvasId: string): Promise<CockpitMoved> {
-  const res = await fetch(cockpitUrl("/dashboards/move", connectionId), {
+export async function moveCanvasDashboard(connectionId: string, canvasId: string): Promise<DashboardMoved> {
+  const res = await fetch(dashboardUrl("/dashboards/move", connectionId), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ canvas_id: canvasId }),
   });
   const body = await res.json().catch(() => ({}));
-  if (res.ok) return body as CockpitMoved;
+  if (res.ok) return body as DashboardMoved;
   const detail = (body as { detail?: unknown }).detail;
-  if (detail && typeof detail === "object" && Array.isArray((detail as CockpitMoved).sentences)) return detail as CockpitMoved;
+  if (detail && typeof detail === "object" && Array.isArray((detail as DashboardMoved).sentences)) return detail as DashboardMoved;
   throw new Error(fastApiError(body, "Failed to move the dashboard"));
 }
 
 /** Go back to an earlier version: it is kept again, as the newest. */
-export async function restoreCockpit(connectionId: string, cockpitId: string, version: number): Promise<CockpitKept> {
-  const res = await fetch(cockpitUrl(`/dashboards/${encodeURIComponent(cockpitId)}/restore`, connectionId), {
+export async function restoreDashboard(connectionId: string, dashboardId: string, version: number): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/restore`, connectionId), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ version }),
   });
-  return cockpitWrite(res, "Failed to go back");
+  return dashboardWrite(res, "Failed to go back");
 }
 
 /** ⚑ Spends model calls. A change to one of the asker's cockpits, asked for in words: a proposal
  *  to keep or not — an edit against the version on screen, or a publish. */
-export async function askCockpit(connectionId: string, cockpitId: string, words: string, schema?: string): Promise<CockpitDrafted> {
-  const res = await fetch(cockpitUrl(`/dashboards/${encodeURIComponent(cockpitId)}/ask`, connectionId), {
+export async function askDashboard(connectionId: string, dashboardId: string, words: string, schema?: string): Promise<DashboardDrafted> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/ask`, connectionId), {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ words, schema_name: schema ?? null }),
   });
@@ -3193,11 +3193,11 @@ export async function askCockpit(connectionId: string, cockpitId: string, words:
 }
 
 /** A group or a role a cockpit may be published to, or is. */
-export interface CockpitAudience { kind: "group" | "role"; id: string; name: string }
+export interface DashboardAudience { kind: "group" | "role"; id: string; name: string }
 
 /** The groups the asker belongs to and the roles they hold: who they may publish to. */
-export async function cockpitAudiences(connectionId: string): Promise<{ groups: CockpitAudience[]; roles: CockpitAudience[] }> {
-  const res = await fetch(cockpitUrl("/dashboards/audiences", connectionId));
+export async function dashboardAudiences(connectionId: string): Promise<{ groups: DashboardAudience[]; roles: DashboardAudience[] }> {
+  const res = await fetch(dashboardUrl("/dashboards/audiences", connectionId));
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(fastApiError(err, "Failed to read who you may publish to"));
@@ -3206,58 +3206,58 @@ export async function cockpitAudiences(connectionId: string): Promise<{ groups: 
 }
 
 /** Publish the cockpit as it stands to groups and roles. A version, under the asker's name. */
-export async function publishCockpit(connectionId: string, cockpitId: string, to: CockpitAudience[]): Promise<CockpitKept> {
-  const res = await fetch(cockpitUrl(`/dashboards/${encodeURIComponent(cockpitId)}/publish`, connectionId), {
+export async function publishDashboard(connectionId: string, dashboardId: string, to: DashboardAudience[]): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/publish`, connectionId), {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to }),
   });
-  return cockpitWrite(res, "Failed to publish the dashboard");
+  return dashboardWrite(res, "Failed to publish the dashboard");
 }
 
 /** Stop sharing a cockpit. A version too. */
-export async function unpublishCockpit(connectionId: string, cockpitId: string): Promise<CockpitKept> {
-  const res = await fetch(cockpitUrl(`/dashboards/${encodeURIComponent(cockpitId)}/unpublish`, connectionId), { method: "POST" });
-  return cockpitWrite(res, "Failed to unpublish the dashboard");
+export async function unpublishDashboard(connectionId: string, dashboardId: string): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/unpublish`, connectionId), { method: "POST" });
+  return dashboardWrite(res, "Failed to unpublish the dashboard");
 }
 
 /** A cockpit someone else published to a group the asker is in or a role they hold. */
-export interface SharedCockpitListed {
+export interface SharedDashboardListed {
   owner: string;
   cockpit_id: string;
   title: string;
   version: number;
   kept_at: string;
   published_by: string;
-  published_to: CockpitAudience[];
+  published_to: DashboardAudience[];
 }
 
-export async function listSharedCockpits(connectionId: string): Promise<SharedCockpitListed[]> {
-  const res = await fetch(cockpitUrl("/dashboards/shared", connectionId));
+export async function listSharedDashboards(connectionId: string): Promise<SharedDashboardListed[]> {
+  const res = await fetch(dashboardUrl("/dashboards/shared", connectionId));
   if (res.status === 404) return [];
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(fastApiError(err, "Failed to read the dashboards shared with you"));
   }
-  return (await res.json()).cockpits as SharedCockpitListed[];
+  return (await res.json()).cockpits as SharedDashboardListed[];
 }
 
-export interface SharedCockpit {
+export interface SharedDashboard {
   connection_id: string;
   owner: string;
   cockpit_id: string;
-  cockpit: CockpitVersion;
-  cards: CockpitCard[];
-  range: CockpitRange;
+  cockpit: DashboardVersion;
+  cards: DashboardCard[];
+  range: DashboardRange;
   ranges_on: boolean;
   currency_symbol?: string;
-  images?: Record<string, CockpitImageStamp>;
+  images?: Record<string, DashboardImageStamp>;
   published_by: string;
-  published_to: CockpitAudience[];
-  ontology?: CockpitPin;
+  published_to: DashboardAudience[];
+  ontology?: DashboardPin;
 }
 
 /** A published cockpit as it stands, read for the asker's own range. */
-export async function getSharedCockpit(connectionId: string, owner: string, cockpitId: string, range?: BriefingRange | null): Promise<SharedCockpit> {
-  const res = await fetch(cockpitUrl(`/dashboards/shared/${encodeURIComponent(owner)}/${encodeURIComponent(cockpitId)}`, connectionId, rangeParams(range)));
+export async function getSharedDashboard(connectionId: string, owner: string, dashboardId: string, range?: BriefingRange | null): Promise<SharedDashboard> {
+  const res = await fetch(dashboardUrl(`/dashboards/shared/${encodeURIComponent(owner)}/${encodeURIComponent(dashboardId)}`, connectionId, rangeParams(range)));
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(fastApiError(err, "Failed to read the shared dashboard"));
@@ -3266,19 +3266,19 @@ export async function getSharedCockpit(connectionId: string, owner: string, cock
 }
 
 /** Start a cockpit of the asker's own from a published one. */
-export async function copySharedCockpit(connectionId: string, owner: string, cockpitId: string): Promise<CockpitKept & { title?: string }> {
-  const res = await fetch(cockpitUrl(`/dashboards/shared/${encodeURIComponent(owner)}/${encodeURIComponent(cockpitId)}/copy`, connectionId), { method: "POST" });
-  return cockpitWrite(res, "Failed to start a dashboard from this one");
+export async function copySharedDashboard(connectionId: string, owner: string, dashboardId: string): Promise<DashboardKept & { title?: string }> {
+  const res = await fetch(dashboardUrl(`/dashboards/shared/${encodeURIComponent(owner)}/${encodeURIComponent(dashboardId)}/copy`, connectionId), { method: "POST" });
+  return dashboardWrite(res, "Failed to start a dashboard from this one");
 }
 
 /** Retire a cockpit. Its history stays. */
-export async function retireCockpit(connectionId: string, cockpitId: string, note = ""): Promise<CockpitKept> {
-  const res = await fetch(cockpitUrl(`/dashboards/${encodeURIComponent(cockpitId)}/retire`, connectionId), {
+export async function retireDashboard(connectionId: string, dashboardId: string, note = ""): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/retire`, connectionId), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ note }),
   });
-  return cockpitWrite(res, "Failed to retire the dashboard");
+  return dashboardWrite(res, "Failed to retire the dashboard");
 }
 
 export async function deleteCard(cardId: string): Promise<void> {
@@ -3287,16 +3287,16 @@ export async function deleteCard(cardId: string): Promise<void> {
 
 /** The cockpit layout (position + size per card) the reader arranged — saved SERVER-SIDE and
  *  account-keyed, so any device/login shows the same arrangement. */
-export type CockpitLayout = Record<string, { x: number; y: number; w: number; h: number }>;
+export type DashboardLayout = Record<string, { x: number; y: number; w: number; h: number }>;
 
-export async function getCockpitLayout(connectionId: string): Promise<CockpitLayout> {
+export async function getDashboardLayout(connectionId: string): Promise<DashboardLayout> {
   try {
     const res = await fetch(`${getApiBase()}/cards/layout?connection_id=${encodeURIComponent(connectionId)}`);
     return res.ok ? await res.json() : {};
   } catch { return {}; }
 }
 
-export async function saveCockpitLayout(connectionId: string, layout: CockpitLayout): Promise<void> {
+export async function saveDashboardLayout(connectionId: string, layout: DashboardLayout): Promise<void> {
   await fetch(`${getApiBase()}/cards/layout`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },

@@ -22,7 +22,7 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   getProcessCandidates: calls.candidates, previewProcess: calls.preview, declareProcess: calls.declare,
   getRelease: calls.release, publishRelease: calls.publish, changeProcess: calls.change,
 }));
-vi.mock("@/lib/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/api")>()), keepCockpit: calls.keep }));
+vi.mock("@/lib/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/api")>()), keepDashboard: calls.keep }));
 vi.mock("@/lib/navigate", () => ({ requestTab: calls.tab }));
 vi.mock("@/lib/objects", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/objects")>()), listObjects: calls.list }));
 
@@ -158,7 +158,7 @@ describe("the process designer", () => {
     calls.keep.mockResolvedValue({ version: 1 });
     await designDelivery(user);
     await screen.findByRole("button", { name: "They really are late" }, { timeout: 4000 });
-    expect(screen.getByTestId("designer-cockpit")).toBeDisabled();
+    expect(screen.getByTestId("designer-dashboard")).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "They really are late" }));
     await user.click(screen.getByRole("button", { name: "Review and publish" }));
     expect(screen.getByTestId("designer-review-panel").textContent).toContain("Declaring Order delivery counts it once more");
@@ -172,7 +172,7 @@ describe("the process designer", () => {
     expect((await screen.findByTestId("designer-release")).textContent).toContain("release 5, which holds 2 changes waiting");
     await user.click(screen.getByRole("button", { name: "Publish release 5" }));
     await waitFor(() => expect(screen.getByTestId("designer-state").textContent).toBe("Published in release 5"));
-    await user.click(screen.getByTestId("designer-cockpit"));
+    await user.click(screen.getByTestId("designer-dashboard"));
     await waitFor(() => expect(calls.keep).toHaveBeenCalled());
     const [conn, id, spec] = calls.keep.mock.calls[0];
     // the server's own id law (`cockpit.home._ID`) and a suffix of its own — never one of the person's cockpits
@@ -184,7 +184,7 @@ describe("the process designer", () => {
     expect(of("ProcessBoard")?.[1].props.process).toBe("order_delivery");
     expect(of("ObjectTable")?.[1].props).toMatchObject({ entity: "Order", segment: "overdue_delivery" });
     expect(of("ObjectDetail")?.[1].props.follows).toBe(of("ObjectTable")?.[0]);
-    expect(calls.tab).toHaveBeenCalledWith("cockpit", { conn: "c1" });
+    expect(calls.tab).toHaveBeenCalledWith("dashboards", { conn: "c1" });
   });
 
   it("keeps a draft in this browser and brings it back", async () => {

@@ -132,7 +132,7 @@ describe("IntelligenceWorkspace — the Dashboards tab, beside the Briefing (Arc
 
   it("is there with the flag on, right after the Briefing, and opening it asks for no brief", async () => {
     flags(true);
-    render(shell("cockpit"));
+    render(shell("dashboards"));
     await waitFor(() => expect(tabs()).toContain("Dashboards"));
     expect(tabs().slice(0, 2)).toEqual(["Briefing", "Dashboards"]);
     await settle();
@@ -142,7 +142,7 @@ describe("IntelligenceWorkspace — the Dashboards tab, beside the Briefing (Arc
   it("is not there with the flag off, and a link to it opens the Briefing", async () => {
     flags(false);
     const onLayerChange = vi.fn();
-    render(<IntelligenceWorkspace connectionId={CONN} layer="cockpit" onLayerChange={onLayerChange}
+    render(<IntelligenceWorkspace connectionId={CONN} layer="dashboards" onLayerChange={onLayerChange}
       onInvestigate={noop} connections={[{ id: CONN, name: "Warehouse" }]} workspaceId="default" />);
     await waitFor(() => expect(onLayerChange).toHaveBeenCalledWith("briefing"));
     expect(tabs()).not.toContain("Dashboards");
