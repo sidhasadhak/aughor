@@ -88,13 +88,20 @@ class TestTheArrivalIsChecked:
         assert second.state == "refuted" and second.extra["question_to"] == "user:ops@corp" and second.version == 1
 
 
+def _yesterday() -> str:
+    import datetime as _dt
+    return (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=1)).isoformat()
+
+
 class TestOnlyACheckedNoteReachesAPrompt:
     def _pieces(self, *verifications):
         from aughor.hub.provenance import ContextPiece, Provenance
         return [ContextPiece(text=f"note {i} says 187 breached", subject=PROMISE, piece_id=str(i),
                              provenance=Provenance(source_kind="conversation", authority="measured" if v == "measured" else "said",
                                                    author="Ana", author_kind="person", scope_kind="object", scope_key=PROMISE,
-                                                   observed_at="2026-09-23T00:00:00+00:00", verification=v))
+                                                   # a day old: a literal date expired under the 30-day
+                                                   # observation TTL on 2026-10-23 (hub.provenance)
+                                                   observed_at=_yesterday(), verification=v))
                 for i, v in enumerate(verifications)]
 
     def test_measured_notes_are_let_through_said_and_contradicted_are_not(self, monkeypatch):
