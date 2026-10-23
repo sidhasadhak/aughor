@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * OntologyPieceComposer — placing a piece bound to the ontology on a cockpit, by hand (Arc OC-4, ROADMAP §3.56).
+ * OntologyPieceComposer — placing a piece bound to the ontology on a dashboard, by hand (Arc OC-4, ROADMAP §3.56).
  *
  * Four kinds, each named by the ids the ontology declares: a process board (a process), an objects table (an entity,
  * and perhaps one of its segments — a rule's, a promise's late or overdue objects, a verified one — with the columns
  * a person picks), an object detail (the table it follows, and the declared actions it offers), and an action button
  * (a declared action, in a detail that is already there). What is offered is what this connection declares; nothing
- * here writes a definition. The server checks every id again before the cockpit is kept.
+ * here writes a definition. The server checks every id again before the dashboard is kept.
  */
 import { useEffect, useMemo, useState } from "react";
 
@@ -84,7 +84,7 @@ export function OntologyPieceComposer({ connectionId, schema, spec, busy, onPlac
   const [columns, setColumns] = useState<string[]>([]);
   const [withDetail, setWithDetail] = useState(true);
   const [chosenActions, setChosenActions] = useState<string[]>([]);
-  // A detail or a button, on what the cockpit already holds.
+  // A detail or a button, on what the dashboard already holds.
   const [table, setTable] = useState("");
   const [detail, setDetail] = useState("");
   const [action, setAction] = useState("");

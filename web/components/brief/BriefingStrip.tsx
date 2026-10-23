@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * BriefingStrip — the cockpit of the person's own that rides with their Briefing (the canvas,
- * docs/COCKPIT_CANVAS_2026-10-08.md, B1: "which cockpit strip rides with it").
+ * BriefingStrip — the dashboard of the person's own that rides with their Briefing (the canvas,
+ * docs/COCKPIT_CANVAS_2026-10-08.md, B1: "which dashboard strip rides with it").
  *
- * It is the same cockpit the Cockpit tab draws, read for the Briefing's range, and it is read
+ * It is the same dashboard the Dashboards tab draws, read for the Briefing's range, and it is read
  * here, not arranged: the doors that change it — take off, resize, a note's words — are the
- * Cockpit tab's. A card may still be refreshed. No model is asked.
+ * Dashboards tab's. A card may still be refreshed. No model is asked.
  */
 import { useEffect, useMemo, useState } from "react";
 
@@ -25,7 +25,7 @@ export function BriefingStrip({ connectionId, schema, dashboardId, range, onOpen
   schema?: string;
   dashboardId: string;
   range: BriefingRange | null;
-  /** Open the Cockpit tab, where this cockpit is arranged. */
+  /** Open the Dashboards tab, where this dashboard is arranged. */
   onOpenDashboard?: () => void;
 }) {
   const [data, setData] = useState<PersonDashboard | null>(null);
@@ -42,7 +42,7 @@ export function BriefingStrip({ connectionId, schema, dashboardId, range, onOpen
         const read = await getDashboard(connectionId, dashboardId, range);
         const placed = new Set(read.cockpit.spec ? cardsPlaced(read.cockpit.spec) : []);
         const runs = await Promise.all(read.cards.filter(c => placed.has(c.id)).map(async (card): Promise<CardState> => {
-          // Arc AP-8 — a query reading the cockpit's values is run by its own cell, with them
+          // Arc AP-8 — a query reading the dashboard's values is run by its own cell, with them
           if (valuesRead(card.sql).length) return { card };
           try { return { card, run: await runCard(card.id, range, { compare: true }) }; }
           catch { return { card, failed: true }; }

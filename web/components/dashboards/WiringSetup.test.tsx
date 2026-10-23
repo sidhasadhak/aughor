@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * Wiring a cockpit in the builder (Arc AP-2 and AP-3; design-mockups/cockpit-builder.html screens 3 and 4). The Data tab
+ * Wiring a dashboard in the builder (Arc AP-2 and AP-3; design-mockups/cockpit-builder.html screens 3 and 4). The Data tab
  * lists the sets with what each holds now and what reads it, the choices and the values; a set is built from what the
  * ontology offers and taken away only when nothing reads it; a piece's setup says what it reads and what it chooses; a
  * button's parameter is offered only sources that hold its entity. Every read is mocked — no test reaches an API.
@@ -80,7 +80,7 @@ describe("the Data tab", () => {
     const onChange = vi.fn(), onSelect = vi.fn();
     render(<DataPane spec={desk()} selected={null} onSelect={onSelect} onChange={onChange} connectionId={`c${++conn}`} />);
     fireEvent.click(screen.getByTestId("data-new-set"));
-    // a cockpit whose every piece reads a set still offers one: it starts from the entity its sets read
+    // a dashboard whose every piece reads a set still offers one: it starts from the entity its sets read
     expect(onChange.mock.calls[0][0].sets["new-set"]).toEqual({ label: "New set", entity: "order" });
     expect(onSelect).toHaveBeenCalledWith("set:new-set");
     fireEvent.click(screen.getByTestId("data-new-value"));

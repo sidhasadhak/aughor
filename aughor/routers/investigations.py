@@ -5654,7 +5654,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         return
 
     # A request for a COCKPIT is not a question about data, and this chat drafts none — the
-    # Briefing's Cockpit tab does (CT-9). Said here, before the clarify gate read it as an
+    # Briefing's Dashboards tab does (CT-9). Said here, before the clarify gate read it as an
     # under-specified question (2 of the CT receipt's 10 asks) or a model answered it as one.
     if not req.insight_id:
         from aughor.dashboards.intent import is_dashboard_ask, where_dashboards_are_made

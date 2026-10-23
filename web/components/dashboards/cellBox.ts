@@ -1,5 +1,5 @@
 /**
- * The box a cockpit element is drawn in, said to what it draws (Arc AP-1, sizes one grade at a time).
+ * The box a dashboard element is drawn in, said to what it draws (Arc AP-1, sizes one grade at a time).
  *
  * On a section's grid an element is given an exact room — `w` columns by `h` rows — and what it draws fills that room:
  * a chart draws at the box's height, a table lists as many rows as the box holds, an image fits it. Off the grid an
@@ -23,7 +23,7 @@ export function useCellBox(): CellBox {
   return useContext(CellBoxContext);
 }
 
-/** How much the builder's canvas scales the cockpit it draws (Arc AP-1): 1 at 100%, less where it fits a narrower
+/** How much the builder's canvas scales the dashboard it draws (Arc AP-1): 1 at 100%, less where it fits a narrower
  *  screen. A pointer's pixels are the scaled ones, so a handle divides by it to count grades. */
 export const CanvasScale = createContext(1);
 

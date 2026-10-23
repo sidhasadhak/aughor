@@ -1,9 +1,9 @@
 /**
- * The arithmetic of a cockpit started from an object (2026-10-10, design-mockups/cockpit-from-object.html): what a
+ * The arithmetic of a dashboard started from an object (2026-10-10, design-mockups/cockpit-from-object.html): what a
  * reader's filters become in the object door's words, where a chart of objects per day starts and ends, its axis, and
  * how a figure is written. No React and no fetch, so the logic tests hold all of it.
  *
- * A reader's filters are their own (the user, 2026-10-10): held per cockpit in their browser, never in the spec.
+ * A reader's filters are their own (the user, 2026-10-10): held per dashboard in their browser, never in the spec.
  */
 import { columnTypeKind, compactNumber, formatCount, formatMetricValue, formatMoney } from "@/lib/format";
 import { currencySymbol } from "@/lib/orgSettings";
@@ -58,7 +58,7 @@ export function withWords(filters: Filters, entity: string, path: string, words:
   return next;
 }
 
-/** Whether any filter is on, anywhere in the cockpit. */
+/** Whether any filter is on, anywhere in the dashboard. */
 export const anyFilter = (filters: Filters): boolean =>
   Object.values(filters).some(props => Object.values(props).some(v => v.length > 0));
 

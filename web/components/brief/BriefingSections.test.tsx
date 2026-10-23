@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * The Briefing's switches (B1): a section shown or hidden, moved, the cockpit that rides with
+ * The Briefing's switches (B1): a section shown or hidden, moved, the dashboard that rides with
  * the Briefing, and a change asked for in words — each lands as the next preference, through
  * `onChange`, and words land only once kept.
  */

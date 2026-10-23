@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * Variables on a cockpit, drawn (Arc AP-8; design-mockups/cockpit-builder.html screens 11–12). Through the cockpit's own
+ * Variables on a dashboard, drawn (Arc AP-8; design-mockups/cockpit-builder.html screens 11–12). Through the dashboard's own
  * renderer with the object door and the card run mocked: a value the reader sets is a control on the page, kept in their
  * browser; every set that reads it, and every query of the person's own that reads it, is read again with it; a value
  * counted from a set is counted at the object door, and one read off the object a reader chose waits until one is

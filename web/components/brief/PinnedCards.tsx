@@ -16,9 +16,9 @@ import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
 
-/** The standing cockpit layer: the user's OWN persistent pinned cards on one canvas the reader
+/** The standing dashboard layer: the user's OWN persistent pinned cards on one canvas the reader
  *  arranges. Each card's number is re-run through the guard battery on read. The brief's findings
- *  read separately in the narrative layer (the exhibit strip) — the cockpit is the surface the
+ *  read separately in the narrative layer (the exhibit strip) — the dashboard is the surface the
  *  user curates, not a dump of the cycle's signals. Renders nothing until a card exists. */
 export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onPinned, onOpenSource, onEvidence, range }: {
   /** BR-9 — the range the page is scoped to: each card runs cut to it (on its table's main
@@ -110,7 +110,7 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
     }
   }, [connectionId, schema, onPinned]);
 
-  // ── ⌘K "Tidy cockpit" command — offered only while the cockpit has cards ──
+  // ── ⌘K "Tidy dashboard" command — offered only while the dashboard has cards ──
   const tidyCommands = useMemo<Command[]>(() =>
     cards.length > 0
       ? [{ id: "cockpit-tidy", label: "Tidy dashboard", sublabel: "Re-pack the dashboard into a clean, gap-free grid", icon: "canvas", accent: "var(--grn3)", keywords: "tidy dashboard arrange pack grid layout reset", run: () => tidyRef.current?.() }]
@@ -120,8 +120,8 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
 
   if (!ready) return null;   // avoid an empty-state flash before the first fetch settles
 
-  // Empty state (Direction B) — teach the cockpit instead of vanishing. The suggested pins are
-  // REAL movers from this cycle, so the first pin is one grounded click. The "Your cockpit"
+  // Empty state (Direction B) — teach the dashboard instead of vanishing. The suggested pins are
+  // REAL movers from this cycle, so the first pin is one grounded click. The "Your dashboard"
   // eyebrow + violet rule are owned by the standing-layer wrapper above.
   if (cards.length === 0) {
     return (

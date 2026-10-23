@@ -1,5 +1,5 @@
 /**
- * dashboard-validate-entry.ts — the cockpit's rules, run on the server (Arc CT, CT-2).
+ * dashboard-validate-entry.ts — the dashboard's rules, run on the server (Arc CT, CT-2).
  *
  * Bundled by `npm run build:dashboard-validate` into `aughor/cockpit/validate.bundle.mjs` and
  * run by `aughor/cockpit/validate.py` as a node subprocess — the arrangement the chart
@@ -16,8 +16,8 @@
  *                                     NOT checked here; the caller sends it back as a "check".
  *   { "op": "wiring", "spec": … }  → { sets, buttons } — each set as the object door would read it, each
  *                                     button's parameters with their source's kind and entity (Arc AP-2/3)
- *   { "op": "grammar",             → { text } — what the writer of a cockpit is told (CT-5); the
- *     "grid": bool }                   grid only while cockpits are built in place (Arc AP-1)
+ *   { "op": "grammar",             → { text } — what the writer of a dashboard is told (CT-5); the
+ *     "grid": bool }                   grid only while dashboards are built in place (Arc AP-1)
  *
  * It exits non-zero on anything it does not understand, and the server treats that as
  * "could not check", never as "accepted".

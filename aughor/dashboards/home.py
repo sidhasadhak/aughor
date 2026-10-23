@@ -24,7 +24,7 @@ from typing import Optional
 #: Where identity is off, the one operator's name — the same as the Briefing's arrangement.
 NOBODY_IN_PARTICULAR = "default"
 
-#: A person's first cockpit, started from the cards pinned before cockpits had names.
+#: A person's first dashboard, started from the cards pinned before dashboards had names.
 FIRST = "my-cockpit"
 
 _ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")

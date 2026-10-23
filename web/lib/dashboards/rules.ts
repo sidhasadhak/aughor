@@ -1,5 +1,5 @@
 /**
- * The rules a cockpit spec must pass — accepted whole or refused whole, with sentences
+ * The rules a dashboard spec must pass — accepted whole or refused whole, with sentences
  * (Arc CT, CT-2; AV-0's law, ROADMAP §3.11).
  *
  * ONE function, run in two places from this one file: the browser runs it before it draws a
@@ -182,7 +182,7 @@ function checkChart(key: string, props: Obj, out: DashboardIssue[]): void {
   }
 }
 
-/** Arc AP-2 and AP-3 — the wiring, by name: every set, value and choice a piece names is one the cockpit holds, sets
+/** Arc AP-2 and AP-3 — the wiring, by name: every set, value and choice a piece names is one the dashboard holds, sets
  *  form no ring and keep one segment, a condition says what its operator needs, a set of what a chosen object links to
  *  waits on a chosen object, one name is one thing, and every source a button's parameter names is there. Whether a
  *  set compiles, and whether a source holds what a parameter takes, are the server's to say (it knows the ontology). */
@@ -255,7 +255,7 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
       if (v.kind !== "number") issues.push({ code: "bad_prop", message: `The value ${q(name)} ${verb} a set, so it holds a number — not ${KIND_WORDS[v.kind]}.` });
       if (!setNamesOf(spec).includes(v.from.set)) issues.push({ code: "bad_prop", message: `The value ${q(name)} ${verb} the set ${q(v.from.set)}, which this dashboard does not hold.` });
     } else if (v.from?.by === "query") {
-      // Arc AP-8c — a query of the cockpit's own: a card it places
+      // Arc AP-8c — a query of the dashboard's own: a card it places
       const card = v.from.card;
       if (!Object.values(spec.elements).some(el => el?.type === "Card" && el.props?.card === card)) {
         issues.push({ code: "bad_prop", message: `The value ${q(name)} reads the query ${q(card)}, which this dashboard does not place.` });
@@ -351,7 +351,7 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
         issues.push({ code: "bad_prop", elementKey: key, message: `${what} reads a set and also names a segment. A set keeps its own segment.` });
       }
     }
-    // Arc AP-2 — a filter column counting within a set: one the cockpit holds, of the entity it filters
+    // Arc AP-2 — a filter column counting within a set: one the dashboard holds, of the entity it filters
     if (el.type === "ObjectFilters" && p.set != null) {
       const within = isSet(p.set) ? readSet(spec, String(p.set)) : null;
       if (!within) {
@@ -681,7 +681,7 @@ export function checkDashboardSpec(spec: unknown): DashboardCheck {
     }
   }
 
-  // Arc OC-4 — an object detail follows an objects table in the same cockpit, by its key — or, since Arc AP-2, the
+  // Arc OC-4 — an object detail follows an objects table in the same dashboard, by its key — or, since Arc AP-2, the
   // object a click chooses, by the choice's name: in a table, or since Arc AP-4 a list, a map, a timeline or a choose-one.
   const wire = spec as unknown as WireSpec;
   const choices = choicesOf(wire);

@@ -1,29 +1,29 @@
 "use client";
 
 /**
- * BriefingCockpits — a person's cockpits, the Cockpit tab beside the Briefing (Arc CT, CT-7 to
+ * BriefingDashboards — a person's dashboards, the Dashboards tab beside the Briefing (Arc CT, CT-7 to
  * CT-10; ROADMAP §3.50).
  *
- * The Briefing is the connection's: what the platform found for a period. A cockpit is a
+ * The Briefing is the connection's: what the platform found for a period. A dashboard is a
  * person's own: the standing set of cards they keep watching for an area — returns, pricing,
  * marketing — and they may keep as many as they like (§6 item 36(i)–(l)). The user: "The
- * cockpit should be a tab inside the Briefing.. as simple as that" — so it is a tab of the
+ * dashboard should be a tab inside the Briefing.. as simple as that" — so it is a tab of the
  * Intelligence workspace, next to the Briefing, and the Briefing's page no longer draws one.
  *
  * Behind `dashboard.composed`; off, the tab is not there. Opening it loads no Briefing and asks
- * no model, and it needs no exploration: a cockpit is made of cards, not of findings.
+ * no model, and it needs no exploration: a dashboard is made of cards, not of findings.
  *
  * What it does, and what each costs:
- *   - draws the chosen cockpit for a period of its own — the latest month when ranges are on,
+ *   - draws the chosen dashboard for a period of its own — the latest month when ranges are on,
  *     "As written" otherwise — each figure against the period it is compared with: no model;
  *   - arranges it by hand, each save a version: no model;
- *   - starts "My cockpit" from the cards pinned before cockpits had names: no model;
- *   - moves a cockpit that lived in a Data Canvas here: no model;
- *   - drafts a new cockpit for an area the person names: ONE short model run, said so on the
+ *   - starts "My dashboard" from the cards pinned before dashboards had names: no model;
+ *   - moves a dashboard that lived in a Data Canvas here: no model;
+ *   - drafts a new dashboard for an area the person names: ONE short model run, said so on the
  *     button. The draft is shown as its outline, can be adjusted, and is kept or discarded.
  *
- * While `dashboard.builder` is on (Arc AP-1), a cockpit opens to be read — the strip, then one bar: its period, its
- * history and Edit — and Edit opens the builder (`CockpitBuilder`): the cockpit between its layout and the setup of
+ * While `dashboard.builder` is on (Arc AP-1), a dashboard opens to be read — the strip, then one bar: its period, its
+ * history and Edit — and Edit opens the builder (`DashboardBuilder`): the dashboard between its layout and the setup of
  * what is chosen, the rail folded to its icons until Done. Every change there is drawn at once and kept as one version
  * a moment after a burst of them, with undo and redo. No model; a change asked in words is the one exception, as here.
  */
@@ -127,7 +127,7 @@ function Refused({ outcome }: { outcome: DashboardKept }) {
   );
 }
 
-/** A note, typed by the person — the one element of a cockpit a model never writes (the canvas,
+/** A note, typed by the person — the one element of a dashboard a model never writes (the canvas,
  *  2026-10-08). Its author and date are the server's to stamp when it is kept. */
 function NoteComposer({ busy, onPlace, onClose }: { busy: boolean; onPlace: (text: string) => void; onClose: () => void }) {
   const [text, setText] = useState("");
@@ -215,7 +215,7 @@ function linesOf(proposal: StagedProposal | null, held: Map<string, CardLine> = 
  *  may adjust by hand first; a publish as who it reaches. Kept whole or discarded whole. */
 function DraftReview({ connectionId, dashboardId, result, proposal, held, onKept, onDiscarded }: {
   connectionId: string;
-  /** The cockpit the proposal is for: a new one's id from the draft, or the one that stands. */
+  /** The dashboard the proposal is for: a new one's id from the draft, or the one that stands. */
   dashboardId: string;
   result: DashboardDrafted;
   proposal: StagedProposal;
@@ -281,19 +281,19 @@ function DraftReview({ connectionId, dashboardId, result, proposal, held, onKept
   );
 }
 
-/** A new cockpit, three ways (2026-10-09): empty — its name and a first note in the person's words, since a cockpit
+/** A new dashboard, three ways (2026-10-09): empty — its name and a first note in the person's words, since a dashboard
  *  holding nothing is refused; for a declared process — its board, its open-and-overdue objects and one beside them;
  *  or drafted by a model for an area, the one way here that asks one. The walk-through found only the last. */
 function NewDashboard({ connectionId, schema, fromObject, sym, onKept, onClose }: {
   connectionId: string; schema?: string; onKept: (dashboardId: string) => void; onClose: () => void;
-  /** Whether a cockpit may start from an object here (`ontology.object_dashboards`). */
+  /** Whether a dashboard may start from an object here (`ontology.object_dashboards`). */
   fromObject: boolean;
   sym: string;
 }) {
   const [way, setWay] = useState<"empty" | "object" | "process" | "draft">("empty");
   const [types, setTypes] = useState<{ object_type: string; display_name: string }[] | null>(null);
   const [entity, setEntity] = useState("");
-  // Arc AP-5 — what each object suggests a cockpit be; none while shapes are off (the route says so with a 404)
+  // Arc AP-5 — what each object suggests a dashboard be; none while shapes are off (the route says so with a 404)
   const [suggested, setSuggested] = useState<{ entity: string; name: string; shape: ShapeName; short: string }[] | null>(null);
   useEffect(() => {
     if (way !== "object" || types) return;
@@ -476,8 +476,8 @@ function NewDashboard({ connectionId, schema, fromObject, sym, onKept, onClose }
   );
 }
 
-/** A change to the cockpit that stands, asked for in words (the canvas, §2.5): one short model
- *  run, bound to this cockpit; what comes back is a proposal to keep or not. Writing a note or
+/** A change to the dashboard that stands, asked for in words (the canvas, §2.5): one short model
+ *  run, bound to this dashboard; what comes back is a proposal to keep or not. Writing a note or
  *  choosing an image is never asked of it — those doors are by hand. */
 function AskChange({ connectionId, dashboardId, schema, held, onKept }: {
   connectionId: string; dashboardId: string; schema?: string; held: Map<string, CardLine>; onKept: () => void;
@@ -531,7 +531,7 @@ function AskChange({ connectionId, dashboardId, schema, held, onKept }: {
   );
 }
 
-/** Who a cockpit is published to (the canvas, B5): the groups the person belongs to and the roles
+/** Who a dashboard is published to (the canvas, B5): the groups the person belongs to and the roles
  *  they may publish to, picked by hand; publishing and unpublishing are each a version. */
 function PublishPanel({ connectionId, dashboardId, publishedTo, busy, onDone, onClose }: {
   connectionId: string; dashboardId: string; publishedTo: DashboardAudience[]; busy: boolean;
@@ -589,9 +589,9 @@ function PublishPanel({ connectionId, dashboardId, publishedTo, busy, onDone, on
   );
 }
 
-/** A cockpit someone else published to a group the person is in or a role they hold: read as it
+/** A dashboard someone else published to a group the person is in or a role they hold: read as it
  *  stands, for the reader's own period, with no door that changes it — and a door to start a
- *  cockpit of their own from it. */
+ *  dashboard of their own from it. */
 function SharedDashboardView({ connectionId, schema, owner, dashboardId, range, chosenRange, onRange, rangesOn, onStarted }: {
   connectionId: string; schema?: string; owner: string; dashboardId: string;
   range: BriefingRange | null; chosenRange: RangeChoice; onRange: (c: RangeChoice) => void; rangesOn: boolean | null;
@@ -610,7 +610,7 @@ function SharedDashboardView({ connectionId, schema, owner, dashboardId, range, 
         const read = await getSharedDashboard(connectionId, owner, dashboardId, range);
         const placed = new Set(read.cockpit.spec ? cardsPlaced(read.cockpit.spec) : []);
         const runs = await Promise.all(read.cards.filter(c => placed.has(c.id)).map(async (card): Promise<CardState> => {
-          // Arc AP-8 — a query reading the cockpit's values is run by its own cell, with them
+          // Arc AP-8 — a query reading the dashboard's values is run by its own cell, with them
           if (valuesRead(card.sql).length) return { card };
           try { return { card, run: await runCard(card.id, range, { compare: true }) }; }
           catch { return { card, failed: true }; }
@@ -675,7 +675,7 @@ const KEEP_AFTER_MS = 900;
  *  and a group or a person in none of the policy's groups. A preview says these in its banner. */
 const WITHHELD = /may see are shown|counted over only the|masked for|sees no |none of its groups/;
 
-/** Arc AP-8c — the cards of the person's own query a cockpit places, by id and title: what a value may read. */
+/** Arc AP-8c — the cards of the person's own query a dashboard places, by id and title: what a value may read. */
 export function placedQueries(spec: { elements?: Record<string, { type?: string; props?: Record<string, unknown> } | undefined> } | null | undefined,
   cards: { id: string; title?: string; sql?: string; render?: Record<string, unknown> }[]): { id: string; title: string }[] {
   const placed = new Set(Object.values(spec?.elements ?? {}).filter(el => el?.type === "Card").map(el => String(el?.props?.card ?? "")));
@@ -691,7 +691,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   onEvidence?: (iid: string) => void;
 }) {
   // The period the cards are read for: the person's pick, else the latest complete month where
-  // ranges are on — a cockpit is watched month by month, as the mock showed it — else as written.
+  // ranges are on — a dashboard is watched month by month, as the mock showed it — else as written.
   // Nothing is read until the flag is known: a first read "as written" would roll every card's
   // standing value for a view nobody asked for.
   const [rangesOn, setRangesOn] = useState<boolean | null>(null);
@@ -706,14 +706,14 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<DashboardKept | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  // Arc AP-6 — building safely: what each element read (the checks chip), the group the builder previews the cockpit
+  // Arc AP-6 — building safely: what each element read (the checks chip), the group the builder previews the dashboard
   // as, the groups it may preview as, and what the object door said a preview withholds
   const [checks, setChecks] = useState<Record<string, ReadState>>({});
   const onReadState = useCallback((key: string, state: ReadState | null) => setChecks(c => {
     if (!state) { if (!(key in c)) return c; const rest = { ...c }; delete rest[key]; return rest; }
     return c[key]?.status === state.status && c[key]?.reason === state.reason ? c : { ...c, [key]: state };
   }), []);
-  // a preview lasts while this cockpit is built: leaving the builder, or opening another, reads as the person again
+  // a preview lasts while this dashboard is built: leaving the builder, or opening another, reads as the person again
   const [previewing, setPreviewing] = useState("");
   const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
   const [heldBack, setHeldBack] = useState<string[]>([]);
@@ -731,13 +731,13 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   // The two doors by hand only: a note's words and an image are the person's, never a model's.
   const [noting, setNoting] = useState(false);
   const [imaging, setImaging] = useState(false);
-  // Any recorded finding of the connection, as a card (B3); who the cockpit is published to (B5).
+  // Any recorded finding of the connection, as a card (B3); who the dashboard is published to (B5).
   const [picking, setPicking] = useState(false);
   // Arc OC-4 — a piece bound to the ontology, placed by hand, while `ontology.dashboard_pieces` is on.
   const [piecesOn, setPiecesOn] = useState(false);
-  // A cockpit started from an object (2026-10-10), while `ontology.object_dashboards` is on.
+  // A dashboard started from an object (2026-10-10), while `ontology.object_dashboards` is on.
   const [objectsOn, setObjectsOn] = useState(false);
-  // Arc AP-1 — a cockpit built in place, while `dashboard.builder` is on: read first, and Edit opens the builder.
+  // Arc AP-1 — a dashboard built in place, while `dashboard.builder` is on: read first, and Edit opens the builder.
   const [builderOn, setBuilderOn] = useState(false);
   // Arc AP-2 and AP-3 — sets, choices and action buttons, while `dashboard.wiring` is on
   const [wiringOn, setWiringOn] = useState(false);
@@ -747,7 +747,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   const [limitsOn, setLimitsOn] = useState(false);
   // Arc AP-7 — a query of the person's own, while `dashboard.queries` is on; a new one is written for a section
   const [queriesOn, setQueriesOn] = useState(false);
-  // Arc AP-8 — variables, while `dashboard.variables` is on: the Variables pane, and a query reading the cockpit's values
+  // Arc AP-8 — variables, while `dashboard.variables` is on: the Variables pane, and a query reading the dashboard's values
   const [variablesOn, setVariablesOn] = useState(false);
   const [writing, setWriting] = useState<{ section: string | null } | null>(null);
   // the picker open, for a section (none: the first that holds pieces); and where a card, a note, an image or a finding
@@ -765,7 +765,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   const [publishing, setPublishing] = useState(false);
   const [shared, setShared] = useState<SharedDashboardListed[]>([]);
   const [tick, setTick] = useState(0);
-  // The cockpit is being read for a period while the cards on screen are still the period before.
+  // The dashboard is being read for a period while the cards on screen are still the period before.
   const [reading, setReading] = useState(false);
   const known = useRef<Set<string>>(new Set());
   const adopt = useRef(false);
@@ -799,7 +799,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
     return () => { alive = false; };
   }, []);
 
-  // The person's cockpits. Null from the route means the flag is off: draw what was drawn before.
+  // The person's dashboards. Null from the route means the flag is off: draw what was drawn before.
   useEffect(() => {
     let cancelled = false;
     listDashboards(connectionId).then(l => {
@@ -807,7 +807,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
       if (l === null) { setList("off"); return; }
       setList(l);
       const live = l.cockpits.filter(c => !c.retired);
-      // The metrics are the cockpit a person opens on (asked 2026-10-05); one of their own is
+      // The metrics are the dashboard a person opens on (asked 2026-10-05); one of their own is
       // opened when it is where they left off.
       setChosen(prev => {
         const want = prev || remembered(connectionId);
@@ -820,7 +820,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
     return () => { cancelled = true; };
   }, [connectionId, tick]);
 
-  // The chosen cockpit, read for the page's range, each card it places run through the guards.
+  // The chosen dashboard, read for the page's range, each card it places run through the guards.
   useEffect(() => {
     if (!chosen || chosen === METRICS_DASHBOARD || chosen.startsWith("shared:") || list === "off") { setData(null); return; }
     if (rangesOn === null) return;
@@ -831,13 +831,13 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
         const read = await getDashboard(connectionId, chosen, range);
         const placed = new Set(read.cockpit.spec ? cardsPlaced(read.cockpit.spec) : []);
         const runs = await Promise.all(read.cards.filter(c => placed.has(c.id)).map(async (card): Promise<CardState> => {
-          // Arc AP-8 — a query reading the cockpit's values is run by its own cell, with them
+          // Arc AP-8 — a query reading the dashboard's values is run by its own cell, with them
           if (valuesRead(card.sql).length) return { card };
           try { return { card, run: await runCard(card.id, range, { compare: true }) }; }
           catch { return { card, failed: true }; }
         }));
         if (cancelled) return;
-        // A card pinned from here lands on the cockpit in view (§6 item 36(k)).
+        // A card pinned from here lands on the dashboard in view (§6 item 36(k)).
         if (adopt.current && read.cockpit.spec && !read.cockpit.retired) {
           adopt.current = false;
           const fresh = read.cards.filter(c => !known.current.has(c.id) && !placed.has(c.id));
@@ -877,7 +877,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
     } finally { setBusy(false); }
   }, [reload]);
 
-  /** Open another cockpit. From the builder's own picker it opens in the builder; anywhere else, to be read. */
+  /** Open another dashboard. From the builder's own picker it opens in the builder; anywhere else, to be read. */
   const choose = (id: string, keepEditing = false) => {
     if (burst.current.timer) sendBurst();
     setDraft(null);
@@ -897,7 +897,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
   }, [rangeKey]);
 
-  // "Remove" on a card takes it off THIS cockpit. The card stays — another cockpit may place it.
+  // "Remove" on a card takes it off THIS dashboard. The card stays — another dashboard may place it.
   const takeOffOne = useCallback((id: string) => {
     if (!data?.cockpit.spec) return;
     void write(() => keepDashboard(connectionId, data.cockpit_id, takeOffCard(data.cockpit.spec, id), "a card taken off"),
@@ -990,7 +990,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
     onPlaceTable: piecesOn ? (entity: string, segment: string) => edit(s => placePiece(s, "ObjectTable", { entity, segment, size: "wide" }).spec,
       "an objects table placed from a process board", "Placed: the objects still waiting and already past the promise.") : undefined,
   }), [takeOffOne, refreshOne, onOpenSource, onEvidence, edit, piecesOn]);
-  // Arc AP-1 — read first: a cockpit being read offers its reader's own doors only, and the builder all of them, each
+  // Arc AP-1 — read first: a dashboard being read offers its reader's own doors only, and the builder all of them, each
   // change kept through `change` so that it can be undone
   const readDoors = useMemo<DashboardDoors>(() => ({ onRefresh: refreshOne, onOpenSource, onEvidence }), [refreshOne, onOpenSource, onEvidence]);
   const editDoors = useMemo<DashboardDoors>(() => {
@@ -1050,7 +1050,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   ) : (
     <Button variant="secondary" size="xs" onClick={() => setNewOpen(true)}>New dashboard</Button>
   );
-  // Under the Metrics cockpit, a person's own cockpits are one muted line and their door — the explanation on hover.
+  // Under the Metrics dashboard, a person's own dashboards are one muted line and their door — the explanation on hover.
   const noneYetLine = (
     <div className="aug-fs-sm" data-testid="dashboard-none-yet" style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--t3)" }}
       title="A dashboard is the set of cards you keep watching for one area — returns, pricing, marketing. It is yours: nobody else sees it or changes it.">
@@ -1074,7 +1074,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
         </EmptyState>
   );
 
-  // a cockpit's versions, newest first, each one a person may go back to
+  // a dashboard's versions, newest first, each one a person may go back to
   const historyPanel = kept && data ? (
     <div style={{ margin: "8px 0 12px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
@@ -1145,7 +1145,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
     </>
   ) : null;
 
-  // Arc AP-1 — the builder: the cockpit between its layout and the setup of what is chosen, in place of the strip
+  // Arc AP-1 — the builder: the dashboard between its layout and the setup of what is chosen, in place of the strip
   if (builderOn && editing && drawn && data && current && chosen !== METRICS_DASHBOARD && !chosen.startsWith("shared:")) {
     const at = savedAt ?? (kept.kept_at ? Date.parse(kept.kept_at) : NaN);
     const saved = pending ? "Saving…"
@@ -1313,7 +1313,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
             </>
           )}>
           {({ selected, onSelect, handle, reads }) => (previewing ? (
-            // Arc AP-6 — read as the person and a member of the group, with no door that changes the cockpit
+            // Arc AP-6 — read as the person and a member of the group, with no door that changes the dashboard
             <ComposedDashboard key={`preview:${previewing}`} spec={current} cards={cards} host={host}
               doors={{ onRefresh: editDoors.onRefresh, onReadState }} sym={data.currency_symbol || "$"} images={images} range={range}
               schema={schema} connectionId={connectionId} dashboardId={`${connectionId}:${chosen}:preview`} asGroup={previewing} onSaid={onSaid} />
@@ -1349,7 +1349,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
           onKept={id => { setNewOpen(false); choose(id); reload(); }} />
       )}
 
-      {/* Cockpits that lived in a Data Canvas, offered here once (CT-10). */}
+      {/* Dashboards that lived in a Data Canvas, offered here once (CT-10). */}
       {list.from_canvases.map(c => (
         <div key={c.canvas_id} data-testid="dashboard-move-offer" className="aug-fs-sm"
           style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, color: "var(--t2)" }}>

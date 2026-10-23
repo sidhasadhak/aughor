@@ -1,5 +1,5 @@
 /**
- * A card's status, read off its run (Arc CT, CT-4). The conditions of a cockpit stand on
+ * A card's status, read off its run (Arc CT, CT-4). The conditions of a dashboard stand on
  * these words, so each is pinned by the values either side of its edge.
  */
 import { describe, expect, it } from "vitest";

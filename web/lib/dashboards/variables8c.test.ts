@@ -1,6 +1,6 @@
 /**
  * Arc AP-8c — the rest of the variables (docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §9.2): a value of yes or no and a
- * list; a value summed over a set's objects; and one read from the first value of a query the cockpit places (every
+ * list; a value summed over a set's objects; and one read from the first value of a query the dashboard places (every
  * row's, for a list). A set keeps objects among a list by "in" and "not in", and compares yes or no by "=" and "!=". A
  * query's value is read as its kind says, or the reason it cannot be is said — never a value made up to fill one.
  */

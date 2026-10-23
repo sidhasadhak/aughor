@@ -1,5 +1,5 @@
 /**
- * A cockpit wired as an App (Arc AP-2 and AP-3; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.1b, §4.3, §4.5): what a
+ * A dashboard wired as an App (Arc AP-2 and AP-3; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.1b, §4.3, §4.5): what a
  * set reads down the sets it starts from, the choices a reader makes and who reads each, the rules that hold the wiring
  * by name, what a press of a button runs, and the edits that build sets and values by hand. The spec is the dispatch
  * desk of the approved mockup, on theLook's names.

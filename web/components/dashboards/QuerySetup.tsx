@@ -2,7 +2,7 @@
 
 /**
  * Your own query, set up in the builder (Arc AP-7; ROADMAP §3.57, the study's §9; design-mockups/cockpit-builder.html
- * screen 10). The user, 2026-10-11: the cockpit was "not flexible enough for the users to choose what they really want
+ * screen 10). The user, 2026-10-11: the dashboard was "not flexible enough for the users to choose what they really want
  * to show" — an SQL statement over one table, across tables or another schema, shown as a table, a card or a chart.
  *
  * The person writes SQL beside the tables of the connection's schemas and runs it: how long it took, how many rows, its
@@ -106,7 +106,7 @@ function Column({ label, value, columns, onPick, none, only }: {
   );
 }
 
-/** Arc AP-8 — what a value of the cockpit's is called and holds, as the setup offers it and tries a query with it. */
+/** Arc AP-8 — what a value of the dashboard's is called and holds, as the setup offers it and tries a query with it. */
 const KIND_WORDS: Record<string, string> = { days: "days", number: "a number", text: "words", date: "a day" };
 const startText = (def: DashboardValueDef) =>
   (def.from?.by ?? "author") === "author" || def.from?.by === "reader" ? (def.value === null || def.value === undefined ? "" : String(def.value)) : "";
@@ -118,7 +118,7 @@ export function QuerySetup({ connectionId, card, onKept, onClose, values }: {
   /** The card kept — a new one, or the one that replaces `card` — for the page to place or to swap in. */
   onKept: (kept: DashboardCard, replaced: string | null) => void;
   onClose?: () => void;
-  /** Arc AP-8 — the cockpit's values, while variables are on: each may be read in the SQL as `{{name}}`. */
+  /** Arc AP-8 — the dashboard's values, while variables are on: each may be read in the SQL as `{{name}}`. */
   values?: Record<string, DashboardValueDef> | null;
 }) {
   const render = (card?.render ?? {}) as { shown?: QueryShown; columns?: TypedColumn[] };

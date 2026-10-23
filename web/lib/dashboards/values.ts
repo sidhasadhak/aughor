@@ -1,5 +1,5 @@
 /**
- * The cockpit's values a query of the person's own reads (Arc AP-8): written `{{name}}` in the statement, sent as the
+ * The dashboard's values a query of the person's own reads (Arc AP-8): written `{{name}}` in the statement, sent as the
  * page holds them now, and bound by the engine — never pasted into the statement (`aughor/dashboards/queries.py` `bind`).
  */
 import { ISO_DAY, MAX_LIST } from "@/lib/dashboards/catalog";
@@ -19,7 +19,7 @@ export function valuesRead(sql: string | null | undefined): string[] {
 export type ValuesSent = Record<string, { kind: string; value: unknown }>;
 
 /** The values a query reads as the page holds them now — or the choice one waits on, one still being read, or why one
- *  cannot be read: a name the cockpit holds no value of, or one that holds nothing yet. */
+ *  cannot be read: a name the dashboard holds no value of, or one that holds nothing yet. */
 export function valuesFor(names: string[], defs: Record<string, { kind: string; label?: string }> | null | undefined,
   valueOf: (name: string) => ValueNow): { values: ValuesSent } | { waiting: string; label: string } | { reading: true } | { refused: string } {
   const values: ValuesSent = {};
@@ -76,7 +76,7 @@ export function valueWords(kind: string, v: unknown): string {
   return Array.isArray(v) ? v.join(", ") : String(v);
 }
 
-/** Arc AP-8c — a value read from a query of the cockpit's own: the first row's value of `column` (none, its first column),
+/** Arc AP-8c — a value read from a query of the dashboard's own: the first row's value of `column` (none, its first column),
  *  as a value of `kind` — or, for a list, that value of every row. Or why it cannot be: the query failed, returned no row,
  *  has no such column, returns more rows than a list holds, or returns something that is not a value of its kind. Never
  *  a value made up to fill one it lacks. */

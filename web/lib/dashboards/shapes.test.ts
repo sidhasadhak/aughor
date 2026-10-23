@@ -1,6 +1,6 @@
 /**
  * Shapes in the starter (Arc AP-5; design-mockups/cockpit-builder.html screens 1 and 7). Each shape the server says an
- * object fits becomes a cockpit the rules accept, laid out as the mockup lays it out — read here from proposals shaped as
+ * object fits becomes a dashboard the rules accept, laid out as the mockup lays it out — read here from proposals shaped as
  * theLook's are served: an order's queue past its dispatch promise, a case's queue on its status, the distribution
  * centres on a map, a customer as one object, inventory on a timeline.
  */

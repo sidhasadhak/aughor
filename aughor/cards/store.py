@@ -56,8 +56,8 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_dashboard_cards_scope ON dashboard_cards(scope, scope_ref)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_dashboard_cards_conn ON dashboard_cards(connection_id)")
-    # Cockpit layout — the user's arrangement (position + size per card) on a connection, saved at
-    # the ACCOUNT level so any login/device sees the same cockpit. Keyed by (connection, user); the
+    # Dashboard layout — the user's arrangement (position + size per card) on a connection, saved at
+    # the ACCOUNT level so any login/device sees the same dashboard. Keyed by (connection, user); the
     # user is 'default' until identity/RBAC is on, so it upgrades to true per-user with no migration.
     c.execute("""
         CREATE TABLE IF NOT EXISTS card_layouts (

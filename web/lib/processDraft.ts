@@ -100,9 +100,9 @@ export function freshId(base: string, taken: Iterable<string>): string {
   return `${base}_${n}`;
 }
 
-/** A new cockpit's id, as the server makes one (`cockpit.home.new_id`): the name in lower-case words joined by hyphens,
- *  then six random hex characters — a cockpit id is `[a-z0-9][a-z0-9-]{0,47}`, and keeping a spec under an id a person
- *  already has would add a version to THAT cockpit, so the suffix is random, never counted. */
+/** A new dashboard's id, as the server makes one (`cockpit.home.new_id`): the name in lower-case words joined by hyphens,
+ *  then six random hex characters — a dashboard id is `[a-z0-9][a-z0-9-]{0,47}`, and keeping a spec under an id a person
+ *  already has would add a version to THAT dashboard, so the suffix is random, never counted. */
 export function dashboardIdFor(name: string, random: () => string = randomHex): string {
   const slug = name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
     .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32).replace(/-+$/, "") || "cockpit";

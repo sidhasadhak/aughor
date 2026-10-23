@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Every piece a cockpit may hold, by what it is for (Arc AP-4; design-mockups/cockpit-builder.html screen 5) — the door
+ * Every piece a dashboard may hold, by what it is for (Arc AP-4; design-mockups/cockpit-builder.html screen 5) — the door
  * that lets a person build the dispatch desk by hand: a figure, a chart and the filter column were placed only by the
  * starter before it (the scenarios on theLook, 2026-10-11).
  *
@@ -36,7 +36,7 @@ const HANDED: readonly string[] = ["card", "note", "image", "finding", "query"];
 
 type Placed = "ObjectTable" | "ObjectDetail" | "ObjectFigure" | "ObjectChart" | "ProcessBoard" | "ActionButtons"
   | "ObjectList" | "ObjectMap" | "ObjectTimeline" | "ChooseOne" | "ObjectSearch";
-/** "Linked" places two things: a set of what the chosen object links to, and a table of it; a drawer is the cockpit's own,
+/** "Linked" places two things: a set of what the chosen object links to, and a table of it; a drawer is the dashboard's own,
  *  holding a detail of the object it opens on. */
 type Kind = Placed | "ObjectFilters" | "Linked" | "Drawer" | HandOff;
 interface Entry { kind: Kind; label: string; says: string }
@@ -83,7 +83,7 @@ function upTo(text: string, max: number): string {
   return cut.slice(0, Math.max(cut.lastIndexOf(" "), 1)).trim();
 }
 
-/** The entity a cockpit already reads first — its filter column's, a piece's, a set's — for the picker to start on. */
+/** The entity a dashboard already reads first — its filter column's, a piece's, a set's — for the picker to start on. */
 function firstEntity(spec: DashboardSpec): string {
   for (const el of Object.values(spec.elements)) if (typeof el.props?.entity === "string" && el.props.entity) return el.props.entity;
   for (const name of Object.keys(spec.sets ?? {})) { const r = readSet(spec, name); if (!isRefused(r)) return r.entity; }
@@ -96,7 +96,7 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, que
   section: string | null;
   connectionId: string;
   schema?: string;
-  /** Whether a piece may read one of the cockpit's sets (Arc AP-2). */
+  /** Whether a piece may read one of the dashboard's sets (Arc AP-2). */
   wiringOn: boolean;
   /** Arc AP-7 — whether a person may write a query of their own here. */
   queriesOn?: boolean;

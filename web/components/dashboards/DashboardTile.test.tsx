@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * How a cockpit draws one card (the user's mock, 2026-09-28). What is pinned is what a reader
+ * How a dashboard draws one card (the user's mock, 2026-09-28). What is pinned is what a reader
  * reads off a tile: the figure at the scale its metric's unit states, how it moved against the
  * period it is compared with — and when that comparison is not at equal age, or has no figure,
  * that it says so — its limit, and what stands behind it.

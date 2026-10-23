@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * The cockpit as a canvas (docs/COCKPIT_CANVAS_2026-10-08.md), drawn: a note and an image in a
+ * The dashboard as a canvas (docs/COCKPIT_CANVAS_2026-10-08.md), drawn: a note and an image in a
  * section beside the cards, each with its stamp; every element at its size, as a span the
  * section's columns cut; the doors an owner has and a reader does not; and a bigger figure
  * that shows its metric's trend. Geometry is a browser question (jsdom is 0×0); what is pinned

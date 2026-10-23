@@ -73,7 +73,7 @@ def test_missing_card_is_404():
 
 
 def test_dashboard_layout_roundtrips_server_side():
-    # No arrangement saved yet → empty (a fresh cockpit packs by default).
+    # No arrangement saved yet → empty (a fresh dashboard packs by default).
     assert client.get("/cards/layout", params={"connection_id": "cx_layout"}).json() == {}
 
     # Save the arrangement, then read it back — server-side + account-keyed, so any device sees it.

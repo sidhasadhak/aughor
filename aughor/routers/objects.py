@@ -27,7 +27,7 @@ router = APIRouter(tags=["objects"], dependencies=[Depends(refuse_organisation_s
                                                   Depends(acting_agent_from_request)])   # Arc OC-7 — an agent reads only what its person may
 
 
-#: Arc AP-6 — the group a builder previews a cockpit as: one more party among the reader's, so it only narrows.
+#: Arc AP-6 — the group a builder previews a dashboard as: one more party among the reader's, so it only narrows.
 AS_GROUP = Query(default=None, description="Arc AP-6 — read as you and a member of this group would: only ever less")
 
 

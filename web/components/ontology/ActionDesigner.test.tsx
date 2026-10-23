@@ -4,7 +4,7 @@
  * The action designer (2026-10-09, approved as drawn after the usability walk-through, job 2). A person decides an
  * action in words — what it is about, what a press does, what the person pressing it says, when it may be pressed, who
  * decides — and sees it read as declaring would read it: how many objects allow a press, and a press dry-run on a real
- * one. Declaring, publishing the release and putting the button on the cockpits a person ticks follow from the page.
+ * one. Declaring, publishing the release and putting the button on the dashboards a person ticks follow from the page.
  * These assert on the REQUESTS the page makes: a form that renders a field and drops it from the body looks the same.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";

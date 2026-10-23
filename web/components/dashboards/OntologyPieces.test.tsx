@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 /**
- * Arc OC-4's chain, as a test: a late dispatch cockpit — a process board, an objects table of the overdue objects, a
- * detail that follows it with a declared action's button — drawn through the cockpit's own renderer, every door the
+ * Arc OC-4's chain, as a test: a late dispatch dashboard — a process board, an objects table of the overdue objects, a
+ * detail that follows it with a declared action's button — drawn through the dashboard's own renderer, every door the
  * pieces read mocked (no test here reaches an API). What it shows: the board's count and the table's total are the
  * two numbers the server gave, a row opens in the detail, running the action reads every piece again so the edit
  * shows in the table and the detail, and an action that needs approval is proposed instead, and said so.

@@ -149,7 +149,7 @@ describe("ProcessPanel — a process as the data counted it", () => {
 
 
 describe("ProcessPanel — a dashboard for a process published earlier", () => {
-  // The walk-through (2026-10-09): Start a cockpit was offered only in the designer's session, right after publishing.
+  // The walk-through (2026-10-09): Start a dashboard was offered only in the designer's session, right after publishing.
   beforeEach(() => { keepDashboard.mockClear(); requestTab.mockClear(); });
 
   it("starts one from the panel — the board, the objects past its first promise, one beside them — and opens on it", async () => {

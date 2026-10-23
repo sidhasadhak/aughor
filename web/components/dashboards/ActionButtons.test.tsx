@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * Action buttons on a cockpit (Arc AP-3; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.5). Drawn through the cockpit's
+ * Action buttons on a dashboard (Arc AP-3; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.5). Drawn through the dashboard's
  * own renderer with the object door and the action door mocked. Every run is one call to the declared action's own door
  * — so its criteria, risk and approval hold on each — and a press says on its row what ran, what waits for approval and
  * what was refused, and why. A button that cannot run says why, or is hidden; it never guesses an object.

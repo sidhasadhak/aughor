@@ -2,7 +2,7 @@
  * Sizes one grade at a time (Arc AP-1; the user, 2026-10-10: "they become either too large or small.. The size needs to
  * be adjusted one grade point at a time"): a section on the grid places each element by w columns and h rows, within
  * what its kind may take; a section sized by name moves onto the grid keeping the room each element had; and every
- * edit leaves a cockpit the rules accept.
+ * edit leaves a dashboard the rules accept.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -19,7 +19,7 @@ import { checkDashboardSpec, vocabulary } from "@/lib/dashboards/rules";
 type Spec = DashboardSpec;
 const premise = (): Spec => JSON.parse(readFileSync(resolve(process.cwd(), "lib/dashboards/premise.fixture.json"), "utf8"));
 
-/** A cockpit started from an object, as `objectCockpitSpec` lays one out: a filter column, then one section. */
+/** A dashboard started from an object, as `objectDashboardSpec` lays one out: a filter column, then one section. */
 function objectDashboard(): Spec {
   return {
     root: "cockpit",

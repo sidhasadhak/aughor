@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * PinnedCardBody — the rendering of ONE pinned cockpit card (title · value/trend/table body ·
+ * PinnedCardBody — the rendering of ONE pinned dashboard card (title · value/trend/table body ·
  * footer actions), independent of how it's laid out. Both the freeform React-Flow canvas
  * (PinnedCardsCanvas) and the responsive drag-to-reorder grid (PinnedCardsGrid) render the
  * SAME card through this component, so the two arrangement modes stay pixel-identical.
@@ -46,7 +46,7 @@ function BigValue({ v }: { v: number | null | undefined }) {
   );
 }
 
-/** Keep a chart's display edits on its card. `PUT /cards/{id}` has existed since the cockpit
+/** Keep a chart's display edits on its card. `PUT /cards/{id}` has existed since the dashboard
  *  shipped but had no client, so every edit to a pinned chart died on unmount. Debounced: the
  *  chart emits per interaction (typing an axis title would be a PUT/keystroke). Every surface
  *  that draws a card's chart keeps its edits through this one. */
@@ -157,7 +157,7 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
     warning?: number | null; critical?: number | null; direction?: string; monitor_id?: string | null;
   } | undefined;
   // A limit is not an alert. A card says it is alerting only when a monitor stands behind it
-  // (`monitor_id`, written when the card was graduated). A card a cockpit proposal made carries
+  // (`monitor_id`, written when the card was graduated). A card a dashboard proposal made carries
   // a limit and schedules nothing (Arc CT-5); it says its limit, and the door to an alert stays.
   const limits = [t0?.warning, t0?.critical].filter((v): v is number => typeof v === "number");
   const [alerting, setAlerting] = useState(limits.length > 0 && !!t0?.monitor_id);

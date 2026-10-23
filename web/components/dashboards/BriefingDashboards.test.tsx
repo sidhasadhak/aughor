@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
 /**
- * BriefingCockpits (Arc CT, CT-7 to CT-10): a person's cockpits, the Cockpit tab beside the Briefing.
+ * BriefingDashboards (Arc CT, CT-7 to CT-10): a person's dashboards, the Dashboards tab beside the Briefing.
  *
- * The API is stood in for, and the cockpit's own drawing (`ComposedCockpit`, tested on its own)
+ * The API is stood in for, and the dashboard's own drawing (`ComposedDashboard`, tested on its own)
  * is a stub that records what it was handed. What is asserted is what this component asks the
  * server to do, and what it hands on.
  */
@@ -84,7 +84,7 @@ const MEASURED = {
 } as unknown as BriefingRangeBlock;
 
 const show = () => render(<BriefingDashboards connectionId="thelook" schema="thelook" />);
-/** Arc AP-1 — building in place on, and the cockpit opened in the builder. */
+/** Arc AP-1 — building in place on, and the dashboard opened in the builder. */
 const openBuilder = async () => {
   api.getSystemFlags.mockResolvedValue({ "dashboard.builder": { value: true } });
   show();
@@ -100,10 +100,10 @@ beforeEach(() => {
   drawn.props.length = 0;
   composer.onCreated = null;
   try { localStorage.clear(); } catch { /* jsdom */ }
-  // A person who left off on a cockpit of their own. Nothing remembered opens the metrics —
+  // A person who left off on a dashboard of their own. Nothing remembered opens the metrics —
   // the last block below.
   localStorage.setItem("aughor:cockpit:thelook", "returns-1");
-  // Ranges off unless a test turns them on: the cockpit then reads as written.
+  // Ranges off unless a test turns them on: the dashboard then reads as written.
   api.getSystemFlags.mockResolvedValue({});
   api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [] });
   api.listDashboards.mockResolvedValue(LIST);
@@ -277,7 +277,7 @@ describe("with no dashboards yet", () => {
 });
 
 describe("a new dashboard started without a model", () => {
-  // The walk-through (2026-10-09): + New cockpit offered only a model's draft, and a cockpit for a process only inside
+  // The walk-through (2026-10-09): + New dashboard offered only a model's draft, and a dashboard for a process only inside
   // the designer's own session.
   const kept = () => api.keepDashboard.mock.calls.at(-1) as [string, string, { elements: Record<string, { type: string; props: Record<string, unknown>; children: string[] }> }, string];
 
@@ -410,7 +410,7 @@ describe("the metrics, the dashboard a person opens on", () => {
     show();
     const metrics = await screen.findByRole("tab", { name: "Metrics" });
     expect(metrics).toHaveAttribute("aria-selected", "true");
-    // measured for the latest month, as a cockpit is read — and the Briefing's own table shows it
+    // measured for the latest month, as a dashboard is read — and the Briefing's own table shows it
     await waitFor(() => expect(api.measureRange).toHaveBeenCalledWith("thelook", { preset: "previous_month" }, "thelook"));
     expect(await screen.findByText("Measured for August 2026 · against July 2026")).toBeInTheDocument();
     // the figure on its card — the table behind Details holds it too
@@ -420,7 +420,7 @@ describe("the metrics, the dashboard a person opens on", () => {
     expect(api.readExpectedNext).toHaveBeenCalledWith("thelook", { preset: "previous_month" }, "thelook", undefined);
     expect(screen.getByTestId("dashboard-range")).toHaveTextContent("August 2026 · final");
     expect(api.getDashboard).not.toHaveBeenCalled();
-    // the person's own cockpits are still there, one click away, and that choice is remembered
+    // the person's own dashboards are still there, one click away, and that choice is remembered
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Returns" }));   // a Radix tab opens on mouseDown
     await waitFor(() => expect(api.getDashboard).toHaveBeenCalledWith("thelook", "returns-1", { preset: "previous_month" }));
     expect(localStorage.getItem("aughor:cockpit:thelook")).toBe("returns-1");
@@ -436,7 +436,7 @@ describe("the metrics, the dashboard a person opens on", () => {
     api.listDashboards.mockResolvedValue({ ...LIST, cockpits: [] });
     show();
     expect(await screen.findByTestId("metrics-dashboard")).toBeInTheDocument();
-    // one muted line and its door, under the metrics; what a cockpit of your own is, on its hover
+    // one muted line and its door, under the metrics; what a dashboard of your own is, on its hover
     const none = screen.getByTestId("dashboard-none-yet");
     expect(none).toHaveTextContent("No dashboard of your own yet");
     expect(none.getAttribute("title")).toMatch(/the set of cards you keep watching for one area/);
@@ -528,7 +528,7 @@ describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => 
     const kept = api.keepDashboard.mock.calls[0][2] as { elements: Record<string, { props: Record<string, unknown> }> };
     expect(kept.elements["card-net"].props).toMatchObject({ w: 6, h: 5 });
     expect(api.keepDashboard.mock.calls[0][3]).toBe("resized by hand");
-    // the room changed and nothing measured did: the cockpit is not read again, nor any card run again
+    // the room changed and nothing measured did: the dashboard is not read again, nor any card run again
     await new Promise(r => setTimeout(r, 50));
     expect(api.getDashboard.mock.calls.length).toBe(reads);
     expect(api.runCard.mock.calls.length).toBe(runs);
@@ -582,7 +582,7 @@ describe("the canvas: a finding from the ledger, a change in words, publishing (
     expect(within(rows[1]).getByRole("button", { name: "Place" })).toBeDisabled();
     fireEvent.click(within(rows[0]).getByRole("button", { name: "Place" }));
     await waitFor(() => expect(api.pinFinding).toHaveBeenCalledWith("thelook", "returns__cat__1", { scope: "connection", scopeRef: "thelook", schema: "thelook" }));
-    // The card pinned lands on the cockpit in view, as a pin from the Briefing does.
+    // The card pinned lands on the dashboard in view, as a pin from the Briefing does.
     await waitFor(() => expect(api.getDashboard).toHaveBeenCalledTimes(2));
   });
 
@@ -853,7 +853,7 @@ describe("previewing as a group (Arc AP-6)", () => {
     expect(within(banner).getByTestId("dashboard-preview-nothing")).toHaveTextContent("No row policy or mask holds back what these pieces read from this group.");
     const props = drawn.props.at(-1)! as { asGroup?: string; doors: Record<string, unknown>; onSaid: (line: string) => void };
     expect(props.asGroup).toBe("support");
-    expect(Object.keys(props.doors).sort()).toEqual(["onReadState", "onRefresh"]);           // nothing that changes the cockpit
+    expect(Object.keys(props.doors).sort()).toEqual(["onReadState", "onRefresh"]);           // nothing that changes the dashboard
     const WITHHELD = [
       "only the Order objects user:amit previewing as support may see are shown — support: status in cancelled",
       "counted over only the Order objects user:amit previewing as support may see — support: status in cancelled",

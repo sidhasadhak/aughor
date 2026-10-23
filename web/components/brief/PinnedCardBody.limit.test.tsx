@@ -5,7 +5,7 @@
  *
  * A card said "Alerting when above threshold" — with the title "This card is now a scheduled
  * monitor" — whenever it carried a limit. That was true while the only way to a limit was to
- * graduate the card, which creates the monitor. A cockpit proposal gives a card a limit and
+ * graduate the card, which creates the monitor. A dashboard proposal gives a card a limit and
  * schedules nothing, and the card went on saying it was alerting. Seen on the live run, on the
  * first card a proposal made.
  */

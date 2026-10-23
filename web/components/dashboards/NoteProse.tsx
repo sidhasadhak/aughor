@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * NoteProse — a cockpit note's words, drawn from the Markdown subset a note may hold (the
+ * NoteProse — a dashboard note's words, drawn from the Markdown subset a note may hold (the
  * canvas, docs/COCKPIT_CANVAS_2026-10-08.md; the user's call, 2026-10-08: "Markdown subset, up
  * to 2,000": bold, italics, lists, links).
  *
  * Narrower than the chat's `AnswerProse` on purpose. A note is a person's reminder, not a
  * document: no headings, no tables, no code, no images, no raw HTML. A link opens in a new tab
- * and is kept to http and https — a note is the one place on a cockpit a person can write a
- * link, and a cockpit is a surface the platform vouches for, so the link is a door and nothing
+ * and is kept to http and https — a note is the one place on a dashboard a person can write a
+ * link, and a dashboard is a surface the platform vouches for, so the link is a door and nothing
  * more: nothing on the page runs from it.
  */
 import type { ReactNode } from "react";

@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge"
  *     tabs={[{ id: "claims", label: "Claims" }, { id: "decisions", label: "Decisions", badge: 2 }]} />
  *
  * A strip may also carry a HEADING between its tabs — a word for the tabs that follow it, as
- * the Briefing's strip says "Your cockpits" after the connection's Metrics — and, at its end,
+ * the Briefing's strip says "Your dashboards" after the connection's Metrics — and, at its end,
  * the one control that belongs to the row (`trailing`: a door to a new tab, a help link).
  */
 export interface TabStripTab<T extends string> {

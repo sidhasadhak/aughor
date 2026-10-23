@@ -116,7 +116,7 @@ def test_the_flag_is_registered_off_and_queued_to_graduate():
     assert flags.flag_disposition("dashboard.composed") == "graduation_queue"
 
 
-# ── the person's cockpits ─────────────────────────────────────────────────────
+# ── the person's dashboards ─────────────────────────────────────────────────────
 
 @needs_rules
 def test_the_list_is_the_persons_cockpits_and_what_they_may_start_from(client, desk, on):
@@ -292,7 +292,7 @@ def test_a_person_may_put_a_number_in_their_own_title(client, desk, on):
     assert client.get(desk.path, params=desk.q).json()["cockpit"]["written_by_model"] is False
 
 
-# ── "My cockpit", started from the cards pinned before cockpits had names ────
+# ── "My dashboard", started from the cards pinned before dashboards had names ────
 
 class _C:
     def __init__(self, id, kind, title):
@@ -391,7 +391,7 @@ def test_the_draft_route_hands_the_area_and_the_person_to_the_drafter(client, de
     assert asked == [(desk.connection, ME, "Returns and refunds", "thelook")]
 
 
-# ── moving a canvas's cockpit here ────────────────────────────────────────────
+# ── moving a canvas's dashboard here ────────────────────────────────────────────
 
 class Canvas:
     """A canvas on the desk's connection whose dashboard was kept before the home moved: its
@@ -496,7 +496,7 @@ def test_no_route_but_the_draft_calls_a_model(client, on, monkeypatch):
     assert client.post("/dashboards/move", params=desk.q, json={"canvas_id": cv.id}).status_code == 200
 
 
-# ── renamed 2026-10-23: dashboards were cockpits ──────────────────────────────────────
+# ── renamed 2026-10-23: dashboards were dashboards ──────────────────────────────────────
 
 def test_an_old_cockpits_path_is_served_as_the_dashboards_one(client, on, desk):
     """A bookmark, a script or a cached page that still says /cockpits lands on the same route, before routing — so

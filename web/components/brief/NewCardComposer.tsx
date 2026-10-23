@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * NewCardComposer — Door 3 of the briefing cockpit (Slice 4): author a card inline, without
+ * NewCardComposer — Door 3 of the briefing dashboard (Slice 4): author a card inline, without
  * leaving the briefing, and pin it through the SAME guarded pin-query path as the Query-Builder
  * door. Two ways in:
  *
@@ -70,12 +70,12 @@ export function NewCardComposer({ connectionId, schema, onCreated, keptFor, star
   connectionId: string;
   schema?: string;
   onCreated: () => void;
-  /** Open on arrival, for a screen whose own button asked for it (the Cockpit tab); `onClose`
+  /** Open on arrival, for a screen whose own button asked for it (the Dashboards tab); `onClose`
    *  then hears when it is done, kept or cancelled. */
   startOpen?: boolean;
   onClose?: () => void;
-  /** Where the card is kept. Absent, it is the connection's — the Briefing's cockpit, as it
-   *  always was. A Data Canvas's cockpit passes its own canvas (Arc CT-4). */
+  /** Where the card is kept. Absent, it is the connection's — the Briefing's dashboard, as it
+   *  always was. A Data Canvas's dashboard passes its own canvas (Arc CT-4). */
   keptFor?: { scope: "canvas"; scopeRef: string };
 }) {
   const [open, setOpen] = useState(startOpen);

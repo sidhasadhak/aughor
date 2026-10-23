@@ -1109,7 +1109,7 @@ export function QueryBuilder({
   const [legendPos,      setLegendPos]      = useState("");   // "" = default (right)
   const [xTitle,         setXTitle]         = useState("");
   const [yTitle,         setYTitle]         = useState("");
-  // Pin to the briefing cockpit (Door 2) — the query is re-guarded on save, so a bad one is refused.
+  // Pin to the briefing dashboard (Door 2) — the query is re-guarded on save, so a bad one is refused.
   const [showPinName, setShowPinName] = useState(false);
   const [pinName,     setPinName]     = useState("");
   const [pinState,    setPinState]    = useState<"idle"|"pinning"|"pinned">("idle");
@@ -1618,9 +1618,9 @@ export function QueryBuilder({
     yTitle: yTitle || undefined,
   };
 
-  // ── Pin to briefing cockpit (Door 2) ────────────────────────────────────────
+  // ── Pin to briefing dashboard (Door 2) ────────────────────────────────────────
   // Persist the current query + chosen render as a StoredCard on this connection's
-  // cockpit. The backend re-runs the SQL through the guard battery and refuses a bad one,
+  // dashboard. The backend re-runs the SQL through the guard battery and refuses a bad one,
   // so a fabricated or mis-grained KPI can never be pinned.
   const onPinClick = () => {
     if (!sql.trim() || !connId) return;

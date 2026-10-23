@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * "Make a cockpit" on an object's panel in the Ontology tab (2026-10-10): the starter in a dialog, and the new cockpit
- * opened in the Cockpit tab once it is kept. Offered while a cockpit may start from an object here
+ * "Make a dashboard" on an object's panel in the Ontology tab (2026-10-10): the starter in a dialog, and the new dashboard
+ * opened in the Dashboards tab once it is kept. Offered while a dashboard may start from an object here
  * (`ontology.dashboard_pieces` and `ontology.object_dashboards`); absent otherwise, never a button that refuses.
  */
 import { useEffect, useState } from "react";

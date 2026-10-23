@@ -44,7 +44,7 @@ describe("the metrics dashboard while a new period is read", () => {
 });
 
 describe("the metrics dashboard when the data cannot be reached (LuxExperience, 2026-10-23)", () => {
-  // The Postgres was down: the server said so as a "headline metrics" row under not-measured, the cockpit showed
+  // The Postgres was down: the server said so as a "headline metrics" row under not-measured, the dashboard showed
   // "1 approved metric can't be measured for a period · Set their dates", and the user approved Repeat Purchase
   // Rate to clear it — and came back to the same row. It is said of the data now, and nothing asks for a metric.
   const down = { ...block("k3", "September 2026", "$1"), measured: [], unmeasured: [],

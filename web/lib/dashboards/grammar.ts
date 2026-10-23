@@ -1,5 +1,5 @@
 /**
- * What the writer of a cockpit is told (Arc CT, CT-5).
+ * What the writer of a dashboard is told (Arc CT, CT-5).
  *
  * The library can write this itself: `catalog.prompt()`. Measured in CT-1, that text is 15,783
  * characters for five components, and most of it teaches what this arc refuses — actions,
@@ -21,7 +21,7 @@ import { CARD_STATUSES, RANGE_STATUSES, RANGE_STATUS_PATH, TAB_PATH } from "@/li
 import { MAX_PATCHES } from "@/lib/dashboards/patch";
 import { MAX_CARDS, MAX_ELEMENTS, MAX_TABS } from "@/lib/dashboards/rules";
 
-/** A small cockpit the rules accept. Its card ids are the names a draft gives its new cards. */
+/** A small dashboard the rules accept. Its card ids are the names a draft gives its new cards. */
 export const GRAMMAR_EXAMPLE = {
   root: "cockpit",
   state: { tab: "overview" },
@@ -69,9 +69,9 @@ const PROPS: Record<WrittenName, string> = {
   Image: `object (an uploaded object's id), caption (text, up to ${MAX_CAPTION} characters), ${SIZE}`,
 };
 
-/** A section's props told while cockpits are built in place (Arc AP-1): the grid besides the columns. */
+/** A section's props told while dashboards are built in place (Arc AP-1): the grid besides the columns. */
 const GRID_SECTION = `, grid (optional: ${GRID.columns})`;
-/** A section's props told while a cockpit may be split into sections (Arc AP-4). */
+/** A section's props told while a dashboard may be split into sections (Arc AP-4). */
 const LAYOUT_SECTION = `, layout (optional, one of: ${LAYOUTS.join(", ")} — the section then holds sections, and may go untitled), `
   + `w (1 to ${GRID.columns}, said by a section that sits in one laid out in columns)`;
 
@@ -88,7 +88,7 @@ function component(name: WrittenName, grid: boolean, structure: boolean): string
   return `- ${name}: ${HOLDS[name]}. props: ${props}. ${holds}`;
 }
 
-/** The grammar. `grid` tells the writer of a cockpit about a section's grid, only while cockpits are built in place
+/** The grammar. `grid` tells the writer of a dashboard about a section's grid, only while dashboards are built in place
  *  (`dashboard.builder`), and `structure` about sections split into sections, only while that is on (`dashboard.app_pieces`);
  *  without them the text is as it was before Arc AP. */
 export function grammar({ grid = false, structure = false }: { grid?: boolean; structure?: boolean } = {}): string {

@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * PinStrip — the ontology release a cockpit holding pieces was composed against, said above it (Arc OC-4; the study's
- * §8.7: a cockpit is checked against the release it is pinned to).
+ * PinStrip — the ontology release a dashboard holding pieces was composed against, said above it (Arc OC-4; the study's
+ * §8.7: a dashboard is checked against the release it is pinned to).
  *
- * The pieces always read what is published now. What a reader is owed is whether that is still what the cockpit was
+ * The pieces always read what is published now. What a reader is owed is whether that is still what the dashboard was
  * built on: when a release since has changed something a piece reads — a process's promise, a rule, an action — the
- * strip names it, with the class it was published as, and the person who keeps the cockpit re-pins it once they have
- * looked. A cockpit with no piece draws no strip.
+ * strip names it, with the class it was published as, and the person who keeps the dashboard re-pins it once they have
+ * looked. A dashboard with no piece draws no strip.
  */
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -22,7 +22,7 @@ export function PinStrip({ pin, spec, busy, onRepin }: {
   pin: DashboardPin;
   spec: unknown;
   busy?: boolean;
-  /** Absent on a cockpit the reader may not change. */
+  /** Absent on a dashboard the reader may not change. */
   onRepin?: () => void;
 }) {
   const elements = ((spec as { elements?: Record<string, { type?: string }> })?.elements) ?? {};

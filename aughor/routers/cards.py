@@ -230,7 +230,7 @@ class PinQueryRequest(BaseModel):
     title: Optional[str] = None
     schema_name: Optional[str] = Field(default=None, alias="schema")
     scope: str = "connection"
-    scope_ref: str = ""                              # defaults to connection_id (the cockpit)
+    scope_ref: str = ""                              # defaults to connection_id (the dashboard)
     render: Dict[str, Any] = Field(default_factory=dict)
     query_ref: Optional[str] = None                  # optional link to the SavedQuery it came from
 
@@ -404,7 +404,7 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
     shown, unread = _shown_of(card)
     reads = _reads_values(card) if shown is not None else False
     if spec is not None and reads:
-        # Arc AP-8 — a query that reads the cockpit's values is read as it says: cutting it would rewrite the statement
+        # Arc AP-8 — a query that reads the dashboard's values is read as it says: cutting it would rewrite the statement
         # its values are bound into
         from aughor.briefing.ranges import phrases
         scoped = {"covers": phrases(spec)["covers"], "standing": True, "grain": None,

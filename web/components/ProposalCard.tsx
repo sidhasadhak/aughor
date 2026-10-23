@@ -201,10 +201,10 @@ function AutomationBody({ chain, detail, openKeys }: {
   );
 }
 
-/* ── a cockpit, as it will be arranged (Arc CT-5) ── */
+/* ── a dashboard, as it will be arranged (Arc CT-5) ── */
 
-/** `change` is what an EDIT does to a line of the cockpit that stands: "added", "changed", or
- *  "" when the edit leaves it as it is. A new cockpit carries none. */
+/** `change` is what an EDIT does to a line of the dashboard that stands: "added", "changed", or
+ *  "" when the edit leaves it as it is. A new dashboard carries none. */
 type DashboardCard = { title: string; new: boolean; tone: string; shown: string; change?: string };
 type DashboardSection = { title: string; shown: string; cards: DashboardCard[]; change?: string };
 type DashboardTabOutline = { tab: string; sections: DashboardSection[]; change?: string };
@@ -234,7 +234,7 @@ function limitWords(l: DashboardNewCard["limit"]): string {
   return `limit: ${parts.join(", ")}`;
 }
 
-/** What an approved cockpit's outcome says, or "" when there is none to say. */
+/** What an approved dashboard's outcome says, or "" when there is none to say. */
 function keptWords(outcome: Record<string, unknown> | undefined): string {
   const version = outcome?.version;
   return typeof version === "number"
@@ -243,7 +243,7 @@ function keptWords(outcome: Record<string, unknown> | undefined): string {
 
 function DashboardBody({ p }: { p: StagedProposal }) {
   const d = p.detail ?? {};
-  // A publish (the canvas, B5): the cockpit as it stands, shared with the groups and roles named.
+  // A publish (the canvas, B5): the dashboard as it stands, shared with the groups and roles named.
   if (d.mode === "publish") {
     const to = (Array.isArray(d.to) ? d.to : []) as string[];
     return (
@@ -582,7 +582,7 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
       ) : (
         <span className="aug-text-xs" style={{ color: STATUS_TONE[status] ?? "var(--t3)" }}>
           {status}{note ? ` — ${note}`
-            // A card read after it settled has no note of its own; a cockpit's record says where it went.
+            // A card read after it settled has no note of its own; a dashboard's record says where it went.
             : p.kind === "cockpit_draft" && status === "executed" && keptWords(p.outcome) ? ` — ${keptWords(p.outcome)}`
             : p.kind === "cockpit_draft" && p.status_message ? ` — ${p.status_message}` : ""}
         </span>

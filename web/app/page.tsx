@@ -1012,7 +1012,7 @@ function resolveDeepLinkTab(t: NavTab): ResolvedTab {
   return none;
 }
 
-/** Dashboards were called cockpits until 2026-10-23: an old `?tab=cockpit` / `?layer=cockpit` link still opens them. */
+/** Dashboards were called dashboards until 2026-10-23: an old `?tab=cockpit` / `?layer=cockpit` link still opens them. */
 const LINK_ALIASES: Record<string, string> = { cockpit: "dashboards" };
 
 function tabFromUrl(): NavTab | null {

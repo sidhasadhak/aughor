@@ -13,7 +13,7 @@ from typing import Any
 
 FLAG = "dashboard.builder"
 
-#: The props only a cockpit built in place writes, by the component that holds them.
+#: The props only a dashboard built in place writes, by the component that holds them.
 _BUILT: dict[str, tuple[str, ...]] = {
     "Section": ("grid",),
     "ObjectFilters": ("w",),

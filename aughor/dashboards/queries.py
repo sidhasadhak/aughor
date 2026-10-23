@@ -45,7 +45,7 @@ AGG_WORDS = {"count": "Count", "count_distinct": "Count of different", "sum": "S
              "min": "Least", "max": "Most"}
 _SOURCE = "cockpit_query"
 _INNER = "aughor_q_inner"
-#: Arc AP-8 — a variable in a query of the person's own: ``{{name}}``, one of the cockpit's values by its name.
+#: Arc AP-8 — a variable in a query of the person's own: ``{{name}}``, one of the dashboard's values by its name.
 PARAM = re.compile(r"\{\{\s*([a-z][a-z0-9_-]{0,39})\s*\}\}")
 
 
@@ -198,7 +198,7 @@ def check(shown: Shown, columns: list[dict]) -> list[str]:
     return out
 
 
-# ── variables: a value of the cockpit's, bound — never pasted in ──────────────────────────────────────────────────────
+# ── variables: a value of the dashboard's, bound — never pasted in ──────────────────────────────────────────────────────
 
 def params_of(sql: str) -> list[str]:
     """The dashboard's values a query reads, by name, each once, in the order it names them."""

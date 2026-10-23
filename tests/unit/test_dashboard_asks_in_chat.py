@@ -32,7 +32,7 @@ RECEIPT_ASKS = [
 
 
 def test_the_receipt_asks_are_recognised_and_questions_are_not():
-    # Ask 9 names no cockpit, dashboard or board — left to the data path, on purpose.
+    # Ask 9 names no dashboard, dashboard or board — left to the data path, on purpose.
     assert [is_dashboard_ask(a) for a in RECEIPT_ASKS] == [True] * 8 + [False, True]
     for q in ("What was revenue last month?", "Which dashboard metrics moved?",
               "Show revenue by board member", "Why did the dashboard's return rate card turn red?"):

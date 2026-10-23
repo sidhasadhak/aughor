@@ -95,7 +95,7 @@ def _map_layout(v: Any) -> dict:
 
 #: The Briefing's sections, in the order the product draws them (the canvas,
 #: docs/COCKPIT_CANVAS_2026-10-08.md, B1). A person shows, hides and orders these and chooses the
-#: cockpit of theirs that rides with the Briefing; the content of a section is never theirs to change.
+#: dashboard of theirs that rides with the Briefing; the content of a section is never theirs to change.
 #: ``measured`` and ``moves`` are the two parts of the verdict — the day's measured figures and the
 #: row of what the findings found — each hidden on its own, moved with the verdict.
 BRIEFING_SECTIONS = ("verdict", "measured", "moves", "key_metrics", "findings", "synthesis", "cockpit", "patterns")
@@ -171,7 +171,7 @@ ALLOWED_KEYS: dict[str, tuple] = {
     "default_connection": (_connection_id, "connection new conversations open on"),
     "ontology_map_layout": (_map_layout, "where you dragged the cards on the ontology map"),
     # The canvas (B1): the Briefing's switches. Cosmetic and self-scoped — which of its sections
-    # you see and in what order, and which cockpit of yours rides with it; its content is the
+    # you see and in what order, and which dashboard of yours rides with it; its content is the
     # platform's, and a send carries the platform's Briefing, not your switches.
     "briefing_sections": (_briefing_sections, "which of the Briefing's sections you show, in what order, "
                                               "and which of your dashboards rides with it"),

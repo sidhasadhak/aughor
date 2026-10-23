@@ -184,18 +184,18 @@ class StagedProposal(BaseModel):
     #: against); accept writes it through `kernel.agents.set_governance`, which re-checks
     #: the knob is declared and the value in range — a cap on spend is governance
     #: however small the number, so Spotlight stages it rather than applying it.
-    #: ``cockpit_draft`` (Arc CT-5, 2026-09-28) is a Data Canvas's cockpit as a person asked
+    #: ``cockpit_draft`` (Arc CT-5, 2026-09-28) is a Data Canvas's dashboard as a person asked
     #: for it: params hold the cards to create — each naming the approved metric, trusted
     #: query or finding it is made from, with the query read from that record at stage time
     #: — and the spec that arranges them, or the spec an edit leaves. Accept makes every
     #: card and keeps the spec as the next version, all or nothing, the bundles' own law;
-    #: it refuses when a record a card came from has changed or the cockpit has moved on.
+    #: it refuses when a record a card came from has changed or the dashboard has moved on.
     kind: Literal["declared_action", "integration",
                   "agent_draft", "automation_draft", "agent_bundle",
                   "automation_state", "agent_grant",
                   "automation_edit", "monitor_bundle", "brief_draft",
                   "outbound_send", "agent_limit", "cockpit_draft",
-                  # The canvas (B5, 2026-10-08): a cockpit published to a group or a role, asked
+                  # The canvas (B5, 2026-10-08): a dashboard published to a group or a role, asked
                   # for in words; accept publishes it as a version under the owner's name.
                   "cockpit_publish",
                   # AO-7e — a crystallised skill, staged by memory at L2+ autonomy; accept
@@ -1208,7 +1208,7 @@ def _accept_dashboard_draft(p: StagedProposal, *, actor: str):
     from aughor.dashboards import propose
     from aughor.org.context import current_user_id
 
-    # Who approved it, as the cockpit's own routes name them: the signed-in user where there
+    # Who approved it, as the dashboard's own routes name them: the signed-in user where there
     # is one, because that is the server's word; else the name the accepting screen gave.
     uid = current_user_id()
     ok, out = propose.accept(dict(p.params or {}), connection_id=p.connection_id,

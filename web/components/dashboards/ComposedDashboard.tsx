@@ -1,24 +1,24 @@
 "use client";
 
 /**
- * ComposedCockpit — a cockpit drawn from a spec (Arc CT, CT-1 and CT-2; ROADMAP §3.50; the
+ * ComposedDashboard — a dashboard drawn from a spec (Arc CT, CT-1 and CT-2; ROADMAP §3.50; the
  * canvas, docs/COCKPIT_CANVAS_2026-10-08.md).
  *
  * The law of the arc: the spec arranges, the card store measures. This component draws tabs
- * and sections from the spec, and hands every card to `CockpitTile`, which draws the card's own
+ * and sections from the spec, and hands every card to `DashboardTile`, which draws the card's own
  * run at its metric's unit — nothing about what a card measures is decided in this file. (Until
- * the user's "make the cockpit look like the mockup", 2026-09-28, a card was drawn with the
+ * the user's "make the dashboard look like the mockup", 2026-09-28, a card was drawn with the
  * Briefing's `PinnedCardBody` unchanged; the face changed, the law did not.)
  *
  * Since the canvas a section also holds a person's own Note and Image, drawn by `StaticTile`,
  * and every element has a size from the catalog's closed set: a column span cut to what the
  * section has, and a row span. The size changes the room, never the measurement. A person
  * resizes by the corner of a tile or by its size pick; either lands as one kept version through
- * `doors.onResize`, and a cockpit the reader may not change offers neither.
+ * `doors.onResize`, and a dashboard the reader may not change offers neither.
  *
  * Three things it will not do:
  *   - draw a spec the rules refuse. It says why instead, in the rules' own sentences.
- *   - let a condition read anything the host did not publish. The state a cockpit renders
+ *   - let a condition read anything the host did not publish. The state a dashboard renders
  *     against is the open tab plus the host's tree, laid over whatever the spec seeded.
  *   - hide a card without saying so. A section counts the cards waiting on a condition, a
  *     card the reader may not see stays where it is and says it is withheld, and a card
@@ -26,7 +26,7 @@
  *     boundary of its own that draws NOTHING when a component throws; the boundary here
  *     sits inside it, so the library's never gets the chance.
  *
- * The Briefing draws a person's cockpits with it (`BriefingCockpits`), behind `dashboard.composed`.
+ * The Briefing draws a person's dashboards with it (`BriefingDashboards`), behind `dashboard.composed`.
  */
 import {
   Children, Component, createContext, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState,
@@ -65,8 +65,8 @@ import { checkDashboardSpec, openingTab } from "@/lib/dashboards/rules";
 import type { WireSpec } from "@/lib/dashboards/sets";
 import { valuesFor, valuesRead, type ValuesSent } from "@/lib/dashboards/values";
 
-/** What a cockpit may ask of the page that holds it. The static doors and `onResize` are absent
- *  on a cockpit the reader may not change — a published one, a strip. */
+/** What a dashboard may ask of the page that holds it. The static doors and `onResize` are absent
+ *  on a dashboard the reader may not change — a published one, a strip. */
 export interface DashboardDoors extends TileDoors, StaticDoors {
   /** Arc OC-4 — place a table of a segment, from a process board's open-and-overdue count. */
   onPlaceTable?: (entity: string, segment: string) => void;
@@ -84,7 +84,7 @@ export interface DashboardDoors extends TileDoors, StaticDoors {
   onReadState?: (key: string, state: ReadState | null) => void;
 }
 
-/** What the builder may ask of a cockpit it draws (Arc AP-1): an element's room on its section's grid — measured from
+/** What the builder may ask of a dashboard it draws (Arc AP-1): an element's room on its section's grid — measured from
  *  the screen when the section is not on the grid yet — and one grade more or less of it, as Alt+arrows give. */
 export interface DashboardHandle {
   room: (key: string) => Box | null;
@@ -108,7 +108,7 @@ interface DashboardContextValue {
   selected: string | null;
   /** Arc AP-2 — the elements that read the set, value or choice chosen in the builder, dashed where they are drawn. */
   reads: Set<string>;
-  /** Each drawn element's room and steps, by key, for the builder's − and + (`CockpitHandle`). */
+  /** Each drawn element's room and steps, by key, for the builder's − and + (`DashboardHandle`). */
   steppers: Map<string, Stepper>;
 }
 
@@ -122,7 +122,7 @@ const SectionKeys = createContext<{ key: string | null; columns: number; childre
 
 function useDashboard(): DashboardContextValue {
   const ctx = useContext(DashboardContext);
-  if (!ctx) throw new Error("a dashboard component was drawn outside ComposedCockpit");
+  if (!ctx) throw new Error("a dashboard component was drawn outside ComposedDashboard");
   return ctx;
 }
 
@@ -148,8 +148,8 @@ const TONE_RULE: Record<Tone, string> = {
 const FILTER_COLUMN = FILTER_DEFAULT_PX;
 
 function DashboardRoot({ element, children }: ComponentRenderProps<{ title: string }>) {
-  // The title names the cockpit for a screen reader and for the history. It is not drawn as a
-  // header: the strip of cockpits above it already carries the name, and a panel does not
+  // The title names the dashboard for a screen reader and for the history. It is not drawn as a
+  // header: the strip of dashboards above it already carries the name, and a panel does not
   // repeat its own title.
   const { elements, doors, selected } = useDashboard();
   const firstKey = element.children?.[0] ?? "";
@@ -158,7 +158,7 @@ function DashboardRoot({ element, children }: ComponentRenderProps<{ title: stri
   if (first?.type !== "ObjectFilters") {
     return <div role="region" aria-label={element.props.title} data-testid="dashboard"><ValuesBar />{children}</div>;
   }
-  // A cockpit started from an object: its filter column at the left, the pieces it narrows beside it, and above them
+  // A dashboard started from an object: its filter column at the left, the pieces it narrows beside it, and above them
   // what is chosen and how many objects that leaves (the rules hold the column to the root's first child, once).
   const [column, ...rest] = Children.toArray(children);
   const props = first.props as { entity: string; properties: FilterProperty[]; w?: number | null; set?: string | null };
@@ -366,7 +366,7 @@ function EmptySection({ element }: ComponentRenderProps<SectionProps>) {
 
 function PiecesSection({ element, children }: ComponentRenderProps<SectionProps>) {
   const { elements, doors, selected } = useDashboard();
-  // A section named as the cockpit is named says nothing new: its heading is not drawn (a cockpit started from an
+  // A section named as the dashboard is named says nothing new: its heading is not drawn (a dashboard started from an
   // object holds one such section).
   const named = Object.values(elements).find(el => el?.type === "Cockpit")?.props as { title?: string } | undefined;
   const heading = element.props.title !== named?.title;
@@ -478,7 +478,7 @@ function measureSection(grid: HTMLElement): Record<string, Box> {
   if (colW <= 0) return out;
   for (const child of Array.from(grid.children) as HTMLElement[]) {
     const key = child.dataset.element;
-    // the layout's own px — the builder's canvas may draw the cockpit scaled, and the grid is laid out unscaled
+    // the layout's own px — the builder's canvas may draw the dashboard scaled, and the grid is laid out unscaled
     const r = { width: child.offsetWidth, height: child.offsetHeight };
     if (!key || !r.width || !r.height) continue;
     out[key] = { w: Math.round((r.width + GRID.gap) / (colW + GRID.gap)), h: Math.round((r.height + GRID.gap) / GRADE) };
@@ -619,7 +619,7 @@ const STEP: Record<string, [number, number]> = { ArrowRight: [1, 0], ArrowLeft: 
  *
  *  Off the grid (a section sized by name) it spans the columns and rows its size names, as before. On the grid it spans
  *  its own w columns and h rows, and what it draws is told its box (`CellBoxContext`) so it fills it. Where the reader
- *  may resize — the cockpit's own — its handles move it one grade at a time, and so do Alt+arrows on it. */
+ *  may resize — the dashboard's own — its handles move it one grade at a time, and so do Alt+arrows on it. */
 function Cell({ type, props, size, testid, extra, children }: {
   type: ComponentName;
   props: Record<string, unknown>;
@@ -722,8 +722,8 @@ function Cell({ type, props, size, testid, extra, children }: {
   );
 }
 
-/** Arc AP-8 — a card of a person's own query that reads the cockpit's values: run here, with them as the page holds them
- *  now — the page that keeps the cockpit runs it without, and would only be told it holds none — again whenever one
+/** Arc AP-8 — a card of a person's own query that reads the dashboard's values: run here, with them as the page holds them
+ *  now — the page that keeps the dashboard runs it without, and would only be told it holds none — again whenever one
  *  changes; or what it waits on. Every other card is as the page ran it. */
 function useValuedRun(cs: CardState | undefined, range: BriefingRange | null | undefined): {
   cs: CardState | undefined; waits: QueryWaiting | null; onRefresh: (() => void) | null;
@@ -860,7 +860,7 @@ function DashboardActionButton({ element }: ComponentRenderProps<{ action: strin
   return <ActionButtonPiece action={element.props.action} />;
 }
 
-// ── a cockpit started from an object (2026-10-10) ─────────────────────────────────────────────────
+// ── a dashboard started from an object (2026-10-10) ─────────────────────────────────────────────────
 // The filter column is drawn by the root, beside the rest; a figure and a chart are drawn in cells like any piece.
 
 function DashboardObjectFilters({ element }: ComponentRenderProps<{ entity: string; properties: FilterProperty[]; set?: string | null }>) {
@@ -1066,16 +1066,16 @@ export function ComposedDashboard({ spec, cards, host, doors, sym = "$", images 
   cards: CardState[];
   host: DashboardHostState;
   doors: DashboardDoors;
-  /** The symbol a money figure is written with (`currency_symbol` from the cockpit's read). */
+  /** The symbol a money figure is written with (`currency_symbol` from the dashboard's read). */
   sym?: string;
-  /** What the cockpit's read says of each image it places, by object id. */
+  /** What the dashboard's read says of each image it places, by object id. */
   images?: Record<string, ImageStamp>;
-  /** The range the cockpit is read for; a bigger figure shows its metric's trend over it. */
+  /** The range the dashboard is read for; a bigger figure shows its metric's trend over it. */
   range?: BriefingRange | null;
   schema?: string;
   /** The connection the ontology's pieces read (Arc OC-4). */
   connectionId?: string;
-  /** The cockpit drawn: a reader's filters are remembered under it, in their browser. */
+  /** The dashboard drawn: a reader's filters are remembered under it, in their browser. */
   dashboardId?: string;
   /** Arc AP-1 — the element chosen in the builder, outlined where it is drawn. */
   selected?: string | null;
@@ -1083,7 +1083,7 @@ export function ComposedDashboard({ spec, cards, host, doors, sym = "$", images 
   handle?: Ref<DashboardHandle>;
   /** Arc AP-2 — the elements that read what the builder has chosen in its Data tab. */
   reads?: readonly string[];
-  /** Arc AP-6 — the group the cockpit is previewed as: every object read as the person and a member of it. */
+  /** Arc AP-6 — the group the dashboard is previewed as: every object read as the person and a member of it. */
   asGroup?: string;
   /** Arc AP-6 — each line the object door said beside a read (what a row policy withholds), once. */
   onSaid?: (line: string) => void;
@@ -1114,7 +1114,7 @@ export function ComposedDashboard({ spec, cards, host, doors, sym = "$", images 
     room: key => steppers.get(key)?.room() ?? null,
     step: (key, dw, dh) => steppers.get(key)?.step(dw, dh),
   }), [steppers]);
-  // Arc AP-8c — a value read from a query of the cockpit's own reads a card the cockpit places
+  // Arc AP-8c — a value read from a query of the dashboard's own reads a card the dashboard places
   const cardSql = useCallback((card: string) => {
     const found = cards.find(c => c.card.id === card);
     return found ? found.card.sql ?? "" : undefined;

@@ -27,7 +27,7 @@ PIECES = ("ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "Object
           "ObjectChart", "ActionButtons", "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch",
           "Drawer")
 FLAG = "ontology.dashboard_pieces"
-#: The pieces of a cockpit started from an object — refused unless its flag is on too.
+#: The pieces of a dashboard started from an object — refused unless its flag is on too.
 FROM_OBJECT = ("ObjectFilters", "ObjectFigure", "ObjectChart")
 _WORDS = {"ProcessBoard": "process board", "ObjectTable": "objects table", "ObjectDetail": "object detail",
           "ActionButton": "action button", "ObjectFilters": "filter column", "ObjectFigure": "figure",
@@ -311,7 +311,7 @@ def _named(props: dict) -> str:
     return json.dumps({k: v for k, v in props.items() if k not in _ROOM}, sort_keys=True, default=str)
 
 
-# ── the release a cockpit was composed against (the study's §8.7: checked against the release it is pinned to) ──
+# ── the release a dashboard was composed against (the study's §8.7: checked against the release it is pinned to) ──
 
 def _set_scope(spec: Any, name: str) -> tuple[str, str]:
     """The entity and segment a named set reads, down the sets it starts from (Arc AP-2) — what a release a piece reads

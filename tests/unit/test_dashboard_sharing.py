@@ -219,7 +219,7 @@ def test_publish_read_as_a_reader_and_copy_over_http(client, on, monkeypatch):
     monkeypatch.setenv("AUGHOR_TIER", "enterprise")
     o = Office()
     assert o.keep().kept
-    # Priya reads as a viewer; to start a cockpit of her own she needs to write, as an editor does.
+    # Priya reads as a viewer; to start a dashboard of her own she needs to write, as an editor does.
     with using_org(o.org):
         assign_role(o.org, PRIYA, "analyst")
     q = {"connection_id": o.connection}

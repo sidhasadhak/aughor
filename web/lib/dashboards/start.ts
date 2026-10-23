@@ -1,8 +1,8 @@
 /**
- * Starting a cockpit without asking a model (2026-10-09). The usability walk-through found *+ New cockpit* offered only
- * a model's draft, and a cockpit for a process only inside the designer's own session: a person could not start one
- * empty, nor for a process published last week. Here a cockpit starts from the person's words — its name and a first
- * note saying what it is for, since a cockpit holding nothing is refused by its rules — or from a declared process:
+ * Starting a dashboard without asking a model (2026-10-09). The usability walk-through found *+ New dashboard* offered only
+ * a model's draft, and a dashboard for a process only inside the designer's own session: a person could not start one
+ * empty, nor for a process published last week. Here a dashboard starts from the person's words — its name and a first
+ * note saying what it is for, since a dashboard holding nothing is refused by its rules — or from a declared process:
  * the board, the open-and-overdue objects, and one object beside them. Either is kept as the person's own version 1.
  *
  * Or, since 2026-10-10, from an object (design-mockups/cockpit-from-object.html): the server proposes what the object
@@ -22,12 +22,12 @@ function base(title: string): unknown {
   } };
 }
 
-/** A cockpit holding one note in the person's words — what it is for. */
+/** A dashboard holding one note in the person's words — what it is for. */
 export function emptyDashboardSpec(title: string, purpose: string): unknown {
   return placeNote(base(title.trim()), purpose);
 }
 
-/** A cockpit for a process: its board, and — when it promises something — the objects open and past the promise
+/** A dashboard for a process: its board, and — when it promises something — the objects open and past the promise
  *  (`segment`, the `overdue_<noun>` it derives) with one of them beside the table. */
 export function processDashboardSpec(title: string, processId: string, entity: string, segment = ""): unknown {
   let { spec } = placePiece(base(title.trim()), "ProcessBoard", { process: processId, size: "full" });
@@ -38,13 +38,13 @@ export function processDashboardSpec(title: string, processId: string, entity: s
   return spec;
 }
 
-/** The overdue segment a process's cockpit lists: its first promise's, while cockpit pieces are on. */
+/** The overdue segment a process's dashboard lists: its first promise's, while dashboard pieces are on. */
 export function overdueSegmentOf(process: Pick<ProcessDetail, "stages">): string {
   return process.stages.map(s => s.promise?.overdue_segment ?? "").find(Boolean) ?? "";
 }
 
-/** What a cockpit started for ``process`` holds, in a sentence. A process whose promises name no overdue list is one
- *  read while cockpits are not built from the ontology here (the list is offered only then), not one that promises
+/** What a dashboard started for ``process`` holds, in a sentence. A process whose promises name no overdue list is one
+ *  read while dashboards are not built from the ontology here (the list is offered only then), not one that promises
  *  nothing — the two are said apart. */
 export function processDashboardHolds(process: Pick<ProcessDetail, "stages">): string {
   if (overdueSegmentOf(process)) return "Its board, the objects open past the promise, and one of them beside the list.";
@@ -53,7 +53,7 @@ export function processDashboardHolds(process: Pick<ProcessDetail, "stages">): s
     : "Its board — it promises nothing, so there is nothing to list as overdue.";
 }
 
-/** Keep a new cockpit under an id of its own (the server's shape, a random suffix — never another cockpit's), and
+/** Keep a new dashboard under an id of its own (the server's shape, a random suffix — never another dashboard's), and
  *  remember it as the one to open. Returns its id. */
 export async function startDashboard(connectionId: string, title: string, spec: unknown, note: string): Promise<string> {
   const id = dashboardIdFor(title);
@@ -62,7 +62,7 @@ export async function startDashboard(connectionId: string, title: string, spec: 
   return id;
 }
 
-/** What a person ticked of a cockpit proposed from an object. */
+/** What a person ticked of a dashboard proposed from an object. */
 export interface ObjectDashboardChoice {
   filters: string[];
   /** Indexes into the proposal's figures. */
@@ -80,14 +80,14 @@ export function everything(p: DashboardFromObject): ObjectDashboardChoice {
            table: listed, actions: listed ? p.actions.map(a => a.id) : [] };
 }
 
-/** Whether a choice holds a piece to narrow — a cockpit of filters alone is refused by its rules. */
+/** Whether a choice holds a piece to narrow — a dashboard of filters alone is refused by its rules. */
 export const holdsAPiece = (c: ObjectDashboardChoice, p: DashboardFromObject): boolean =>
   c.figures.length > 0 || (c.chart && !!p.chart) || c.table;
 
 type El = { type: string; props: Record<string, unknown>; children: string[] };
 
-/** The cockpit a choice makes, laid out as the approved mockup lays it out: the filter column at the left, then one
- *  section named as the cockpit (its heading is not drawn) holding the figures across, the chart below them, and the
+/** The dashboard a choice makes, laid out as the approved mockup lays it out: the filter column at the left, then one
+ *  section named as the dashboard (its heading is not drawn) holding the figures across, the chart below them, and the
  *  table with the chosen object's detail — its actions on it — beside it. */
 export function objectDashboardSpec(p: DashboardFromObject, c: ObjectDashboardChoice): unknown {
   const title = p.title.slice(0, MAX_TITLE);

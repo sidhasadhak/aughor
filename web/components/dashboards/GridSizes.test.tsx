@@ -4,7 +4,7 @@
  * Sizes one grade at a time, drawn (Arc AP-1; the user, 2026-10-10: "make sure that these charts tables graphs or
  * filters are size adjustables in a swift manner.. The size needs to be adjusted one grade point at a time"). What is
  * pinned is what the grid is told — jsdom is 0×0, so the section's width is given where a drag needs one — and what
- * each way of resizing hands the cockpit's owner: one grade, held to what the kind may take.
+ * each way of resizing hands the dashboard's owner: one grade, held to what the kind may take.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -233,7 +233,7 @@ describe("in the builder (Arc AP-1)", () => {
     const grid = document.querySelector('[data-grid="12"]') as HTMLElement;
     Object.defineProperty(grid, "clientWidth", { value: 1200, configurable: true });
     const handle = within(cellOf("card-net")).getByTestId("grid-handle-w");
-    // 101 px on screen at half size is 202 px of the cockpit's own: two columns, not one
+    // 101 px on screen at half size is 202 px of the dashboard's own: two columns, not one
     fireEvent.pointerDown(handle, { clientX: 500, clientY: 0, pointerId: 1 });
     fireEvent.pointerMove(handle, { clientX: 601, clientY: 0 });
     fireEvent.pointerUp(handle, {});

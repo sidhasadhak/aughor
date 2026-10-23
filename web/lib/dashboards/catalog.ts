@@ -1,11 +1,11 @@
 /**
- * The cockpit's catalog — the ONE home of what a composed cockpit may contain (Arc CT, CT-2;
+ * The dashboard's catalog — the ONE home of what a composed dashboard may contain (Arc CT, CT-2;
  * ROADMAP §3.50, docs/COCKPIT_JSON_RENDER_STUDY_2026-09-28.md; the canvas,
  * docs/COCKPIT_CANVAS_2026-10-08.md).
  *
  * Seven components, no actions. The law of the arc is in the `Card`: it holds a card's id and
  * nothing about what that card measures. Its SQL, its limits, its history and its provenance
- * stay in the card store, and it is drawn by `CockpitTile`.
+ * stay in the card store, and it is drawn by `DashboardTile`.
  *
  * Two of the seven are a person's own and measure nothing (the canvas, 2026-10-08). A `Note`
  * is their words, typed by them; an `Image` is a file they uploaded, by its object id. Both say
@@ -35,10 +35,10 @@ import { schema } from "@json-render/react/schema";
 import { z } from "zod";
 
 /** Raised when a component or a prop is added, renamed or removed. 2: Note, Image and `size`. 3: the ontology's
- *  pieces — ProcessBoard, ObjectTable, ObjectDetail and ActionButton (Arc OC-4). 4: a cockpit started from an object —
- *  ObjectFilters, ObjectFigure and ObjectChart (2026-10-10). 5: a cockpit built in place (Arc AP-1, 2026-10-10) — sizes
+ *  pieces — ProcessBoard, ObjectTable, ObjectDetail and ActionButton (Arc OC-4). 4: a dashboard started from an object —
+ *  ObjectFilters, ObjectFigure and ObjectChart (2026-10-10). 5: a dashboard built in place (Arc AP-1, 2026-10-10) — sizes
  *  one grade at a time (a section's `grid`, each placed element's `w` and `h`, the filter column's `w`) and a chart's
- *  measure and split (`agg`, `path`, `format`, `split`, `top`). 6: a cockpit wired as an App (Arc AP-2, AP-3, 2026-10-11) —
+ *  measure and split (`agg`, `path`, `format`, `split`, `top`). 6: a dashboard wired as an App (Arc AP-2, AP-3, 2026-10-11) —
  *  named `sets` and `values` the pieces read, the objects a reader chooses and ticks named and read by others
  *  (`chooses`, `ticks`, `shows`, `set_from`, `of`), and ActionButtons whose parameters come from them. 7: a structure of
  *  pieces (Arc AP-4, 2026-10-11) — a section laid out in columns, rows or tabs of sections of its own (`layout`, a child's
@@ -46,7 +46,7 @@ import { z } from "zod";
  *  value of a day, a value that comes from the reader, a set's count or the object a reader chose (`from`), and a set's
  *  condition comparing any value as its kind allows. 9: a set's linked objects (`traverse`) and a set combined with
  *  another — either, both, but not (`combine`; Arc AP-8b, 2026-10-11). 10: a value of yes or no and a list, and a value
- *  summed from a set or read from a query of the cockpit's own (`sum`, `query`; Arc AP-8c, 2026-10-12). */
+ *  summed from a set or read from a query of the dashboard's own (`sum`, `query`; Arc AP-8c, 2026-10-12). */
 export const DASHBOARD_VOCABULARY_VERSION = 10;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
@@ -150,7 +150,7 @@ export type SetOp = (typeof SET_OPS)[number];
 export const VALUE_KINDS = ["days", "number", "text", "date", "yesno", "list"] as const;
 /** Arc AP-8 — where a value comes from: the author, who sets it once; the reader, on the page, from the choices the
  *  author offers or as they type; how many objects a set holds; or a property of the object a reader chose. Arc AP-8c —
- *  a property summed over a set's objects; or the first value of a query of the cockpit's own (each row's, for a list). */
+ *  a property summed over a set's objects; or the first value of a query of the dashboard's own (each row's, for a list). */
 export const VALUE_SOURCES = ["author", "reader", "count", "chosen", "sum", "query"] as const;
 /** Arc AP-8c — the most items a list holds: as many as a set's condition lists. */
 export const MAX_LIST = 30;
@@ -488,7 +488,7 @@ export const TICKERS: readonly PieceName[] = ["ObjectTable", "ObjectList"];
 export const SWITCHED: readonly PieceName[] = ["ObjectTable", "ObjectList", "ObjectMap", "ObjectTimeline"];
 
 export type WrittenName = "Cockpit" | "Tabs" | "Tab" | "Section" | "Card" | "Note" | "Image";
-/** The components a writer of a cockpit is told about — every one but the ontology's pieces. */
+/** The components a writer of a dashboard is told about — every one but the ontology's pieces. */
 export const WRITTEN: readonly WrittenName[] = ["Cockpit", "Tabs", "Tab", "Section", "Card", "Note", "Image"];
 
 export type ComponentName = WrittenName | PieceName;
@@ -502,7 +502,7 @@ export const PLACED: readonly ComponentName[] = [
 /** The two that are a person's own: a model arranges them and never makes one. */
 export const STATIC: readonly ComponentName[] = ["Note", "Image"];
 
-/** What each component may hold. A cockpit's shape is fixed so that a reader can predict it. */
+/** What each component may hold. A dashboard's shape is fixed so that a reader can predict it. */
 export const MAY_HOLD: Record<ComponentName, readonly ComponentName[]> = {
   Cockpit: ["Tabs", "Section", "ObjectFilters", "Drawer"],
   Tabs: ["Tab"],

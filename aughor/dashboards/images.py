@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
-#: The one volume, per connection, cockpit images live in.
+#: The one volume, per connection, dashboard images live in.
 VOLUME = "cockpit-images"
 #: The cap, stated in the refusal.
 MAX_BYTES = 5 * 1024 * 1024

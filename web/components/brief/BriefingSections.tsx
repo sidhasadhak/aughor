@@ -3,7 +3,7 @@
 /**
  * BriefingSections — the Briefing's switches (the canvas, docs/COCKPIT_CANVAS_2026-10-08.md, B1).
  *
- * A person shows, hides and orders the Briefing's sections and chooses which cockpit of theirs
+ * A person shows, hides and orders the Briefing's sections and chooses which dashboard of theirs
  * rides with it. Nothing about a section's content changes: the Briefing stays the platform's,
  * and a send carries the platform's Briefing, not these switches. The preference is kept per
  * person on the server, so it follows them to their next browser.
@@ -28,9 +28,9 @@ export function BriefingSections({ pref, onChange, cockpits, dashboardsOn, busy 
   pref: BriefingSectionsPref;
   /** Keep this as the person's preference. */
   onChange: (next: BriefingSectionsPref, said: string) => void;
-  /** The person's own cockpits, which may ride with the Briefing. */
+  /** The person's own dashboards, which may ride with the Briefing. */
   cockpits: DashboardChoice[];
-  /** Whether cockpits are on at all; off, the standing cockpit layer rides as it always did. */
+  /** Whether dashboards are on at all; off, the standing dashboard layer rides as it always did. */
   dashboardsOn: boolean;
   busy?: boolean;
 }) {

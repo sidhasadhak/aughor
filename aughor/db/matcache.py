@@ -63,7 +63,7 @@ DEFAULT_TTL: float = 3_600.0   # 1 hour
 # has (each `/query/run`, the Briefing desk's metric moves, the period brief) and from the monitors
 # scheduler's eviction. On 2026-10-15 at 17:37 UTC the live API died with a segmentation fault inside
 # `_duckdb` on a worker thread (crash report python3.11-2026-10-15-193753.ips) while sixteen `/query/run`
-# calls measured a cockpit at once. Every use of the handle holds `_LOCK`; each operation is a single
+# calls measured a dashboard at once. Every use of the handle holds `_LOCK`; each operation is a single
 # small statement, so serialising them costs nothing a reader can see.
 _conn: duckdb.DuckDBPyConnection | None = None
 _LOCK = threading.Lock()

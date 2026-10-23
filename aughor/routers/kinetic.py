@@ -32,7 +32,7 @@ class ExecuteRequest(BaseModel):
     params: dict = Field(default_factory=dict)
     actor: str = ""                         # ignored: the person signed in is who acts (`authz.caller`)
     #: Arc OC-4 — when running it needs approval, stage it in the Actions inbox for a person instead of answering 428:
-    #: what a cockpit's action button does. Read only while `ontology.dashboard_pieces` is on.
+    #: what a dashboard's action button does. Read only while `ontology.dashboard_pieces` is on.
     propose_if_gated: bool = False
     #: Where the person was when they asked — shown on the approval card beside the params.
     reasoning: str = ""

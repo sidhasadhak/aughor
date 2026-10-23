@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * FindingPicker — any recorded finding of the connection, placed on a cockpit as a card (the
+ * FindingPicker — any recorded finding of the connection, placed on a dashboard as a card (the
  * canvas, docs/COCKPIT_CANVAS_2026-10-08.md, B3).
  *
  * Door 1 pins a finding the Briefing shows; this is the same door, opened on the whole ledger
@@ -9,7 +9,7 @@
  * this cycle's Briefing led with. The card is made by the same route (`/cards/pin-insight`),
  * through the same guard battery, with the same link back to the finding; nothing is written
  * here. A finding with no query has nothing to measure and is said so, not offered. One already
- * on this cockpit is said to be.
+ * on this dashboard is said to be.
  */
 import { useEffect, useMemo, useState } from "react";
 
@@ -24,7 +24,7 @@ const SHOWN = 60;
 export function FindingPicker({ connectionId, schema, placed, busy, onPlaced, onClose }: {
   connectionId: string;
   schema?: string;
-  /** The finding ids the cockpit's cards already show. */
+  /** The finding ids the dashboard's cards already show. */
   placed: Set<string>;
   busy?: boolean;
   onPlaced: () => void;

@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * PeriodPicker — the one control a cockpit is read by: which period its cards are cut to (Arc
+ * PeriodPicker — the one control a dashboard is read by: which period its cards are cut to (Arc
  * CT; the user's mock, 2026-09-28). The Briefing's `RangeControl` lays every choice out as a
- * button; a cockpit is looked at more than it is steered, so here the choice is one menu and
+ * button; a dashboard is looked at more than it is steered, so here the choice is one menu and
  * what it shows is the period itself, as the server resolved it — "July 2026 · final".
  */
 import { useState } from "react";

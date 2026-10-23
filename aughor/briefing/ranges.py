@@ -32,7 +32,7 @@ from typing import Any, Callable, Optional
 
 from aughor.semantic.metric_time import Window
 
-#: The Cockpit's periods (the user, 2026-10-08): the day, week, month or year under way — "current" —
+#: The Dashboard's periods (the user, 2026-10-08): the day, week, month or year under way — "current" —
 #: and the one before it — "last". Each is read only over days whose data has ARRIVED (``data_through``,
 #: read from the warehouse): most sources hold yesterday at best, so a current day read off the calendar
 #: alone is empty. The Briefing's settled presets above are unchanged.
@@ -1181,7 +1181,7 @@ def resolve_for(conn_id: str, preset: Optional[str] = None, *, start: Optional[d
                  counter="briefing.range.fiscal")
     # Every range reads where the data ends (one statement per table, kept ten minutes): a dataset
     # that ENDED is known only by reading it, and its editions read as if today were the day after
-    # its last day. Until 2026-10-23 only the Cockpit's periods and a recent custom range read it, and
+    # its last day. Until 2026-10-23 only the Dashboard's periods and a recent custom range read it, and
     # Olist's six editions anchored to 2026 over data that stops in 2018.
     edge = data_edge(conn_id, schema, today=today)
     return resolve_range(preset, start=start, end=end, today=today, lag_days=lag,

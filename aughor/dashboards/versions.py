@@ -36,7 +36,7 @@ from aughor.dashboards import validate as _validate
 from aughor.dashboards.home import Home, prefix
 from aughor.kernel.errors import tolerate
 
-#: The artifact kind, for a person's cockpit and a canvas's alike.
+#: The artifact kind, for a person's dashboard and a canvas's alike.
 KIND = "cockpit"
 
 KEPT = "kept"
@@ -360,7 +360,7 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
         "written_by_model": bool(written_by_model),
         "cards": list(verdict.cards),
         "changes": changes(before.get("spec"), spec),
-        # An edit does not unpublish: who the cockpit reaches carries to the next version.
+        # An edit does not unpublish: who the dashboard reaches carries to the next version.
         "published_to": list(before.get("published_to") or []) if not before.get("retired") else [],
         "published_by": (before.get("published_by") or "") if not before.get("retired") else "",
         **({"ontology_release": pin} if pin else {}),
@@ -420,7 +420,7 @@ def _retired_payload(before: dict, approved_by: str, note: str) -> dict:
         "written_by_model": False,
         "cards": [],
         "changes": changes(before.get("spec"), None),
-        # A retired cockpit reaches nobody.
+        # A retired dashboard reaches nobody.
         "published_to": [],
         "published_by": "",
     }
@@ -442,7 +442,7 @@ def retire(home: Home, *, approved_by: str, note: str = "") -> Kept:
                   "the dashboard was retired")
 
 
-# ── a cockpit that lived in a canvas ────────────────────────────────────────────────────────
+# ── a dashboard that lived in a canvas ────────────────────────────────────────────────────────
 
 def canvas_latest(canvas_id: str) -> Optional[dict]:
     """A canvas's dashboard as it was left, with its spec — or None."""

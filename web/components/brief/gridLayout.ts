@@ -1,7 +1,7 @@
 /**
- * gridLayout — a small, pure grid-packing core for the cockpit canvas.
+ * gridLayout — a small, pure grid-packing core for the dashboard canvas.
  *
- * The cockpit is a SNAP-TO-GRID board on which cards never overlap and never leave a gap they could
+ * The dashboard is a SNAP-TO-GRID board on which cards never overlap and never leave a gap they could
  * fill. Every card occupies an integer cell rectangle {gx,gy,gw,gh} on a uniform `GRID`-px lattice,
  * and the board is TOP-LEFT PACKED: each card, in priority order, drops into the top-most / then
  * left-most free position it fits (`packTopLeft`) — so cards gravitate up AND left, the left gutter

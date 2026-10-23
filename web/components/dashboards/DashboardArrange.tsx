@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * CockpitArrange — a cockpit's outline, arranged by hand (Arc CT, CT-8; ROADMAP §3.50).
+ * DashboardArrange — a dashboard's outline, arranged by hand (Arc CT, CT-8; ROADMAP §3.50).
  *
  * Tabs, their sections and the cards, notes and images in each, as lines a person can move,
  * size, rename and take off. No card is drawn here and no query runs: arranging is about where
  * things go and how much room they take, and a card's figure is the card's own business, drawn
- * on the cockpit itself.
+ * on the dashboard itself.
  *
  * Every change goes through the pure edits in `lib/cockpit/edit.ts`, so what this screen holds
- * is always a spec, and the caller keeps it — as the next version of a cockpit, or, for a draft
+ * is always a spec, and the caller keeps it — as the next version of a dashboard, or, for a draft
  * not yet kept, as the person's changes to it.
  */
 import { useState } from "react";

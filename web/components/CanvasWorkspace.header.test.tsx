@@ -4,7 +4,7 @@
  * An open Data Canvas: its header, what it is for, and the chrome around what the person made.
  *
  * The canvas is for questions and deep analysis (Arc CT, §6 item 36(l)): it has its three views whatever the
- * cockpit flag says. A cockpit is a person's, in the Briefing. The header's give-and-take was fixed while the canvas
+ * dashboard flag says. A dashboard is a person's, in the Briefing. The header's give-and-take was fixed while the canvas
  * briefly had a fourth tab, and stands on its own. Redone to CLARITY (2026-10-12): the header says the name, what it is
  * in a line and its facts as chips; the landing no longer repeats them; a question asked many times is one history row;
  * a read that failed says so instead of showing an empty list.

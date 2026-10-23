@@ -206,7 +206,7 @@ class BigQueryConnection(Connector):
     #: Python type → BigQuery scalar type. `bool` is checked before `int` because it is a
     #: SUBCLASS of int in Python: ordered the other way, every True binds as INT64 1 and a
     #: `WHERE is_active = @flag` silently compares a boolean column to a number. A day binds as
-    #: a DATE (Arc AP-8, a cockpit's day value) — and `datetime` before `date`, its subclass, so
+    #: a DATE (Arc AP-8, a dashboard's day value) — and `datetime` before `date`, its subclass, so
     #: a moment stays a TIMESTAMP.
     _PARAM_TYPES = ((bool, "BOOL"), (int, "INT64"), (float, "FLOAT64"), (str, "STRING"),
                     (_dt.datetime, "TIMESTAMP"), (_dt.date, "DATE"))

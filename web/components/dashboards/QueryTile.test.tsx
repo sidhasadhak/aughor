@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * A card of a person's own query, drawn through the cockpit's own renderer (Arc AP-7): as it was set up — a chart, a
+ * A card of a person's own query, drawn through the dashboard's own renderer (Arc AP-7): as it was set up — a chart, a
  * figure, a table — never by its result's shape; what the run left out said beneath it; a query that cannot be read
  * said in its place and counted by the builder's checks. A run from a server with queries off draws as every card did.
  */

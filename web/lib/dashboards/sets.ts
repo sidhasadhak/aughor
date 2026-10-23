@@ -1,5 +1,5 @@
 /**
- * A cockpit's sets, values and choices (Arc AP-2; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.1b and §4.3).
+ * A dashboard's sets, values and choices (Arc AP-2; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.1b and §4.3).
  *
  * A set is a named group of objects pieces read: an entity, or another set it starts from, kept to one segment and the
  * author's conditions, and — for what an object links to — to the objects whose `path` is the key of the object a
@@ -8,7 +8,7 @@
  * ("Window · 14 days"). Wiring is by name, never by expression: each is a literal string the rules check resolves.
  *
  * ONE home for what a set reads. The browser asks the object door with it; the server runs the same function through
- * the validator bundle and compiles each set before a cockpit is kept (`aughor/dashboards/pieces.py`), so the two cannot
+ * the validator bundle and compiles each set before a dashboard is kept (`aughor/dashboards/pieces.py`), so the two cannot
  * come to read a set differently.
  */
 import {
@@ -169,7 +169,7 @@ function walkSet(spec: WireSpec, name: string, valueOf: ((value: string) => Valu
   return { refused: `The set ${q(name)} reads nothing.` };
 }
 
-/** The names of the sets a cockpit holds. */
+/** The names of the sets a dashboard holds. */
 export const setNamesOf = (spec: WireSpec): string[] => Object.keys(spec.sets ?? {});
 
 /** Arc AP-8 — a value counted (or, AP-8c, summed) from a set that, down the sets it starts from and the values they
@@ -221,7 +221,7 @@ function valuesOfSet(spec: WireSpec, name: string, seen: Set<string> = new Set()
 }
 
 /** Arc AP-8c — the values a value reads to be read: a count's or a sum's set's, and a query's (`cardSql` says the
- *  statement of a card the cockpit places). */
+ *  statement of a card the dashboard places). */
 export function valueReads(spec: WireSpec, name: string, cardSql?: (card: string) => string | undefined): string[] {
   const from = spec.values?.[name]?.from;
   if (from?.by === "count" || from?.by === "sum") return valuesOfSet(spec, from.set);
@@ -276,7 +276,7 @@ export function pieceSet(spec: WireSpec, props: Record<string, unknown>, shown?:
   return { refused: "This piece names neither an entity nor a set." };
 }
 
-/** Every choice the cockpit's pieces make, by name. */
+/** Every choice the dashboard's pieces make, by name. */
 export function choicesOf(spec: WireSpec): Map<string, Choice> {
   const out = new Map<string, Choice>();
   const add = (name: unknown, kind: ChoiceKind, key: string, entity: string) => {

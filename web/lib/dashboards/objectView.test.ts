@@ -1,6 +1,6 @@
 /**
- * A cockpit started from an object (2026-10-10): a reader's filters in the object door's words, a chart's window and
- * axis, how a figure is written, and the cockpit a person's ticks make — always one the cockpit's rules accept.
+ * A dashboard started from an object (2026-10-10): a reader's filters in the object door's words, a chart's window and
+ * axis, how a figure is written, and the dashboard a person's ticks make — always one the dashboard's rules accept.
  */
 import { describe, expect, it } from "vitest";
 
@@ -131,7 +131,7 @@ describe("the dashboard a person's ticks make", () => {
       expect(holdsAPiece(c, PROPOSAL)).toBe(true);
       expect(checkDashboardSpec(objectDashboardSpec(PROPOSAL, c)).issues).toEqual([]);
     }
-    // nothing to narrow: the starter makes no cockpit of it (an empty section is a builder's, since Arc AP-4, not a start)
+    // nothing to narrow: the starter makes no dashboard of it (an empty section is a builder's, since Arc AP-4, not a start)
     const nothing = { ...all, figures: [], chart: false, table: false };
     expect(holdsAPiece(nothing, PROPOSAL)).toBe(false);
   });

@@ -1,5 +1,5 @@
 /**
- * An edit to a cockpit, applied strictly (Arc CT, CT-5).
+ * An edit to a dashboard, applied strictly (Arc CT, CT-5).
  *
  * An edit arrives as RFC 6902 operations against the spec as it stands, is shown to a person,
  * and on their approval becomes the next version. So an operation does exactly what it says
@@ -12,7 +12,7 @@
  * leniency is the point. Here leniency would let an edit do less than it said.
  *
  * All or nothing: the spec handed in is never changed, and a refused edit hands back no spec.
- * The result still has to pass `checkCockpitSpec`; this file only moves values.
+ * The result still has to pass `checkDashboardSpec`; this file only moves values.
  */
 
 export const MAX_PATCHES = 100;

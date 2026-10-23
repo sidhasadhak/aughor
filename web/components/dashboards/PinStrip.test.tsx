@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
 /**
- * Arc OC-4 — the release a cockpit holding pieces was composed against, said above it. In force: one quiet line.
+ * Arc OC-4 — the release a dashboard holding pieces was composed against, said above it. In force: one quiet line.
  * Changed since: each change that touches what a piece reads, with the class it was published as and the piece that
- * reads it, and a re-pin for the person who keeps the cockpit — none for a reader of a published one.
+ * reads it, and a re-pin for the person who keeps the dashboard — none for a reader of a published one.
  */
 import { fireEvent, render, screen } from "@/lib/testing";
 import { describe, expect, it, vi } from "vitest";

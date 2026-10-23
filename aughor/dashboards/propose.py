@@ -46,7 +46,7 @@ from aughor.dashboards.pieces import PIECES
 from aughor.dashboards.pieces import title_of as piece_title
 from aughor.kernel.errors import tolerate
 
-#: The inbox's kind for a cockpit proposal, and for a proposal to publish one (the canvas, B5).
+#: The inbox's kind for a dashboard proposal, and for a proposal to publish one (the canvas, B5).
 KIND = "cockpit_draft"
 PUBLISH_KIND = "cockpit_publish"
 
@@ -642,7 +642,7 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
     refusals: list[str] = []
 
     # The reasoning is a model's text, and it is read twice: by the person approving, on the
-    # card, and by whoever later reads the cockpit's history, where it is the version's note.
+    # card, and by whoever later reads the dashboard's history, where it is the version's note.
     # It states no figure — but a limit the draft sets is a setting a person asked for and
     # approves on the same card, not a measurement, and the reasoning may name it. Only one
     # they asked for: a limit the writer chose is a figure it read, and the third run of the
@@ -687,10 +687,10 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
         from aughor.dashboards.pieces import pieces_written
         from aughor.dashboards.wiring import wiring_written
         refusals.extend(pieces_written(live["spec"] if live else None, final, new=mode == MODE_NEW))
-        # Arc AP-2 — a model arranges a wired cockpit and never wires one: its sets and values are a person's
+        # Arc AP-2 — a model arranges a wired dashboard and never wires one: its sets and values are a person's
         refusals.extend(wiring_written(live["spec"] if live else None, final, new=mode == MODE_NEW))
         # A card that was refused is still a name the spec places. It is counted as known
-        # here, or the rules would call it a card the cockpit may not place — a second
+        # here, or the rules would call it a card the dashboard may not place — a second
         # sentence for a fault already told in its own.
         refused_names = named - set(ids)
         verdict = _validate.check_spec_for_home(
@@ -725,7 +725,7 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
         "patches": patches if mode == MODE_EDIT else [],
     }
     moves = _versions.changes(live["spec"] if live else None, final)
-    # A new cockpit is all of it new; saying "added" of every line would say nothing.
+    # A new dashboard is all of it new; saying "added" of every line would say nothing.
     arranged = outline(final, titles, set(ids.values()), moves if mode == MODE_EDIT else None)
     detail = {
         "title": title,
@@ -928,7 +928,7 @@ def accept(params: dict, *, connection_id: str, approved_by: str, proposal_id: s
         return False, "The dashboard this was drafted for is on another connection. Nothing was made."
     if not (approved_by or "").strip():
         return False, "A dashboard is kept with the name of the person who approved it. None was given."
-    # A person's cockpit is theirs: only they keep it. Where identity is off there is one
+    # A person's dashboard is theirs: only they keep it. Where identity is off there is one
     # operator, and whoever approves is them.
     if home.owner != NOBODY_IN_PARTICULAR and approved_by.strip() != approver(home.owner):
         return False, "This dashboard was drafted for someone else, and only they can keep it. Nothing was made."

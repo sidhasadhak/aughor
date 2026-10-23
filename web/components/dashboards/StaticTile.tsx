@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * StaticTile — a Note and an Image, the two elements of a cockpit that measure nothing (the
+ * StaticTile — a Note and an Image, the two elements of a dashboard that measure nothing (the
  * canvas, docs/COCKPIT_CANVAS_2026-10-08.md §3).
  *
  * A static thing says it is static. A note shows who wrote it and when; an image who uploaded
@@ -26,7 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { MAX_CAPTION, MAX_NOTE, SPAN, type Size } from "@/lib/dashboards/catalog";
 import { formatDateTime } from "@/lib/format";
 
-/** What a static tile may ask of its cockpit. Each is absent on a cockpit the reader may not change. */
+/** What a static tile may ask of its dashboard. Each is absent on a dashboard the reader may not change. */
 export interface StaticDoors {
   onTakeOff?: (key: string) => void;
   onResize?: (key: string, size: Size) => void;
@@ -34,7 +34,7 @@ export interface StaticDoors {
   onRecaption?: (key: string, caption: string) => void;
 }
 
-/** What the cockpit's read says of an uploaded image: its stamps, and whether the reader may see it. */
+/** What the dashboard's read says of an uploaded image: its stamps, and whether the reader may see it. */
 export interface ImageStamp {
   file_name: string;
   uploaded_by: string;
@@ -110,7 +110,7 @@ export function NoteTile({ elementKey, text, author, writtenAt, size, doors }: {
 export function ImageTile({ elementKey, caption, stamp, size, doors }: {
   elementKey: string | null;
   caption: string;
-  /** Undefined when the cockpit's read said nothing of this object: then it is not shown, and said so. */
+  /** Undefined when the dashboard's read said nothing of this object: then it is not shown, and said so. */
   stamp?: ImageStamp;
   size: Size;
   doors: StaticDoors;

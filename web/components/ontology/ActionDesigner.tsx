@@ -11,8 +11,8 @@
  * when it may be pressed (values the data holds, with their counts), who decides. A call to another system is its own
  * step, only for an action that makes one. As the draft changes it is read exactly as declaring would read it, with
  * nothing written (`POST /ontology/declared-actions/preview`): how many objects allow a press now, over all of them and
- * beside each cockpit that shows them one at a time, and a press dry-run on a real object. Declaring goes through the
- * existing door (and its approval gate); then the release; then the button goes onto the cockpits a person ticks.
+ * beside each dashboard that shows them one at a time, and a press dry-run on a real object. Declaring goes through the
+ * existing door (and its approval gate); then the release; then the button goes onto the dashboards a person ticks.
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
@@ -65,7 +65,7 @@ function words(id: string): string {
   return id.replace(/_/g, " ");
 }
 
-/** A cockpit that shows the type's objects one at a time — where the action's button can sit. */
+/** A dashboard that shows the type's objects one at a time — where the action's button can sit. */
 export interface ActionPlace {
   dashboardId: string;
   title: string;
@@ -74,7 +74,7 @@ export interface ActionPlace {
   segment: string;
 }
 
-/** The places a cockpit spec offers for an action on ``entity``: each object detail beside a table of that type. */
+/** The places a dashboard spec offers for an action on ``entity``: each object detail beside a table of that type. */
 export function placesIn(dashboardId: string, title: string, spec: unknown, entity: string[]): ActionPlace[] {
   const els = ((spec ?? {}) as { elements?: Record<string, { type: string; props?: Record<string, unknown> }> }).elements ?? {};
   const wanted = new Set(entity.filter(Boolean).map(e => e.toLowerCase()));
@@ -193,7 +193,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
   }, [connectionId, schema, draft.entity]);
   const cands = candsRead?.entity === draft.entity ? candsRead.cands : null;
 
-  // The cockpits that show the type's objects one at a time — where the button can sit.
+  // The dashboards that show the type's objects one at a time — where the button can sit.
   useEffect(() => {
     if (!draft.entity) return;
     let live = true;

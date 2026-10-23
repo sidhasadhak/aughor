@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * The cockpit a person opens on (ROADMAP §6 item 43; asked 2026-10-05): the connection's approved
+ * The dashboard a person opens on (ROADMAP §6 item 43; asked 2026-10-05): the connection's approved
  * metrics, measured for a period — this range, its comparison, the change, a year earlier and
  * whether each figure has settled. It is the Briefing's own measured table, read without writing
  * a Briefing: no narrative, no model call. A metric's name opens it beside the page.
  *
- * It belongs to the connection, not to the person, so it is not in "Your cockpits" and cannot be
- * arranged or retired. A person's own cockpits sit beside it, as before.
+ * It belongs to the connection, not to the person, so it is not in "Your dashboards" and cannot be
+ * arranged or retired. A person's own dashboards sit beside it, as before.
  */
 import type { RangeChoice } from "@/components/brief/BriefRange";
 import { Chip, MUTED } from "@/components/clarity/kit";
@@ -20,7 +20,7 @@ import { measureRange, type BriefingRange, type BriefingRangeBlock, type Dashboa
 import { periodShort } from "@/lib/dashboards/figures";
 import { formatDateTime, relTime } from "@/lib/format";
 
-/** The strip's id for it. No cockpit a person keeps can carry it. */
+/** The strip's id for it. No dashboard a person keeps can carry it. */
 export const METRICS_DASHBOARD = "::metrics";
 
 /** The period as the picker says it: its words, and whether every figure in it has settled. */

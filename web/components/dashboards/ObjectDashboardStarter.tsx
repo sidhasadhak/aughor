@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Starting a cockpit from an object (2026-10-10) — the first view of design-mockups/cockpit-from-object.html, which the
+ * Starting a dashboard from an object (2026-10-10) — the first view of design-mockups/cockpit-from-object.html, which the
  * user approved as "absolute perfection". The server proposes what the object holds, each piece with a preview it
- * measured (`GET /cockpits/from-object`); the person ticks what they want; the cockpit is kept as their own first
- * version, with no model asked. Drawn inside New cockpit and in a dialog from the Ontology tab's object panel.
+ * measured (`GET /cockpits/from-object`); the person ticks what they want; the dashboard is kept as their own first
+ * version, with no model asked. Drawn inside New dashboard and in a dialog from the Ontology tab's object panel.
  */
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -109,7 +109,7 @@ export function ObjectDashboardStarter({ connectionId, schema, entity, sym = "$"
   const create = async () => {
     setStarting(true);
     try {
-      // while shapes are offered, an overview says it is one: a shape's cockpits are read against each other's
+      // while shapes are offered, an overview says it is one: a shape's dashboards are read against each other's
       onKept(await startDashboard(connectionId, p.title, objectDashboardSpec(p, choice),
         `Started from the object ${p.name}${p.shapes?.length ? " as an overview" : ""}`));
     } catch (e) {

@@ -159,7 +159,7 @@ class MetricDefinition(BaseModel):
         default=None, description="The person who confirmed or corrected them; empty = set "
                                   "automatically and not yet confirmed")
     # Arc OC-3 (ROADMAP §3.56) — the entity whose objects this definition measures, an ontology id (`OrderItem`), so a
-    # release, a cockpit and the question frame read the metric by what it is about rather than by its tables. Empty
+    # release, a dashboard and the question frame read the metric by what it is about rather than by its tables. Empty
     # until a person confirms it: `aughor/ontology/keys.py` proposes one from the grain's table, never stores it.
     entity: Optional[str] = Field(
         default=None, description="The entity whose objects it measures, e.g. 'OrderItem' — confirmed by a person")

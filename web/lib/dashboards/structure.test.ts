@@ -2,7 +2,7 @@
  * A structure of pieces (Arc AP-4; the user, 2026-10-11, showing Workshop's blank app: "a widget based structure would be
  * really helpful"; design-mockups/cockpit-builder.html screens 8 and 9). A section holds pieces on its own grid, or is
  * laid out in columns, rows or tabs of sections of its own; a section may hold nothing yet; a section side by side says
- * its width in twelfths. Every edit leaves a cockpit the rules accept, and the writer of a cockpit hears of none of it
+ * its width in twelfths. Every edit leaves a dashboard the rules accept, and the writer of a dashboard hears of none of it
  * while the structure is off.
  */
 import { describe, expect, it } from "vitest";

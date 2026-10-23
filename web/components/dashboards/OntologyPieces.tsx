@@ -1,22 +1,22 @@
 "use client";
 
 /**
- * OntologyPieces — the cockpit's pieces bound to the ontology (Arc OC-4, ROADMAP §3.56; the screen the user approved
- * on 2026-10-09: a late dispatch cockpit, board → table → detail → action).
+ * OntologyPieces — the dashboard's pieces bound to the ontology (Arc OC-4, ROADMAP §3.56; the screen the user approved
+ * on 2026-10-09: a late dispatch dashboard, board → table → detail → action).
  *
  * Each piece names what it reads by id and reads it through the doors every other surface uses: a process board reads
  * `GET /ontology/processes`, an objects table `POST /objects/list` (the object door's own compiler), an object detail
  * `GET /objects/{type}/{key}`, and an action button runs a declared action through the governed execute door — or,
  * when running it needs approval, has the door stage it in the Actions inbox for a person. Nothing here computes a figure.
  *
- * The pieces talk to each other through the cockpit, never through the spec: the spec says which table a detail
+ * The pieces talk to each other through the dashboard, never through the spec: the spec says which table a detail
  * follows (by element key); which object is chosen is the reader's, held here while they look. After an action runs,
  * every piece reads again, so its edit shows in the table and in the detail at once — and on the object's own page,
  * which reads the same edits.
  *
  * An id that stops resolving is said where the piece stands, never drawn as an empty piece.
  *
- * Since 2026-10-10 a cockpit started from an object adds three more (design-mockups/cockpit-from-object.html): a filter
+ * Since 2026-10-10 a dashboard started from an object adds three more (design-mockups/cockpit-from-object.html): a filter
  * column over an entity's categories, a figure and a chart of objects per day. A reader's click in the filter column
  * narrows every piece over that entity — the table too — for that reader only (the user, 2026-10-10): the choice is
  * held here and in their browser, never in the spec. A piece the filters cannot narrow says "Not filtered" while one
@@ -72,7 +72,7 @@ interface PiecesValue {
   /** Arc AP-2 — the set a figure shows in a table's stead, by the choice it names (`shows`). */
   shown: Record<string, string>;
   show: (choice: string, set: string | null) => void;
-  /** Arc AP-2 — the cockpit's sets and values, and its elements, which the pieces read by name. */
+  /** Arc AP-2 — the dashboard's sets and values, and its elements, which the pieces read by name. */
   wire: WireSpec;
   /** The names a detail may follow — each choosing piece's element key, and each object a click chooses — with the name
    *  its picks land under: a piece that names its choice picks under that name, whichever of the two a detail follows. */
@@ -80,11 +80,11 @@ interface PiecesValue {
   /** Raised after an action runs, so every piece reads again. */
   tick: number;
   bump: () => void;
-  /** The tables the cockpit holds: element key → what it lists. */
+  /** The tables the dashboard holds: element key → what it lists. */
   tables: { key: string; entity: string; segment: string }[];
-  /** Place a table of a segment beside a board — absent on a cockpit the reader may not change. */
+  /** Place a table of a segment beside a board — absent on a dashboard the reader may not change. */
   onPlaceTable?: (entity: string, segment: string) => void;
-  /** One read per drawn cockpit and tick, shared by its pieces — never kept past the cockpit that made it. */
+  /** One read per drawn dashboard and tick, shared by its pieces — never kept past the dashboard that made it. */
   processes: () => Promise<ProcessesAndRules>;
   actions: () => Promise<Record<string, DeclaredAction>>;
   /** The reader's own filters, by entity — never in the spec. */
@@ -93,14 +93,14 @@ interface PiecesValue {
   clear: (entity?: string) => void;
   /** Arc AP-4 — words a reader typed in a search box, narrowing every set of an entity; none lets the search go. */
   search: (entity: string, path: string, words: string) => void;
-  /** Arc AP-6 — the group the cockpit is previewed as, every read made as the person and a member of it; "" for none. */
+  /** Arc AP-6 — the group the dashboard is previewed as, every read made as the person and a member of it; "" for none. */
   asGroup: string;
   /** What the object door said beside what it read — what a row policy withholds, a property masked — for the page. */
   say: (lines: string[] | undefined) => void;
-  /** Arc AP-8 — what each of the cockpit's values holds now: the author's, the reader's own, a set's count, or a property
+  /** Arc AP-8 — what each of the dashboard's values holds now: the author's, the reader's own, a set's count, or a property
    *  of the object a reader chose — or the choice it waits on, or still being read. */
   valueOf: (name: string) => ValueNow;
-  /** The values a reader set on the page, by name — kept in their browser, never in the cockpit. */
+  /** The values a reader set on the page, by name — kept in their browser, never in the dashboard. */
   readerValues: Record<string, unknown>;
   setValue: (name: string, value: unknown) => void;
 }
@@ -113,9 +113,9 @@ export function usePieces(): PiecesValue {
   return ctx;
 }
 
-/** Where a reader's filters for one cockpit are remembered: their browser, and only theirs. */
+/** Where a reader's filters for one dashboard are remembered: their browser, and only theirs. */
 const filtersKey = (cockpit: string) => `aughor:cockpit-filters:${cockpit}`;
-/** Arc AP-8 — where the values a reader set on one cockpit are remembered: their browser, and only theirs. */
+/** Arc AP-8 — where the values a reader set on one dashboard are remembered: their browser, and only theirs. */
 const valuesKey = (cockpit: string) => `aughor:cockpit-values:${cockpit}`;
 
 function rememberedValues(cockpit?: string): Record<string, unknown> {
@@ -142,13 +142,13 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
   /** Arc AP-6 — each line the object door said beside a read, once, for the page. */
   onSaid?: (line: string) => void;
   elements: Record<string, { type?: string; props?: Record<string, unknown> } | undefined>;
-  /** Arc AP-2 — the sets and values the cockpit names, read by its pieces. */
+  /** Arc AP-2 — the sets and values the dashboard names, read by its pieces. */
   sets?: WireSpec["sets"];
   values?: WireSpec["values"];
   onPlaceTable?: (entity: string, segment: string) => void;
-  /** The cockpit drawn — the key a reader's filters are remembered under; none, and they last while it is open. */
+  /** The dashboard drawn — the key a reader's filters are remembered under; none, and they last while it is open. */
   dashboardId?: string;
-  /** Arc AP-8c — the statement of a card the cockpit places, for a value read from a query of its own. */
+  /** Arc AP-8c — the statement of a card the dashboard places, for a value read from a query of its own. */
   cardSql?: (card: string) => string | undefined;
   children: ReactNode;
 }) {
@@ -364,7 +364,7 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the objects chosen
   }, [chosenKey, connectionId, schema, asGroup]);
-  // Arc AP-8c — a value read from a query of the cockpit's own: the card run as written, never cut to the page's range,
+  // Arc AP-8c — a value read from a query of the dashboard's own: the card run as written, never cut to the page's range,
   // with the values it reads as the page holds them now; again whenever one of them changes
   const queryAsks = useMemo(() => Object.fromEntries(Object.entries(values ?? {}).flatMap(([name, def]): [string, string][] => {
     if (def.from?.by !== "query") return [];
@@ -454,8 +454,8 @@ const WHERE: Record<string, string> = {
   ObjectTable: " in its table", ObjectList: " in its list", ObjectMap: " on its map", ObjectTimeline: " on its timeline", ChooseOne: "",
 };
 
-/** Whether a reader's filter is on anywhere in the cockpit — and so whether `entity`'s pieces are narrowed by one.
- *  Outside a cockpit's pieces (a strip of cards with none), nothing is filtered. */
+/** Whether a reader's filter is on anywhere in the dashboard — and so whether `entity`'s pieces are narrowed by one.
+ *  Outside a dashboard's pieces (a strip of cards with none), nothing is filtered. */
 export function useFiltering(entity?: string): { on: boolean; narrows: boolean } {
   const ctx = useContext(PiecesContext);
   if (!ctx) return { on: false, narrows: false };
@@ -932,7 +932,7 @@ export function ActionButtonPiece({ action }: { action: string }) {
 }
 
 
-// ── a cockpit started from an object: the filter column, a figure, a chart (2026-10-10) ─────────────────────
+// ── a dashboard started from an object: the filter column, a figure, a chart (2026-10-10) ─────────────────────
 
 const num = (v: unknown): number | null => {
   const n = Number(v);
@@ -1114,7 +1114,7 @@ const valueText = (kind: string, v: unknown) => (v === null || v === undefined ?
 const boxText = (v: unknown) => (v === null || v === undefined ? "" : Array.isArray(v) ? v.join(", ") : String(v));
 
 /** The values a reader sets on the page, above its pieces: each a control of its own — the choices its author offers,
- *  or a box to type in — remembered in the reader's browser, never in the cockpit. Nothing when it offers none. */
+ *  or a box to type in — remembered in the reader's browser, never in the dashboard. Nothing when it offers none. */
 export function ValuesBar({ spaced = true }: { spaced?: boolean }) {
   const { wire, valueOf, readerValues, setValue } = usePieces();
   const offered = Object.entries(wire.values ?? {}).filter(([, v]) => v.from?.by === "reader");

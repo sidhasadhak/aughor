@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * The builder's Setup (Arc AP-1; the study's receipt: "Change the Order cockpit's chart to split by status and its
+ * The builder's Setup (Arc AP-1; the study's receipt: "Change the Order dashboard's chart to split by status and its
  * table's columns, with no spec written by hand"). Each field offers what the ontology declares for the entity — read
  * here from a stand-in shaped as theLook's Order is served, its roles and its two links to the customer — and hands back
  * the next spec with the version's note. Nothing is typed as a spec.

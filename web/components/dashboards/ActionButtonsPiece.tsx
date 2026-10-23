@@ -5,7 +5,7 @@
  * what they fill in (Arc AP-3; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.5; design-mockups/cockpit-builder.html
  * screens 4 and 6).
  *
- * A cockpit defines no action of its own: a button names a declared action, and the declaration owns who may press it,
+ * A dashboard defines no action of its own: a button names a declared action, and the declaration owns who may press it,
  * its criteria, its risk and its approval. Each run is one call to that action's own door (`runOrPropose`), so a
  * high-risk action on twenty ticked orders is twenty proposals in the Actions inbox, never one silent batch. What a
  * press did is said on the button's own row — a run refused says why — and the sets the button names are read again.
@@ -144,7 +144,7 @@ function OneButton({ def, declared }: { def: ActionButtonDef; declared: Declared
     const one = outcomes.length === 1 && outcomes[0].status === "ran";
     if (!one) setSaid(pressSaid(outcomes, thing));
     setOpen(false); setAsked({});
-    // what ran changed what the cockpit reads: its sets, and every piece, are read again
+    // what ran changed what the dashboard reads: its sets, and every piece, are read again
     if (outcomes.some(o => o.status === "ran")) bump();
   };
 

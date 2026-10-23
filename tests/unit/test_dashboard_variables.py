@@ -219,7 +219,7 @@ def test_a_query_reading_values_is_read_as_it_says_for_a_range_and_says_why(clie
     assert run["scoped"]["why"] == "It reads the dashboard's own values, so it is read as its query says, not cut to the range."
 
 
-# ── what the server checks before a cockpit is kept ───────────────────────────────────────────────────────────────────
+# ── what the server checks before a dashboard is kept ───────────────────────────────────────────────────────────────────
 
 def _valued(**values) -> dict:
     """The dispatch desk, its values as given."""
@@ -306,7 +306,7 @@ def test_the_keep_door_refuses_variables_while_off_a_property_the_entity_lacks_a
     assert not wrong.kept and "Order has no property colour" in " ".join(wrong.sentences), wrong.sentences
     kept = keep(spec)
     assert kept.kept, kept.sentences
-    # a query of the person's own placed on the cockpit reads {{country}}; the cockpit must hold a value of that name
+    # a query of the person's own placed on the dashboard reads {{country}}; the dashboard must hold a value of that name
     card = cards.place(home, StoredCard(connection_id=home.connection_id, source="authored", title="By country",
                                            sql="SELECT 1 WHERE 'a' = {{country}}", render={"shown": {"as": "table"}}))
     placed = _desk(**{"values.status": status})

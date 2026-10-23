@@ -24,7 +24,7 @@ from typing import Any, Callable, Optional
 FLAG = "dashboard.shapes"
 #: The days a queue's set looks back over before a person says otherwise — what the desk of the mockup reads.
 WINDOW_DAYS = 14
-#: The most kinds of linked objects one object's cockpit shows — a table of each that can be listed, a count of each
+#: The most kinds of linked objects one object's dashboard shows — a table of each that can be listed, a count of each
 #: that cannot (an event log that declares no key).
 MAX_LINKED = 3
 #: The most shapes offered, before Blank.

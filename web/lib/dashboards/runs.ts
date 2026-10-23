@@ -1,10 +1,10 @@
 /**
- * What one press of a cockpit's button runs (Arc AP-3; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.5).
+ * What one press of a dashboard's button runs (Arc AP-3; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.5).
  *
  * Each parameter of the declared action takes one source: the object a reader chose (it runs once), the objects they
  * ticked (once per object, each run its own, at most 50), every object of a set (asked first, said with its count, at
  * most 50), what the form asks, or the same value every time. A parameter the button wires to nothing is asked when it
- * is a value, and stops the button — saying why — when it is an object: a cockpit never guesses which object an action
+ * is a value, and stops the button — saying why — when it is an object: a dashboard never guesses which object an action
  * runs on.
  *
  * Planning is pure, here; running is the piece's (`ActionButtonsPiece`), one call to the declared action's own door per

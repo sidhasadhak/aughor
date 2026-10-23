@@ -35,7 +35,7 @@ _STATUS_CODE = {"refused": 422, "not_checked": 503, "failed": 500}
 class KeepRequest(BaseModel):
     spec: Any
     note: str = ""
-    #: Arc OC-4 — pin a cockpit holding pieces to the ontology release in force now, the spec unchanged or not.
+    #: Arc OC-4 — pin a dashboard holding pieces to the ontology release in force now, the spec unchanged or not.
     repin: bool = False
 
 
@@ -62,7 +62,7 @@ class QueryRequest(BaseModel):
     shown: dict[str, Any] = {}
     title: str = ""
     replaces: str = ""
-    #: Arc AP-8 — the cockpit's values the query reads as ``{{name}}``, as the page holds them now: name →
+    #: Arc AP-8 — the dashboard's values the query reads as ``{{name}}``, as the page holds them now: name →
     #: ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement.
     values: dict[str, dict[str, Any]] = {}
 
@@ -300,7 +300,7 @@ def _read_query(connection_id: str, req: QueryRequest) -> dict:
         shown = queries.Shown.model_validate(req.shown or {"as": "table"})
     except Exception as e:
         return {"refused": [f"How the card is shown cannot be read: {e}"]}
-    # Arc AP-8 — the cockpit's values it reads, bound: refused while variables are off, or when one holds nothing
+    # Arc AP-8 — the dashboard's values it reads, bound: refused while variables are off, or when one holds nothing
     run_sql, params = sql, None
     if queries.params_of(sql):
         from aughor.dashboards import variables
@@ -423,7 +423,7 @@ def read_dashboard(request: Request, cockpit_id: str, connection_id: str, preset
         "ranges_on": ranges_on,
         "history": versions.history(home),
         "currency_symbol": resolve_currency_symbol(connection_id, None),
-        # What the spec's images are, from the volume's own rows; one the cockpit may not show says why.
+        # What the spec's images are, from the volume's own rows; one the dashboard may not show says why.
         "images": images.stamps_for(connection_id, kept.get("spec")),
         **_pinned(connection_id, kept),
     }

@@ -222,7 +222,7 @@ def test_a_share_moves_in_points_not_percent_of_a_percent():
     assert "16.1% a year earlier, 2025-08-18 to 2025-08-27 (-1.9 pts)" in line
 
 
-# ── the Cockpit's default view and what a figure opens to (ROADMAP §6 item 43) ────────────────
+# ── the Dashboard's default view and what a figure opens to (ROADMAP §6 item 43) ────────────────
 
 def test_the_measures_alone_are_the_briefings_own_figures_with_no_narrator(con, narrator, approved):
     spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
@@ -461,7 +461,7 @@ def test_a_count_over_a_window_with_no_rows_is_not_a_reading(con, approved):
     assert band["orders_placed"]["why"].startswith("only 2 earlier ranges held a reading")
 
 
-# ── the Cockpit's periods: current and last, read to where the data ends (2026-10-08) ───────
+# ── the Dashboard's periods: current and last, read to where the data ends (2026-10-08) ───────
 
 OCT8 = date(2026, 10, 8)                     # a Thursday
 LOADING = {"through": OCT8, "held_by": ["orders"], "tables": {"orders": OCT8}}

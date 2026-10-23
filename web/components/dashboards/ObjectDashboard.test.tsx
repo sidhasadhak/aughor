@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
 /**
- * A cockpit started from an object (2026-10-10), drawn through the cockpit's own renderer with every door it reads
+ * A dashboard started from an object (2026-10-10), drawn through the dashboard's own renderer with every door it reads
  * mocked. What it shows: a reader's click in the filter column narrows the figure, the chart and the table over the
- * same entity — and only for that reader, remembered in their browser under the cockpit's id; a list of values is
+ * same entity — and only for that reader, remembered in their browser under the dashboard's id; a list of values is
  * counted under the OTHER filters, never its own; a piece the filters cannot narrow says "Not filtered" while one is
  * on; and the whole is said beside the narrowed figure.
  */

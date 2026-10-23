@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
 /**
- * The builder's frame (Arc AP-1; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.4 and §4.7): the cockpit between its
+ * The builder's frame (Arc AP-1; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.4 and §4.7): the dashboard between its
  * layout and the setup of what is chosen. What is pinned is what each part hands on — the element chosen, a step of one
- * grade, a change as the next spec — and that a change the rules refuse is said and never handed on. The cockpit itself
- * is a stub here (`ComposedCockpit` is tested on its own); what it is handed is what is asserted.
+ * grade, a change as the next spec — and that a change the rules refuse is said and never handed on. The dashboard itself
+ * is a stub here (`ComposedDashboard` is tested on its own); what it is handed is what is asserted.
  */
 import { act, fireEvent, render, screen, waitFor, within } from "@/lib/testing";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -47,7 +47,7 @@ function objectDashboard(): DashboardSpec {
   };
 }
 
-/** The builder around a stub cockpit that hands it `room` and records every step and every element chosen. */
+/** The builder around a stub dashboard that hands it `room` and records every step and every element chosen. */
 function build(spec: DashboardSpec, room: Record<string, { w: number; h: number }> = {}) {
   const onChange = vi.fn();
   const step = vi.fn();
@@ -265,7 +265,7 @@ describe("the Data tab (Arc AP-2)", () => {
       note: { type: "Note", props: { text: "The oldest first" }, children: [] },
     },
   });
-  /** The builder with wiring on or off, recording what the cockpit is told is dashed. */
+  /** The builder with wiring on or off, recording what the dashboard is told is dashed. */
   function wire(spec: DashboardSpec, wiringOn: boolean) {
     const reads: string[][] = [];
     render(

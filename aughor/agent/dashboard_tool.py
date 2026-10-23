@@ -156,7 +156,7 @@ def draft_dashboard(home: Home, args: dict, *, emit: Optional[Emit] = None, said
             if op == propose.MODE_EDIT else f'the dashboard "{detail.get("title")}"')
     made = [c for c in (p.params or {}).get("cards") or [] if isinstance(c, dict)]
     shows = f" The new cards show: {'; '.join(_shows(c) for c in made)}." if made else ""
-    # A new cockpit where one stands replaces it whole. Said in the summary: the third run of
+    # A new dashboard where one stands replaces it whole. Said in the summary: the third run of
     # the receipt found two that would have taken off 9 and 12 cards, and nothing said it.
     whole = ""
     if op == propose.MODE_NEW and before:

@@ -40,12 +40,12 @@ class CardProvenance(BaseModel):
     origin_finding_id: str = ""           # the origin_finding anchor (drill/receipt reuse)
     receipt_ref: str = ""                 # the trust-receipt key proving the number
     # Arc CT-3 — a card made from an approved metric records which one, and at which version,
-    # so a cockpit can say what stands behind a figure. Empty / 0 = not made from a metric.
+    # so a dashboard can say what stands behind a figure. Empty / 0 = not made from a metric.
     # Stored inside `provenance_json`, so an older row reads with both at their defaults.
     metric: str = ""
     metric_version: int = 0
     # The card that replaces this one (2026-10-08): a duplicate is superseded, never deleted, and a
-    # cockpit does not offer it again. Stored inside `provenance_json`, like the two above.
+    # dashboard does not offer it again. Stored inside `provenance_json`, like the two above.
     superseded_by: str = ""
 
 

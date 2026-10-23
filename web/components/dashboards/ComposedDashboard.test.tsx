@@ -3,7 +3,7 @@
 /**
  * CT-1's premise, as a test: ONE hand-written spec — tabs, sections, two cards from the card
  * store, one card shown by a condition — drawn through the library, with every card handed to
- * the cockpit's tile (`CockpitTile`, tested on its own).
+ * the dashboard's tile (`DashboardTile`, tested on its own).
  *
  * What this cannot show is geometry: jsdom reports every element as 0×0. Whether the grid
  * looks right is a browser question, and CT-1's receipt answers it there.
@@ -80,7 +80,7 @@ describe("the premise spec, drawn", () => {
 
   it("shows the conditional card when the host says the watch is over its limit, and only then", () => {
     // ONE spec object throughout. A fresh object per render would rebuild the state from
-    // scratch and pass this test without the host's change ever reaching a cockpit that is
+    // scratch and pass this test without the host's change ever reaching a dashboard that is
     // already open — which is the case that matters, and the one a mutation showed was untested.
     const spec = premise();
     const { rerender } = render(<ComposedDashboard spec={spec} cards={CARDS} host={host("final", "within")} doors={DOORS} />);

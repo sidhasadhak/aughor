@@ -183,7 +183,7 @@ def _touches(conn: str, names: set[str], automations: list[dict], metrics: list[
            "metrics": [{"id": m["id"], "name": m["name"], "how": m["how"]} for m in metrics]}
     from aughor.kernel.flags import flag_enabled
     if flag_enabled("ontology.dashboard_pieces"):
-        # Arc OC-4 — a cockpit's pieces name the process, the entity, the segment and the action they read.
+        # Arc OC-4 — a dashboard's pieces name the process, the entity, the segment and the action they read.
         try:
             from aughor.dashboards.pieces import dashboards_reading
             out["cockpits"] = dashboards_reading(conn, names)

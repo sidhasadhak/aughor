@@ -1,7 +1,7 @@
 /**
  * What the host says about each card, read off the card's own run (Arc CT, CT-4).
  *
- * A card is run in the browser, as the Briefing's cockpit runs its cards, so this is where
+ * A card is run in the browser, as the Briefing's dashboard runs its cards, so this is where
  * its status is said. The range's status is the server's (`aughor/dashboards/host.py`).
  *
  *   within      the card has a limit and its value is inside it
@@ -48,7 +48,7 @@ export function cardStatus(cs: CardState): CardStatus {
   return crossed ? "over" : "within";
 }
 
-/** The tree a cockpit's conditions read: the range's status from the server, each card's
+/** The tree a dashboard's conditions read: the range's status from the server, each card's
  *  from its run. A card the canvas holds always has a status, so a condition on it is never
  *  silently false for want of one. */
 export function hostStateOf(rangeStatus: RangeStatus, cards: CardState[]): DashboardHostState {

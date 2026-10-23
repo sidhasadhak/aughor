@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
 /**
- * A wired cockpit, drawn (Arc AP-2; the study's receipt: "The dispatch desk of the mockup built by hand, numbers equal
- * to the door's"). Through the cockpit's own renderer with the object door mocked: each piece asks the door for its set —
+ * A wired dashboard, drawn (Arc AP-2; the study's receipt: "The dispatch desk of the mockup built by hand, numbers equal
+ * to the door's"). Through the dashboard's own renderer with the object door mocked: each piece asks the door for its set —
  * the segment and the conditions down the sets it starts from, a value's days in place — a figure's click switches the
  * list and lets go of what was chosen in it, a row's click chooses the object a detail and a linked set read, ticks
- * collect. And the arc's falsifier: a cockpit drawn before the wiring asks the door for exactly what it asked before.
+ * collect. And the arc's falsifier: a dashboard drawn before the wiring asks the door for exactly what it asked before.
  */
 import { fireEvent, render, screen, waitFor, within } from "@/lib/testing";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";

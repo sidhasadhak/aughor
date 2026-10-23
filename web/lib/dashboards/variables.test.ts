@@ -1,5 +1,5 @@
 /**
- * Variables on a cockpit (Arc AP-8; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §9.2): a value comes from its author,
+ * Variables on a dashboard (Arc AP-8; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §9.2): a value comes from its author,
  * the reader on the page, a set's count or a property of the object a reader chose; a set compares any value as its
  * kind allows; and a query of the person's own reads one as `{{name}}`, sent as the page holds it now. The rules hold
  * each value's shape by where it comes from, and refuse a value counted from a set that reads it back.

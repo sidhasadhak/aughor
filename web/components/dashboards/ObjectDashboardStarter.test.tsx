@@ -3,7 +3,7 @@
 /**
  * The starter's shapes (Arc AP-5; design-mockups/cockpit-builder.html screen 7): what an object fits is offered as one to
  * three shapes, the best first and chosen, with one sentence of why and what the shape holds; Make it keeps the shape's
- * cockpit as the person's first version, saying which shape it started from. An overview is today's checklist; with
+ * dashboard as the person's first version, saying which shape it started from. An overview is today's checklist; with
  * shapes off the starter is the one before. Every read is mocked.
  */
 import { fireEvent, render, screen, waitFor, within } from "@/lib/testing";

@@ -41,7 +41,7 @@ def test_only_what_a_structure_says_is_found_and_nothing_else():
     assert app_pieces.structured(json.loads(FIXTURE.read_text())) == []
     for nonsense in (None, [], {"elements": "x"}, {"elements": {"s": {"type": "Section"}}}):
         assert app_pieces.structured(nonsense) == []
-    # each found for its own reason alone: untitled; titled and laid out; titled, empty and of the cockpit's own
+    # each found for its own reason alone: untitled; titled and laid out; titled, empty and of the dashboard's own
     untitled = {"elements": {"s": {"type": "Section", "props": {"columns": 2}, "children": ["c"]}}}
     assert app_pieces.structured(untitled) == ["s"]
     laid_out = {"elements": {"s": {"type": "Section", "props": {"title": "Desk", "layout": "rows"}, "children": ["a"]}}}

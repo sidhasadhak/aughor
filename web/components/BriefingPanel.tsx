@@ -1623,11 +1623,11 @@ function HeroDivider() {
  *  carrying the identity to deep-link back to its ledger row. */
 interface MoverTile {
   ident:      string;   // signalIdentity — the ledger row to scroll/expand
-  insightId:  string;   // the finding id — used to pin from the cockpit empty state
+  insightId:  string;   // the finding id — used to pin from the dashboard empty state
   value:      string;
   secondary?: string;
   label:      string;   // the finding statement (clamped to 2 lines in the tile)
-  sublabel?:  string;   // a short descriptor (for the cockpit's suggested-pin chips)
+  sublabel?:  string;   // a short descriptor (for the dashboard's suggested-pin chips)
   domain:     string;
   accent:     string;   // domain colour (honest — not a fabricated favorability judgement)
   /** The finding itself, so a tile can open the same detail its ledger row does — the chart,
@@ -2576,13 +2576,13 @@ export function BriefingPanel({
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
   const [pinnedRefresh, setPinnedRefresh]   = useState(0);
-  // Arc CT-7 — with `dashboard.composed` on, the person's cockpits are a tab beside the Briefing
+  // Arc CT-7 — with `dashboard.composed` on, the person's dashboards are a tab beside the Briefing
   // (IntelligenceWorkspace), so the standing layer below is not drawn. A canvas's Briefing has
   // no such tab and keeps the layer. Until the flags answer, and when they cannot, it is off.
   const [dashboardFlag, setDashboardFlag]       = useState(false);
   const dashboardsOn = dashboardFlag && !canvasId;
   // The canvas (B1) — the Briefing's switches: which sections this person shows, in what order,
-  // and which cockpit of theirs rides with it. A preference, kept on the server; the content of
+  // and which dashboard of theirs rides with it. A preference, kept on the server; the content of
   // a section is never theirs to change. Until the store answers, the product's order.
   const [sections, setSections]             = useState<BriefingSectionsPref>(DEFAULT_SECTIONS);
   const [sectionsOpen, setSectionsOpen]     = useState(false);
@@ -2617,7 +2617,7 @@ export function BriefingPanel({
   // you enter, and an always-mounted panel would cost every reader ~420px of width.
   const [askOpen, setAskOpen]               = useState(false);
   // Scope chips: narrow the narrative layer (supporting signals + top patterns) to one
-  // domain; null = all. The standing cockpit layer is intentionally left unscoped — it's
+  // domain; null = all. The standing dashboard layer is intentionally left unscoped — it's
   // the user's arranged surface, not a per-cycle finding view.
   const [scope, setScope]                   = useState<string | null>(null);
   const [loading, setLoading]               = useState(false);
@@ -3049,7 +3049,7 @@ export function BriefingPanel({
   const scopeDomain    = scope && briefing?.domains.some(d => d.name === scope) ? scope : null;
   const headlineIdent  = briefing?.headline ? signalIdentity(briefing.headline.insight) : null;
 
-  // "Numbers that moved" (the hero tiles) + the cockpit's suggested pins share ONE extraction:
+  // "Numbers that moved" (the hero tiles) + the dashboard's suggested pins share ONE extraction:
   // the top findings (unscoped, headline excluded) that yield a key figure, in impact order.
   // Every figure is quoted from a grounded finding statement — never invented.
   const movers = useMemo<MoverTile[]>(() => {
@@ -3680,7 +3680,7 @@ export function BriefingPanel({
         </>
       );
       case "patterns": return (
-      /* ── Top patterns ── a full-width row below the cockpit. */
+      /* ── Top patterns ── a full-width row below the dashboard. */
       hasPatterns && (
         <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 280px", minWidth: 240 }}>

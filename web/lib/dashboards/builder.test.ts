@@ -1,6 +1,6 @@
 /**
  * The builder's logic (Arc AP-1; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.4): what each element is called, the
- * edits the builder makes, a chart's split and the rules it is held to, what a cockpit's writer is told, and the rail
+ * edits the builder makes, a chart's split and the rules it is held to, what a dashboard's writer is told, and the rail
  * folded for the builder without the person's preference being written.
  */
 import { readFileSync } from "node:fs";
@@ -17,7 +17,7 @@ import { foldNavFor, NAV_COLLAPSED_KEY } from "@/lib/navCollapse";
 
 const premise = (): DashboardSpec => JSON.parse(readFileSync(resolve(process.cwd(), "lib/dashboards/premise.fixture.json"), "utf8"));
 
-/** A cockpit started from an object, with a detail and its buttons. */
+/** A dashboard started from an object, with a detail and its buttons. */
 function objectDashboard(): DashboardSpec {
   return {
     root: "cockpit",

@@ -2,7 +2,7 @@
 
 /**
  * ResultChartCard — the answer-result chart surface for Insight (chat), Deep Analysis
- * (report), and the briefing cockpit. Wraps the canonical <Chart> (ECharts) engine and
+ * (report), and the briefing dashboard. Wraps the canonical <Chart> (ECharts) engine and
  * renders CLEAN: no controls sit on the chart. A single hover pencil ("Edit
  * visualization") opens the Databricks-style right-docked side panel (VizEditorPanel),
  * where every control lives, grouped into layered sections — Visualization, X axis,

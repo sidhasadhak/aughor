@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * CockpitArrange (Arc CT, CT-8): the outline a person arranges by hand. What is asserted is
+ * DashboardArrange (Arc CT, CT-8): the outline a person arranges by hand. What is asserted is
  * the spec it hands back — the edits themselves are `lib/cockpit/edit.test.ts`'s.
  */
 import { readFileSync } from "node:fs";
@@ -27,7 +27,7 @@ function arrange() {
   return onChange;
 }
 
-describe("CockpitArrange", () => {
+describe("DashboardArrange", () => {
   it("lays the dashboard out as tabs, their sections, and the cards in each, by name", () => {
     arrange();
     expect(screen.getAllByTestId("arrange-tab-name").map(i => (i as HTMLInputElement).value)).toEqual(["Overview", "Watches"]);

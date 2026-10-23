@@ -1,5 +1,5 @@
 /**
- * An edit to a cockpit, applied strictly (Arc CT, CT-5). Every refusal is asserted by a token
+ * An edit to a dashboard, applied strictly (Arc CT, CT-5). Every refusal is asserted by a token
  * of its own sentence, and every one of them leaves the spec it was handed untouched.
  */
 import { readFileSync } from "node:fs";

@@ -134,7 +134,7 @@ export function ProcessPanel({ connectionId, schema, processId, version, onOpenT
   );
 }
 
-/** A cockpit for this process — its board, its open-and-overdue objects and one of them beside the table (2026-10-09).
+/** A dashboard for this process — its board, its open-and-overdue objects and one of them beside the table (2026-10-09).
  *  The walk-through found it offered only in the designer's own session, never for a process published earlier. */
 function StartDashboardFor({ process, connectionId }: { process: ProcessDetail; connectionId: string }) {
   const [busy, setBusy] = useState(false);

@@ -69,7 +69,7 @@ def move_from_canvas(canvas_id: str, *, connection_id: str, owner: str) -> dict[
         _put_back(was, upsert_card)
         return {"moved": False, "sentences": [*kept.sentences, "Nothing moved."]}
 
-    # 3. The canvas's cockpit, retired with a note that says where it went.
+    # 3. The canvas's dashboard, retired with a note that says where it went.
     gone = _versions.retire_canvas(canvas_id, approved_by=by,
                                    note=f"moved to the Briefing as '{title}'")
     said = [] if gone.kept else [

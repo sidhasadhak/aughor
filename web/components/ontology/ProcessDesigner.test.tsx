@@ -4,7 +4,7 @@
  * The process designer (2026-10-09, approved as drawn after the usability walk-through). A person names a process in
  * words, picks what moves through it and when each stage is reached from what the data carries, and sees it counted as
  * declaring would count it — with the checks to read before publishing, the stuck stage asked about as a question, and
- * what the process creates. Declaring, publishing the release and starting a cockpit for it follow from the same page.
+ * what the process creates. Declaring, publishing the release and starting a dashboard for it follow from the same page.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
@@ -175,7 +175,7 @@ describe("the process designer", () => {
     await user.click(screen.getByTestId("designer-dashboard"));
     await waitFor(() => expect(calls.keep).toHaveBeenCalled());
     const [conn, id, spec] = calls.keep.mock.calls[0];
-    // the server's own id law (`cockpit.home._ID`) and a suffix of its own — never one of the person's cockpits
+    // the server's own id law (`cockpit.home._ID`) and a suffix of its own — never one of the person's dashboards
     expect(conn).toBe("c1");
     expect(id).toMatch(/^order-delivery-[0-9a-f]{6}$/);
     expect(id).toMatch(/^[a-z0-9][a-z0-9-]{0,47}$/);

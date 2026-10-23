@@ -1,5 +1,5 @@
 /**
- * The Metrics cockpit read as figures (`design-mockups/cockpit-day-figures.html`, the user 2026-10-12: "that is how
+ * The Metrics dashboard read as figures (`design-mockups/cockpit-day-figures.html`, the user 2026-10-12: "that is how
  * I'd like my COCKPITS to look"): which figure moved most, what each is compared with in a few words, what cannot be
  * measured and why, and which metrics' data ended before the period. Every figure is the period's own (the user,
  * 2026-10-23). Pure: nothing here fetches.

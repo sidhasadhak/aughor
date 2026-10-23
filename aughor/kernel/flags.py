@@ -112,9 +112,9 @@ FLAG_ENV = {
     # the canvas draws each cited result once. OFF → the answer's first sentence is cut as the headline
     # and every result is drawn, byte-identical.
     "analyst.conclude": "AUGHOR_ANALYST_CONCLUDE",
-    # Arc CT-4 (ROADMAP §3.50). ON adds a Cockpit tab to the Data Canvas: the canvas's own cards,
+    # Arc CT-4 (ROADMAP §3.50). ON adds a Dashboards tab to the Data Canvas: the canvas's own cards,
     # arranged by a kept spec — tabs, sections, cards shown by a condition. No model call: the
-    # tab draws what was approved. OFF → the Data Canvas has its three tabs and the cockpit's
+    # tab draws what was approved. OFF → the Data Canvas has its three tabs and the dashboard's
     # routes answer 404, exactly as before.
     "dashboard.composed": "AUGHOR_DASHBOARD_COMPOSED",
     # Arc OC-0 (ROADMAP §3.56). ON: once a day the ontology census — what every built scope declares, what the
@@ -137,33 +137,33 @@ FLAG_ENV = {
     # whole statement over any set of that entity's objects, and the question frame may resolve to it. OFF: the
     # object door and the frame read exactly as before; the key is still kept and counted.
     "ontology.keyed_metrics": "AUGHOR_ONTOLOGY_KEYED_METRICS",
-    # Arc OC-4 (ROADMAP §3.56). ON: a cockpit may hold pieces bound to the ontology — a process board, an objects table
+    # Arc OC-4 (ROADMAP §3.56). ON: a dashboard may hold pieces bound to the ontology — a process board, an objects table
     # over an entity or a segment, an object detail that follows the table, and a button that runs a declared action —
-    # and the object door resolves each promise's overdue segment (`overdue_<noun>`). OFF: the cockpit vocabulary
+    # and the object door resolves each promise's overdue segment (`overdue_<noun>`). OFF: the dashboard vocabulary
     # refuses those pieces and the compiler resolves exactly the names it did; POST /objects/list still lists.
     "ontology.dashboard_pieces": "AUGHOR_ONTOLOGY_DASHBOARD_PIECES",
-    # The cockpit started from an object (2026-10-10, design-mockups/cockpit-from-object.html). ON: a cockpit may hold
+    # The dashboard started from an object (2026-10-10, design-mockups/cockpit-from-object.html). ON: a dashboard may hold
     # a filter column over an entity's categories, figures and a chart of its objects, every piece narrowed by the
-    # reader's own filters; and a person may start a cockpit from an object, its pieces proposed from what the object
-    # holds. OFF: the cockpit vocabulary refuses those three pieces and nothing is proposed.
+    # reader's own filters; and a person may start a dashboard from an object, its pieces proposed from what the object
+    # holds. OFF: the dashboard vocabulary refuses those three pieces and nothing is proposed.
     "ontology.object_dashboards": "AUGHOR_ONTOLOGY_OBJECT_DASHBOARDS",
-    # Arc AP-1 (ROADMAP §3.57, docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md). ON: a cockpit opens to be read, and Edit
+    # Arc AP-1 (ROADMAP §3.57, docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md). ON: a dashboard opens to be read, and Edit
     # shows it between its layout and the setup of the piece chosen — sizes one grade at a time on a section's grid, and
-    # every piece set up there, never typed as a spec. OFF: a cockpit is arranged by its six sizes and Arrange, the
-    # server refuses a section on the grid, and the writer of a cockpit is told nothing about the grid.
+    # every piece set up there, never typed as a spec. OFF: a dashboard is arranged by its six sizes and Arrange, the
+    # server refuses a section on the grid, and the writer of a dashboard is told nothing about the grid.
     "dashboard.builder": "AUGHOR_DASHBOARD_BUILDER",
-    # Arc AP-2 and AP-3 (ROADMAP §3.57). ON: a cockpit may name sets and values its pieces read, a table may name what a
+    # Arc AP-2 and AP-3 (ROADMAP §3.57). ON: a dashboard may name sets and values its pieces read, a table may name what a
     # click chooses and ticks collect, a figure may switch a list, and action buttons run declared actions on what a
     # reader chose or ticked, on a set, or with what they fill in. OFF: the server refuses a spec that says any of it,
     # and the builder offers none of it.
     "dashboard.wiring": "AUGHOR_DASHBOARD_WIRING",
     "dashboard.app_pieces": "AUGHOR_DASHBOARD_APP_PIECES",
     "dashboard.shapes": "AUGHOR_DASHBOARD_SHAPES",
-    # Arc AP-7 (ROADMAP §3.57). ON: a card on a cockpit may read a person's own SQL — one table, several, another schema —
+    # Arc AP-7 (ROADMAP §3.57). ON: a card on a dashboard may read a person's own SQL — one table, several, another schema —
     # shown as a table, a figure or a chart set up as they choose, each run stopped after the connection's time limit.
     # OFF: the builder offers no query of your own, the doors answer 404, and every card runs as it always did.
     "dashboard.queries": "AUGHOR_DASHBOARD_QUERIES",
-    # Arc AP-8 (ROADMAP §3.57). ON: a cockpit's value may come from the reader on the page, a set's count or the object a
+    # Arc AP-8 (ROADMAP §3.57). ON: a dashboard's value may come from the reader on the page, a set's count or the object a
     # reader chose; a set compares any value; a query of your own reads one as a bound parameter. OFF: a value is the
     # author's and only days reach a set, as before; the server refuses a spec that says more.
     "dashboard.variables": "AUGHOR_DASHBOARD_VARIABLES",
@@ -296,7 +296,7 @@ RENAMED: dict[str, str] = {
     # left 2026-08-06 with their targets — flag endgame Wave 5 hardwired all three.
     # The map stays declared (empty) because `_canonical` is still the resolution
     # seam any future rename must pass through.
-    # 2026-10-23 — cockpits were renamed Dashboards (PENDING 54; the user: "rename cockpits entirely as Dashboards -
+    # 2026-10-23 — dashboards were renamed Dashboards (PENDING 54; the user: "rename dashboards entirely as Dashboards -
     # externally and internally"). Every old name keeps resolving: an operator's override row, a script, a call site.
     "cockpit.composed": "dashboard.composed",
     "cockpit.builder": "dashboard.builder",
@@ -855,8 +855,8 @@ INTENTIONALLY_OFF: dict = {
 #: the E4 grid is the exit. Each entry names the question that settles it. Pre-check
 #: "does the flag change the prompt?" before buying any grid.
 EXPERIMENT: dict = {
-    # Arc AP-1, 2026-10-10. It changes where a cockpit is changed, so it is watched before it graduates.
-    # Arc AP-2 and AP-3, 2026-10-11. It changes what a cockpit can do — an action a reader runs from it — so it is watched
+    # Arc AP-1, 2026-10-10. It changes where a dashboard is changed, so it is watched before it graduates.
+    # Arc AP-2 and AP-3, 2026-10-11. It changes what a dashboard can do — an action a reader runs from it — so it is watched
     # before it graduates.
     "dashboard.wiring": "does a wired dashboard become a place work is done — of the wired dashboards, is an action run from "
                       "one at least weekly? Falsifiers (§3.57): a dashboard drawn before the wiring renders differently "
@@ -876,7 +876,7 @@ EXPERIMENT: dict = {
     "dashboard.builder": "is the setup where people change a dashboard — of the dashboards started from an object, is one in "
                        "five or more edited within two weeks of starting? Falsifier (§3.57): fewer than one in five, "
                        "and the setup is not where people look",
-    # The cockpit started from an object, 2026-10-10. It is a new way to read objects, so it is watched before it
+    # The dashboard started from an object, 2026-10-10. It is a new way to read objects, so it is watched before it
     # graduates.
     "ontology.object_dashboards": "does a dashboard started from an object get read again — opened on three or more "
                                 "days in its first two weeks — more often than one started empty or for a "

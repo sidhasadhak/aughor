@@ -13,7 +13,7 @@
  * (`POST /ontology/processes/preview`): how many reach each stage, the typical time between stages, each promise's
  * breach rate, and the checks to read before publishing — a stage objects wait at for over a year asked about as a
  * question, with the statuses that explain them. Publishing declares the process and publishes the release; then a
- * cockpit for it is one press away.
+ * dashboard for it is one press away.
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
@@ -100,8 +100,8 @@ function days(n: number | null | undefined): string {
   return `${Number.isInteger(n) ? n : n.toFixed(1)} d`;
 }
 
-/** A fresh cockpit holding the process's board, its open-and-overdue objects and one object beside them — the same
- *  cockpit a process's own panel and *+ New cockpit* start (`lib/cockpit/start`). */
+/** A fresh dashboard holding the process's board, its open-and-overdue objects and one object beside them — the same
+ *  dashboard a process's own panel and *+ New dashboard* start (`lib/cockpit/start`). */
 export const dashboardSpecFor = processDashboardSpec;
 
 type Phase = { at: "draft" } | { at: "declared"; id: string } | { at: "published"; id: string; release: number };

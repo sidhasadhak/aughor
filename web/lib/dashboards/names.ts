@@ -1,5 +1,5 @@
 /**
- * What a cockpit's elements are called where a person reads them as lines — the builder's layout (Arc AP-1), Arrange,
+ * What a dashboard's elements are called where a person reads them as lines — the builder's layout (Arc AP-1), Arrange,
  * the strip that says which pieces a release touched. ONE home for it: before it, Arrange named every element by its
  * `card` prop, so the ontology's pieces drew as blank lines, and the strip named three of them by their element keys
  * (the study's defects 1 and 5, docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §1.6).

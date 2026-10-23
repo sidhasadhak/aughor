@@ -1,7 +1,7 @@
 /**
  * The Briefing's switches (the canvas, docs/COCKPIT_CANVAS_2026-10-08.md, B1).
  *
- * A person shows, hides and orders the Briefing's sections and chooses which cockpit of theirs
+ * A person shows, hides and orders the Briefing's sections and chooses which dashboard of theirs
  * rides with it. The content of a section is never theirs to change, and a send carries the
  * platform's Briefing, not their switches. The preference is kept per person on the server
  * (`briefing_sections`, `aughor/db/user_prefs.py`), whose registry holds the same ids.
@@ -14,7 +14,7 @@
  * of their own.
  *
  * A switch can be asked for in words. The words are read HERE, without a model: the vocabulary
- * is eight names, three verbs and a cockpit's name, and a model call to read "hide the findings"
+ * is eight names, three verbs and a dashboard's name, and a model call to read "hide the findings"
  * would cost a person seconds for nothing. What the words come to is a proposal the person keeps
  * or not — words never write.
  */
@@ -130,14 +130,14 @@ function sectionIn(text: string): SectionId | null {
 }
 
 /** The words, read as switches: hide or show a section, put one first, last, before or after
- *  another, and name the cockpit that rides with the Briefing. Several at once, separated by a
+ *  another, and name the dashboard that rides with the Briefing. Several at once, separated by a
  *  comma, "and" or "then". */
 export function proposeFromWords(words: string, pref: BriefingSectionsPref, cockpits: DashboardChoice[]): SwitchProposal {
   const lines: string[] = [];
   let next: BriefingSectionsPref = { ...pref, sections: pref.sections.map(s => ({ ...s })) };
   const clauses = words.toLowerCase().replace(/[.!?]+$/g, "").split(/\s*(?:,|;|\bthen\b|\band\b)\s*/).map(c => c.trim()).filter(Boolean);
   for (const clause of clauses) {
-    // The cockpit that rides with the Briefing, by its name.
+    // The dashboard that rides with the Briefing, by its name.
     const named = cockpits.find(c => c.title && clause.includes(c.title.toLowerCase()));
     if (named && /\b(strip|dashboard|cockpit|ride|with|show|put|use)\b/.test(clause) && !HIDE.test(clause)) {
       next = { ...next, strip: named.id, sections: next.sections.map(s => (s.id === "cockpit" ? { ...s, on: true } : s)) };

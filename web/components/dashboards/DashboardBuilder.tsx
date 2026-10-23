@@ -1,17 +1,17 @@
 "use client";
 
 /**
- * CockpitBuilder — a cockpit built in place (Arc AP-1; ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md
+ * DashboardBuilder — a dashboard built in place (Arc AP-1; ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md
  * §4.4 and §4.7; design-mockups/cockpit-builder.html, screen 2).
  *
- * The user, 2026-10-10: "In the current nothing is editable." A cockpit opens to be read; Edit opens this — the
- * cockpit between its layout and the setup of what is chosen, as Workshop lays out its editor:
+ * The user, 2026-10-10: "In the current nothing is editable." A dashboard opens to be read; Edit opens this — the
+ * dashboard between its layout and the setup of what is chosen, as Workshop lays out its editor:
  *
- *   - left, the layout: the cockpit as a tree of lines, each named by what it reads (`lib/cockpit/names.ts`), and at
+ *   - left, the layout: the dashboard as a tree of lines, each named by what it reads (`lib/cockpit/names.ts`), and at
  *     its foot the change asked in words, which a model may only arrange;
- *   - middle, the canvas: the cockpit as its reader sees it, live — a table still lists, a filter still narrows — with
+ *   - middle, the canvas: the dashboard as its reader sees it, live — a table still lists, a filter still narrows — with
  *     the chosen element outlined, and above it a bar to move it, take it off, and step its width and height one grade
- *     at a time. The cockpit is laid out at least as wide as the mockup's page and fits a narrower screen, saying the
+ *     at a time. The dashboard is laid out at least as wide as the mockup's page and fits a narrower screen, saying the
  *     zoom; at 1920 × 1080 it draws at 100%;
  *   - right, the setup of the element chosen (`PieceSetup`), or the history while it is open.
  *
@@ -55,9 +55,9 @@ function useEntityTitles(connectionId: string): (id: string) => string | undefin
   return id => names[id.toLowerCase()];
 }
 
-/** The narrowest the canvas lays a cockpit out: the mockup's page. A narrower canvas draws it scaled to fit. */
+/** The narrowest the canvas lays a dashboard out: the mockup's page. A narrower canvas draws it scaled to fit. */
 export const MIN_LAYOUT = 1100;
-/** The canvas's own margin around the cockpit. */
+/** The canvas's own margin around the dashboard. */
 const PAD = 16;
 
 const ICON: Record<string, IconName> = {
@@ -74,7 +74,7 @@ function PaneLabel({ children }: { children: ReactNode }) {
   );
 }
 
-/** The cockpit as a tree of lines: each named by what it reads, the chosen one marked. */
+/** The dashboard as a tree of lines: each named by what it reads, the chosen one marked. */
 export function LayoutTree({ spec, selected, onSelect, cardTitle, entityTitle }: {
   spec: DashboardSpec; selected: string | null; onSelect: (key: string) => void; cardTitle?: (id: string) => string | undefined;
   entityTitle?: (id: string) => string | undefined;
@@ -130,7 +130,7 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
   /** Every change, as the next spec and the version's note. */
   onChange: (next: DashboardSpec, note: string) => void;
   cardTitle?: (id: string) => string | undefined;
-  /** The edit bar, drawn by the page that keeps the cockpit. */
+  /** The edit bar, drawn by the page that keeps the dashboard. */
   bar: ReactNode;
   /** What may be added — a card, a note, a piece — under the layout. */
   add?: ReactNode;
@@ -138,13 +138,13 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
   words?: ReactNode;
   /** The history while it is open, in the setup's place. */
   aside?: ReactNode;
-  /** What is drawn above the cockpit on the canvas: a composer open, what a keep said. */
+  /** What is drawn above the dashboard on the canvas: a composer open, what a keep said. */
   above?: ReactNode;
   connectionId: string;
   schema?: string;
   /** Arc AP-2 — whether this install wires cockpits: the Data tab, and what pieces read, then. */
   wiringOn?: boolean;
-  /** Arc AP-4 — whether a cockpit may be split into sections: a section's split, its sections inside, a copy, a width. */
+  /** Arc AP-4 — whether a dashboard may be split into sections: a section's split, its sections inside, a copy, a width. */
   structureOn?: boolean;
   /** Arc AP-4 — open the piece picker for a section: the one chosen, the one a chosen piece sits in, or none. */
   onAddPiece?: (section: string | null) => void;
@@ -154,11 +154,11 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
   cardSetup?: (cardId: string) => ReactNode | null;
   /** Arc AP-8 — whether this install has variables: the Data tab is Variables, and a value says where it comes from. */
   variablesOn?: boolean;
-  /** Arc AP-8 — the cockpit's values a card of the person's own query reads, by the card's id. */
+  /** Arc AP-8 — the dashboard's values a card of the person's own query reads, by the card's id. */
   cardReads?: (cardId: string) => string[];
-  /** Arc AP-8c — the cards of the person's own query the cockpit places: a value may read one's first value. */
+  /** Arc AP-8c — the cards of the person's own query the dashboard places: a value may read one's first value. */
   queryCards?: { id: string; title: string }[];
-  /** The cockpit, drawn with the element chosen, the door that chooses one, the handle the steps use, and — while a
+  /** The dashboard, drawn with the element chosen, the door that chooses one, the handle the steps use, and — while a
    *  set, a value or a choice is chosen — the pieces that read it. */
   children: (p: { selected: string | null; onSelect: (key: string) => void; handle: { current: DashboardHandle | null }; reads: string[] }) => ReactNode;
 }) {
@@ -206,7 +206,7 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
   const layout = avail > 0 ? Math.max(avail, MIN_LAYOUT) : undefined;
   const zoom = Math.round(scale * 100);
 
-  // the chosen element's room, read again whenever the cockpit changes: its own on the grid, measured off it
+  // the chosen element's room, read again whenever the dashboard changes: its own on the grid, measured off it
   const el = selected ? spec.elements[selected] : undefined;
   const kind = el && el.type in LIMITS ? (el.type as GridKind) : null;
   const [box, setBox] = useState<Box | null>(null);
@@ -395,7 +395,7 @@ export function DashboardBuilder({ spec, onChange, cardTitle, bar, add, words, a
 }
 
 /** Arc AP-6 — the checks chip: how many elements read cleanly, how many are still reading, and the ones to fix — each
- *  with why, a click choosing it. Counted over what the cockpit holds now, as each cell said it. */
+ *  with why, a click choosing it. Counted over what the dashboard holds now, as each cell said it. */
 function ChecksChip({ spec, checks, onChoose, cardTitle, entityTitle }: {
   spec: DashboardSpec; checks: Record<string, ReadState>; onChoose: (key: string) => void;
   cardTitle?: (id: string) => string | undefined; entityTitle?: (id: string) => string | undefined;
@@ -444,7 +444,7 @@ export interface EditBarProps {
   onDone: () => void;
 }
 
-/** The one bar of Edit mode: which cockpit, that it is being edited and when it was last kept, undo and redo, what may
+/** The one bar of Edit mode: which dashboard, that it is being edited and when it was last kept, undo and redo, what may
  *  be added or done to it, and Done. */
 export function EditBar({ picker, saved, canUndo, canRedo, onUndo, onRedo, actions, onDone }: EditBarProps) {
   return (

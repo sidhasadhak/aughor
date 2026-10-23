@@ -2,8 +2,8 @@
 
 /**
  * Arc AP-8c, drawn: a list the reader ticks from the choices offered, yes or no as a switch of two, a value summed over a
- * set at the object door, and one read from the first value of a query the cockpit places — run as written, with the
- * values it reads, never cut to the page's range. Through the cockpit's own renderer, the object door and the card run
+ * set at the object door, and one read from the first value of a query the dashboard places — run as written, with the
+ * values it reads, never cut to the page's range. Through the dashboard's own renderer, the object door and the card run
  * mocked. What cannot be read says why in its place: a sum over nothing is not a zero; a query that is not placed, or
  * reads itself back, is said.
  */
@@ -151,7 +151,7 @@ describe("a value read from a query", () => {
   });
 
   it("that is not placed, or reads itself back, says so in place of what reads it", async () => {
-    // the card it names is placed, and it is not one of the cockpit's cards the person has
+    // the card it names is placed, and it is not one of the dashboard's cards the person has
     const { unmount } = draw(SPEC, []);
     await waitFor(() => expect(screen.getAllByText(/not a card this dashboard places/).length).toBeGreaterThan(0));
     unmount();

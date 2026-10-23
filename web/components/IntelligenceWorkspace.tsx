@@ -34,7 +34,7 @@ const ConnectionGraphPanel = dynamic(() => import("@/components/ConnectionGraphP
 // loop's accumulation is org-wide learning — "what Aughor knows", which is this
 // section's job — not agent operations.
 const MemoryPanel      = dynamic(() => import("@/components/MemoryPanel").then(m => ({ default: m.MemoryPanel })), { ssr: false, loading });
-// Arc CT-7 — a person's own cockpits, a tab of their own beside the Briefing.
+// Arc CT-7 — a person's own dashboards, a tab of their own beside the Briefing.
 const BriefingDashboards = dynamic(() => import("@/components/dashboards/BriefingDashboards").then(m => ({ default: m.BriefingDashboards })), { ssr: false, loading });
 
 // Minimal inline icon set — mirrors NavIcon paths used elsewhere in the shell.
@@ -81,8 +81,8 @@ const LAYERS: WorkspaceLayer<IntelLayer>[] = [
 // reports honestly when a connection has no graph built yet.
 const GRAPH_LAYER: WorkspaceLayer<IntelLayer> = { id: "graph", icon: "kgraph", label: "Graph", blurb: "Connection knowledge graph" };
 
-// Arc CT-7 — the person's cockpits, beside the Briefing: the Briefing is the connection's, a
-// cockpit is the person's own. Present only with `dashboard.composed` on, and never for a canvas,
+// Arc CT-7 — the person's dashboards, beside the Briefing: the Briefing is the connection's, a
+// dashboard is the person's own. Present only with `dashboard.composed` on, and never for a canvas,
 // which is for questions and deep analysis. Off, the layers are exactly what they were.
 const DASHBOARD_LAYER: WorkspaceLayer<IntelLayer> = { id: "dashboards", icon: "gauge", label: "Dashboards", blurb: "Your own dashboards — the cards you keep watching" };
 
@@ -187,7 +187,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
     return () => { alive = false; };
   }, []);
   const withDashboard = dashboardsOn === true && !canvasId;
-  // A link to the Cockpit tab where there is none opens the Briefing instead of an empty pane.
+  // A link to the Dashboards tab where there is none opens the Briefing instead of an empty pane.
   useEffect(() => {
     if (layer === "dashboards" && dashboardsOn !== null && !withDashboard) onLayerChange("briefing");
   }, [layer, dashboardsOn, withDashboard, onLayerChange]);

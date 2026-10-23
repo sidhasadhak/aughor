@@ -282,7 +282,10 @@ the boundary. If you are tempted to rename one, you are about to orphan history.
   `cockpit_publish`, their `cockpit:{title}` action ids and the `cockpit` proposer; the audit and approval names
   `cockpit.draft` / `cockpit.publish`; the `cockpit-images` file volume; the Briefing-switches section id `cockpit`;
   the browser keys `aughor:cockpit:*`; the metering sites `cockpit.draft` / `cockpit.edit`; and the old links
-  `?tab=cockpit` / `?layer=cockpit`, which still open
+  `?tab=cockpit` / `?layer=cockpit`, which still open; and the data's field names those stored rows carry, which the API mirrors — `cockpit`,
+  `cockpit_id`, `cockpits` (a proposal's params, a Ledger payload, a response). The nine flags were renamed through
+  `RENAMED` / `RETIRED_ENV` (`cockpit.*` → `dashboard.*`, `AUGHOR_COCKPIT_*` → `AUGHOR_DASHBOARD_*`), and `/cockpits…`
+  is served as `/dashboards…`. The vocabulary ratchet holds the word at its count
 - The card store's table `dashboard_cards`, its file `data/dashboard_cards.db` and its `AUGHOR_DASHBOARD_DB` override —
   the store itself moved to `aughor/cards/` (2026-10-23) so that *dashboard* names dashboards; a stored card is a
   `StoredCard` in code

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * The Metrics cockpit as figures (`design-mockups/cockpit-day-figures.html`). The fixture is LuxExperience's September
- * 2026 as the live cockpit measured it (2026-10-13): one figure of the period's own, three read for earlier months
+ * The Metrics dashboard as figures (`design-mockups/cockpit-day-figures.html`). The fixture is LuxExperience's September
+ * 2026 as the live dashboard measured it (2026-10-13): one figure of the period's own, three read for earlier months
  * because their data stops there, four that cannot be measured for a period.
  */
 import { describe, expect, it, vi } from "vitest";

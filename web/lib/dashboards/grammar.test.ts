@@ -1,5 +1,5 @@
 /**
- * What the writer of a cockpit is told (Arc CT, CT-5). The grammar is held to the rules it
+ * What the writer of a dashboard is told (Arc CT, CT-5). The grammar is held to the rules it
  * describes: a text that taught a spec the rules refuse would cost a model call every time it
  * was followed.
  */

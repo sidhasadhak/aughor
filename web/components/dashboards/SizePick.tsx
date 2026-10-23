@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * SizePick — one of the six sizes an element of a cockpit may take, by name (the user,
+ * SizePick — one of the six sizes an element of a dashboard may take, by name (the user,
  * 2026-10-08: "make each component size adjustable… without losing the elegance and
  * robustness"). The set is closed on purpose: a size is a prop the validator counts and a
  * version keeps, never free pixels. The corner drag on a tile lands on one of these too.

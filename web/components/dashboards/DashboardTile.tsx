@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * CockpitTile — how a cockpit draws one card (Arc CT; the user's mock, 2026-09-28: "make the
- * cockpit look like the mockup").
+ * DashboardTile — how a dashboard draws one card (Arc CT; the user's mock, 2026-09-28: "make the
+ * dashboard look like the mockup").
  *
  * The first cut drew every card with `PinnedCardBody`, the Briefing's own card, unchanged. That
- * kept one rendering of a card, and it is why the cockpit looked like a pinned card and not like
+ * kept one rendering of a card, and it is why the dashboard looked like a pinned card and not like
  * the mock: a figure floating in a fixed-height box, the unit dropped, what stands behind the
  * figure unsaid, and three action buttons where the mock says where the figure came from.
  *
@@ -70,21 +70,21 @@ export function tileShape(cs: CardState): TileShape {
 export const WIDE: Record<TileShape, boolean> = { figure: false, trend: true, rows: true };
 
 export interface TileDoors {
-  /** Take the card off this cockpit. Absent where the reader may not change it — a strip, a published one. */
+  /** Take the card off this dashboard. Absent where the reader may not change it — a strip, a published one. */
   onRemove?: (id: string) => void;
   onRefresh: (id: string) => void;
   onOpenSource?: (iid: string) => void;
   onEvidence?: (iid: string) => void;
-  /** Give the element this tile draws a size. Absent on a cockpit the reader may not change. */
+  /** Give the element this tile draws a size. Absent on a dashboard the reader may not change. */
   onResize?: (key: string, size: Size) => void;
 }
 
-/** Where a tile stands: the element it draws, and its size. A tile drawn outside a cockpit's spec
+/** Where a tile stands: the element it draws, and its size. A tile drawn outside a dashboard's spec
  *  (a test, a strip) has no element, and offers no size. */
 export interface TilePlace {
   elementKey: string | null;
   size: Size;
-  /** The range the cockpit is read for, so a bigger figure can show its trend. Null when none. */
+  /** The range the dashboard is read for, so a bigger figure can show its trend. Null when none. */
   range?: BriefingRange | null;
   schema?: string;
 }
@@ -112,7 +112,7 @@ function limitsOf(card: DashboardCard): { values: number[]; below: boolean; watc
 }
 
 /** One figure, at the scale its unit states. A figure its unit says cannot be is still shown —
- *  a cockpit hides nothing — plainly, and said to be outside its range. */
+ *  a dashboard hides nothing — plainly, and said to be outside its range. */
 export function figureText(v: number, card: DashboardCard, sym: string): { text: string; outside: boolean } {
   const range = card.stated_range ?? undefined;
   const f = formatMetric(v, card.unit ?? "", sym, card.title, range);
@@ -249,7 +249,7 @@ function useChartHeight(offGrid: number): [(el: HTMLDivElement | null) => void, 
   return [ref, box.onGrid && room.height > 0 ? Math.max(60, room.height) : offGrid];
 }
 
-/** A metric's trend over the ranges before the one the cockpit is read for — what a bigger figure
+/** A metric's trend over the ranges before the one the dashboard is read for — what a bigger figure
  *  tile has the room to show (the user, 2026-10-08: "a bigger tile shows the same figure larger, with
  *  its trend"). Read once per card and range; nothing is re-measured, and the figure above it is
  *  the card's own run, untouched. */
@@ -441,7 +441,7 @@ function RowsTile({ cs, doors, place }: { cs: CardState & { card: DashboardCard 
   );
 }
 
-/** Arc AP-8 — what a query reading the cockpit's values waits on: a value still being read, or the choice a value read
+/** Arc AP-8 — what a query reading the dashboard's values waits on: a value still being read, or the choice a value read
  *  off a chosen object waits on, in words. */
 export type QueryWaiting = { reading: true } | { waiting: ReactNode };
 

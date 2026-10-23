@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 /**
- * A chart split by a property (Arc AP-1; the study's receipt: "Change the Order cockpit's chart to split by status").
- * Drawn through the cockpit's own renderer with the object door mocked: each day's bar stacks the property's most common
+ * A chart split by a property (Arc AP-1; the study's receipt: "Change the Order dashboard's chart to split by status").
+ * Drawn through the dashboard's own renderer with the object door mocked: each day's bar stacks the property's most common
  * values — read from every object — and folds the rest into Other; a value keeps its colour while a reader narrows,
  * even where the narrowed objects rank the values differently; and the narrowed bars stand before the whole as a line.
  */

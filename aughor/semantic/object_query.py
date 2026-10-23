@@ -78,7 +78,7 @@ from aughor.semantic.cross_source import KeyedRead
 AggName = Literal["count", "count_distinct", "sum", "avg", "min", "max"]
 FilterOp = Literal["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "between",
                    "is_null", "not_null", "exists", "not_exists", "in_last", "contains", "in_set", "not_in_set"]
-#: Arc AP-8b — the most sets one condition names, and how deep sets may read sets: a cockpit's sets read each other a
+#: Arc AP-8b — the most sets one condition names, and how deep sets may read sets: a dashboard's sets read each other a
 #: few levels down, never without end.
 MAX_SETS_PER_CONDITION = 4
 MAX_SET_DEPTH = 4

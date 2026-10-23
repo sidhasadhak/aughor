@@ -1,7 +1,7 @@
 /**
  * keyFigure — pull the one salient figure out of a finding's OWN statement.
  *
- * The Briefing's digest tiles, the ledger's key-figure column, and the cockpit's
+ * The Briefing's digest tiles, the ledger's key-figure column, and the dashboard's
  * suggested pins all want "the number this finding is about." We never invent a number:
  * we quote the finding's grounded prose, extracting the most headline-worthy token by a
  * fixed priority (% › ratio › currency › largest grouped integer). When nothing scans as

@@ -173,7 +173,7 @@ function Row({ label, right, hint, children, testid }: { label: string; right?: 
 /** A person's words, kept when they leave the field or press Enter — and only when there are some. */
 function Words({ label, value, max, onSave, many }: { label: string; value: string; max: number; onSave: (v: string) => void; many?: boolean }) {
   const [text, setText] = useState(value);
-  // a value changed from elsewhere — an undo, another cockpit — replaces what the field shows
+  // a value changed from elsewhere — an undo, another dashboard — replaces what the field shows
   const [shown, setShown] = useState(value);
   if (shown !== value) { setShown(value); setText(value); }
   const save = () => {
@@ -565,7 +565,7 @@ function SearchSetup({ p, ef, set }: { p: Props; ef: EntityFields; set: (patch: 
 
 // ── Arc AP-2 — what a piece reads, and what it chooses ───────────────────────────────────────────────────────────────
 
-/** Which set a table, a figure or a chart reads: every object of its entity, or a set the cockpit names. */
+/** Which set a table, a figure or a chart reads: every object of its entity, or a set the dashboard names. */
 function ReadsRow({ spec, k, p, entity, onChange }: { spec: DashboardSpec; k: string; p: Props; entity: string; onChange: Change }) {
   const sets = Object.entries(spec.sets ?? {});
   const value = p.set ? `set:${String(p.set)}` : `entity:${entity}`;

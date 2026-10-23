@@ -25,7 +25,7 @@ from tests.unit.test_dashboard_pieces import _graph as _pieces_graph
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
                                  reason="the dashboard's rules need node + validate.bundle.mjs")
-#: Everything a wired desk needs on: wiring, the ontology's pieces, and the pieces of a cockpit started from an object.
+#: Everything a wired desk needs on: wiring, the ontology's pieces, and the pieces of a dashboard started from an object.
 ALL = {wiring.FLAG, pieces.FLAG, "ontology.object_dashboards"}
 
 
@@ -99,7 +99,7 @@ def _button(action: str, **params) -> dict:
     return {"sets": {}, "buttons": [{"element": "buttons", "index": 0, "action": action, "params": params}]}
 
 
-# ── what only a wired cockpit says ──────────────────────────────────────────────────────────────────────
+# ── what only a wired dashboard says ──────────────────────────────────────────────────────────────────────
 
 def test_a_wired_cockpit_is_found_by_its_sets_values_and_each_wired_piece_in_that_order():
     # a detail follows a table by `follows`, as it did before sets: that alone does not wire it
@@ -297,7 +297,7 @@ def test_what_a_piece_reads_through_a_set_is_what_a_release_tracks_down_the_sets
     assert pieces._set_scope(ring, "a") == ("", "")                          # a ring reads nothing, and ends
 
 
-# ── a person wires a cockpit; a model arranges one ─────────────────────────────────────────────────────
+# ── a person wires a dashboard; a model arranges one ─────────────────────────────────────────────────────
 
 def test_a_new_cockpit_from_a_model_names_no_set_or_value():
     said = wiring.wiring_written(None, _desk(), new=True)

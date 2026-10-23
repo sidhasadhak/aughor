@@ -96,7 +96,7 @@ class Desk:
         tag = uuid.uuid4().hex[:6]
         self.tag = tag
         self.connection = connection
-        # A person of the desk's own: a person's cards and cockpits are theirs alone, so two
+        # A person of the desk's own: a person's cards and dashboards are theirs alone, so two
         # desks in one test read nothing of each other's.
         self.home = Home(connection, owner or f"u{tag}", f"returns-{tag}")
         self.held = f"net{tag}"
@@ -290,7 +290,7 @@ def test_options_offer_the_whole_connection_and_the_connections_pinned_cards(mon
         card_store.delete_card(pinned.id)       # a card pinned for everyone is every later test's too
 
 
-# ── a new cockpit ────────────────────────────────────────────────────────────
+# ── a new dashboard ────────────────────────────────────────────────────────────
 
 def test_a_draft_is_one_proposal_and_changes_nothing(desk, warehouse):
     frames: list[tuple[str, dict]] = []
@@ -302,7 +302,7 @@ def test_a_draft_is_one_proposal_and_changes_nothing(desk, warehouse):
     [p] = desk.pending()
     assert out["proposal_id"] == p.id and out["expires_at"] == p.expires_at
     assert p.kind == "cockpit_draft" and p.connection_id == CONN
-    assert p.action_id == "cockpit:Returns"            # the cockpit's name: it is what an inbox row reads
+    assert p.action_id == "cockpit:Returns"            # the dashboard's name: it is what an inbox row reads
     assert p.reasoning == "Alerts first, detail behind a tab."
     assert frames == [("proposal_staged", {"proposal_id": p.id, "kind": "cockpit_draft",
                                            "connection_id": CONN, "action_id": p.action_id})]
@@ -361,7 +361,7 @@ def test_the_card_says_what_is_arranged_in_words(desk):
     d = staged(desk).detail
     assert d["title"] == "Returns"
     assert d["mode"] == "new" and d["replaces_version"] is None
-    # A new cockpit is all of it new, so no line is marked as added: `change` is "" throughout.
+    # A new dashboard is all of it new, so no line is marked as added: `change` is "" throughout.
     assert d["outline"] == [
         {"tab": "Overview", "change": "", "sections": [
             {"title": "Needs a look", "change": "", "shown": '"Return rate" is over its limit', "cards": [
@@ -428,7 +428,7 @@ def _one(desk: Desk, card: dict, place: bool = True) -> dict:
     (lambda d: {"key": "k1", "metric": d.draft_metric}, "is draft. A card is made from an approved metric."),
     (lambda d: {"key": "k1", "trusted_query": "tq-nowhere"}, 'There is no trusted query "tq-nowhere" on this connection.'),
     (lambda d: {"key": "k1", "trusted_query": d.chain_owned}, "belongs to an automation and is not in the catalogue"),
-    # It exists and is approved, on a connection that is not this cockpit's.
+    # It exists and is approved, on a connection that is not this dashboard's.
     (lambda d: {"key": "k1", "trusted_query": d.elsewhere}, 'There is no trusted query "tq-elsewhere-'),
     (lambda d: {"key": "k1", "finding": "f-nowhere"}, 'The Briefing shows no finding "f-nowhere".'),
     (lambda d: {"key": "k1", "finding": d.bare_finding}, "has no query behind it, so no card can be made from it"),
@@ -1082,7 +1082,7 @@ def test_an_edit_is_operations_against_the_cockpit_as_it_stands(standing):
     assert latest["spec"] == p.params["spec"]
     assert latest["changes"] == p.detail["changes"]
     assert [v["version"] for v in versions.history(desk.home)] == [2, 1]
-    # The card the edit took off the cockpit is still the person's: an edit arranges, it does not delete.
+    # The card the edit took off the dashboard is still the person's: an edit arranges, it does not delete.
     assert len(desk.held_cards()) == 4
 
 
@@ -1100,7 +1100,7 @@ def test_an_edit_that_takes_off_a_section_and_a_tab_says_each_by_name(standing):
         {"what": "section", "title": "Where and when", "from": "Detail"},
         {"what": "tab", "title": "Detail", "from": ""},
     ]
-    # Taken off the cockpit, and still the person's: an edit arranges, it deletes no card.
+    # Taken off the dashboard, and still the person's: an edit arranges, it deletes no card.
     assert accept(p).ok is True
     assert len(standing.held_cards()) == 4
 
@@ -1288,7 +1288,7 @@ def test_an_edit_drafted_against_a_version_lands_on_that_version_or_not_at_all(s
     assert versions.latest(desk.home)["spec"]["elements"]["sec-headline"]["props"]["title"] == "Headline"
 
 
-# ── a new cockpit from an area (CT-9) ────────────────────────────────────────
+# ── a new dashboard from an area (CT-9) ────────────────────────────────────────
 # The model is the repo's faux backend, scripted call by call: no credentials, no network,
 # no spend. What is asserted is what the platform did with what the model asked for.
 
@@ -1322,7 +1322,7 @@ def test_an_area_is_drafted_into_one_proposal_for_a_new_cockpit_of_the_persons(d
     home = Home.of(p.params["home"])
     assert (home.connection_id, home.owner) == (CONN, desk.home.owner)
     assert home.cockpit_id == out["cockpit_id"] and home.cockpit_id.startswith("returns-with-an-alert-above-12-")
-    assert home != desk.home                                      # a new cockpit, never one that stands
+    assert home != desk.home                                      # a new dashboard, never one that stands
     assert out["summary"].startswith('Drafted the dashboard "Returns": 2 tabs, 3 sections, 4 cards (3 new)')
     assert out["sentences"] == []
     assert versions.latest(home) is None                          # nothing is kept until the person keeps it

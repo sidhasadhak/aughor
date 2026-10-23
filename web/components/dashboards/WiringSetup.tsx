@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * WiringSetup — a cockpit's sets, values and choices in the builder (Arc AP-2; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md
+ * WiringSetup — a dashboard's sets, values and choices in the builder (Arc AP-2; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md
  * §4.4; design-mockups/cockpit-builder.html screen 3).
  *
- * The Data tab lists what the cockpit's pieces read and what its readers make: each set with what it holds now and how
+ * The Data tab lists what the dashboard's pieces read and what its readers make: each set with what it holds now and how
  * many pieces read it, each choice with the piece that makes it, each value. A set is built here — the entity or set it
  * starts from, the segment it keeps, its conditions, the chosen object it links to — and taken away only when nothing
- * reads it. Every field offers what the ontology declares; nothing is typed as a spec, and a model never wires a cockpit.
+ * reads it. Every field offers what the ontology declares; nothing is typed as a spec, and a model never wires a dashboard.
  */
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -204,8 +204,8 @@ export function DataPane({ spec, selected, onSelect, onChange, connectionId, sch
   const values = Object.keys(spec.values ?? {});
   const choices = [...choicesOf(spec).values()];
   const entities = useEntities(connectionId);
-  // a new set starts from the entity the cockpit already reads — a piece's own, else a set's, else the filter column's;
-  // on a cockpit that reads none yet — its cards all queries — from the connection's first entity (Arc AP-8)
+  // a new set starts from the entity the dashboard already reads — a piece's own, else a set's, else the filter column's;
+  // on a dashboard that reads none yet — its cards all queries — from the connection's first entity (Arc AP-8)
   const firstEntity = [...Object.values(spec.elements).map(el => el.props?.entity), ...Object.values(spec.sets ?? {}).map(x => x.entity)]
     .find((e): e is string => typeof e === "string" && !!e) ?? entities[0]?.value ?? "";
   const newSet = () => {
@@ -383,7 +383,7 @@ function Pick({ label, value, options, onPick, none }: { label: string; value: s
  *  to, what it holds now and what reads it. */
 export function SetSetup({ spec, name, onChange, onGone, connectionId, schema, variablesOn = false }: {
   spec: DashboardSpec; name: string; onChange: Change; onGone: () => void; connectionId: string; schema?: string;
-  /** Arc AP-8 — a condition may compare with any value of the cockpit's, as its kind allows. */
+  /** Arc AP-8 — a condition may compare with any value of the dashboard's, as its kind allows. */
   variablesOn?: boolean;
 }) {
   const set = spec.sets?.[name];
@@ -598,7 +598,7 @@ export function ValueSetup({ spec, name, onChange, onGone, variablesOn = false, 
   spec: DashboardSpec; name: string; onChange: Change; onGone: () => void;
   variablesOn?: boolean; connectionId?: string; schema?: string;
   cardReads?: (cardId: string) => string[]; cardTitle?: (cardId: string) => string | undefined;
-  /** Arc AP-8c — the cards of the person's own query the cockpit places, a value may read the first value of. */
+  /** Arc AP-8c — the cards of the person's own query the dashboard places, a value may read the first value of. */
   queryCards?: { id: string; title: string }[];
   /** The name a value has after a rename moved it — the setup follows it. */
   onRenamed?: (name: string) => void;

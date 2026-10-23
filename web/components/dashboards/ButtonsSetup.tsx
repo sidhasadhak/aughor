@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * ButtonsSetup — the setup of a cockpit's action buttons (Arc AP-3; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.5;
+ * ButtonsSetup — the setup of a dashboard's action buttons (Arc AP-3; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.5;
  * design-mockups/cockpit-builder.html screen 4).
  *
  * Each button names a declared action and takes each of its parameters from one source. Only sources that hold the

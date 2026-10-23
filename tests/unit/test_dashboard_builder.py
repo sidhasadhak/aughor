@@ -41,7 +41,7 @@ def _plain() -> dict:
     return json.loads(FIXTURE.read_text())
 
 
-# ── what only a cockpit built in place says ─────────────────────────────────────────────────────────────
+# ── what only a dashboard built in place says ─────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("kind,props,said", [
     ("Section", {"title": "Today", "grid": 12}, True),

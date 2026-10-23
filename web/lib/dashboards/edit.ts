@@ -1,14 +1,14 @@
 /**
- * Hand edits to a cockpit's spec (Arc CT, CT-8; ROADMAP §3.50).
+ * Hand edits to a dashboard's spec (Arc CT, CT-8; ROADMAP §3.50).
  *
- * A person arranges their cockpit by hand: moves a card, takes one off, renames a section or a
+ * A person arranges their dashboard by hand: moves a card, takes one off, renames a section or a
  * tab, starts a new section or a new tab. Each edit here is a pure function from a spec to a NEW
  * spec — the one it was given is never touched — and what comes out is kept by the server as the
  * next version, through the same rules as any other (`rules.ts`, run there by the validator).
  *
  * The rules refuse an empty section, tab or row of tabs. So taking the last card out of a section
- * takes the section too, and so on upward: the cockpit that is left is always one the rules can
- * accept, except the cockpit with nothing left in it — which the rules refuse, in their own words,
+ * takes the section too, and so on upward: the dashboard that is left is always one the rules can
+ * accept, except the dashboard with nothing left in it — which the rules refuse, in their own words,
  * and a person retires instead.
  *
  * No model, no figure. A title a person types is theirs; the server keeps it as theirs.
@@ -30,7 +30,7 @@ export interface DashboardSpec {
   root: string;
   state?: Record<string, unknown>;
   elements: Record<string, Element>;
-  /** Arc AP-2 — the sets and values a wired cockpit's pieces read, by name. */
+  /** Arc AP-2 — the sets and values a wired dashboard's pieces read, by name. */
   sets?: Record<string, DashboardSetDef>;
   values?: Record<string, DashboardValueDef>;
 }
@@ -61,9 +61,9 @@ function tabsElement(s: DashboardSpec): string | null {
 /** An element's room on a section's grid: columns across, rows down (Arc AP-1). */
 export interface Box { w: number; h: number }
 
-/** The columns a section draws when it says none (`ComposedCockpit`'s most). */
+/** The columns a section draws when it says none (`ComposedDashboard`'s most). */
 const AUTO_COLUMNS = 4;
-/** The size an element draws at when it says none, by kind — as `ComposedCockpit` draws it. */
+/** The size an element draws at when it says none, by kind — as `ComposedDashboard` draws it. */
 const DEFAULT_SIZE: Record<GridKind, Size> = {
   Card: "small", Note: "small", Image: "small", ProcessBoard: "full", ObjectTable: "wide", ObjectDetail: "small",
   ObjectFigure: "small", ObjectChart: "full", ActionButtons: "small",
@@ -180,7 +180,7 @@ export function cardsPlaced(spec: unknown): string[] {
 }
 
 /** The tab the spec opens on, kept to one that still exists: an edit that takes a tab away
- *  must not leave the cockpit opening on nothing. */
+ *  must not leave the dashboard opening on nothing. */
 function settle(s: DashboardSpec): DashboardSpec {
   const names = tabsOf(s).map(t => t.name);
   if (s.state && "tab" in s.state && names.length && !names.includes(String(s.state.tab))) {
@@ -207,13 +207,13 @@ function detach(s: DashboardSpec, key: string, andDelete: boolean): void {
 }
 
 /** Arc AP-4 — whether a section sits in one laid out in sections: there, a section left with nothing stays, an empty box
- *  its layout keeps; a section of the cockpit's own goes when it is emptied, as it always did. */
+ *  its layout keeps; a section of the dashboard's own goes when it is emptied, as it always did. */
 function inLayout(s: DashboardSpec, key: string): boolean {
   const parent = parentOf(s, key);
   return s.elements[key]?.type === "Section" && !!parent && s.elements[parent]?.type === "Section" && !!s.elements[parent].props.layout;
 }
 
-/** Take an element — a card, a section — off the cockpit. A table goes with every detail that follows it. */
+/** Take an element — a card, a section — off the dashboard. A table goes with every detail that follows it. */
 export function takeOff(spec: unknown, key: string): DashboardSpec {
   const s = copy(spec);
   if (!(key in s.elements) || key === s.root) return settle(s);
@@ -224,7 +224,7 @@ export function takeOff(spec: unknown, key: string): DashboardSpec {
   return settle(s);
 }
 
-/** Take a card off the cockpit wherever it is placed. The card itself is not touched. */
+/** Take a card off the dashboard wherever it is placed. The card itself is not touched. */
 export function takeOffCard(spec: unknown, cardId: string): DashboardSpec {
   let s = copy(spec);
   for (const [k, el] of Object.entries(s.elements)) {
@@ -287,7 +287,7 @@ export function placeCard(spec: unknown, cardId: string, sectionKey?: string): D
   return s;
 }
 
-/** Arc AP-7 — a changed card in place of the one it replaces, wherever the cockpit places it: a change to a query of the
+/** Arc AP-7 — a changed card in place of the one it replaces, wherever the dashboard places it: a change to a query of the
  *  person's own is a new card, and the one before stays in the store for the versions that read it. */
 export function swapCard(spec: unknown, from: string, to: string): DashboardSpec {
   const s = copy(spec);
@@ -354,7 +354,7 @@ export function placePiece(
 }
 
 /** Arc AP-4 — a drawer that opens beside the page when `opensOn` is chosen, holding a detail of the chosen object: the
- *  cockpit's own, after its sections. */
+ *  dashboard's own, after its sections. */
 export function addDrawer(spec: unknown, title: string, opensOn: string): { spec: DashboardSpec; key: string | null } {
   const s = copy(spec);
   const name = title.trim().slice(0, MAX_TITLE);
@@ -412,7 +412,7 @@ export function resize(spec: unknown, key: string, size: Size): DashboardSpec {
 }
 
 /** Arc AP-1 — put a section on the grid: each element it places takes the room `measured` says it had on screen (a
- *  person's eye judged the cockpit as drawn), else the room its size gave it; its `columns` goes, and each `size`, which
+ *  person's eye judged the dashboard as drawn), else the room its size gave it; its `columns` goes, and each `size`, which
  *  the grid would read by nothing. A section already on the grid is left as it is. */
 export function toGrid(spec: unknown, sectionKey: string, measured: Record<string, Box> = {}): DashboardSpec {
   const s = copy(spec);
@@ -462,7 +462,7 @@ export function staticsPlaced(spec: unknown): string[] {
   }));
 }
 
-/** Rename the cockpit, a section or a tab. An empty name is no name: nothing changes. */
+/** Rename the dashboard, a section or a tab. An empty name is no name: nothing changes. */
 export function rename(spec: unknown, key: string, text: string): DashboardSpec {
   const s = copy(spec);
   const el = s.elements[key];
@@ -483,7 +483,7 @@ export function moveSectionTo(spec: unknown, sectionKey: string, tabKey: string)
   return settle(s);
 }
 
-/** Start a new tab and move a section to it. A cockpit with no tabs gets them: what it held
+/** Start a new tab and move a section to it. A dashboard with no tabs gets them: what it held
  *  becomes the first tab, "Overview", and the new tab follows it. */
 export function moveSectionToNewTab(spec: unknown, sectionKey: string, label: string): DashboardSpec {
   const s = copy(spec);
@@ -492,7 +492,7 @@ export function moveSectionToNewTab(spec: unknown, sectionKey: string, label: st
   let tabs = tabsElement(s);
   if (!tabs) {
     const root = s.elements[s.root];
-    // the filter column stays the cockpit's own first child, beside the tabs: a tab holds sections only
+    // the filter column stays the dashboard's own first child, beside the tabs: a tab holds sections only
     const column = root.children.filter(k => s.elements[k]?.type === "ObjectFilters");
     const first = freshKey(s, "tab-overview");
     s.elements[first] = { type: "Tab", props: { name: "overview", label: "Overview" },
@@ -531,7 +531,7 @@ export function setProps(spec: unknown, key: string, patch: Record<string, unkno
 }
 
 /** Whether `key` can move one place earlier or later among its parent's children. The filter column stays the
- *  cockpit's first child, so nothing moves before it and it moves nowhere. */
+ *  dashboard's first child, so nothing moves before it and it moves nowhere. */
 export function canMove(spec: unknown, key: string, delta: -1 | 1): boolean {
   const s = spec as DashboardSpec;
   const parent = parentOf(s, key);
@@ -542,7 +542,7 @@ export function canMove(spec: unknown, key: string, delta: -1 | 1): boolean {
 }
 
 /** Take an element off, and everything it holds: a section with its pieces, a tab with its sections. A section left
- *  with nothing goes, as `takeOff` takes it, so the cockpit left is one the rules accept. */
+ *  with nothing goes, as `takeOff` takes it, so the dashboard left is one the rules accept. */
 export function takeOffAll(spec: unknown, key: string): DashboardSpec {
   const s = spec as DashboardSpec;
   const el = s.elements[key];
@@ -553,11 +553,11 @@ export function takeOffAll(spec: unknown, key: string): DashboardSpec {
   return key in out.elements ? takeOff(out, key) : out;
 }
 
-/** One line of a cockpit's outline: an element and how deep it sits under the root. The row of tabs is not a line —
+/** One line of a dashboard's outline: an element and how deep it sits under the root. The row of tabs is not a line —
  *  its tabs are. */
 export interface OutlineLine { key: string; depth: number; type: string }
 
-/** The cockpit as a tree of lines, in the order it is drawn: the root, the filter column, each tab, each section, the
+/** The dashboard as a tree of lines, in the order it is drawn: the root, the filter column, each tab, each section, the
  *  pieces each holds and the buttons a detail holds. */
 export function outline(spec: unknown): OutlineLine[] {
   const s = spec as DashboardSpec;
@@ -574,10 +574,10 @@ export function outline(spec: unknown): OutlineLine[] {
   return out;
 }
 
-// ── Arc AP-2 — a cockpit's sets and values, by hand ─────────────────────────────────────────────────────────────────
+// ── Arc AP-2 — a dashboard's sets and values, by hand ─────────────────────────────────────────────────────────────────
 
 /** A name for a new set, value or choice, made from what a person calls it — "Shipped late" → `shipped-late` — and
- *  never one the cockpit already uses for anything. */
+ *  never one the dashboard already uses for anything. */
 export function freshWireName(spec: unknown, label: string): string {
   const s = spec as DashboardSpec;
   const used = new Set([...Object.keys(s.sets ?? {}), ...Object.keys(s.values ?? {}), ...choicesOf(s).keys()]);
@@ -614,7 +614,7 @@ export function renameValue(spec: unknown, from: string, label: string, read: bo
 }
 
 /** Take a set or a value away — only one nothing reads; one something reads is left as it is, and `readersOf` says
- *  what reads it. A cockpit left with none carries no empty map. */
+ *  what reads it. A dashboard left with none carries no empty map. */
 export function dropWire(spec: unknown, name: string): DashboardSpec {
   const s = copy(spec);
   const readers = readersOf(s, name);
@@ -746,7 +746,7 @@ export function nameByPiece(spec: unknown, sectionKey: string, name: string): Da
   return s;
 }
 
-/** Arc AP-4 — the cockpit's filter column, placed by hand: its first child, beside what it narrows. A cockpit holds one. */
+/** Arc AP-4 — the dashboard's filter column, placed by hand: its first child, beside what it narrows. A dashboard holds one. */
 export function placeFilterColumn(spec: unknown, props: Record<string, unknown>): { spec: DashboardSpec; key: string | null } {
   const s = copy(spec);
   const root = s.elements[s.root];

@@ -6,7 +6,7 @@
  * Before this, a card that already had a standing value drew it under "for <the range>": the
  * run carried the range's figure in `rows`, as text, and the card drew `refresh`, which is the
  * card's standing value whatever the run was for. Seen live on the demo warehouse: 8.42M
- * labelled November, where November held 2.78M. It reached the Briefing's cockpit as well as
+ * labelled November, where November held 2.78M. It reached the Briefing's dashboard as well as
  * the canvas's, since both draw a card with this component.
  */
 import { render, screen } from "@testing-library/react";

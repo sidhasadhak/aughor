@@ -257,7 +257,7 @@ def check_spec(spec: Any, *, known_cards: Iterable[str], model_written: bool = T
     if not out["valid"]:
         # A refusal names every fault it can (CT-5). The rules hand back what they read from
         # the elements that were sound, and what only the platform knows is said of that, in
-        # the same refusal — or a writer would learn of a card the cockpit may not place only
+        # the same refusal — or a writer would learn of a card the dashboard may not place only
         # after repairing everything else.
         said = [str(i.get("message", "")) for i in issues if isinstance(i, dict)]
         seen = out.get("seen") if isinstance(out.get("seen"), dict) else {}

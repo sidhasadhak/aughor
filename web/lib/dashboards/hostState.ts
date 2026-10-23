@@ -1,5 +1,5 @@
 /**
- * What the host publishes to a cockpit, and therefore all a condition may read (Arc CT, CT-2).
+ * What the host publishes to a dashboard, and therefore all a condition may read (Arc CT, CT-2).
  *
  * The tree carries STATUSES, never figures: a figure appears only inside a card, where it is
  * measured. The model writes "show this card when the watch is over its limit"; whether the
@@ -10,7 +10,7 @@
  *   /cards/<card id>/status  within · over · unmeasured · withheld
  */
 
-/** `standing` is a cockpit read with no range chosen: every card runs as it was written. The
+/** `standing` is a dashboard read with no range chosen: every card runs as it was written. The
  *  other three are the glossary's own words for a figure's status. The server says the same
  *  four (`aughor/dashboards/host.py`), and a test on its side holds the two lists together. */
 export const RANGE_STATUSES = ["standing", "final", "provisional", "to_date"] as const;
@@ -41,7 +41,7 @@ export function publishedPath(path: string): PublishedPath | null {
   return null;
 }
 
-/** The state a cockpit renders against: the open tab, and the host's tree laid over it. */
+/** The state a dashboard renders against: the open tab, and the host's tree laid over it. */
 export function stateModel(tab: string | null, host: DashboardHostState): Record<string, unknown> {
   return { tab, range: { status: host.range.status }, cards: host.cards };
 }

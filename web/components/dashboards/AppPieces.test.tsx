@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * The pieces the picker adds, drawn (Arc AP-4; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.4) — through the cockpit's
+ * The pieces the picker adds, drawn (Arc AP-4; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.4) — through the dashboard's
  * own renderer, the object door mocked. The door here lists the columns asked for in the reverse order, so a piece that
  * reads a property by its place among its props, not by its path, says the wrong thing and fails. A list's cards say each
  * object by the properties named, or "Order 101" by its key; a sort the cards do not show is asked for beside them; a map
@@ -80,7 +80,7 @@ beforeEach(() => {
   }));
 });
 
-/** A cockpit of one section holding the elements given, by key. */
+/** A dashboard of one section holding the elements given, by key. */
 function desk(elements: Record<string, { type: string; props: Record<string, unknown>; children?: string[] }>) {
   return {
     root: "cockpit",

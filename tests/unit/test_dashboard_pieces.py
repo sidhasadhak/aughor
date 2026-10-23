@@ -247,7 +247,7 @@ def test_a_run_answers_with_what_its_check_found_and_its_ledger_entry(gated, mon
     assert (r.json()["verification"], r.json()["action_entry"]) == (found, "ae-1")
 
 
-# ── the release a cockpit was composed against ───────────────────────────────────────────────
+# ── the release a dashboard was composed against ───────────────────────────────────────────────
 
 def _both_on(monkeypatch):
     monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name in (FLAG, "ontology.release"))

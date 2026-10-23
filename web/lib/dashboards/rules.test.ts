@@ -1,5 +1,5 @@
 /**
- * The cockpit's rules (Arc CT, CT-2). Every refusal is asserted by a token of ITS OWN
+ * The dashboard's rules (Arc CT, CT-2). Every refusal is asserted by a token of ITS OWN
  * sentence, never by `valid === false` alone: a spec refused for a different reason than the
  * one under test would otherwise pass as proof of a rule that never ran.
  */

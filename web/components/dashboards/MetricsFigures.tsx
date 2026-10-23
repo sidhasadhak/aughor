@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The Metrics cockpit as figures — `design-mockups/cockpit-day-figures.html` (the user, 2026-10-12, on the figures-first
+ * The Metrics dashboard as figures — `design-mockups/cockpit-day-figures.html` (the user, 2026-10-12, on the figures-first
  * mockup drawn for the Briefing: "that is how I'd like my COCKPITS to look"). The order CLARITY sets: what moved most
  * (the hero: the figure, its change, this period against the one it is compared with as two bars), then every other
  * figure, then what needs a person, then the whole table behind Details.
@@ -116,7 +116,7 @@ function Hero({ m, block, onOpen }: { m: BriefingRangeMeasure; block: BriefingRa
   );
 }
 
-/** A small figure: the rest of the cockpit, six to a row. */
+/** A small figure: the rest of the dashboard, six to a row. */
 function SmallFigure({ m, block, onOpen }: { m: BriefingRangeMeasure; block: BriefingRangeBlock; onOpen?: () => void }) {
   return (
     <div data-testid={`figure-${m.metric}`} style={CARD}>

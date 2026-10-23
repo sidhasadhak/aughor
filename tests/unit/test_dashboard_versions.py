@@ -343,7 +343,7 @@ def test_another_tenant_does_not_read_this_cockpit(desk):
         assert versions.version(desk.home, 1) is None
 
 
-# ── a person's cockpits ───────────────────────────────────────────────────────
+# ── a person's dashboards ───────────────────────────────────────────────────────
 
 @needs_rules
 def test_a_person_has_their_cockpits_and_nobody_elses(desk):
@@ -360,7 +360,7 @@ def test_a_person_has_their_cockpits_and_nobody_elses(desk):
     assert mine[0]["title"] == "Returns" and mine[1]["title"] == "Returns"
     assert versions.of_person("thelook", other.home.owner)[0]["cockpit_id"] == other.home.cockpit_id
     assert versions.of_person("superstore", desk.home.owner) == []
-    # Another person's cockpit of the same name is theirs: nothing of it is read here.
+    # Another person's dashboard of the same name is theirs: nothing of it is read here.
     assert versions.latest(Home("thelook", other.home.owner, desk.home.cockpit_id)) is None
 
 

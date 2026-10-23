@@ -1,7 +1,7 @@
 /**
  * Shapes in the starter (Arc AP-5; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.6; design-mockups/cockpit-builder.html
  * screens 1 and 7). The server says which shapes an object fits and reads what each is laid out from
- * (`aughor/dashboards/shapes.py`); here each shape becomes the cockpit a person keeps as their own first version — a spec
+ * (`aughor/dashboards/shapes.py`); here each shape becomes the dashboard a person keeps as their own first version — a spec
  * the rules accept, every piece changeable after:
  *
  *   - a queue: the objects waiting past the promise in a window the author sets, figures that switch the list, a filter
@@ -10,9 +10,9 @@
  *   - a map: the objects placed by their coordinates, a click opening the chosen one beside it, and a list of them;
  *   - one object: one found by its name, its properties, and a table of each kind of object that links to it;
  *   - a timeline: each object a bar between its two moments, the chosen one beside it;
- *   - an overview: today's starter (`objectCockpitSpec`).
+ *   - an overview: today's starter (`objectDashboardSpec`).
  *
- * Sizes are named (small, wide, full): a shape needs no grid, so it starts on an install that builds cockpits in place
+ * Sizes are named (small, wide, full): a shape needs no grid, so it starts on an install that builds dashboards in place
  * or not.
  */
 import type { DashboardFromObject, ShapeName, ShapeSignals } from "@/lib/api";
