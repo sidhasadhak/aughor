@@ -37,7 +37,7 @@ describe("short words for long ledger text", () => {
   it("turns a decision's kind prefix into words and keeps its first clause", () => {
     expect(shortLabel("open_case: order:2 is in overdue_dispatch; proposed by the OC-8 receipt script"))
       .toBe("Open case: order:2 is in overdue dispatch");
-    expect(shortLabel("cockpit:Marketing Dashboard: I am creating a Marketing cockpit using the existing cards."))
+    expect(shortLabel("cockpit:Marketing Dashboard: I am creating a Marketing dashboard using the existing cards."))
       .toBe("Cockpit: Marketing Dashboard");
   });
 

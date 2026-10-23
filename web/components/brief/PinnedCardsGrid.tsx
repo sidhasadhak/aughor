@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * PinnedCardsGrid — the cockpit's DEFAULT ("tidy") layout: a responsive grid of pinned cards the
+ * PinnedCardsGrid — the dashboard's DEFAULT ("tidy") layout: a responsive grid of pinned cards the
  * reader reorders by priority via drag-and-drop. A scorecard wants scannable, uniform tiles far
  * more often than free spatial placement, so this is the default; the freeform React-Flow canvas
  * lives behind the "Arrange freely" toggle (PinnedCardsCanvas).

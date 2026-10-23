@@ -1,5 +1,5 @@
 """The Briefing's switches are a per-person preference (the canvas, B1): which sections show, in
-what order, and which cockpit rides with it. The value's shape is checked on the way in, as every
+what order, and which dashboard rides with it. The value's shape is checked on the way in, as every
 key of this closed registry is, and the registry's six ids are the web's six."""
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def check(value):
 
 def test_the_key_is_in_the_registry_and_says_what_it_is():
     assert KEY in ALLOWED_KEYS
-    assert "Briefing" in ALLOWED_KEYS[KEY][1] and "cockpit" in ALLOWED_KEYS[KEY][1]
+    assert "Briefing" in ALLOWED_KEYS[KEY][1] and "dashboard" in ALLOWED_KEYS[KEY][1]
     assert KEY in get_preferences()["known_keys"]
 
 
@@ -39,7 +39,7 @@ def test_every_section_once_in_the_kept_order_and_one_left_out_is_appended_shown
     ({"sections": "findings"}, "must be a list"),
     ({"sections": [{"id": "footer"}]}, "each section is one of"),
     ({"sections": [{"id": "findings"}, {"id": "findings"}]}, "listed twice"),
-    ({"strip": "Not An Id!"}, "id of one of your cockpits"),
+    ({"strip": "Not An Id!"}, "id of one of your dashboards"),
 ])
 def test_a_value_the_shape_refuses_is_said(value, said):
     with pytest.raises(ValueError, match=said):

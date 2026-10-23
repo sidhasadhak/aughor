@@ -35,7 +35,7 @@ AGENT_HEADER = "X-Aughor-Acting-Agent"
 
 _acting_agent: contextvars.ContextVar[str] = contextvars.ContextVar("aughor_acting_agent", default="")
 _unfiltered: contextvars.ContextVar[bool] = contextvars.ContextVar("aughor_security_unfiltered", default=False)
-#: Arc AP-6 — the group a builder previews a cockpit as (`previewing`); "" when none.
+#: Arc AP-6 — the group a builder previews a dashboard as (`previewing`); "" when none.
 _previewing: contextvars.ContextVar[str] = contextvars.ContextVar("aughor_security_previewing", default="")
 #: How a previewed group is named among a reader's parties.
 PREVIEW_PREFIX = "group:"

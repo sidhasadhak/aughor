@@ -394,13 +394,13 @@ from aughor.kernel.ledger import RECEIPT_KINDS as CANVAS_KEEPS  # noqa: E402
 
 def purge_canvas_artifacts(canvas_id: str) -> dict[str, int]:
     """Delete what only a canvas could show, once the canvas is gone: its cards and saved
-    chart configs, its cockpit's versions, its saved artifacts, and its exploration (the
+    chart configs, its dashboard's versions, its saved artifacts, and its exploration (the
     findings, the jobs and their events). Before this a deleted canvas left them all,
     unreachable (found by CT-3; measured 2026-10-04 on the live install). Best-effort per
     store, like the connection cascade; returns ``{artifact: count}``."""
     counts: dict[str, int] = {}
     try:
-        from aughor.dashboard.store import purge_scope
+        from aughor.cards.store import purge_scope
         counts["cards"] = purge_scope("canvas", canvas_id)
     except Exception as e:
         tolerate(e, "purge: canvas cards", counter="canvas.purge.cards")

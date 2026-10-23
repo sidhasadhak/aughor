@@ -3,7 +3,7 @@
 /**
  * BriefingSections — the Briefing's switches (the canvas, docs/COCKPIT_CANVAS_2026-10-08.md, B1).
  *
- * A person shows, hides and orders the Briefing's sections and chooses which cockpit of theirs
+ * A person shows, hides and orders the Briefing's sections and chooses which dashboard of theirs
  * rides with it. Nothing about a section's content changes: the Briefing stays the platform's,
  * and a send carries the platform's Briefing, not these switches. The preference is kept per
  * person on the server, so it follows them to their next browser.
@@ -19,19 +19,19 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  isPart, labelOf, moved, proposeFromWords, toggled, type BriefingSectionsPref, type CockpitChoice, type SectionId, type SwitchProposal,
+  isPart, labelOf, moved, proposeFromWords, toggled, type BriefingSectionsPref, type DashboardChoice, type SectionId, type SwitchProposal,
 } from "@/lib/briefingSections";
 
 const NONE = "__none__";
 
-export function BriefingSections({ pref, onChange, cockpits, cockpitsOn, busy }: {
+export function BriefingSections({ pref, onChange, cockpits, dashboardsOn, busy }: {
   pref: BriefingSectionsPref;
   /** Keep this as the person's preference. */
   onChange: (next: BriefingSectionsPref, said: string) => void;
-  /** The person's own cockpits, which may ride with the Briefing. */
-  cockpits: CockpitChoice[];
-  /** Whether cockpits are on at all; off, the standing cockpit layer rides as it always did. */
-  cockpitsOn: boolean;
+  /** The person's own dashboards, which may ride with the Briefing. */
+  cockpits: DashboardChoice[];
+  /** Whether dashboards are on at all; off, the standing dashboard layer rides as it always did. */
+  dashboardsOn: boolean;
   busy?: boolean;
 }) {
   const [words, setWords] = useState("");
@@ -76,12 +76,12 @@ export function BriefingSections({ pref, onChange, cockpits, cockpitsOn, busy }:
           );
         })}
       </ul>
-      {cockpitsOn && (
+      {dashboardsOn && (
         <label style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>The cockpit that rides with it</span>
+          <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>The dashboard that rides with it</span>
           <Select value={pref.strip || NONE} items={items} disabled={busy}
-            onValueChange={v => { const id = v === NONE ? "" : String(v); if (id !== pref.strip) onChange({ ...pref, strip: id }, id ? `“${items[id]}” rides with your Briefing.` : "No cockpit rides with your Briefing."); }}>
-            <SelectTrigger size="sm" aria-label="The cockpit that rides with the Briefing" data-testid="briefing-strip-pick" style={{ minWidth: 180 }}>
+            onValueChange={v => { const id = v === NONE ? "" : String(v); if (id !== pref.strip) onChange({ ...pref, strip: id }, id ? `“${items[id]}” rides with your Briefing.` : "No dashboard rides with your Briefing."); }}>
+            <SelectTrigger size="sm" aria-label="The dashboard that rides with the Briefing" data-testid="briefing-strip-pick" style={{ minWidth: 180 }}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

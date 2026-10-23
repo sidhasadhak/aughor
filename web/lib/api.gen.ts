@@ -2002,7 +2002,7 @@ export interface paths {
          * Read Layout
          * @description Where the caller arranged this automation's steps (`{}` if never touched).
          *
-         *     Server-side and account-keyed rather than `localStorage`, for the reason the cockpit
+         *     Server-side and account-keyed rather than `localStorage`, for the reason the dashboard
          *     settled once: an arrangement a person made on their laptop and cannot find on their
          *     desktop reads as the product having forgotten it. No 404 for an unknown automation —
          *     an empty layout IS the answer for one nobody has arranged.
@@ -2367,6 +2367,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/business-profile/currency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dataset Currency
+         * @description The currency one dataset's figures carry, and whose word it is: ``code`` only when a person
+         *     confirmed it (then it labels every figure), ``inferred`` as the profile proposes it, and
+         *     ``status`` confirmed · inferred · unknown. Unconfirmed figures print as plain amounts (2026-10-23).
+         */
+        get: operations["get_dataset_currency_business_profile_currency_get"];
+        /**
+         * Put Dataset Currency
+         * @description A person confirms the dataset's currency — the profile's proposal or another code — or clears it
+         *     with "". Kept with who and when; it then labels every figure read from this dataset.
+         */
+        put: operations["put_dataset_currency_business_profile_currency_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/business-profile/rebuild": {
         parameters: {
             query?: never;
@@ -2632,7 +2659,7 @@ export interface paths {
         /**
          * List Cards Route
          * @description Cards matching the filters (any left unset is ignored), newest-updated first.
-         *     Fetch a canvas cockpit with `?scope=canvas&scope_ref=<canvas_id>`.
+         *     Fetch a canvas dashboard with `?scope=canvas&scope_ref=<canvas_id>`.
          */
         get: operations["list_cards_route_cards_get"];
         put?: never;
@@ -2653,13 +2680,13 @@ export interface paths {
         };
         /**
          * Get Layout Route
-         * @description The caller's saved cockpit layout for a connection ({card_id: {x, y, w, h}}); {} if none.
+         * @description The caller's saved dashboard layout for a connection ({card_id: {x, y, w, h}}); {} if none.
          *     Server-side + account-keyed, so any device/login sees the same arrangement.
          */
         get: operations["get_layout_route_cards_layout_get"];
         /**
          * Put Layout Route
-         * @description Persist the caller's cockpit layout (position + size per card) for a connection.
+         * @description Persist the caller's dashboard layout (position + size per card) for a connection.
          */
         put: operations["put_layout_route_cards_layout_put"];
         post?: never;
@@ -2712,7 +2739,7 @@ export interface paths {
          *     anything that errors or is BLOCKED — so the second authoring door carries the identical
          *     trust guarantee as the first, now on user-authored SQL. `kind` is derived from the result
          *     shape (a single numeric cell → kpi, otherwise chart); the render spec is stored opaque for
-         *     the card to draw and the card lands on the connection's cockpit.
+         *     the card to draw and the card lands on the connection's dashboard.
          */
         post: operations["pin_query_route_cards_pin_query_post"];
         delete?: never;
@@ -2754,7 +2781,7 @@ export interface paths {
          * @description Graduate a KPI/watch card to a scheduled Monitor — the last step of the card lifecycle:
          *     run its already-guarded SQL as a recurring threshold check (`reanchor_window` ON so a frozen
          *     date window can't go stale), then record the thresholds + monitor id back on the card so the
-         *     cockpit shows it's now alerting. The card stops being a passive slot and becomes proactive
+         *     dashboard shows it's now alerting. The card stops being a passive slot and becomes proactive
          *     push, reusing the monitor engine rather than forking a second alerting path.
          */
         post: operations["graduate_card_route_cards__card_id__graduate_post"];
@@ -2786,7 +2813,7 @@ export interface paths {
          *     a card whose tables have no date runs standing and `scoped` says why. A range run never
          *     rolls into the card's standing value history.
          *
-         *     With `compare` (a cockpit asks it), a figure cut to a range is also read for the window the
+         *     With `compare` (a dashboard asks it), a figure cut to a range is also read for the window the
          *     range is compared with, cut the same way, so the two differ only by their dates — `previous`.
          *     It is at equal age only when the range is final: a cut does not bound a cohort's outcomes to
          *     an as-of the way a metric's own measurement does, so before then part of any difference is
@@ -3017,434 +3044,6 @@ export interface paths {
         get: operations["get_chat_receipt_chat__connection_id___turn_id__receipt_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Cockpits
-         * @description The asker's cockpits on this connection, the cards they may place, and the canvas
-         *     cockpits waiting to be moved here. No model call, and nothing is written.
-         */
-        get: operations["list_cockpits_cockpits_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/audiences": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Audiences
-         * @description The groups the asker belongs to and the roles they hold: who they may publish a cockpit to
-         *     (the canvas, B5). Declared before the cockpit-by-id read, which would take the word for an id.
-         */
-        get: operations["audiences_cockpits_audiences_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/draft": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Draft Cockpit
-         * @description ⚑ Spends model calls. Draft a new cockpit for the area the person named: one short
-         *     model run with the drafting tool alone. What comes back is a proposal to keep or not, or
-         *     the reasons none was drafted — never a cockpit changed.
-         */
-        post: operations["draft_cockpit_cockpits_draft_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/from-object": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Propose From Object
-         * @description What a cockpit started from ``entity`` is offered (2026-10-10): its categories as filters, its numbers as
-         *     figures, a chart of its objects per day, a table of them and the actions declared on them — each measured through
-         *     the object door, with a preview. Nothing is kept and no model is asked; the person ticks what they want and keeps
-         *     it as any new cockpit is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path.
-         */
-        get: operations["propose_from_object_cockpits_from_object_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/images": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Upload Image
-         * @description Take an image into this connection's cockpit volume — PNG, JPEG, GIF, WebP or SVG, up to
-         *     5 MB, read from its bytes — to be placed on a cockpit by the object id this answers with.
-         *     By hand only: no model uploads an image.
-         */
-        post: operations["upload_image_cockpits_images_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/images/{object_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read Image
-         * @description An image a cockpit on this connection places, as bytes, with the reader's own access.
-         */
-        get: operations["read_image_cockpits_images__object_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/move": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Move Cockpit
-         * @description Move a canvas's cockpit to the asker's Briefing. One act: the cards it places become
-         *     theirs, its spec their cockpit's first version, and the canvas's is retired with a note.
-         */
-        post: operations["move_cockpit_cockpits_move_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/queries": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Keep Query
-         * @description Arc AP-7 — keep a person's own query as a card of theirs, as it is to be shown. The query is run first and the
-         *     setup checked against what it returns; a refusal says why and keeps nothing. A change to a card of theirs is a new
-         *     card, and the one it replaces is superseded, never deleted — so a cockpit's earlier versions still read their own.
-         */
-        post: operations["keep_query_cockpits_queries_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/queries/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Preview Query
-         * @description Arc AP-7 — run a person's own query as the builder would keep it, and say what it returns and how it would be
-         *     shown — or what stops it. Nothing is kept. It runs through the connection's own door, read-only, stopped after the
-         *     connection's time limit. Registered before ``/cockpits/{cockpit_id}``.
-         */
-        post: operations["preview_query_cockpits_queries_preview_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/shapes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Suggested Shapes
-         * @description Arc AP-5 — what each object suggests a cockpit be: the shape that fits it best, with a short line of why, read
-         *     from the served ontology alone — no warehouse read, no model. Registered before ``/cockpits/{cockpit_id}``.
-         */
-        get: operations["suggested_shapes_cockpits_shapes_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/shared": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Shared Cockpits
-         * @description The cockpits others published to a group the asker is in or a role they hold.
-         */
-        get: operations["shared_cockpits_cockpits_shared_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/shared/{owner}/{cockpit_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read Shared Cockpit
-         * @description A published cockpit as it stands, for a reader it reaches: read-only, for the reader's own
-         *     period; a card the reader may not read stands and says so.
-         */
-        get: operations["read_shared_cockpit_cockpits_shared__owner___cockpit_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/shared/{owner}/{cockpit_id}/copy": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Copy Shared Cockpit
-         * @description Start a cockpit of the asker's own from a published one: the publisher's cards copied into
-         *     theirs, the spec kept as the new cockpit's first version. The publisher's is untouched.
-         */
-        post: operations["copy_shared_cockpit_cockpits_shared__owner___cockpit_id__copy_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Start First
-         * @description Start "My cockpit" from the cards pinned in the Briefing before cockpits had names, in the
-         *     order the person arranged them. Written by code, kept like any other spec.
-         */
-        post: operations["start_first_cockpits_start_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/{cockpit_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read Cockpit
-         * @description One of the asker's cockpits as it stands: its newest version with its spec, every card
-         *     it may place (theirs and the connection's), the range it is read for, and its history.
-         */
-        get: operations["read_cockpit_cockpits__cockpit_id__get"];
-        /**
-         * Keep Cockpit
-         * @description Keep a spec the person wrote — a card moved, a section renamed — as the cockpit's next
-         *     version, or a refusal with the reasons.
-         */
-        put: operations["keep_cockpit_cockpits__cockpit_id__put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/{cockpit_id}/ask": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Ask Cockpit
-         * @description ⚑ Spends model calls. A change to one of the asker's cockpits, asked for in words — add a
-         *     finding, move or resize an element, take a note off, share it with a team. One short model
-         *     run with the drafting tool alone; what comes back is a proposal to keep or not.
-         */
-        post: operations["ask_cockpit_cockpits__cockpit_id__ask_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/{cockpit_id}/publish": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Publish Cockpit
-         * @description Publish the cockpit as it stands to groups the asker belongs to and roles they may publish
-         *     to. A version, under their name; a reader sees it under "Shared with you".
-         */
-        post: operations["publish_cockpit_cockpits__cockpit_id__publish_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/{cockpit_id}/restore": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Restore Cockpit
-         * @description Go back to an earlier version. It is kept again as the newest, checked against the
-         *     cards as they are today.
-         */
-        post: operations["restore_cockpit_cockpits__cockpit_id__restore_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/{cockpit_id}/retire": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Retire Cockpit
-         * @description Retire a cockpit. Its history stays.
-         */
-        post: operations["retire_cockpit_cockpits__cockpit_id__retire_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cockpits/{cockpit_id}/unpublish": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Unpublish Cockpit
-         * @description Stop sharing a cockpit. A version too: its history says when it reached whom.
-         */
-        post: operations["unpublish_cockpit_cockpits__cockpit_id__unpublish_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4514,6 +4113,533 @@ export interface paths {
         get: operations["cron_tick_cron_tick_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Dashboards
+         * @description The asker's dashboards on this connection, the cards they may place, and the canvas
+         *     dashboards waiting to be moved here. No model call, and nothing is written.
+         */
+        get: operations["list_dashboards_dashboards_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/audiences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audiences
+         * @description The groups the asker belongs to and the roles they hold: who they may publish a dashboard to
+         *     (the canvas, B5). Declared before the cockpit-by-id read, which would take the word for an id.
+         */
+        get: operations["audiences_dashboards_audiences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft Dashboard
+         * @description ⚑ Spends model calls. Draft a new dashboard for the area the person named: one short
+         *     model run with the drafting tool alone. What comes back is a proposal to keep or not, or
+         *     the reasons none was drafted — never a dashboard changed.
+         */
+        post: operations["draft_dashboard_dashboards_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/from-object": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Propose From Object
+         * @description What a dashboard started from ``entity`` is offered (2026-10-10): its categories as filters, its numbers as
+         *     figures, a chart of its objects per day, a table of them and the actions declared on them — each measured through
+         *     the object door, with a preview. Nothing is kept and no model is asked; the person ticks what they want and keeps
+         *     it as any new dashboard is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path.
+         */
+        get: operations["propose_from_object_dashboards_from_object_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Image
+         * @description Take an image into this connection's dashboard volume — PNG, JPEG, GIF, WebP or SVG, up to
+         *     5 MB, read from its bytes — to be placed on a dashboard by the object id this answers with.
+         *     By hand only: no model uploads an image.
+         */
+        post: operations["upload_image_dashboards_images_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/images/{object_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Image
+         * @description An image a dashboard on this connection places, as bytes, with the reader's own access.
+         */
+        get: operations["read_image_dashboards_images__object_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move Dashboard
+         * @description Move a canvas's dashboard to the asker's Briefing. One act: the cards it places become
+         *     theirs, its spec their dashboard's first version, and the canvas's is retired with a note.
+         */
+        post: operations["move_dashboard_dashboards_move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/queries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep Query
+         * @description Arc AP-7 — keep a person's own query as a card of theirs, as it is to be shown. The query is run first and the
+         *     setup checked against what it returns; a refusal says why and keeps nothing. A change to a card of theirs is a new
+         *     card, and the one it replaces is superseded, never deleted — so a dashboard's earlier versions still read their own.
+         */
+        post: operations["keep_query_dashboards_queries_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/queries/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Query
+         * @description Arc AP-7 — run a person's own query as the builder would keep it, and say what it returns and how it would be
+         *     shown — or what stops it. Nothing is kept. It runs through the connection's own door, read-only, stopped after the
+         *     connection's time limit. Registered before ``/cockpits/{cockpit_id}``.
+         */
+        post: operations["preview_query_dashboards_queries_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep Question
+         * @description Keep a question for a dashboard: its automation, asked on its rhythm (weekly by default) or only when asked.
+         *     Nothing is asked now — the first answer comes on its schedule, or is the Data Canvas answer it starts from.
+         */
+        post: operations["keep_question_dashboards_questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/questions/cost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Question Cost
+         * @description What one answer costs on this connection, from this install's own metered runs — said before a question is kept.
+         *     Registered before the read below, which would otherwise take "cost" for a question's id.
+         */
+        get: operations["question_cost_dashboards_questions_cost_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/questions/{automation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Question
+         * @description A question as a dashboard shows it — its latest answer in full and every answer in a line. No model call.
+         */
+        get: operations["read_question_dashboards_questions__automation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/questions/{automation_id}/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask Question Now
+         * @description Ask it now: a full agent run, through the gates its schedule uses. A person's click, never a page's load.
+         */
+        post: operations["ask_question_now_dashboards_questions__automation_id__ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/questions/{automation_id}/rhythm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Question Rhythm */
+        put: operations["set_question_rhythm_dashboards_questions__automation_id__rhythm_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/shapes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Suggested Shapes
+         * @description Arc AP-5 — what each object suggests a dashboard be: the shape that fits it best, with a short line of why, read
+         *     from the served ontology alone — no warehouse read, no model. Registered before ``/cockpits/{cockpit_id}``.
+         */
+        get: operations["suggested_shapes_dashboards_shapes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/shared": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Shared Dashboards
+         * @description The dashboards others published to a group the asker is in or a role they hold.
+         */
+        get: operations["shared_dashboards_dashboards_shared_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/shared/{owner}/{cockpit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Shared Dashboard
+         * @description A published dashboard as it stands, for a reader it reaches: read-only, for the reader's own
+         *     period; a card the reader may not read stands and says so.
+         */
+        get: operations["read_shared_dashboard_dashboards_shared__owner___cockpit_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/shared/{owner}/{cockpit_id}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy Shared Dashboard
+         * @description Start a dashboard of the asker's own from a published one: the publisher's cards copied into
+         *     theirs, the spec kept as the new dashboard's first version. The publisher's is untouched.
+         */
+        post: operations["copy_shared_dashboard_dashboards_shared__owner___cockpit_id__copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start First
+         * @description Start "My dashboard" from the cards pinned in the Briefing before dashboards had names, in the
+         *     order the person arranged them. Written by code, kept like any other spec.
+         */
+        post: operations["start_first_dashboards_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/{cockpit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Dashboard
+         * @description One of the asker's dashboards as it stands: its newest version with its spec, every card
+         *     it may place (theirs and the connection's), the range it is read for, and its history.
+         */
+        get: operations["read_dashboard_dashboards__cockpit_id__get"];
+        /**
+         * Keep Dashboard
+         * @description Keep a spec the person wrote — a card moved, a section renamed — as the dashboard's next
+         *     version, or a refusal with the reasons.
+         */
+        put: operations["keep_dashboard_dashboards__cockpit_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/{cockpit_id}/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask Dashboard
+         * @description ⚑ Spends model calls. A change to one of the asker's dashboards, asked for in words — add a
+         *     finding, move or resize an element, take a note off, share it with a team. One short model
+         *     run with the drafting tool alone; what comes back is a proposal to keep or not.
+         */
+        post: operations["ask_dashboard_dashboards__cockpit_id__ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/{cockpit_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Dashboard
+         * @description Publish the dashboard as it stands to groups the asker belongs to and roles they may publish
+         *     to. A version, under their name; a reader sees it under "Shared with you".
+         */
+        post: operations["publish_dashboard_dashboards__cockpit_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/{cockpit_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Dashboard
+         * @description Go back to an earlier version. It is kept again as the newest, checked against the
+         *     cards as they are today.
+         */
+        post: operations["restore_dashboard_dashboards__cockpit_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/{cockpit_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retire Dashboard
+         * @description Retire a dashboard. Its history stays.
+         */
+        post: operations["retire_dashboard_dashboards__cockpit_id__retire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/{cockpit_id}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unpublish Dashboard
+         * @description Stop sharing a dashboard. A version too: its history says when it reached whom.
+         */
+        post: operations["unpublish_dashboard_dashboards__cockpit_id__unpublish_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5873,6 +5999,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/exploration/{conn_id}/briefing/covers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read Edition Covers
+         * @description What each of the Briefing's six editions covers, what it is compared with, and the lead approved
+         *     metric's figure for each — shown when the data has ENDED, so a reader sees where every edition
+         *     landed. No narrative is written and no model is called; the figures are measured now (a POST, as the
+         *     measures door is: it runs warehouse queries).
+         */
+        post: operations["read_edition_covers_exploration__conn_id__briefing_covers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/exploration/{conn_id}/briefing/desk": {
         parameters: {
             query?: never;
@@ -5954,7 +6103,7 @@ export interface paths {
         put?: never;
         /**
          * Measure Range Metrics
-         * @description The range's approved metrics, measured — the Cockpit's default view (ROADMAP §6 item 43). No
+         * @description The range's approved metrics, measured — the Dashboard's default view (ROADMAP §6 item 43). No
          *     narrative is written and no model is called. When the range's Briefing was built for the same window
          *     within its cache age, its figures are returned as they stand, so the two pages cannot disagree about
          *     one; otherwise the metrics are measured now, the result cache first.
@@ -8270,7 +8419,7 @@ export interface paths {
          * Execute Action
          * @description Run one declared action. A criterion failure returns 422 with the authored message; a
          *     high-risk action needing approval returns 428 (approve via POST /approvals/allow, then retry) —
-         *     or, asked with ``propose_if_gated`` while `ontology.cockpit_pieces` is on, is staged for a person
+         *     or, asked with ``propose_if_gated`` while `ontology.dashboard_pieces` is on, is staged for a person
          *     and returns 200 with ``status: proposed`` and the proposal's id (Arc OC-4); success returns 200
          *     with the dispatch outcome, what its verification found, and its Action ledger entry — the answer had dropped the
          *     last two, so a press read "done" whatever its check said.
@@ -9819,6 +9968,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics/catalogue/{conn_id}/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Adopt Metrics
+         * @description Adopt a SET of proposed metrics — the explorer's or an industry's — in one door: each lands as a
+         *     definition dated by the date a person confirmed, and is proposed and approved; the whole set is asked
+         *     for approval ONCE (the user's decision, 2026-10-23; the Olist study, Gaps 22 and 24: eight metrics took
+         *     Customise → Dates → Propose → Approve → approve-the-approval each, eight self-granted allowlists).
+         *
+         *     ``metric.approve`` stays HIGH risk: the batch's scope names the dataset and every metric in it, so
+         *     approving it approves exactly this set. A metric that cannot be adopted as asked — no formula yet, a date
+         *     on a table it does not read, the same figures as an approved one — is skipped with the reason; the rest
+         *     go on.
+         */
+        post: operations["adopt_metrics_metrics_catalogue__conn_id__adopt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics/catalogue/{conn_id}/{name}/materialise": {
         parameters: {
             query?: never;
@@ -10647,7 +10824,7 @@ export interface paths {
         put?: never;
         /**
          * Post Objects V1 List
-         * @description One page of objects — the cockpit's listing door, with the release it was read under. An entity, or a segment
+         * @description One page of objects — the dashboard's listing door, with the release it was read under. An entity, or a segment
          *     of it (late, overdue, a rule's objects), the columns asked for, at most 200 a page.
          */
         post: operations["post_objects_v1_list_objects_v1_list_post"];
@@ -11637,6 +11814,29 @@ export interface paths {
          * @description 2026-09-22 — remove an expression property a person declared. 404 when the type has none of that name.
          */
         delete: operations["withdraw_ontology_expression_ontology_entities__entity_id__expressions__name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/entities/{entity_id}/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Ontology Entity Key
+         * @description Name what makes one object of this type: one column, or SEVERAL together (the Olist study, Gap 13, 2026-10-22:
+         *     order lines are keyed by (order_id, order_item_id), payments by (order_id, payment_sequential), reviews by
+         *     (review_id, order_id), and the key door offered one column — so all three carried "not unique per row" for
+         *     good). The key is measured over the rows like any backing, and said unique or not.
+         */
+        put: operations["set_ontology_entity_key_ontology_entities__entity_id__key_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -12643,7 +12843,7 @@ export interface paths {
          * Get Ontology Release
          * @description Arc OC-2 — the scope's releases and its draft (ROADMAP §3.56): the release consumers read, every earlier one, and
          *     each change waiting to be published with its class (ERR · MEANING · WARN · SAFE), its reasons, what changed field
-         *     by field, and the automations, claims and cockpit cards it touches. While `ontology.release` is off the draft is
+         *     by field, and the automations, claims and dashboard cards it touches. While `ontology.release` is off the draft is
          *     empty and says so: a declaration is published when it is saved.
          */
         get: operations["get_ontology_release_ontology_release_get"];
@@ -16905,8 +17105,8 @@ export interface components {
             /** Table Name */
             table_name?: string | null;
         };
-        /** Body_upload_image_cockpits_images_post */
-        Body_upload_image_cockpits_images_post: {
+        /** Body_upload_image_dashboards_images_post */
+        Body_upload_image_dashboards_images_post: {
             /** File */
             file: string;
         };
@@ -17049,7 +17249,7 @@ export interface components {
         };
         /**
          * CardRunValues
-         * @description Arc AP-8 — the cockpit's values a card of a person's own query reads as ``{{name}}``, as the page holds them now:
+         * @description Arc AP-8 — the dashboard's values a card of a person's own query reads as ``{{name}}``, as the page holds them now:
          *     name → ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement.
          */
         CardRunValues: {
@@ -17664,83 +17864,6 @@ export interface components {
             settings_override: {
                 [key: string]: unknown;
             };
-        };
-        /** DashboardCard */
-        DashboardCard: {
-            /**
-             * Author
-             * @default
-             */
-            author: string;
-            /**
-             * Body
-             * @default
-             */
-            body: string;
-            /**
-             * Connection Id
-             * @default
-             */
-            connection_id: string;
-            /**
-             * Created At
-             * @default
-             */
-            created_at: string;
-            /**
-             * Id
-             * @default
-             */
-            id: string;
-            /**
-             * Kind
-             * @default kpi
-             */
-            kind: string;
-            /** Links */
-            links?: string[];
-            provenance?: components["schemas"]["CardProvenance"];
-            /** Query Ref */
-            query_ref?: string | null;
-            refresh?: components["schemas"]["CardRefresh"];
-            /** Render */
-            render?: {
-                [key: string]: unknown;
-            };
-            /**
-             * Scope
-             * @default canvas
-             */
-            scope: string;
-            /**
-             * Scope Ref
-             * @default
-             */
-            scope_ref: string;
-            /**
-             * Source
-             * @default authored
-             */
-            source: string;
-            /**
-             * Sql
-             * @default
-             */
-            sql: string;
-            /** Thresholds */
-            thresholds?: {
-                [key: string]: unknown;
-            };
-            /**
-             * Title
-             * @default
-             */
-            title: string;
-            /**
-             * Updated At
-             * @default
-             */
-            updated_at: string;
         };
         /** DeclareDecisionRequest */
         DeclareDecisionRequest: {
@@ -19379,7 +19502,7 @@ export interface components {
             company_name: string;
             /**
              * Currency Code
-             * @description ISO 4217 reporting currency, e.g. 'GBP'. Describes the ORGANISATION and is stated as such (org_context: 'reports in GBP'). It does NOT relabel figures read from a warehouse — nothing converts, so the data's own currency wins there; see resolve_currency. Empty = unset.
+             * @description ISO 4217 reporting currency, e.g. 'GBP'. Describes the ORGANISATION and is stated as such (org_context: 'reports in GBP'). It does NOT relabel figures read from a warehouse — nothing converts; a figure carries the currency a person confirmed for its dataset (store.data_currency). Empty = unset.
              * @default
              */
             currency_code: string;
@@ -19568,7 +19691,7 @@ export interface components {
         /**
          * PinInsightRequest
          * @description Pin the finding `insight_id` (from `connection_id`'s briefing) as a card scoped to
-         *     `scope`/`scope_ref` (e.g. a canvas cockpit).
+         *     `scope`/`scope_ref` (e.g. a canvas dashboard).
          */
         PinInsightRequest: {
             /** Connection Id */
@@ -19810,7 +19933,7 @@ export interface components {
         };
         /**
          * PublishRequest
-         * @description Who the cockpit is published to: groups and roles, each by kind and id or name.
+         * @description Who the dashboard is published to: groups and roles, each by kind and id or name.
          */
         PublishRequest: {
             /** To */
@@ -19900,6 +20023,32 @@ export interface components {
              * @default 0
              */
             usage_count: number;
+        };
+        /**
+         * QuestionKeepRequest
+         * @description A question kept on a dashboard (PENDING 54): its words, how often it is asked, and the Data Canvas answer it
+         *     starts from, when it is kept from one.
+         */
+        QuestionKeepRequest: {
+            /**
+             * First Run
+             * @default
+             */
+            first_run: string;
+            /** Question */
+            question: string;
+            /**
+             * Rhythm
+             * @default weekly
+             */
+            rhythm: string;
+            /** Schema Name */
+            schema_name?: string | null;
+        };
+        /** QuestionRhythmRequest */
+        QuestionRhythmRequest: {
+            /** Rhythm */
+            rhythm: string;
         };
         /**
          * ReasoningMessage
@@ -20548,6 +20697,83 @@ export interface components {
              * @description draft | active | deprecated
              */
             status: string;
+        };
+        /** StoredCard */
+        StoredCard: {
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /**
+             * Body
+             * @default
+             */
+            body: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /**
+             * Kind
+             * @default kpi
+             */
+            kind: string;
+            /** Links */
+            links?: string[];
+            provenance?: components["schemas"]["CardProvenance"];
+            /** Query Ref */
+            query_ref?: string | null;
+            refresh?: components["schemas"]["CardRefresh"];
+            /** Render */
+            render?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Scope
+             * @default canvas
+             */
+            scope: string;
+            /**
+             * Scope Ref
+             * @default
+             */
+            scope_ref: string;
+            /**
+             * Source
+             * @default authored
+             */
+            source: string;
+            /**
+             * Sql
+             * @default
+             */
+            sql: string;
+            /** Thresholds */
+            thresholds?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
         };
         /** SubscriptionIn */
         SubscriptionIn: {
@@ -21296,7 +21522,7 @@ export interface components {
         /**
          * _ActionPreview
          * @description A draft action for the designer to read: its id, the declaration as the declare door takes it, the segments a
-         *     cockpit lists it beside, and the person's own example of what a press is given (``{"reason": "Missed pickup"}``).
+         *     dashboard lists it beside, and the person's own example of what a press is given (``{"reason": "Missed pickup"}``).
          */
         _ActionPreview: {
             action: components["schemas"]["_DeclaredActionBody"];
@@ -21308,6 +21534,20 @@ export interface components {
             };
             /** Segments */
             segments?: string[];
+        };
+        /** _AdoptItem */
+        _AdoptItem: {
+            /** Name */
+            name: string;
+            /** Time Column */
+            time_column?: string | null;
+            /** Time Kind */
+            time_kind?: string | null;
+        };
+        /** _AdoptRequest */
+        _AdoptRequest: {
+            /** Items */
+            items: components["schemas"]["_AdoptItem"][];
         };
         /** _AgentPolicyBody */
         _AgentPolicyBody: {
@@ -21590,6 +21830,14 @@ export interface components {
             right_key: string;
             /** Right Table */
             right_table: string;
+        };
+        /** _CurrencyBody */
+        _CurrencyBody: {
+            /**
+             * Code
+             * @default
+             */
+            code: string;
         };
         /** _CustomModelIn */
         _CustomModelIn: {
@@ -21887,6 +22135,11 @@ export interface components {
             moves: string[][];
             /** States */
             states: string[];
+        };
+        /** _EntityKey */
+        _EntityKey: {
+            /** Columns */
+            columns: string[];
         };
         /** _EntityOverride */
         _EntityOverride: {
@@ -22684,26 +22937,26 @@ export interface components {
              */
             outcome: string;
         };
-        /** AskRequest */
-        aughor__routers__cockpit__AskRequest: {
-            /** Schema Name */
-            schema_name?: string | null;
-            /** Words */
-            words: string;
-        };
-        /** RestoreRequest */
-        aughor__routers__cockpit__RestoreRequest: {
-            /** Version */
-            version: number;
-        };
         /** LayoutRequest */
-        aughor__routers__dashboard__LayoutRequest: {
+        aughor__routers__cards__LayoutRequest: {
             /** Connection Id */
             connection_id: string;
             /** Layout */
             layout?: {
                 [key: string]: unknown;
             };
+        };
+        /** AskRequest */
+        aughor__routers__dashboards__AskRequest: {
+            /** Schema Name */
+            schema_name?: string | null;
+            /** Words */
+            words: string;
+        };
+        /** RestoreRequest */
+        aughor__routers__dashboards__RestoreRequest: {
+            /** Version */
+            version: number;
         };
         /** AcceptRequest */
         aughor__routers__datasets__AcceptRequest: {
@@ -26920,6 +27173,74 @@ export interface operations {
             };
         };
     };
+    get_dataset_currency_business_profile_currency_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_dataset_currency_business_profile_currency_put: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_CurrencyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rebuild_business_profile_business_profile_rebuild_post: {
         parameters: {
             query: {
@@ -27542,7 +27863,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DashboardCard"];
+                "application/json": components["schemas"]["StoredCard"];
             };
         };
         responses: {
@@ -27610,7 +27931,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__dashboard__LayoutRequest"];
+                "application/json": components["schemas"]["aughor__routers__cards__LayoutRequest"];
             };
         };
         responses: {
@@ -27750,7 +28071,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DashboardCard"];
+                "application/json": components["schemas"]["StoredCard"];
             };
         };
         responses: {
@@ -28225,770 +28546,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_cockpits_cockpits_get: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    audiences_cockpits_audiences_get: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    draft_cockpit_cockpits_draft_post: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DraftRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    propose_from_object_cockpits_from_object_get: {
-        parameters: {
-            query: {
-                entity: string;
-                connection_id: string;
-                schema_name?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    upload_image_cockpits_images_post: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_upload_image_cockpits_images_post"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    read_image_cockpits_images__object_id__get: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path: {
-                object_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    move_cockpit_cockpits_move_post: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MoveRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    keep_query_cockpits_queries_post: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["QueryRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    preview_query_cockpits_queries_preview_post: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["QueryRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    suggested_shapes_cockpits_shapes_get: {
-        parameters: {
-            query: {
-                connection_id: string;
-                schema_name?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    shared_cockpits_cockpits_shared_get: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    read_shared_cockpit_cockpits_shared__owner___cockpit_id__get: {
-        parameters: {
-            query: {
-                connection_id: string;
-                preset?: string | null;
-                start?: string | null;
-                end?: string | null;
-                workspace_id?: string | null;
-            };
-            header?: never;
-            path: {
-                owner: string;
-                cockpit_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    copy_shared_cockpit_cockpits_shared__owner___cockpit_id__copy_post: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path: {
-                owner: string;
-                cockpit_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    start_first_cockpits_start_post: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    read_cockpit_cockpits__cockpit_id__get: {
-        parameters: {
-            query: {
-                connection_id: string;
-                preset?: string | null;
-                start?: string | null;
-                end?: string | null;
-                workspace_id?: string | null;
-            };
-            header?: never;
-            path: {
-                cockpit_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    keep_cockpit_cockpits__cockpit_id__put: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path: {
-                cockpit_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["KeepRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    ask_cockpit_cockpits__cockpit_id__ask_post: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path: {
-                cockpit_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["aughor__routers__cockpit__AskRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    publish_cockpit_cockpits__cockpit_id__publish_post: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path: {
-                cockpit_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PublishRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    restore_cockpit_cockpits__cockpit_id__restore_post: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path: {
-                cockpit_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["aughor__routers__cockpit__RestoreRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    retire_cockpit_cockpits__cockpit_id__retire_post: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path: {
-                cockpit_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RetireRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    unpublish_cockpit_cockpits__cockpit_id__unpublish_post: {
-        parameters: {
-            query: {
-                connection_id: string;
-            };
-            header?: never;
-            path: {
-                cockpit_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
             /** @description Validation Error */
@@ -30757,6 +30314,945 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_dashboards_dashboards_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audiences_dashboards_audiences_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    draft_dashboard_dashboards_draft_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_from_object_dashboards_from_object_get: {
+        parameters: {
+            query: {
+                entity: string;
+                connection_id: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_image_dashboards_images_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_image_dashboards_images_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_image_dashboards_images__object_id__get: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                object_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_dashboard_dashboards_move_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    keep_query_dashboards_queries_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_query_dashboards_queries_preview_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    keep_question_dashboards_questions_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionKeepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    question_cost_dashboards_questions_cost_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_question_dashboards_questions__automation_id__get: {
+        parameters: {
+            query?: {
+                first?: string;
+            };
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ask_question_now_dashboards_questions__automation_id__ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_question_rhythm_dashboards_questions__automation_id__rhythm_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionRhythmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggested_shapes_dashboards_shapes_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shared_dashboards_dashboards_shared_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_shared_dashboard_dashboards_shared__owner___cockpit_id__get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+                workspace_id?: string | null;
+            };
+            header?: never;
+            path: {
+                owner: string;
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    copy_shared_dashboard_dashboards_shared__owner___cockpit_id__copy_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                owner: string;
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_first_dashboards_start_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_dashboard_dashboards__cockpit_id__get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                preset?: string | null;
+                start?: string | null;
+                end?: string | null;
+                workspace_id?: string | null;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    keep_dashboard_dashboards__cockpit_id__put: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ask_dashboard_dashboards__cockpit_id__ask_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["aughor__routers__dashboards__AskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_dashboard_dashboards__cockpit_id__publish_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_dashboard_dashboards__cockpit_id__restore_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["aughor__routers__dashboards__RestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retire_dashboard_dashboards__cockpit_id__retire_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetireRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unpublish_dashboard_dashboards__cockpit_id__unpublish_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path: {
+                cockpit_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -32823,6 +33319,40 @@ export interface operations {
                 preset?: string | null;
                 start?: string | null;
                 end?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_edition_covers_exploration__conn_id__briefing_covers_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                workspace_id?: string | null;
             };
             header?: never;
             path: {
@@ -39556,6 +40086,44 @@ export interface operations {
             };
         };
     };
+    adopt_metrics_metrics_catalogue__conn_id__adopt_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_AdoptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     materialise_metric_metrics_catalogue__conn_id___name__materialise_post: {
         parameters: {
             query?: {
@@ -42681,6 +43249,44 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_ontology_entity_key_ontology_entities__entity_id__key_put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_EntityKey"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

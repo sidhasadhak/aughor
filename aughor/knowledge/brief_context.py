@@ -48,7 +48,10 @@ def _period_lines(period: dict[str, Any]) -> list[str]:
     label = str(period.get("label") or "").strip()
     line = f"PERIOD: the {label.lower() + ' ' if label else ''}Briefing for {covers}"
     compared = str(period.get("compared_with") or "").strip()
-    if compared:
+    withheld = str(period.get("compare_withheld") or "").strip()
+    if withheld:
+        line += f", not compared with any earlier period because {withheld}"
+    elif compared:
         line += f", compared with {compared}"
     if period.get("start") and period.get("end"):
         line += f" (dates from {period['start']} up to but not including {period['end']})"
@@ -56,7 +59,9 @@ def _period_lines(period: dict[str, Any]) -> list[str]:
     lag = period.get("lag_days")
     if as_of:
         line += f"; read as of {as_of}"
-    if isinstance(lag, int) and lag > 0:
+    if period.get("data_ended"):
+        line += f"; the data ended on {period.get('data_through')}, so every figure is final"
+    elif isinstance(lag, int) and lag > 0:
         line += f", and the newest {lag} days of data are not settled yet"
     out = [line + "."]
     moving = [str(t) for t in (period.get("still_moving") or []) if str(t).strip()]

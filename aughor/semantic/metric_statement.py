@@ -148,6 +148,11 @@ def date_candidates(sql: str, tables: Optional[list], profile_entry: dict,
     for t in statement_tables(sql, dialect) + [str(x).strip() for x in (tables or []) if str(x).strip()]:
         if bare(t) not in {bare(s) for s in seen}:
             seen.append(t)
+    # The table another statement table's key NAMES comes first: its date is the business event the rows
+    # belong to. Olist's GMV reads order lines JOIN orders, and the first table's date — the shipping
+    # deadline — was proposed and saved as GMV's date (the Olist study, Gap 21, 2026-10-22).
+    parents = _named_by_keys(seen, profile_entry)
+    seen.sort(key=lambda t: bare(t) not in parents)
     out: list[dict] = []
     for table in seen:
         columns = table_columns(profile_entry or {}, bare(table))
@@ -155,7 +160,10 @@ def date_candidates(sql: str, tables: Optional[list], profile_entry: dict,
         rows = [(c, d) for c, d in columns.items() if is_time(d)]
         if primary and primary not in {c for c, _ in rows}:
             rows.append((primary, columns.get(primary, "timestamp")))
-        rows.sort(key=lambda cd: (cd[0] != primary, cd[0]))
+        # Within a table, the date that says the record was MADE (purchased, created, placed) before the
+        # profiler's main one: Olist's orders carry order_approved_at as main, and the order is dated by
+        # its purchase.
+        rows.sort(key=lambda cd: (not CREATION_NAME.search(cd[0]), cd[0] != primary, cd[0]))
         for column, dtype in rows:
             out.append({"grain": f"{table}.{column}", "table": table, "column": column,
                         "type": dtype, "primary": column == primary})
@@ -167,6 +175,51 @@ def date_candidates(sql: str, tables: Optional[list], profile_entry: dict,
             if is_text(dtype) and DATEY_NAME.search(column) and not _NOT_A_DATE.search(column):
                 out.append({"grain": f"{table}.{column}", "table": table, "column": column,
                             "type": dtype, "primary": False, "text": True})
+    return out
+
+
+#: A date NAME that says the record was MADE — when an order was placed, a user signed up, a row was created.
+CREATION_NAME = re.compile(r"(?:^|_)(?:created|creation|purchase|purchased|placed|ordered|signup|signed_up|"
+                           r"registered|booked|opened)(?:_|$)", re.I)
+
+
+def _core_names(tables: list[str]) -> dict[str, str]:
+    """Each table's bare name without the prefix and suffix tokens EVERY table shares — Olist names every table
+    `olist_<what>_dataset`, so `olist_orders_dataset` is `orders` and `order_id` can name it. One table, or tables
+    that share nothing, keep their names."""
+    names = sorted({bare(t) for t in tables if bare(t)})
+    if len(names) < 2:
+        return {n: n for n in names}
+    parts = [n.split("_") for n in names]
+    lead = 0
+    while all(len(p) > lead + 1 for p in parts) and len({p[lead] for p in parts}) == 1:
+        lead += 1
+    tail = 0
+    while all(len(p) > lead + tail + 1 for p in parts) and len({p[-1 - tail] for p in parts}) == 1:
+        tail += 1
+    return {n: "_".join(p[lead:len(p) - tail]) for n, p in zip(names, parts)}
+
+
+def _key_target(column: str, cores: dict[str, str], exclude: set) -> Optional[str]:
+    """The table a `<stem>_id` key NAMES among ``cores`` (bare name → core name), or None."""
+    if not column.endswith("_id"):
+        return None
+    stem = column[:-3]
+    names = {stem, f"{stem}s", f"{stem}es", f"{stem[:-1]}ies" if stem.endswith("y") else ""} - {""}
+    return next((t for t, core in cores.items() if (t in names or core in names) and t not in exclude), None)
+
+
+def _named_by_keys(tables: list[str], profile_entry: dict) -> set[str]:
+    """The statement tables (bare names) another statement table's key names — the parents in the statement."""
+    from aughor.semantic.metric_time import table_columns
+    cores = _core_names(_profiled_tables(profile_entry) + list(tables))
+    own = {bare(t) for t in tables}
+    out: set[str] = set()
+    for table in tables:
+        for column in table_columns(profile_entry or {}, bare(table)):
+            target = _key_target(column, {t: c for t, c in cores.items() if t in own}, {bare(table)})
+            if target:
+                out.add(target)
     return out
 
 
@@ -203,16 +256,12 @@ def dates_one_join_away(sql: str, tables: Optional[list], profile_entry: dict,
 
     own = [t for t in statement_tables(sql, dialect) + [str(x).strip() for x in (tables or []) if str(x).strip()]]
     own_bare = {bare(t) for t in own}
-    known = _profiled_tables(profile_entry)
+    cores = _core_names(_profiled_tables(profile_entry))
     out: list[dict] = []
     for table in dict.fromkeys(own):
         prefix = table.rsplit(".", 1)[0] + "." if "." in table else ""
         for column in table_columns(profile_entry or {}, bare(table)):
-            if not column.endswith("_id"):
-                continue
-            stem = column[:-3]
-            names = {stem, f"{stem}s", f"{stem}es", f"{stem[:-1]}ies" if stem.endswith("y") else ""}
-            target = next((t for t in known if t in names and t not in own_bare), None)
+            target = _key_target(column, cores, own_bare)
             if not target:
                 continue
             cols = table_columns(profile_entry or {}, target)

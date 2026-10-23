@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Segmented } from "@/components/ui/segmented";
 import { Loading, ReadFailed } from "@/components/ui/states";
-import { getConnections, type Connection } from "@/lib/api";
+import { getConnections, getJobs, getWorkspace, DEEP_ANALYSIS_JOB_KIND, type Connection, type JobRow } from "@/lib/api";
 import { getApiBase } from "@/lib/config";
 import { subscribeKernelEvents } from "@/lib/events";
 import { countNoun, formatCount, formatTimestamp, relTime } from "@/lib/format";
@@ -147,8 +147,45 @@ export function AgentRuns({ onGoToChat, onOpenRun, onOpenMachineView, workspaceI
     return () => { alive = false; unsub(); };
   }, [workspaceId, tick]);
 
+  // What else is running in this workspace — the explorer, an automation — from the kernel's jobs, the record Agent Ops
+  // lists (the Olist study, Gaps 10 and 34: this page said "No runs yet" through a live exploration). A deep analysis
+  // is already a run here, so its job is not counted twice.
+  const [live, setLive] = useState<JobRow[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const read = () => {
+      Promise.all([getJobs({ state: "active" }), workspaceId ? getWorkspace(workspaceId) : Promise.resolve(null)])
+        .then(([jobs, ws]) => {
+          if (!alive) return;
+          const ids = ws ? new Set(ws.connection_ids ?? []) : null;
+          setLive((Array.isArray(jobs) ? jobs : []).filter(j => j.kind !== DEEP_ANALYSIS_JOB_KIND
+            && (!ids || (!!j.conn_id && ids.has(j.conn_id)))));
+        })
+        .catch(() => { /* unread: the runs list stands on its own */ });
+    };
+    read();
+    const unsub = subscribeKernelEvents(() => read(), { kinds: ["job.state"] });
+    return () => { alive = false; unsub(); };
+  }, [workspaceId, tick]);
+
   const all = useMemo(() => runs ?? [], [runs]);
   const groups = useMemo(() => foldRuns(all), [all]);
+  const liveLine = live.length > 0 && (
+    <section aria-label="Running now" data-testid="runs-live" style={CARD}>
+      <Label right={countNoun(live.length, "run")}>Running now</Label>
+      {live.map((j, i) => (
+        <div key={j.id} data-testid="runs-live-row" style={{ ...ROW, gap: 8, padding: "6px 0", ...(i ? RULE : {}) }}>
+          <Dot color="var(--blue4)" />
+          <span className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)", flex: 1, minWidth: 0 }}>{j.title || j.kind}</span>
+          <span className="aug-fs-xs" style={MUTED}>
+            {j.agent?.agent || j.kind}{j.conn_id ? ` · ${connectionLabel(j.conn_id, conns)}` : ""}
+            {j.started_at || j.created_at ? ` · started ${relTime(j.started_at || j.created_at || "")} ago` : ""}
+          </span>
+          {onOpenMachineView && <Button size="xs" variant="ghost" onClick={onOpenMachineView}>Open in Agent Ops</Button>}
+        </div>
+      ))}
+    </section>
+  );
 
   if (runs === null) {
     return <Page testId="runs">{failed !== null
@@ -159,8 +196,9 @@ export function AgentRuns({ onGoToChat, onOpenRun, onOpenMachineView, workspaceI
   if (all.length === 0) {
     return (
       <Page testId="runs">
+        {liveLine}
         <section aria-label="Runs" style={CARD}>
-          <Empty>No runs yet.</Empty>
+          <Empty>{live.length ? "No question asked here yet." : "No runs yet."}</Empty>
           <Button size="xs" variant="secondary" style={{ marginTop: 8 }} onClick={() => onGoToChat()}>Ask a question</Button>
         </section>
       </Page>
@@ -169,7 +207,7 @@ export function AgentRuns({ onGoToChat, onOpenRun, onOpenMachineView, workspaceI
 
   const deep = all.filter(r => !isChat(r)).length;
   const unfinished = all.filter(r => UNFINISHED.has(r.status)).length;
-  const running = all.filter(r => r.status === "running").length;
+  const running = all.filter(r => r.status === "running").length + live.length;
   const paused = all.filter(r => r.status === "paused").length;
   const since = all.reduce((min, r) => (r.started_at < min ? r.started_at : min), all[0].started_at);
   // Said once: one connection is named in the figures, not on every row; several are named on each row.
@@ -196,6 +234,8 @@ export function AgentRuns({ onGoToChat, onOpenRun, onOpenMachineView, workspaceI
         <Figure testId="runs-fig-running" label="Running" value={formatCount(running)}
           sub={paused ? `${formatCount(paused)} paused, waiting` : running ? "in flight now" : "nothing in flight"} />
       </Figures>
+
+      {liveLine}
 
       {failed !== null && (
         <div className="aug-fs-xs" style={ROW}>

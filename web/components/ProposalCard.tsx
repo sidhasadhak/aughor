@@ -61,8 +61,8 @@ const KIND_CHIP: Record<string, { hue: ChipHue; label: string }> = {
   brief_draft: { hue: "info", label: "brief delivery" },
   outbound_send: { hue: "caution", label: "Slack post" },
   agent_limit: { hue: "accent", label: "agent limit" },
-  cockpit_draft: { hue: "info", label: "cockpit" },
-  cockpit_publish: { hue: "info", label: "cockpit · publish" },
+  cockpit_draft: { hue: "info", label: "dashboard" },
+  cockpit_publish: { hue: "info", label: "dashboard · publish" },
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -201,19 +201,19 @@ function AutomationBody({ chain, detail, openKeys }: {
   );
 }
 
-/* ── a cockpit, as it will be arranged (Arc CT-5) ── */
+/* ── a dashboard, as it will be arranged (Arc CT-5) ── */
 
-/** `change` is what an EDIT does to a line of the cockpit that stands: "added", "changed", or
- *  "" when the edit leaves it as it is. A new cockpit carries none. */
-type CockpitCard = { title: string; new: boolean; tone: string; shown: string; change?: string };
-type CockpitSection = { title: string; shown: string; cards: CockpitCard[]; change?: string };
-type CockpitTabOutline = { tab: string; sections: CockpitSection[]; change?: string };
+/** `change` is what an EDIT does to a line of the dashboard that stands: "added", "changed", or
+ *  "" when the edit leaves it as it is. A new dashboard carries none. */
+type DashboardCard = { title: string; new: boolean; tone: string; shown: string; change?: string };
+type DashboardSection = { title: string; shown: string; cards: DashboardCard[]; change?: string };
+type DashboardTabOutline = { tab: string; sections: DashboardSection[]; change?: string };
 
 /** What an edit does to one line, beside it. A line it leaves alone says nothing. */
 function Moved({ change }: { change?: string }) {
-  return change ? <span data-testid="cockpit-moved" style={{ color: "var(--amb4)" }}> · {change}</span> : null;
+  return change ? <span data-testid="dashboard-moved" style={{ color: "var(--amb4)" }}> · {change}</span> : null;
 }
-type CockpitNewCard = {
+type DashboardNewCard = {
   id: string; title: string; from: string; name: string; version: number; kind: string;
   limit?: { warning?: number; critical?: number; direction?: string };
 };
@@ -224,7 +224,7 @@ const MADE_FROM: Record<string, string> = {
   metric: "the approved metric", trusted_query: "the trusted query", finding: "the finding",
 };
 
-function limitWords(l: CockpitNewCard["limit"]): string {
+function limitWords(l: DashboardNewCard["limit"]): string {
   if (!l || (l.warning == null && l.critical == null)) return "";
   const way = l.direction === "below" ? "at or below" : "at or above";
   const parts = [
@@ -234,28 +234,28 @@ function limitWords(l: CockpitNewCard["limit"]): string {
   return `limit: ${parts.join(", ")}`;
 }
 
-/** What an approved cockpit's outcome says, or "" when there is none to say. */
+/** What an approved dashboard's outcome says, or "" when there is none to say. */
 function keptWords(outcome: Record<string, unknown> | undefined): string {
   const version = outcome?.version;
   return typeof version === "number"
-    ? `kept as version ${version} — it is among your cockpits in the Briefing` : "";
+    ? `kept as version ${version} — it is among your dashboards in the Briefing` : "";
 }
 
-function CockpitBody({ p }: { p: StagedProposal }) {
+function DashboardBody({ p }: { p: StagedProposal }) {
   const d = p.detail ?? {};
-  // A publish (the canvas, B5): the cockpit as it stands, shared with the groups and roles named.
+  // A publish (the canvas, B5): the dashboard as it stands, shared with the groups and roles named.
   if (d.mode === "publish") {
     const to = (Array.isArray(d.to) ? d.to : []) as string[];
     return (
-      <div className="flex flex-col gap-1" data-testid="cockpit-publish">
-        <Row label="Cockpit">{String(d.title ?? "")}</Row>
+      <div className="flex flex-col gap-1" data-testid="dashboard-publish">
+        <Row label="Dashboard">{String(d.title ?? "")}</Row>
         <Row label="Publish to">{to.join(", ")}</Row>
         <Row label="As it stands">version {String(d.replaces_version ?? "")} · read-only for its readers, under your name</Row>
       </div>
     );
   }
-  const outline = (Array.isArray(d.outline) ? d.outline : []) as CockpitTabOutline[];
-  const made = (Array.isArray(p.params?.cards) ? p.params.cards : []) as CockpitNewCard[];
+  const outline = (Array.isArray(d.outline) ? d.outline : []) as DashboardTabOutline[];
+  const made = (Array.isArray(p.params?.cards) ? p.params.cards : []) as DashboardNewCard[];
   const changes = (d.changes ?? {}) as { added?: string[]; removed?: string[]; changed?: string[] };
   const edit = d.mode === "edit";
   const before = d.replaces_version;
@@ -266,16 +266,16 @@ function CockpitBody({ p }: { p: StagedProposal }) {
     changes.changed?.length ? `${changes.changed.length} changed` : "",
   ].filter(Boolean).join(" · ");
   return (
-    <div className="flex flex-col gap-2" data-testid="cockpit-draft">
+    <div className="flex flex-col gap-2" data-testid="dashboard-draft">
       <div className="flex flex-col gap-1">
-        <Row label="Cockpit">{String(d.title ?? "")}</Row>
+        <Row label="Dashboard">{String(d.title ?? "")}</Row>
         <Row label="Canvas">{String(d.canvas_name ?? "")}</Row>
         {edit
           ? <Row label="Edits">version {String(before)}{moved ? ` · of its elements, ${moved}` : ""}</Row>
           : before != null && <Row label="Replaces">version {String(before)}</Row>}
       </div>
 
-      <div className="flex flex-col gap-1.5" data-testid="cockpit-outline">
+      <div className="flex flex-col gap-1.5" data-testid="dashboard-outline">
         {outline.map((tab, i) => (
           <div key={`tab-${i}`} className="flex flex-col gap-1">
             {tab.tab && (
@@ -307,9 +307,9 @@ function CockpitBody({ p }: { p: StagedProposal }) {
       </div>
 
       {gone.length > 0 && (
-        <div className="flex flex-col gap-1" data-testid="cockpit-taken-off">
+        <div className="flex flex-col gap-1" data-testid="dashboard-taken-off">
           <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
-            Taken off the cockpit{gone.some(g => g.what === "card") ? ". A card taken off is kept, and other cockpits may place it" : ""}:
+            Taken off the dashboard{gone.some(g => g.what === "card") ? ". A card taken off is kept, and other dashboards may place it" : ""}:
           </span>
           {gone.map((g, i) => (
             <Row key={`gone-${i}`} label={TAKEN_OFF[g.what] ?? g.what}>
@@ -320,7 +320,7 @@ function CockpitBody({ p }: { p: StagedProposal }) {
       )}
 
       {made.length > 0 && (
-        <div className="flex flex-col gap-1" data-testid="cockpit-new-cards">
+        <div className="flex flex-col gap-1" data-testid="dashboard-new-cards">
           <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
             {made.length === 1 ? "One card is made" : `${made.length} cards are made`}, each from a record that is already approved or found:
           </span>
@@ -515,7 +515,7 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
           </span>
         </div>
       )}
-      {(p.kind === "cockpit_draft" || p.kind === "cockpit_publish") && <CockpitBody p={p} />}
+      {(p.kind === "cockpit_draft" || p.kind === "cockpit_publish") && <DashboardBody p={p} />}
       {(p.kind === "declared_action" || p.kind === "integration") && (
         <div className="flex flex-col gap-1">
           <Row label="Action" mono>{p.action_id}</Row>
@@ -582,7 +582,7 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
       ) : (
         <span className="aug-text-xs" style={{ color: STATUS_TONE[status] ?? "var(--t3)" }}>
           {status}{note ? ` — ${note}`
-            // A card read after it settled has no note of its own; a cockpit's record says where it went.
+            // A card read after it settled has no note of its own; a dashboard's record says where it went.
             : p.kind === "cockpit_draft" && status === "executed" && keptWords(p.outcome) ? ` — ${keptWords(p.outcome)}`
             : p.kind === "cockpit_draft" && p.status_message ? ` — ${p.status_message}` : ""}
         </span>

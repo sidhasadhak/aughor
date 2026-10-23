@@ -622,7 +622,7 @@ def _num(v) -> Optional[float]:
         return None
     # NaN and infinity are no figure. DuckDB answers a ratio over an empty range with NaN
     # (`COUNT(...) * 1.0 / COUNT(...)` is 0.0 / 0), and one that reached a measured figure left
-    # the whole response unwritable as JSON — the Cockpit's "Failed to fetch" for every month
+    # the whole response unwritable as JSON — the Dashboard's "Failed to fetch" for every month
     # after Uber's rides end in 2024 (2026-10-07).
     return f if math.isfinite(f) else None
 

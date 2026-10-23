@@ -7,7 +7,7 @@
  * so expanding a second row destroyed the first row's edits *without a reload*.
  *
  * This is the one type that crosses the wire. It is stored two ways, both opaque to the backend:
- *   - a PINNED CARD keeps it in `DashboardCard.render` (already persisted, already read on mount)
+ *   - a PINNED CARD keeps it in `StoredCard.render` (already persisted, already read on mount)
  *   - a card-less chart (ledger row, digest tile, KPI) keeps it in `viz_configs`, keyed by the
  *     insight it is about
  *

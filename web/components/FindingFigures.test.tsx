@@ -8,14 +8,25 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { FindingFigures, figureValue, isOneRecord, isStated, unstatedFigures } from "@/components/FindingFigures";
-import { setOrgSettingsCache } from "@/lib/orgSettings";
-import type { OrgSettings } from "@/lib/api";
+import { setCurrentDataset, setDataCurrency } from "@/lib/orgSettings";
 
-afterEach(() => setOrgSettingsCache(null));
+afterEach(() => setCurrentDataset(""));
+
+const held = (code: string) => ({ connection_id: "c1", schema_name: null, code, status: code ? "confirmed" as const : "inferred" as const,
+                                  inferred: "BRL", confirmed_by: code ? "test" : "", confirmed_at: "" });
 
 describe("one value as a figure", () => {
+  it("money carries only a confirmed currency — never the org's, never a default \"$\" (2026-10-23)", () => {
+    setCurrentDataset("c1", "");
+    setDataCurrency(held(""));
+    expect(figureValue("total_revenue", "359224.30043935776")).toBe("359,224.30");
+    setDataCurrency(held("BRL"));
+    expect(figureValue("total_revenue", "359224.30043935776")).toBe("R$359,224.30");
+  });
+
   it("as its table cell would read — money to the cent, a share as a percentage, a key as written", () => {
-    setOrgSettingsCache({ currency_code: "USD" } as OrgSettings);
+    setCurrentDataset("c1", "");
+    setDataCurrency(held("USD"));
     expect(figureValue("total_revenue", "359224.30043935776")).toBe("$359,224.30");
     expect(figureValue("monthly_revenue", "117163.3701043129")).toBe("$117,163.37");  // names a month; is money
     expect(figureValue("units_sold", "7027")).toBe("7,027");

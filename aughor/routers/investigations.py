@@ -1272,18 +1272,14 @@ def _ground_headline(headline, columns, rows):
 
 
 def resolve_currency_symbol(connection_id: str, schema_name: Optional[str]) -> str:
-    """Effective currency symbol for a connection+schema — override-wins over the inferred
-    profile, falling back to USD '$'. The app/workspace override applies even when no profile
-    is loaded, so an EUR org gets '€' regardless. Best-effort; returns '$' on any failure."""
+    """The symbol a figure from this dataset carries: the currency a PERSON confirmed for it, else
+    "" — a plain amount, never a default "$" and never the model's inferred code (2026-10-23)."""
     try:
-        from aughor.business_profile import store as _pstore
-        from aughor.orgsettings import resolve_currency
+        from aughor.orgsettings import figure_currency
         from aughor.knowledge.triage import currency_symbol
-        prof = _pstore.load(connection_id, schema_name)
-        code = resolve_currency(getattr(prof, "currency_code", None) or "")
-        return currency_symbol(code)
-    except Exception:
-        return "$"
+        return currency_symbol(figure_currency(connection_id, schema_name))
+    except Exception:  # noqa: BLE001 — unknown is unlabelled, never "$"
+        return ""
 
 
 def _apply_currency(text: str, sym: str) -> str:
@@ -5658,13 +5654,13 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         return
 
     # A request for a COCKPIT is not a question about data, and this chat drafts none — the
-    # Briefing's Cockpit tab does (CT-9). Said here, before the clarify gate read it as an
+    # Briefing's Dashboards tab does (CT-9). Said here, before the clarify gate read it as an
     # under-specified question (2 of the CT receipt's 10 asks) or a model answered it as one.
     if not req.insight_id:
-        from aughor.cockpit.intent import is_cockpit_ask, where_cockpits_are_made
-        if is_cockpit_ask(req.question):
+        from aughor.dashboards.intent import is_dashboard_ask, where_dashboards_are_made
+        if is_dashboard_ask(req.question):
             from aughor.kernel.flags import flag_enabled
-            yield _sse("headline", {"headline": where_cockpits_are_made(flag_enabled("cockpit.composed"))})
+            yield _sse("headline", {"headline": where_dashboards_are_made(flag_enabled("dashboard.composed"))})
             yield _sse("done", {})
             return
 

@@ -95,17 +95,17 @@ def _map_layout(v: Any) -> dict:
 
 #: The Briefing's sections, in the order the product draws them (the canvas,
 #: docs/COCKPIT_CANVAS_2026-10-08.md, B1). A person shows, hides and orders these and chooses the
-#: cockpit of theirs that rides with the Briefing; the content of a section is never theirs to change.
+#: dashboard of theirs that rides with the Briefing; the content of a section is never theirs to change.
 #: ``measured`` and ``moves`` are the two parts of the verdict — the day's measured figures and the
 #: row of what the findings found — each hidden on its own, moved with the verdict.
 BRIEFING_SECTIONS = ("verdict", "measured", "moves", "key_metrics", "findings", "synthesis", "cockpit", "patterns")
-_COCKPIT_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
+_DASHBOARD_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 
 
 def _briefing_sections(v: Any) -> dict:
-    """``{"sections": [{"id": <section>, "on": <bool>}, …], "strip": "<cockpit id>" | ""}``. Every
+    """``{"sections": [{"id": <section>, "on": <bool>}, …], "strip": "<dashboard id>" | ""}``. Every
     section is listed once; one left out is appended, shown, so a section the product adds later is
-    not hidden by an older preference. ``strip`` names the person's own cockpit drawn under the
+    not hidden by an older preference. ``strip`` names the person's own dashboard drawn under the
     Briefing, or nothing."""
     if not isinstance(v, dict):
         raise ValueError("must be an object with 'sections' and 'strip'")
@@ -126,8 +126,8 @@ def _briefing_sections(v: Any) -> dict:
         if sid not in seen:
             out.append({"id": sid, "on": True})
     strip = v.get("strip") or ""
-    if not isinstance(strip, str) or (strip and not _COCKPIT_ID.match(strip)):
-        raise ValueError("'strip' is the id of one of your cockpits, or empty for none")
+    if not isinstance(strip, str) or (strip and not _DASHBOARD_ID.match(strip)):
+        raise ValueError("'strip' is the id of one of your dashboards, or empty for none")
     return {"sections": out, "strip": strip}
 
 
@@ -171,10 +171,10 @@ ALLOWED_KEYS: dict[str, tuple] = {
     "default_connection": (_connection_id, "connection new conversations open on"),
     "ontology_map_layout": (_map_layout, "where you dragged the cards on the ontology map"),
     # The canvas (B1): the Briefing's switches. Cosmetic and self-scoped — which of its sections
-    # you see and in what order, and which cockpit of yours rides with it; its content is the
+    # you see and in what order, and which dashboard of yours rides with it; its content is the
     # platform's, and a send carries the platform's Briefing, not your switches.
     "briefing_sections": (_briefing_sections, "which of the Briefing's sections you show, in what order, "
-                                              "and which of your cockpits rides with it"),
+                                              "and which of your dashboards rides with it"),
     # SP-13 — the clock drafts and new schedules speak. Cosmetic-plus: it changes what
     # NEW drafts default to, never what any existing chain does.
     "timezone": (_timezone, "the timezone drafts and new schedules speak (IANA name)"),

@@ -14,11 +14,12 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { getDepartures, getNeedsHuman, type Connection, type Departure, type NeedsHuman } from "@/lib/api";
+import { getDepartures, getJobs, getNeedsHuman, type Connection, type Departure, type JobRow, type NeedsHuman } from "@/lib/api";
+import { subscribeKernelEvents } from "@/lib/events";
 import { approverName } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { owes, sourceName, summaryLine, whenText } from "@/lib/departures";
-import { countNoun, formatCount, normalizeNumberPrecision } from "@/lib/format";
+import { countNoun, endedDay, formatCount, normalizeNumberPrecision, relTime } from "@/lib/format";
 import { dayWords } from "@/lib/home";
 import { connectionLabel, destinationLabel, needsYouTitle } from "@/lib/names";
 import {
@@ -51,6 +52,10 @@ interface OrgBriefingRow {
   as_of?: string;
   headline_theme?: string;
   lede?: string;
+  /** What the kept edition covers, and — for data that ENDED — the day it ended (2026-10-23). */
+  covers?: string;
+  data_ended?: boolean;
+  data_through?: string | null;
 }
 interface OrgBriefing { briefings: OrgBriefingRow[]; with_briefing: number; connections: number }
 
@@ -116,6 +121,8 @@ export interface NowDoors {
   onOpenRecord: (layer: InspectLayer, id: string) => void;
   /** Home — where a first run connects data and asks its first question. */
   onOpenHome: () => void;
+  /** Agent Ops' Overview — every run, with its trace, cost and Stop. */
+  onOpenAgentOps?: () => void;
 }
 
 /** A figure whose read is in flight or failed says that, in its own line — never a 0. */
@@ -136,6 +143,15 @@ export function NowPanel({ connections, contextReady, doors }: {
   const aside = useLoad(getSetAside, []);
   const corrections = useLoad(() => getCorrections({ limit: 60 }), []);
   const briefing = useLoad(readOrgBriefing, []);
+  // What is running now, from the kernel's jobs — the record Agent Ops lists — on this workspace's connections
+  // (the Olist study, Gaps 9 and 34: Now said "Nothing waits on you" through a live exploration of the workspace's
+  // own data, and only the header's "1 live" knew).
+  const running = useLoad(() => getJobs({ state: "active" }), []);
+  useEffect(() => subscribeKernelEvents(() => running.reload(), { kinds: ["job.state"] }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []);
+  const here = useMemo(() => new Set(connections.map(c => c.id)), [connections]);
+  const runningHere: JobRow[] = (Array.isArray(running.data) ? running.data : []).filter(j => !!j.conn_id && here.has(j.conn_id));
   const missions = useLoad(() => listMissions({ state: "active" }), []);
 
   // "Since you were here" is this reader's own convenience: the last visit is kept in this
@@ -199,6 +215,26 @@ export function NowPanel({ connections, contextReady, doors }: {
                 onAsideChanged={() => { aside.reload(); window.dispatchEvent(new Event(WAITING_CHANGED_EVENT)); }} />}
             </Gate>
           </NeedsYou>
+
+          {runningHere.length > 0 && (
+            <Card label="Running now" testId="now-running" right={countNoun(runningHere.length, "run")}>
+              {runningHere.map((j, i) => (
+                <div key={j.id} data-testid="now-running-row" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto",
+                  gap: 12, alignItems: "center", padding: "7px 0", ...(i ? RULE : {}) }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }}>{j.title || j.kind}</div>
+                    <div className="aug-fs-xs" style={{ ...ONE_LINE, color: "var(--t2)" }}>
+                      {j.agent?.agent || j.kind} · {connectionLabel(j.conn_id ?? "", connections)}
+                      {j.started_at || j.created_at ? ` · started ${relTime(j.started_at || j.created_at || "")} ago` : ""}
+                    </div>
+                  </div>
+                  {doors.onOpenAgentOps && (
+                    <Button size="xs" variant="secondary" onClick={() => doors.onOpenAgentOps?.()}>Open in Agent Ops</Button>
+                  )}
+                </div>
+              ))}
+            </Card>
+          )}
 
           {/* The picture — the week's slots, place by place — beside the Briefing in a line each. */}
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
@@ -846,7 +882,13 @@ function BriefingLines({ fold, doors }: { fold: OrgBriefing; doors: NowDoors }) 
           <div style={{ minWidth: 0 }} title={k!.lede || k!.headline}>
             <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)", fontWeight: 500 }}>{k!.headline || firstLine(k!.lede)}</div>
             <div className="aug-fs-xs" style={{ ...ONE_LINE, color: "var(--t2)" }}>
-              {b.connection_name}{k!.as_of ? ` · as of ${dayWords(k!.as_of)}` : ""}
+              {b.connection_name}
+              {/* An edition about data that ENDED names its days and where the data ended, so it is not
+                  read as this week's news: "Olist · September 2018 · data ended Wed 17 Oct 2018". */}
+              {b.data_ended && b.covers ? ` · ${b.covers}` : ""}
+              {b.data_ended && b.data_through
+                ? <span data-testid="now-data-ended"> · data ended {endedDay(b.data_through)}</span>
+                : k!.as_of ? ` · as of ${dayWords(k!.as_of)}` : ""}
             </div>
           </div>
           <Button size="xs" variant="secondary" onClick={() => doors.onOpenBriefing(b.connection_id)}>Read</Button>

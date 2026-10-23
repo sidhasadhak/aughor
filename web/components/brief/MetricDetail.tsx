@@ -4,7 +4,7 @@
  * What a measured figure opens to (ROADMAP §6 item 43; asked 2026-10-05: each metric clickable,
  * to learn more about it).
  *
- * A metric's row on the Briefing or the Cockpit opens a drawer beside the page: the figure with
+ * A metric's row on the Briefing or the Dashboard opens a drawer beside the page: the figure with
  * its comparisons, the metric over the range and the ranges before it (one warehouse statement,
  * no model call), the segments that moved inside it when the range's Briefing read any, and how
  * the metric is defined and dated. The drawer only reads. "Ask why it moved" hands the question

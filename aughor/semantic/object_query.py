@@ -78,7 +78,7 @@ from aughor.semantic.cross_source import KeyedRead
 AggName = Literal["count", "count_distinct", "sum", "avg", "min", "max"]
 FilterOp = Literal["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "between",
                    "is_null", "not_null", "exists", "not_exists", "in_last", "contains", "in_set", "not_in_set"]
-#: Arc AP-8b — the most sets one condition names, and how deep sets may read sets: a cockpit's sets read each other a
+#: Arc AP-8b — the most sets one condition names, and how deep sets may read sets: a dashboard's sets read each other a
 #: few levels down, never without end.
 MAX_SETS_PER_CONDITION = 4
 MAX_SET_DEPTH = 4
@@ -527,10 +527,24 @@ def _predicate(col: str, p: EntityProperty, f: ObjectFilter) -> str:
     if op == "not_null":
         return f"{col} IS NOT NULL"
     if op in _COMPARE:
-        if f.value is None or isinstance(f.value, (list, dict)):
-            raise ObjectQueryRefused(f"filter '{f.path} {op}' needs one value (is_null / not_null for NULL, "
-                                     "in for a list)")
-        return f"{col} {_COMPARE[op]} {typed_literal(f.value, p, f.path)}"
+        value = f.value
+        # A one-item list for a comparison IS that value: the model wrote `order_status = ['delivered']`
+        # and the most useful rule of the Olist run (96,478 delivered orders) was refused in a parser's
+        # words (the Olist study, Gap 12, 2026-10-22). Unambiguous, so it is read, not refused.
+        if isinstance(value, list) and len(value) == 1:
+            value = value[0]
+        elif value is None and f.values and len(f.values) == 1:
+            value = f.values[0]
+        if isinstance(value, list) or (value is None and f.values):
+            many = len(value) if isinstance(value, list) else len(f.values or [])
+            raise ObjectQueryRefused(
+                f"'{f.path} {op}' compares with one value and was given {many}; to match any of them, "
+                f"use '{f.path} in' with the list" if op in ("=", "!=") else
+                f"'{f.path} {op}' compares with one value and was given {many}")
+        if value is None or isinstance(value, dict):
+            raise ObjectQueryRefused(f"'{f.path} {op}' needs a value to compare with; to match an empty "
+                                     f"{f.path}, use '{f.path} is_null'")
+        return f"{col} {_COMPARE[op]} {typed_literal(value, p, f.path)}"
     vals = f.values or (f.value if isinstance(f.value, list) else [])
     if op in ("in", "not_in"):
         if not vals or len(vals) > _MAX_IN:

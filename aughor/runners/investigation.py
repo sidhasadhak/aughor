@@ -74,6 +74,9 @@ class InvestigationRequest:
     #: has produced one, and a step that publishes a value it does not have is exactly the
     #: silent hole `UnresolvedBinding` was added to refuse.
     wait: bool = False
+    #: The session the run is filed under — a dashboard's question files every answer it asks for under its own
+    #: (``question:<id>``), so its history reads back by that tag. Unset, the ask door files the run as it always did.
+    session_id: Optional[str] = None
 
 
 @dataclass
@@ -127,7 +130,8 @@ def _ask_request(req: InvestigationRequest):
     from aughor.routers.investigations import AskRequest
     return AskRequest(question=req.question, connection_id=req.connection_id,
                       depth=req.depth, schema_name=req.schema_name,
-                      agent_id=req.agent_id or None)
+                      agent_id=req.agent_id or None,
+                      **({"session_id": req.session_id} if req.session_id else {}))
 
 
 #: Terminal statuses that mean the investigation did NOT answer. Read from the

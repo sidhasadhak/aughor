@@ -52,6 +52,11 @@ def expected_next(conn_id: str, spec: R.RangeSpec, *, profile: Any = None, works
 
     from dataclasses import replace
 
+    if spec.data_ended:
+        # The data stopped: no later range will hold rows, so a band for one is a prediction about
+        # nothing — and booking it would leave a claim on the Record that can never be checked.
+        return {"target": None, "items": [],
+                "why": f"the data ended on {R._d(spec.data_through)}: no later range will have rows to predict"}
     target = R.later_spec(spec)
     if target is None:
         return {"target": None, "items": [],

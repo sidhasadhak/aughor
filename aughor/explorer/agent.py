@@ -78,6 +78,15 @@ logger = logging.getLogger(__name__)
 # overrides for slicing experiments.
 _DOMAIN_LEASE_S = float(os.environ.get("AUGHOR_DOMAIN_LEASE_S", "900") or 900)
 
+#: How a finding writes its figures (2026-10-23, the Olist study's group C: "late rate 0.0646" and "$" over
+#: reais). A ratio as a percentage with one decimal — the grounding guards credit a percentage of a result's
+#: fraction (verify._number_grounded) and do not enforce percentages; money plain, because the page labels
+#: it with the currency a person confirmed for the dataset.
+FIGURE_STYLE = ("Write a rate, share or ratio as a percentage with one decimal (6.5%, not 0.0646). "
+                "Write money as a plain number with thousands separators and no currency symbol or code — "
+                "the page labels the currency.")
+
+
 _RATE_SECONDS_SCHEMA = 0.0   # schema phases (3-7) run as fast as the DB allows
 _RATE_SECONDS_INTEL  = 5.0   # domain intel phase runs at 1 query per 5 seconds
 _COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate aggregates
@@ -2232,7 +2241,7 @@ class SchemaExplorer:
                         lambda: llm.complete(
                             system=("You are a precise analyst. Interpret the query result as ONE specific, "
                                     "number-bearing business insight that answers the question. Do not invent "
-                                    "per-row ratios from totals. novelty is 1-5."),
+                                    "per-row ratios from totals. novelty is 1-5. " + FIGURE_STYLE),
                             user=f"QUESTION: {q}\n\nRESULT (first 20 rows):\n{result_text}",
                             response_model=_PinInterp,
                         ),
@@ -3997,6 +4006,7 @@ class SchemaExplorer:
                     _sys3 = (
                         "You are interpreting a SQL query result as a concise business insight. "
                         "Write 1-2 sentences maximum. Include specific numbers from the result. "
+                        + FIGURE_STYLE + " "
                         "Focus on what is actionable or surprising.\n\n"
                         "CRITICAL INTERPRETATION RULES:\n"
                         "- Use ONLY numbers that appear in the result. Copy each value exactly as it "
@@ -4544,7 +4554,7 @@ class SchemaExplorer:
                                 "CONFIRMING RESULT below. Do NOT reuse, restate, or recompute any figure "
                                 "from Finding A or Finding B — those are the inputs, not the answer. If the "
                                 "result contains no new combined quantity, the composition failed: say so "
-                                "plainly with novelty=1 and cite no numbers. novelty is 1-5."),
+                                "plainly with novelty=1 and cite no numbers. novelty is 1-5. " + FIGURE_STYLE),
                         user=(f"FINDING A (input — do NOT quote its numbers): {c.a.finding}\n"
                               f"FINDING B (input — do NOT quote its numbers): {c.b.finding}\n"
                               f"COMPOSITION: {ctype}\n\n"

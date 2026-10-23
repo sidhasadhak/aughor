@@ -714,7 +714,7 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
   const [activeConn, setActiveConn] = useState(connectionId);
   // The shell's connection is the workspace's: when it changes — a workspace switch, a reselect — this panel follows
   // it; its own picker still moves within the workspace. Until 2026-10-15 it filled only an EMPTY choice, so a panel
-  // visited on one workspace kept that connection after a switch: the cockpit on LuxExperience, the Metrics tab still
+  // visited on one workspace kept that connection after a switch: the dashboard on LuxExperience, the Metrics tab still
   // on Workspace's sixteen rows, and the scope's picker blank because its connection was no longer in the list.
   useEffect(() => { if (connectionId) setActiveConn(connectionId); }, [connectionId]);
 

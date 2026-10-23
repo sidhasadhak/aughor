@@ -13,7 +13,7 @@
  * (`POST /ontology/processes/preview`): how many reach each stage, the typical time between stages, each promise's
  * breach rate, and the checks to read before publishing — a stage objects wait at for over a year asked about as a
  * question, with the statuses that explain them. Publishing declares the process and publishes the release; then a
- * cockpit for it is one press away.
+ * dashboard for it is one press away.
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
-import { processCockpitSpec, startCockpit as keepNewCockpit } from "@/lib/cockpit/start";
+import { processDashboardSpec, startDashboard as keepNewDashboard } from "@/lib/dashboards/start";
 import { formatCount, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { requestTab } from "@/lib/navigate";
@@ -100,9 +100,9 @@ function days(n: number | null | undefined): string {
   return `${Number.isInteger(n) ? n : n.toFixed(1)} d`;
 }
 
-/** A fresh cockpit holding the process's board, its open-and-overdue objects and one object beside them — the same
- *  cockpit a process's own panel and *+ New cockpit* start (`lib/cockpit/start`). */
-export const cockpitSpecFor = processCockpitSpec;
+/** A fresh dashboard holding the process's board, its open-and-overdue objects and one object beside them — the same
+ *  dashboard a process's own panel and *+ New dashboard* start (`lib/dashboards/start`). */
+export const dashboardSpecFor = processDashboardSpec;
 
 type Phase = { at: "draft" } | { at: "declared"; id: string } | { at: "published"; id: string; release: number };
 
@@ -250,15 +250,15 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
   };
 
   const segment = preview?.creates.find(c => c.kind === "segment");
-  const startCockpit = async () => {
+  const startDashboard = async () => {
     if (phase.at !== "published" || !segment) return;
     setBusy("cockpit");
     try {
-      await keepNewCockpit(connectionId, draft.name, processCockpitSpec(draft.name, phase.id, cands?.entity ?? draft.entity, segment.name),
+      await keepNewDashboard(connectionId, draft.name, processDashboardSpec(draft.name, phase.id, cands?.entity ?? draft.entity, segment.name),
         `Started from the process ${draft.name.trim()}`);
-      requestTab("cockpit", { conn: connectionId });
+      requestTab("dashboards", { conn: connectionId });
     } catch (e) {
-      toast.error("The cockpit was not made", { description: errorText(e).slice(0, 240) });
+      toast.error("The dashboard was not made", { description: errorText(e).slice(0, 240) });
     } finally { setBusy(""); }
   };
 
@@ -304,7 +304,7 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
               <>
                 <span>
                   {editing ? "Saving the change to " : "Declaring "}<b>{draft.name.trim()}</b>{" "}counts it once more and writes it to the draft of this connection&apos;s
-                  ontology; it reaches the agent, the Briefing and cockpits when the release is published.
+                  ontology; it reaches the agent, the Briefing and dashboards when the release is published.
                   {openAsks.length > 0 && ` ${openAsks.length === 1 ? "One question below is" : `${openAsks.length} questions below are`} not answered — the numbers would be published as they stand.`}
                 </span>
                 <span style={{ display: "flex", gap: 6 }}>
@@ -455,7 +455,7 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
       <section style={CARD} data-testid="designer-creates">
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
           <span style={{ fontWeight: 500, color: "var(--t1)" }}>What it creates</span>
-          <span className="aug-fs-xs" style={HINT}>ready to place on a cockpit once published</span>
+          <span className="aug-fs-xs" style={HINT}>ready to place on a dashboard once published</span>
         </div>
         {preview?.creates.length ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
@@ -474,13 +474,13 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
           </div>
         ) : <p className="aug-fs-sm" style={{ ...HINT, margin: 0 }}>A promise on a stage makes a list of what is late, its rate and its typical duration.</p>}
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
-          <Button size="xs" variant="outline" data-testid="designer-cockpit" disabled={phase.at !== "published" || !segment || !!busy}
-            onClick={() => void startCockpit()}>
-            <Icon name="gauge" size={12} /> {busy === "cockpit" ? "Making it…" : "Start a cockpit for this process"}
+          <Button size="xs" variant="outline" data-testid="designer-dashboard" disabled={phase.at !== "published" || !segment || !!busy}
+            onClick={() => void startDashboard()}>
+            <Icon name="gauge" size={12} /> {busy === "cockpit" ? "Making it…" : "Start a dashboard for this process"}
           </Button>
           {phase.at !== "published" && (
             <span className="aug-fs-xs" style={HINT}>
-              {!segment ? "A cockpit needs a promise to list what is late." : "Publish the process first — a cockpit reads what is published."}
+              {!segment ? "A dashboard needs a promise to list what is late." : "Publish the process first — a dashboard reads what is published."}
             </span>
           )}
         </div>

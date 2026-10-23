@@ -10,17 +10,23 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { Theme } from "@radix-ui/themes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-let onEvent: (() => void) | null = null;
+// Every subscriber hears an event, as on the real stream: the page subscribes twice — its runs, and the live jobs.
+const subscribers = new Set<() => void>();
+const onEvent = () => subscribers.forEach(cb => cb());
 vi.mock("@/lib/events", () => ({
-  subscribeKernelEvents: (cb: () => void) => { onEvent = cb; return () => { onEvent = null; }; },
+  subscribeKernelEvents: (cb: () => void) => { subscribers.add(cb); return () => { subscribers.delete(cb); }; },
 }));
 
 import { AgentRuns, foldRuns, type Run } from "./AgentRuns";
+import { DEEP_ANALYSIS_JOB_KIND } from "@/lib/api";
+import { setCurrentDataset, setDataCurrency } from "@/lib/orgSettings";
 
 const SCHEDULED = (day: string) =>
   `[Scheduled-run context — written by code, not inferred]\nThis is a scheduled daily run at ${day}T09:00Z.\n\nWhat changed in theLook in the last day? Give me the top three findings with the numbers.`;
 
 let list: unknown;
+/** The kernel's active jobs, when a test serves them (else /jobs answers with the runs list, as before). */
+let jobs: unknown[] | null = null;
 const urls: string[] = [];
 globalThis.fetch = (async (input: RequestInfo | URL) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -28,6 +34,8 @@ globalThis.fetch = (async (input: RequestInfo | URL) => {
   const p = new URL(url, "http://x").pathname;
   const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "Content-Type": "application/json" } });
   if (p === "/connections") return json([{ id: "8233e4fd", name: "theLook" }]);
+  if (p === "/jobs" && jobs) return json(jobs);
+  if (p.startsWith("/workspaces/") && jobs) return json({ id: "default", name: "Default", is_default: true, connection_ids: ["8233e4fd"] });
   return list instanceof Error ? json({ detail: "down" }, 503) : json(list);
 }) as typeof fetch;
 
@@ -40,6 +48,17 @@ const opened: unknown[][] = [];
 const asked: (string | undefined)[] = [];
 const mount = () => render(<Theme><AgentRuns onGoToChat={q => asked.push(q)} onOpenRun={(...a) => opened.push(a)}
   onOpenMachineView={() => {}} workspaceId="default" /></Theme>);
+
+
+/** The dataset in view, with USD confirmed by a person: only a confirmed currency keeps a "$" in front of a
+ *  figure (2026-10-23) — the "$" here is incidental to what this file tests. */
+function confirmUsd(): void {
+  setCurrentDataset("c1", "");
+  setDataCurrency({ connection_id: "c1", schema_name: null, code: "USD", status: "confirmed", inferred: "USD",
+                    confirmed_by: "test", confirmed_at: "" });
+}
+
+beforeEach(confirmUsd);
 
 beforeEach(() => {
   urls.length = 0; opened.length = 0; asked.length = 0;
@@ -154,17 +173,41 @@ describe("Agent runs", () => {
     const rows = await screen.findAllByTestId("run-group");
     expect(rows.every(r => !r.textContent?.includes("theLook ·") && !r.textContent?.includes("· theLook"))).toBe(true);
     (list as Run[]).push(run("other", { question: "How many returns?", connection_id: "aaaa1111bbbb", started_at: "2026-10-12T11:00:00Z" }));
-    onEvent?.();
+    onEvent();
     await vi.waitFor(() => expect(screen.getByTestId("runs-fig-runs")).toHaveTextContent("2 connections"));
     const other = screen.getAllByTestId("run-group").find(r => r.textContent?.includes("How many returns?"))!;
     expect(other).toHaveTextContent("connection aaaa1111");
+  });
+
+  it("says what is running from the kernel's jobs — never 'No runs yet' through a live exploration (Gap 10)", async () => {
+    list = [];
+    jobs = [{ id: "j1", kind: "exploration", state: "RUNNING", conn_id: "8233e4fd", canvas_id: null,
+              created_at: new Date(Date.now() - 300_000).toISOString(), started_at: null, finished_at: null, error: null,
+              agent: { agent: "Scout", blurb: "", icon: "" }, title: "Exploring theLook", cost: null, duration_ms: null },
+            { id: "j2", kind: DEEP_ANALYSIS_JOB_KIND, state: "RUNNING", conn_id: "8233e4fd", canvas_id: null, created_at: null,
+              started_at: null, finished_at: null, error: null, agent: { agent: "Analyst", blurb: "", icon: "" },
+              title: "a deep run, already a run here", cost: null, duration_ms: null },
+            { id: "j3", kind: "exploration", state: "RUNNING", conn_id: "elsewhere", canvas_id: null, created_at: null,
+              started_at: null, finished_at: null, error: null, agent: { agent: "Scout", blurb: "", icon: "" },
+              title: "Exploring another workspace's data", cost: null, duration_ms: null }];
+    try {
+      mount();
+      const [row] = await screen.findAllByTestId("runs-live-row");
+      expect(row).toHaveTextContent("Exploring theLook");
+      expect(row).toHaveTextContent("Scout · theLook · started 5m ago");
+      expect(screen.getAllByTestId("runs-live-row")).toHaveLength(1);
+      expect(screen.getByText("No question asked here yet.")).toBeInTheDocument();
+      expect(screen.queryByText("No runs yet.")).toBeNull();
+    } finally {
+      jobs = null;
+    }
   });
 
   it("refreshes when a run's event lands", async () => {
     mount();
     await screen.findByTestId("runs-figures");
     const before = urls.filter(u => u.includes("limit=")).length;
-    onEvent?.();
+    onEvent();
     await vi.waitFor(() => expect(urls.filter(u => u.includes("limit=")).length).toBe(before + 1));
   });
 

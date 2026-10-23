@@ -11,8 +11,8 @@
  * when it may be pressed (values the data holds, with their counts), who decides. A call to another system is its own
  * step, only for an action that makes one. As the draft changes it is read exactly as declaring would read it, with
  * nothing written (`POST /ontology/declared-actions/preview`): how many objects allow a press now, over all of them and
- * beside each cockpit that shows them one at a time, and a press dry-run on a real object. Declaring goes through the
- * existing door (and its approval gate); then the release; then the button goes onto the cockpits a person ticks.
+ * beside each dashboard that shows them one at a time, and a press dry-run on a real object. Declaring goes through the
+ * existing door (and its approval gate); then the release; then the button goes onto the dashboards a person ticks.
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
@@ -28,8 +28,8 @@ import {
   conditionMessage, dropAction, emptyAction, keepAction, keptAction, notReady, oneOf, toActionSpec,
   type ActionDraft, type AskDraft, type AskType, type CallDraft, type ConditionDraft,
 } from "@/lib/actionDraft";
-import { getActionTriggers, getCockpit, getDeclaredActions, keepCockpit, listCockpits, type ActionTrigger } from "@/lib/api";
-import { addAction } from "@/lib/cockpit/edit";
+import { getActionTriggers, getDashboard, getDeclaredActions, keepDashboard, listDashboards, type ActionTrigger } from "@/lib/api";
+import { addAction } from "@/lib/dashboards/edit";
 import { formatCount } from "@/lib/format";
 import { requestTab } from "@/lib/navigate";
 import { listObjects } from "@/lib/objects";
@@ -65,17 +65,17 @@ function words(id: string): string {
   return id.replace(/_/g, " ");
 }
 
-/** A cockpit that shows the type's objects one at a time — where the action's button can sit. */
+/** A dashboard that shows the type's objects one at a time — where the action's button can sit. */
 export interface ActionPlace {
-  cockpitId: string;
+  dashboardId: string;
   title: string;
   detailKey: string;
   tableKey: string;
   segment: string;
 }
 
-/** The places a cockpit spec offers for an action on ``entity``: each object detail beside a table of that type. */
-export function placesIn(cockpitId: string, title: string, spec: unknown, entity: string[]): ActionPlace[] {
+/** The places a dashboard spec offers for an action on ``entity``: each object detail beside a table of that type. */
+export function placesIn(dashboardId: string, title: string, spec: unknown, entity: string[]): ActionPlace[] {
   const els = ((spec ?? {}) as { elements?: Record<string, { type: string; props?: Record<string, unknown> }> }).elements ?? {};
   const wanted = new Set(entity.filter(Boolean).map(e => e.toLowerCase()));
   return Object.entries(els).flatMap(([key, el]) => {
@@ -83,7 +83,7 @@ export function placesIn(cockpitId: string, title: string, spec: unknown, entity
     const tableKey = String(el.props?.follows ?? "");
     const table = els[tableKey];
     if (table?.type !== "ObjectTable" || !wanted.has(String(table.props?.entity ?? "").toLowerCase())) return [];
-    return [{ cockpitId, title, detailKey: key, tableKey, segment: String(table.props?.segment ?? "") }];
+    return [{ dashboardId, title, detailKey: key, tableKey, segment: String(table.props?.segment ?? "") }];
   });
 }
 
@@ -193,20 +193,20 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
   }, [connectionId, schema, draft.entity]);
   const cands = candsRead?.entity === draft.entity ? candsRead.cands : null;
 
-  // The cockpits that show the type's objects one at a time — where the button can sit.
+  // The dashboards that show the type's objects one at a time — where the button can sit.
   useEffect(() => {
     if (!draft.entity) return;
     let live = true;
     const entity = draft.entity;
     const names = [draft.entity, draft.entityLabel, cands?.api_name ?? "", cands?.entity ?? ""];
-    listCockpits(connectionId)
+    listDashboards(connectionId)
       .then(async list => {
         const found: ActionPlace[] = [];
         for (const c of (list?.cockpits ?? []).filter(c => !c.retired)) {
-          const read = await getCockpit(connectionId, c.cockpit_id).catch(() => null);
+          const read = await getDashboard(connectionId, c.cockpit_id).catch(() => null);
           if (read) found.push(...placesIn(c.cockpit_id, c.title || c.cockpit_id, read.cockpit.spec, names));
         }
-        if (live) { setPlacesRead({ entity, places: found }); setTicked(Object.fromEntries(found.map(p => [`${p.cockpitId}/${p.detailKey}`, true]))); }
+        if (live) { setPlacesRead({ entity, places: found }); setTicked(Object.fromEntries(found.map(p => [`${p.dashboardId}/${p.detailKey}`, true]))); }
       })
       .catch(() => { if (live) setPlacesRead({ entity, places: [] }); });
     return () => { live = false; };
@@ -258,7 +258,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
       setReviewing(false);
       onDeclared?.(made.id);
       setRelease(await getRelease(connectionId, schema).catch(() => null));
-      toast.success("Declared. It reaches cockpits and the agent when the release is published.");
+      toast.success("Declared. It reaches dashboards and the agent when the release is published.");
     } catch (e) {
       toast.error(...refusal("Not declared", e));
     } finally { setBusy(""); }
@@ -277,24 +277,24 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
     } finally { setBusy(""); }
   };
 
-  const chosen = places.filter(p => ticked[`${p.cockpitId}/${p.detailKey}`]);
+  const chosen = places.filter(p => ticked[`${p.dashboardId}/${p.detailKey}`]);
   const place = async () => {
     if (phase.at !== "published" || !chosen.length) return;
     setBusy("place");
     const on: string[] = [];
     try {
-      for (const cockpitId of [...new Set(chosen.map(p => p.cockpitId))]) {
-        const read = await getCockpit(connectionId, cockpitId);
+      for (const dashboardId of [...new Set(chosen.map(p => p.dashboardId))]) {
+        const read = await getDashboard(connectionId, dashboardId);
         let spec: unknown = read.cockpit.spec;
         const els = (spec as { elements: Record<string, { props?: Record<string, unknown> }> }).elements;
-        for (const p of chosen.filter(c => c.cockpitId === cockpitId)) {
+        for (const p of chosen.filter(c => c.dashboardId === dashboardId)) {
           const named = Array.isArray(els[p.tableKey]?.props?.columns);
           const defaults = markProperty && !named
             ? await defaultColumns(connectionId, schema, String(els[p.tableKey]?.props?.entity ?? draft.entity), p.segment) : [];
           spec = withAction(spec, p, phase.id, markProperty, defaults);
         }
-        await keepCockpit(connectionId, cockpitId, spec, `Added the action ${draft.name.trim()}`);
-        on.push(chosen.find(c => c.cockpitId === cockpitId)?.title ?? cockpitId);
+        await keepDashboard(connectionId, dashboardId, spec, `Added the action ${draft.name.trim()}`);
+        on.push(chosen.find(c => c.dashboardId === dashboardId)?.title ?? dashboardId);
       }
       setPhase({ at: "placed", id: phase.id, release: phase.release, on });
     } catch (e) {
@@ -303,9 +303,9 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
     } finally { setBusy(""); }
   };
 
-  const openCockpit = (cockpitId: string) => {
-    try { localStorage.setItem(`aughor:cockpit:${connectionId}`, cockpitId); } catch { /* the cockpit opens on its own tab */ }
-    requestTab("cockpit", { conn: connectionId });
+  const openDashboard = (dashboardId: string) => {
+    try { localStorage.setItem(`aughor:cockpit:${connectionId}`, dashboardId); } catch { /* the cockpit opens on its own tab */ }
+    requestTab("dashboards", { conn: connectionId });
   };
 
   const stateLabel = phase.at === "draft" ? "Draft · not declared" : phase.at === "declared" ? "Declared · waiting for the release"
@@ -382,7 +382,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
         <Callout tone="blue" style={{ marginBottom: 12 }} data-testid="action-placed">
           <span className="aug-fs-sm">
             The button is on {phase.on.join(", ")}.{" "}
-            <Button size="xs" variant="minimal" onClick={() => openCockpit(chosen[0]?.cockpitId ?? "")}>Open {phase.on[0]}</Button>
+            <Button size="xs" variant="minimal" onClick={() => openDashboard(chosen[0]?.dashboardId ?? "")}>Open {phase.on[0]}</Button>
           </span>
         </Callout>
       )}
@@ -633,7 +633,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
               </p>
             )}
             <p className="aug-fs-xs" style={{ color: "var(--t2)", margin: 0 }}>
-              <Icon name="run" size={11} /> A button for {oneOf(entityLabel)}&apos;s detail on a cockpit
+              <Icon name="run" size={11} /> A button for {oneOf(entityLabel)}&apos;s detail on a dashboard
               {draft.does === "tell" ? ", that sends a message and keeps its delivery as the proof it was sent"
                 : draft.does === "analyse" ? ", that starts a deep analysis and keeps its job as the proof it started" : ""}.
             </p>
@@ -643,10 +643,10 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
             <p className="aug-fs-sm" style={{ ...LABEL, color: "var(--t1)", fontWeight: 500 }}>Where it appears</p>
             {places.length === 0 ? (
               <p className="aug-fs-xs" style={HINT}>
-                No cockpit of yours shows {plural} one at a time yet. Its button can be added later, with From the ontology on a cockpit.
+                No dashboard of yours shows {plural} one at a time yet. Its button can be added later, with From the ontology on a dashboard.
               </p>
             ) : places.map(p => {
-              const id = `${p.cockpitId}/${p.detailKey}`;
+              const id = `${p.dashboardId}/${p.detailKey}`;
               const seg = segmentOf(p.segment);
               return (
                 <label key={id} className="aug-fs-xs" style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 6, color: "var(--t2)" }}>
@@ -663,7 +663,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
             {places.length > 0 && (
               <Button size="xs" variant="secondary" data-testid="action-place" disabled={phase.at !== "published" || !chosen.length || !!busy}
                 onClick={() => void place()}>
-                {busy === "place" ? "Adding…" : phase.at === "placed" ? "Added" : "Add the button to the cockpits ticked"}
+                {busy === "place" ? "Adding…" : phase.at === "placed" ? "Added" : "Add the button to the dashboards ticked"}
               </Button>
             )}
             {places.length > 0 && phase.at !== "published" && phase.at !== "placed" && (

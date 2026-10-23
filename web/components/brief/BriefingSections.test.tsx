@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * The Briefing's switches (B1): a section shown or hidden, moved, the cockpit that rides with
+ * The Briefing's switches (B1): a section shown or hidden, moved, the dashboard that rides with
  * the Briefing, and a change asked for in words — each lands as the next preference, through
  * `onChange`, and words land only once kept.
  */
@@ -11,12 +11,12 @@ import { describe, expect, it, vi } from "vitest";
 import { BriefingSections, HiddenSection } from "@/components/brief/BriefingSections";
 import { DEFAULT_SECTIONS, type BriefingSectionsPref } from "@/lib/briefingSections";
 
-const COCKPITS = [{ id: "growth-1", title: "Growth review" }, { id: "returns-2", title: "Returns" }];
+const DASHBOARDS = [{ id: "growth-1", title: "Growth review" }, { id: "returns-2", title: "Returns" }];
 const order = (p: BriefingSectionsPref) => p.sections.map(s => `${s.id}${s.on ? "" : ":off"}`);
 
-function show(pref = DEFAULT_SECTIONS, cockpitsOn = true) {
+function show(pref = DEFAULT_SECTIONS, dashboardsOn = true) {
   const onChange = vi.fn();
-  render(<BriefingSections pref={pref} onChange={onChange} cockpits={COCKPITS} cockpitsOn={cockpitsOn} />);
+  render(<BriefingSections pref={pref} onChange={onChange} cockpits={DASHBOARDS} dashboardsOn={dashboardsOn} />);
   return onChange;
 }
 
@@ -48,14 +48,14 @@ describe("the switches", () => {
     expect(order(onChange.mock.calls[0][0] as BriefingSectionsPref)).toEqual(["verdict", "measured", "moves", "key_metrics", "synthesis", "findings", "cockpit", "patterns"]);
   });
 
-  it("names the cockpit that rides with the Briefing, only where cockpits are on", () => {
+  it("names the dashboard that rides with the Briefing, only where dashboards are on", () => {
     const onChange = show();
     change(screen.getByTestId("briefing-strip-pick"), { target: { value: "growth-1" } });
     expect(onChange.mock.calls[0][0]).toEqual({ ...DEFAULT_SECTIONS, strip: "growth-1" });
     expect(onChange.mock.calls[0][1]).toBe("“Growth review” rides with your Briefing.");
   });
 
-  it("with cockpits off there is no cockpit to choose", () => {
+  it("with dashboards off there is no dashboard to choose", () => {
     show(DEFAULT_SECTIONS, false);
     expect(screen.queryByTestId("briefing-strip-pick")).toBeNull();
   });

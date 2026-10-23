@@ -205,6 +205,107 @@ def materialise_metric(conn_id: str, name: str, schema: Optional[str] = None,
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+class _AdoptItem(BaseModel):
+    name: str
+    #: The date a person confirmed on the adopt screen (``schema.table.column``); the definition's own
+    #: date when it already has one.
+    time_column: Optional[str] = None
+    time_kind: Optional[str] = None
+
+
+class _AdoptRequest(BaseModel):
+    items: list[_AdoptItem]
+
+
+def adopt_scope(dataset: Optional[str], labels: list[str]) -> str:
+    """The one scope a batch is approved under, written as a person reads it in the approval modal:
+    the dataset and the metrics, e.g. "olist: Average Order Value, GMV"."""
+    return f"{dataset or 'every dataset'}: {', '.join(sorted(labels))}"
+
+
+@router.post("/metrics/catalogue/{conn_id}/adopt", dependencies=[gate(Capability.METRICS_DEFINE)])
+def adopt_metrics(conn_id: str, req: _AdoptRequest, schema: Optional[str] = None):
+    """Adopt a SET of proposed metrics — the explorer's or an industry's — in one door: each lands as a
+    definition dated by the date a person confirmed, and is proposed and approved; the whole set is asked
+    for approval ONCE (the user's decision, 2026-10-23; the Olist study, Gaps 22 and 24: eight metrics took
+    Customise → Dates → Propose → Approve → approve-the-approval each, eight self-granted allowlists).
+
+    ``metric.approve`` stays HIGH risk: the batch's scope names the dataset and every metric in it, so
+    approving it approves exactly this set. A metric that cannot be adopted as asked — no formula yet, a date
+    on a table it does not read, the same figures as an approved one — is skipped with the reason; the rest
+    go on."""
+    from datetime import datetime, timezone
+
+    from aughor import govern
+    from aughor.kernel.ledger import Ledger
+    from aughor.semantic.governance import apply_transition
+    from aughor.semantic.metric_catalogue import MaterialiseError, find_entry, materialise
+    from aughor.semantic.metric_time import merge_time_edit
+
+    dataset = schema or _declared_schema(conn_id)
+    items = list({i.name: i for i in req.items}.values())
+    if not items:
+        raise HTTPException(status_code=422, detail="name at least one metric to adopt")
+    labels = []
+    for item in items:
+        entry = find_entry(conn_id, item.name, dataset or ALL_DATASETS)
+        labels.append(entry.label if entry is not None and getattr(entry, "label", "") else item.name)
+    scope = adopt_scope(dataset, labels)
+    govern.guard("metric.approve", scope)
+    actor, now = caller(), datetime.now(timezone.utc).isoformat()
+    adopted: list[dict] = []
+    skipped: list[dict] = []
+    for item, label in zip(items, labels):
+        def skip(why: str) -> None:
+            skipped.append({"name": item.name, "label": label, "reason": why})
+        try:
+            m = materialise(conn_id, item.name, dataset, actor=actor)
+        except MaterialiseError as exc:
+            skip(str(exc))
+            continue
+        if m.status == "approved":
+            skip("it is already approved")
+            continue
+        if not str(m.sql or "").strip():
+            skip("it has no formula for this connection yet — write its SQL in its editor first")
+            continue
+        sent = {k: v for k, v in (("time_column", item.time_column), ("time_kind", item.time_kind)) if v}
+        if not (sent.get("time_column") or m.time_column):
+            skip("it has no date — choose the column it is dated by")
+            continue
+        try:
+            time = merge_time_edit(m, {**sent, "time_confirmed_by": actor} if sent else {})
+            _require_date_on_a_table_read({**m.model_dump(), **time}, m)
+        except ValueError as exc:
+            skip(str(exc))
+            continue
+        except HTTPException as exc:
+            skip(str(exc.detail))
+            continue
+        m = m.model_copy(update={k: v for k, v in time.items() if k in MetricDefinition.model_fields})
+        twin = _twin_check(m, conn_id)
+        if twin and twin.get("twin"):
+            from aughor.semantic import metric_twins
+            skip(metric_twins.said(m, twin))
+            continue
+        d = m.model_dump()
+        try:
+            for action in (("propose", "approve") if d.get("status") != "proposed" else ("approve",)):
+                d, audit = apply_transition(d, action, actor, now)
+        except ValueError as exc:
+            skip(str(exc))
+            continue
+        save_metric(MetricDefinition(**d))
+        Ledger.default().emit("metric.governance", {**audit, "connection": conn_id, "schema_name": home_schema(m),
+                                                     "batch": scope})
+        adopted.append({"name": d["name"], "label": label, "version": d.get("version"),
+                        "time_column": d.get("time_column")})
+    if adopted:
+        _restate_briefings(conn_id)
+        _reopen_questions(conn_id, dataset, f"{len(adopted)} metric{'s' if len(adopted) != 1 else ''} were approved")
+    return {"adopted": adopted, "skipped": skipped, "scope": scope}
+
+
 @router.post("/metrics/catalogue/{conn_id}/{name}/remove", dependencies=[gate(Capability.METRICS_DEFINE)])
 def remove_proposal(conn_id: str, name: str, schema: Optional[str] = None):
     """Remove a PROPOSED metric — an industry recipe or the explorer's — from this dataset (``*``:

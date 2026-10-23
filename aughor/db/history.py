@@ -1572,6 +1572,25 @@ def list_investigations(limit: int = 50) -> list[dict]:
     return combined[:limit]
 
 
+def list_investigations_for_session(session_id: str, limit: int = 50) -> list[dict]:
+    """The deep runs filed under one session, newest first, org-scoped like :func:`list_investigations`. A dashboard's
+    question files every answer it asks for under its own session (``question:<id>``), so its history is read here, by
+    the tag the ask door already stores — not from an inquiry, which closes once answered and is re-opened by subject.
+    '' yields no rows."""
+    if not session_id:
+        return []
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    from aughor.security.authz import require_identity_enabled
+    _org, _op = (" AND org_id = ?", [current_org_id()]) if require_identity_enabled() else ("", [])
+    rows = c.execute(
+        f"""SELECT id, question, connection_id, started_at, completed_at, status, headline
+            FROM investigations WHERE session_id = ? AND COALESCE(kind, 'investigation') = 'investigation'{_org}
+            ORDER BY started_at DESC LIMIT ?""", [session_id, *_op, int(limit)]).fetchall()
+    keys = ("id", "question", "connection_id", "started_at", "completed_at", "status", "headline")
+    return [dict(zip(keys, tuple(r))) for r in rows]
+
+
 def list_investigations_for_agent(agent_id: str, limit: int = 50) -> list[dict]:
     """Every run a single user-agent produced — deep runs AND quick chat sessions —
     newest-first and org-scoped exactly like :func:`list_investigations`, whose

@@ -13,6 +13,8 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { changeOf } from "@/components/brief/MetricDetail";
+import { endsWords, ownFigures, sentence } from "@/lib/dashboards/figures";
+import { endedDay } from "@/lib/format";
 import { requestTab } from "@/lib/navigate";
 import type { BriefingDesk, BriefingRangeBlock, DeskColumn, DeskItem } from "@/lib/api";
 
@@ -51,20 +53,47 @@ export function PaperMasthead({ scope, edition, tools }: { scope: string; editio
   );
 }
 
-export function PaperDateline({ today, covers, lagDays, records }: {
+export function PaperDateline({ today, covers, lagDays, records, endedOn }: {
   today: string; covers: string; lagDays?: number | null; records: number;
+  /** The data ENDED on this day: the edition is final, and no settling lag is said. */
+  endedOn?: string | null;
 }) {
   return (
     <div className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", padding: "7px 0",
       borderBottom: RULE, color: "var(--t3)" }}>
       <b style={{ color: "var(--t2)", fontWeight: 500 }}>{today}</b>
       <span>{covers}</span>
-      {typeof lagDays === "number" && lagDays >= 7 && (
+      {endedOn && (
+        <>
+          <span className="aug-fs-xs" data-testid="paper-final"
+            style={{ padding: "2px 8px", borderRadius: "var(--r-pill)", background: "var(--grn1)", color: "var(--grn4)" }}>
+            final
+          </span>
+          <span className="aug-fs-xs" data-testid="paper-ended"
+            style={{ padding: "2px 8px", borderRadius: "var(--r-pill)", border: RULE, color: "var(--t2)" }}>
+            data ended {endedDay(endedOn)}
+          </span>
+        </>
+      )}
+      {!endedOn && typeof lagDays === "number" && lagDays >= 7 && (
         <span className="aug-fs-xs" style={{ padding: "2px 8px", borderRadius: "var(--r-pill)", background: "var(--amb1)", color: "var(--amb4)" }}>
           data settles {lagDays} days late
         </span>
       )}
       {records > 0 && <span style={{ marginLeft: "auto" }}>grounded in {records} record{records === 1 ? "" : "s"}</span>}
+    </div>
+  );
+}
+
+/** The data ENDED: one line saying where, and what the edition became because of it
+ *  (design-mockups/briefing-data-ended.html, approved 2026-10-23). */
+export function PaperEdgeNotice({ note, onCovers }: { note: string; onCovers?: () => void }) {
+  return (
+    <div data-testid="paper-edge-notice" className="aug-fs-sm"
+      style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", padding: "9px 12px", marginTop: 10,
+        background: "var(--bg-1)", borderRadius: "var(--r2)", color: "var(--t2)" }}>
+      <span style={{ flex: 1, minWidth: 0 }}>{note}</span>
+      {onCovers && <Button variant="ghost" size="xs" onClick={onCovers}>What each edition covers ↓</Button>}
     </div>
   );
 }
@@ -94,26 +123,29 @@ export function PaperLead({ kicker, headline, children }: { kicker: string; head
 
 export interface PaperNumber {
   key: string; label: string; value: string; change?: { text: string; sign: number }; unknown?: string;
-  /** Said under the label when the figure is not the edition's own: other months, or part of one. */
+  /** Said under the label when the figure holds only part of the edition's range. */
   note?: string;
+  /** Why there is no figure, in full: the chip's title. */
+  why?: string;
 }
 
-/** An edition's measured metrics as the numbers box prints them. A metric whose data ends before
- *  the range was measured over the latest months it covers (`anchored`): its row names those months,
- *  so "€14,306 −5%" is never read as this edition's move (LuxExperience's September 2026 edition,
- *  2026-10-12: three of its four figures were June 2025 and April 2024). A part-period figure says
- *  which days it holds. A metric not measured is said, never a zero. */
-export function rangeNumbers(block: BriefingRangeBlock): PaperNumber[] {
+/** An edition's measured metrics as the numbers box prints them: every figure is the edition's own
+ *  range, against the one comparison the note under the box names (the user, 2026-10-23 — four of
+ *  LuxExperience's ten weekly figures were other weeks, each dated in amber under its name). A metric
+ *  whose data ended before the range has no figure: its chip says when its data ended. A part-period
+ *  figure says which days it holds. A metric not measured is said, never a zero. */
+export function rangeNumbers(stored: BriefingRangeBlock): PaperNumber[] {
+  const block = ownFigures(stored);        // an edition stored before 2026-10-23 reads by the same rule
   return [
     ...block.measured.map(m => {
       const t = changeOf(m, "previous");
-      const days = m.current_partial ? `only ${m.current_partial}` : "";
-      const own = m.anchored ? `${m.anchored.covers}, against ${m.anchored.compared_with} — its data ends ${m.anchored.data_ends}` : "";
       return { key: m.metric, label: m.name, value: m.current_text ?? "—",
                change: t && m.rel !== null ? { text: t, sign: Math.sign(m.rel) } : undefined,
-               note: [own, days].filter(Boolean).join(" · ") || undefined };
+               note: m.current_partial ? `only ${m.current_partial}` : undefined };
     }),
-    ...block.unmeasured.map(u => ({ key: `unmeasured:${u.name}`, label: u.name, value: "", unknown: "not measured" })),
+    ...block.unmeasured.map(u => ({ key: `unmeasured:${u.name}`, label: u.name, value: "",
+                                    unknown: u.data_ends ? `data ended ${endsWords([u.data_ends])}` : "not measured",
+                                    why: sentence(u.reason) })),
   ];
 }
 
@@ -132,7 +164,7 @@ export function PaperNumbers({ title, rows, note }: { title: string; rows: Paper
               {r.note && <span className="aug-fs-xs" data-testid="paper-number-note" style={{ display: "block", color: "var(--amb4)" }}>{r.note}</span>}
             </span>
             {r.unknown
-              ? <span className="aug-fs-xs" style={{ color: "var(--t3)", padding: "0 6px", borderRadius: 3,
+              ? <span className="aug-fs-xs" title={r.why} style={{ color: "var(--t3)", padding: "0 6px", borderRadius: 3, whiteSpace: "nowrap",
                   background: "repeating-linear-gradient(135deg, var(--b1) 0 4px, transparent 4px 8px)" }}>{r.unknown}</span>
               : <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                   {r.value}

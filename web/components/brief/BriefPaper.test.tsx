@@ -7,7 +7,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 
-import { DeskColumns, InBrief, PaperNumbers, PaperSources, numberDesk, paperDate, rangeNumbers } from "@/components/brief/BriefPaper";
+import { DeskColumns, InBrief, PaperDateline, PaperEdgeNotice, PaperNumbers, PaperSources, numberDesk, paperDate, rangeNumbers } from "@/components/brief/BriefPaper";
 import { firstSentence } from "@/components/BriefingPanel";
 import type { BriefingDesk, BriefingRangeBlock, BriefingRangeMeasure, DeskItem } from "@/lib/api";
 
@@ -22,6 +22,30 @@ const DESK: BriefingDesk = {
   gaps: { items: [item("disagree", "2025 revenue has three answers", { action: { verb: "Settle it", kind: "inquiry", ref: "q1" } })], more: 2 },
   decide: { items: [], more: 0 },
 };
+
+describe("the paper on data that ended (design-mockups/briefing-data-ended.html)", () => {
+  it("marks the edition final, names the day the data ended, and says no settling lag", () => {
+    render(<PaperDateline today="Friday 23 October 2026" covers="covering September 2018" lagDays={9} records={0}
+      endedOn="2018-10-17" />);
+    expect(screen.getByTestId("paper-final")).toHaveTextContent("final");
+    expect(screen.getByTestId("paper-ended")).toHaveTextContent("data ended Wed 17 Oct 2018");
+    expect(screen.queryByText(/settles/)).toBeNull();
+  });
+
+  it("keeps the settling chip on live data", () => {
+    render(<PaperDateline today="Friday 23 October 2026" covers="covering 20 October" lagDays={29} records={0} />);
+    expect(screen.getByText("data settles 29 days late")).toBeInTheDocument();
+    expect(screen.queryByTestId("paper-final")).toBeNull();
+  });
+
+  it("says where the data ended in one line, with a door to the editions table", () => {
+    const onCovers = vi.fn();
+    render(<PaperEdgeNotice note="The data ended on 2018-10-17 (Wednesday)." onCovers={onCovers} />);
+    expect(screen.getByTestId("paper-edge-notice")).toHaveTextContent("The data ended on 2018-10-17 (Wednesday).");
+    fireEvent.click(screen.getByText("What each edition covers ↓"));
+    expect(onCovers).toHaveBeenCalledOnce();
+  });
+});
 
 describe("numberDesk", () => {
   it("numbers the desk's stories on from the lead's citations, in reading order", () => {
@@ -115,39 +139,53 @@ describe("PaperSources", () => {
   });
 });
 
-describe("rangeNumbers — a figure from other months names them (LuxExperience, September 2026)", () => {
+describe("rangeNumbers — every figure is the edition's own (LuxExperience's week, 2026-10-23)", () => {
   const m = (over: Partial<BriefingRangeMeasure>): BriefingRangeMeasure => ({
     name: "Average Order Value (AOV)", metric: "aov", unit: "EUR", time_kind: "flow", confirmed: false,
     current: 581.12, previous: 590.72, last_year: 454.19, rel: -0.0162, rel_last_year: 0.279, status: "final",
     current_text: "€581", previous_text: "€591", ...over });
+  // Clienteling ended June 2025: the server has no figure for it this week.
   const block = {
-    compared_with: "August 2026", covers: "September 2026",
+    compared_with: "the week before, 2026-10-05 to 2026-10-11", covers: "the week 2026-10-12 to 2026-10-18",
     measured: [
       m({}),
-      m({ name: "Clienteling-Influenced GMV per Interaction", metric: "gmv_int", current: 14305.98, previous: 15098.17, rel: -0.0525,
-          current_text: "€14,306", previous_text: "€15,098",
-          anchored: { start: "2025-06-01", end: "2025-07-01", data_ends: "2025-06-29", covers: "June 2025", compared_with: "May 2025",
-                      why: "its data ends 2025-06-29, before this range" } }),
-      m({ name: "Markdown Penetration", metric: "md", current: 1, previous: 1, rel: null, current_text: "100%", current_partial: "2024-04-01 to 2024-04-05",
-          anchored: { start: "2024-04-01", end: "2024-05-01", data_ends: "2024-04-05", covers: "April 2024", compared_with: "March 2024", why: "x" } }),
+      m({ name: "Session Conversion Rate", metric: "scr", current: 0.021, rel: null, current_text: "2.1%",
+          current_partial: "2026-10-12 to 2026-10-14" }),
     ],
-    unmeasured: [{ name: "Gross Margin %", reason: "its dates cannot be set by rule" }],
+    unmeasured: [
+      { name: "Clienteling-Influenced GMV per Interaction", metric: "gmv_int", data_ends: "2025-06-29",
+        reason: "its data ends 2025-06-29, before this range" },
+      { name: "Marketing ROAS", reason: "its data has no rows in this range" },
+    ],
   } as unknown as BriefingRangeBlock;
 
-  it("keeps the edition's own figure plain, and names another period's months beside its change", () => {
+  it("prints the edition's figures plain, and an ended metric as when its data ended — never another week's figure", () => {
     const rows = rangeNumbers(block);
     expect(rows[0]).toMatchObject({ label: "Average Order Value (AOV)", value: "€581", note: undefined });
     expect(rows[0].change?.sign).toBe(-1);
-    expect(rows[1].note).toBe("June 2025, against May 2025 — its data ends 2025-06-29");
-    expect(rows[2].note).toBe("April 2024, against March 2024 — its data ends 2024-04-05 · only 2024-04-01 to 2024-04-05");
-    expect(rows[2].change).toBeUndefined();                                  // no change to state
-    expect(rows[3]).toMatchObject({ label: "Gross Margin %", unknown: "not measured" });
+    expect(rows[1].note).toBe("only 2026-10-12 to 2026-10-14");          // part of the edition's own week
+    expect(rows[2]).toMatchObject({ label: "Clienteling-Influenced GMV per Interaction", value: "",
+                                    unknown: "data ended Jun 2025", why: "Its data ends 2025-06-29, before this range" });
+    expect(rows[3]).toMatchObject({ label: "Marketing ROAS", unknown: "not measured" });
+    expect(rows.map(r => r.value)).not.toContain("13,809");
   });
 
-  it("prints the note under the figure's name", () => {
-    render(<PaperNumbers title="The month in numbers" rows={rangeNumbers(block)} />);
-    expect(screen.getAllByTestId("paper-number-note").map(n => n.textContent)).toEqual([
-      "June 2025, against May 2025 — its data ends 2025-06-29",
-      "April 2024, against March 2024 — its data ends 2024-04-05 · only 2024-04-01 to 2024-04-05"]);
+  it("prints an edition stored before the rule by the same rule", () => {
+    // stored with Clienteling's own last week among the edition's figures
+    const lastWeek = m({ name: "Clienteling-Influenced GMV per Interaction", metric: "gmv_int", current: 13809, current_text: "13,809",
+      anchored: { start: "2025-06-23", end: "2025-06-30", data_ends: "2025-06-29", covers: "the week 2025-06-23 to 2025-06-29",
+                  compared_with: "the week before", why: "x" } });
+    const stored = { ...block, unmeasured: [block.unmeasured[1]], measured: [...block.measured, lastWeek] } as BriefingRangeBlock;
+    const rows = rangeNumbers(stored);
+    expect(rows.map(r => r.label)).toEqual(["Average Order Value (AOV)", "Session Conversion Rate",
+      "Clienteling-Influenced GMV per Interaction", "Marketing ROAS"]);
+    expect(rows[2]).toMatchObject({ value: "", unknown: "data ended Jun 2025" });
+  });
+
+  it("prints no other week's dates under any name", () => {
+    render(<PaperNumbers title="The week in numbers" rows={rangeNumbers(block)} />);
+    expect(screen.getAllByTestId("paper-number-note").map(n => n.textContent)).toEqual(["only 2026-10-12 to 2026-10-14"]);
+    expect(screen.getByTestId("paper-numbers")).not.toHaveTextContent("2025-06");
+    expect(screen.getByText("data ended Jun 2025")).toHaveAttribute("title", "Its data ends 2025-06-29, before this range");
   });
 });

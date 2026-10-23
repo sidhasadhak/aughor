@@ -52,6 +52,13 @@ def evict_matcache_once() -> None:
 
 def trigger_now(monitor_id: str) -> Optional[MonitorAlert]:
     """Run a monitor immediately (synchronous, for the API test endpoint)."""
+    return trigger_now_read(monitor_id)[0]
+
+
+def trigger_now_read(monitor_id: str) -> tuple[Optional[MonitorAlert], str]:
+    """Run a monitor immediately; the alert it raised (or None) and what it READ, in words — "read 848,860.1 (warning
+    below 900,000)" — so "no condition met" is never said without the value it was judged on (the Olist study, Gap 36)."""
+    said = ""
     try:
         from aughor.monitors.store import get_monitor, append_alert
         from aughor.monitors.runner import check_monitor, failure_alert
@@ -61,7 +68,7 @@ def trigger_now(monitor_id: str) -> Optional[MonitorAlert]:
 
         monitor = get_monitor(monitor_id)
         if not monitor:
-            return None
+            return None, ""
         # DATA-06: bind the monitor's tenant for the run (the caller's request org and
         # the connection's org agree once the owner-check passes; binding the
         # connection's org is authoritative and matches the background engine path).
@@ -81,14 +88,16 @@ def trigger_now(monitor_id: str) -> Optional[MonitorAlert]:
             if run.failed:
                 # GM-4 — the test run says its query could not run, rather than "no condition met". Shown,
                 # not stored: the scheduled run owns the record and the one alert a failure sends.
-                return failure_alert(monitor, run.failed)
+                return failure_alert(monitor, run.failed), ""
+            from aughor.monitors.runner import reading_words
+            said = reading_words(monitor, run)
             alert = run.alert
             if alert is not None:
                 append_alert(alert)
-            return alert
+            return alert, said
     except Exception as exc:
         logger.error("trigger_now failed for monitor %s: %s", monitor_id, exc)
-        return None
+        return None, said
 
 
 def start() -> None:

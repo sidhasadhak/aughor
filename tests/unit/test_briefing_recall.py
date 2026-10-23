@@ -192,4 +192,4 @@ def test_a_plain_magnitude_is_rounded_not_shown_to_float_noise():
 
     assert format_value(1.9552912223133716, "Lead Time", "days, roughly 0-30", "$") == "1.96"
     assert format_value(6951.0, "Units Sold", "count", "$") == "6951"      # a count stays whole
-    assert format_value(0.10027334196518486, "Return rate", "ratio 0..1", "$") == "10%"
+    assert format_value(0.10027334196518486, "Return rate", "ratio 0..1", "$") == "10.0%"

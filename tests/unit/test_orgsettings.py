@@ -65,25 +65,16 @@ class TestEffectiveSettings:
 
 class TestOverrideWins:
     def test_currency_does_NOT_beat_the_data_anymore(self):
-        """CHANGED 2026-09-23, deliberately, and this test is inverted rather than deleted.
+        """CHANGED 2026-09-23 and again 2026-10-23, inverted rather than deleted each time.
 
-        It asserted the org setting beat the data's own currency, which was the recorded
-        choice — until a EUR workspace printed euro signs over theLook's dollars in a real
-        Slack channel. Nothing in this tree converts currency, so the preference was not
-        reporting the figure, it was relabelling it. The org setting keeps every meaning
-        that does not require a conversion (`org_context` still says "reports in GBP");
-        it no longer decides the unit on a number read out of a warehouse.
-        Full reasoning in `resolve_currency`; guards in test_currency_follows_the_data.py.
-        """
+        It asserted the org setting beat the data's own currency — until a EUR workspace printed
+        euro signs over theLook's dollars (nothing converts, so it relabelled). Since 2026-10-23 a
+        figure carries only the currency a PERSON confirmed for its dataset; the org setting keeps
+        every meaning that needs no conversion (`org_context` still says "reports in GBP").
+        Guards in test_currency_follows_the_data.py."""
         S.save_org_settings(OrgSettings(currency_code="GBP"))
-        assert S.resolve_currency("EUR") == "EUR"
+        assert S.figure_currency("c-unconfirmed", None) == ""
         assert "reports in GBP" in S.org_context()
-
-    def test_currency_unset_falls_to_profile(self):
-        assert S.resolve_currency("EUR") == "EUR"
-
-    def test_currency_both_unset_defaults_usd(self):
-        assert S.resolve_currency("") == "USD"
 
     def test_industry_org_set_beats_profile(self):
         S.save_org_settings(OrgSettings(industry="Commercial Aviation"))
@@ -92,14 +83,14 @@ class TestOverrideWins:
     def test_industry_unset_falls_to_profile(self):
         assert S.resolve_industry("DTC Beauty") == "DTC Beauty"
 
-    def test_workspace_currency_override_applies_when_the_data_is_silent(self):
-        """The workspace override still resolves, and still beats the app default — it just
-        no longer overrides a currency the DATA declared. Both halves are asserted, because
+    def test_workspace_currency_override_still_resolves_and_labels_no_figure(self):
+        """The workspace override still resolves, and still beats the app default — for what the
+        organisation reports in. It labels no figure (2026-10-23). Both halves are asserted, because
         a test of only the second would pass if the override had stopped working at all."""
         S.save_org_settings(OrgSettings(currency_code="USD"))
         ws = WS.create_workspace("WS", settings_override={"currency_code": "INR"})
-        assert S.resolve_currency("", workspace_id=ws.id) == "INR"      # override still wins over app
-        assert S.resolve_currency("EUR", workspace_id=ws.id) == "EUR"   # but not over the data
+        assert S.effective_settings(ws.id).currency_code == "INR"        # override still wins over app
+        assert S.figure_currency("c-unconfirmed", None) == ""            # but labels no figure
 
 
 class TestWorkspaceOverridePersistence:

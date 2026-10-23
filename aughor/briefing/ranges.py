@@ -32,7 +32,7 @@ from typing import Any, Callable, Optional
 
 from aughor.semantic.metric_time import Window
 
-#: The Cockpit's periods (the user, 2026-10-08): the day, week, month or year under way — "current" —
+#: The Dashboard's periods (the user, 2026-10-08): the day, week, month or year under way — "current" —
 #: and the one before it — "last". Each is read only over days whose data has ARRIVED (``data_through``,
 #: read from the warehouse): most sources hold yesterday at best, so a current day read off the calendar
 #: alone is empty. The Briefing's settled presets above are unchanged.
@@ -90,6 +90,15 @@ class RangeSpec:
     #: The day, week, month or year holding the range goes on past its last day: a period so far.
     under_way: bool = False
     fiscal_start_month: int = 1
+    #: The data ENDED: its newest day is more than ``STOPPED_DAYS`` before today, so the range was read
+    #: as if today were the day after it (the Olist run, 2026-10-22: a 2016–2018 dataset read every
+    #: edition off today and could only ever be empty). Its figures are final; it has no settling lag.
+    data_ended: bool = False
+    #: The first day the data holds, when it was read with the edge.
+    data_from: Optional[date] = None
+    #: Why the range is not compared with the one before, in words ("" when it is): the earlier
+    #: range starts before the data does, so it holds only part of its days.
+    compare_withheld: str = ""
 
     @property
     def last_day(self) -> date:
@@ -258,6 +267,19 @@ def _edge_range(preset: str, *, today: date, through: Optional[date], held_by: t
 def phrases(spec: RangeSpec) -> dict:
     """What the Briefing covers and what it is compared with, in words a reader checks against a
     calendar — ISO dates, never "last week", which is ambiguous the day after."""
+    words = _phrases(spec)
+    if spec.data_ended:
+        # The data stopped: a period it ends inside is read to its last day, not "so far" — nothing
+        # more is coming — and "to date" would name today, eight years after the data.
+        words["covers"] = (words["covers"].replace(" so far,", ", to the data's last day,")
+                           .replace(" to date,", " to the data's last day,"))
+    if spec.compare_withheld:
+        words["compared_with"] = f"no earlier period ({spec.compare_withheld})"
+        words["last_year"] = None
+    return words
+
+
+def _phrases(spec: RangeSpec) -> dict:
     unit = EDGE_UNIT.get(spec.preset)
     if unit and spec.under_way:
         if unit == "week":
@@ -291,9 +313,11 @@ def phrases(spec: RangeSpec) -> dict:
 
 
 def compared_word(spec: RangeSpec) -> str:
-    """What the range is compared with, short enough to follow "higher than" on a cockpit's card.
+    """What the range is compared with, short enough to follow "higher than" on a dashboard's card.
     ``phrases`` says it in full, with its dates; a card carries the full phrase as its title."""
     p = PRESET_PERIOD.get(spec.preset) or EDGE_UNIT.get(spec.preset)
+    if spec.compare_withheld:
+        return "no earlier period"
     if spec.under_way and p == "week":
         return "the same days of the week before"
     if spec.under_way and p == "month":
@@ -330,6 +354,10 @@ def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
     preset = preset or ("custom" if start else "")
     if preset not in PRESETS:
         return None, f"a range is one of {', '.join(PRESETS)}"
+    ended = _ended(edge, today)
+    if ended is not None and preset != "custom":
+        return _ended_range(preset, today=today, through=ended, edge=edge or {},
+                            fiscal_start_month=fiscal_start_month)
     lag = clamp_lag(lag_days)
     anchor = today - timedelta(days=lag)          # the newest settled day
     common = dict(as_of=today, lag_days=lag, lag_source=lag_source, still_moving=tuple(still_moving))
@@ -372,6 +400,18 @@ def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
     if (e - start).days > MAX_RANGE_DAYS:
         return None, f"the range is longer than {MAX_RANGE_DAYS} days — read it as years"
     note = ""
+    if ended is not None:
+        # A range the reader typed over data that has ended: read as asked (cut at the data's last day
+        # when it runs past it), final, and never said to wait out a settling lag (Gap 38: "The range
+        # ends 2 days before today because of a 2-day settling lag", of a range ending in 2018).
+        if start <= ended < e - timedelta(days=1):
+            e = ended + timedelta(days=1)
+        shift = e - start
+        year = timedelta(days=364)
+        return RangeSpec("custom", start, e, start - shift, e - shift, start - year, e - year, as_of=today,
+                         lag_days=0, lag_source="data_ended", data_through=ended, data_ended=True,
+                         data_from=edge.get("from"),
+                         edge_note=_ended_note(ended, edge, asked_to=end if e <= end else None)), ""
     if through is not None:
         # Days whose data has not arrived are not read: a range asked to today against a whole
         # comparison reads part of a day against a whole one.
@@ -385,6 +425,61 @@ def resolve_range(preset: Optional[str] = None, *, start: Optional[date] = None,
     year = timedelta(days=364)
     return RangeSpec("custom", start, e, start - shift, e - shift, start - year, e - year,
                      data_through=through, edge_note=note, **common), ""
+
+
+def _ended(edge: Optional[dict], today: date) -> Optional[date]:
+    """The data's last day when the data has ENDED — its newest day is more than ``STOPPED_DAYS``
+    before today — else None. Live data, however late it settles, is never ended."""
+    through = (edge or {}).get("through")
+    if through is None or (today - through).days <= STOPPED_DAYS:
+        return None
+    return through
+
+
+def _ended_note(through: date, edge: dict, *, asked_to: Optional[date] = None, covers: str = "") -> str:
+    """What an ended dataset did to the range, in the ENDED voice: the data stopped, so nothing
+    is still arriving — never "nothing after it has arrived yet", which is a live source's words."""
+    said = f"The data ended on {_d(through)} ({through.strftime('%A')})."
+    if covers:
+        said += f" Each edition reads as if today were the day after, so this one covers {covers}."
+    tables = dict(edge.get("tables") or {})
+    held_by = list(edge.get("held_by") or [])
+    if held_by and len(set(tables.values())) > 1:
+        ahead = sorted(t for t, d in tables.items() if d > through)
+        said += (f" {', '.join(held_by)} {'ends' if len(held_by) == 1 else 'end'} there; "
+                 f"{', '.join(ahead)} {'runs' if len(ahead) == 1 else 'run'} later.")
+    if asked_to is not None:
+        said = f"Asked to {_d(asked_to)}, read to {_d(through)}. " + said
+    return said
+
+
+def _ended_range(preset: str, *, today: date, through: date, edge: dict,
+                 fiscal_start_month: int) -> tuple[Optional[RangeSpec], str]:
+    """A preset over data that has ENDED: resolved as if read the day after its last day, with a
+    one-day floor (the newest settled day IS the last day), then dated today and made final.
+
+    The decision (the user, 2026-10-23, on the Olist mockup): anchor to the data's LAST ROW, not to
+    the last day that looks whole by volume. A comparison whose earlier range starts before the data
+    does is withheld and says why — 2017 against a 2016 the data holds from September is not a +13,558%
+    year."""
+    from dataclasses import replace
+
+    live = {**edge, "through": through}
+    spec, why = resolve_range(preset, today=through + timedelta(days=1), lag_days=1, lag_source="data_ended",
+                              fiscal_start_month=fiscal_start_month, edge=live)
+    if spec is None:
+        return None, why
+    data_from = edge.get("from")
+    withheld, ly_s, ly_e = "", spec.last_year_start, spec.last_year_end
+    if data_from is not None and spec.previous_start < data_from:
+        withheld = (f"the data starts on {_d(data_from)}, so {_phrases(spec)['compared_with']} holds only "
+                    "part of its days")
+    if data_from is not None and ly_s is not None and ly_s < data_from:
+        ly_s, ly_e = None, None
+    spec = replace(spec, as_of=today, lag_days=0, lag_source="data_ended", still_moving=(),
+                   data_through=through, data_ended=True, data_from=data_from,
+                   compare_withheld=withheld, last_year_start=ly_s, last_year_end=ly_e)
+    return replace(spec, edge_note=_ended_note(through, edge, covers=phrases(spec)["covers"])), ""
 
 
 def range_block(spec: RangeSpec) -> dict:
@@ -402,6 +497,9 @@ def range_block(spec: RangeSpec) -> dict:
             "compared_with": words["compared_with"], "last_year_label": words["last_year"],
             "data_through": _d(spec.data_through) if spec.data_through else None,
             "edge_note": spec.edge_note, "under_way": spec.under_way,
+            "data_ended": spec.data_ended,
+            "data_from": _d(spec.data_from) if spec.data_from else None,
+            "compare_withheld": spec.compare_withheld,
             "measured": [], "unmeasured": []}
 
 
@@ -457,7 +555,7 @@ def governed_metrics(conn_id: str, schema: Optional[str] = None) -> list:
     the same list.
 
     ``schema`` — the dataset in view: its own definitions and the ones promoted to every dataset,
-    never another dataset's. The Cockpit of the workspace's Uber data measured Daily Gross Revenue,
+    never another dataset's. The Dashboard of the workspace's Uber data measured Daily Gross Revenue,
     which reads the `main` dataset, beside the rides (2026-10-07)."""
     from aughor.briefing.reading_order import industry_reading, ordered
     from aughor.semantic.metrics import list_metrics
@@ -490,6 +588,13 @@ def statement_lines(conn_id: str) -> Callable[[Any], Optional[dict]]:
 def data_ends(m: Any, run_sql: Callable[[str], tuple], dialect: str) -> Optional[date]:
     """The last day a metric's own date has rows — one statement over the table its date is on — or
     None when it cannot be read."""
+    return data_span(m, run_sql, dialect)[1]
+
+
+def data_span(m: Any, run_sql: Callable[[str], tuple], dialect: str) -> tuple[Optional[date], Optional[date]]:
+    """The first and the last day a metric's own date has rows, in one statement over the table its
+    date is on; ``(None, None)`` when it cannot be read. The first day is what a comparison needs: a
+    range before it, or partly before it, is not a range the data covers."""
     from sqlglot import exp
 
     from aughor.semantic import metric_time as mt
@@ -498,20 +603,24 @@ def data_ends(m: Any, run_sql: Callable[[str], tuple], dialect: str) -> Optional
     table, col = split_grain(getattr(m, "time_column", None))
     table = table or next(iter(mt.tables_read(m)), None)
     if not (table and col):
-        return None
+        return None, None
     try:
-        sql = (exp.select(exp.alias_(exp.Max(this=mt._day(exp.column(col))), "last_day"))
+        day = mt._day(exp.column(col))
+        sql = (exp.select(exp.alias_(exp.Min(this=day), "first_day"),
+                          exp.alias_(exp.Max(this=day.copy()), "last_day"))
                .from_(mt._table(table, dialect)).sql(dialect=dialect))
         _cols, rows, error = run_sql(sql)
     except Exception as exc:  # noqa: BLE001 — not known is said by the caller, never guessed
         from aughor.kernel.errors import tolerate
         tolerate(exc, "a metric's last day of data could not be read", counter="briefing.range.data_ends")
-        return None
+        return None, None
     if error or not rows:
-        return None
-    first = rows[0]
-    cells = list(first.values()) if isinstance(first, dict) else list(first)
-    return mt._as_date(cells[0]) if cells else None
+        return None, None
+    row = rows[0]
+    cells = list(row.values()) if isinstance(row, dict) else list(row)
+    if len(cells) < 2:
+        return None, None
+    return mt._as_date(cells[0]), mt._as_date(cells[1])
 
 
 #: Where a connection's data ends, per (connection, dataset, day), kept ten minutes: a page asks for
@@ -519,7 +628,7 @@ def data_ends(m: Any, run_sql: Callable[[str], tuple], dialect: str) -> Optional
 _EDGE_CACHE: dict[tuple, tuple[float, dict]] = {}
 _EDGE_TTL_S = 10 * 60
 #: A table whose data ends this long before the newest is not holding the edge back — it stopped,
-#: and its metric reads its own last range instead (``anchored_spec``), saying so.
+#: and its metric has no figure for a range past it — the reason names the day its data ends.
 STOPPED_DAYS = 31
 
 
@@ -544,72 +653,37 @@ def data_edge(conn_id: str, schema: Optional[str] = None, *, today: date,
         return hit[1]
     metrics = [m for m in governed_metrics(conn_id, schema) if mt.declared(m) and m.time_kind != "stock"]
     if not metrics:
-        return {"through": None, "held_by": [], "tables": {}, "why": "no approved metric names a date"}
+        return {"through": None, "from": None, "held_by": [], "tables": {}, "why": "no approved metric names a date"}
     from aughor.knowledge import period_brief
 
     lasts: dict[str, Optional[date]] = {}
+    firsts: dict[str, Optional[date]] = {}
     try:
         with (runner or (lambda: period_brief.connection_runner(conn_id, cached=False)))() as (run_sql, dialect):
             for m in metrics:
                 table, _col = split_grain(getattr(m, "time_column", None))
                 table = mt.bare_name(table or next(iter(mt.tables_read(m)), "") or "")
                 if table and table not in lasts:
-                    lasts[table] = data_ends(m, run_sql, dialect)
+                    firsts[table], lasts[table] = data_span(m, run_sql, dialect)
     except Exception as exc:  # noqa: BLE001 — not known is said, never guessed
         from aughor.kernel.errors import tolerate
         tolerate(exc, "where the data ends could not be read", counter="briefing.range.edge")
-        return {"through": None, "held_by": [], "tables": {},
+        return {"through": None, "from": None, "held_by": [], "tables": {},
                 "why": f"the connection could not be opened ({type(exc).__name__})"}
     read = {t: min(d, today) for t, d in lasts.items() if d is not None}
     if not read:
-        out = {"through": None, "held_by": [], "tables": {}, "why": "no table's last day could be read"}
+        out = {"through": None, "from": None, "held_by": [], "tables": {}, "why": "no table's last day could be read"}
     else:
         newest = max(read.values())
         live = {t: d for t, d in read.items() if (newest - d).days <= STOPPED_DAYS}
         through = min(live.values())
-        out = {"through": through, "held_by": sorted(t for t, d in live.items() if d == through),
-               "tables": live, "why": ""}
+        # The data starts where its LATEST-starting live table does: before that, some measured table
+        # holds no rows, so a range reaching back past it is only partly covered.
+        starts = [firsts[t] for t in live if firsts.get(t) is not None]
+        out = {"through": through, "from": max(starts) if starts else None,
+               "held_by": sorted(t for t, d in live.items() if d == through), "tables": live, "why": ""}
     _EDGE_CACHE[key] = (_t.monotonic(), out)
     return out
-
-
-def anchored_spec(spec: RangeSpec, last_day: date) -> Optional[RangeSpec]:
-    """The same kind of range, ending where a metric's data does: the month, week, day or year that
-    holds its last day, or a custom range of the same length ending there. None when the data does
-    not end before the range — then the range itself is the right one to read."""
-    if last_day >= spec.start:
-        return None
-    lag = spec.lag_days
-    if spec.preset in EDGE_PRESETS:
-        # As if read the day after its data ends: the period holding that day, or the one before.
-        from dataclasses import replace
-        new, _ = resolve_range(spec.preset, today=last_day + timedelta(days=1), lag_days=lag,
-                               lag_source=spec.lag_source, fiscal_start_month=spec.fiscal_start_month,
-                               edge={"through": last_day})
-        return replace(new, as_of=spec.as_of, edge_note="") if new else None
-    if spec.preset == "custom":
-        new, _ = resolve_range("custom", start=last_day - (spec.end - spec.start) + timedelta(days=1),
-                               end=last_day, today=spec.as_of, lag_days=lag, lag_source=spec.lag_source)
-        return new
-    if spec.preset in ("month_to_date", "year_to_date"):
-        fiscal = spec.start.month if spec.preset == "year_to_date" else 1
-        new, _ = resolve_range(spec.preset, today=last_day + timedelta(days=lag), lag_days=lag,
-                               lag_source=spec.lag_source, fiscal_start_month=fiscal)
-        return new
-    period = PRESET_PERIOD.get(spec.preset)
-    fiscal = spec.start.month if period == "year" else 1
-    # The period that holds the last day ends at `ends`; read as of its own last day, it is complete.
-    if period == "day":
-        ends = last_day + timedelta(days=1)
-    elif period == "week":
-        ends = last_day - timedelta(days=last_day.weekday()) + timedelta(days=7)
-    elif period == "month":
-        ends = (last_day.replace(day=1) + timedelta(days=32)).replace(day=1)
-    else:
-        ends = date(last_day.year + (1 if last_day.month >= fiscal else 0), fiscal, 1)
-    new, _ = resolve_range(spec.preset, today=ends - timedelta(days=1) + timedelta(days=lag), lag_days=lag,
-                           lag_source=spec.lag_source, fiscal_start_month=fiscal)
-    return new
 
 
 def _unsettled(m: Any, spec: RangeSpec) -> bool:
@@ -619,21 +693,71 @@ def _unsettled(m: Any, spec: RangeSpec) -> bool:
     return bool({mt.bare_name(t) for t in mt.tables_read(m)} & set(spec.still_moving))
 
 
+def _figure_row(m: Any, name: str, read: RangeSpec, got: dict, *, dialect: str,
+                line_of: Callable[[Any], Any]) -> dict:
+    """One metric's figure for ``read``, from its measured windows ``got``: its comparisons, how much of
+    each range its data covers, its status and the SQL that read it."""
+    from aughor.knowledge.period_brief import partial_span
+    from aughor.semantic import metric_time as mt
+
+    at = read.windows()
+    cur, prev, ly = got.get("current"), got.get("previous"), got.get("last_year")
+    slack = _slack(read.days)
+    cur_partial = (None if m.time_kind == "stock"
+                   else partial_span(cur["first"], cur["last"], read.start, read.end, slack))
+    prev_partial = (None if (prev is None or prev["value"] is None or m.time_kind == "stock")
+                    else partial_span(prev["first"], prev["last"], read.previous_start, read.previous_end, slack))
+    pv = read_value(prev) if m.time_kind != "stock" else (prev["value"] if prev else None)
+    if read.compare_withheld:
+        pv, prev_partial = None, None
+    lv = read_value(ly) if m.time_kind != "stock" else (ly["value"] if ly else None)
+    status = mt.figure_status(m, at[0], as_of=read.as_of, lag_days=read.lag_days, unsettled=_unsettled(m, read))
+    return {
+        "name": name, "metric": m.name, "unit": m.unit or "", "time_kind": m.time_kind,
+        "time_source": m.time_source, "confirmed": bool(m.time_confirmed_by),
+        "current": cur["value"], "previous": pv, "last_year": lv,
+        "rel": None if (cur_partial or prev_partial) else _rel(cur["value"], pv),
+        "rel_last_year": None if cur_partial else _rel(cur["value"], lv),
+        "status": status,
+        "current_partial": cur_partial, "previous_partial": prev_partial,
+        # BR-6 — said, never implied: a provisional flow figure against a settled comparison
+        # is not a fair move, and the reader is told so beside the number.
+        "equal_age": equal_age(m, status),
+        "sql": mt.measure_sql(m, at, dialect=dialect)[0] or "",
+        "compare_withheld": read.compare_withheld,
+        "line": line_of(m),
+    }
+
+
+def _without_rows(m: Any, name: str, spec: RangeSpec, *, run_sql: Callable[[str], tuple], dialect: str) -> dict:
+    """The ``unmeasured`` row of a metric with no rows in ``spec`` — when its data ENDED before the range,
+    with the day it ends (``data_ends``)."""
+    last = data_ends(m, run_sql, dialect)
+    if last is None or last >= spec.start:
+        return {"name": name, "metric": m.name, "reason": "its data has no rows in this range"}
+    return {"name": name, "metric": m.name, "reason": f"its data ends {_d(last)}, before this range",
+            "data_ends": _d(last)}
+
+
 def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tuple], dialect: str,
-                  north_stars: Optional[list] = None, schema: Optional[str] = None) -> dict:
+                  north_stars: Optional[list] = None, schema: Optional[str] = None,
+                  only: Optional[str] = None) -> dict:
     """Every approved metric measured for the range and its comparisons. Returns ``{"measured",
     "unmeasured"}``; every approved metric lands in exactly one list, and a north star with no
     approved definition is named in ``unmeasured`` with that reason.
 
-    A metric whose data ENDED before the range is read over the same kind of range at its data's
-    end, and says so (``anchored``) — a dataset that stopped in 2024 reads its last month, never a
-    blank in every preset (the user, 2026-10-07: *"no static or stale metrics"*). A range with no
-    rows is never a figure: a count over it answers 0, and that 0 was shown as measured."""
-    from aughor.knowledge.period_brief import partial_span
+    A metric whose data ENDED before the range has no figure for it: it lands in ``unmeasured``, its
+    reason naming the day its data ends (``data_ends``). A range's figures are its own and nothing
+    else, in the Briefing and the Dashboard alike (the user, 2026-10-23, on LuxExperience's week: four
+    of its ten figures had been read over their own last weeks, each dated in amber under its name).
+    A range with no rows is never a figure: a count over it answers 0, and that 0 was shown as
+    measured."""
     from aughor.semantic import metric_time as mt
 
     said = mt.ensure_dates(conn_id, run_sql=run_sql, dialect=dialect, today=spec.as_of)
     governed = governed_metrics(conn_id, schema)
+    if only:
+        governed = [m for m in governed if m.name == only]     # one metric, asked for by name
     approved, over_cap = governed[:MAX_METRICS], governed[MAX_METRICS:]
     line_of = statement_lines(conn_id)
     windows = spec.windows()
@@ -650,56 +774,13 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
             continue
         got = {r["window"]: r for r in rows}
         cur = got.get("current")
-        read, at, anchored = spec, windows, None
         if read_value(cur) is None and m.time_kind != "stock":
-            last = data_ends(m, run_sql, dialect)
-            moved = anchored_spec(spec, last) if last is not None else None
-            if moved is not None:
-                rows, why = mt.run_measure(m, moved.windows(), run_sql, dialect=dialect)
-                got = {r["window"]: r for r in rows} if not why else {}
-                if read_value(got.get("current")) is not None:
-                    read, at, cur = moved, moved.windows(), got.get("current")
-                    words = phrases(moved)
-                    anchored = {"start": _d(moved.start), "end": _d(moved.end), "data_ends": _d(last),
-                                "covers": words["covers"], "compared_with": words["compared_with"],
-                                "last_year_label": words["last_year"],
-                                "why": (f"its data ends {_d(last)}, before this range — this is "
-                                        f"{words['covers']}, the latest it covers")}
-            if anchored is None:
-                reason = (f"its data ends {_d(last)}, before this range" if last is not None and last < spec.start
-                          else "its data has no rows in this range")
-                unmeasured.append({"name": name, "reason": reason})
-                continue
-        elif cur is None or cur["value"] is None:
-            unmeasured.append({"name": name, "reason": "its data has no rows in this range"})
+            unmeasured.append(_without_rows(m, name, spec, run_sql=run_sql, dialect=dialect))
             continue
-        slack = _slack(read.days)
-        prev, ly = got.get("previous"), got.get("last_year")
-        cur_partial = (None if m.time_kind == "stock"
-                       else partial_span(cur["first"], cur["last"], read.start, read.end, slack))
-        prev_partial = (None if (prev is None or prev["value"] is None or m.time_kind == "stock")
-                        else partial_span(prev["first"], prev["last"], read.previous_start, read.previous_end, slack))
-        pv = read_value(prev) if m.time_kind != "stock" else (prev["value"] if prev else None)
-        lv = read_value(ly) if m.time_kind != "stock" else (ly["value"] if ly else None)
-        windows_read = at
-        measured.append({
-            "name": name, "metric": m.name, "unit": m.unit or "", "time_kind": m.time_kind,
-            "time_source": m.time_source, "confirmed": bool(m.time_confirmed_by),
-            "current": cur["value"], "previous": pv, "last_year": lv,
-            "rel": None if (cur_partial or prev_partial) else _rel(cur["value"], pv),
-            "rel_last_year": None if cur_partial else _rel(cur["value"], lv),
-            "status": mt.figure_status(m, windows_read[0], as_of=read.as_of, lag_days=read.lag_days,
-                                       unsettled=_unsettled(m, read)),
-            "current_partial": cur_partial, "previous_partial": prev_partial,
-            # BR-6 — said, never implied: a provisional flow figure against a settled comparison
-            # is not a fair move, and the reader is told so beside the number.
-            "equal_age": equal_age(m, mt.figure_status(
-                m, windows_read[0], as_of=read.as_of, lag_days=read.lag_days,
-                unsettled=_unsettled(m, read))),
-            "sql": mt.measure_sql(m, windows_read, dialect=dialect)[0] or "",
-            "anchored": anchored,
-            "line": line_of(m),
-        })
+        if cur is None or cur["value"] is None:
+            unmeasured.append({"name": name, "metric": m.name, "reason": "its data has no rows in this range"})
+            continue
+        measured.append(_figure_row(m, name, spec, got, dialect=dialect, line_of=line_of))
     # A metric the CAP cut says the cap cut it. Measured 2026-09-27: theLook had ten approved
     # definitions against a cap of eight, and the two it dropped fell through to the north-star
     # loop below — which sees only that the name is unaccounted for and reports "no approved
@@ -741,11 +822,6 @@ def metric_line(m: dict, block: dict, currency_code: Optional[str]) -> str:
     POINTS: "15.1% to 14.3% (-0.8 pts)", never "a 6% improvement" of a rate."""
     from aughor.knowledge import period_brief
 
-    if m.get("anchored"):
-        # Read over its own data's last range — its sentence names THAT range, not the one asked for.
-        a = m["anchored"]
-        block = {**block, "covers": a["covers"], "compared_with": a["compared_with"],
-                 "last_year_label": a.get("last_year_label")}
     share = m.get("unit") == "ratio 0..1"
     if share and m.get("rel") is not None and m.get("previous") is not None:
         pts = (m["current"] - m["previous"]) * 100
@@ -808,14 +884,16 @@ def say_figures(measured: list[dict], currency: Optional[str]) -> None:
             m[f"{k}_text"] = _figure_text(m.get(k), m["name"], m["unit"], currency)
 
 
-def _currency(profile: Any, workspace_id: Optional[str]) -> Optional[str]:
-    from aughor.orgsettings import resolve_currency
-    return resolve_currency(getattr(profile, "currency_code", None) or "", workspace_id)
+def _currency(conn_id: str, schema: Optional[str]) -> Optional[str]:
+    """The dataset's currency as a PERSON confirmed it, or "" — its figures print as plain amounts
+    (2026-10-23: never the profile's inferred code, never a default "$")."""
+    from aughor.orgsettings import figure_currency
+    return figure_currency(conn_id, schema)
 
 
 def measured_block(conn_id: str, spec: RangeSpec, *, profile: Any = None, workspace_id: Optional[str] = None,
                    runner: Optional[Callable[[], Any]] = None, schema: Optional[str] = None) -> dict:
-    """The range's approved metrics, measured, and nothing else — the Cockpit's default view (ROADMAP
+    """The range's approved metrics, measured, and nothing else — the Dashboard's default view (ROADMAP
     §6 item 43). The same measurement and the same wording a range Briefing carries, with no recipe
     section, no narrative and no model call."""
     from aughor.knowledge import period_brief
@@ -829,10 +907,70 @@ def measured_block(conn_id: str, spec: RangeSpec, *, profile: Any = None, worksp
     except Exception as exc:  # noqa: BLE001
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the range measurement could not open the connection", counter="briefing.range.measure")
-        return {**block, "unmeasured": [{"name": "headline metrics",
-                                         "reason": f"the connection could not be opened ({type(exc).__name__})"}]}
-    say_figures(got["measured"], _currency(profile, workspace_id))
+        # Said of the DATA, never as a metric: a "headline metrics" row under not-measured read as one more
+        # metric waiting on a person, and its door said "Set their dates" (LuxExperience, 2026-10-23: the
+        # Postgres was down, the user approved a metric to clear it, and the row stayed).
+        return {**block, "unreachable": f"the connection could not be opened ({type(exc).__name__})"}
+    say_figures(got["measured"], _currency(conn_id, schema))
     return {**block, **got}
+
+
+#: The Briefing's six editions, in the range control's order, as "What each edition covers" lists them.
+COVER_PRESETS = ("yesterday", "last_week", "last_month", "last_year", "month_to_date", "year_to_date")
+COVER_LABEL = {"yesterday": "Day", "last_week": "Week", "last_month": "Month", "last_year": "Year",
+               "month_to_date": "Month to date", "year_to_date": "Year to date"}
+
+
+def edition_covers(conn_id: str, *, schema: Optional[str] = None, workspace_id: Optional[str] = None,
+                   profile: Any = None, runner: Optional[Callable[[], Any]] = None,
+                   today: Optional[date] = None) -> dict:
+    """What each of the six editions covers and is compared with, and the LEAD approved metric's
+    figure for each — the table a reader of data that ENDED checks the anchoring against (the Olist
+    mockup, approved 2026-10-23). One connection, one metric, no narrative, no model call."""
+    from aughor.knowledge import period_brief
+
+    governed = governed_metrics(conn_id, schema)
+    lead = governed[0] if governed else None
+    specs = [(p, *resolve_for(conn_id, p, workspace_id=workspace_id, today=today, schema=schema))
+             for p in COVER_PRESETS]
+    rows: list[dict] = []
+    for p, spec, why in specs:
+        row: dict[str, Any] = {"preset": p, "label": COVER_LABEL[p], "why": why if spec is None else ""}
+        if spec is not None:
+            words = phrases(spec)
+            row.update({"start": _d(spec.start), "last_day": _d(spec.last_day), "covers": words["covers"],
+                        "previous_start": _d(spec.previous_start),
+                        "previous_last_day": _d(spec.previous_end - timedelta(days=1)),
+                        "compared_with": words["compared_with"], "compare_withheld": spec.compare_withheld,
+                        "current_text": None, "previous_text": None, "rel": None})
+        rows.append(row)
+    if lead is not None:
+        currency = _currency(conn_id, schema)
+        try:
+            with (runner or (lambda: period_brief.connection_runner(conn_id)))() as (run_sql, dialect):
+                for row, (_p, spec, _why) in zip(rows, specs):
+                    if spec is None:
+                        continue
+                    got = measure_range(conn_id, spec, run_sql=run_sql, dialect=dialect, schema=schema,
+                                        only=lead.name)
+                    if got["measured"]:
+                        say_figures(got["measured"], currency)
+                        m = got["measured"][0]
+                        row.update({"current_text": m.get("current_text"), "previous_text": m.get("previous_text"),
+                                    "rel": m.get("rel"), "status": m.get("status")})
+                    else:
+                        row["why"] = (got["unmeasured"][0]["reason"] if got["unmeasured"] else "not measured")
+        except Exception as exc:  # noqa: BLE001 — the dates still stand; the figures say why they are missing
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the editions' lead figures could not be measured", counter="briefing.range.covers")
+            for row in rows:
+                row["why"] = row["why"] or f"the connection could not be opened ({type(exc).__name__})"
+    first = next((s for _p, s, _w in specs if s is not None), None)
+    return {"data_ended": bool(first and first.data_ended),
+            "data_through": _d(first.data_through) if first and first.data_through else None,
+            "data_from": _d(first.data_from) if first and first.data_from else None,
+            "metric": {"name": lead.name, "label": lead.label or lead.name} if lead else None,
+            "editions": rows}
 
 
 #: How many ranges a metric's trend reads, the range itself included. A year reaches less far back.
@@ -949,7 +1087,7 @@ def metric_trend(conn_id: str, spec: RangeSpec, metric_name: str, *, profile: An
     got = {r["window"]: r for r in rows}
     values = [read_value(got.get(w.label)) for w in windows]
     unit = _read_unit(m.time_kind, m.unit or "", values)
-    currency, slack = _currency(profile, workspace_id), _slack(spec.days)
+    currency, slack = _currency(conn_id, schema), _slack(spec.days)
     settled_by = spec.as_of - timedelta(days=max(int(spec.lag_days or 1), 1))
     series = []
     for w, v in zip(windows, values):
@@ -982,7 +1120,7 @@ def build_range_briefing(conn_id: str, spec: RangeSpec, *, scope_key: str, domai
     block = {**range_block(spec), "recipe": recipe_for(spec.preset),
              "sections": list(SECTIONS[recipe_for(spec.preset)])}
     north = list(getattr(profile, "north_star_metrics", None) or []) if profile is not None else []
-    currency = _currency(profile, workspace_id)
+    currency = _currency(conn_id, scope_key.split(":", 1)[1] if ":" in scope_key else None)
 
     def measure() -> dict:
         from aughor.briefing import recipes
@@ -1004,9 +1142,8 @@ def build_range_briefing(conn_id: str, spec: RangeSpec, *, scope_key: str, domai
             from aughor.kernel.errors import tolerate
             tolerate(exc, "the range measurement could not open the connection",
                      counter="briefing.range.measure")
-            return {"findings": [], "measured": [],
-                    "unmeasured": [{"name": "headline metrics",
-                                    "reason": f"the connection could not be opened ({type(exc).__name__})"}]}
+            return {"findings": [], "measured": [], "unmeasured": [],
+                    "unreachable": f"the connection could not be opened ({type(exc).__name__})"}
         say_figures(got["measured"], currency)
         candidates = extra.pop("candidates", {})
         return {**got, **extra, "findings": range_findings(got["measured"], block, currency),
@@ -1042,9 +1179,11 @@ def resolve_for(conn_id: str, preset: Optional[str] = None, *, start: Optional[d
         from aughor.kernel.errors import tolerate
         tolerate(exc, "org settings unreadable; a year range is the calendar year",
                  counter="briefing.range.fiscal")
-    edge = None
-    if preset in EDGE_PRESETS or (end is not None and (today - end).days <= STOPPED_DAYS):
-        edge = data_edge(conn_id, schema, today=today)
+    # Every range reads where the data ends (one statement per table, kept ten minutes): a dataset
+    # that ENDED is known only by reading it, and its editions read as if today were the day after
+    # its last day. Until 2026-10-23 only the Dashboard's periods and a recent custom range read it, and
+    # Olist's six editions anchored to 2026 over data that stops in 2018.
+    edge = data_edge(conn_id, schema, today=today)
     return resolve_range(preset, start=start, end=end, today=today, lag_days=lag,
                          lag_source=lag_source, still_moving=tuple(moving), fiscal_start_month=fiscal,
                          edge=edge)
@@ -1071,6 +1210,8 @@ def sheet_lines(brief: dict, currency_code: Optional[str] = None) -> list[tuple[
     if early.get("figures"):
         figs = "; ".join(f"{f['name']} {f.get('value_text') or f['value']}" for f in early["figures"])
         sections.append(("early", [f"Still settling (early), {early['start']} to {early['end']}: {figs}."]))
+    if block.get("unreachable"):
+        sections.append(("unmeasured", [f"Nothing was measured: the data could not be reached — {block['unreachable']}."]))
     by_reason: dict[str, list[str]] = {}
     for u in block.get("unmeasured") or []:
         by_reason.setdefault(u["reason"], []).append(u["name"])

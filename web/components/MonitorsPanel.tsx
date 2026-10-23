@@ -239,9 +239,11 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
     setRunResult(r => ({ ...r, [id]: "running…" }));
     try {
       const res = await triggerMonitor(id);
+      // What it read is said with the verdict, so "no condition met" can be checked against the line (Gap 36).
+      const read = res.read ? ` · ${res.read}` : "";
       const msg = "fired" in res && res.fired === false
-        ? "No condition met"
-        : `Fired: ${(res as MonitorAlert).severity} — ${alertText((res as MonitorAlert).message)}`;
+        ? `No condition met${read}`
+        : `Fired: ${(res as MonitorAlert).severity} — ${alertText((res as MonitorAlert).message)}${read}`;
       setRunResult(r => ({ ...r, [id]: msg }));
       setTimeout(() => setRunResult(r => { const n = { ...r }; delete n[id]; return n; }), 6000);
     } catch {

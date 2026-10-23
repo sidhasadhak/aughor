@@ -25,6 +25,7 @@
  * **Unknown is never zero.** Unpriced calls, runs that reported no usage, runs a restart cut off and a built-in
  * agent with no runs of its own each say so as a chip, never as a 0 or a dash.
  */
+import { saidState } from "@/lib/runState";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ActivityStreamPanel } from "@/components/ActivityStreamPanel";
@@ -110,6 +111,8 @@ const STATE_MARK: Record<string, { word: string; color: string }> = {
   RUNNING: { word: "running", color: "var(--blue4)" }, PENDING: { word: "waiting to start", color: "var(--t3)" },
   PAUSED: { word: "paused", color: "var(--amb4)" }, SUCCEEDED: { word: "succeeded", color: "var(--grn4)" },
   FAILED: { word: "failed", color: "var(--red4)" }, CANCELLED: { word: "cancelled", color: "var(--amb4)" },
+  // A run its budget stopped, not a person (the Olist study, Gap 20): the kernel's CANCELLED, said as what it was.
+  BUDGET_STOP: { word: "stopped at its budget", color: "var(--amb4)" },
   // Not an error: the process died holding the run, and nobody observed a failure.
   INTERRUPTED: { word: "cut off by a restart", color: "var(--amb4)" },
 };
@@ -150,8 +153,9 @@ export function foldRuns(runs: FleetJob[], connections: ReadonlyArray<Connection
   for (const j of runs) {
     const { title, raw } = jobTitle(j, connections);
     const agent = j.agent?.agent || j.kind;
-    const key = `${agent}\u0000${title}\u0000${j.state}`;
-    const g = groups.get(key) ?? { key, title, raw, agent, state: j.state, runs: [] };
+    const state = saidState(j.state, j.error);
+    const key = `${agent}\u0000${title}\u0000${state}`;
+    const g = groups.get(key) ?? { key, title, raw, agent, state, runs: [] };
     g.runs.push(j);
     groups.set(key, g);
   }
@@ -871,7 +875,7 @@ function ActiveRuns({ runs, error, onRetry, onKill, connections }: {
                 {t.title}
               </div>
               <div className="aug-fs-xs" style={{ ...ROW, gap: 6, color: "var(--t2)" }}>
-                <StateMark state={j.state} /><span>· {j.agent?.agent || j.kind} · started {relTime(j.created_at)} ago</span>
+                <StateMark state={saidState(j.state, j.error)} /><span>· {j.agent?.agent || j.kind} · started {relTime(j.created_at)} ago</span>
               </div>
             </div>
             <span className="aug-fs-xs" style={{ ...MUTED, ...NUM }}>{j.duration_ms ? duration(j.duration_ms) : ""}</span>

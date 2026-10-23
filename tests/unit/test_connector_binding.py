@@ -116,7 +116,7 @@ class _Typed(_Bindable):
 
 
 def test_a_bound_read_is_typed_when_the_driver_reads_its_types_and_aligned_with_the_rows_kept():
-    """Arc AP-8 — a cockpit's query reading a value runs bound, and asks for typed rows as an unbound one does: a
+    """Arc AP-8 — a dashboard's query reading a value runs bound, and asks for typed rows as an unbound one does: a
     driver that reads its column types hands them back, and the envelope offers exactly the rows the result keeps."""
     result, payload = _bare(_Typed).execute_with_params_typed("query_workbench", "SELECT :v", {"v": 1}, max_rows=2)
     assert result.error is None and payload is not None
@@ -221,7 +221,7 @@ def test_bigquery_declares_a_type_for_every_parameter():
 
 
 def test_bigquery_binds_a_day_as_a_date_and_a_moment_as_a_timestamp():
-    """Arc AP-8 — a cockpit's day value; `datetime` is a subclass of `date`, so it is checked first."""
+    """Arc AP-8 — a dashboard's day value; `datetime` is a subclass of `date`, so it is checked first."""
     import datetime as dt
     declared = {p.name: p.type_ for p in _bq({"d": dt.date(2026, 10, 11), "t": dt.datetime(2026, 10, 11, 9)})}
 

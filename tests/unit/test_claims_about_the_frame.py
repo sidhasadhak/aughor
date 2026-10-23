@@ -86,6 +86,6 @@ def test_a_claim_about_a_segment_is_one_a_release_touches(ledger, monkeypatch):
     # The point of the subject: OC-2's restatement finds this claim when the rule that derives the segment changes.
     from aughor.ontology.release import _touches
     monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name == "ontology.release")
-    monkeypatch.setattr("aughor.dashboard.store.list_cards", lambda **k: [])
+    monkeypatch.setattr("aughor.cards.store.list_cards", lambda **k: [])
     cid = _book({"kind": "segment", "key": "completed_orders"})
     assert [c["id"] for c in _touches("c", {"completed_orders"}, [])["claims"]] == [cid]

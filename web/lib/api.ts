@@ -1276,6 +1276,29 @@ export interface MetricProposals {
   note: string;
 }
 
+/** What adopting a set of proposals did (2026-10-23): each metric adopted, or skipped with why. */
+export interface AdoptResult {
+  adopted: { name: string; label: string; version?: number; time_column?: string }[];
+  skipped: { name: string; label: string; reason: string }[];
+  /** The scope the set was approved under — the dataset and every metric in it. */
+  scope: string;
+}
+
+/** Adopt a set of proposed metrics in one door: each dated by the date a person confirmed, proposed and
+ *  approved; the set asks for approval ONCE (the app-wide modal shows it and sends this again). */
+export async function adoptMetrics(connectionId: string, schema: string | undefined,
+                                   items: { name: string; time_column?: string }[]): Promise<AdoptResult> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics/catalogue/${encodeURIComponent(connectionId)}/adopt${q}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The metrics could not be adopted"));
+  }
+  return res.json();
+}
+
 export async function getMetricProposals(
   connection: string, sql: string, tables: string[], filters: string[], name: string,
 ): Promise<MetricProposals> {
@@ -2431,7 +2454,7 @@ export async function getDomainInsights(connectionId: string, schema?: string): 
 /** A finding the explorer recorded, by the glossary's word: the wire keeps its older name. */
 export type RecordedFinding = ExplorationInsight;
 
-/** The connection's recorded findings, by domain, as the cockpit's ledger picker reads them
+/** The connection's recorded findings, by domain, as the dashboard's ledger picker reads them
  *  (the canvas, 2026-10-08): every domain that has one, in name order. */
 export async function listFindingsByDomain(connectionId: string, schema?: string): Promise<{ domain: string; findings: RecordedFinding[] }[]> {
   const by = await getDomainInsights(connectionId, schema);
@@ -2445,7 +2468,7 @@ export function pinFinding(connectionId: string, findingId: string, opts: { scop
 }
 
 /** The finding a card was made from, or "" for a card made from nothing recorded. */
-export function findingOfCard(card: DashboardCard): string {
+export function findingOfCard(card: StoredCard): string {
   return card.provenance?.insight_id || "";
 }
 
@@ -2525,9 +2548,9 @@ export async function promoteConnectionInsight(connectionId: string, insightId: 
   return res.json();
 }
 
-// ── Dashboard cards (briefing cockpit — user-authored KPI/chart/watch cards) ──
+// ── Dashboard cards (briefing dashboard — user-authored KPI/chart/watch cards) ──
 
-export interface DashboardCardRefresh {
+export interface StoredCardRefresh {
   cadence: string;
   last_run: string;
   last_value: number | null;
@@ -2535,7 +2558,7 @@ export interface DashboardCardRefresh {
   history: number[];
 }
 
-export interface DashboardCard {
+export interface StoredCard {
   id: string;
   connection_id: string;
   scope: string;
@@ -2546,7 +2569,7 @@ export interface DashboardCard {
   sql: string;
   query_ref: string | null;
   render: Record<string, unknown>;
-  refresh: DashboardCardRefresh;
+  refresh: StoredCardRefresh;
   thresholds: Record<string, unknown>;
   /** `metric` and `metric_version` (Arc CT-3): the approved metric a card was made from, and the
    *  version it had then. Empty and 0 when the card was not made from a metric. */
@@ -2571,7 +2594,7 @@ export interface CardRunResult {
    *  value, so a card drawn for a range reads this and not that (Arc CT-4). Optional because a
    *  server from before it does not send it. */
   value?: number | null;
-  refresh: DashboardCardRefresh;
+  refresh: StoredCardRefresh;
   /** BR-9 — present when the run asked for a range: what the number covers, or `standing`
    *  with why the card's SQL could not be cut to it (no date on its tables). */
   scoped?: { covers: string; standing: boolean; why: string; grain: string | null } | null;
@@ -2585,14 +2608,14 @@ export interface CardRunResult {
   duration_ms?: number;
 }
 
-// ── Arc AP-7 — your own query on the cockpit (flag `cockpit.queries`) ───────────────────────────────────────────────
+// ── Arc AP-7 — your own query on the dashboard (flag `dashboard.queries`) ───────────────────────────────────────────────
 
 export type QueryShownAs = "table" | "figure" | "bar" | "line" | "area" | "scatter";
 export type QueryAgg = "count" | "count_distinct" | "sum" | "avg" | "min" | "max";
 export type QueryBucket = "" | "day" | "week" | "month" | "quarter" | "year";
 export type QuerySegments = "stacked" | "side_by_side" | "shares";
 
-/** How a card of a person's own query is shown (`aughor/cockpit/queries.py` `Shown`). */
+/** How a card of a person's own query is shown (`aughor/dashboards/queries.py` `Shown`). */
 export interface QueryShown {
   as: QueryShownAs;
   /** True: the platform sums the query's rows; false: it is drawn as the query returns it. */
@@ -2632,13 +2655,13 @@ export interface QueryPreview {
   tables?: string[];
   setup?: QueryShown;
   shown?: QueryShaped;
-  /** Arc AP-8 — the cockpit's values it reads, by name (`{{name}}`). */
+  /** Arc AP-8 — the dashboard's values it reads, by name (`{{name}}`). */
   reads?: string[];
 }
 
 export interface QueryAsked {
   sql: string; shown: Partial<QueryShown>; title?: string; replaces?: string;
-  /** Arc AP-8 — the cockpit's values it reads, as the page holds them now; each bound by the engine. */
+  /** Arc AP-8 — the dashboard's values it reads, as the page holds them now; each bound by the engine. */
   values?: Record<string, { kind: string; value: unknown }>;
 }
 
@@ -2647,16 +2670,16 @@ export class QueryRefused extends Error {
   constructor(public reasons: string[]) { super(reasons.join(" ")); }
 }
 
-export async function previewCockpitQuery(connectionId: string, asked: QueryAsked): Promise<QueryPreview> {
-  const res = await fetch(`${getApiBase()}/cockpits/queries/preview?connection_id=${encodeURIComponent(connectionId)}`, {
+export async function previewDashboardQuery(connectionId: string, asked: QueryAsked): Promise<QueryPreview> {
+  const res = await fetch(`${getApiBase()}/dashboards/queries/preview?connection_id=${encodeURIComponent(connectionId)}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(asked),
   });
   if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The query could not be run"));
   return res.json();
 }
 
-export async function keepCockpitQuery(connectionId: string, asked: QueryAsked): Promise<{ card: CockpitCard; preview: QueryPreview }> {
-  const res = await fetch(`${getApiBase()}/cockpits/queries?connection_id=${encodeURIComponent(connectionId)}`, {
+export async function keepDashboardQuery(connectionId: string, asked: QueryAsked): Promise<{ card: DashboardCard; preview: QueryPreview }> {
+  const res = await fetch(`${getApiBase()}/dashboards/queries?connection_id=${encodeURIComponent(connectionId)}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(asked),
   });
   if (res.status === 422) {
@@ -2665,6 +2688,105 @@ export async function keepCockpitQuery(connectionId: string, asked: QueryAsked):
     throw new QueryRefused(refused?.length ? refused : [fastApiError(body, "The query could not be kept")]);
   }
   if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The query could not be kept"));
+  return res.json();
+}
+
+// ── PENDING 54 — a question on a dashboard: asked by the agent on a rhythm, shown as the Data Canvas shows an answer ──
+
+export type QuestionRhythm = "daily" | "weekly" | "monthly" | "ask";
+
+/** One answer in a line, newest first. */
+export interface QuestionAnswerLine {
+  id: string;
+  asked_at: string | null;
+  answered_at: string | null;
+  status: string;
+  headline: string;
+  /** As the Record booked it: "answered", "contradicted" (a later reading refuted it), or "" while it runs. */
+  verdict: string;
+}
+
+/** The latest finished answer, in the run's own words and figures. */
+export interface QuestionAnswer {
+  id: string;
+  headline: string;
+  summary: string;
+  figures: { label: string; value: string; note: string }[];
+  /** What moved it: the run's attribution when it measured one, else what its breakdown found, sentence by sentence. */
+  why: { drivers: { cause: string; amount: string; share: number | null }[]; lines: string[] };
+  gaps: string;
+  confidence: string;
+  period: string;
+  against: string;
+  asked_at: string | null;
+  answered_at: string | null;
+  minutes: number | null;
+}
+
+/** What a run costs on this install, from its own metered runs (`record/inquiry.py::run_cost_estimate`). */
+export interface RunCostEstimate {
+  kind: string;
+  from: string;
+  tokens: number | null;
+  minutes: number | null;
+  n: number;
+  usd_floor: number | null;
+  usd_n: number;
+  unpriced_calls: number;
+  ceiling: { tokens?: number; seconds?: number; charter?: string };
+}
+
+export interface DashboardQuestion {
+  automation_id: string;
+  question: string;
+  rhythm: QuestionRhythm | "custom";
+  rhythm_words: string;
+  next_at: string | null;
+  enabled: boolean;
+  latest: QuestionAnswer | null;
+  answers: QuestionAnswerLine[];
+  running: boolean;
+  cost: RunCostEstimate;
+}
+
+/** Keep a question for a dashboard. Nothing is asked now: its first answer comes on its rhythm, or is the Data Canvas
+ *  answer it is kept from (`first_run`). */
+export async function keepQuestion(connectionId: string, body: { question: string; rhythm: QuestionRhythm;
+  schema_name?: string; first_run?: string }): Promise<{ automation_id: string; session: string; first: string; rhythm: QuestionRhythm }> {
+  const res = await fetch(`${getApiBase()}/dashboards/questions?connection_id=${encodeURIComponent(connectionId)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The question could not be kept"));
+  return res.json();
+}
+
+/** What one answer costs on this connection, before a question is kept. */
+export async function readQuestionCost(connectionId: string): Promise<RunCostEstimate> {
+  const res = await fetch(`${getApiBase()}/dashboards/questions/cost?connection_id=${encodeURIComponent(connectionId)}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Its cost could not be read"));
+  return res.json();
+}
+
+/** A question as a dashboard shows it. No model call: the answers already kept. */
+export async function readQuestion(automationId: string, first?: string): Promise<DashboardQuestion> {
+  const q = first ? `?first=${encodeURIComponent(first)}` : "";
+  const res = await fetch(`${getApiBase()}/dashboards/questions/${encodeURIComponent(automationId)}${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The question could not be read"));
+  return res.json();
+}
+
+/** Ask it now — a full agent run, a person's click. */
+export async function askQuestionNow(automationId: string): Promise<{ outcome: string; reason: string; asked: boolean; message: string }> {
+  const res = await fetch(`${getApiBase()}/dashboards/questions/${encodeURIComponent(automationId)}/ask`, { method: "POST" });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The question could not be asked"));
+  return res.json();
+}
+
+export async function setQuestionRhythm(automationId: string, rhythm: QuestionRhythm): Promise<{ automation_id: string; rhythm: string; next_at: string | null }> {
+  const res = await fetch(`${getApiBase()}/dashboards/questions/${encodeURIComponent(automationId)}/rhythm`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rhythm }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Its rhythm could not be changed"));
   return res.json();
 }
 
@@ -2683,7 +2805,7 @@ export async function pinInsightToDashboard(
   connectionId: string,
   insightId: string,
   opts: { scope?: string; scopeRef?: string; schema?: string; kind?: string; title?: string } = {},
-): Promise<{ card: DashboardCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
+): Promise<{ card: StoredCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
   const res = await fetch(`${getApiBase()}/cards/pin-insight`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2713,7 +2835,7 @@ export async function pinQueryToDashboard(
   sql: string,
   title: string,
   opts: { scope?: string; scopeRef?: string; schema?: string; render?: Record<string, unknown>; queryRef?: string } = {},
-): Promise<{ card: DashboardCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
+): Promise<{ card: StoredCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
   const res = await fetch(`${getApiBase()}/cards/pin-query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2735,9 +2857,9 @@ export async function pinQueryToDashboard(
   return res.json();
 }
 
-export async function listDashboardCards(
+export async function listCards(
   opts: { connectionId?: string; scope?: string; scopeRef?: string } = {},
-): Promise<DashboardCard[]> {
+): Promise<StoredCard[]> {
   const q = new URLSearchParams();
   if (opts.connectionId) q.set("connection_id", opts.connectionId);
   if (opts.scope) q.set("scope", opts.scope);
@@ -2748,9 +2870,9 @@ export async function listDashboardCards(
 }
 
 /** Update a pinned card in place — the seam used to persist a chart's display config into
- *  `card.render`. `PUT /cards/{id}` has existed since the cockpit shipped but had no client,
+ *  `card.render`. `PUT /cards/{id}` has existed since the dashboard shipped but had no client,
  *  so every edit to a pinned chart was lost on unmount. */
-export async function updateDashboardCard(cardId: string, card: DashboardCard): Promise<DashboardCard> {
+export async function updateCard(cardId: string, card: StoredCard): Promise<StoredCard> {
   const res = await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -2782,20 +2904,20 @@ export async function saveVizConfig(
 
 /** Recompute a card's value now (guard-on-read). Returns the current result + the rolling
  *  last/prev value for a delta. */
-export async function runDashboardCard(cardId: string, range?: BriefingRange | null,
+export async function runCard(cardId: string, range?: BriefingRange | null,
   opts: { compare?: boolean; values?: Record<string, { kind: string; value: unknown }> } = {}): Promise<CardRunResult> {
   const q = new URLSearchParams();
   if (range) {
     if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
     else q.set("preset", range.preset);
-    // A cockpit asks for the figure of the window its range is compared with, too (`previous`).
+    // A dashboard asks for the figure of the window its range is compared with, too (`previous`).
     if (opts.compare) q.set("compare", "true");
   }
   // The path is one template and the query a plain suffix: the API-contract test reads the
   // template as the route, and a conditional inside it read as "/run${qs".
   const url = `${getApiBase()}/cards/${encodeURIComponent(cardId)}/run`;
   const qs = q.toString();
-  // Arc AP-8 — a query that reads the cockpit's values is sent them; every other card is run as it always was
+  // Arc AP-8 — a query that reads the dashboard's values is sent them; every other card is run as it always was
   const res = await fetch(qs ? `${url}?${qs}` : url, opts.values
     ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values: opts.values }) }
     : { method: "POST" });
@@ -2803,10 +2925,10 @@ export async function runDashboardCard(cardId: string, range?: BriefingRange | n
   return res.json();
 }
 
-// ── A person's cockpits in the Briefing (Arc CT-7 to CT-10, flag `cockpit.composed`) ───────────
+// ── A person's dashboards in the Briefing (Arc CT-7 to CT-10, flag `dashboard.composed`) ───────────
 
-/** One kept version of a cockpit. The newest carries its `spec`; a history entry does not. */
-export interface CockpitVersion {
+/** One kept version of a dashboard. The newest carries its `spec`; a history entry does not. */
+export interface DashboardVersion {
   version: number;
   artifact_id: string;
   kept_at: string;
@@ -2830,38 +2952,38 @@ export interface CockpitVersion {
   ontology_release?: string;
 }
 
-/** Arc OC-4 — for a cockpit holding pieces bound to the ontology: the release it was composed against, the one in
+/** Arc OC-4 — for a dashboard holding pieces bound to the ontology: the release it was composed against, the one in
  *  force, and every change published between them that touches what its pieces read. */
-export interface CockpitPin {
+export interface DashboardPin {
   pinned: string;
   current: string;
   changes: { release: string; number: number; kind: string; target_id: string; change: string;
              class: "ERR" | "MEANING" | "WARN" | "SAFE"; pieces: string[] }[];
 }
 
-/** One of a person's cockpits, as the strip lists it. */
-export interface CockpitListed extends CockpitVersion {
+/** One of a person's dashboards, as the strip lists it. */
+export interface DashboardListed extends DashboardVersion {
   cockpit_id: string;
   title: string;
   started_at: string;
 }
 
-/** A canvas's cockpit from before the home moved, waiting to be moved to the Briefing. */
-export interface CanvasCockpitLeft extends CockpitVersion {
+/** A canvas's dashboard from before the home moved, waiting to be moved to the Briefing. */
+export interface CanvasDashboardLeft extends DashboardVersion {
   canvas_id: string;
   title: string;
 }
 
-export interface CockpitList {
+export interface DashboardList {
   person: string;
-  cockpits: CockpitListed[];
-  /** Cards pinned for everyone on the connection, and the person's own — what "My cockpit" starts from. */
+  cockpits: DashboardListed[];
+  /** Cards pinned for everyone on the connection, and the person's own — what "My dashboard" starts from. */
   shared_cards: number;
   own_cards: number;
-  from_canvases: CanvasCockpitLeft[];
+  from_canvases: CanvasDashboardLeft[];
 }
 
-export interface CockpitRange {
+export interface DashboardRange {
   status: "standing" | "final" | "provisional" | "to_date";
   preset: RangePreset | null;
   start: string | null;
@@ -2874,12 +2996,12 @@ export interface CockpitRange {
   edge_note?: string;
 }
 
-/** A card a cockpit may place: the person's own, or one pinned for the connection — with the
+/** A card a dashboard may place: the person's own, or one pinned for the connection — with the
  *  record it was made from ("metric", "trusted_query", "finding", or "" for a query of its own)
  *  and, for a card made from a metric, the metric's unit and the range that unit states. */
-export type CockpitCard = DashboardCard & {
+export type DashboardCard = StoredCard & {
   own: boolean;
-  /** Why the cockpit does not offer this card back — superseded, made from a deprecated metric,
+  /** Why the dashboard does not offer this card back — superseded, made from a deprecated metric,
    *  or a copy of one already placed; "" when it is offered. */
   not_offered?: string;
   made_from?: "metric" | "trusted_query" | "finding" | "";
@@ -2887,10 +3009,10 @@ export type CockpitCard = DashboardCard & {
   stated_range?: StatedRange | null;
 };
 
-/** What the cockpit's read says of an image it places: its stamps from the volume's own row, and
+/** What the dashboard's read says of an image it places: its stamps from the volume's own row, and
  *  whether this reader may see its bytes. An image that is gone, or not this connection's,
  *  stands as its caption with `why`. */
-export interface CockpitImageStamp {
+export interface DashboardImageStamp {
   object: string;
   file_name: string;
   uploaded_by: string;
@@ -2901,33 +3023,33 @@ export interface CockpitImageStamp {
   why: string;
 }
 
-export interface PersonCockpit {
+export interface PersonDashboard {
   connection_id: string;
   owner: string;
   cockpit_id: string;
-  cockpit: CockpitVersion;
-  cards: CockpitCard[];
-  range: CockpitRange;
+  cockpit: DashboardVersion;
+  cards: DashboardCard[];
+  range: DashboardRange;
   ranges_on: boolean;
-  history: CockpitVersion[];
+  history: DashboardVersion[];
   /** The symbol a money figure is written with, as the Briefing resolves it. */
   currency_symbol?: string;
   /** The images the spec places, by object id (the canvas, 2026-10-08). */
-  images?: Record<string, CockpitImageStamp>;
-  ontology?: CockpitPin;
+  images?: Record<string, DashboardImageStamp>;
+  ontology?: DashboardPin;
 }
 
-/** Where an image placed on a cockpit is read from: the API, with the reader's own access. */
-export function cockpitImageUrl(connectionId: string, objectId: string): string {
-  return `${getApiBase()}/cockpits/images/${encodeURIComponent(objectId)}?connection_id=${encodeURIComponent(connectionId)}`;
+/** Where an image placed on a dashboard is read from: the API, with the reader's own access. */
+export function dashboardImageUrl(connectionId: string, objectId: string): string {
+  return `${getApiBase()}/dashboards/images/${encodeURIComponent(objectId)}?connection_id=${encodeURIComponent(connectionId)}`;
 }
 
-/** Upload an image into this connection's cockpit volume, to be placed on a cockpit by its object
+/** Upload an image into this connection's dashboard volume, to be placed on a dashboard by its object
  *  id. PNG, JPEG, SVG, GIF or WebP up to 5 MB; a refusal says which it failed. */
-export async function uploadCockpitImage(connectionId: string, file: File): Promise<CockpitImageStamp> {
+export async function uploadDashboardImage(connectionId: string, file: File): Promise<DashboardImageStamp> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(cockpitUrl("/cockpits/images", connectionId), { method: "POST", body: form });
+  const res = await fetch(dashboardUrl("/dashboards/images", connectionId), { method: "POST", body: form });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(fastApiError(err, "The image could not be uploaded"));
@@ -2936,7 +3058,7 @@ export async function uploadCockpitImage(connectionId: string, file: File): Prom
 }
 
 /** What a write answered: kept, unchanged — or a refusal, which arrives as an error. */
-export interface CockpitKept {
+export interface DashboardKept {
   status: "kept" | "unchanged" | "refused" | "not_checked" | "failed";
   kept: boolean;
   version: number | null;
@@ -2946,7 +3068,7 @@ export interface CockpitKept {
 }
 
 /** What a draft for an area came to: one proposal to keep, or the reasons none was drafted. */
-export interface CockpitDrafted {
+export interface DashboardDrafted {
   staged: boolean;
   proposal_id: string;
   cockpit_id: string;
@@ -2956,7 +3078,7 @@ export interface CockpitDrafted {
   sentences: string[];
 }
 
-export interface CockpitMoved {
+export interface DashboardMoved {
   moved: boolean;
   connection_id?: string;
   owner?: string;
@@ -2967,25 +3089,25 @@ export interface CockpitMoved {
   sentences: string[];
 }
 
-/** A cockpit write that was refused. `sentences` are the validator's own, to show as they are. */
-export class CockpitRefused extends Error {
-  constructor(public readonly outcome: CockpitKept) {
-    super(outcome.sentences.join(" ") || "The cockpit was not kept.");
-    this.name = "CockpitRefused";
+/** A dashboard write that was refused. `sentences` are the validator's own, to show as they are. */
+export class DashboardRefused extends Error {
+  constructor(public readonly outcome: DashboardKept) {
+    super(outcome.sentences.join(" ") || "The dashboard was not kept.");
+    this.name = "DashboardRefused";
   }
 }
 
-async function cockpitWrite(res: Response, fallback: string): Promise<CockpitKept> {
+async function dashboardWrite(res: Response, fallback: string): Promise<DashboardKept> {
   const body = await res.json().catch(() => ({}));
-  if (res.ok) return body as CockpitKept;
+  if (res.ok) return body as DashboardKept;
   const detail = (body as { detail?: unknown }).detail;
-  if (detail && typeof detail === "object" && Array.isArray((detail as CockpitKept).sentences)) {
-    throw new CockpitRefused(detail as CockpitKept);
+  if (detail && typeof detail === "object" && Array.isArray((detail as DashboardKept).sentences)) {
+    throw new DashboardRefused(detail as DashboardKept);
   }
   throw new Error(fastApiError(body, fallback));
 }
 
-function cockpitUrl(path: string, connectionId: string, extra?: URLSearchParams): string {
+function dashboardUrl(path: string, connectionId: string, extra?: URLSearchParams): string {
   const q = new URLSearchParams(extra);
   q.set("connection_id", connectionId);
   return `${getApiBase()}${path}?${q.toString()}`;
@@ -3000,49 +3122,49 @@ function rangeParams(range?: BriefingRange | null): URLSearchParams {
   return q;
 }
 
-/** The asker's cockpits on this connection. Null when the flag is off (the route answers 404),
- *  so a caller need not know the flag's name — and the Briefing draws its cockpit as before. */
-export async function listCockpits(connectionId: string): Promise<CockpitList | null> {
-  const res = await fetch(cockpitUrl("/cockpits", connectionId));
+/** The asker's dashboards on this connection. Null when the flag is off (the route answers 404),
+ *  so a caller need not know the flag's name — and the Briefing draws its dashboard as before. */
+export async function listDashboards(connectionId: string): Promise<DashboardList | null> {
+  const res = await fetch(dashboardUrl("/dashboards", connectionId));
   if (res.status === 404) return null;
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(err, "Failed to read your cockpits"));
+    throw new Error(fastApiError(err, "Failed to read your dashboards"));
   }
   return res.json();
 }
 
-/** One of the asker's cockpits as it stands, read for a range when one is chosen. */
-export async function getCockpit(connectionId: string, cockpitId: string, range?: BriefingRange | null): Promise<PersonCockpit> {
-  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}`, connectionId, rangeParams(range)));
+/** One of the asker's dashboards as it stands, read for a range when one is chosen. */
+export async function getDashboard(connectionId: string, dashboardId: string, range?: BriefingRange | null): Promise<PersonDashboard> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}`, connectionId, rangeParams(range)));
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(err, "Failed to read the cockpit"));
+    throw new Error(fastApiError(err, "Failed to read the dashboard"));
   }
   return res.json();
 }
 
 /** Keep a spec the person wrote — a card moved, a section renamed — as the next version. */
-export async function keepCockpit(
-  connectionId: string, cockpitId: string, spec: unknown, note = "", repin = false,
-): Promise<CockpitKept> {
-  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}`, connectionId), {
+export async function keepDashboard(
+  connectionId: string, dashboardId: string, spec: unknown, note = "", repin = false,
+): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}`, connectionId), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(repin ? { spec, note, repin } : { spec, note }),
   });
-  return cockpitWrite(res, "Failed to keep the cockpit");
+  return dashboardWrite(res, "Failed to keep the dashboard");
 }
 
-/** Start "My cockpit" from the cards pinned in the Briefing, in the order they were arranged. No model. */
-export async function startMyCockpit(connectionId: string): Promise<CockpitKept> {
-  const res = await fetch(cockpitUrl("/cockpits/start", connectionId), { method: "POST" });
-  return cockpitWrite(res, "Failed to start your cockpit");
+/** Start "My dashboard" from the cards pinned in the Briefing, in the order they were arranged. No model. */
+export async function startMyDashboard(connectionId: string): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl("/dashboards/start", connectionId), { method: "POST" });
+  return dashboardWrite(res, "Failed to start your dashboard");
 }
 
-/** What a cockpit started from an object is offered (2026-10-10, `aughor/cockpit/from_object.py`): each piece with a
+/** What a dashboard started from an object is offered (2026-10-10, `aughor/dashboards/from_object.py`): each piece with a
  *  preview the object door measured. Nothing is kept and no model is asked. */
-export interface CockpitFromObject {
+export interface DashboardFromObject {
   connection_id: string;
   schema_name: string;
   entity: string;
@@ -3064,7 +3186,7 @@ export interface CockpitFromObject {
   caveats: string[];
   /** Arc AP-5 — the shapes it fits, the best first, each with one sentence of why; present while shapes are on. */
   shapes?: ShapeOffer[];
-  /** What the shapes are laid out from, read from the ontology (`aughor/cockpit/shapes.py`). */
+  /** What the shapes are laid out from, read from the ontology (`aughor/dashboards/shapes.py`). */
   signals?: ShapeSignals;
 }
 
@@ -3080,7 +3202,7 @@ export interface ShapeSignals {
   queue: ({ kind: "promise"; process: string; noun: string; placed: string; reached: string; stage: string;
             overdue: string; late: string; promise: string }
           | { kind: "states"; status: string; final: string[]; moves: string }) | null;
-  /** The actions a cockpit can fill: an object parameter of the entity's own from the chosen one, a value asked. */
+  /** The actions a dashboard can fill: an object parameter of the entity's own from the chosen one, a value asked. */
   actions: { id: string; label: string; params: { name: string; source: "chosen" | "ask" }[] }[];
   places: { lat: string; lng: string; via: string; through?: string } | null;
   moments: { start: string; end: string } | null;
@@ -3096,19 +3218,19 @@ export interface ShapeLink {
   listable?: boolean;
 }
 
-/** Arc AP-5 — what each object suggests a cockpit be, read from the ontology alone. */
+/** Arc AP-5 — what each object suggests a dashboard be, read from the ontology alone. */
 export async function getSuggestedShapes(connectionId: string, schema?: string): Promise<{ entity: string; type_id: string; name: string; shape: ShapeName; short: string }[]> {
   const q = new URLSearchParams();
   if (schema) q.set("schema_name", schema);
-  const res = await fetch(cockpitUrl("/cockpits/shapes", connectionId, q));
+  const res = await fetch(dashboardUrl("/dashboards/shapes", connectionId, q));
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return ((await res.json()) as { objects: { entity: string; type_id: string; name: string; shape: ShapeName; short: string }[] }).objects;
 }
 
-export async function getCockpitFromObject(connectionId: string, entity: string, schema?: string): Promise<CockpitFromObject> {
+export async function getDashboardFromObject(connectionId: string, entity: string, schema?: string): Promise<DashboardFromObject> {
   const q = new URLSearchParams({ entity });
   if (schema) q.set("schema_name", schema);
-  const res = await fetch(cockpitUrl("/cockpits/from-object", connectionId, q));
+  const res = await fetch(dashboardUrl("/dashboards/from-object", connectionId, q));
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
     const d = body?.detail;
@@ -3117,48 +3239,48 @@ export async function getCockpitFromObject(connectionId: string, entity: string,
   return res.json();
 }
 
-/** ⚑ Spends model calls. Draft a new cockpit for an area the person names. */
-export async function draftCockpit(connectionId: string, area: string, schema?: string): Promise<CockpitDrafted> {
-  const res = await fetch(cockpitUrl("/cockpits/draft", connectionId), {
+/** ⚑ Spends model calls. Draft a new dashboard for an area the person names. */
+export async function draftDashboard(connectionId: string, area: string, schema?: string): Promise<DashboardDrafted> {
+  const res = await fetch(dashboardUrl("/dashboards/draft", connectionId), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ area, schema_name: schema || null }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(err, "Failed to draft the cockpit"));
+    throw new Error(fastApiError(err, "Failed to draft the dashboard"));
   }
   return res.json();
 }
 
-/** Move a canvas's cockpit to the asker's Briefing. */
-export async function moveCanvasCockpit(connectionId: string, canvasId: string): Promise<CockpitMoved> {
-  const res = await fetch(cockpitUrl("/cockpits/move", connectionId), {
+/** Move a canvas's dashboard to the asker's Briefing. */
+export async function moveCanvasDashboard(connectionId: string, canvasId: string): Promise<DashboardMoved> {
+  const res = await fetch(dashboardUrl("/dashboards/move", connectionId), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ canvas_id: canvasId }),
   });
   const body = await res.json().catch(() => ({}));
-  if (res.ok) return body as CockpitMoved;
+  if (res.ok) return body as DashboardMoved;
   const detail = (body as { detail?: unknown }).detail;
-  if (detail && typeof detail === "object" && Array.isArray((detail as CockpitMoved).sentences)) return detail as CockpitMoved;
-  throw new Error(fastApiError(body, "Failed to move the cockpit"));
+  if (detail && typeof detail === "object" && Array.isArray((detail as DashboardMoved).sentences)) return detail as DashboardMoved;
+  throw new Error(fastApiError(body, "Failed to move the dashboard"));
 }
 
 /** Go back to an earlier version: it is kept again, as the newest. */
-export async function restoreCockpit(connectionId: string, cockpitId: string, version: number): Promise<CockpitKept> {
-  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/restore`, connectionId), {
+export async function restoreDashboard(connectionId: string, dashboardId: string, version: number): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/restore`, connectionId), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ version }),
   });
-  return cockpitWrite(res, "Failed to go back");
+  return dashboardWrite(res, "Failed to go back");
 }
 
-/** ⚑ Spends model calls. A change to one of the asker's cockpits, asked for in words: a proposal
+/** ⚑ Spends model calls. A change to one of the asker's dashboards, asked for in words: a proposal
  *  to keep or not — an edit against the version on screen, or a publish. */
-export async function askCockpit(connectionId: string, cockpitId: string, words: string, schema?: string): Promise<CockpitDrafted> {
-  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/ask`, connectionId), {
+export async function askDashboard(connectionId: string, dashboardId: string, words: string, schema?: string): Promise<DashboardDrafted> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/ask`, connectionId), {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ words, schema_name: schema ?? null }),
   });
@@ -3169,12 +3291,12 @@ export async function askCockpit(connectionId: string, cockpitId: string, words:
   return res.json();
 }
 
-/** A group or a role a cockpit may be published to, or is. */
-export interface CockpitAudience { kind: "group" | "role"; id: string; name: string }
+/** A group or a role a dashboard may be published to, or is. */
+export interface DashboardAudience { kind: "group" | "role"; id: string; name: string }
 
 /** The groups the asker belongs to and the roles they hold: who they may publish to. */
-export async function cockpitAudiences(connectionId: string): Promise<{ groups: CockpitAudience[]; roles: CockpitAudience[] }> {
-  const res = await fetch(cockpitUrl("/cockpits/audiences", connectionId));
+export async function dashboardAudiences(connectionId: string): Promise<{ groups: DashboardAudience[]; roles: DashboardAudience[] }> {
+  const res = await fetch(dashboardUrl("/dashboards/audiences", connectionId));
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(fastApiError(err, "Failed to read who you may publish to"));
@@ -3182,98 +3304,98 @@ export async function cockpitAudiences(connectionId: string): Promise<{ groups: 
   return res.json();
 }
 
-/** Publish the cockpit as it stands to groups and roles. A version, under the asker's name. */
-export async function publishCockpit(connectionId: string, cockpitId: string, to: CockpitAudience[]): Promise<CockpitKept> {
-  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/publish`, connectionId), {
+/** Publish the dashboard as it stands to groups and roles. A version, under the asker's name. */
+export async function publishDashboard(connectionId: string, dashboardId: string, to: DashboardAudience[]): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/publish`, connectionId), {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to }),
   });
-  return cockpitWrite(res, "Failed to publish the cockpit");
+  return dashboardWrite(res, "Failed to publish the dashboard");
 }
 
-/** Stop sharing a cockpit. A version too. */
-export async function unpublishCockpit(connectionId: string, cockpitId: string): Promise<CockpitKept> {
-  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/unpublish`, connectionId), { method: "POST" });
-  return cockpitWrite(res, "Failed to unpublish the cockpit");
+/** Stop sharing a dashboard. A version too. */
+export async function unpublishDashboard(connectionId: string, dashboardId: string): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/unpublish`, connectionId), { method: "POST" });
+  return dashboardWrite(res, "Failed to unpublish the dashboard");
 }
 
-/** A cockpit someone else published to a group the asker is in or a role they hold. */
-export interface SharedCockpitListed {
+/** A dashboard someone else published to a group the asker is in or a role they hold. */
+export interface SharedDashboardListed {
   owner: string;
   cockpit_id: string;
   title: string;
   version: number;
   kept_at: string;
   published_by: string;
-  published_to: CockpitAudience[];
+  published_to: DashboardAudience[];
 }
 
-export async function listSharedCockpits(connectionId: string): Promise<SharedCockpitListed[]> {
-  const res = await fetch(cockpitUrl("/cockpits/shared", connectionId));
+export async function listSharedDashboards(connectionId: string): Promise<SharedDashboardListed[]> {
+  const res = await fetch(dashboardUrl("/dashboards/shared", connectionId));
   if (res.status === 404) return [];
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(err, "Failed to read the cockpits shared with you"));
+    throw new Error(fastApiError(err, "Failed to read the dashboards shared with you"));
   }
-  return (await res.json()).cockpits as SharedCockpitListed[];
+  return (await res.json()).cockpits as SharedDashboardListed[];
 }
 
-export interface SharedCockpit {
+export interface SharedDashboard {
   connection_id: string;
   owner: string;
   cockpit_id: string;
-  cockpit: CockpitVersion;
-  cards: CockpitCard[];
-  range: CockpitRange;
+  cockpit: DashboardVersion;
+  cards: DashboardCard[];
+  range: DashboardRange;
   ranges_on: boolean;
   currency_symbol?: string;
-  images?: Record<string, CockpitImageStamp>;
+  images?: Record<string, DashboardImageStamp>;
   published_by: string;
-  published_to: CockpitAudience[];
-  ontology?: CockpitPin;
+  published_to: DashboardAudience[];
+  ontology?: DashboardPin;
 }
 
-/** A published cockpit as it stands, read for the asker's own range. */
-export async function getSharedCockpit(connectionId: string, owner: string, cockpitId: string, range?: BriefingRange | null): Promise<SharedCockpit> {
-  const res = await fetch(cockpitUrl(`/cockpits/shared/${encodeURIComponent(owner)}/${encodeURIComponent(cockpitId)}`, connectionId, rangeParams(range)));
+/** A published dashboard as it stands, read for the asker's own range. */
+export async function getSharedDashboard(connectionId: string, owner: string, dashboardId: string, range?: BriefingRange | null): Promise<SharedDashboard> {
+  const res = await fetch(dashboardUrl(`/dashboards/shared/${encodeURIComponent(owner)}/${encodeURIComponent(dashboardId)}`, connectionId, rangeParams(range)));
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(err, "Failed to read the shared cockpit"));
+    throw new Error(fastApiError(err, "Failed to read the shared dashboard"));
   }
   return res.json();
 }
 
-/** Start a cockpit of the asker's own from a published one. */
-export async function copySharedCockpit(connectionId: string, owner: string, cockpitId: string): Promise<CockpitKept & { title?: string }> {
-  const res = await fetch(cockpitUrl(`/cockpits/shared/${encodeURIComponent(owner)}/${encodeURIComponent(cockpitId)}/copy`, connectionId), { method: "POST" });
-  return cockpitWrite(res, "Failed to start a cockpit from this one");
+/** Start a dashboard of the asker's own from a published one. */
+export async function copySharedDashboard(connectionId: string, owner: string, dashboardId: string): Promise<DashboardKept & { title?: string }> {
+  const res = await fetch(dashboardUrl(`/dashboards/shared/${encodeURIComponent(owner)}/${encodeURIComponent(dashboardId)}/copy`, connectionId), { method: "POST" });
+  return dashboardWrite(res, "Failed to start a dashboard from this one");
 }
 
-/** Retire a cockpit. Its history stays. */
-export async function retireCockpit(connectionId: string, cockpitId: string, note = ""): Promise<CockpitKept> {
-  const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/retire`, connectionId), {
+/** Retire a dashboard. Its history stays. */
+export async function retireDashboard(connectionId: string, dashboardId: string, note = ""): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/retire`, connectionId), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ note }),
   });
-  return cockpitWrite(res, "Failed to retire the cockpit");
+  return dashboardWrite(res, "Failed to retire the dashboard");
 }
 
-export async function deleteDashboardCard(cardId: string): Promise<void> {
+export async function deleteCard(cardId: string): Promise<void> {
   await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}`, { method: "DELETE" });
 }
 
-/** The cockpit layout (position + size per card) the reader arranged — saved SERVER-SIDE and
+/** The dashboard layout (position + size per card) the reader arranged — saved SERVER-SIDE and
  *  account-keyed, so any device/login shows the same arrangement. */
-export type CockpitLayout = Record<string, { x: number; y: number; w: number; h: number }>;
+export type DashboardLayout = Record<string, { x: number; y: number; w: number; h: number }>;
 
-export async function getCockpitLayout(connectionId: string): Promise<CockpitLayout> {
+export async function getDashboardLayout(connectionId: string): Promise<DashboardLayout> {
   try {
     const res = await fetch(`${getApiBase()}/cards/layout?connection_id=${encodeURIComponent(connectionId)}`);
     return res.ok ? await res.json() : {};
   } catch { return {}; }
 }
 
-export async function saveCockpitLayout(connectionId: string, layout: CockpitLayout): Promise<void> {
+export async function saveDashboardLayout(connectionId: string, layout: DashboardLayout): Promise<void> {
   await fetch(`${getApiBase()}/cards/layout`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -3286,7 +3408,7 @@ export async function saveCockpitLayout(connectionId: string, layout: CockpitLay
 export async function graduateCard(
   cardId: string,
   thresholds: { warning_threshold?: number | null; critical_threshold?: number | null; threshold_direction?: string },
-): Promise<{ card: DashboardCard }> {
+): Promise<{ card: StoredCard }> {
   const res = await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}/graduate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -5211,7 +5333,9 @@ export async function deleteMonitor(id: string): Promise<void> {
   if (!res.ok && res.status !== 204) throw new Error("Failed to delete monitor");
 }
 
-export async function triggerMonitor(id: string): Promise<MonitorAlert | { fired: false }> {
+/** A monitor run now: its alert, or that nothing fired — and either way what it READ, in words ("read 848,860.1
+ *  (warning below 900,000)"; "" when it read no single value). The Olist study, Gap 36. */
+export async function triggerMonitor(id: string): Promise<(MonitorAlert | { fired: false }) & { read?: string }> {
   const res = await fetch(`${getApiBase()}/monitors/${id}/trigger`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to trigger monitor");
   return res.json();
@@ -5558,7 +5682,7 @@ export async function getAutomationPalette(
 
 /** DS-4 — where each step sits on the Design canvas, as `{alias: {x, y}}`.
  *
- *  Server-side and account-keyed rather than `localStorage`, for the reason the cockpit's
+ *  Server-side and account-keyed rather than `localStorage`, for the reason the dashboard's
  *  layout settled once: an arrangement someone made on their laptop and cannot find on
  *  their desktop reads as the product having forgotten it. Its own endpoint, never a
  *  field on the automation — a view preference must not ride the record the engine
@@ -7531,10 +7655,18 @@ export interface BriefingRangeMeasure {
   equal_age?: { equal: boolean; why: string };
   /** The income-statement line it reads on, when the connection's industry declares a statement. */
   line?: { line: string; label: string } | null;
-  /** Its data ends before the range: it was measured over the latest month (week, day) it covers
-   *  instead — those are its own `covers` / `compared_with`, not the range's. Absent when it covers
-   *  the range itself. */
+  /** Set only on a figure stored before 2026-10-23, read over the period its data last covered instead of
+   *  the range; `ownFigures` reads it as not measured, as the server now says it. */
   anchored?: { start: string; end: string; data_ends: string; covers: string; compared_with: string; why: string } | null;
+}
+
+/** A metric the range has no figure for, and why — with the day its data ends (`data_ends`) when it ENDED before
+ *  the range (the user, 2026-10-23: the period named is the one compared; another period's figure is never shown). */
+export interface BriefingRangeUnmeasured {
+  name: string;
+  reason: string;
+  metric?: string;
+  data_ends?: string;
 }
 
 /** Arc BR-4 — a segment's move inside a metric (what moved). */
@@ -7567,7 +7699,7 @@ export interface BriefingRangeBlock {
   last_year_end: string | null;
   as_of: string;
   lag_days: number;
-  lag_source: "learned" | "beyond_horizon" | "default";
+  lag_source: "learned" | "beyond_horizon" | "default" | "data_ended";
   still_moving: string[];
   covers: string;
   compared_with: string;
@@ -7578,8 +7710,18 @@ export interface BriefingRangeBlock {
   edge_note?: string;
   /** The period holding the range goes on past it: a period so far. */
   under_way?: boolean;
+  /** The data ENDED (its newest day is more than a month old): the range was read as if today were
+   *  the day after `data_through`, and every figure in it is final. */
+  data_ended?: boolean;
+  /** The first day the data holds, when the edge was read. */
+  data_from?: string | null;
+  /** Why the range is not compared with the one before ("" when it is): the earlier range starts
+   *  before the data does. */
+  compare_withheld?: string;
   measured: BriefingRangeMeasure[];
-  unmeasured: { name: string; reason: string }[];
+  unmeasured: BriefingRangeUnmeasured[];
+  /** Why the data could not be reached, when it could not: nothing was measured, and no metric is at fault. */
+  unreachable?: string;
   /** Arc BR-4 — the recipe that wrote it, and its own sections. */
   recipe?: "day" | "week" | "month" | "year" | "custom";
   sections?: string[];
@@ -7723,7 +7865,7 @@ export async function readRangeBriefing(
   return res.json();
 }
 
-/** The range's approved metrics, measured — the Cockpit's default view. No narrative is written
+/** The range's approved metrics, measured — the Dashboard's default view. No narrative is written
  *  and no model is called; a Briefing built for the same window inside its cache age hands back
  *  its own figures (`from_briefing`), so the two pages cannot disagree about one. */
 export interface RangeMeasuresResponse {
@@ -7731,6 +7873,70 @@ export interface RangeMeasuresResponse {
   from_briefing: boolean;
   measured_at: string | null;
   scope_key: string;
+}
+
+/** One of the Briefing's six editions, as "What each edition covers" lists it. */
+export interface EditionCover {
+  preset: RangePreset;
+  label: string;
+  /** Why the edition has no range or no figure; "" when it has both. */
+  why: string;
+  start?: string;
+  last_day?: string;
+  previous_start?: string;
+  previous_last_day?: string;
+  covers?: string;
+  compared_with?: string;
+  compare_withheld?: string;
+  current_text?: string | null;
+  previous_text?: string | null;
+  rel?: number | null;
+}
+
+export interface EditionCovers {
+  data_ended: boolean;
+  data_through: string | null;
+  data_from: string | null;
+  /** The lead approved metric each edition's figure is read for; null when none is approved. */
+  metric: { name: string; label: string } | null;
+  editions: EditionCover[];
+}
+
+/** What each of the six editions covers and the lead metric's figure for each — shown when the data
+ *  has ENDED. Measured now (warehouse queries, no model call), so it is a POST, as the measures door is. */
+/** One dataset's currency: the profile's proposal and a person's confirmation (2026-10-23). */
+export async function getDataCurrency(connectionId: string, schema?: string): Promise<import("./orgSettings").DataCurrency> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/business-profile/currency?${q}`);
+  if (!res.ok) throw new Error(`The data's currency could not be read (${res.status})`);
+  return res.json();
+}
+
+/** A person confirms a dataset's currency (a three-letter ISO code), or clears it with "". */
+export async function confirmDataCurrency(connectionId: string, schema: string | undefined, code: string): Promise<import("./orgSettings").DataCurrency> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/business-profile/currency?${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The currency could not be confirmed"));
+  }
+  return res.json();
+}
+
+export async function readEditionCovers(connectionId: string, schema?: string, workspaceId?: string): Promise<EditionCovers> {
+  const q = new URLSearchParams();
+  if (schema) q.set("schema", schema);
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/covers?${q}`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "What each edition covers could not be read"));
+  }
+  return res.json();
 }
 
 export async function measureRange(
@@ -8317,6 +8523,11 @@ export interface FleetJob {
   cost: RunCost | null;
   duration_ms: number | null;
 }
+
+/** One kernel job, as the pages that say what is running read it (Now, Agent runs) — the same row Agent Ops lists. */
+export type JobRow = FleetJob;
+/** The kernel job kind a deep analysis runs as — the backend's frozen spelling, named here once. */
+export const DEEP_ANALYSIS_JOB_KIND = "investigation";
 
 export async function getJobs(params?: {
   state?: string; conn_id?: string; kind?: string; limit?: number;
@@ -9241,7 +9452,7 @@ export async function listUserAgents(): Promise<UserAgent[]> {
   return res.json();
 }
 
-/** A declared action as the ontology's actions door returns it — what a cockpit's button needs to run one (Arc OC-4). */
+/** A declared action as the ontology's actions door returns it — what a dashboard's button needs to run one (Arc OC-4). */
 export interface DeclaredAction {
   id: string;
   display_name: string;
@@ -10998,7 +11209,7 @@ export async function exportIntakeBundle(connectionId: string): Promise<IntakeEx
   return res.json();
 }
 
-// ── PX-2 · the governed-spend cockpit ──────────────────────────────────────
+// ── PX-2 · the governed-spend dashboard ──────────────────────────────────────
 // Caps (G4's store, formless until now), the usage rollup, per-model health,
 // the route mix, and the cross-cutting governance feed.
 

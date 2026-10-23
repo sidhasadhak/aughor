@@ -298,7 +298,7 @@ function objectPath(objectType: string, pk: string): string {
 export async function getObjectPage(
   objectType: string, pk: string, connectionId?: string, schemaName?: string, asGroup?: string,
 ): Promise<ObjectPage | ObjectRefusal | ObjectMissing | ObjectWithheld> {
-  // Arc AP-6 — previewing a cockpit as a group: read as the person and a member of it, only ever less
+  // Arc AP-6 — previewing a dashboard as a group: read as the person and a member of it, only ever less
   const res = await fetch(`${objectPath(objectType, pk)}${scope(connectionId, schemaName, asGroup ? { as_group: asGroup } : {})}`);
   if (res.status === 404) return { path: "missing", detail: await detailOf(res) };
   if (res.status === 403) return { path: "withheld", detail: await detailOf(res) };
@@ -407,7 +407,7 @@ export async function getObjectTitles(
 }
 
 
-// ── Arc OC-4 — a page of objects, and running a declared action from a cockpit ─────────────────
+// ── Arc OC-4 — a page of objects, and running a declared action from a dashboard ─────────────────
 
 /** One page of an entity's objects, or of a segment of it, as `POST /objects/list` returns it. */
 export interface ObjectListingPage {

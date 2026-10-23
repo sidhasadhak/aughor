@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * PinnedCardBody — the rendering of ONE pinned cockpit card (title · value/trend/table body ·
+ * PinnedCardBody — the rendering of ONE pinned dashboard card (title · value/trend/table body ·
  * footer actions), independent of how it's laid out. Both the freeform React-Flow canvas
  * (PinnedCardsCanvas) and the responsive drag-to-reorder grid (PinnedCardsGrid) render the
  * SAME card through this component, so the two arrangement modes stay pixel-identical.
@@ -16,13 +16,13 @@ import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { type ChartCustom } from "@/components/Chart";
 import { formatMetricValue, formatVariance } from "@/lib/format";
-import { graduateCard, updateDashboardCard, type CardRunResult, type DashboardCard } from "@/lib/api";
+import { graduateCard, updateCard, type CardRunResult, type StoredCard } from "@/lib/api";
 import { isEmptyVizConfig, type VizConfig } from "@/components/charts/vizConfig";
 import { toast } from "@/components/ui/toast";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 
-export type CardState = { card: DashboardCard; run?: CardRunResult; failed?: boolean };
+export type CardState = { card: StoredCard; run?: CardRunResult; failed?: boolean };
 
 export type Kind = "kpi" | "chart" | "table" | "note";
 
@@ -46,11 +46,11 @@ function BigValue({ v }: { v: number | null | undefined }) {
   );
 }
 
-/** Keep a chart's display edits on its card. `PUT /cards/{id}` has existed since the cockpit
+/** Keep a chart's display edits on its card. `PUT /cards/{id}` has existed since the dashboard
  *  shipped but had no client, so every edit to a pinned chart died on unmount. Debounced: the
  *  chart emits per interaction (typing an axis title would be a PUT/keystroke). Every surface
  *  that draws a card's chart keeps its edits through this one. */
-export function usePersistViz(card: DashboardCard): (viz: VizConfig) => void {
+export function usePersistViz(card: StoredCard): (viz: VizConfig) => void {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const persistViz = useCallback((viz: VizConfig) => {
     if (!card.id) return;
@@ -59,7 +59,7 @@ export function usePersistViz(card: DashboardCard): (viz: VizConfig) => void {
       const next = { ...(card.render || {}) } as Record<string, unknown>;
       if (isEmptyVizConfig(viz)) delete next.viz; else next.viz = viz;
       // Best-effort: a display preference must never surface an error over the card.
-      void updateDashboardCard(card.id, { ...card, render: next }).catch(() => {});
+      void updateCard(card.id, { ...card, render: next }).catch(() => {});
     }, 600);
   }, [card]);
   useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
@@ -68,7 +68,7 @@ export function usePersistViz(card: DashboardCard): (viz: VizConfig) => void {
 
 /** Watch → alert: a direction and a threshold, and the card becomes a scheduled monitor. */
 export function CardAlertForm({ card, direction, onSet }: {
-  card: DashboardCard;
+  card: StoredCard;
   direction: "below" | "above";
   onSet: (direction: "below" | "above") => void;
 }) {
@@ -157,7 +157,7 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
     warning?: number | null; critical?: number | null; direction?: string; monitor_id?: string | null;
   } | undefined;
   // A limit is not an alert. A card says it is alerting only when a monitor stands behind it
-  // (`monitor_id`, written when the card was graduated). A card a cockpit proposal made carries
+  // (`monitor_id`, written when the card was graduated). A card a dashboard proposal made carries
   // a limit and schedules nothing (Arc CT-5); it says its limit, and the door to an alert stays.
   const limits = [t0?.warning, t0?.critical].filter((v): v is number => typeof v === "number");
   const [alerting, setAlerting] = useState(limits.length > 0 && !!t0?.monitor_id);

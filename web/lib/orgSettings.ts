@@ -43,23 +43,93 @@ export function subscribeOrgSettings(cb: () => void): () => void {
 }
 export function orgSettingsVersion(): number { return _version; }
 
-/** Currency symbol for the effective reporting currency, or "" when none is set. */
+// ── The currency a figure is in: the one a PERSON confirmed for its dataset (2026-10-23) ──
+// Until then the org's reporting currency labelled every money figure, though nothing converts:
+// Olist's reais printed as "$1,258,681.34" (the Olist study, Gap 14). The org setting describes the
+// organisation; a figure carries its own dataset's confirmed currency, or none — a plain amount.
+
+/** One dataset's currency, as `GET /business-profile/currency` serves it. */
+export interface DataCurrency {
+  connection_id: string;
+  schema_name: string | null;
+  /** Set only when a person confirmed it. */
+  code: string;
+  status: "confirmed" | "inferred" | "unknown";
+  /** The profile's proposal — shown beside a Confirm door, never in front of a number. */
+  inferred: string;
+  profile_confidence?: number | null;
+  confirmed_by: string;
+  confirmed_at: string;
+}
+
+const _currencies = new Map<string, DataCurrency>();
+let _dataset = "";
+const datasetKey = (connectionId: string, schema?: string | null) => `${connectionId}|${schema || ""}`;
+
+/** Keep one dataset's currency (read, or just confirmed). */
+export function setDataCurrency(c: DataCurrency): void {
+  _currencies.set(datasetKey(c.connection_id, c.schema_name), c);
+  _version++;
+  _listeners.forEach((l) => l());
+}
+
+let _loader: ((connectionId: string, schema: string) => void) | null = null;
+
+/** How a dataset's currency is read when it comes into view (the page registers the API call, so
+ *  this module stays free of fetches). */
+export function registerCurrencyLoader(load: ((connectionId: string, schema: string) => void) | null): void {
+  _loader = load;
+  const ds = currentDataset();
+  if (load && ds && !_currencies.has(_dataset)) load(ds[0], ds[1]);
+}
+
+/** The dataset whose figures are on screen: the connection in view and its chosen schema. */
+export function setCurrentDataset(connectionId: string, schema?: string | null): void {
+  const key = connectionId ? datasetKey(connectionId, schema) : "";
+  if (key === _dataset) return;
+  _dataset = key;
+  _version++;
+  _listeners.forEach((l) => l());
+  if (key && _loader && !_currencies.has(key)) _loader(connectionId, schema || "");
+}
+
+/** The dataset in view, as [connection, schema], or null. */
+export function currentDataset(): [string, string] | null {
+  if (!_dataset) return null;
+  const [conn, schema] = _dataset.split("|");
+  return [conn, schema];
+}
+
+/** The currency of the dataset in view, when it has been read. */
+export function currentDataCurrency(): DataCurrency | null {
+  return _currencies.get(_dataset) ?? null;
+}
+
+/** The symbol a money figure in view carries: its dataset's CONFIRMED currency, or "" (a plain
+ *  amount) — never the org's preference, never the profile's guess, never a default "$". */
 export function effectiveCurrencySymbol(): string {
-  return _cache?.currency_code ? currencySymbol(_cache.currency_code) : "";
+  const c = currentDataCurrency();
+  return c?.code ? currencySymbol(c.code) : "";
+}
+
+/** What a page says once where amounts are plain: "" when the currency is confirmed. */
+export function unconfirmedCurrencyNote(): string {
+  const c = currentDataCurrency();
+  if (c?.code) return "";
+  return c?.inferred
+    ? `Amounts are plain: no one has confirmed this data's currency (the profile suggests ${c.inferred}).`
+    : "Amounts are plain: no one has confirmed this data's currency.";
 }
 
 /**
- * Rewrite hardcoded "$"-prefixed amounts in a DISPLAY string to the configured reporting
- * currency symbol — e.g. "$69.81" → "€69.81", "-$330K" → "-€330K". The deep-analysis LLM emits
- * figures with a literal "$" baked in; this is the presentation seam that makes them honour the
- * workspace/Org currency setting (the same setting the briefing already respects).
- *
- * No-op when no currency is configured or it's USD (US workspaces stay byte-identical), and only
- * a "$" that prefixes a number is touched, so ordinary prose is never mangled.
+ * Rewrite "$"-prefixed amounts in a DISPLAY string to the confirmed currency of the dataset in view —
+ * "$69.81" → "€69.81" — or drop the "$" when none is confirmed, so "$1,258,681" over reais reads
+ * "1,258,681" (2026-10-23). The deep-analysis model bakes a literal "$" into figures it writes.
+ * A no-op only when the confirmed currency IS USD; only a "$" that prefixes a number is touched.
  */
 export function localizeCurrency(text: string): string {
   const sym = effectiveCurrencySymbol();
-  if (!text || !sym || sym === "$") return text;
+  if (!text || sym === "$") return text;
   return text.replace(/\$(?=\s?[\d.,])/g, sym);
 }
 

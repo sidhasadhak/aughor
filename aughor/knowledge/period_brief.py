@@ -143,16 +143,28 @@ def period_note(block: dict, today: Optional[date] = None) -> str:
     """The code-written block that tells the narrator which version it is writing."""
     today = today or datetime.now(timezone.utc).date()
     label = block["label"].upper()
+    withheld = block.get("compare_withheld")
     lines = [
         "[Briefing period — written by code, not inferred]",
-        f"This is the {label} briefing. It covers {block['covers']} (UTC) and compares it with "
-        f"{block['compared_with']}.",
+        (f"This is the {label} briefing. It covers {block['covers']} (UTC). It is not compared with an "
+         f"earlier period, because {withheld}: state no change against any earlier period."
+         if withheld else
+         f"This is the {label} briefing. It covers {block['covers']} (UTC) and compares it with "
+         f"{block['compared_with']}."),
         f"Speak about that {block['period']} only. Every finding below is from inside it or is a "
         "measurement of it; do not describe anything as happening in it that the findings do not "
         "place there, and do not compare it with any period other than the one named.",
     ]
     lag = int(block.get("lag_days") or 1)
-    if lag > 1 and block.get("lag_source") == "beyond_horizon":
+    if block.get("data_ended"):
+        # Gap 38 (the Olist run): an unconditional settling sentence was written about a range eight
+        # years settled. Data that ENDED has no lag; its figures are final, and that is what is said.
+        lines.append(
+            f"The data ended on {block.get('data_through')}, more than a month before today "
+            f"({today.isoformat()}): this {block['period']} is read as if today were the day after it, "
+            "and every figure in it is final. Say so once, plainly. Do not mention settling, late rows "
+            "or confirming a figure later.")
+    elif lag > 1 and block.get("lag_source") == "beyond_horizon":
         moving = list(block.get("still_moving") or [])
         tables, verb, it = (", ".join(moving) or "a table",
                             *(("were", "them") if len(moving) > 1 else ("was", "it")))
@@ -169,6 +181,9 @@ def period_note(block: dict, today: Optional[date] = None) -> str:
             f"{why} a {lag}-day settling lag: newer days are still changing as late rows arrive. "
             "Say so in one plain sentence, so the reader never has to guess why the newest "
             "figure is dated before today.")
+    if block.get("unreachable"):
+        lines.append(f"The data could not be reached for this {block['period']} ({block['unreachable']}), so "
+                     "nothing was measured. State no figure for it; say once that the data could not be reached.")
     if block.get("unmeasured"):
         names = ", ".join(u["name"] for u in block["unmeasured"][:6])
         lines.append(f"Not measured for this {block['period']}: {names}. Do not state a value "
@@ -291,6 +306,9 @@ def metric_line(m: dict, block: dict, currency_code: Optional[str]) -> str:
     cur = _fmt(m["current"], name, unit, currency_code)
     prev = _fmt(m.get("previous"), name, unit, currency_code)
     rel = m.get("rel")
+    if m.get("compare_withheld"):
+        # The earlier range starts before the data does: not "no rows", which would say it is empty.
+        return f"{name} was {cur} in {block['covers']}; it is not compared, because {m['compare_withheld']}."
     if m.get("previous") is None:
         return (f"{name} was {cur} in {block['covers']}; {block['compared_with']} has no rows "
                 "to compare with.")
@@ -428,8 +446,9 @@ def build_period_briefing(conn_id: str, period: str, *, scope_key: str, domain_d
                                                       today=today)
     block = window_block(window, lag_source, still_moving)
     metrics = list(getattr(profile, "north_star_metrics", None) or []) if profile is not None else []
-    from aughor.orgsettings import resolve_currency
-    currency = resolve_currency(getattr(profile, "currency_code", None) or "", workspace_id)
+    from aughor.orgsettings import figure_currency
+    # the dataset's currency as a person confirmed it, else a plain amount (2026-10-23)
+    currency = figure_currency(conn_id, scope_key.split(":", 1)[1] if ":" in scope_key else None)
 
     def measure() -> dict:
         if not metrics:

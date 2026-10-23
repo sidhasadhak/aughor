@@ -52,7 +52,7 @@ def _empty() -> dict:
 
 # ── One id, one finding ──────────────────────────────────────────────────────
 # A finding's id is how a card, a claim and the ledger name it, and the
-# cockpit's ledger picker keys its rows by it. Until 2026-10-09 the ids were numbered by position
+# dashboard's ledger picker keys its rows by it. Until 2026-10-09 the ids were numbered by position
 # within one run and appended to the list the state already held across runs: on theLook's live
 # state 35 ids named 62 findings — each pinned key question four times over (the read-back of an
 # unchanged finding appended a copy of what the list held), and `synth__share__1` three DIFFERENT

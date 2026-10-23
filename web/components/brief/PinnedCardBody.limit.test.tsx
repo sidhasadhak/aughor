@@ -5,7 +5,7 @@
  *
  * A card said "Alerting when above threshold" — with the title "This card is now a scheduled
  * monitor" — whenever it carried a limit. That was true while the only way to a limit was to
- * graduate the card, which creates the monitor. A cockpit proposal gives a card a limit and
+ * graduate the card, which creates the monitor. A dashboard proposal gives a card a limit and
  * schedules nothing, and the card went on saying it was alerting. Seen on the live run, on the
  * first card a proposal made.
  */
@@ -13,12 +13,12 @@ import { render, screen } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { PinnedCardBody, type CardState } from "@/components/brief/PinnedCardBody";
-import type { DashboardCard } from "@/lib/api";
+import type { StoredCard } from "@/lib/api";
 
 vi.mock("@/lib/api", async (original) => ({
   ...(await original<typeof import("@/lib/api")>()),
   graduateCard: vi.fn(),
-  updateDashboardCard: vi.fn(),
+  updateCard: vi.fn(),
 }));
 
 beforeAll(() => {
@@ -27,12 +27,12 @@ beforeAll(() => {
 
 const REFRESH = { cadence: "daily", last_run: "", last_value: 1.59, prev_value: null, history: [] };
 
-function card(thresholds: DashboardCard["thresholds"]): CardState {
+function card(thresholds: StoredCard["thresholds"]): CardState {
   return {
     card: {
       id: "c1", connection_id: "fixture", scope: "canvas", scope_ref: "cv", source: "authored", kind: "kpi",
       title: "Payment failure rate", sql: "SELECT 1", query_ref: null, render: {}, refresh: REFRESH, thresholds,
-      provenance: {} as DashboardCard["provenance"],          // no test here reads it
+      provenance: {} as StoredCard["provenance"],          // no test here reads it
       links: [], body: "", author: "", created_at: "", updated_at: "",
     },
     run: { columns: ["v"], rows: [["1.59"]], row_count: 1, caveats: [], error: null, value: 1.59, refresh: REFRESH, scoped: null },

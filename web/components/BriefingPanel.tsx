@@ -19,6 +19,7 @@ import { GuardChip } from "@/components/ui/trust";
  */
 
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
+import { ownFigures } from "@/lib/dashboards/figures";
 import { compactNumber, countNoun, formatCount, formatDateTime, formatMetricValue, formatTimestamp, formatVariance, normalizeNumberPrecision, pct } from "@/lib/format";
 import { noveltyLabel, noveltyOutOf, noveltyShare } from "@/lib/novelty";
 import {
@@ -76,12 +77,13 @@ import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { PeriodSwitch, periodUnavailable } from "@/components/brief/BriefPeriod";
 import { RangeControl, RangeFigures, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
 import {
-  AskBar, DeskColumns, InBrief, PaperDateline, PaperFront, PaperLead, PaperMasthead, PaperNumbers, PaperSources,
+  AskBar, DeskColumns, InBrief, PaperDateline, PaperEdgeNotice, PaperFront, PaperLead, PaperMasthead, PaperNumbers, PaperSources,
   numberDesk, openDeskAction, paperDate, rangeNumbers, type PaperNumber,
 } from "@/components/brief/BriefPaper";
 import { getBriefingDesk, type BriefingDesk } from "@/lib/api";
 import { buildRangeBriefing, isRangeBlock, readRangeBriefing, type BriefingOff, type BriefingRange, type BriefingRangeBlock } from "@/lib/api";
 import { StatTile } from "@/components/brief/StatTile";
+import { EditionCovers, scrollToCovers } from "@/components/brief/EditionCovers";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
 import { claimBriefingEntrance } from "@/components/brief/firstOpen";
 import { PinnedCards } from "@/components/brief/PinnedCards";
@@ -97,9 +99,9 @@ import { BriefingSections, HiddenSection } from "@/components/brief/BriefingSect
 import { BriefingStrip } from "@/components/brief/BriefingStrip";
 import { BriefingOffNotice } from "@/components/brief/BriefingOff";
 import { NewCardComposer } from "@/components/brief/NewCardComposer";
-import { getMyPreferences, listCockpits, putMyPreference } from "@/lib/api";
+import { getMyPreferences, listDashboards, putMyPreference } from "@/lib/api";
 import {
-  DEFAULT_SECTIONS, isPart, normalizeSections, toggled, type BriefingSectionsPref, type CockpitChoice, type SectionId,
+  DEFAULT_SECTIONS, isPart, normalizeSections, toggled, type BriefingSectionsPref, type DashboardChoice, type SectionId,
 } from "@/lib/briefingSections";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
@@ -1083,7 +1085,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
       });
       setPinStatus("done");
       onPinned?.();
-      toast.success("Pinned to your cockpit");
+      toast.success("Pinned to your dashboard");
     } catch {
       setPinStatus("error");
       toast.error("Couldn't pin finding", { description: "The finding's query didn't pass the trust guards." });
@@ -1621,11 +1623,11 @@ function HeroDivider() {
  *  carrying the identity to deep-link back to its ledger row. */
 interface MoverTile {
   ident:      string;   // signalIdentity — the ledger row to scroll/expand
-  insightId:  string;   // the finding id — used to pin from the cockpit empty state
+  insightId:  string;   // the finding id — used to pin from the dashboard empty state
   value:      string;
   secondary?: string;
   label:      string;   // the finding statement (clamped to 2 lines in the tile)
-  sublabel?:  string;   // a short descriptor (for the cockpit's suggested-pin chips)
+  sublabel?:  string;   // a short descriptor (for the dashboard's suggested-pin chips)
   domain:     string;
   accent:     string;   // domain colour (honest — not a fabricated favorability judgement)
   /** The finding itself, so a tile can open the same detail its ledger row does — the chart,
@@ -2574,31 +2576,31 @@ export function BriefingPanel({
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
   const [pinnedRefresh, setPinnedRefresh]   = useState(0);
-  // Arc CT-7 — with `cockpit.composed` on, the person's cockpits are a tab beside the Briefing
+  // Arc CT-7 — with `dashboard.composed` on, the person's dashboards are a tab beside the Briefing
   // (IntelligenceWorkspace), so the standing layer below is not drawn. A canvas's Briefing has
   // no such tab and keeps the layer. Until the flags answer, and when they cannot, it is off.
-  const [cockpitFlag, setCockpitFlag]       = useState(false);
-  const cockpitsOn = cockpitFlag && !canvasId;
+  const [dashboardFlag, setDashboardFlag]       = useState(false);
+  const dashboardsOn = dashboardFlag && !canvasId;
   // The canvas (B1) — the Briefing's switches: which sections this person shows, in what order,
-  // and which cockpit of theirs rides with it. A preference, kept on the server; the content of
+  // and which dashboard of theirs rides with it. A preference, kept on the server; the content of
   // a section is never theirs to change. Until the store answers, the product's order.
   const [sections, setSections]             = useState<BriefingSectionsPref>(DEFAULT_SECTIONS);
   const [sectionsOpen, setSectionsOpen]     = useState(false);
   const [sectionsBusy, setSectionsBusy]     = useState(false);
-  const [myCockpits, setMyCockpits]         = useState<CockpitChoice[]>([]);
+  const [myDashboards, setMyDashboards]         = useState<DashboardChoice[]>([]);
   useEffect(() => {
     let alive = true;
     getMyPreferences().then(p => { if (alive) setSections(normalizeSections(p.preferences.briefing_sections)); }).catch(() => {});
     return () => { alive = false; };
   }, []);
   useEffect(() => {
-    if (!cockpitsOn) { setMyCockpits([]); return; }
+    if (!dashboardsOn) { setMyDashboards([]); return; }
     let alive = true;
-    listCockpits(connectionId).then(l => {
-      if (alive && l) setMyCockpits(l.cockpits.filter(c => !c.retired).map(c => ({ id: c.cockpit_id, title: c.title || c.cockpit_id })));
+    listDashboards(connectionId).then(l => {
+      if (alive && l) setMyDashboards(l.cockpits.filter(c => !c.retired).map(c => ({ id: c.cockpit_id, title: c.title || c.cockpit_id })));
     }).catch(() => {});
     return () => { alive = false; };
-  }, [connectionId, cockpitsOn]);
+  }, [connectionId, dashboardsOn]);
   const saveSections = useCallback(async (next: BriefingSectionsPref, said: string) => {
     const before = sections;
     setSections(next);
@@ -2615,7 +2617,7 @@ export function BriefingPanel({
   // you enter, and an always-mounted panel would cost every reader ~420px of width.
   const [askOpen, setAskOpen]               = useState(false);
   // Scope chips: narrow the narrative layer (supporting signals + top patterns) to one
-  // domain; null = all. The standing cockpit layer is intentionally left unscoped — it's
+  // domain; null = all. The standing dashboard layer is intentionally left unscoped — it's
   // the user's arranged surface, not a per-cycle finding view.
   const [scope, setScope]                   = useState<string | null>(null);
   const [loading, setLoading]               = useState(false);
@@ -2650,7 +2652,7 @@ export function BriefingPanel({
       if (!alive) return;
       setPeriodsOn(!!f["briefing.by_period"]?.value);
       setRangesOn(!!f["briefing.ranges"]?.value);
-      setCockpitFlag(!!f["cockpit.composed"]?.value);
+      setDashboardFlag(!!f["dashboard.composed"]?.value);
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -3047,7 +3049,7 @@ export function BriefingPanel({
   const scopeDomain    = scope && briefing?.domains.some(d => d.name === scope) ? scope : null;
   const headlineIdent  = briefing?.headline ? signalIdentity(briefing.headline.insight) : null;
 
-  // "Numbers that moved" (the hero tiles) + the cockpit's suggested pins share ONE extraction:
+  // "Numbers that moved" (the hero tiles) + the dashboard's suggested pins share ONE extraction:
   // the top findings (unscoped, headline excluded) that yield a key figure, in impact order.
   // Every figure is quoted from a grounded finding statement — never invented.
   const movers = useMemo<MoverTile[]>(() => {
@@ -3100,8 +3102,10 @@ export function BriefingPanel({
 
   const hasPatterns    = scopedPatterns.length > 0;
   const hasNarrative   = !!narrative?.narrative;
-  // Arc BR-3 — the range on screen, when the Briefing is a range's; the page reads it.
-  const rangeBlock     = hasNarrative && isRangeBlock(narrative?.period) ? narrative!.period as BriefingRangeBlock : null;
+  // Arc BR-3 — the range on screen, when the Briefing is a range's; the page reads it. Its figures are its own: an
+  // edition stored before 2026-10-23 is read by that rule, so no tile, strip or box shows another period's figure.
+  const storedBlock    = hasNarrative && isRangeBlock(narrative?.period) ? narrative!.period as BriefingRangeBlock : null;
+  const rangeBlock     = useMemo(() => (storedBlock ? ownFigures(storedBlock) : null), [storedBlock]);
   // A range is chosen but its Briefing is not on screen yet (building, or refused): the hero
   // must not fall back to the standing view's figures, which read as this range's.
   const rangePending   = rangesOn && !canvasId && range.preset !== "standing" && !rangeBlock;
@@ -3239,8 +3243,12 @@ export function BriefingPanel({
   const editionBlock = rangeBlock ?? (editionFor && editionFor.key === rangeKey ? editionFor.block : null);
   const numbersTitle = rangeBlock ? `The ${rangeBlock.period && rangeBlock.period !== "custom" ? rangeBlock.period : "range"} in numbers`
     : rangeSelected ? "In numbers" : "The record, in numbers";
-  const numbersNote = rangeBlock
-    ? `Each against ${rangeBlock.compared_with}${rangeBlock.measured.some(m => m.anchored) ? ", unless its own months are named" : ""}.`
+  const numbersNote = rangeBlock?.unreachable
+    ? `The data could not be reached, so nothing was measured — ${rangeBlock.unreachable}.`
+    : rangeBlock?.compare_withheld
+    ? `Not compared: ${rangeBlock.compare_withheld}.`
+    : rangeBlock
+    ? `Each against ${rangeBlock.compared_with}.`
     : rangeSelected ? (narrativeLoading ? "Measuring this edition…" : undefined)
     : "Pick Day, Week or Month for the business's own figures.";
   const citationNs = hasNarrative && narrative ? narrative.citations.map(c => Number(c.ref)).filter(Number.isFinite) : [];
@@ -3374,7 +3382,13 @@ export function BriefingPanel({
       />
       <PaperDateline today={paperDate(new Date())}
         covers={editionBlock ? `covering ${editionBlock.covers}` : rangeSelected ? "covering this range" : "everything recorded, not tied to dates"}
-        lagDays={editionBlock?.lag_days} records={paperRefs.length} />
+        lagDays={editionBlock?.lag_days} records={paperRefs.length}
+        endedOn={rangeSelected && editionBlock?.data_ended ? editionBlock.data_through ?? null : null} />
+      {/* The data ENDED (design-mockups/briefing-data-ended.html): one line saying where, and what this
+          edition became because of it; the table below lists where every edition landed. */}
+      {rangeSelected && editionBlock?.data_ended && editionBlock.edge_note && (
+        <PaperEdgeNotice note={editionBlock.edge_note} onCovers={scrollToCovers} />
+      )}
       {(explorerError || explorerPending || birthStep) && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
           {explorerError && (
@@ -3396,7 +3410,7 @@ export function BriefingPanel({
       {showSchedule && <BriefSchedule connId={connectionId} />}
       {sectionsOpen && (
         <BriefingSections pref={sections} onChange={(next, said) => void saveSections(next, said)}
-          cockpits={myCockpits} cockpitsOn={cockpitsOn} busy={sectionsBusy} />
+          cockpits={myDashboards} dashboardsOn={dashboardsOn} busy={sectionsBusy} />
       )}
 
       {isEmpty ? (
@@ -3477,6 +3491,9 @@ export function BriefingPanel({
     return (
       <>
         {on("verdict") && <PaperFront lead={lead} side={<PaperNumbers title={numbersTitle} rows={numberRows} note={numbersNote} />} />}
+        {rangeSelected && editionBlock?.data_ended && (
+          <EditionCovers connectionId={connectionId} schema={schema} workspaceId={workspaceId} current={editionBlock.preset} />
+        )}
         {!canvasId && (
           <DeskColumns desk={desk ? desk.data : undefined} error={desk?.error ?? null} refs={deskRefs} connectionId={connectionId} />
         )}
@@ -3627,28 +3644,28 @@ export function BriefingPanel({
             is ALWAYS present now — even with no pins — so the cockpit teaches itself (empty
             state) instead of vanishing. The cycle's findings read above in the ledger; the
             cockpit is the surface the user curates, not a dump of the brief. */}
-      {/* Arc CT-7 — with `cockpit.composed` on, a person's cockpits have a tab of their own
+      {/* Arc CT-7 — with `dashboard.composed` on, a person's cockpits have a tab of their own
           beside the Briefing, and this layer is not drawn here. Off, it is drawn as it always was.
           The canvas (B1): on, the cockpit of theirs they chose under Sections rides here, read for
           the Briefing's range and arranged in its own tab. */}
-      {cockpitsOn && sections.strip && (
+      {dashboardsOn && sections.strip && (
         <div style={{ marginTop: 16, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
-          <BriefingStrip connectionId={connectionId} schema={schema} cockpitId={sections.strip}
+          <BriefingStrip connectionId={connectionId} schema={schema} dashboardId={sections.strip}
             range={rangeSelected ? range : null} />
         </div>
       )}
-      {cockpitsOn && !sections.strip && (
+      {dashboardsOn && !sections.strip && (
         <div className="aug-fs-sm" data-testid="briefing-strip-none" style={{ color: "var(--t3)", borderTop: "1px solid var(--vio2)", paddingTop: 12 }}>
-          No cockpit rides with your Briefing. Choose one of yours under Sections; it is arranged in the Cockpit tab.
+          No dashboard rides with your Briefing. Choose one of yours under Sections; it is arranged in the Dashboards tab.
         </div>
       )}
-      {!cockpitsOn && (
+      {!dashboardsOn && (
         <div style={{ marginTop: 16, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
           <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 12 }}>
-            Your cockpit
+            Your dashboard
             {/* BR-9 — under a range each card runs cut to it and says what it covers (or that it
                 could not be); the label names the range the cards were asked for. */}
-            {rangeSelected ? <span data-testid="cockpit-note" style={{ fontWeight: 400, color: "var(--t3)" }}>{rangeBlock ? ` · asked for ${rangeBlock.covers}` : " · asked for this range"}</span> : null}
+            {rangeSelected ? <span data-testid="dashboard-note" style={{ fontWeight: 400, color: "var(--t3)" }}>{rangeBlock ? ` · asked for ${rangeBlock.covers}` : " · asked for this range"}</span> : null}
           </div>
           {/* Door 3 (inline authoring) sits at the top so the first card can be composed even when empty. */}
           <NewCardComposer connectionId={connectionId} schema={schema}
@@ -3663,7 +3680,7 @@ export function BriefingPanel({
         </>
       );
       case "patterns": return (
-      /* ── Top patterns ── a full-width row below the cockpit. */
+      /* ── Top patterns ── a full-width row below the dashboard. */
       hasPatterns && (
         <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 280px", minWidth: 240 }}>

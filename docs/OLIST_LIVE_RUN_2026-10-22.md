@@ -570,12 +570,34 @@ Record, Inbox and the closed loop; the agent wizard's draft, scope and honesty a
 ## Next
 
 1. Decide A: either uploads create a connection per workspace, or a workspace scopes by schema everywhere a
-   page says "Workspace".
-2. Teach the Briefing (and Now) the data's last settled day (B).
+   page says "Workspace". **Done 2026-10-23 (#623):** an uploads connection per workspace; Catalog, Now's
+   Briefing fold, Needs-you docs and profile metrics scoped. Still org-wide: agent-wizard documents,
+   Monitors' and Notifications' lists.
+2. Teach the Briefing (and Now) the data's last settled day (B). **Built 2026-10-23** on the user's decision
+   (mockup `design-mockups/briefing-data-ended.html`): data whose newest row is more than a month old has
+   ENDED; every edition reads as if today were the day after its last row (Olist: 17 Oct 2018), is final,
+   says so in one line, and lists where each edition landed; a comparison whose earlier range starts before
+   the data does is withheld and says why; nothing is predicted after the end; a scheduled send pauses
+   while the edge does not move; Now names the days and the end.
 3. A workspace currency that adopts the Profile's inference; one number formatter for money and ratios (C).
+   **Built 2026-10-23**, per DATASET on the user's choice (one connection held Olist in BRL and `main` in EUR):
+   the profile's currency is a suggestion; a person confirms it on the Profile page; only a confirmed currency
+   labels a figure, server and web, and an unconfirmed one prints plain amounts and says so. Percentages carry
+   one decimal; findings are asked to write ratios as percentages; the definition check reads 13,494,400.74,
+   not 1.34944e+07. Olist confirmed BRL live.
 4. "Adopt the explorer's eight" as one door with the right dates (D); composite keys (Gap 13).
+   **Built 2026-10-23:** the Semantic Layer's "Adopt the proposals" card ticks and dates every proposal with a
+   formula and approves the set ONCE (the approval names the dataset and the metrics); a proposal's date leads
+   with the parent table's and the record's own creation date (GMV: order_purchase_timestamp, not the shipping
+   deadline); `order_status = ['delivered']` reads as its value; a key may be several columns, and Olist's three
+   pairs each measure unique over every row. Not approved live: the seven Olist proposals wait for a person.
 5. One answer to "what ran" across Now, Agent runs, History, Agent Ops; a monitor shows what it read (E).
-6. The user's own item: rename "Phase 8"-style names (PENDING 53).
+   **Built 2026-10-23:** Now has "Running now" and Agent runs says what else is running, both from the kernel's
+   jobs on the workspace's connections (Agent runs stays the person's history); a budget stop reads "stopped at
+   its budget" in Agent Ops; a monitor says what it read — live, Olist's GMV floor reads the ALL-TIME total
+   (13,494,400.74), which is why it never fires against a monthly 900,000 line (a monitor over a metric reading its
+   all-time value is the next defect to name). Gap 30 did not reproduce.
+6. The user's own item: rename "Phase 8"-style names (PENDING 53). **Done 2026-10-23 (#623).**
 Not done in this run: the other seven Olist metrics, Health targets, a document upload, Slack reach, the
 Default workspace's `data/metrics.json` drift from this run.
 

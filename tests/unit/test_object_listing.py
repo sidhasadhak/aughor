@@ -1,11 +1,11 @@
 """Arc OC-4 — a page of objects through the object door's own compiler (ROADMAP §3.56).
 
 Before: the door answered aggregates only. `POST /objects/query` grouped and counted, and the one listing that existed
-(`list_linked`) read a single object's links with no total and no edit merged. A cockpit's objects table needs one row
+(`list_linked`) read a single object's links with no total and no edit merged. A dashboard's objects table needs one row
 per object, the columns a person chose, a sort that holds still across pages, and the total the set holds. Every
 claim here is held to a hand-written query over the seeded samples warehouse: the page, the sort with the key breaking
 ties, the total under a segment and filters, an accepted edit listed like a column, and — behind
-`ontology.cockpit_pieces` — each promise's overdue segment, whose total is exactly the measurement's `open_overdue`.
+`ontology.dashboard_pieces` — each promise's overdue segment, whose total is exactly the measurement's `open_overdue`.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from aughor.semantic.object_query import ObjectQueryRefused, compile_object_list
 from tests.unit.test_object_bindings import seed
 from tests.unit.test_object_processes import _DEADLINES, FULFILMENT, declare, fresh_graph
 
-_FLAG = "ontology.cockpit_pieces"
+_FLAG = "ontology.dashboard_pieces"
 
 
 @pytest.fixture(scope="module")

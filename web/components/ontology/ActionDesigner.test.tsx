@@ -4,7 +4,7 @@
  * The action designer (2026-10-09, approved as drawn after the usability walk-through, job 2). A person decides an
  * action in words — what it is about, what a press does, what the person pressing it says, when it may be pressed, who
  * decides — and sees it read as declaring would read it: how many objects allow a press, and a press dry-run on a real
- * one. Declaring, publishing the release and putting the button on the cockpits a person ticks follow from the page.
+ * one. Declaring, publishing the release and putting the button on the dashboards a person ticks follow from the page.
  * These assert on the REQUESTS the page makes: a form that renders a field and drops it from the body looks the same.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,7 +25,7 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
 }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
-  getDeclaredActions: calls.declared, listCockpits: calls.cockpits, getCockpit: calls.cockpit, keepCockpit: calls.keep,
+  getDeclaredActions: calls.declared, listDashboards: calls.cockpits, getDashboard: calls.cockpit, keepDashboard: calls.keep,
   getActionTriggers: calls.triggers,
 }));
 vi.mock("@/lib/navigate", () => ({ requestTab: calls.tab }));
@@ -116,7 +116,7 @@ describe("the action designer", () => {
       .toContain("51 of the 25,051 overdue dispatch the button sits beside can't be pressed"), { timeout: 3000 });
   });
 
-  it("declares through the approval gate in words, publishes the release, and puts the button and its column on the cockpit ticked", async () => {
+  it("declares through the approval gate in words, publishes the release, and puts the button and its column on the dashboard ticked", async () => {
     calls.declare.mockRejectedValueOnce(new Error("428 approval_required: ontology.override")).mockResolvedValueOnce(undefined);
     calls.release.mockResolvedValue({ published: { number: 4 }, draft: [{}] });
     calls.publish.mockResolvedValue({ number: 5, id: "r5", restated_claims: [] });
@@ -137,8 +137,8 @@ describe("the action designer", () => {
     await waitFor(() => expect(screen.getByTestId("action-designer-state").textContent).toBe("Published in release 5"));
     await user.click(screen.getByTestId("action-place"));
     await waitFor(() => expect(calls.keep).toHaveBeenCalled());
-    const [conn, cockpitId, spec, note] = calls.keep.mock.calls[0];
-    expect([conn, cockpitId, note]).toEqual(["c1", "late-dispatch", "Added the action Escalate to carrier"]);
+    const [conn, dashboardId, spec, note] = calls.keep.mock.calls[0];
+    expect([conn, dashboardId, note]).toEqual(["c1", "late-dispatch", "Added the action Escalate to carrier"]);
     const els = (spec as typeof LATE).elements as Record<string, { type: string; props: Record<string, unknown>; children: string[] }>;
     const button = els["detail-table-overdue_dispatch"].children.map(k => els[k]);
     expect(button).toEqual([{ type: "ActionButton", props: { action: "escalate_to_carrier" }, children: [] }]);
@@ -197,7 +197,7 @@ describe("the action designer", () => {
 describe("where an action's button can sit", () => {
   it("is each object detail beside a table of the type — matched by id or name, in any case", () => {
     expect(placesIn("late-dispatch", "Late dispatch", LATE, ["order"])).toEqual([{
-      cockpitId: "late-dispatch", title: "Late dispatch", detailKey: "detail-table-overdue_dispatch",
+      dashboardId: "late-dispatch", title: "Late dispatch", detailKey: "detail-table-overdue_dispatch",
       tableKey: "table-overdue_dispatch", segment: "overdue_dispatch" }]);
     expect(placesIn("late-dispatch", "Late dispatch", LATE, ["User"])).toEqual([]);
   });

@@ -197,9 +197,11 @@ def test_a_definition_can_be_renamed_moved_and_promoted_and_a_draft_removed(clie
 
 # ── no static or stale figures ──────────────────────────────────────────────────────────────
 
-def test_a_dataset_that_ended_reads_its_last_month_and_an_empty_count_is_no_figure(monkeypatch):
+def test_a_dataset_that_ended_has_no_figure_for_the_range_and_an_empty_count_is_no_figure(monkeypatch):
     """Uber's rides end 2024-12-30. Every recent range read nothing for them — and a COUNT read 0,
-    which was shown as a measured figure. Now: the last month the data covers, saying so."""
+    which was shown as a measured figure. Then (2026-10-07) the last month the data covers was shown
+    among the range's figures; now (the user, 2026-10-23) the range has no figure for it and the reason
+    names the day its data ends — in the Briefing and the Dashboard alike."""
     from datetime import date
 
     from aughor.briefing import ranges
@@ -215,9 +217,12 @@ def test_a_dataset_that_ended_reads_its_last_month_and_an_empty_count_is_no_figu
     monkeypatch.setattr(mt, "ensure_dates", lambda *a, **k: {})
     monkeypatch.setattr(mt, "measure_sql", lambda m, windows, **k: ("Q " + " ".join(f"{w.label}={w.start}" for w in windows), ""))
 
+    asked: list[str] = []
+
     def run_sql(sql):
+        asked.append(sql)
         if "MAX(" in sql.upper():
-            return ["last_day"], [("2024-12-30",)], ""
+            return ["first_day", "last_day"], [("2024-01-01", "2024-12-30")], ""   # the edge reads both ends
         if "current=2024-12-01" in sql:
             return [], [("current", 4100, date(2024, 12, 1), date(2024, 12, 30), 4100),
                         ("previous", 3900, date(2024, 11, 1), date(2024, 11, 30), 3900)], ""
@@ -225,19 +230,21 @@ def test_a_dataset_that_ended_reads_its_last_month_and_an_empty_count_is_no_figu
 
     spec, _ = ranges.resolve_range("last_month", today=date(2026, 10, 7), lag_days=1)
     out = ranges.measure_range("c", spec, run_sql=run_sql, dialect="duckdb")
-    [got] = out["measured"]
-    assert got["current"] == 4100 and got["previous"] == 3900
-    assert got["anchored"]["data_ends"] == "2024-12-30"
-    assert "December 2024" in got["anchored"]["covers"], got["anchored"]
+    assert out["measured"] == []
+    [row] = out["unmeasured"]
+    assert row["reason"] == "its data ends 2024-12-30, before this range"
+    assert row["data_ends"] == "2024-12-30"
+    assert not any("current=2024-12-01" in sql for sql in asked), "December 2024 was read for a range it is not"
 
     # The same metric where its data does not end before the range: an empty month is not 0.
     def empty(sql):
         if "MAX(" in sql.upper():
-            return ["last_day"], [("2026-10-06",)], ""
+            return ["first_day", "last_day"], [("2024-01-01", "2026-10-06")], ""
         return [], [("current", 0, None, None, 0), ("previous", 0, None, None, 0)], ""
     out = ranges.measure_range("c", spec, run_sql=empty, dialect="duckdb")
     assert out["measured"] == []
-    assert out["unmeasured"] == [{"name": "Completed rides", "reason": "its data has no rows in this range"}]
+    assert out["unmeasured"] == [{"name": "Completed rides", "metric": "rides",
+                                  "reason": "its data has no rows in this range"}]
 
 
 def test_a_sum_that_leaves_cancelled_rows_out_is_a_flow_and_a_count_of_open_rows_a_level():

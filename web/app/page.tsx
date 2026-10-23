@@ -3,7 +3,7 @@ import { CONNECTORS } from "@/lib/connectors.gen";
 import { ErrorState } from "@/components/ui/states";
 import { toast } from "@/components/ui/toast";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
 // Always-eager: on the critical path at first render
@@ -21,7 +21,8 @@ import { installWorkspaceHeader, setActiveWorkspace } from "@/lib/workspace";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { OwnersPanel } from "@/components/OwnersPanel";
-import { setOrgSettingsCache } from "@/lib/orgSettings";
+import { registerCurrencyLoader, setCurrentDataset, setDataCurrency, setOrgSettingsCache } from "@/lib/orgSettings";
+import { rememberedSchema } from "@/lib/schemaChoice";
 import { formatCount } from "@/lib/format";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
@@ -111,7 +112,7 @@ import {
   addConnection as apiAddConnection,
   deleteConnection as apiDeleteConnection,
   getConnectionFreshness,
-  getEffectiveSettings,
+  getDataCurrency, getEffectiveSettings,
   getJobs,
   cancelJob,
   getAgents,
@@ -159,7 +160,7 @@ type NavTab =
   | "intel"             // legacy deep-link → intelligence/domains layer
   | "org-intel"         // legacy deep-link → intelligence/org layer
   | "ontology"          // legacy deep-link → intelligence/ontology layer
-  | "cockpit"           // deep-link → intelligence/cockpit layer (the process designer hands a new cockpit over)
+  | "dashboards"        // deep-link → intelligence/dashboards layer (the process designer hands a new dashboard over)
   | "operations"        // unified Operations workspace (Monitors / Action Hub / Security)
   | "agentic-ops"       // Agentic Ops — runs · agents · attention · activity · run graphs
   | "control-room"      // legacy deep-link → agentic-ops (Wave CR's original id)
@@ -911,7 +912,7 @@ const VALID_TABS = new Set<NavTab>([
   "now", "record", "inquiries", "decisions", "missions", "claims", "corrections", "action-centre", "developer",
   "home", "spend", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
   "inbox", "briefing", "intelligence", "intel-hub", "intel", "org-intel",
-  "ontology", "cockpit", "operations", "agentic-ops", "control-room", "evals", "data",
+  "ontology", "dashboards", "operations", "agentic-ops", "control-room", "evals", "data",
   "health", "playbook", "documents", "catalog", "builder", "query", "connections", "metrics",
   // AO-4 — `integrations` is an Operations layer alias like `monitors`; it was missing
   // here, so `?tab=integrations` (the link every Slack door hands out) opened Home.
@@ -962,7 +963,7 @@ const OPS_LAYER_FOR_TAB: Partial<Record<NavTab, OpsLayer>> = {
 const INTEL_LAYER_FOR_TAB: Partial<Record<NavTab, IntelLayer>> = {
   briefing:    "briefing",
   ontology:    "ontology",
-  cockpit:     "cockpit",
+  dashboards:  "dashboards",
   "intel-hub": "hub",
   intel:       "hub",   // the former Domains layer folded into the Hub (Data Profile)
   "org-intel":  "org",
@@ -1011,14 +1012,18 @@ function resolveDeepLinkTab(t: NavTab): ResolvedTab {
   return none;
 }
 
+/** Dashboards were called dashboards until 2026-10-23: an old `?tab=cockpit` / `?layer=cockpit` link still opens them. */
+const LINK_ALIASES: Record<string, string> = { cockpit: "dashboards" };
+
 function tabFromUrl(): NavTab | null {
   if (typeof window === "undefined") return null;
-  const t = new URLSearchParams(window.location.search).get("tab") as NavTab | null;
+  const raw = new URLSearchParams(window.location.search).get("tab");
+  const t = (raw && (LINK_ALIASES[raw] ?? raw)) as NavTab | null;
   return t && VALID_TABS.has(t) ? t : null;
 }
 
 const VALID_LAYERS = new Set<IntelLayer>([
-  "briefing", "cockpit", "hub", "ontology", "graph", "evidence", "memory", "kinetic", "org", "brain",
+  "briefing", "dashboards", "hub", "ontology", "graph", "evidence", "memory", "kinetic", "org", "brain",
 ]);
 
 /** PX-0 (§3.14) — every workspace's layer is addressable, not only Intelligence's
@@ -1032,7 +1037,8 @@ const RECORD_LAYERS = new Set<RecordLayer>(["inquiries", "decisions", "missions"
 
 function layerFromUrl(): string | null {
   if (typeof window === "undefined") return null;
-  return new URLSearchParams(window.location.search).get("layer");
+  const raw = new URLSearchParams(window.location.search).get("layer");
+  return raw && (LINK_ALIASES[raw] ?? raw);
 }
 
 export default function Home() {
@@ -1173,6 +1179,12 @@ export default function Home() {
       if (r.recordLayer) setRecordLayer(r.recordLayer);
       if (r.secLens) setSecLens(r.secLens);
       setOpenId(detail.params?.id ?? null);
+      // a run named by the event opens in the Data Canvas, as `openRun` opens one (a dashboard's Question, PENDING 54)
+      if (detail.params?.run) {
+        setShowHistory(false);
+        setSelectedChatSessionId(null);
+        setSelectedHistoryInvId(detail.params.run);
+      }
       setTab(r.tab);
     };
     window.addEventListener(NAVIGATE_EVENT, onNavigate);
@@ -1432,7 +1444,11 @@ export default function Home() {
       .finally(() => setWsLoaded(true));
   }, []);
 
-  useEffect(() => {
+  // A LAYOUT effect: React runs every layout effect before any passive one, and a child's effects
+  // before its parent's. Set in a passive effect, the workspace reached the transport AFTER the panels
+  // that load on mount had already asked — Now's Briefing list in the Olist workspace listed five
+  // connections' Briefings (seen 2026-10-23).
+  useLayoutEffect(() => {
     if (selectedWorkspace && typeof window !== "undefined") {
       localStorage.setItem(LAST_WS_KEY, selectedWorkspace);
     }
@@ -1477,6 +1493,19 @@ export default function Home() {
   // a deep link (?chat=…, a canvas, a shared view) names its destination, and a
   // redirect that overrode it would break every link this app has ever handed out.
   // The hop happens once per load, and /chat carries "Open in workbench" back.
+  // The currency a money figure carries is its DATASET's, as a person confirmed it (2026-10-23): the
+  // connection in view and the schema last chosen for it. Read once per dataset; a confirmation on the
+  // Profile page writes the cache directly.
+  useEffect(() => {
+    registerCurrencyLoader((conn, schema) => {
+      getDataCurrency(conn, schema || undefined).then(setDataCurrency).catch(() => { /* unread: plain amounts */ });
+    });
+    return () => registerCurrencyLoader(null);
+  }, []);
+  useEffect(() => {
+    setCurrentDataset(selectedConn, selectedConn ? rememberedSchema(selectedConn) : null);
+  }, [selectedConn]);
+
   const redirectedHome = useRef(false);
   useEffect(() => {
     getEffectiveSettings(selectedWorkspace || undefined)
@@ -1869,6 +1898,8 @@ export default function Home() {
             {tab === "now" && (
               <ErrorBoundary label="The Now page hit an error.">
                 <NowPanel
+                  // Its reads load once, on mount: a new workspace is a new page of them.
+                  key={selectedWorkspace || "none"}
                   connections={wsConnections}
                   contextReady={contextReady}
                   doors={{
@@ -1876,6 +1907,7 @@ export default function Home() {
                     onOpenInquiry: id => openRecord("inquiries", id),
                     onOpenDepartures: openDepartures,
                     onOpenAttention: () => { setAgentsLayer("attention"); setTab("agentic-ops"); },
+                    onOpenAgentOps: () => setTab("agentic-ops"),
                     onOpenBriefing: connId => {
                       if (connId) setSelectedConn(connId);
                       handleNavigate("intelligence");

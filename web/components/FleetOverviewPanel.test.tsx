@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TraceFocus } from "@/components/FleetOverviewPanel";
 import type { FleetJob, FleetOverview, NeedsHumanRow } from "@/lib/api";
+import { isBudgetStop, saidState } from "@/lib/runState";
 
 /** The trace index's filter to one deep run — the wire's own name for it. */
 const RUN_FILTER = "investigation_id";
@@ -499,5 +500,27 @@ describe("the two folds at the foot", () => {
     mount([], { traceId: "25c6cf71" });
     expect(await screen.findByTestId("ao-fold-traces")).toHaveAttribute("data-open", "true");
     await vi.waitFor(() => expect(calls.getTrace?.[0]?.[0]).toBe("25c6cf71"));
+  });
+});
+
+// A run its budget stopped is said so, not "cancelled" (the Olist study, Gap 20): the kernel records it CANCELLED and keeps
+// the cause in its error; Agent Ops reads the cause and never folds a budget stop into a person's cancel of the same run.
+const budgetJob = (id: string, state: string, error: string | null = null): FleetJob => ({
+  id, kind: "exploration", state, conn_id: "workspace", canvas_id: null, created_at: "2026-10-22T22:50:00Z",
+  started_at: null, finished_at: null, error, agent: { agent: "Scout", blurb: "", icon: "" }, title: "Explore olist",
+  cost: null, duration_ms: null,
+});
+
+describe("a budget stop", () => {
+  it("is its own said state; a person's cancel and a failure stay as they were", () => {
+    expect(isBudgetStop("budget exceeded: token budget (200,000 tokens)")).toBe(true);
+    expect(saidState("CANCELLED", "budget exceeded: token budget (200,000 tokens)")).toBe("BUDGET_STOP");
+    expect(saidState("CANCELLED", null)).toBe("CANCELLED");
+    expect(saidState("FAILED", "budget exceeded: time budget (900s)")).toBe("FAILED");
+  });
+
+  it("is folded apart from a person's cancel of the same run", () => {
+    const groups = foldRuns([budgetJob("a", "CANCELLED", "budget exceeded: token budget (200,000 tokens)"), budgetJob("b", "CANCELLED")]);
+    expect(groups.map(g => g.state).sort()).toEqual(["BUDGET_STOP", "CANCELLED"]);
   });
 });

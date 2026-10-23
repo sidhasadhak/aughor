@@ -282,7 +282,7 @@ def design_checks(db: Any, graph: OntologyGraph, process: Process, measured: Pro
 
 
 def creates(measured: Process) -> list[dict]:
-    """What a published process derives, each with its number now — what can be placed on a cockpit."""
+    """What a published process derives, each with its number now — what can be placed on a dashboard."""
     out: list[dict] = []
     for i, s in enumerate(measured.stages):
         p = s.promise

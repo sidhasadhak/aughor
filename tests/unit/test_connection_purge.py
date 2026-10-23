@@ -387,17 +387,17 @@ def test_a_deleted_connection_leaves_nothing_on_disk():
 
 
 def test_a_deleted_canvas_takes_its_cards_and_cockpit_history_and_keeps_its_filed_runs():
-    """CT-3 found it by reading: a deleted canvas left its cards and its cockpit's history
+    """CT-3 found it by reading: a deleted canvas left its cards and its dashboard's history
     behind, unreachable. Measured 2026-10-04 on the live install: four deleted canvases still
     held 881 kernel artifacts, 680 jobs and 5,478 events. A chat answer filed under the canvas
     is a RUN and stays, with its receipt — as a deleted chat thread's runs do (FL-6)."""
-    from aughor.dashboard import store as cards
-    from aughor.dashboard.models import DashboardCard
+    from aughor.cards import store as cards
+    from aughor.cards.models import StoredCard
     from aughor.db import purge
     from aughor.kernel.ledger import Ledger
 
     canvas = "cv_gone_01"
-    cards.upsert_card(DashboardCard(connection_id="c1", scope="canvas", scope_ref=canvas,
+    cards.upsert_card(StoredCard(connection_id="c1", scope="canvas", scope_ref=canvas,
                                     title="Revenue"))
     cards.set_viz_config(f"canvas:{canvas}", "t1", "u1", {"type": "bar"})
     ledger = Ledger.default()

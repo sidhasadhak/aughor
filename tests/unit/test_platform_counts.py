@@ -1,6 +1,6 @@
-"""Arc AP-4 — a case queue: a platform-owned type counted, and kept in a cockpit like any other (ROADMAP §3.57).
+"""Arc AP-4 — a case queue: a platform-owned type counted, and kept in a dashboard like any other (ROADMAP §3.57).
 
-A case lives in the edit layer, not a warehouse (Arc OC-6), so the object door's compiler refuses it. A cockpit's figure
+A case lives in the edit layer, not a warehouse (Arc OC-6), so the object door's compiler refuses it. A dashboard's figure
 and its filter column ask how many: here they are counted where the cases live — how many, or how many different
 values of a property, in all or by one property, kept to the conditions given, a reader's search words among them —
 and the keep door checks a case queue's pieces the same way, with no case read. Anything the edit layer cannot answer
@@ -10,7 +10,7 @@ real resolver on the seeded samples.
 from __future__ import annotations
 
 from aughor.actions import overlay as OVL
-from aughor.cockpit import pieces
+from aughor.dashboards import pieces
 from aughor.ontology.platform_objects import listing, query
 from aughor.semantic.object_query import ObjectQuery
 from tests.unit.test_object_actions import CONN, ORDER, db, graph  # noqa: F401 — fixtures by name
@@ -98,7 +98,7 @@ def _case_desk(**list_props) -> dict:
 
 def test_a_case_queue_is_checked_where_its_cases_live_and_kept_like_any_cockpit(queue, monkeypatch):
     monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
-                        lambda name: name in {pieces.FLAG, "ontology.object_cockpits", "cockpit.app_pieces"})
+                        lambda name: name in {pieces.FLAG, "ontology.object_dashboards", "dashboard.app_pieces"})
     monkeypatch.setattr(pieces, "accepted_edits", lambda conn: [])
     assert pieces.not_resolved(CONN, _case_desk(), graph=queue) == []
     said = pieces.not_resolved(CONN, _case_desk(title="priority"), graph=queue)

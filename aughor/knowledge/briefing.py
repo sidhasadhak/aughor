@@ -236,18 +236,22 @@ def _build_user_prompt(
             "growth that is flattening a longer climb). Do not cite the macro context as a "
             "numbered finding."
         )
+    # A currency a person confirmed labels the money; with none, the amounts stand plain and the
+    # reader is told why once — never a default "$" (the user, 2026-10-23, the Olist study's Gap 14).
+    money = (f"Report any monetary figure in {currency_sym.strip()}, never another currency symbol."
+             if currency_sym.strip() else
+             "No person has confirmed this data's currency: write every monetary figure as a plain "
+             "number with no currency symbol or code, and say once that the currency is unconfirmed.")
     if multi_schema:
         lines.append(
             f"\nLEAD with finding [1] (the highest-impact signal); then summarize the single most "
             f"important signal from EACH of the other distinct businesses separately (name the "
-            f"business) — do NOT imply any connection or shared cause across businesses. Report any "
-            f"monetary figure in {currency_sym}, never another currency symbol."
+            f"business) — do NOT imply any connection or shared cause across businesses. {money}"
         )
     else:
         lines.append(
             f"\nLEAD the narrative with finding [1] — it is the highest-impact signal; open on it, "
-            f"then connect the rest. Report any monetary figure in {currency_sym} (this business "
-            f"reports in that currency), never another currency symbol."
+            f"then connect the rest. {money}"
         )
     lines.append(
         "\nGenerate the executive briefing narrative: a 2-3 sentence lede, then 2-4 short "
@@ -341,22 +345,19 @@ def _coverage_digest(domain_data: dict[str, list[dict]], cited_ids: set[str]) ->
     return "\n".join(lines)
 
 
-def _profile_signals(profile: Any, workspace_id: Optional[str] = None) -> tuple[list, str]:
-    """(north-star token-sets, currency symbol) from a BusinessProfile (model or dict).
-    Empty/`$` defaults when no profile — the brief still gates and ranks, just without
-    north-star weighting or currency correction. `workspace_id` lets a workspace-scoped
-    currency override win over the app default (else app default, else the inferred code)."""
+def _profile_signals(profile: Any, connection_id: str = "", schema: Optional[str] = None) -> tuple[list, str]:
+    """(north-star token-sets, currency symbol) for one dataset. The symbol is the currency a PERSON
+    confirmed for ``connection_id`` / ``schema``, else "" — never the profile's inferred code (a
+    proposal, shown on the Profile page) and never a default "$" (2026-10-23). No profile: no
+    north-star weighting; the brief still gates and ranks."""
     from aughor.knowledge.triage import north_star_tokens, currency_symbol
+    from aughor.orgsettings import figure_currency
     names: list[str] = []
-    code: Optional[str] = None
     if isinstance(profile, dict):
         names = [m.get("name", "") for m in (profile.get("north_star_metrics") or [])]
-        code = profile.get("currency_code")
     elif profile is not None:
         names = [getattr(m, "name", "") for m in (getattr(profile, "north_star_metrics", None) or [])]
-        code = getattr(profile, "currency_code", None)
-    from aughor.orgsettings import resolve_currency
-    return north_star_tokens(names), currency_symbol(resolve_currency(code or "", workspace_id))
+    return north_star_tokens(names), currency_symbol(figure_currency(connection_id, schema))
 
 
 def _dataset_subject(profile: Any) -> str:
@@ -518,6 +519,7 @@ def generate_narrative(
     col_types: Optional[dict[str, str]] = None,
     period: Optional[dict] = None,
     period_note_today: Any = None,
+    schema: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     Call the LLM narrator and return a serialisable briefing dict.
@@ -549,7 +551,7 @@ def generate_narrative(
         }
     """
     from aughor.knowledge.triage import plausibility, impact_score
-    ns_tokens, currency_sym = _profile_signals(profile, workspace_id)
+    ns_tokens, currency_sym = _profile_signals(profile, connection_id, schema)
     # CB-6 — what the organisation is trying to do this quarter, written by people in organisation
     # settings. A finding that bears on one ranks higher and the brief says which goal it bears on.
     priorities: list = []
@@ -562,13 +564,10 @@ def generate_narrative(
                  counter="briefing.priorities")
     from aughor.knowledge.triage import priority_hit, priority_tokensets
     pr_tokens = priority_tokensets(priorities)
-    from aughor.orgsettings import resolve_currency
-    # Override-wins: a workspace-scoped (then app) org currency beats the inferred
-    # currency_code (resolve_currency already falls back to the inferred value, then "USD").
-    currency_code = resolve_currency(
-        (profile.get("currency_code") if isinstance(profile, dict) else getattr(profile, "currency_code", None)) or "",
-        workspace_id,
-    )
+    from aughor.orgsettings import figure_currency
+    # The dataset's currency as a person confirmed it, else "" (2026-10-23): the profile's inferred
+    # code is a proposal on the Profile page, and the org's preference describes the organisation.
+    currency_code = figure_currency(connection_id, schema)
 
     # Currency-normalise any text shown in the brief: a non-USD business should never display
     # a '$' figure (findings were authored before currency-awareness). Rewrites '$<number>' to
@@ -576,6 +575,8 @@ def generate_narrative(
     # surface is consistent. A no-op when the business reports in USD.
     import re as _re
     def _cur(text: str) -> str:
+        # With no confirmed currency the symbol is "": a "$" the explorer baked in is dropped, so
+        # the amount stands plain rather than in dollars it was never shown to be in.
         if not text or currency_sym == "$":
             return text
         return _re.sub(r"\$(?=\s?[\d.])", currency_sym, text)
@@ -1073,15 +1074,19 @@ def get_briefing(
         if chains:
             domain_data = {**domain_data, "Promises": list(chains) + list(domain_data.get("Promises", []))}
 
+    # The dataset the scope names ("conn:schema", with any "#period" after it) — its confirmed
+    # currency labels the figures. A canvas's scope names no dataset.
+    _sk = (scope_key or connection_id).split("#", 1)[0]
+    _scope_schema = _sk.split(":", 1)[1] if (":" in _sk and not _sk.startswith("canvas:")) else None
     if period is None:
         briefing = generate_narrative(domain_data, patterns, connection_id, macro_context,
                                       profile=profile, workspace_id=workspace_id,
-                                      col_types=col_types)
+                                      col_types=col_types, schema=_scope_schema)
     else:
         briefing = generate_narrative(domain_data, patterns, connection_id, macro_context,
                                       profile=profile, workspace_id=workspace_id,
                                       col_types=col_types, period=period,
-                                      period_note_today=period_note_today)
+                                      period_note_today=period_note_today, schema=_scope_schema)
 
     try:
         # Per-key upsert: a concurrent generation for ANOTHER scope can no longer be

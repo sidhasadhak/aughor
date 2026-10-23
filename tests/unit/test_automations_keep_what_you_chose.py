@@ -1,7 +1,7 @@
 """Spotlight: "finishing a draft in the editor drops its timezone and its run-as agent" — and,
 measured while fixing it, every canvas save reset a stored timezone to UTC and un-exposed a chain
 from MCP: the request model had no `timezone`, and the canvas's full-record save never carried
-`exposed_as_tool`, which its own door (`POST …/exposed`) flips. Cockpit (CT-5's survey): "a
+`exposed_as_tool`, which its own door (`POST …/exposed`) flips. Dashboard (CT-5's survey): "a
 proposal's approval card … is not drawn again when the chat is reopened" — the live frame was
 never stored; the proposals a turn's run staged are found by its trace.
 """
@@ -58,7 +58,7 @@ def test_a_reopened_chat_draws_the_approval_cards_its_turns_staged():
     from aughor.telemetry import bind_trace
 
     with bind_trace("trace-cards-1"):
-        save_chat_turn("draft me a returns cockpit", "conn-keep", "Staged a cockpit draft.", "",
+        save_chat_turn("draft me a returns dashboard", "conn-keep", "Staged a dashboard draft.", "",
                        session_id="sess-cards-1")
     staged = stage_proposal(StagedProposal(kind="cockpit_draft", connection_id="conn-keep",
                                            action_id="cockpit:new", params={}, trace_id="trace-cards-1",

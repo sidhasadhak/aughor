@@ -40,7 +40,7 @@ export function RangeControl({ value, onChange, disabled, standing, label = "Bri
   value: RangeChoice;
   onChange: (c: RangeChoice) => void;
   disabled?: boolean;
-  /** What "no range" is called on this screen. The Briefing's is "What we know"; a cockpit's
+  /** What "no range" is called on this screen. The Briefing's is "What we know"; a dashboard's
    *  cards, read with no range, run as they were written — which is a different thing to say. */
   standing?: { label: string; title: string };
   /** The group's name for a screen reader. */
@@ -172,7 +172,7 @@ export function RangeMeasures({ block, expected }: { block: BriefingRangeBlock; 
         const change = changeOf(m, "previous");
         if (!change) return "no comparison rows";
         if (!m.equal_age || m.equal_age.equal) return change;
-        // Said beside the number, as the cockpit's cards say it: part of this difference is age.
+        // Said beside the number, as the dashboard's cards say it: part of this difference is age.
         return (
           <span title={m.equal_age.why}>
             {change}<span data-testid="change-not-equal-age" style={{ color: "var(--amb4)" }}> · not at equal age</span>

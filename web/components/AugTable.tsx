@@ -14,7 +14,7 @@ import React, { useMemo, useState } from "react";
 import { Table, ConfigProvider, theme, type ThemeConfig } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
 import { cleanLabel, formatMoney, formatTableNumber, formatPercent, displayCellValue } from "@/lib/format";
-import { isMoneyColumn, columnCurrencySymbol } from "@/lib/orgSettings";
+import { isMoneyColumn, columnCurrencySymbol, currencyFromColumn, unconfirmedCurrencyNote } from "@/lib/orgSettings";
 import { sqlColKey, sqlRowObjects } from "@/lib/sqlTable";
 import { useOrgSettings } from "@/lib/useOrgSettings";
 import { rawCells, TableActions } from "@/components/TableActions";
@@ -305,6 +305,13 @@ export function SqlResultTable({
         summary={summary}
         style={{ fontSize: 12 }}
       />
+      {/* Said once, beside the amounts it is about: a money column whose dataset's currency no person has
+          confirmed prints plain, never under a default "$" (2026-10-23, the Olist study's Gap 14). */}
+      {rows.length > 0 && columns.some(c => isMoneyColumn(c) && !currencyFromColumn(c)) && unconfirmedCurrencyNote() && (
+        <span className="aug-fs-xs" data-testid="table-currency-note" style={{ color: "var(--t3)" }}>
+          {unconfirmedCurrencyNote()}
+        </span>
+      )}
     </div>
   );
 }

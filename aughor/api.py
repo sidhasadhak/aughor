@@ -464,6 +464,27 @@ app.add_middleware(_WorkspaceContextMiddleware)
 app.add_middleware(_OntologyViewMiddleware)
 app.add_middleware(_TraceFlushMiddleware)
 
+
+class _RenamedPathMiddleware:
+    """Dashboards were called cockpits until 2026-10-23 (PENDING 54): a request to ``/cockpits…`` is served as
+    ``/dashboards…`` — before routing, so the route it lands on, its RBAC policy and its guards are the new one's.
+    A bookmark, a script or a cached page keeps working; nothing new is written under the old name."""
+
+    _OLD, _NEW = "/cockpits", "/dashboards"
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get("path") or ""
+        if scope.get("type") == "http" and (path == self._OLD or path.startswith(self._OLD + "/")):
+            scope = dict(scope, path=self._NEW + path[len(self._OLD):],
+                         raw_path=(self._NEW + path[len(self._OLD):]).encode())
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(_RenamedPathMiddleware)
+
 # ── CORS ──────────────────────────────────────────────────────────────────────
 # Defaults cover the dev web UI (:3000/:3001) and the prod-preview server (:3210);
 # AUGHOR_CORS_ORIGINS overrides the whole list.
@@ -1123,8 +1144,8 @@ from aughor.routers import (
     packs as packs_router,
     receipt as receipt_router,
     agui,
-    cockpit as cockpit_router,
-    dashboard,
+    dashboards as dashboards_router,
+    cards,
     evals,
     consistency,
     kinetic,
@@ -1207,8 +1228,8 @@ app.include_router(authority_router.router)  # earned authority: the L0–L5 tab
 from aughor.routers import builder_v1 as builder_v1_router  # noqa: E402 — Arc OC-8, doors for builders
 app.include_router(builder_v1_router.router)  # /ontology/v1 + /objects/v1: the contract, listing, proposing
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
-app.include_router(dashboard.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)
-app.include_router(cockpit_router.router)  # Arc CT-4 — a Data Canvas's cockpit (self-gates on cockpit.composed)
+app.include_router(cards.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)
+app.include_router(dashboards_router.router)  # Arc CT-4 — dashboards (self-gate on dashboard.composed); /cockpits answers too
 app.include_router(evals.router)  # Wave E3 — eval suites/runs (gated on eval.suite)
 app.include_router(charts.router)  # RC-2 — the chart door for surfaces that cannot draw (Slack)
 app.include_router(automations.router)  # Wave A — condition→effect (self-gates on automations.engine)

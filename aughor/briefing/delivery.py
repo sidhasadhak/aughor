@@ -106,10 +106,14 @@ def render_period_markdown(block: dict, sections: list, cut: int) -> str:
     """A period briefing as it leaves: what it covers and against what, why it ends where it
     does, then each surviving section. Same shape as the alert summary's markdown."""
     period = block.get("period", "period")
+    withheld = block.get("compare_withheld")
     lines = [f"# {block.get('label', '')} Briefing — {block.get('covers', '')}",
-             f"*Compared with {block.get('compared_with', '')}. All dates UTC.*"]
+             (f"*Not compared: {withheld}. All dates UTC.*" if withheld
+              else f"*Compared with {block.get('compared_with', '')}. All dates UTC.*")]
     lag = int(block.get("lag_days") or 1)
-    if lag > 1:
+    if block.get("data_ended"):
+        lines.append(f"*The data ended on {block.get('data_through')}: every figure here is final.*")
+    elif lag > 1:
         lines.append(f"*This {period} ends {lag} days before today: newer days are still "
                      "settling as late rows arrive"
                      + (", a lag the platform measured" if block.get("lag_source") == "learned"
@@ -180,7 +184,7 @@ def _build_range_departure(sub: BriefSubscription, *, runner=None) -> dict:
 
     domain_data, profile = period_brief.scope_inputs(sub.conn_id, sub.schema_name or None)
     spec, why = ranges.resolve_for(sub.conn_id, ranges.PERIOD_PRESET.get(sub.period, "yesterday"),
-                                   workspace_id=sub.workspace_id or None)
+                                   workspace_id=sub.workspace_id or None, schema=sub.schema_name or None)
     if spec is None:
         raise ValueError(f"the range cannot be read: {why}")
     scope_key = f"{sub.conn_id}:{sub.schema_name}" if sub.schema_name else sub.conn_id
@@ -383,6 +387,34 @@ def _book_delivery(sub: BriefSubscription, built: dict, verdict, result: dict, *
         receipt_line=verdict.receipt_line(), held_lines=len(built.get("held_lines") or []))
 
 
+def _paused_on_ended_data(sub: BriefSubscription) -> str:
+    """Why a scheduled Briefing is not sent, when its data has ENDED and the edition it would send is
+    one this subscription already sent — "" when it should go. Data that stopped does not move, so the
+    same edition every morning is noise; the send resumes by itself when new rows move the edge (the
+    anchored range then covers new days). Read before building: a paused send spends no model call."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("briefing.ranges"):
+        return ""
+    from aughor.briefing import ranges
+    from aughor.briefing.deliveries import sent_at_for
+    try:
+        spec, _why = ranges.resolve_for(sub.conn_id, ranges.PERIOD_PRESET.get(sub.period, "yesterday"),
+                                        workspace_id=sub.workspace_id or None, schema=sub.schema_name or None)
+    except Exception as exc:  # noqa: BLE001 — not known: the send goes, as it did before the pause existed
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "whether the data has ended could not be read; the Briefing is sent",
+                 counter="briefs.delivery.pause", conn_id=sub.conn_id)
+        return ""
+    if spec is None or not spec.data_ended:
+        return ""
+    covers = ranges.phrases(spec)["covers"]
+    sent = sent_at_for(sub.conn_id, sub.id, covers)
+    if not sent:
+        return ""
+    return (f"paused: the data ended on {ranges._d(spec.data_through)} and has not moved since the Briefing "
+            f"for {covers} was sent on {sent[:10]}; sending resumes when new rows arrive")
+
+
 def _deliver_period(sub: BriefSubscription, trigger, result: dict) -> None:
     """Send the Briefing written for *sub*'s period through the same departure gate and
     trigger as the alert summary. Refused — and said — while the flag is off: a subscription saved
@@ -402,6 +434,10 @@ def _deliver_period(sub: BriefSubscription, trigger, result: dict) -> None:
         off = _turned_off(sub)
         if off:
             result["error"] = f"not sent — {off}"
+            return
+        paused = _paused_on_ended_data(sub)
+        if paused:
+            result["status"], result["error"] = "paused", f"not sent — {paused}"
             return
         built = build_period_departure(sub)
         result["summary"], result["markdown"] = built["summary"], built["markdown"]

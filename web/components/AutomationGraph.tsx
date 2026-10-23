@@ -949,7 +949,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
    *
    * `positions` holds ONLY placements a person made — a drag, or a step dropped from the
    * palette. The computed fallback below is never written into it, which is what makes
-   * saving the whole map safe: the cockpit's rule, that automatic (re)placement must
+   * saving the whole map safe: the dashboard's rule, that automatic (re)placement must
    * never persist, holds here by construction rather than by a flag.
    */
   useEffect(() => {

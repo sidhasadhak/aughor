@@ -53,7 +53,7 @@ const LAYERS: WorkspaceLayer<OpsLayer>[] = [
   { id: "monitors",    icon: "activity", label: "Monitors",         blurb: "Metric watches & alerts" },
   { id: "actions",     icon: "spark",    label: "Notifications",    blurb: "Webhook, Slack & Jira triggers" },
   { id: "integrations", icon: "plug",    label: "Integrations",     blurb: "Connect Google, Slack & Microsoft" },
-  // PX-2 — the governed-spend cockpit. The caps store shipped 2026-09-06 with a write
+  // PX-2 — the governed-spend dashboard. The caps store shipped 2026-09-06 with a write
   // door and no form; usage, model health and the audit feed were folds with no route
   // to an eye. This layer is those endpoints given a screen.
   { id: "spend",       icon: "scales",   label: "Spend",            blurb: "Usage, caps & the governance feed" },

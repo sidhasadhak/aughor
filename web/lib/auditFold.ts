@@ -73,7 +73,7 @@ export function callerName(hypothesisId: string): { agent: string; detail?: stri
     case "cb2_review":            return { agent: "Curator", detail: "measurement" };
   }
   if (h.startsWith("card:")) return { agent: "You", detail: "a pinned card" };
-  // the object door's reads: a cockpit's figures and charts count, its tables list, an object's page reads the rest
+  // the object door's reads: a dashboard's figures and charts count, its tables list, an object's page reads the rest
   if (h === "objects") return { agent: "Objects", detail: "counted" };
   if (h === "objects.list") return { agent: "Objects", detail: "listed" };
   if (h.startsWith("objects.")) return { agent: "Objects", detail: "an object's page" };

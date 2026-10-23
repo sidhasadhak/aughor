@@ -6,19 +6,19 @@
  * Before this, a card that already had a standing value drew it under "for <the range>": the
  * run carried the range's figure in `rows`, as text, and the card drew `refresh`, which is the
  * card's standing value whatever the run was for. Seen live on the demo warehouse: 8.42M
- * labelled November, where November held 2.78M. It reached the Briefing's cockpit as well as
+ * labelled November, where November held 2.78M. It reached the Briefing's dashboard as well as
  * the canvas's, since both draw a card with this component.
  */
 import { render, screen } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { PinnedCardBody, cardKind, type CardState } from "@/components/brief/PinnedCardBody";
-import type { CardRunResult, DashboardCard } from "@/lib/api";
+import type { CardRunResult, StoredCard } from "@/lib/api";
 
 vi.mock("@/lib/api", async (original) => ({
   ...(await original<typeof import("@/lib/api")>()),
   graduateCard: vi.fn(),
-  updateDashboardCard: vi.fn(),
+  updateCard: vi.fn(),
 }));
 
 beforeAll(() => {
@@ -34,9 +34,9 @@ const STANDING = { cadence: "daily", last_run: "", last_value: 8416308.73, prev_
 const CARD = {
   id: "c1", connection_id: "fixture", scope: "canvas", scope_ref: "cv", source: "authored", kind: "kpi",
   title: "Revenue", sql: "SELECT 1", query_ref: null, render: {}, refresh: STANDING, thresholds: {},
-  provenance: {} as DashboardCard["provenance"],            // no test here reads it
+  provenance: {} as StoredCard["provenance"],            // no test here reads it
   links: [], body: "", author: "", created_at: "", updated_at: "",
-} satisfies DashboardCard;
+} satisfies StoredCard;
 
 function run(more: Partial<CardRunResult>): CardState {
   return { card: CARD, run: { columns: ["revenue"], rows: [["8416308.73"]], row_count: 1, caveats: [], error: null, value: 8416308.73, refresh: STANDING, scoped: null, ...more } };

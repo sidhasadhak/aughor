@@ -295,11 +295,13 @@ def format_value(value: float, name: str, unit: str, sym: str) -> str:
     from aughor.business_profile.validate import stated_range
 
     kind = stated_range(unit)[0]
+    # A percentage carries one decimal (2026-10-23, the user's default for the Olist study's group C):
+    # "9%" hid whether a rate was 8.5% or 9.4%.
     if kind == "ratio01":
         # A 0..1 rate whose chart_sql came out on the 0..100 scale is still that rate's percent.
-        return f"{value * 100 if abs(value) <= 1.5 else value:.0f}%"
+        return f"{value * 100 if abs(value) <= 1.5 else value:.1f}%"
     if kind == "pct100":
-        return f"{value:.0f}%"
+        return f"{value:.1f}%"
     if _CUR_UNIT.search(unit) or (_CUR_NAME.search(f"{name} {_unit_head(unit)}")
                                   and not _RATIO_UNIT.search(unit) and not _MULTIPLE.search(name)):
         return f"{sym}{value:,.0f}" if abs(value) >= 10 else f"{sym}{value:,.2f}"
@@ -332,6 +334,13 @@ def is_degenerate_move(move: Move, name: str, unit: str, currency_code: Optional
     the KPI strip's 'no rounds-to-zero on cards' rule, applied to a move's endpoints."""
     sym = currency_symbol(currency_code)
     lo = min(_fmt_numeric(move.start, name, unit, sym), _fmt_numeric(move.end, name, unit, sym))
+    # A rate's base is near zero when it rounds to 0 at WHOLE percent — fixed here, not read off the
+    # display, which carries one decimal since 2026-10-23: 0.4% → 0.6% (+50%) is still a near-zero
+    # base, as it was when both printed "0%".
+    from aughor.business_profile.validate import stated_range
+    kind = stated_range(unit)[0]
+    if kind in ("ratio01", "pct100"):
+        return round(lo) == 0
     return lo == 0.0
 
 

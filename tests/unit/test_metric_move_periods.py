@@ -47,7 +47,7 @@ def test_the_move_compares_the_first_and_last_whole_months_and_says_what_it_left
     [move] = MM.compute_metric_moves([METRIC], _runner(sessions), "EUR", settled_through=DAY,
                                      scope="luxexperience", measured_at="2026-10-11T17:00:00+00:00")
     assert move["id"] == "metric-move::luxexperience.web_session_conversion_rate"
-    assert move["finding"] == ("Web Session Conversion Rate has risen from 2% to 31% (+1467%) "
+    assert move["finding"] == ("Web Session Conversion Rate has risen from 2.0% to 31.3% (+1467%) "
                                "between Jul 2020 and Sep 2026.")
     assert move["generated_at"] == "2026-10-11T17:00:00+00:00"
     d = move["dossier"]

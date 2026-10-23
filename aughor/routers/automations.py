@@ -184,7 +184,7 @@ def _layout_user_id(request: Request) -> str:
     """The account key for a canvas arrangement — the identified user, or a shared
     'default' on localhost / identity-off so one operator sees the same canvas on any
     device. Upgrades to true per-user the moment RBAC identity is bound, with no
-    migration. Same resolution the cockpit's layout uses; two account keys that could
+    migration. Same resolution the dashboard's layout uses; two account keys that could
     disagree would put a user's arrangement somewhere they cannot find it."""
     try:
         from aughor.security.authz import get_principal
@@ -198,7 +198,7 @@ def _layout_user_id(request: Request) -> str:
 def read_layout(automation_id: str, request: Request):
     """Where the caller arranged this automation's steps (`{}` if never touched).
 
-    Server-side and account-keyed rather than `localStorage`, for the reason the cockpit
+    Server-side and account-keyed rather than `localStorage`, for the reason the dashboard
     settled once: an arrangement a person made on their laptop and cannot find on their
     desktop reads as the product having forgotten it. No 404 for an unknown automation —
     an empty layout IS the answer for one nobody has arranged.

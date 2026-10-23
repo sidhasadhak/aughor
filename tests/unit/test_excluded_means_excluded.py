@@ -122,7 +122,7 @@ def test_a_connector_that_renders_its_own_schema_text_hands_it_out_without_them(
 
 
 def test_a_cached_result_for_a_turned_off_table_is_never_served():
-    """Found live 2026-10-08: the Cockpit measured Uber's three metrics from `ncr_ride_bookings` after it
+    """Found live 2026-10-08: the Dashboard measured Uber's three metrics from `ncr_ride_bookings` after it
     was turned off — every statement was answered from the result cache, which sits in front of the door."""
     from aughor.control_plane.contracts.execution import QueryResult
     from aughor.db import matcache

@@ -533,6 +533,17 @@ export async function declareDisplayProperty(
   if (!res.ok) throw new Error(await detailOf(res));
 }
 
+/** Name what makes one object of a type: one column, or several together — order lines by (order_id, order_item_id)
+ *  (the Olist study, Gap 13). The key is measured over the rows and said unique or not. */
+export async function setEntityKey(
+  connectionId: string, entityId: string, columns: string[], schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/key?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ columns }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
 /** Measure the ontology against the data — cardinalities, lifecycles, keys, display properties and bindings, and the
  *  bindings the data proposes. No model call. */
 export async function measureOntology(connectionId: string, schemaName?: string): Promise<void> {
@@ -892,8 +903,8 @@ export interface ProcessPromise {
   note: string;
   segment: string;
   metric: string;
-  /** Arc OC-4 — the segment of the objects still waiting and already past the promise, while cockpits may be built
-   *  from the ontology (`ontology.cockpit_pieces`). */
+  /** Arc OC-4 — the segment of the objects still waiting and already past the promise, while dashboards may be built
+   *  from the ontology (`ontology.dashboard_pieces`). */
   overdue_segment?: string;
 }
 
@@ -1353,7 +1364,7 @@ export interface ReleaseChange {
     automations: { id: string; name: string; how: string }[];
     /** Arc OC-3 — the approved metrics keyed to the element. */
     metrics?: { id: string; name: string; how: string }[];
-    /** Arc OC-4 — the cockpits whose pieces read it, while cockpits may be built from the ontology. */
+    /** Arc OC-4 — the dashboards whose pieces read it, while dashboards may be built from the ontology. */
     cockpits?: { cockpit: string; title: string; pieces: string[] }[];
   };
   by: string;

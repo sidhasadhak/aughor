@@ -7,11 +7,15 @@
  * that dataset (2026-10-07). The pickers stay separate; the choice made in one is the other's
  * default. A per-viewer convenience — storage that is refused or empty simply means no default.
  */
+import { setCurrentDataset } from "./orgSettings";
+
 const KEY = (connectionId: string) => `aughor_schema_choice:${connectionId}`;
 
 export function rememberSchema(connectionId: string, schema: string | null | undefined): void {
   if (!connectionId || !schema) return;
   try { window.localStorage.setItem(KEY(connectionId), schema); } catch { /* storage refused */ }
+  // The schema chosen is the dataset whose figures are on screen: its confirmed currency labels them.
+  setCurrentDataset(connectionId, schema);
 }
 
 export function rememberedSchema(connectionId: string): string | null {

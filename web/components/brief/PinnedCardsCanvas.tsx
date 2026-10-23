@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * PinnedCardsCanvas — the standing cockpit layer as a CANVAS (briefing-cockpit follow-up).
+ * PinnedCardsCanvas — the standing dashboard layer as a CANVAS (briefing-cockpit follow-up).
  *
  * The user's pinned KPI / chart / table cards become React-Flow nodes the reader arranges by
  * priority (drag by the title bar) and resizes at will (NodeResizer), with a MINIMUM size per viz
  * type so a KPI never gets forced as large as a table. Charts + tables FILL their node (measured
  * body height → ResultChartCard `fillHeight`), so a stretched card's chart grows with it.
  *
- * The board is a SNAP-TO-GRID cockpit that never overlaps: drag and resize both snap to a uniform
+ * The board is a SNAP-TO-GRID dashboard that never overlaps: drag and resize both snap to a uniform
  * `GRID` lattice (React-Flow's `snapToGrid`/`snapGrid`, which its resizer reads too), and the layout
  * is kept TOP-LEFT PACKED — cards gravitate up AND left, filling any hole a neighbour left behind
  * (see ./gridLayout). While you move or resize one card it is pinned under the cursor and every OTHER
@@ -23,7 +23,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { getCockpitLayout, saveCockpitLayout } from "@/lib/api";
+import { getDashboardLayout, saveDashboardLayout } from "@/lib/api";
 import { PinnedCardBody, cardKind, type CardState, type Kind } from "@/components/brief/PinnedCardBody";
 import {
   GRID, boxToCell, cellPos, cellSize, packTopLeft, bottomRow,
@@ -166,7 +166,7 @@ function PinnedCardNode({ data, selected }: NodeProps<Node<PinnedNodeData>>) {
 
 const nodeTypes = { pinned: PinnedCardNode };
 
-// The cockpit is a fixed, non-pannable panel: CONTROL the viewport at the origin so nothing (auto-pan
+// The dashboard is a fixed, non-pannable panel: CONTROL the viewport at the origin so nothing (auto-pan
 // on drag, a transient narrow-width clamp) can ever shift the board. Node dragging is unaffected — it
 // moves node positions, not the viewport. Stable identities so React-Flow doesn't churn.
 const FIXED_VIEWPORT = { x: 0, y: 0, zoom: 1 } as const;
@@ -201,14 +201,14 @@ function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSour
     return () => ro.disconnect();
   }, []);
 
-  // Cockpit layout — loaded from the SERVER (account-keyed, so any device sees the same arrangement),
+  // Dashboard layout — loaded from the SERVER (account-keyed, so any device sees the same arrangement),
   // applied once ready. `savedRef` mirrors the latest saved layout so new cards pack relative to it.
   const savedRef = useRef<Layout>({});
   const [loaded, setLoaded] = useState<Layout | null>(null);
   useEffect(() => {
     let cancelled = false;
     setLoaded(null);
-    getCockpitLayout(connectionId).then(l => {
+    getDashboardLayout(connectionId).then(l => {
       if (cancelled) return;
       savedRef.current = (l as Layout) || {};
       setLoaded(savedRef.current);
@@ -308,7 +308,7 @@ function PinnedCardsInner({ connectionId, cards, onRemove, onRefresh, onOpenSour
         if (w && h) l[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y), w: Math.round(w), h: Math.round(h) };
       });
       savedRef.current = l;
-      saveCockpitLayout(connectionId, l);
+      saveDashboardLayout(connectionId, l);
       dirtyRef.current = false;
     }, 500);
     return () => clearTimeout(t);

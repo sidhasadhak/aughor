@@ -27,6 +27,7 @@ import { ErrorState, Loading } from "@/components/ui/states";
 import type { ChatTurn, CompiledFrame } from "@/lib/chatTurn";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
 import { validateQuery, annotateTable, proposeLearnedSkill, saveLearnedSkill, getGroundingContext, pinQueryToDashboard, type QueryValidation, type GroundingReceipt } from "@/lib/api";
+import { KeepOnDashboard } from "@/components/dashboards/KeepOnDashboard";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { OverviewReportView } from "@/components/OverviewReport";
@@ -1811,14 +1812,25 @@ export function ChatMessage({
 
       {/* ── Export this response as PDF / PowerPoint (Insight or Deep Analysis) ── */}
       {isDone && (turn.investigationId || turn.receiptId) && (
-        <div className="flex justify-end items-center gap-2 mt-3">
+        <div className="flex flex-wrap justify-end items-center gap-2 mt-3">
           {turn.investigationId && connectionId && (
-            <SaveAsSkillButton invId={turn.investigationId} connectionId={connectionId} />
+            <RunDoors invId={turn.investigationId} connectionId={connectionId} question={turn.question} />
           )}
           <ExportButton invId={(turn.investigationId ?? turn.receiptId) as string} />
         </div>
       )}
     </div>
+  );
+}
+
+/** What a finished deep analysis may become: its question kept on a dashboard, this answer its first (PENDING 54), and
+ *  a reusable skill. */
+function RunDoors({ invId, connectionId, question }: { invId: string; connectionId: string; question: string }) {
+  return (
+    <>
+      <KeepOnDashboard connectionId={connectionId} question={question} runId={invId} />
+      <SaveAsSkillButton invId={invId} connectionId={connectionId} />
+    </>
   );
 }
 

@@ -511,7 +511,7 @@ def _adhoc_title(columns: list, question: str, sql: str = "", rows: Any = None, 
     return title[:1].upper() + title[1:]
 
 
-#: Aliases a code generator writes (a cockpit piece's `v0`, `x`, `s`) — names nobody reads, so the expression speaks.
+#: Aliases a code generator writes (a dashboard piece's `v0`, `x`, `s`) — names nobody reads, so the expression speaks.
 _GENERATED_ALIAS = re.compile(r"^(?:[a-z]{1,2}|v\d+|col\d+|_?c\d+|f\d+)$", re.I)
 _AGG_WORDS = {"sum": "total", "avg": "average", "min": "lowest", "max": "highest"}
 

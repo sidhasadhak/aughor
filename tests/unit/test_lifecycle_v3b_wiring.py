@@ -9,7 +9,7 @@ What each wiring protects:
 * **canvas** — a scope edit silently redefines what every investigation on that canvas can
   see; before this the prior scope was simply gone.
 * **dashboard card** — the upsert's ``ON CONFLICT DO UPDATE`` overwrites SQL, thresholds and
-  render spec on the artifact a cockpit shows daily. The create is not a revision (the
+  render spec on the artifact a dashboard shows daily. The create is not a revision (the
   savedquery precedent: the UPDATE is what creates the first revision).
 * **eval suite** — the corpus IS the artifact, and it is edited destructively while the
   suite's run history still cites the deleted case_ids. Revisions are recorded after each
@@ -55,16 +55,16 @@ def test_canvas_update_records_a_revision(_on, monkeypatch, tmp_path):
 
 def _dash_store(monkeypatch, tmp_path):
     monkeypatch.setenv("AUGHOR_DASHBOARD_DB", str(tmp_path / "dash.db"))
-    from aughor.dashboard import store as ds
+    from aughor.cards import store as ds
     importlib.reload(ds)
     return ds
 
 
 def test_card_update_records_a_revision_but_create_does_not(_on, monkeypatch, tmp_path):
     ds = _dash_store(monkeypatch, tmp_path)
-    from aughor.dashboard.models import DashboardCard
+    from aughor.cards.models import StoredCard
 
-    card = ds.upsert_card(DashboardCard(connection_id="c1", title="v1", sql="SELECT 1"))
+    card = ds.upsert_card(StoredCard(connection_id="c1", title="v1", sql="SELECT 1"))
     assert history("dashboard", f"dashboard:{card.id}") == [], \
         "a create is readable as the live row; the UPDATE is what creates the first revision"
 

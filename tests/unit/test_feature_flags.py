@@ -93,7 +93,7 @@ def test_specialist_packs_left_the_registry_for_good():
     assert set(FLAG_DEFAULT) == {"ask.converse", "semops.banded_cascade",
                                  "briefing.by_period", "answers.recheck",
                                  "ontology.explore_on_connect", "chat.buttons_reach_agent",
-                                 "ontology.history", "ontology.release", "ontology.cockpit_pieces",
+                                 "ontology.history", "ontology.release", "ontology.dashboard_pieces",
                                  "actions.outbox", "ontology.builder_doors"}
 
 

@@ -47,7 +47,7 @@ describe("the frame", () => {
 describe("the connection in scope", () => {
   it("follows the shell's connection when it changes, as on a workspace switch", () => {
     /** 2026-10-15: visited on the Default workspace, the panel kept `workspace` after the switch to Luxeperience —
-     *  the cockpit on the Lux connection, the Metrics tab still on Workspace's sixteen rows, the picker blank. */
+     *  the dashboard on the Lux connection, the Metrics tab still on Workspace's sixteen rows, the picker blank. */
     const both = [{ id: "c1", name: "theLook" }, { id: "c2", name: "PostgreSQL" }];
     const { rerender } = view(<SemanticLayerPanel connectionId="c1" connections={both} />);
     expect(screen.getByTestId("metrics-stub")).toHaveTextContent("c1");

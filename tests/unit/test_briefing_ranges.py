@@ -222,7 +222,7 @@ def test_a_share_moves_in_points_not_percent_of_a_percent():
     assert "16.1% a year earlier, 2025-08-18 to 2025-08-27 (-1.9 pts)" in line
 
 
-# ── the Cockpit's default view and what a figure opens to (ROADMAP §6 item 43) ────────────────
+# ── the Dashboard's default view and what a figure opens to (ROADMAP §6 item 43) ────────────────
 
 def test_the_measures_alone_are_the_briefings_own_figures_with_no_narrator(con, narrator, approved):
     spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
@@ -248,7 +248,9 @@ def test_measures_that_cannot_open_the_connection_say_so():
 
     spec, _ = ranges.resolve_range("last_week", today=SEP26, lag_days=13)
     block = ranges.measured_block("c1", spec, runner=closed)
-    assert block["measured"] == [] and "could not be opened (ConnectionError)" in block["unmeasured"][0]["reason"]
+    # said of the data, never as a not-measured "metric" (2026-10-23: it read as one waiting on a person)
+    assert block["measured"] == [] and block["unmeasured"] == []
+    assert "could not be opened (ConnectionError)" in block["unreachable"]
 
 
 @pytest.mark.parametrize("kw, n, expected", [
@@ -459,7 +461,7 @@ def test_a_count_over_a_window_with_no_rows_is_not_a_reading(con, approved):
     assert band["orders_placed"]["why"].startswith("only 2 earlier ranges held a reading")
 
 
-# ── the Cockpit's periods: current and last, read to where the data ends (2026-10-08) ───────
+# ── the Dashboard's periods: current and last, read to where the data ends (2026-10-08) ───────
 
 OCT8 = date(2026, 10, 8)                     # a Thursday
 LOADING = {"through": OCT8, "held_by": ["orders"], "tables": {"orders": OCT8}}
@@ -498,7 +500,7 @@ def test_a_period_so_far_is_compared_with_the_same_days_of_the_one_before():
                                                (date(2026, 9, 1), date(2026, 9, 8)),
                                                (date(2026, 10, 1), date(2026, 10, 8))]
     assert ranges.later_spec(month) is None
-    from aughor.cockpit.host import TO_DATE, status_of
+    from aughor.dashboards.host import TO_DATE, status_of
     assert status_of(month) == TO_DATE
 
 
@@ -538,12 +540,6 @@ def test_a_custom_range_past_the_data_is_cut_and_says_so_and_without_an_edge_rea
     assert (asked.last_day, asked.previous_start, asked.edge_note) == (OCT8, date(2026, 9, 23), "")
 
 
-def test_a_metric_whose_data_stopped_reads_the_same_kind_of_period_at_its_end():
-    moved = ranges.anchored_spec(_edge("current_month"), date(2024, 6, 15))
-    assert (moved.start, moved.last_day, moved.preset, moved.as_of) == (
-        date(2024, 6, 1), date(2024, 6, 15), "current_month", OCT8)
-
-
 def _dated(name, table, kind="flow"):
     from types import SimpleNamespace as N
     return N(name=name, label=name, time_kind=kind, time_column=f"{table}.created_at", until_column="x",
@@ -568,7 +564,8 @@ def test_where_the_data_ends_is_the_earliest_live_table_read_once_each(monkeypat
             yield (lambda sql: (seen.append(sql), run_sql(sql))[1]), d
     edge = ranges.data_edge("c1", today=OCT8, runner=counting)
     # the table that stopped in 2024 is not holding today back, and a level does not count
-    assert edge == {"through": date(2026, 10, 5), "held_by": ["returns"], "why": "",
+    # each table holds one day, so the data starts where the later-starting live table does: orders
+    assert edge == {"through": date(2026, 10, 5), "from": date(2026, 10, 7), "held_by": ["returns"], "why": "",
                     "tables": {"orders": date(2026, 10, 7), "returns": date(2026, 10, 5)}}
     assert len(seen) == 3                                       # orders once, though two metrics read it
     # read again inside ten minutes, it is not read again
@@ -593,14 +590,19 @@ def test_where_the_data_ends_says_why_when_it_cannot_be_read(monkeypatch):
     assert day.last_day == date(2026, 10, 7) and day.edge_note.startswith("Whether data has arrived after 2026-10-07 was not read")
 
 
-def test_only_the_current_and_last_periods_and_recent_custom_ranges_read_the_edge(monkeypatch):
+def test_every_range_reads_the_edge_and_live_data_resolves_as_before(monkeypatch):
+    """Until 2026-10-23 only the Dashboard's periods and a recent custom range read where the data ends,
+    so a dataset that ENDED was never known as one (the Olist run). Every range reads it now — and on
+    live data, which has not ended, each resolves exactly as it did."""
     asked: list[str] = []
     monkeypatch.setattr(ranges, "data_edge", lambda conn_id, schema=None, today=None: asked.append(conn_id) or LOADING)
-    ranges.resolve_for("c1", "last_month", today=OCT8)
-    ranges.resolve_for("c1", "custom", start=date(2025, 1, 1), end=date(2025, 1, 31), today=OCT8)
-    assert asked == []
-    spec, _ = ranges.resolve_for("c1", "current_day", today=OCT8)
-    assert asked == ["c1"] and spec.last_day == date(2026, 10, 7)
+    month, _ = ranges.resolve_for("c1", "last_month", today=OCT8)
+    old, _ = ranges.resolve_for("c1", "custom", start=date(2025, 1, 1), end=date(2025, 1, 31), today=OCT8)
+    day, _ = ranges.resolve_for("c1", "current_day", today=OCT8)
+    assert asked == ["c1"] * 3
+    assert (month.start, month.end, month.data_ended) == (date(2026, 9, 1), date(2026, 10, 1), False)
+    assert (old.start, old.last_day, old.data_ended) == (date(2025, 1, 1), date(2025, 1, 31), False)
+    assert day.last_day == date(2026, 10, 7) and not day.data_ended
 
 
 def test_a_flows_earlier_ranges_are_not_said_to_be_read_at_one_age(con, approved):

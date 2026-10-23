@@ -278,6 +278,46 @@ export function formatPoints(from: number | null | undefined, to: number | null 
 }
 
 /** Signed variance percent for scorecards: +12.5% / -3.0%. Input is a ratio. */
+/** A day with its year, for data that ended long ago: "Wed 17 Oct 2018". */
+/** "Fri 23 Oct", or "Fri 23 Oct at 09:07 UTC" — an instant as the day (and UTC time) a reader says; "" without one.
+ *  A dashboard's Question dates its answers by it (PENDING 54). */
+export function utcDayWords(iso: string | null | undefined, withTime = false): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const day = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  if (!withTime) return day;
+  return `${day} at ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" })} UTC`;
+}
+
+export function endedDay(iso: string): string {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  if (isNaN(d.getTime())) return iso;
+  const part = (o: Intl.DateTimeFormatOptions) => d.toLocaleDateString("en-GB", { ...o, timeZone: "UTC" });
+  return `${part({ weekday: "short" })} ${part({ day: "numeric", month: "short", year: "numeric" })}`;
+}
+
+/** A span of days as a table cell says it: "Wed 17 Oct 2018", "September 2018", "2017", "1–17 Oct 2018",
+ *  "1 Jan – 17 Oct 2018". The full sentence ("the year to the data's last day, …") rides as its title. */
+export function spanWords(start?: string | null, last?: string | null): string {
+  if (!start || !last) return "";
+  const a = new Date(`${start.slice(0, 10)}T00:00:00Z`), b = new Date(`${last.slice(0, 10)}T00:00:00Z`);
+  if (isNaN(a.getTime()) || isNaN(b.getTime())) return `${start} to ${last}`;
+  const f = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString("en-GB", { ...o, timeZone: "UTC" });
+  const full: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" };
+  if (a.getTime() === b.getTime()) return endedDay(start);
+  const sameYear = a.getUTCFullYear() === b.getUTCFullYear();
+  const sameMonth = sameYear && a.getUTCMonth() === b.getUTCMonth();
+  const monthEnd = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth() + 1, 0)).getUTCDate();
+  if (sameMonth && a.getUTCDate() === 1 && b.getUTCDate() === monthEnd) return f(a, { month: "long", year: "numeric" });
+  if (sameYear && a.getUTCMonth() === 0 && a.getUTCDate() === 1 && b.getUTCMonth() === 11 && b.getUTCDate() === 31) {
+    return String(a.getUTCFullYear());
+  }
+  if (sameMonth) return `${a.getUTCDate()}–${f(b, full)}`;
+  if (sameYear) return `${f(a, { day: "numeric", month: "short" })} – ${f(b, full)}`;
+  return `${f(a, full)} – ${f(b, full)}`;
+}
+
 export function formatVariance(ratio: number | null | undefined, digits = 1): string {
   if (ratio === null || ratio === undefined || isNaN(ratio)) return "";
   const p = (ratio * 100).toFixed(digits);

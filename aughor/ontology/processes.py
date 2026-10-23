@@ -937,7 +937,7 @@ def measure_override_processes(connection_id: str, schema_name: Optional[str], d
 
 def _pieces_on() -> bool:
     from aughor.kernel.flags import flag_enabled
-    return flag_enabled("ontology.cockpit_pieces")
+    return flag_enabled("ontology.dashboard_pieces")
 
 
 def describe_process(graph: OntologyGraph, process: Process) -> dict:

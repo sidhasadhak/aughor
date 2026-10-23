@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  deleteDashboardCard,
-  listDashboardCards,
-  runDashboardCard,
+  deleteCard,
+  listCards,
+  runCard,
   pinInsightToDashboard,
-  type DashboardCard,
+  type StoredCard,
   type BriefingRange,
 } from "@/lib/api";
 import { PinnedCardsCanvas, type CardState } from "@/components/brief/PinnedCardsCanvas";
@@ -16,9 +16,9 @@ import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
 
-/** The standing cockpit layer: the user's OWN persistent pinned cards on one canvas the reader
+/** The standing dashboard layer: the user's OWN persistent pinned cards on one canvas the reader
  *  arranges. Each card's number is re-run through the guard battery on read. The brief's findings
- *  read separately in the narrative layer (the exhibit strip) — the cockpit is the surface the
+ *  read separately in the narrative layer (the exhibit strip) — the dashboard is the surface the
  *  user curates, not a dump of the cycle's signals. Renders nothing until a card exists. */
 export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onPinned, onOpenSource, onEvidence, range }: {
   /** BR-9 — the range the page is scoped to: each card runs cut to it (on its table's main
@@ -55,10 +55,10 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
     let cancelled = false;
     (async () => {
       try {
-        const list = await listDashboardCards({ scope: "connection", scopeRef: connectionId });
+        const list = await listCards({ scope: "connection", scopeRef: connectionId });
         const withRuns = await Promise.all(
-          list.map(async (card: DashboardCard): Promise<CardState> => {
-            try { return { card, run: await runDashboardCard(card.id, range) }; }
+          list.map(async (card: StoredCard): Promise<CardState> => {
+            try { return { card, run: await runCard(card.id, range) }; }
             catch { return { card, failed: true }; }
           }),
         );
@@ -75,9 +75,9 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
 
   const remove = useCallback(async (id: string) => {
     try {
-      await deleteDashboardCard(id);
+      await deleteCard(id);
       setCards(cs => cs.filter(c => c.card.id !== id));
-      toast.success("Card removed from your cockpit");
+      toast.success("Card removed from your dashboard");
     } catch {
       toast.error("Couldn't remove card", { description: "The card store didn't accept the delete — try again." });
     }
@@ -90,7 +90,7 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
 
   const refreshOne = useCallback(async (id: string) => {
     try {
-      const run = await runDashboardCard(id, range);
+      const run = await runCard(id, range);
       setCards(cs => cs.map(c => (c.card.id === id ? { ...c, run, failed: false } : c)));
       toast.success("Card refreshed");
     } catch {
@@ -103,25 +103,25 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
   const pinSuggestion = useCallback(async (insightId: string) => {
     try {
       await pinInsightToDashboard(connectionId, insightId, { scope: "connection", scopeRef: connectionId, schema });
-      toast.success("Pinned to your cockpit");
+      toast.success("Pinned to your dashboard");
       onPinned?.();
     } catch {
       toast.error("Couldn't pin finding", { description: "The finding's query didn't pass the trust guards." });
     }
   }, [connectionId, schema, onPinned]);
 
-  // ── ⌘K "Tidy cockpit" command — offered only while the cockpit has cards ──
+  // ── ⌘K "Tidy dashboard" command — offered only while the dashboard has cards ──
   const tidyCommands = useMemo<Command[]>(() =>
     cards.length > 0
-      ? [{ id: "cockpit-tidy", label: "Tidy cockpit", sublabel: "Re-pack the cockpit into a clean, gap-free grid", icon: "canvas", accent: "var(--grn3)", keywords: "tidy cockpit arrange pack grid layout reset", run: () => tidyRef.current?.() }]
+      ? [{ id: "cockpit-tidy", label: "Tidy dashboard", sublabel: "Re-pack the dashboard into a clean, gap-free grid", icon: "canvas", accent: "var(--grn3)", keywords: "tidy dashboard arrange pack grid layout reset", run: () => tidyRef.current?.() }]
       : [],
   [cards.length]);
   useRegisterCommands("cockpit", tidyCommands);
 
   if (!ready) return null;   // avoid an empty-state flash before the first fetch settles
 
-  // Empty state (Direction B) — teach the cockpit instead of vanishing. The suggested pins are
-  // REAL movers from this cycle, so the first pin is one grounded click. The "Your cockpit"
+  // Empty state (Direction B) — teach the dashboard instead of vanishing. The suggested pins are
+  // REAL movers from this cycle, so the first pin is one grounded click. The "Your dashboard"
   // eyebrow + violet rule are owned by the standing-layer wrapper above.
   if (cards.length === 0) {
     return (
@@ -140,7 +140,7 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
                   <div key={s.insightId} style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", padding: "8px 12px", fontSize: 12, color: "var(--t2)" }}>
                     <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--t1)" }}>{s.value}</span>
                     <span style={{ color: "var(--t3)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label}</span>
-                    <Button variant="ghost" size="xs" onClick={() => pinSuggestion(s.insightId)} title="Pin this figure to your cockpit"
+                    <Button variant="ghost" size="xs" onClick={() => pinSuggestion(s.insightId)} title="Pin this figure to your dashboard"
                       style={{ color: "var(--vio4)", fontWeight: 600, fontSize: 12, padding: "2px 8px" }}>Pin</Button>
                   </div>
                 ))}

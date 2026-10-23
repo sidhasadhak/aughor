@@ -7,7 +7,7 @@
  * screens read the draft; the agent, the Briefing, metrics and automations keep reading what was published. This strip
  * says which release they read, and lists each waiting change the way `GET /ontology/release` classes it: whether it
  * breaks something (ERR), changes what a definition means (MEANING), is worth a look (WARN) or is safe — with the
- * claims, automations and cockpit cards it touches. Publishing is the person's act, refused while anything breaks; a
+ * claims, automations and dashboard cards it touches. Publishing is the person's act, refused while anything breaks; a
  * change of meaning restates the claims computed under the old one. Off, the strip renders nothing.
  */
 import React, { useCallback, useEffect, useState } from "react";
@@ -42,9 +42,9 @@ function touchesLine(c: ReleaseChange): string {
   const parts: string[] = [];
   if (c.touches.claims.length) parts.push(countNoun(c.touches.claims.length, "claim"));
   if (c.touches.automations.length) parts.push(countNoun(c.touches.automations.length, "automation"));
-  if (c.touches.cards.length) parts.push(countNoun(c.touches.cards.length, "cockpit card"));
+  if (c.touches.cards.length) parts.push(countNoun(c.touches.cards.length, "dashboard card"));
   if (c.touches.metrics?.length) parts.push(countNoun(c.touches.metrics.length, "approved metric"));
-  if (c.touches.cockpits?.length) parts.push(countNoun(c.touches.cockpits.length, "cockpit"));
+  if (c.touches.cockpits?.length) parts.push(countNoun(c.touches.cockpits.length, "dashboard"));
   return parts.join(" · ");
 }
 

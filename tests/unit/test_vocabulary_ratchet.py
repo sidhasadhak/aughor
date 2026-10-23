@@ -163,11 +163,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # governed pipeline — one identifier from the existing API, no prose. Both say "action".
          "tests/unit/test_action_undo_and_gateway_writes.py",
          "aughor/actions/authority.py",
-         # Arc OC-4 (2026-10-09), the same ground: the cockpit pieces' suite and the listing suite build
+         # Arc OC-4 (2026-10-09), the same ground: the dashboard pieces' suite and the listing suite build
          # `KineticAction` fixtures on the graph's `kinetic_actions`, monkeypatch `routers.kinetic`'s graph and
          # press the frozen `/kinetic-actions/{id}/execute` door — identifiers of the existing API, no prose. The
          # product code they cover says "declared action" and reads `declared_actions()`.
-         "tests/unit/test_cockpit_pieces.py",
+         "tests/unit/test_dashboard_pieces.py",
          "tests/unit/test_object_listing.py",
          # The close-out's C6 (2026-10-05), the same ground: the L5 agent (`actions/autonomy.py`) imports
          # the one executor, `execute_kinetic_action`, to run the action it chose through the governed
@@ -406,6 +406,19 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          "web/components/FleetOverviewPanel.test.tsx"),
         "retired from the UI; the layer is 'Overview'",
     ),
+    "cockpit": (
+        # Renamed Dashboard 2026-10-23 (PENDING 54; the user: "rename cockpits entirely as Dashboards - externally and
+        # internally"), in four stages: what people read, the card store moved off the name, the code, then this. What
+        # is left is what a rename must not touch — every one of them read back by name: the stored names in the
+        # glossary's frozen list (the Ledger kind `cockpit` and its natural keys, the spec's root key "cockpit" and its
+        # element type "Cockpit", the proposal kinds `cockpit_draft` / `cockpit_publish`, the audit names, the
+        # `cockpit-images` volume, the Briefing-switches section id, the browser keys `aughor:cockpit:*`), the data's
+        # field names that stored rows carry (`cockpit`, `cockpit_id`, `cockpits`), the flag aliases in `RENAMED` /
+        # `RETIRED_ENV`, the old-path middleware, and links to the studies and mockups filed under the old name.
+        r"(?i)cockpit", CODE_ROOTS, (),
+        "renamed Dashboard (2026-10-23); what remains is stored, read back by name, or an alias that keeps an old "
+        "name working — new code says dashboard",
+    ),
     "charter": (
         # The API's row discriminant IS `kind: "charter"` (see FleetCharterRow), so these
         # files spell it to match the wire. Exempted as TYPE vocabulary, never as prose.
@@ -555,6 +568,10 @@ BASELINE: dict[str, int] = {
     # 4 → 3 (AO-3, 2026-10-03): the activity stream's tooltip said "the agent charter";
     # what remains is the wire field `charter_id` and one type literal.
     "charter": 3,
+    # 2026-10-23: measured after R1–R3 and the comment pass (6,268 occurrences across the repo before the rename).
+    # 973 → 971 the same day: the Question piece (PENDING 54) added the API's field names it must read, and paid for
+    # them by correcting the old paths comments still named (lib/cockpit/, aughor/cockpit/) to where the code lives.
+    "cockpit": 971,
     "control_room": 26,
     "copilotkit": 4,
     # 54 → 49: mostly already true on main (the study references moved to docs/, which is
@@ -589,7 +606,7 @@ BASELINE: dict[str, int] = {
     # restored the Hub's domain rail on the Profile layer (ProfileLayer.tsx +28: the
     # domain-findings API by its own names). Code #498 removed came back by request;
     # renaming that API to dodge the pattern would only hide it from this test.
-    "insight": 1740,   # 1757 → 1754 on 2026-09-28: the cockpit's test fixtures no longer spell out a card's provenance;
+    "insight": 1740,   # 1757 → 1754 on 2026-09-28: the dashboard's test fixtures no longer spell out a card's provenance;
     #                    1754 → 1740 on 2026-10-13: Org, redone to CLARITY, says "finding" and aliases the frozen API names
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
@@ -601,7 +618,8 @@ BASELINE: dict[str, int] = {
     # 2026-10-12: 581 → 576, measured; Security & Audit's redo took one, the rest is slack other waves left.
     # 2026-10-13: 576 → 548, measured; Agent runs left page.tsx for its own file and says "deep analysis", and
     # Health asks "why" instead of investigating (−16); the rest is slack other waves left.
-    "investigation_in_web": 548,
+    # 548 → 547 (2026-10-23): a finished answer's two doors share one wrapper, so its run id is named once.
+    "investigation_in_web": 547,
     # Lowered twice over, by two waves that landed together. DS-11's completion reworded
     # four prose hits in `actions/inbox.py` and exempted the inbox suite; DS-13 exempted
     # `aughor/actions/executor.py` and its own suite, where every hit is a type name, an
@@ -775,7 +793,7 @@ def test_canonical_words_are_not_banned():
     """Guard against the ratchet eating the vocabulary it exists to protect: the words the
     glossary tells authors to USE must never appear in BANNED."""
     for word in ("deep analysis", "quick answer", "finding", "narrative", "survey",
-                 "briefing", "segment", "action", "notification", "pack", "custom agent"):
+                 "briefing", "segment", "action", "notification", "pack", "custom agent", "dashboard"):
         for term, (pattern, _, _, _) in BANNED.items():
             assert not re.search(pattern, word), (
                 f"BANNED[{term!r}] matches the canonical word {word!r} — the ratchet would "
@@ -788,7 +806,7 @@ def test_glossary_exists_and_covers_the_banned_terms():
     ratchet has nowhere to look up the replacement."""
     text = (REPO / "docs" / "GLOSSARY.md").read_text().lower()
     missing = [t for t in ("insight", "soma", "kinetic", "persona", "specialist", "digest",
-                           "fleet", "palantir", "genie", "databricks")
+                           "fleet", "palantir", "genie", "databricks", "cockpit")
                if t not in text]
     assert not missing, f"docs/GLOSSARY.md does not mention: {missing}"
 

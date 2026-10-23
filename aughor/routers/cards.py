@@ -1,0 +1,630 @@
+"""Dashboard-card CRUD — the standing (dashboard) layer of the Briefing.
+
+Slice 0 of the briefing-cockpit initiative (docs/BRIEFING_COCKPIT_2026-07-18.md): a thin,
+scope-filtered CRUD over the dashboard-card store, exposing the primitive. Deliberately
+DEFERRED to later slices (kept out of scope here): RBAC scope enforcement, running a
+user-authored card's SQL through the guard battery (execute_guarded) on write, and the
+pin-from-insight / Query-Builder convenience doors that compose this primitive.
+"""
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field
+
+from aughor.cards import doors
+from aughor.cards.models import StoredCard
+from aughor.cards.store import (
+    delete_card, get_card, get_layout, get_viz_configs, list_cards, set_layout,
+    set_viz_config, upsert_card,
+)
+from aughor.kernel.errors import tolerate
+from aughor.security.authz import connection_owner_guard
+
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["cards"], dependencies=[Depends(connection_owner_guard)])
+
+
+def _layout_user_id(request: Request) -> str:
+    """The account key for dashboard layout — the identified user, or a shared 'default' on
+    localhost / identity-off so a single operator still gets the same dashboard on any device.
+    Upgrades to true per-user the moment RBAC identity is bound, with no migration."""
+    try:
+        from aughor.security.authz import get_principal
+        p = get_principal(request)
+        return p.user_id if p and p.user_id else "default"
+    except Exception:
+        return "default"
+
+
+@router.get("/cards")
+def list_cards_route(
+    connection_id: Optional[str] = None,
+    scope: Optional[str] = None,
+    scope_ref: Optional[str] = None,
+) -> list[dict]:
+    """Cards matching the filters (any left unset is ignored), newest-updated first.
+    Fetch a canvas dashboard with `?scope=canvas&scope_ref=<canvas_id>`."""
+    return [
+        c.model_dump()
+        for c in list_cards(connection_id=connection_id, scope=scope, scope_ref=scope_ref)
+    ]
+
+
+class LayoutRequest(BaseModel):
+    connection_id: str
+    layout: Dict[str, Any] = Field(default_factory=dict)   # {card_id: {x, y, w, h}}
+
+
+# NOTE: the static /cards/layout routes MUST precede /cards/{card_id} below, or the dynamic
+# path would swallow "layout" as a card_id.
+@router.get("/cards/layout")
+def get_layout_route(request: Request, connection_id: str) -> Dict[str, Any]:
+    """The caller's saved dashboard layout for a connection ({card_id: {x, y, w, h}}); {} if none.
+    Server-side + account-keyed, so any device/login sees the same arrangement."""
+    return get_layout(connection_id, _layout_user_id(request))
+
+
+@router.put("/cards/layout")
+def put_layout_route(request: Request, req: LayoutRequest) -> dict:
+    """Persist the caller's dashboard layout (position + size per card) for a connection."""
+    set_layout(req.connection_id, _layout_user_id(request), req.layout or {})
+    return {"ok": True}
+
+
+# ── Per-chart display config for card-less surfaces (ledger rows, digest tiles, KPIs) ──
+#
+# A pinned card stores its display in `StoredCard.render`. Charts that are NOT cards had
+# nowhere to put it, so every edit — chart type, axes, colour binding, legend, transform,
+# table/pivot view — was lost the moment the row collapsed. Keyed by the insight the chart is
+# about, and by the SAME scope_key the briefing stamps, so edits never cross schemas.
+
+
+class VizConfigRequest(BaseModel):
+    scope_key: str = ""
+    target_id: str
+    config: Dict[str, Any] = Field(default_factory=dict)   # opaque, frontend-owned (like `render`)
+
+
+@router.get("/viz-configs")
+def get_viz_configs_route(request: Request, scope_key: str = "") -> Dict[str, Any]:
+    """Every saved chart config in a scope, as `{target_id: config}` — one fetch per brief."""
+    return get_viz_configs(scope_key, _layout_user_id(request))
+
+
+@router.put("/viz-configs")
+def put_viz_config_route(request: Request, req: VizConfigRequest) -> dict:
+    """Persist one chart's display config. An empty `config` resets it (deletes the row)."""
+    set_viz_config(req.scope_key, req.target_id, _layout_user_id(request), req.config or {})
+    return {"ok": True}
+
+
+@router.get("/cards/{card_id}")
+def get_card_route(card_id: str) -> dict:
+    c = get_card(card_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Card not found")
+    return c.model_dump()
+
+
+@router.post("/cards", status_code=201)
+def create_card_route(card: StoredCard) -> dict:
+    # The store owns id + timestamps; ignore any client-supplied values.
+    card = card.model_copy(update={"id": "", "created_at": "", "updated_at": ""})
+    return upsert_card(card).model_dump()
+
+
+@router.put("/cards/{card_id}")
+def update_card_route(card_id: str, card: StoredCard) -> dict:
+    if not get_card(card_id):
+        raise HTTPException(status_code=404, detail="Card not found")
+    return upsert_card(card.model_copy(update={"id": card_id})).model_dump()
+
+
+@router.delete("/cards/{card_id}", status_code=204)
+def delete_card_route(card_id: str) -> None:
+    if not delete_card(card_id):
+        raise HTTPException(status_code=404, detail="Card not found")
+
+
+# ── Guard-on-write: the shared trust gate every authoring door runs through ──
+
+#: The guard, the scalar reading and the title clip are shared with every other door that
+#: makes a card (`aughor/cards/doors.py`); the names below are this router's own for them.
+_clip_title = doors.clip_title
+_scalar = doors.scalar_of
+
+
+def _preview(result) -> dict:
+    """A bounded, stringified snapshot of a guarded result for the pin response."""
+    return {
+        "columns": result.columns or [],
+        "rows": [[str(c) for c in r] for r in (result.rows or [])[:20]],
+        "row_count": result.row_count,
+    }
+
+
+def _guarded_or_refuse(
+    connection_id: str, sql: str, *, query_id: str, schema: Optional[str] = None
+):
+    """Open the connection, run `sql` through the deterministic guard battery, and either
+    return the clean QueryResult or refuse. A leadership dashboard never stores a card it
+    couldn't run cleanly: a connection that won't open is a 404, and a query that errors or is
+    BLOCKED by a guard is a 422 — nothing is persisted either way. Shared by every authoring
+    door so a Query-Builder pin carries the exact same trust guarantee as a pinned finding.
+    """
+    try:
+        return doors.run_guarded(connection_id, sql, query_id=query_id, schema=schema)
+    except doors.GuardRefused as refused:
+        raise HTTPException(status_code=404 if refused.missing_connection else 422, detail=str(refused))
+
+
+# ── Door 1: pin a briefing finding as a card ─────────────────────────────────
+
+class PinInsightRequest(BaseModel):
+    """Pin the finding `insight_id` (from `connection_id`'s briefing) as a card scoped to
+    `scope`/`scope_ref` (e.g. a canvas dashboard)."""
+    model_config = ConfigDict(populate_by_name=True)
+    connection_id: str
+    insight_id: str
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+    scope: str = "canvas"
+    scope_ref: str = ""
+    kind: str = "kpi"                 # kpi | chart
+    title: Optional[str] = None       # optional override of the finding text
+
+
+@router.post("/cards/pin-insight", status_code=201)
+def pin_insight_route(req: PinInsightRequest) -> dict:
+    """Pin a briefing finding as a dashboard card (the "from an insight" door).
+
+    Resolves the finding's grounded SQL from the SAME domain insights the brief is built
+    from, RE-RUNS it through the deterministic guard battery (`execute_guarded`) so the
+    pinned number carries the same trust guarantee as an AI answer — a query that errors or
+    is BLOCKED is refused (422), never stored — then persists a card linked back to the
+    source finding + its receipt, plus a live preview and any unrepaired guard caveats.
+    """
+    from aughor.routers import exploration
+
+    # 1) Resolve the finding (same source as the brief) and require a runnable query.
+    by_domain = exploration._domain_insights_for(req.connection_id, req.schema_name)
+    insight = next(
+        (i for items in by_domain.values() for i in (items or []) if i.get("id") == req.insight_id),
+        None,
+    )
+    if not insight:
+        raise HTTPException(status_code=404, detail="Insight not found in this connection's briefing")
+    sql = (insight.get("sql") or "").strip()
+    if not sql:
+        raise HTTPException(status_code=422, detail="This finding has no query to pin (profile-only fact)")
+
+    # 2) Guard-on-write, on the canvas-scoped schema (refuses 422 if it can't run cleanly).
+    use_schema = (
+        req.schema_name
+        if (req.schema_name and exploration._store_key(req.connection_id, req.schema_name) != req.connection_id)
+        else None
+    )
+    result = _guarded_or_refuse(
+        req.connection_id, sql, query_id=f"pin:{req.insight_id}", schema=use_schema
+    )
+
+    # 3) Build + store the card, linked to the source finding (graph edge) + its receipt.
+    saved = upsert_card(doors.card_from_finding(
+        req.connection_id, insight, kind=req.kind, title=req.title,
+        scope=req.scope, scope_ref=req.scope_ref))
+    return {"card": saved.model_dump(), "preview": _preview(result), "caveats": result.caveats or []}
+
+
+# ── Door 2: pin a Query-Builder query as a card ──────────────────────────────
+
+class PinQueryRequest(BaseModel):
+    """Pin an ad-hoc Query-Builder query as a card. Unlike Door 1 the SQL is user-authored, so
+    the guard-on-write battery is the whole point: a bad join or mis-grained aggregate is
+    refused (422) before it can ever become a leadership KPI. `render` is the opaque
+    frontend-owned Chart spec; `kind` is derived from the result shape, not trusted from the
+    client."""
+    model_config = ConfigDict(populate_by_name=True)
+    connection_id: str
+    sql: str
+    title: Optional[str] = None
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+    scope: str = "connection"
+    scope_ref: str = ""                              # defaults to connection_id (the dashboard)
+    render: Dict[str, Any] = Field(default_factory=dict)
+    query_ref: Optional[str] = None                  # optional link to the SavedQuery it came from
+
+
+@router.post("/cards/pin-query", status_code=201)
+def pin_query_route(req: PinQueryRequest) -> dict:
+    """Pin a Query-Builder query as a dashboard card (the "from Query Builder" door).
+
+    Runs the user's SQL through the SAME guard battery as a pinned finding, refusing (422)
+    anything that errors or is BLOCKED — so the second authoring door carries the identical
+    trust guarantee as the first, now on user-authored SQL. `kind` is derived from the result
+    shape (a single numeric cell → kpi, otherwise chart); the render spec is stored opaque for
+    the card to draw and the card lands on the connection's dashboard.
+    """
+    sql = (req.sql or "").strip()
+    if not sql:
+        raise HTTPException(status_code=422, detail="No query to pin")
+
+    result = _guarded_or_refuse(
+        req.connection_id, sql, query_id="pin-query", schema=req.schema_name or None
+    )
+
+    saved = upsert_card(StoredCard(
+        connection_id=req.connection_id,
+        scope=req.scope,
+        scope_ref=req.scope_ref or req.connection_id,
+        source="query_builder",
+        kind="kpi" if _scalar(result) is not None else "chart",
+        title=_clip_title(req.title or "", "Pinned query"),
+        sql=sql,
+        query_ref=req.query_ref,
+        render=req.render or {},
+    ))
+    return {"card": saved.model_dump(), "preview": _preview(result), "caveats": result.caveats or []}
+
+
+# ── Graduate a card to a Monitor (watch → alert, Slice 4) ────────────────────
+
+class GraduateCardRequest(BaseModel):
+    """Alert thresholds. `threshold_direction`: fire when the value goes below (default) or above
+    the threshold."""
+    warning_threshold: Optional[float] = None
+    critical_threshold: Optional[float] = None
+    threshold_direction: str = "below"
+
+
+@router.post("/cards/{card_id}/graduate", status_code=201)
+def graduate_card_route(card_id: str, req: GraduateCardRequest) -> dict:
+    """Graduate a KPI/watch card to a scheduled Monitor — the last step of the card lifecycle:
+    run its already-guarded SQL as a recurring threshold check (`reanchor_window` ON so a frozen
+    date window can't go stale), then record the thresholds + monitor id back on the card so the
+    dashboard shows it's now alerting. The card stops being a passive slot and becomes proactive
+    push, reusing the monitor engine rather than forking a second alerting path.
+    """
+    from pydantic import ValidationError
+    from aughor.monitors.models import Monitor
+    from aughor.monitors.store import upsert_monitor
+
+    card = get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    if not (card.sql or "").strip():
+        raise HTTPException(status_code=422, detail="This card has no query to monitor")
+    if req.warning_threshold is None and req.critical_threshold is None:
+        raise HTTPException(status_code=422, detail="Set a warning or critical threshold")
+
+    try:
+        monitor = Monitor(
+            conn_id=card.connection_id,
+            name=card.title or "Card alert",
+            custom_sql=card.sql,
+            reanchor_window=True,
+            alert_on="threshold_cross",
+            warning_threshold=req.warning_threshold,
+            critical_threshold=req.critical_threshold,
+            threshold_direction=req.threshold_direction,
+        )
+    except ValidationError as e:
+        detail = "; ".join(f"{er['loc'][-1]}: {er['msg']}" for er in e.errors())
+        raise HTTPException(status_code=422, detail=f"Invalid alert configuration — {detail}")
+
+    saved_monitor = upsert_monitor(monitor)
+    # No scheduler sync: the automation heartbeat reads the monitor store live each
+    # tick (virtual adoption), so the graduated monitor is already scheduled.
+
+    updated = upsert_card(card.model_copy(update={"thresholds": {
+        "warning": req.warning_threshold,
+        "critical": req.critical_threshold,
+        "direction": req.threshold_direction,
+        "monitor_id": saved_monitor.id,
+    }}))
+    return {"monitor": saved_monitor.model_dump(), "card": updated.model_dump()}
+
+
+# ── Run / refresh a card's value ─────────────────────────────────────────────
+
+def _card_range(conn_id: str, preset: Optional[str], start: Optional[str], end: Optional[str],
+                workspace_id: Optional[str]):
+    """BR-9 — the range a card run asks for, resolved as the Briefing resolves its own; None
+    when none is asked; refused (404) with the flag off, (422) when it cannot be read."""
+    from datetime import date as _date
+
+    from aughor.briefing import ranges
+    from aughor.kernel.flags import flag_enabled
+
+    if not (preset or start or end):
+        return None
+    if not flag_enabled("briefing.ranges"):
+        raise HTTPException(status_code=404, detail="a card for a date range needs the 'briefing.ranges' flag")
+    try:
+        first = _date.fromisoformat(start) if start else None
+        last = _date.fromisoformat(end) if end else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="start and end are ISO days, e.g. 2026-08-17")
+    spec, why = ranges.resolve_for(conn_id, preset, start=first, end=last, workspace_id=workspace_id)
+    if spec is None:
+        raise HTTPException(status_code=422, detail=why)
+    return spec
+
+
+class CardRunValues(BaseModel):
+    """Arc AP-8 — the dashboard's values a card of a person's own query reads as ``{{name}}``, as the page holds them now:
+    name → ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement."""
+    values: Dict[str, Dict[str, Any]] = {}
+
+
+@router.post("/cards/{card_id}/run")
+def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[str] = None,
+                   end: Optional[str] = None, workspace_id: Optional[str] = None,
+                   compare: bool = False, body: Optional[CardRunValues] = None) -> dict:
+    """Recompute a card's value NOW: re-run its SQL through the guard battery and return the
+    current result. A single numeric cell is recorded as the card's latest value (rolling the
+    previous one into prev_value) so a KPI can show a delta. Guard-on-read keeps a card honest
+    even if the underlying data drifted after it was pinned.
+
+    BR-9 (2026-09-26): with a range (`preset`, or `start` and `end`) the card's SQL is cut to
+    it the way a finding is re-asked — the first table it reads that has a main date,
+    substituted by itself filtered to the window — and `scoped` says what the number covers;
+    a card whose tables have no date runs standing and `scoped` says why. A range run never
+    rolls into the card's standing value history.
+
+    With `compare` (a dashboard asks it), a figure cut to a range is also read for the window the
+    range is compared with, cut the same way, so the two differ only by their dates — `previous`.
+    It is at equal age only when the range is final: a cut does not bound a cohort's outcomes to
+    an as-of the way a metric's own measurement does, so before then part of any difference is
+    age, and `previous` says so."""
+    from aughor.db.connection import open_connection_for
+    from aughor.sql.executor import execute_guarded
+
+    card = get_card(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    if not (card.sql or "").strip():
+        return {"columns": [], "rows": [], "row_count": 0, "caveats": [], "error": None,
+                "value": None, "refresh": card.refresh.model_dump(), "scoped": None}
+    spec = _card_range(card.connection_id, preset, start, end, workspace_id)
+    metric = _governed_metric_of(card)
+    if metric is not None and spec is not None:
+        measured = _metric_card_for_range(card, metric, spec, compare)
+        if measured is not None:
+            return measured
+    try:
+        db = open_connection_for(card.connection_id)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
+    # A card made from a metric runs the metric's CURRENT definition — the copy taken when the card
+    # was made went stale the moment the definition was corrected (the user, 2026-10-07: "no static
+    # or stale metrics").
+    base = _metric_statement(metric) or card.sql
+    sql, scoped, cut_on = base, None, None
+    shown, unread = _shown_of(card)
+    reads = _reads_values(card) if shown is not None else False
+    if spec is not None and reads:
+        # Arc AP-8 — a query that reads the dashboard's values is read as it says: cutting it would rewrite the statement
+        # its values are bound into
+        from aughor.briefing.ranges import phrases
+        scoped = {"covers": phrases(spec)["covers"], "standing": True, "grain": None,
+                  "why": "It reads the dashboard's own values, so it is read as its query says, not cut to the range."}
+    elif spec is not None:
+        from aughor.briefing.ranges import phrases
+        from aughor.briefing.reask import grain_for
+        from aughor.semantic.metric_statement import scoped_statement
+        from aughor.semantic.metric_time import window_predicate
+        from aughor.semantic.metric_statement import statement_tables
+        from aughor.tools.profile_cache import profile_entry_for
+
+        dialect = str(getattr(db, "dialect", "") or "duckdb")
+        covers = phrases(spec)["covers"]
+        table, col, why = grain_for(base, [], profile_entry_for(card.connection_id, statement_tables(base)) or {}, dialect)
+        cut = None
+        if table is not None:
+            cut, why, _ = scoped_statement(base, table, window_predicate(col, spec.start, spec.end), dialect=dialect)
+        if cut is None:
+            scoped = {"covers": covers, "standing": True, "why": why, "grain": None}
+        else:
+            sql, cut_on = cut, (table, col, dialect)
+            scoped = {"covers": covers, "standing": False, "why": "", "grain": f"{table}.{col}"}
+    if shown is not None or unread:
+        # Arc AP-7 — a card of a person's own query, shown as they asked
+        try:
+            return _run_shown(db, card, shown, unread, sql, scoped, values=body.values if body else {})
+        finally:
+            try:
+                db.close()
+            except Exception as exc:
+                tolerate(exc, "dashboard: connection close failed after a query card run", counter="dashboard.db_close")
+    previous = None
+    try:
+        result = execute_guarded(db, sql, query_id=f"card:{card_id}", schema=None)
+        if compare and cut_on is not None and _scalar(result) is not None:
+            previous = _previous_figure(db, card, spec, *cut_on, execute_guarded, sql=base)
+    finally:
+        try:
+            db.close()
+        except Exception as exc:
+            tolerate(exc, "dashboard: connection close failed after card run", counter="dashboard.db_close")
+    # The figure of THIS run, whatever it was run for. Until Arc CT-4 a run cut to a range
+    # carried its figure only inside `rows`, as text, while `refresh` went on carrying the
+    # standing one — and the card drew `refresh`. So a card with a standing value showed it
+    # under "for <the range>": the all-time revenue, labelled November's. Seen live on the
+    # demo warehouse, 8.42M where the range held 2.78M. `value` is what a reader is shown.
+    value = _scalar(result)
+    # A range's figure is the range's; the tracked value and its history stay the standing card's.
+    card = _recorded(card, None if (scoped is not None and not scoped["standing"]) else value)
+    return {
+        "columns": result.columns or [],
+        "rows": (result.rows or [])[:200],       # raw values so the client can detect a time series
+        "row_count": result.row_count,
+        "caveats": result.caveats or [],
+        "error": result.error,
+        "value": value,
+        "refresh": card.refresh.model_dump(),
+        "scoped": scoped,
+        **({"previous": previous} if compare else {}),
+    }
+
+
+def _recorded(card, scalar):
+    """The card with ``scalar`` kept as its latest value — the one before rolled into ``prev_value``, the history
+    bounded — or the card as it was when there is no standing value to keep."""
+    from aughor.util.time import now_iso
+    if scalar is None:
+        return card
+    hist = list(card.refresh.history or [])
+    if not hist or hist[-1] != scalar:      # dedupe consecutive equals → a meaningful step series
+        hist = (hist + [scalar])[-24:]        # bounded to the last 24 observations
+    return upsert_card(card.model_copy(update={"refresh": card.refresh.model_copy(update={
+        "prev_value": card.refresh.last_value,
+        "last_value": scalar,
+        "last_run": now_iso(),
+        "history": hist,
+    })}))
+
+
+def _shown_of(card):
+    """Arc AP-7 — how a card of a person's own query is shown, while queries are on: ``(shown, "")``; ``(None, why)``
+    when what it says cannot be read; ``(None, "")`` for every other card, which runs as it always did."""
+    from aughor.dashboards import queries
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled(queries.FLAG):
+        return None, ""
+    try:
+        return queries.shown_of(card.render), ""
+    except queries.Refused as e:
+        return None, str(e)
+
+
+def _reads_values(card) -> bool:
+    """Arc AP-8 — whether a card's query reads any of the dashboard's values (``{{name}}``)."""
+    from aughor.dashboards import queries
+    return bool(queries.params_of(card.sql or ""))
+
+
+def _run_shown(db, card, shown, unread: str, sql: str, scoped, *, values: Optional[dict] = None) -> dict:
+    """Arc AP-7 — run a query card as it is shown: refused while a row policy narrows a table it reads (it reads the
+    table straight), summed around the person's statement, stopped after the connection's time limit. Arc AP-8 — the
+    dashboard's values it reads are bound by the engine, as the page holds them now; one it holds nothing for is said."""
+    from aughor.dashboards import pieces, queries
+
+    def said(why: str) -> dict:
+        return {"columns": [], "rows": [], "row_count": 0, "caveats": [], "error": why, "value": None,
+                "refresh": card.refresh.model_dump(), "scoped": scoped, "shown": None}
+    if unread:
+        return said(unread)
+    params = None
+    if queries.params_of(sql):
+        from aughor.dashboards import variables
+        if not variables.on():
+            return said(variables.refused_query(sql))
+        try:
+            sql, params = queries.bind(sql, values or {})
+        except queries.Refused as e:
+            return said(str(e))
+    try:
+        graph = pieces.served_graph(card.connection_id)
+    except Exception:
+        graph = None
+    why = queries.policy_refusal(graph, queries.tables_of(card.sql, queries.dialect_of(db)))
+    if why:
+        return said(why)
+    seconds = queries.time_limit(card.connection_id)
+    columns = card.render.get("columns") if isinstance(card.render, dict) else None
+    if not isinstance(columns, list) or not columns:
+        probe = queries.probe(db, sql, seconds=seconds, params=params)
+        if probe["error"]:
+            return said(probe["error"])
+        columns = probe["columns"]
+    shown = queries.normalized(shown, columns)
+    problems = queries.check(shown, columns)
+    if problems:
+        return said(" ".join(problems))
+    ran = queries.run(db, sql, shown, columns, seconds=seconds, params=params)
+    if ran["error"]:
+        return said(ran["error"])
+    value = ran["shown"].get("value") if ran["shown"]["as"] == "figure" else None
+    # a figure read for one reader's values is theirs, never the card's standing value
+    card = _recorded(card, value if (scoped is None or scoped["standing"]) and params is None else None)
+    return {"columns": [c.get("name") for c in ran["columns"]], "rows": ran["rows"][:200], "row_count": len(ran["rows"]),
+            "caveats": ran["caveats"], "error": None, "value": value, "refresh": card.refresh.model_dump(),
+            "scoped": scoped, "shown": ran["shown"], "duration_ms": ran["duration_ms"]}
+
+
+def _governed_metric_of(card):
+    """The definition a card was made from, as it reads NOW, or None (a card of its own SQL)."""
+    name = str(getattr(card.provenance, "metric", "") or "").strip() if card.provenance else ""
+    if not name:
+        return None
+    try:
+        from aughor.semantic.metrics import get_metric
+        return get_metric(name, connection_id=card.connection_id)
+    except Exception as exc:  # noqa: BLE001 — the card keeps its own SQL and says nothing new
+        tolerate(exc, "a card's metric could not be read; it runs the SQL it was made with",
+                 counter="dashboard.card_metric")
+        return None
+
+
+def _metric_statement(metric) -> str:
+    if metric is None or not (metric.sql or "").strip():
+        return ""
+    from aughor.semantic.metrics import value_query
+    return value_query(metric) or ""
+
+
+def _metric_card_for_range(card, metric, spec, compare: bool) -> Optional[dict]:
+    """A metric card read for a range the way the Briefing reads the metric — on its own dates, with
+    its comparison at equal age — never cut on whatever date the profiler calls its table's main
+    one. None when the metric's dates are not set, so the card falls back to the cut."""
+    from aughor.briefing.ranges import compared_word, phrases, read_value
+    from aughor.dashboards.host import FINAL, status_of
+    from aughor.knowledge import period_brief
+    from aughor.semantic import metric_time as mt
+
+    if not mt.declared(metric):
+        return None
+    try:
+        with period_brief.connection_runner(card.connection_id) as (run_sql, dialect):
+            rows, why = mt.run_measure(metric, spec.windows(), run_sql, dialect=dialect)
+    except Exception as exc:  # noqa: BLE001 — the cut below still answers
+        tolerate(exc, "a metric card could not be measured for its range; it is cut instead",
+                 counter="dashboard.card_measure")
+        return None
+    got = {r["window"]: r for r in rows}
+    value = None if why else read_value(got.get("current"))
+    words = phrases(spec)
+    out = {"columns": [metric.name], "rows": [[value]] if value is not None else [],
+           "row_count": 1 if value is not None else 0, "caveats": [], "error": why or None,
+           "value": value, "refresh": card.refresh.model_dump(),
+           "scoped": {"covers": words["covers"], "standing": False, "why": "" if value is not None else
+                      (why or "its data has no rows in this range"), "grain": metric.time_column},
+           "metric": {"name": metric.name, "version": metric.version, "status": metric.status}}
+    if compare:
+        pv = None if why else read_value(got.get("previous"))
+        out["previous"] = {"covers": words["compared_with"], "word": compared_word(spec),
+                           "equal_age": status_of(spec) == FINAL, "value": pv,
+                           "why": "" if pv is not None else "it has no figure there"}
+    return out
+
+
+def _previous_figure(db, card, spec, table: str, col: str, dialect: str, execute, sql: str = "") -> dict:
+    """The card's figure for the window its range is compared with, cut as the range was.
+    ``value`` is None when that window has none, with ``why``; never a zero."""
+    from aughor.briefing.ranges import compared_word, phrases
+    from aughor.dashboards.host import FINAL, status_of
+    from aughor.semantic.metric_statement import scoped_statement
+    from aughor.semantic.metric_time import window_predicate
+
+    said = {"covers": phrases(spec)["compared_with"], "word": compared_word(spec),
+            "equal_age": status_of(spec) == FINAL, "value": None, "why": ""}
+    cut, why, _ = scoped_statement(sql or card.sql, table, window_predicate(col, spec.previous_start, spec.previous_end),
+                                   dialect=dialect)
+    if cut is None:
+        return {**said, "why": why}
+    got = execute(db, cut, query_id=f"card:{card.id}:previous", schema=None)
+    if got.error:
+        return {**said, "why": f"its query failed: {str(got.error)[:160]}"}
+    value = _scalar(got)
+    return {**said, "value": value, "why": "" if value is not None else "it has no figure there"}

@@ -5,7 +5,7 @@ theLook carried two pairs: Return rate and Item Return Rate — returned items o
 them written with ``SAFE_DIVIDE`` — and Gross Margin Percentage and Gross Margin Rate, the same margin
 over the same join. Drafts come from several proposers (the industry pack, the profile's north stars,
 the Explorer, Ask), each naming a measure its own way, and the only check was on the NAME. So both of
-each pair were approved, a card was made of each, and the Executive Cockpit showed the return rate
+each pair were approved, a card was made of each, and the Executive Dashboard showed the return rate
 three times.
 
 Two definitions are one measure when they read the same tables and give the same figure — or the same

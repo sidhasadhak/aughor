@@ -27,7 +27,7 @@ export function setNavCollapsed(collapsed: boolean, doc: Document = document): v
   }
 }
 
-/** Fold the rail to its icons for a while — the cockpit builder's room to build (Arc AP-1) — WITHOUT writing the
+/** Fold the rail to its icons for a while — the dashboard builder's room to build (Arc AP-1) — WITHOUT writing the
  *  person's stored preference: the theme toggle once wrote a person's theme by reading it, and this must not do the
  *  same to the rail. The function returned gives the rail back as the person keeps it — as stored, or, with nothing
  *  stored, as it was before — so ⌘\ pressed meanwhile is theirs and stands. */

@@ -750,10 +750,9 @@ def _metric_moves_provider(conn_id: str, profile, schema: str | None = None):
     metrics = getattr(profile, "north_star_metrics", None) or []
     if not metrics:
         return None
-    from aughor.orgsettings import resolve_currency
-    # Override-wins: an explicitly-set org currency is authoritative over the
-    # per-connection inferred currency_code (else the inferred value, else USD).
-    currency = resolve_currency(getattr(profile, "currency_code", None) or "")
+    from aughor.orgsettings import figure_currency
+    # The dataset's currency as a PERSON confirmed it, else none — a plain amount (2026-10-23).
+    currency = figure_currency(conn_id, schema)
 
     def _provider():
         from aughor.knowledge.metric_moves import compute_metric_moves
@@ -985,7 +984,7 @@ def read_briefing_desk(conn_id: str, schema: str | None = None, workspace_id: st
 @router.post("/exploration/{conn_id}/briefing/measures")
 def measure_range_metrics(conn_id: str, schema: str | None = None, workspace_id: str | None = None,
                           preset: str | None = None, start: str | None = None, end: str | None = None):
-    """The range's approved metrics, measured — the Cockpit's default view (ROADMAP §6 item 43). No
+    """The range's approved metrics, measured — the Dashboard's default view (ROADMAP §6 item 43). No
     narrative is written and no model is called. When the range's Briefing was built for the same window
     within its cache age, its figures are returned as they stand, so the two pages cannot disagree about
     one; otherwise the metrics are measured now, the result cache first."""
@@ -1010,6 +1009,22 @@ def measure_range_metrics(conn_id: str, schema: str | None = None, workspace_id:
                                      workspace_id=workspace_id, schema=schema)
     return {"period": measured, "from_briefing": False,
             "measured_at": datetime.now(timezone.utc).isoformat(), "scope_key": scope_key}
+
+
+@router.post("/exploration/{conn_id}/briefing/covers")
+def read_edition_covers(conn_id: str, schema: str | None = None, workspace_id: str | None = None):
+    """What each of the Briefing's six editions covers, what it is compared with, and the lead approved
+    metric's figure for each — shown when the data has ENDED, so a reader sees where every edition
+    landed. No narrative is written and no model is called; the figures are measured now (a POST, as the
+    measures door is: it runs warehouse queries)."""
+    from aughor.briefing import ranges
+    from aughor.kernel.flags import flag_enabled
+
+    if not flag_enabled("briefing.ranges"):
+        raise HTTPException(status_code=404, detail=(
+            "briefings for any date range are off on this install — they need the 'briefing.ranges' flag"))
+    return ranges.edition_covers(conn_id, schema=schema, workspace_id=workspace_id,
+                                 profile=_load_business_profile(conn_id, schema))
 
 
 @router.post("/exploration/{conn_id}/briefing/metric/{metric}")

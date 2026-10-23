@@ -169,9 +169,12 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("POST", "/query/auto-federated-answer"): P.ANALYSIS_RUN,
     ("POST", "/query/validate"): P.ANALYSIS_RUN,
     ("POST", "/query/capability-answer"): P.ANALYSIS_RUN,
-    # Arc AP-7 — a person's own query on a cockpit runs their SQL against the warehouse, by the SQL editor's own rule.
-    ("POST", "/cockpits/queries"): P.ANALYSIS_RUN,
-    ("POST", "/cockpits/queries/preview"): P.ANALYSIS_RUN,
+    # Arc AP-7 — a person's own query on a dashboard runs their SQL against the warehouse, by the SQL editor's own rule.
+    ("POST", "/dashboards/queries"): P.ANALYSIS_RUN,
+    ("POST", "/dashboards/queries/preview"): P.ANALYSIS_RUN,
+    # PENDING 54 — a question kept on a dashboard is asked by the agent on its rhythm, and asking now is a run.
+    ("POST", "/dashboards/questions"): P.ANALYSIS_RUN,
+    ("POST", "/dashboards/questions/{automation_id}/ask"): P.ANALYSIS_RUN,
 
     # ── Resource delete / export (more specific than the write floor) ──
     ("DELETE", "/investigations"): P.RESOURCE_DELETE,

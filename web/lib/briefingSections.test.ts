@@ -9,7 +9,7 @@ import {
   BRIEFING_SECTIONS, DEFAULT_SECTIONS, PARTS, moved, normalizeSections, proposeFromWords, toggled, type BriefingSectionsPref,
 } from "@/lib/briefingSections";
 
-const COCKPITS = [{ id: "growth-review-1a2b", title: "Growth review" }, { id: "returns-9f", title: "Returns" }];
+const DASHBOARDS = [{ id: "growth-review-1a2b", title: "Growth review" }, { id: "returns-9f", title: "Returns" }];
 const order = (p: BriefingSectionsPref) => p.sections.map(s => `${s.id}${s.on ? "" : ":off"}`);
 const ALL = ["verdict", "measured", "moves", "key_metrics", "findings", "synthesis", "cockpit", "patterns"];
 
@@ -34,7 +34,7 @@ describe("the preference", () => {
 
 describe("the words", () => {
   it("hide the findings, put the synthesis first — two switches, one proposal", () => {
-    const out = proposeFromWords("hide the findings, put the synthesis first", DEFAULT_SECTIONS, COCKPITS);
+    const out = proposeFromWords("hide the findings, put the synthesis first", DEFAULT_SECTIONS, DASHBOARDS);
     expect(out.kind).toBe("proposal");
     if (out.kind !== "proposal") return;
     expect(out.lines).toEqual(["Hide “Findings” — one line stays saying it is hidden", "Put “Full synthesis” first"]);
@@ -43,31 +43,31 @@ describe("the words", () => {
   });
 
   it("hides the tiles inside the verdict without the headline, and says a part moves with it", () => {
-    const out = proposeFromWords("I do not wish to see the measured figures inside the briefing", DEFAULT_SECTIONS, COCKPITS);
+    const out = proposeFromWords("I do not wish to see the measured figures inside the briefing", DEFAULT_SECTIONS, DASHBOARDS);
     expect(out.kind).toBe("proposal");
     if (out.kind !== "proposal") return;
     expect(out.lines).toEqual(["Hide “Measured figures — the tiles under the headline” — the verdict's headline stays"]);
     expect(order(out.next)).toEqual(["verdict", "measured:off", "moves", "key_metrics", "findings", "synthesis", "cockpit", "patterns"]);
-    const moves = proposeFromWords("hide what the findings found", DEFAULT_SECTIONS, COCKPITS);
+    const moves = proposeFromWords("hide what the findings found", DEFAULT_SECTIONS, DASHBOARDS);
     expect(moves.kind === "proposal" && order(moves.next)).toEqual(["verdict", "measured", "moves:off", "key_metrics", "findings", "synthesis", "cockpit", "patterns"]);
-    const stuck = proposeFromWords("put the tiles first", DEFAULT_SECTIONS, COCKPITS);
+    const stuck = proposeFromWords("put the tiles first", DEFAULT_SECTIONS, DASHBOARDS);
     expect(stuck.kind).toBe("refused");
   });
 
-  it("names the cockpit that rides with the Briefing, and shows the section it rides in", () => {
+  it("names the dashboard that rides with the Briefing, and shows the section it rides in", () => {
     const hidden = toggled(DEFAULT_SECTIONS, "cockpit", false);
-    const out = proposeFromWords("show the Growth review strip with it", hidden, COCKPITS);
+    const out = proposeFromWords("show the Growth review strip with it", hidden, DASHBOARDS);
     expect(out.kind).toBe("proposal");
     if (out.kind !== "proposal") return;
     expect(out.lines).toEqual(["Let “Growth review” ride with your Briefing"]);
     expect(out.next.strip).toBe("growth-review-1a2b");
     expect(out.next.sections.find(s => s.id === "cockpit")?.on).toBe(true);
-    const none = proposeFromWords("no cockpit strip", out.next, COCKPITS);
+    const none = proposeFromWords("no dashboard strip", out.next, DASHBOARDS);
     expect(none.kind === "proposal" && none.next.strip).toBe("");
   });
 
   it("reads before and after, show, and the key metrics strip before the bare word", () => {
-    const out = proposeFromWords("put the key metrics after the synthesis and show patterns", DEFAULT_SECTIONS, COCKPITS);
+    const out = proposeFromWords("put the key metrics after the synthesis and show patterns", DEFAULT_SECTIONS, DASHBOARDS);
     expect(out.kind).toBe("proposal");
     if (out.kind !== "proposal") return;
     expect(out.lines).toEqual(["Put “Key Metrics strip” after “Full synthesis”", "Show “Top patterns”"]);
@@ -75,10 +75,10 @@ describe("the words", () => {
   });
 
   it("refuses what it does not read, and says what can be said; a switch already so is said so", () => {
-    const out = proposeFromWords("write me a note saying returns are too high", DEFAULT_SECTIONS, COCKPITS);
+    const out = proposeFromWords("write me a note saying returns are too high", DEFAULT_SECTIONS, DASHBOARDS);
     expect(out.kind).toBe("refused");
     expect(out.kind === "refused" && out.why).toContain("hide or show a section");
-    const same = proposeFromWords("show the findings", DEFAULT_SECTIONS, COCKPITS);
+    const same = proposeFromWords("show the findings", DEFAULT_SECTIONS, DASHBOARDS);
     expect(same.kind === "refused" && same.why).toContain("already reads that way");
   });
 });

@@ -1,7 +1,7 @@
 """A ratio over an empty range is not a figure (2026-10-07).
 
 DuckDB answers `COUNT(...) * 1.0 / COUNT(...)` over no rows with NaN, not NULL. Uber's rides end
-in 2024, so every recent range is empty, and Ride Completion Rate's NaN reached the Cockpit as a
+in 2024, so every recent range is empty, and Ride Completion Rate's NaN reached the Dashboard as a
 measured figure: the response could not be written as JSON, the API answered 500, and the page
 said only "Failed to fetch".
 """
@@ -35,5 +35,6 @@ def test_a_nan_from_the_warehouse_is_no_figure_and_the_range_still_answers(monke
                                dialect="duckdb")
 
     assert out["measured"] == []
-    assert out["unmeasured"] == [{"name": "Ride Completion Rate", "reason": "its data has no rows in this range"}]
+    assert out["unmeasured"] == [{"name": "Ride Completion Rate", "metric": "ride_completion_rate",
+                                  "reason": "its data has no rows in this range"}]
     json.dumps(out, allow_nan=False)  # what the API's response does — it raised on the NaN
