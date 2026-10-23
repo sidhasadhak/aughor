@@ -1276,6 +1276,29 @@ export interface MetricProposals {
   note: string;
 }
 
+/** What adopting a set of proposals did (2026-10-23): each metric adopted, or skipped with why. */
+export interface AdoptResult {
+  adopted: { name: string; label: string; version?: number; time_column?: string }[];
+  skipped: { name: string; label: string; reason: string }[];
+  /** The scope the set was approved under — the dataset and every metric in it. */
+  scope: string;
+}
+
+/** Adopt a set of proposed metrics in one door: each dated by the date a person confirmed, proposed and
+ *  approved; the set asks for approval ONCE (the app-wide modal shows it and sends this again). */
+export async function adoptMetrics(connectionId: string, schema: string | undefined,
+                                   items: { name: string; time_column?: string }[]): Promise<AdoptResult> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics/catalogue/${encodeURIComponent(connectionId)}/adopt${q}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The metrics could not be adopted"));
+  }
+  return res.json();
+}
+
 export async function getMetricProposals(
   connection: string, sql: string, tables: string[], filters: string[], name: string,
 ): Promise<MetricProposals> {

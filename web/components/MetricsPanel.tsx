@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 
 import { Card, Chip, Empty, Figure, Figures, Label, MUTED, NUM, NeedsYou, ONE_LINE, Page, ROW, RULE } from "@/components/clarity/kit";
 import { FoldLine, GroupHead, Sql, ToolsMenu, rowButtonStyle } from "@/components/semantic/parts";
+import { AdoptProposals } from "@/components/semantic/AdoptProposals";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -1288,6 +1289,9 @@ export function MetricsPanel({ connId, schema, datasets = [] }: {
       {adding && (
         <Card label="New metric" testId="metric-new">{editorForm}</Card>
       )}
+
+      {/* The proposals, adopted as a set: dated, proposed and approved together, approved once (2026-10-23). */}
+      {connId && !every && <AdoptProposals connId={connId} schema={schema || undefined} rows={rows} onDone={() => { load(); }} />}
 
       <Card label="Metrics" testId="metrics-list" right={<>
         {rows.length > 0 && <span style={NUM}>{`${formatCount(counts.total ?? rows.length)} apply${every ? " · every dataset" : ""}`}</span>}

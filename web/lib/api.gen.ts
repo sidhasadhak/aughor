@@ -9869,6 +9869,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics/catalogue/{conn_id}/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Adopt Metrics
+         * @description Adopt a SET of proposed metrics — the explorer's or an industry's — in one door: each lands as a
+         *     definition dated by the date a person confirmed, and is proposed and approved; the whole set is asked
+         *     for approval ONCE (the user's decision, 2026-10-23; the Olist study, Gaps 22 and 24: eight metrics took
+         *     Customise → Dates → Propose → Approve → approve-the-approval each, eight self-granted allowlists).
+         *
+         *     ``metric.approve`` stays HIGH risk: the batch's scope names the dataset and every metric in it, so
+         *     approving it approves exactly this set. A metric that cannot be adopted as asked — no formula yet, a date
+         *     on a table it does not read, the same figures as an approved one — is skipped with the reason; the rest
+         *     go on.
+         */
+        post: operations["adopt_metrics_metrics_catalogue__conn_id__adopt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics/catalogue/{conn_id}/{name}/materialise": {
         parameters: {
             query?: never;
@@ -21358,6 +21386,20 @@ export interface components {
             };
             /** Segments */
             segments?: string[];
+        };
+        /** _AdoptItem */
+        _AdoptItem: {
+            /** Name */
+            name: string;
+            /** Time Column */
+            time_column?: string | null;
+            /** Time Kind */
+            time_kind?: string | null;
+        };
+        /** _AdoptRequest */
+        _AdoptRequest: {
+            /** Items */
+            items: components["schemas"]["_AdoptItem"][];
         };
         /** _AgentPolicyBody */
         _AgentPolicyBody: {
@@ -39695,6 +39737,44 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adopt_metrics_metrics_catalogue__conn_id__adopt_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_AdoptRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
