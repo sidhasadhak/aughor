@@ -105,9 +105,9 @@ def _figure(token: str) -> float:
 def test_a_move_is_a_percent_exactly_when_its_text_states_a_rate(name, text):
     kind = stated_range(text)[0]
     if kind == "ratio01":
-        assert _phrased(name, text, 0.25, 0.35) == ("25%", "35%")
+        assert _phrased(name, text, 0.25, 0.35) == ("25.0%", "35.0%")      # one decimal (2026-10-23)
     elif kind == "pct100":
-        assert _phrased(name, text, 25.0, 35.0) == ("25%", "35%")
+        assert _phrased(name, text, 25.0, 35.0) == ("25.0%", "35.0%")
     else:
         start, end = _phrased(name, text, 4.0, 6.0)
         assert not start.endswith("%") and not end.endswith("%"), (start, end)
@@ -118,10 +118,10 @@ def test_the_live_misreads_are_phrased_at_their_scale():
     assert _phrased("Inventory Turnover (by product-month)", "ratio (units sold per unit avg. inventory)", 4.0, 6.5) \
         == ("4", "6.5")
     assert _phrased("Net Review Ratio", "ratio -1 to 1 (healthy: >0.2)", 0.2, 0.35) == ("0.2", "0.35")
-    assert _phrased("Defect Rate", "percent 0-100 (measured ≈ 2.2)", 1.2, 2.2) == ("1%", "2%")
+    assert _phrased("Defect Rate", "percent 0-100 (measured ≈ 2.2)", 1.2, 2.2) == ("1.2%", "2.2%")
     assert _phrased("Average Order Value (AOV)", "ratio 0-1000 (USD per order)", 404.11, 458.61, "EUR") \
         == ("€404", "€459")
-    assert _phrased("Load Factor", "ratio 0..1 (0..100%); industry-typical 0.75–0.90.", 0.78, 0.86) == ("78%", "86%")
+    assert _phrased("Load Factor", "ratio 0..1 (0..100%); industry-typical 0.75–0.90.", 0.78, 0.86) == ("78.0%", "86.0%")
 
 
 def test_a_return_on_spend_is_neither_a_percent_nor_money():
@@ -142,4 +142,4 @@ def test_a_unit_is_read_where_the_text_states_it_not_from_its_commentary():
 
 def test_a_rate_series_on_the_other_scale_still_reads_as_its_percent():
     # A 0..1 rate whose chart_sql came out on 0..100 was phrased "45%" before the reading and still is.
-    assert _phrased("Repeat Purchase Rate", "ratio 0-1", 45.0, 52.0) == ("45%", "52%")
+    assert _phrased("Repeat Purchase Rate", "ratio 0-1", 45.0, 52.0) == ("45.0%", "52.0%")

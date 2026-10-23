@@ -52,7 +52,7 @@ def test_zero_baseline_skipped():
 def test_margin_finding_text_and_currency_neutral_percent():
     mv = series_move(*MARGIN_TREND)
     f = build_move_finding("Gross Margin Rate", "percent 0-100", mv, "EUR")
-    assert "from 50% to 34%" in f["finding"]
+    assert "from 50.0% to 34.0%" in f["finding"]
     assert "-32%" in f["finding"]
     assert f["metric_move"] is True
 

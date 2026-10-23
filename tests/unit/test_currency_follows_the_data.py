@@ -66,7 +66,7 @@ def test_an_inferred_currency_labels_no_figure(profiles, monkeypatch):
     — a proposal beside a Confirm door, never the unit in front of a number. Until a person confirms,
     a figure is a plain amount (no "R$", no default "$")."""
     _org(monkeypatch, currency="USD")
-    got = S.data_currency("workspace", "olist")
+    got = S.data_currency("workspace", "olist", inferred="BRL")
     assert (got["code"], got["status"], got["inferred"]) == ("", "inferred", "BRL")
     assert S.figure_currency("workspace", "olist") == ""
     assert S.currency_symbol(S.figure_currency("workspace", "olist")) == ""      # never "$"
@@ -78,7 +78,8 @@ def test_a_confirmation_labels_its_own_dataset_and_no_other(profiles):
     S.confirm_currency("workspace", "olist", "brl", actor="amit")
     assert S.figure_currency("workspace", "olist") == "BRL"
     assert S.figure_currency("workspace", "main") == ""                      # still unconfirmed
-    assert S.data_currency("workspace", "main")["inferred"] == "EUR"
+    from aughor.routers import profile as R
+    assert R.get_dataset_currency("workspace", "main")["inferred"] == "EUR"
     held = S.data_currency("workspace", "olist")
     assert (held["status"], held["confirmed_by"]) == ("confirmed", "amit") and held["confirmed_at"]
 
@@ -90,7 +91,7 @@ def test_a_person_may_state_another_currency_and_clear_it(profiles):
     assert get_connection_settings("8233e4fd")[S.CURRENCIES_KEY][""]["was"] == "USD"   # the change is kept
     assert S.figure_currency("8233e4fd") == "EUR"
     S.confirm_currency("8233e4fd", None, "", actor="amit")
-    assert S.data_currency("8233e4fd")["status"] == "inferred"
+    assert S.data_currency("8233e4fd", inferred="USD")["status"] == "inferred"
     with pytest.raises(ValueError, match="three-letter ISO 4217"):
         S.confirm_currency("8233e4fd", None, "dollars", actor="amit")
 

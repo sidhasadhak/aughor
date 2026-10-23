@@ -94,7 +94,8 @@ CURRENCIES_KEY = "currencies"
 _ISO = re.compile(r"^[A-Z]{3}$")
 
 
-def data_currency(conn_id: str, schema: Optional[str] = None) -> dict:
+def data_currency(conn_id: str, schema: Optional[str] = None, *, inferred: str = "",
+                  profile_confidence: Optional[float] = None) -> dict:
     """The currency a figure from one DATASET (a connection and schema) is in, and whose word it is.
 
     ``code`` is set only when a PERSON confirmed it — then it labels every figure from the dataset.
@@ -105,19 +106,14 @@ def data_currency(conn_id: str, schema: Optional[str] = None) -> dict:
     connection held Olist in reais and a franchise in euros, so a workspace currency would mislabel one).
 
     The org setting describes the ORGANISATION ("reports in EUR", ``org_context``) and labels no
-    warehouse figure: nothing in this tree converts currency, so it would relabel (2026-09-23)."""
+    warehouse figure: nothing in this tree converts currency, so it would relabel (2026-09-23).
+
+    ``inferred`` is the profile's proposal, handed in by a caller that may read the profile (the
+    profile routes): this module is platform and does not import the agent's business profile."""
     from aughor.db.registry import get_connection_settings
     key = schema or ""
     held = dict(((get_connection_settings(conn_id) or {}).get(CURRENCIES_KEY) or {}).get(key) or {})
-    inferred, profile_confidence = "", None
-    try:
-        from aughor.business_profile import store as pstore
-        prof = ((pstore.load_raw(conn_id, schema) or {}).get("profile") or {})
-        inferred = str(prof.get("currency_code") or "").strip().upper()
-        profile_confidence = prof.get("confidence")
-    except Exception as exc:  # noqa: BLE001 — no proposal is said as none, never guessed
-        from aughor.kernel.errors import tolerate
-        tolerate(exc, "the profile's currency could not be read", counter="orgsettings.currency.profile")
+    inferred = (inferred or "").strip().upper()
     code = str(held.get("code") or "").strip().upper()
     return {"connection_id": conn_id, "schema_name": schema, "code": code,
             "status": "confirmed" if code else ("inferred" if inferred else "unknown"),
@@ -139,7 +135,8 @@ def figure_currency(conn_id: str, schema: Optional[str] = None) -> str:
         return ""
 
 
-def confirm_currency(conn_id: str, schema: Optional[str], code: str, *, actor: str) -> dict:
+def confirm_currency(conn_id: str, schema: Optional[str], code: str, *, actor: str,
+                     inferred: str = "") -> dict:
     """A person states the dataset's currency (or clears it with ""). Kept with who said it and
     when — provenance is required, and this is the only door that writes it."""
     from aughor.db.registry import get_connection_settings, update_connection_settings
@@ -151,12 +148,12 @@ def confirm_currency(conn_id: str, schema: Optional[str], code: str, *, actor: s
     if code:
         before = dict(held.get(key) or {})
         held[key] = {"code": code, "by": actor or "", "at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
-                     "inferred": data_currency(conn_id, schema)["inferred"],
+                     "inferred": (inferred or "").strip().upper(),
                      **({"was": before.get("code")} if before.get("code") and before.get("code") != code else {})}
     else:
         held.pop(key, None)
     update_connection_settings(conn_id, {CURRENCIES_KEY: held})
-    return data_currency(conn_id, schema)
+    return data_currency(conn_id, schema, inferred=inferred)
 
 
 def resolve_industry(profile_industry: str = "", workspace_id: Optional[str] = None) -> str:

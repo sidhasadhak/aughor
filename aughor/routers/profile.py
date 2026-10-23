@@ -14,6 +14,14 @@ from aughor.security.authz import connection_owner_guard
 router = APIRouter(tags=["profile"], dependencies=[Depends(connection_owner_guard)])
 
 
+def _profile_currency(connection_id: str, schema_name: Optional[str]) -> dict:
+    """The profile's currency PROPOSAL for one dataset, handed to the platform's currency store (which
+    may not read the agent's profile itself)."""
+    prof = ((store.load_raw(connection_id, schema_name) or {}).get("profile") or {})
+    return {"inferred": str(prof.get("currency_code") or "").strip().upper(),
+            "profile_confidence": prof.get("confidence")}
+
+
 class _CurrencyBody(BaseModel):
     #: A three-letter ISO 4217 code a person states for the dataset, or "" to clear it.
     code: str = ""
@@ -25,7 +33,7 @@ def get_dataset_currency(connection_id: str, schema_name: Optional[str] = Query(
     confirmed it (then it labels every figure), ``inferred`` as the profile proposes it, and
     ``status`` confirmed · inferred · unknown. Unconfirmed figures print as plain amounts (2026-10-23)."""
     from aughor.orgsettings import data_currency
-    return data_currency(connection_id, schema_name)
+    return data_currency(connection_id, schema_name, **_profile_currency(connection_id, schema_name))
 
 
 @router.put("/business-profile/currency")
@@ -35,8 +43,11 @@ def put_dataset_currency(body: _CurrencyBody, connection_id: str,
     with "". Kept with who and when; it then labels every figure read from this dataset."""
     from aughor.orgsettings import confirm_currency
     from aughor.security.authz import caller
+    proposal = _profile_currency(connection_id, schema_name)
     try:
-        return confirm_currency(connection_id, schema_name, body.code, actor=caller())
+        return {**confirm_currency(connection_id, schema_name, body.code, actor=caller(),
+                                   inferred=proposal["inferred"]),
+                "profile_confidence": proposal["profile_confidence"]}
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
