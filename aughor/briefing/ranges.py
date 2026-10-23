@@ -907,8 +907,10 @@ def measured_block(conn_id: str, spec: RangeSpec, *, profile: Any = None, worksp
     except Exception as exc:  # noqa: BLE001
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the range measurement could not open the connection", counter="briefing.range.measure")
-        return {**block, "unmeasured": [{"name": "headline metrics",
-                                         "reason": f"the connection could not be opened ({type(exc).__name__})"}]}
+        # Said of the DATA, never as a metric: a "headline metrics" row under not-measured read as one more
+        # metric waiting on a person, and its door said "Set their dates" (LuxExperience, 2026-10-23: the
+        # Postgres was down, the user approved a metric to clear it, and the row stayed).
+        return {**block, "unreachable": f"the connection could not be opened ({type(exc).__name__})"}
     say_figures(got["measured"], _currency(conn_id, schema))
     return {**block, **got}
 
@@ -1140,9 +1142,8 @@ def build_range_briefing(conn_id: str, spec: RangeSpec, *, scope_key: str, domai
             from aughor.kernel.errors import tolerate
             tolerate(exc, "the range measurement could not open the connection",
                      counter="briefing.range.measure")
-            return {"findings": [], "measured": [],
-                    "unmeasured": [{"name": "headline metrics",
-                                    "reason": f"the connection could not be opened ({type(exc).__name__})"}]}
+            return {"findings": [], "measured": [], "unmeasured": [],
+                    "unreachable": f"the connection could not be opened ({type(exc).__name__})"}
         say_figures(got["measured"], currency)
         candidates = extra.pop("candidates", {})
         return {**got, **extra, "findings": range_findings(got["measured"], block, currency),
@@ -1209,6 +1210,8 @@ def sheet_lines(brief: dict, currency_code: Optional[str] = None) -> list[tuple[
     if early.get("figures"):
         figs = "; ".join(f"{f['name']} {f.get('value_text') or f['value']}" for f in early["figures"])
         sections.append(("early", [f"Still settling (early), {early['start']} to {early['end']}: {figs}."]))
+    if block.get("unreachable"):
+        sections.append(("unmeasured", [f"Nothing was measured: the data could not be reached — {block['unreachable']}."]))
     by_reason: dict[str, list[str]] = {}
     for u in block.get("unmeasured") or []:
         by_reason.setdefault(u["reason"], []).append(u["name"])

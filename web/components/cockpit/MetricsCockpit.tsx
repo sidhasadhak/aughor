@@ -14,6 +14,7 @@ import { Chip, MUTED } from "@/components/clarity/kit";
 import { MetricsFigures } from "@/components/cockpit/MetricsFigures";
 import { PeriodPicker, choiceName } from "@/components/cockpit/PeriodPicker";
 import { Absent, Gate, useLoad } from "@/components/record/kit";
+import { Button } from "@/components/ui/button";
 import { Loading } from "@/components/ui/states";
 import { measureRange, type BriefingRange, type BriefingRangeBlock, type CockpitRange } from "@/lib/api";
 import { periodShort } from "@/lib/cockpit/figures";
@@ -100,7 +101,18 @@ export function MetricsCockpit({ connectionId, schema, rangesOn, value, onChange
         <div data-testid="metrics-body" aria-busy={reading || undefined}
           style={{ opacity: reading ? 0.45 : 1, transition: "opacity 120ms ease-out", pointerEvents: reading ? "none" : undefined }}>
           <Gate load={load} what={`the metrics for ${choiceName(value)}`}>
-            {d => (d && (d.period.measured.length > 0 || d.period.unmeasured.length > 0)
+            {d => d?.period.unreachable ? (
+              // Said of the data, never as a metric waiting on a person (LuxExperience, 2026-10-23: a Postgres
+              // that was down showed as "1 approved metric can't be measured · Set their dates", and the user
+              // approved a metric to clear it).
+              <div data-testid="metrics-unreachable" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                <Absent>
+                  {`The data could not be reached, so nothing was measured — ${d.period.unreachable}. `}
+                  No metric needs anything from you; the figures are read again when the data answers.
+                </Absent>
+                <Button size="xs" variant="secondary" onClick={load.reload}>Try again</Button>
+              </div>
+            ) : (d && (d.period.measured.length > 0 || d.period.unmeasured.length > 0)
               ? <MetricsFigures connectionId={connectionId} schema={schema} block={d.period} />
               : <Absent>No approved metric is on this connection yet. Approve one in the Semantic Layer and it is measured here.</Absent>)}
           </Gate>

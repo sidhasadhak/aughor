@@ -248,7 +248,9 @@ def test_measures_that_cannot_open_the_connection_say_so():
 
     spec, _ = ranges.resolve_range("last_week", today=SEP26, lag_days=13)
     block = ranges.measured_block("c1", spec, runner=closed)
-    assert block["measured"] == [] and "could not be opened (ConnectionError)" in block["unmeasured"][0]["reason"]
+    # said of the data, never as a not-measured "metric" (2026-10-23: it read as one waiting on a person)
+    assert block["measured"] == [] and block["unmeasured"] == []
+    assert "could not be opened (ConnectionError)" in block["unreachable"]
 
 
 @pytest.mark.parametrize("kw, n, expected", [

@@ -3243,7 +3243,9 @@ export function BriefingPanel({
   const editionBlock = rangeBlock ?? (editionFor && editionFor.key === rangeKey ? editionFor.block : null);
   const numbersTitle = rangeBlock ? `The ${rangeBlock.period && rangeBlock.period !== "custom" ? rangeBlock.period : "range"} in numbers`
     : rangeSelected ? "In numbers" : "The record, in numbers";
-  const numbersNote = rangeBlock?.compare_withheld
+  const numbersNote = rangeBlock?.unreachable
+    ? `The data could not be reached, so nothing was measured — ${rangeBlock.unreachable}.`
+    : rangeBlock?.compare_withheld
     ? `Not compared: ${rangeBlock.compare_withheld}.`
     : rangeBlock
     ? `Each against ${rangeBlock.compared_with}.`

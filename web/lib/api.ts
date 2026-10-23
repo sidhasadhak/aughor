@@ -7621,6 +7621,8 @@ export interface BriefingRangeBlock {
   compare_withheld?: string;
   measured: BriefingRangeMeasure[];
   unmeasured: BriefingRangeUnmeasured[];
+  /** Why the data could not be reached, when it could not: nothing was measured, and no metric is at fault. */
+  unreachable?: string;
   /** Arc BR-4 — the recipe that wrote it, and its own sections. */
   recipe?: "day" | "week" | "month" | "year" | "custom";
   sections?: string[];

@@ -42,3 +42,28 @@ describe("the metrics cockpit while a new period is read", () => {
     expect(screen.getByTestId("metrics-body").getAttribute("aria-busy")).toBeNull();
   });
 });
+
+describe("the metrics cockpit when the data cannot be reached (LuxExperience, 2026-10-23)", () => {
+  // The Postgres was down: the server said so as a "headline metrics" row under not-measured, the cockpit showed
+  // "1 approved metric can't be measured for a period · Set their dates", and the user approved Repeat Purchase
+  // Rate to clear it — and came back to the same row. It is said of the data now, and nothing asks for a metric.
+  const down = { ...block("k3", "September 2026", "$1"), measured: [], unmeasured: [],
+                 unreachable: "the connection could not be opened (OperationalError)" };
+
+  it("says the data could not be reached — never a metric to approve or date — and reads again on Try again", async () => {
+    api.readExpectedNext.mockResolvedValue({ target: null, items: [], why: "" });
+    api.measureRange.mockResolvedValueOnce({ period: down, from_briefing: false, measured_at: "2026-10-23T04:16:10Z", scope_key: "c" });
+    render(<MetricsCockpit connectionId="c" rangesOn value={{ preset: "previous_month" }} onChange={() => {}} />);
+    const said = await screen.findByTestId("metrics-unreachable");
+    expect(said).toHaveTextContent("The data could not be reached, so nothing was measured — the connection could not be opened (OperationalError).");
+    expect(said).toHaveTextContent("No metric needs anything from you");
+    expect(screen.queryByTestId("cockpit-needs")).toBeNull();
+    expect(screen.queryByText(/approve|Set their dates|can't be measured/i)).toBeNull();
+
+    api.measureRange.mockResolvedValueOnce({ period: block("k3", "September 2026", "$300"), from_briefing: false,
+                                             measured_at: "2026-10-23T05:00:00Z", scope_key: "c" });
+    within(said).getByRole("button", { name: "Try again" }).click();
+    expect(await within(await screen.findByTestId("cockpit-figures")).findByText("$300")).toBeTruthy();
+    expect(screen.queryByTestId("metrics-unreachable")).toBeNull();
+  });
+});

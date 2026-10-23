@@ -181,6 +181,9 @@ def period_note(block: dict, today: Optional[date] = None) -> str:
             f"{why} a {lag}-day settling lag: newer days are still changing as late rows arrive. "
             "Say so in one plain sentence, so the reader never has to guess why the newest "
             "figure is dated before today.")
+    if block.get("unreachable"):
+        lines.append(f"The data could not be reached for this {block['period']} ({block['unreachable']}), so "
+                     "nothing was measured. State no figure for it; say once that the data could not be reached.")
     if block.get("unmeasured"):
         names = ", ".join(u["name"] for u in block["unmeasured"][:6])
         lines.append(f"Not measured for this {block['period']}: {names}. Do not state a value "
