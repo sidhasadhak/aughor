@@ -75,7 +75,7 @@ const draw = () => render(
 const figure = (label: string) => screen.getAllByTestId("object-figure").find(f => f.textContent?.startsWith(label)) as HTMLElement;
 const asked = () => objects.queryObjects.mock.calls.map(c => c[0] as ObjectQueryRequest);
 
-describe("a cockpit started from an object", () => {
+describe("a dashboard started from an object", () => {
   it("draws the filter column, the whole as figures, and says how many objects there are", async () => {
     draw();
     await waitFor(() => expect(screen.getByTestId("object-filter-count").textContent).toBe("125,080 orders"));
@@ -117,7 +117,7 @@ describe("a cockpit started from an object", () => {
     expect(cells.find(c => c.contains(chip))?.getAttribute("data-element")).toBe("people");
   });
 
-  it("remembers a reader's filters in their browser, under the cockpit, and clears them", async () => {
+  it("remembers a reader's filters in their browser, under the dashboard, and clears them", async () => {
     const first = draw();
     fireEvent.click(await screen.findByRole("checkbox", { name: "Status: Shipped" }));
     await waitFor(() => expect(localStorage.getItem("aughor:cockpit-filters:thelook:orders-1a2b")).toBe('{"order":{"status":["Shipped"]}}'));
@@ -129,7 +129,7 @@ describe("a cockpit started from an object", () => {
     expect(localStorage.getItem("aughor:cockpit-filters:thelook:orders-1a2b")).toBe("{}");
   });
 
-  it("does not draw a section's heading that only repeats the cockpit's name", async () => {
+  it("does not draw a section's heading that only repeats the dashboard's name", async () => {
     draw();
     await screen.findAllByTestId("object-figure");
     expect(screen.queryByText("Orders", { selector: ".aug-fs-h2" })).toBeNull();

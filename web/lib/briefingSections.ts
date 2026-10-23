@@ -26,7 +26,7 @@ export const BRIEFING_SECTIONS = [
   { id: "key_metrics", label: "Key Metrics strip" },
   { id: "findings", label: "Findings" },
   { id: "synthesis", label: "Full synthesis" },
-  { id: "cockpit", label: "Your cockpit" },
+  { id: "cockpit", label: "Your dashboard" },
   { id: "patterns", label: "Top patterns" },
 ] as const;
 
@@ -107,7 +107,7 @@ const WORDS: [RegExp, SectionId][] = [
   [/\bfindings?\b|\bledger\b/, "findings"],
   [/\bsynthesis\b|\bnarrative\b|\bfull text\b|\bprose\b/, "synthesis"],
   [/\bpatterns?\b/, "patterns"],
-  [/\bcockpit\b|\bstrip\b|\bcards\b/, "cockpit"],
+  [/\bdashboards?\b|\bcockpit\b|\bstrip\b|\bcards\b/, "cockpit"],
 ];
 
 const HIDE = /^(hide|remove|drop|take off|take away|get rid of|collapse|turn off|close)\b|\bdon'?t (want|need|show|wish)\b|\bwithout\b|\bno longer\b|\bnot (?:wish|want) to see\b/;
@@ -116,7 +116,7 @@ const FIRST = /\b(first|top|up top|at the top|to the top|at the start|up front)\
 const LAST = /\b(last|bottom|at the end|to the end|at the bottom|to the bottom)\b/;
 const BEFORE = /\b(before|above)\s+(?:the\s+)?(.+)$/;
 const AFTER = /\b(after|below|under|beneath)\s+(?:the\s+)?(.+)$/;
-const NO_STRIP = /\b(no|none|without|remove|hide)\b.*\b(cockpit|strip)\b|\b(cockpit|strip)\b.*\b(off|away|none)\b/;
+const NO_STRIP = /\b(no|none|without|remove|hide)\b.*\b(dashboard|cockpit|strip)\b|\b(dashboard|cockpit|strip)\b.*\b(off|away|none)\b/;
 
 export interface CockpitChoice { id: string; title: string }
 
@@ -139,14 +139,14 @@ export function proposeFromWords(words: string, pref: BriefingSectionsPref, cock
   for (const clause of clauses) {
     // The cockpit that rides with the Briefing, by its name.
     const named = cockpits.find(c => c.title && clause.includes(c.title.toLowerCase()));
-    if (named && /\b(strip|cockpit|ride|with|show|put|use)\b/.test(clause) && !HIDE.test(clause)) {
+    if (named && /\b(strip|dashboard|cockpit|ride|with|show|put|use)\b/.test(clause) && !HIDE.test(clause)) {
       next = { ...next, strip: named.id, sections: next.sections.map(s => (s.id === "cockpit" ? { ...s, on: true } : s)) };
       lines.push(`Let “${named.title}” ride with your Briefing`);
       continue;
     }
-    if (NO_STRIP.test(clause) && !sectionIn(clause.replace(/\b(cockpit|strip)\b/g, ""))) {
+    if (NO_STRIP.test(clause) && !sectionIn(clause.replace(/\b(dashboards?|cockpit|strip)\b/g, ""))) {
       next = { ...next, strip: "" };
-      lines.push("No cockpit rides with your Briefing");
+      lines.push("No dashboard rides with your Briefing");
       continue;
     }
     const id = sectionIn(clause);
@@ -180,8 +180,8 @@ export function proposeFromWords(words: string, pref: BriefingSectionsPref, cock
   const acted = lines.filter(l => !l.startsWith("Where to put") && !l.includes("moves with it"));
   if (!acted.length) {
     return { kind: "refused", why: "Not read as a Briefing switch. You can hide or show a section — the verdict, its measured "
-      + "figures, what the findings found, the key metrics strip, findings, synthesis, cockpit, patterns — put a section "
-      + "first, last, before or after another, and name the cockpit that rides with the Briefing. The sections' content is the platform's." };
+      + "figures, what the findings found, the key metrics strip, findings, synthesis, dashboard, patterns — put a section "
+      + "first, last, before or after another, and name the dashboard that rides with the Briefing. The sections' content is the platform's." };
   }
   if (JSON.stringify(next) === JSON.stringify(pref)) {
     return { kind: "refused", why: `Your Briefing already reads that way: ${lines.join("; ").toLowerCase()}.` };

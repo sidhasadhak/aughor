@@ -223,7 +223,7 @@ describe("in the builder (Arc AP-1)", () => {
     expect(handle.current?.room("nothing")).toBeNull();
   });
 
-  it("counts a drag's grades at the cockpit's own size where the canvas draws it scaled", () => {
+  it("counts a drag's grades at the dashboard's own size where the canvas draws it scaled", () => {
     const doors = owner();
     render(
       <CanvasScale.Provider value={0.5}>

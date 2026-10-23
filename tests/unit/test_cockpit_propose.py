@@ -1,4 +1,4 @@
-"""Arc CT, CT-5 (ROADMAP §3.50) — a cockpit drafted as ONE proposal; since CT-7 a person's own.
+"""Arc CT, CT-5 (ROADMAP §3.50) — a dashboard drafted as ONE proposal; since CT-7 a person's own.
 
 Run against the REAL stores — the inbox, the card store and the Ledger, each pointed at a
 temporary file by ``tests/conftest.py``; the metric store and the trusted-query store, each
@@ -37,7 +37,7 @@ from aughor.semantic.trusted_queries import TrustedQuery, save_trusted
 
 needs_rules = pytest.mark.skipif(
     shutil.which("node") is None or not V._BUNDLE.exists(),
-    reason="the cockpit's rules need node + validate.bundle.mjs")
+    reason="the dashboard's rules need node + validate.bundle.mjs")
 
 pytestmark = needs_rules
 
@@ -89,7 +89,7 @@ def warehouse(monkeypatch, tmp_path) -> Warehouse:
 
 
 class Desk:
-    """One person's cockpit on theLook, the person holding one card, with a metric, a draft metric, two trusted
+    """One person's dashboard on theLook, the person holding one card, with a metric, a draft metric, two trusted
     queries and two findings to make cards from. Every name is this test's own."""
 
     def __init__(self, monkeypatch=None, connection: str = CONN, owner: str = ""):
@@ -222,10 +222,10 @@ def _names(tools) -> list[str]:
 def test_the_tool_is_offered_in_no_conversation(desk, on):
     """The canvas is for investigation (§6 item 36(l)). A chat turn's tools are what they were
     before Arc CT, flag on or off, in a canvas or not: the drafting tool runs only in the
-    Briefing's own draft, bound to the cockpit it drafts."""
+    Briefing's own draft, bound to the dashboard it drafts."""
     from aughor.agent.converse_tools import converse_tools
     emit = lambda kind, payload: None   # noqa: E731
-    with_canvas = converse_tools(CONN, emit=emit, canvas_id="cv1", user_question="build me a returns cockpit")
+    with_canvas = converse_tools(CONN, emit=emit, canvas_id="cv1", user_question="build me a returns dashboard")
     without = converse_tools(CONN, emit=emit)
     assert [t.as_wire() for t in with_canvas] == [t.as_wire() for t in without]
     assert "draft_cockpit" not in _names(with_canvas)
@@ -275,7 +275,7 @@ def test_options_show_the_cockpit_as_it_stands(desk):
 
 
 def test_options_offer_the_whole_connection_and_the_connections_pinned_cards(monkeypatch, warehouse):
-    """A person's cockpit is not a canvas's: it may be made of anything the connection has
+    """A person's dashboard is not a canvas's: it may be made of anything the connection has
     approved, and it may place what was pinned for everyone. It never offers another person's."""
     desk = Desk(monkeypatch)
     pinned = card_store.upsert_card(DashboardCard(connection_id=CONN, scope="connection", scope_ref=CONN,
@@ -307,11 +307,11 @@ def test_a_draft_is_one_proposal_and_changes_nothing(desk, warehouse):
     assert frames == [("proposal_staged", {"proposal_id": p.id, "kind": "cockpit_draft",
                                            "connection_id": CONN, "action_id": p.action_id})]
     assert out["summary"] == (
-        f'Drafted the cockpit "Returns": 2 tabs, 3 sections, 4 cards (3 new) (proposal {p.id}). '
+        f'Drafted the dashboard "Returns": 2 tabs, 3 sections, 4 cards (3 new) (proposal {p.id}). '
         'The new cards show: "Return rate", one figure for the whole connection; "Returned, by category", '
         'a chart of its rows; "Returns cluster in the first week after delivery", a chart of its rows. '
         "Nothing is changed yet. The person keeps it, all of it or none of it, and it then appears among "
-        "their cockpits in the Briefing.")
+        "their dashboards in the Briefing.")
 
     # Nothing is made until a person approves.
     assert desk.held_cards() == [desk.held]
@@ -407,13 +407,13 @@ def test_sections_with_no_tabs(desk):
     assert p.params["cards"] == []
     out = draft_cockpit(desk.home, {"op": "new", "spec": {**spec, "elements": {
         **spec["elements"], "s": {**spec["elements"]["s"], "props": {"title": "At a glance"}}}}})
-    assert 'Drafted the cockpit "Returns": 1 section, 1 card (proposal' in out["summary"]
+    assert 'Drafted the dashboard "Returns": 1 section, 1 card (proposal' in out["summary"]
 
 
 # ── what a draft is refused for ──────────────────────────────────────────────
 
 def _one(desk: Desk, card: dict, place: bool = True) -> dict:
-    """A draft of one new card, placed in a cockpit of one section."""
+    """A draft of one new card, placed in a dashboard of one section."""
     key = card.get("key") if isinstance(card, dict) else None
     spec = {"root": "c", "elements": {
         "c": {"type": "Cockpit", "props": {"title": "Returns"}, "children": ["s"]},
@@ -509,7 +509,7 @@ def test_more_cards_than_a_draft_may_make(desk, warehouse):
 def test_a_spec_the_rules_refuse_is_refused_in_the_rules_own_words(desk):
     spec = desk.spec()
     spec["elements"]["c-net"]["on"] = {"press": {"action": "anything"}}
-    assert 'The element "c-net" carries "on". A cockpit defines no action of its own' in refused(desk, spec=spec)
+    assert 'The element "c-net" carries "on". A dashboard defines no action of its own' in refused(desk, spec=spec)
 
 
 def test_a_name_the_draft_never_declared_is_refused_with_its_repair(desk):
@@ -519,7 +519,7 @@ def test_a_name_the_draft_never_declared_is_refused_with_its_repair(desk):
     spec["elements"]["c-net"]["props"] = {"card": "ghost"}
     del spec["elements"]["c-net"]["visible"]
     assert refused(desk, spec=spec) == (
-        'The cockpit places the card "ghost". The person has no card with that id, and the draft creates '
+        'The dashboard places the card "ghost". The person has no card with that id, and the draft creates '
         'none of that name. To create it, add it to "cards" with "key": "ghost" and the one record it is '
         "made from (metric, trusted_query, finding). "
         "The draft creates: by-category, first-week, return-rate.")
@@ -533,7 +533,7 @@ def test_a_name_that_is_a_record_is_told_how_to_become_a_card(desk):
     spec["elements"]["c-cat"]["props"] = {"card": desk.trusted}
     spec["elements"]["c-week"]["props"] = {"card": desk.finding}
     text = refused(desk, spec=spec, cards=[{"key": "return-rate", "metric": desk.metric}])
-    assert (f'The cockpit places the card "{desk.metric}". The person has no card with that id, and the draft '
+    assert (f'The dashboard places the card "{desk.metric}". The person has no card with that id, and the draft '
             f'creates none of that name. "{desk.metric}" is an approved metric: to make a card from it, add '
             f'{{"key": "{desk.metric}", "metric": "{desk.metric}"}} to "cards". The draft creates: return-rate.') in text
     assert f'"{desk.trusted}" is a trusted query: to make a card from it, add {{"key": "{desk.trusted}", "trusted_query": "{desk.trusted}"}}' in text
@@ -553,7 +553,7 @@ def test_a_status_read_of_a_card_nobody_made(desk):
     spec = desk.spec()
     spec["elements"]["c-net"]["visible"] = {"$state": "/cards/phantom/status", "eq": "over"}
     text = refused(desk, spec=spec)
-    assert text.startswith('The cockpit reads the status of the card "phantom". The person has no card with that id')
+    assert text.startswith('The dashboard reads the status of the card "phantom". The person has no card with that id')
 
 
 def test_the_same_spec_from_a_person_is_refused_in_the_plain_words(desk):
@@ -561,8 +561,8 @@ def test_the_same_spec_from_a_person_is_refused_in_the_plain_words(desk):
     spec = desk.spec()
     out = versions.keep(desk.home, spec, approved_by="user1", source="a person's own hand",
                         written_by_model=False)
-    assert 'The cockpit places the card "return-rate", which is not a card of this cockpit.' in out.sentences
-    assert 'A condition reads the status of the card "return-rate", which is not a card of this cockpit.' in out.sentences
+    assert 'The dashboard places the card "return-rate", which is not a card of this dashboard.' in out.sentences
+    assert 'A condition reads the status of the card "return-rate", which is not a card of this dashboard.' in out.sentences
 
 
 def test_a_title_that_states_a_figure(desk):
@@ -574,7 +574,7 @@ def test_a_title_that_states_a_figure(desk):
 def test_the_reasoning_is_a_models_text_and_states_no_figure(desk):
     """It is shown to the person approving, and kept as the version's note in the history."""
     text = refused(desk, reasoning="The return rate is 10.03%, so its alert comes first.")
-    assert text == ("The reasoning states a figure (10.03%). Say why the cockpit is arranged this way; "
+    assert text == ("The reasoning states a figure (10.03%). Say why the dashboard is arranged this way; "
                     "a figure is a card's to show, where it is measured. "
                     "A limit this draft sets on a card may be named.")
     # A year, a rank and a small count are not claims about the data, here as at the departure gate.
@@ -631,7 +631,7 @@ def test_a_limit_the_user_named_is_set(desk, words):
 def test_a_limit_nobody_named_is_refused_and_is_no_licence_for_a_figure(desk):
     """The receipt's third run, ask 5: the writer set 12% on two return cards nobody had asked a
     limit of, and the reasoning then stated a figure it had measured as "the limit"."""
-    text = refused(desk, said="Build me a returns cockpit.", reasoning="Each capped at 12%.")
+    text = refused(desk, said="Build me a returns dashboard.", reasoning="Each capped at 12%.")
     assert ('The card "return-rate" sets a limit of 12, which the user did not name. A limit goes on a '
             'card only when the user names it: leave "limit" out, or ask the user for one.') in text
     assert "The reasoning states a figure (12%)." in text
@@ -643,16 +643,16 @@ def test_a_limit_nobody_named_is_refused_and_is_no_licence_for_a_figure(desk):
 
 
 def test_the_tool_holds_a_limit_to_the_words_of_the_turn(desk, on):
-    """What the person asked for binds to the tool by closure, as the cockpit and the person do —
+    """What the person asked for binds to the tool by closure, as the dashboard and the person do —
     the model does not get to say what the person said."""
 
     def tool(words: str):
         return drafting_tool(desk.home, said=words)
 
     ask = {"op": "new", "spec": desk.spec(), "cards": desk.cards()}
-    out = tool("Build me a returns cockpit.").run(ask)
+    out = tool("Build me a returns dashboard.").run(ask)
     assert out["staged"] is False and "which the user did not name" in out["error"]
-    assert tool("Build me a returns cockpit, with an alert above 12%.").run(ask)["staged"] is True
+    assert tool("Build me a returns dashboard, with an alert above 12%.").run(ask)["staged"] is True
 
 
 def test_the_writer_is_told_how_many_cards_a_draft_may_make(desk, on):
@@ -664,7 +664,7 @@ def test_the_writer_is_told_how_many_cards_a_draft_may_make(desk, on):
     assert '{"key": "return-rate", "metric": "return_rate"}' in out["summary"]
     assert 'A name the spec places and "cards" does not list is refused' in out["summary"]
     # What the third run found a writer drafting without knowing.
-    for told in ('A "new" cockpit replaces the one that stands, whole',
+    for told in ('A "new" dashboard replaces the one that stands, whole',
                  "A finding is one the Briefing shows",
                  "only when the user named it; a limit you choose is refused",
                  "a metric is one figure for the whole connection"):
@@ -725,8 +725,8 @@ def test_what_only_the_platform_knows_is_told_in_the_same_refusal_as_the_rules(d
     text = refused(desk, spec=spec)
     assert 'The element "c-rate" carries "on".' in text
     assert 'reads "Returns up 14%", which states a figure (14%)' in text
-    assert 'The cockpit places the card "ghost". The person has no card with that id' in text
-    assert 'The cockpit reads the status of the card "phantom". The person has no card with that id' in text
+    assert 'The dashboard places the card "ghost". The person has no card with that id' in text
+    assert 'The dashboard reads the status of the card "phantom". The person has no card with that id' in text
     # …and the cards the draft does make are not among the ones it is said not to have.
     assert text.count("The person has no card with that id") == 2
 
@@ -747,10 +747,10 @@ def test_a_refusal_speaks_in_the_names_the_writer_gave(desk):
 
 
 @pytest.mark.parametrize("kw,sentence", [
-    ({"mode": "new", "spec": None, "cards": []}, 'A new cockpit carries its whole "spec".'),
-    ({"mode": "new", "spec": "a cockpit about returns", "cards": []}, 'A new cockpit carries its whole "spec".'),
-    ({"mode": "new", "patches": [{"op": "remove", "path": "/root"}]}, 'A new cockpit carries its whole "spec", not "patches".'),
-    ({"mode": "rewrite"}, 'A cockpit is drafted "new" or as an "edit".'),
+    ({"mode": "new", "spec": None, "cards": []}, 'A new dashboard carries its whole "spec".'),
+    ({"mode": "new", "spec": "a dashboard about returns", "cards": []}, 'A new dashboard carries its whole "spec".'),
+    ({"mode": "new", "patches": [{"op": "remove", "path": "/root"}]}, 'A new dashboard carries its whole "spec", not "patches".'),
+    ({"mode": "rewrite"}, 'A dashboard is drafted "new" or as an "edit".'),
     ({"mode": "new", "cards": {"key": "k1"}}, '"cards" is a list of the cards to create.'),
 ])
 def test_a_draft_that_is_not_one(desk, kw, sentence):
@@ -802,7 +802,7 @@ def test_when_the_rules_cannot_run_nothing_is_staged_and_trying_again_will_not_h
 
     out = desk.draft()
     assert out.staged is False and out.not_checked is True
-    assert "The cockpit's rules could not run: node was not found on this machine" in said(out)
+    assert "The dashboard's rules could not run: node was not found on this machine" in said(out)
     assert desk.pending() == []
 
     told = draft_cockpit(desk.home, {"op": "new", "spec": desk.spec(), "cards": desk.cards()})
@@ -834,7 +834,7 @@ def test_a_newer_draft_replaces_the_one_before_it_for_this_cockpit_only(desk, mo
 # ── approval ─────────────────────────────────────────────────────────────────
 
 def accept(p, actor: Optional[str] = None):
-    """Approve as the person the cockpit is for, unless another name is given."""
+    """Approve as the person the dashboard is for, unless another name is given."""
     owner = (p.params.get("home") or {}).get("owner", "")
     result, _grant = inbox.accept_proposal(p.id, actor=approver(owner) if actor is None else actor)
     return result
@@ -845,7 +845,7 @@ def test_approved_every_card_is_made_and_the_spec_is_kept_in_the_approvers_name(
     result = accept(p)
 
     assert result.ok is True and result.status == "executed", result.message
-    assert result.message == "cockpit 'Returns' kept as version 1 in the Briefing, with 3 new cards"
+    assert result.message == "dashboard 'Returns' kept as version 1 in the Briefing, with 3 new cards"
     ids = {c["key"]: c["id"] for c in p.params["cards"]}
     assert result.outcome["cards_created"] == [ids["return-rate"], ids["by-category"], ids["first-week"]]
     assert result.outcome["version"] == 1 and result.outcome["cockpit_id"] == desk.home.cockpit_id
@@ -879,7 +879,7 @@ def test_approved_every_card_is_made_and_the_spec_is_kept_in_the_approvers_name(
 
 def test_the_approver_is_the_signed_in_user_where_there_is_one(monkeypatch, warehouse):
     """The accepting screen sends a name of its own. Where someone is signed in, the server
-    knows who, and that is the name a cockpit is kept in."""
+    knows who, and that is the name a dashboard is kept in."""
     me = f"u-{uuid.uuid4().hex[:6]}"
     desk = Desk(monkeypatch, owner=me)
     monkeypatch.setattr("aughor.org.context.current_user_id", lambda: me)
@@ -890,7 +890,7 @@ def test_the_approver_is_the_signed_in_user_where_there_is_one(monkeypatch, ware
 
 
 def test_a_persons_cockpit_is_kept_by_them_and_nobody_else(monkeypatch, warehouse):
-    """A cockpit is its owner's (§6 item 36(i)): signed in as someone else, it is not theirs to keep."""
+    """A dashboard is its owner's (§6 item 36(i)): signed in as someone else, it is not theirs to keep."""
     desk = Desk(monkeypatch, owner=f"u-{uuid.uuid4().hex[:6]}")
     p = staged(desk)
     real, made = cards.place, []
@@ -898,7 +898,7 @@ def test_a_persons_cockpit_is_kept_by_them_and_nobody_else(monkeypatch, warehous
     monkeypatch.setattr("aughor.org.context.current_user_id", lambda: "u7")
     result = accept(p, actor="chat")
     assert result.ok is False and made == []
-    assert "This cockpit was drafted for someone else, and only they can keep it. Nothing was made." in result.message
+    assert "This dashboard was drafted for someone else, and only they can keep it. Nothing was made." in result.message
     nothing_was_made(desk, p)
 
 
@@ -917,7 +917,7 @@ def test_nobody_approved_it(desk, monkeypatch):
     # Keeping would refuse it too, further down. This is refused BEFORE a card is made.
     assert made == []
     assert result.ok is False
-    assert "A cockpit is kept with the name of the person who approved it. None was given." in result.message
+    assert "A dashboard is kept with the name of the person who approved it. None was given." in result.message
     nothing_was_made(desk, p)
 
 
@@ -931,7 +931,7 @@ def test_a_metric_changed_since_the_draft_refuses_all_of_it(desk):
     result = accept(p)
     assert result.ok is False and result.status == "dispatch_error"
     assert (f'The card "Return rate" was drafted from version 3 of the metric "{desk.metric}", '
-            "which is now at version 4. Nothing was made. Ask for the cockpit again.") in result.message
+            "which is now at version 4. Nothing was made. Ask for the dashboard again.") in result.message
     nothing_was_made(desk, p)
 
 
@@ -972,7 +972,7 @@ def test_a_cockpit_that_moved_on_since_the_draft_refuses_it(desk):
                          written_by_model=False).kept
 
     result = accept(p)
-    assert ("The cockpit has changed since this was drafted: it was not yet made, and it is now version 1. "
+    assert ("The dashboard has changed since this was drafted: it was not yet made, and it is now version 1. "
             "Ask for it again.") in result.message
     nothing_was_made(desk, p, version=1)
     assert versions.latest(desk.home)["spec"] == by_hand
@@ -984,13 +984,13 @@ def test_all_or_nothing_when_the_spec_cannot_be_kept(desk, monkeypatch):
 
     def refuse(home, spec, **kw):
         seen.append(desk.held_cards())
-        return versions.Kept(versions.FAILED, sentences=("The cockpit could not be kept: the disk is full.",))
+        return versions.Kept(versions.FAILED, sentences=("The dashboard could not be kept: the disk is full.",))
 
     monkeypatch.setattr(versions, "keep", refuse)
     result = accept(p)
 
     assert len(seen) == 1 and len(seen[0]) == 4          # the cards HAD been made when the keep failed
-    assert "The cockpit could not be kept: the disk is full. Nothing was kept." in result.message
+    assert "The dashboard could not be kept: the disk is full. Nothing was kept." in result.message
     nothing_was_made(desk, p)
 
 
@@ -1009,7 +1009,7 @@ def test_all_or_nothing_when_a_card_cannot_be_made(desk, monkeypatch):
     result = accept(p)
 
     assert len(calls) == 2
-    assert "The cockpit could not be made: the card store is locked. Nothing was kept." in result.message
+    assert "The dashboard could not be made: the card store is locked. Nothing was kept." in result.message
     nothing_was_made(desk, p)
 
 
@@ -1041,7 +1041,7 @@ def test_it_is_audited_under_its_own_name(desk):
 
 @pytest.fixture
 def standing(desk) -> Desk:
-    """The desk, with its cockpit approved as version 1."""
+    """The desk, with its dashboard approved as version 1."""
     assert accept(staged(desk)).ok is True
     return desk
 
@@ -1058,7 +1058,7 @@ def test_an_edit_is_operations_against_the_cockpit_as_it_stands(standing):
 
     [p] = desk.pending()
     assert out["summary"].startswith(
-        'Drafted an edit to the cockpit "Returns", which stands at version 1: 2 tabs, 3 sections, 3 cards ')
+        'Drafted an edit to the dashboard "Returns", which stands at version 1: 2 tabs, 3 sections, 3 cards ')
     assert p.params["mode"] == "edit" and p.params["base_version"] == 1
     assert p.params["patches"] == patches and p.params["cards"] == []
     assert p.detail["replaces_version"] == 1
@@ -1106,9 +1106,9 @@ def test_an_edit_that_takes_off_a_section_and_a_tab_says_each_by_name(standing):
 
 
 def test_a_new_cockpit_says_what_it_takes_off_the_one_that_stands(standing):
-    """A new cockpit replaces the one that stands, whole. The first cut listed what was taken
+    """A new dashboard replaces the one that stands, whole. The first cut listed what was taken
     off for an edit only, and this test asserted a new one took nothing off — while its spec
-    kept one card of four. The receipt's third run found two new cockpits that would have
+    kept one card of four. The receipt's third run found two new dashboards that would have
     taken off 9 and 12 cards, with none of them named on the card or in the chat."""
     spec = standing.spec()
     spec["elements"]["cockpit"]["props"]["title"] = "Returned goods"
@@ -1127,10 +1127,10 @@ def test_a_new_cockpit_says_what_it_takes_off_the_one_that_stands(standing):
         {"what": "card", "title": "Returns cluster in the first week after delivery", "from": "Where and when"},
     ]
     assert out["summary"].endswith(
-        " It replaces the cockpit that stands (version 1) whole, and takes off 3 of its cards: Return rate; "
-        "Returned, by category; Returns cluster in the first week after delivery. To add to that cockpit "
+        " It replaces the dashboard that stands (version 1) whole, and takes off 3 of its cards: Return rate; "
+        "Returned, by category; Returns cluster in the first week after delivery. To add to that dashboard "
         "instead, draft an edit. Nothing is changed yet. The person keeps it, all of it or none of it, and "
-        "it then appears among their cockpits in the Briefing.")
+        "it then appears among their dashboards in the Briefing.")
 
 
 def _edit_adding(desk: Desk, card: dict) -> propose.Drafted:
@@ -1201,7 +1201,7 @@ def test_a_new_cockpit_that_keeps_every_card_says_so(standing):
     out = draft_cockpit(standing.home, {"op": "new", "spec": spec, "cards": []})
     assert out["staged"] is True, out
     assert standing.pending()[0].detail["taken_off"] == []
-    assert " It replaces the cockpit that stands (version 1) whole; every card on it is kept." in out["summary"]
+    assert " It replaces the dashboard that stands (version 1) whole; every card on it is kept." in out["summary"]
 
 
 def test_an_edit_may_make_a_card_and_place_it_by_the_name_it_gave(standing, monkeypatch):
@@ -1237,7 +1237,7 @@ def test_an_edit_may_make_a_card_and_place_it_by_the_name_it_gave(standing, monk
      'reads "Returns up 14%", which states a figure (14%)'),
     ([{"op": "remove", "path": "/elements/sec-detail/children/1"}], "orphaned_element"),
     ([{"op": "replace", "path": "/elements/cockpit/props/title", "value": "Returns"}],
-     "The cockpit already reads this way. Nothing was drafted."),
+     "The dashboard already reads this way. Nothing was drafted."),
     ([], "An edit is a list of operations, and this one holds none."),
     (None, "An edit is a list of operations, and this one holds none."),
 ])
@@ -1253,13 +1253,13 @@ def test_an_edit_carries_operations_not_a_spec(standing):
 
 def test_there_is_nothing_to_edit(desk):
     assert refused(desk, mode="edit", patches=[{"op": "remove", "path": "/root"}]) \
-        == 'There is no cockpit here to edit. Draft one with op "new".'
+        == 'There is no dashboard here to edit. Draft one with op "new".'
 
 
 def test_a_retired_cockpit_is_not_edited_and_a_new_one_follows_it(standing):
     desk = standing
     assert versions.retire(desk.home, approved_by="user1").kept
-    assert "There is no cockpit here to edit" in refused(
+    assert "There is no dashboard here to edit" in refused(
         desk, mode="edit", patches=[{"op": "replace", "path": "/elements/cockpit/props/title", "value": "X"}])
 
     spec = {"root": "c", "elements": {
@@ -1282,7 +1282,7 @@ def test_an_edit_drafted_against_a_version_lands_on_that_version_or_not_at_all(s
                          written_by_model=False).kept
 
     result = accept(p)
-    assert ("The cockpit has changed since this was drafted: it was version 1, and it is now version 2. "
+    assert ("The dashboard has changed since this was drafted: it was version 1, and it is now version 2. "
             "Ask for it again.") in result.message
     assert versions.latest(desk.home)["version"] == 2
     assert versions.latest(desk.home)["spec"]["elements"]["sec-headline"]["props"]["title"] == "Headline"
@@ -1323,7 +1323,7 @@ def test_an_area_is_drafted_into_one_proposal_for_a_new_cockpit_of_the_persons(d
     assert (home.connection_id, home.owner) == (CONN, desk.home.owner)
     assert home.cockpit_id == out["cockpit_id"] and home.cockpit_id.startswith("returns-with-an-alert-above-12-")
     assert home != desk.home                                      # a new cockpit, never one that stands
-    assert out["summary"].startswith('Drafted the cockpit "Returns": 2 tabs, 3 sections, 4 cards (3 new)')
+    assert out["summary"].startswith('Drafted the dashboard "Returns": 2 tabs, 3 sections, 4 cards (3 new)')
     assert out["sentences"] == []
     assert versions.latest(home) is None                          # nothing is kept until the person keeps it
 
@@ -1354,7 +1354,7 @@ def test_when_nothing_is_drafted_the_reasons_are_the_platforms_or_a_figure_free_
     # The model's own words are shown only when they state no figure: they are no measurement.
     set_responses([_call(op="options"), "Marketing converts at 26.7%, so there is nothing to add."])
     out = draft_for_area(CONN, desk.home.owner, "marketing", provider=faux)
-    assert out["sentences"] == ["The model drafted no cockpit for this area, and gave no reason."]
+    assert out["sentences"] == ["The model drafted no dashboard for this area, and gave no reason."]
 
     # A draft refused to the end: the platform's own sentences, not the model's.
     set_responses([_call(op="options"), _call(op="new", spec=desk.spec(), cards=desk.cards()), "I give up."])
@@ -1371,7 +1371,7 @@ def test_no_area_or_no_model_that_calls_tools_spends_nothing(desk, monkeypatch):
 
     monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", spent)
     assert ask.draft_for_area(CONN, desk.home.owner, "   ")["sentences"] == [
-        "Name the area this cockpit is for — returns, pricing, marketing."]
+        "Name the area this dashboard is for — returns, pricing, marketing."]
     monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: False)
     out = ask.draft_for_area(CONN, desk.home.owner, "returns")
     assert out["staged"] is False and "cannot call tools" in out["sentences"][0]
@@ -1391,4 +1391,4 @@ def test_the_model_is_given_the_drafting_tool_alone(desk, faux, monkeypatch):
     monkeypatch.setattr(tool_loop, "run_tool_loop", spy)
     set_responses(["Nothing to draft."])
     draft_for_area(CONN, desk.home.owner, "pricing", provider=faux)
-    assert seen == [(["draft_cockpit"], "Draft a cockpit for this area: pricing", 6)]
+    assert seen == [(["draft_cockpit"], "Draft a dashboard for this area: pricing", 6)]

@@ -1,4 +1,4 @@
-"""Pin-from-Query-Builder endpoint (Briefing cockpit, Slice 2 — Door 2).
+"""Pin-from-Query-Builder endpoint (Briefing dashboard, Slice 2 — Door 2).
 
 Verifies the ENDPOINT's contract, not the guard battery (tested in aughor/sql): the
 user-authored SQL is re-run through execute_guarded, a query that errors is REFUSED (422,

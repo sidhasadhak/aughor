@@ -148,7 +148,7 @@ describe("ProcessPanel — a process as the data counted it", () => {
 });
 
 
-describe("ProcessPanel — a cockpit for a process published earlier", () => {
+describe("ProcessPanel — a dashboard for a process published earlier", () => {
   // The walk-through (2026-10-09): Start a cockpit was offered only in the designer's session, right after publishing.
   beforeEach(() => { keepCockpit.mockClear(); requestTab.mockClear(); });
 

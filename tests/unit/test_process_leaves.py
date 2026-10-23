@@ -1,7 +1,7 @@
 """Arc OC-4 — a process says how an object leaves it, and a promise stops counting it as open (ROADMAP §3.56).
 
 Found on theLook's live receipt (2026-10-09): of the 43,777 orders the dispatch promise counted *open and overdue*,
-18,726 were Cancelled — they had left the process, and a late dispatch cockpit would have listed them as late. A
+18,726 were Cancelled — they had left the process, and a late dispatch dashboard would have listed them as late. A
 process now declares how an object leaves it (`leaves`: a property and the values that mean gone); one that left
 still counts toward the stages it reached, and is no longer open or overdue — in the measurement, in the overdue
 segment and so on the board and in the table alike. Every number is held to a hand-written query over the seeded

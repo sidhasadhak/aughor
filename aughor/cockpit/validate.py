@@ -1,4 +1,4 @@
-"""The cockpit's validator (Arc CT, CT-2) — a spec is accepted whole or refused whole, with
+"""The dashboard's validator (Arc CT, CT-2) — a spec is accepted whole or refused whole, with
 sentences (AV-0's law, ROADMAP §3.11).
 
 Two halves, and the split is by who can know:
@@ -11,12 +11,12 @@ Two halves, and the split is by who can know:
    ``export/echarts.py`` uses for charts, for the same reason: the server checks a spec with
    the function the browser draws it with, so the two cannot come to disagree.
 
-2. **What only the platform knows** — whether a card the spec places is one this cockpit may place, and,
+2. **What only the platform knows** — whether a card the spec places is one this dashboard may place, and,
    for a spec a MODEL wrote, whether a title states a figure. Those are checked here.
 
 **The numerals law is for text a model wrote.** A person who names a section "Top 1000
 accounts" has said so in their own name, and a canvas called "Store 4521" is a canvas's name.
-The first cut held every title to the law, whoever wrote it: a cockpit started from a canvas
+The first cut held every title to the law, whoever wrote it: a dashboard started from a canvas
 whose name held a number was refused for "stating a figure" — found by a test that failed one
 run in six, because its canvas names were random. ``model_written`` defaults to True, so a
 caller that forgets to say gets the strict reading.
@@ -89,14 +89,14 @@ def _run(payload: dict[str, Any]) -> tuple[Optional[dict], str]:
             return None, "the rules answered with something that is not an object"
         return out, ""
     except Exception as exc:
-        tolerate(exc, "the cockpit's rules could not run; the spec is NOT accepted",
+        tolerate(exc, "the dashboard's rules could not run; the spec is NOT accepted",
                  counter="cockpit.validator_unavailable")
         return None, f"{type(exc).__name__}: {exc}"[:300]
 
 
 def _not_checked(why: str) -> SpecVerdict:
     return SpecVerdict(NOT_CHECKED, (
-        f"The cockpit's rules could not run: {why}. Nothing is accepted unchecked.",))
+        f"The dashboard's rules could not run: {why}. Nothing is accepted unchecked.",))
 
 
 def vocabulary() -> Optional[dict]:
@@ -115,9 +115,9 @@ def wiring(spec: Any) -> Optional[dict]:
 
 
 def grammar() -> Optional[str]:
-    """What the writer of a cockpit is told, as the web writes it from its own catalog — or
+    """What the writer of a dashboard is told, as the web writes it from its own catalog — or
     None when the rules cannot run. The server keeps no copy (CT-5). The grid is told of only
-    while building cockpits in place is on (Arc AP-1), and sections split into sections only while that is on (Arc AP-4);
+    while building dashboards in place is on (Arc AP-1), and sections split into sections only while that is on (Arc AP-4);
     off, the text is as it was before them."""
     from aughor.cockpit import app_pieces, builder
     out, _why = _run({"op": "grammar", "grid": builder.on(), "structure": app_pieces.on()})
@@ -225,20 +225,20 @@ def stated_figures(text: str) -> list[str]:
 
 
 def unknown_card(name: str, how: str) -> str:
-    """What is said of a card a spec names that is not one this cockpit may place. ``how`` is "placed"
+    """What is said of a card a spec names that is not one this dashboard may place. ``how`` is "placed"
     or "read" — a ``Card`` places it, or a condition reads its status."""
     if how == "read":
-        return f'A condition reads the status of the card "{name}", which is not a card of this cockpit.'
-    return f'The cockpit places the card "{name}", which is not a card of this cockpit.'
+        return f'A condition reads the status of the card "{name}", which is not a card of this dashboard.'
+    return f'The dashboard places the card "{name}", which is not a card of this dashboard.'
 
 
 def check_spec(spec: Any, *, known_cards: Iterable[str], model_written: bool = True,
                say_unknown: Optional[Callable[[str, str], str]] = None) -> SpecVerdict:
     """Accept ``spec`` whole or refuse it whole. ``known_cards`` are the ids of the cards this
-    cockpit may place, plus any the same proposal is about to create. ``model_written`` says whose
+    dashboard may place, plus any the same proposal is about to create. ``model_written`` says whose
     words the titles are: a model's are held to the numerals law, a person's are their own.
 
-    ``say_unknown`` writes the sentence for a card the cockpit may not place. The default is
+    ``say_unknown`` writes the sentence for a card the dashboard may not place. The default is
     for a spec a person hands in. A draft has more to say — what it does create, and how the
     card could be created — and says it itself (``aughor/cockpit/propose.py``)."""
     say_unknown = say_unknown or unknown_card
@@ -272,7 +272,7 @@ def check_spec(spec: Any, *, known_cards: Iterable[str], model_written: bool = T
 
 def _platform_says(read: dict, known: set[str], model_written: bool,
                    say_unknown: Callable[[str, str], str]) -> list[str]:
-    """What only the platform knows of what the rules read: a card the cockpit may not place,
+    """What only the platform knows of what the rules read: a card the dashboard may not place,
     and — of text a model wrote — a title that states a figure."""
     # A caller's `say_unknown` may answer "" for a card it has already spoken of.
     said = [say_unknown(str(card), "placed") for card in read.get("cards") or [] if str(card) not in known]
@@ -285,14 +285,14 @@ def _platform_says(read: dict, known: set[str], model_written: bool,
         if figures:
             sentences.append(
                 f'The {t.get("prop")} of "{t.get("elementKey")}" reads "{text}", which states a figure '
-                f'({", ".join(figures)}). In a cockpit a figure belongs to a card, where it is measured.')
+                f'({", ".join(figures)}). In a dashboard a figure belongs to a card, where it is measured.')
     return sentences
 
 
 def check_spec_for_home(spec: Any, home: Any, *, also_known: Iterable[str] = (),
                         model_written: bool = True,
                         say_unknown: Optional[Callable[[str, str], str]] = None) -> SpecVerdict:
-    """:func:`check_spec` against the cards this person's cockpit may place — their own and
+    """:func:`check_spec` against the cards this person's dashboard may place — their own and
     the connection's (``aughor/cockpit/cards.py``). ``also_known`` names the cards the same
     proposal will create on approval."""
     from aughor.cockpit import cards

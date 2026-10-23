@@ -175,7 +175,7 @@ describe("a value's setup", () => {
 });
 
 describe("a piece's wiring", () => {
-  it("reads every object of its entity or a set; a click chooses for the cockpit; ticks collect", async () => {
+  it("reads every object of its entity or a set; a click chooses for the dashboard; ticks collect", async () => {
     const onChange = vi.fn();
     render(<PieceSetup spec={desk()} selected="table" onChange={onChange} connectionId={`c${++conn}`} wiringOn />);
     await choose(screen.getByLabelText("Reads"), "entity:order");
@@ -199,7 +199,7 @@ describe("a piece's wiring", () => {
     expect(onChange.mock.calls[0][0].elements.filters.props.set).toBe("waiting");
   });
 
-  it("is not offered while the install does not wire cockpits", () => {
+  it("is not offered while the install does not wire dashboards", () => {
     render(<PieceSetup spec={desk()} selected="table" onChange={vi.fn()} connectionId={`c${++conn}`} />);
     expect(screen.queryByTestId("setup-reads")).toBeNull();
     expect(screen.queryByTestId("setup-chooses")).toBeNull();

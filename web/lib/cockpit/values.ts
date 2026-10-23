@@ -25,7 +25,7 @@ export function valuesFor(names: string[], defs: Record<string, { kind: string; 
   const values: ValuesSent = {};
   for (const name of names) {
     const def = defs?.[name];
-    if (!def) return { refused: `It reads {{${name}}}, and this cockpit holds no value of that name.` };
+    if (!def) return { refused: `It reads {{${name}}}, and this dashboard holds no value of that name.` };
     const now = valueOf(name);
     if ("refused" in now) return { refused: `It reads ${def.label ?? name}, which cannot be read: ${now.refused}` };
     if ("waiting" in now) return { waiting: now.waiting, label: def.label ?? name };

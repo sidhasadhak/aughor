@@ -116,7 +116,7 @@ describe("the action designer", () => {
       .toContain("51 of the 25,051 overdue dispatch the button sits beside can't be pressed"), { timeout: 3000 });
   });
 
-  it("declares through the approval gate in words, publishes the release, and puts the button and its column on the cockpit ticked", async () => {
+  it("declares through the approval gate in words, publishes the release, and puts the button and its column on the dashboard ticked", async () => {
     calls.declare.mockRejectedValueOnce(new Error("428 approval_required: ontology.override")).mockResolvedValueOnce(undefined);
     calls.release.mockResolvedValue({ published: { number: 4 }, draft: [{}] });
     calls.publish.mockResolvedValue({ number: 5, id: "r5", restated_claims: [] });

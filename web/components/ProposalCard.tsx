@@ -61,8 +61,8 @@ const KIND_CHIP: Record<string, { hue: ChipHue; label: string }> = {
   brief_draft: { hue: "info", label: "brief delivery" },
   outbound_send: { hue: "caution", label: "Slack post" },
   agent_limit: { hue: "accent", label: "agent limit" },
-  cockpit_draft: { hue: "info", label: "cockpit" },
-  cockpit_publish: { hue: "info", label: "cockpit · publish" },
+  cockpit_draft: { hue: "info", label: "dashboard" },
+  cockpit_publish: { hue: "info", label: "dashboard · publish" },
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -238,7 +238,7 @@ function limitWords(l: CockpitNewCard["limit"]): string {
 function keptWords(outcome: Record<string, unknown> | undefined): string {
   const version = outcome?.version;
   return typeof version === "number"
-    ? `kept as version ${version} — it is among your cockpits in the Briefing` : "";
+    ? `kept as version ${version} — it is among your dashboards in the Briefing` : "";
 }
 
 function CockpitBody({ p }: { p: StagedProposal }) {
@@ -248,7 +248,7 @@ function CockpitBody({ p }: { p: StagedProposal }) {
     const to = (Array.isArray(d.to) ? d.to : []) as string[];
     return (
       <div className="flex flex-col gap-1" data-testid="cockpit-publish">
-        <Row label="Cockpit">{String(d.title ?? "")}</Row>
+        <Row label="Dashboard">{String(d.title ?? "")}</Row>
         <Row label="Publish to">{to.join(", ")}</Row>
         <Row label="As it stands">version {String(d.replaces_version ?? "")} · read-only for its readers, under your name</Row>
       </div>
@@ -268,7 +268,7 @@ function CockpitBody({ p }: { p: StagedProposal }) {
   return (
     <div className="flex flex-col gap-2" data-testid="cockpit-draft">
       <div className="flex flex-col gap-1">
-        <Row label="Cockpit">{String(d.title ?? "")}</Row>
+        <Row label="Dashboard">{String(d.title ?? "")}</Row>
         <Row label="Canvas">{String(d.canvas_name ?? "")}</Row>
         {edit
           ? <Row label="Edits">version {String(before)}{moved ? ` · of its elements, ${moved}` : ""}</Row>
@@ -309,7 +309,7 @@ function CockpitBody({ p }: { p: StagedProposal }) {
       {gone.length > 0 && (
         <div className="flex flex-col gap-1" data-testid="cockpit-taken-off">
           <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
-            Taken off the cockpit{gone.some(g => g.what === "card") ? ". A card taken off is kept, and other cockpits may place it" : ""}:
+            Taken off the dashboard{gone.some(g => g.what === "card") ? ". A card taken off is kept, and other dashboards may place it" : ""}:
           </span>
           {gone.map((g, i) => (
             <Row key={`gone-${i}`} label={TAKEN_OFF[g.what] ?? g.what}>

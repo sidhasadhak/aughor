@@ -187,7 +187,7 @@ describe("the starting point", () => {
     expect(unwrapRunSql("DROP SCHEMA rearm_single CASCADE")).toBe("DROP SCHEMA rearm_single CASCADE");
   });
 
-  it("opens a cockpit piece's statement without the piece's sort or sum around it — theLook's live runs", () => {
+  it("opens a dashboard piece's statement without the piece's sort or sum around it — theLook's live runs", () => {
     // As the live audit holds them (2026-10-13): the row cap around a piece's wrapper around the person's statement.
     const stmt = "SELECT u.country, ROUND(SUM(oi.sale_price), 2) AS sales FROM thelook.orders o JOIN thelook.users u "
       + "ON u.id = o.user_id GROUP BY 1 ORDER BY sales DESC LIMIT 5";

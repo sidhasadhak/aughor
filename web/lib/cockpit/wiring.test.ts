@@ -61,7 +61,7 @@ describe("what a set reads", () => {
     expect((readSet(ring, "shipped") as { refused: string }).refused).toMatch(/"shipped" → "placed" → "shipped" start from each other in a ring/);
     const gone = desk();
     delete gone.sets!.placed;
-    expect((readSet(gone, "waiting") as { refused: string }).refused).toMatch(/starts from "placed", which this cockpit does not hold/);
+    expect((readSet(gone, "waiting") as { refused: string }).refused).toMatch(/starts from "placed", which this dashboard does not hold/);
     const two = desk();
     two.sets!.placed.segment = "active_orders";
     expect((readSet(two, "waiting") as { refused: string }).refused).toMatch(/keeps two segments/);
@@ -118,15 +118,15 @@ describe("the choices a reader makes, and what reads each", () => {
   });
 });
 
-describe("the rules a wired cockpit is held to", () => {
+describe("the rules a wired dashboard is held to", () => {
   it("accept the dispatch desk", () => {
     expect(issues(desk())).toEqual([]);
   });
 
   const broken = (change: (s: CockpitSpec) => void) => { const s = desk(); change(s); return issues(s).join(" "); };
 
-  it("refuse a set, a value or a choice named that the cockpit does not hold", () => {
-    expect(broken(s => { s.elements.chart.props.set = "nowhere"; })).toMatch(/reads the set "nowhere", which this cockpit does not hold/);
+  it("refuse a set, a value or a choice named that the dashboard does not hold", () => {
+    expect(broken(s => { s.elements.chart.props.set = "nowhere"; })).toMatch(/reads the set "nowhere", which this dashboard does not hold/);
     expect(broken(s => { s.elements["fig-late"].props.of = "nowhere"; })).toMatch(/said beside the set "nowhere"/);
     expect(broken(s => { s.sets!.placed.where![0].value_from = "nowhere"; })).toMatch(/reads the value "nowhere"/);
     expect(broken(s => { s.elements.detail.props.follows = "nowhere"; })).toMatch(/follows "nowhere", which is neither/);
@@ -147,9 +147,9 @@ describe("the rules a wired cockpit is held to", () => {
     expect(broken(s => { s.values!.waiting = { label: "Waiting", kind: "days", value: 3 }; })).toMatch(/"waiting" names a set and a value. One name is one thing/);
   });
 
-  it("hold a filter column's counts to a set the cockpit holds, of what it filters", () => {
+  it("hold a filter column's counts to a set the dashboard holds, of what it filters", () => {
     expect(broken(s => { s.elements.filters.props.set = "waiting"; })).toBe("");
-    expect(broken(s => { s.elements.filters.props.set = "nowhere"; })).toMatch(/counts within the set "nowhere", which this cockpit does not hold/);
+    expect(broken(s => { s.elements.filters.props.set = "nowhere"; })).toMatch(/counts within the set "nowhere", which this dashboard does not hold/);
     expect(broken(s => { s.elements.filters.props.set = "lines"; })).toMatch(/filters order and counts within "lines", a set of order_item/);
   });
 
@@ -181,7 +181,7 @@ describe("the rules a wired cockpit is held to", () => {
     expect(issues({ ...desk(), wires: {} }).join(" ")).toMatch(/The spec carries "wires"/);
   });
 
-  it("leave a cockpit that is not wired exactly as it was judged", () => {
+  it("leave a dashboard that is not wired exactly as it was judged", () => {
     const plain = desk();
     delete plain.sets; delete plain.values;
     for (const k of ["fig-waiting", "fig-late", "chart", "table", "lines", "buttons", "detail"]) delete plain.elements[k];
@@ -257,14 +257,14 @@ describe("what a press runs", () => {
 });
 
 describe("sets and values, by hand", () => {
-  it("names a new one from its label, never as anything the cockpit already uses", () => {
+  it("names a new one from its label, never as anything the dashboard already uses", () => {
     expect(freshWireName(desk(), "Returned recently")).toBe("returned-recently");
     expect(freshWireName(desk(), "Waiting")).toBe("waiting-2");
     expect(freshWireName(desk(), "Chosen order")).toBe("chosen-order-2");
     expect(freshWireName(desk(), "!!!")).toBe("set");
   });
 
-  it("adds and changes a set and a value, and every edit leaves a cockpit the rules accept", () => {
+  it("adds and changes a set and a value, and every edit leaves a dashboard the rules accept", () => {
     let s = putSet(desk(), "returned", { label: "Returned", from: "placed", segment: "returned_orders" });
     s = putValue(s, "top", { label: "Top", kind: "number", value: 3 });
     expect(issues(s)).toEqual([]);

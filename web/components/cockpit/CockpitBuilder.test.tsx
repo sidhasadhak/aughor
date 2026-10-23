@@ -71,7 +71,7 @@ function build(spec: CockpitSpec, room: Record<string, { w: number; h: number }>
 beforeEach(() => { toasts.error.mockReset(); toasts.success.mockReset(); });
 
 describe("the layout", () => {
-  it("is the cockpit as a tree of lines, each named by what it reads, its room beside it", () => {
+  it("is the dashboard as a tree of lines, each named by what it reads, its room beside it", () => {
     const { line } = build(objectCockpit());
     const lines = screen.getAllByTestId("builder-line");
     expect(lines.map(l => l.dataset.key)).toEqual(["cockpit", "filters", "sec", "chart", "table", "sec-2", "note"]);
@@ -89,7 +89,7 @@ describe("the layout", () => {
     expect(line("filters")).not.toHaveTextContent(/^order/);
   });
 
-  it("chooses the element a line names — outlined on the cockpit, marked in the tree, its setup opened", () => {
+  it("chooses the element a line names — outlined on the dashboard, marked in the tree, its setup opened", () => {
     const { line, seen } = build(objectCockpit());
     fireEvent.click(line("sec-2"));
     expect(line("sec-2")).toHaveAttribute("aria-selected", "true");
@@ -99,7 +99,7 @@ describe("the layout", () => {
   });
 });
 
-describe("the bar above the cockpit", () => {
+describe("the bar above the dashboard", () => {
   it("steps a piece's width and height one grade at a time, and no further than its kind may take", () => {
     const { line, step } = build(objectCockpit(), { chart: { w: 12, h: 6 }, table: { w: 4, h: 20 } });
     fireEvent.click(line("chart"));
@@ -191,7 +191,7 @@ describe("the canvas's room (the study §4.7)", () => {
   });
   afterEach(() => { observers = []; });
 
-  it("draws the cockpit at 100% where there is room for the page", () => {
+  it("draws the dashboard at 100% where there is room for the page", () => {
     canvasWidth = 1336;                                              // 1920 less the folded rail, the layout and the setup
     build(objectCockpit());
     act(() => observers.forEach(cb => cb()));
@@ -217,7 +217,7 @@ describe("the canvas's room (the study §4.7)", () => {
   });
 });
 
-describe("with the cockpit itself drawn", () => {
+describe("with the dashboard itself drawn", () => {
   /** The builder around the real renderer, its spec kept in state as the page keeps it: each step drawn at once. */
   function Page({ start }: { start: CockpitSpec }) {
     const [spec, setSpec] = useState(start);
@@ -276,7 +276,7 @@ describe("the Data tab (Arc AP-2)", () => {
     return reads;
   }
 
-  it("is offered only where cockpits are wired; off, the left pane is the layout and nothing else", () => {
+  it("is offered only where dashboards are wired; off, the left pane is the layout and nothing else", () => {
     wire(wired(), false);
     expect(screen.queryByRole("radio", { name: "Data" })).toBeNull();
     expect(screen.getByTestId("builder-layout")).toBeInTheDocument();

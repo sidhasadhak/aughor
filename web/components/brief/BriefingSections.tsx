@@ -78,10 +78,10 @@ export function BriefingSections({ pref, onChange, cockpits, cockpitsOn, busy }:
       </ul>
       {cockpitsOn && (
         <label style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>The cockpit that rides with it</span>
+          <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>The dashboard that rides with it</span>
           <Select value={pref.strip || NONE} items={items} disabled={busy}
-            onValueChange={v => { const id = v === NONE ? "" : String(v); if (id !== pref.strip) onChange({ ...pref, strip: id }, id ? `“${items[id]}” rides with your Briefing.` : "No cockpit rides with your Briefing."); }}>
-            <SelectTrigger size="sm" aria-label="The cockpit that rides with the Briefing" data-testid="briefing-strip-pick" style={{ minWidth: 180 }}>
+            onValueChange={v => { const id = v === NONE ? "" : String(v); if (id !== pref.strip) onChange({ ...pref, strip: id }, id ? `“${items[id]}” rides with your Briefing.` : "No dashboard rides with your Briefing."); }}>
+            <SelectTrigger size="sm" aria-label="The dashboard that rides with the Briefing" data-testid="briefing-strip-pick" style={{ minWidth: 180 }}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

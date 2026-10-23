@@ -42,9 +42,9 @@ function touchesLine(c: ReleaseChange): string {
   const parts: string[] = [];
   if (c.touches.claims.length) parts.push(countNoun(c.touches.claims.length, "claim"));
   if (c.touches.automations.length) parts.push(countNoun(c.touches.automations.length, "automation"));
-  if (c.touches.cards.length) parts.push(countNoun(c.touches.cards.length, "cockpit card"));
+  if (c.touches.cards.length) parts.push(countNoun(c.touches.cards.length, "dashboard card"));
   if (c.touches.metrics?.length) parts.push(countNoun(c.touches.metrics.length, "approved metric"));
-  if (c.touches.cockpits?.length) parts.push(countNoun(c.touches.cockpits.length, "cockpit"));
+  if (c.touches.cockpits?.length) parts.push(countNoun(c.touches.cockpits.length, "dashboard"));
   return parts.join(" · ");
 }
 

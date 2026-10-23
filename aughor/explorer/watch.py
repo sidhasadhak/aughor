@@ -2,7 +2,7 @@
 
 "Time detects, dimensions explain." When a period has arrived AND settled, at each approved metric's
 date grain, the dataset's metrics are re-read for it — SQL only, the same measurement the Briefing and
-the cockpit read (`briefing.ranges.measured_block`), so a figure watched here is the figure a person
+the dashboard read (`briefing.ranges.measured_block`), so a figure watched here is the figure a person
 sees there. The reading is kept on the dataset's program (`explorer/program.py`), which the Time
 maturity reading and the next check read; a figure that REALLY moved — a settled figure, at least
 ``MOVED`` from the period before — is a named event that reopens the dataset's questions.

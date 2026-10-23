@@ -176,7 +176,7 @@ export function NewCardComposer({ connectionId, schema, onCreated, keptFor, star
         scope: keptFor?.scope ?? "connection", scopeRef: keptFor?.scopeRef ?? connectionId, schema,
         render: { chartType },
       });
-      toast.success("Pinned to your cockpit");
+      toast.success("Pinned to your dashboard");
       onCreated(); reset();
     } catch (e) {
       const msg = (e as Error).message || "Could not pin — the query failed the trust guards";
@@ -189,7 +189,7 @@ export function NewCardComposer({ connectionId, schema, onCreated, keptFor, star
     return (
       <div style={{ marginBottom: 12 }}>
         <Button variant="ghost" size="xs" onClick={() => setOpen(true)}
-          title="Author a new cockpit card from a grounded metric"
+          title="Author a new dashboard card from a grounded metric"
           style={{ fontSize: 11, color: "var(--vio4)", padding: "3px 8px", border: "1px dashed color-mix(in srgb, var(--vio4) 40%, var(--b1))", borderRadius: "var(--r2)" }}>
           ＋ New card
         </Button>
@@ -309,11 +309,11 @@ export function NewCardComposer({ connectionId, schema, onCreated, keptFor, star
         <Button variant="ghost" size="xs" onClick={reset}
           style={{ fontSize: 11, color: "var(--t3)", padding: "3px 9px" }}>Cancel</Button>
         <Button variant="ghost" size="xs" onClick={pin} disabled={!canPin || busy}
-          title="Pin to the cockpit — re-run through the trust guards on save"
+          title="Pin to the dashboard — re-run through the trust guards on save"
           style={{
             fontSize: 11, padding: "3px 11px", borderRadius: "var(--r2)", fontWeight: 500,
             background: "var(--vio4)", color: "var(--bg-0)", opacity: (!canPin || busy) ? 0.4 : 1,
-          }}>{busy ? "Pinning…" : "Pin to cockpit"}</Button>
+          }}>{busy ? "Pinning…" : "Pin to dashboard"}</Button>
       </div>
     </div>
   );

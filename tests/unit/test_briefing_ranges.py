@@ -591,7 +591,7 @@ def test_where_the_data_ends_says_why_when_it_cannot_be_read(monkeypatch):
 
 
 def test_every_range_reads_the_edge_and_live_data_resolves_as_before(monkeypatch):
-    """Until 2026-10-23 only the Cockpit's periods and a recent custom range read where the data ends,
+    """Until 2026-10-23 only the Dashboard's periods and a recent custom range read where the data ends,
     so a dataset that ENDED was never known as one (the Olist run). Every range reads it now — and on
     live data, which has not ended, each resolves exactly as it did."""
     asked: list[str] = []

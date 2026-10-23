@@ -724,7 +724,7 @@ export function ValueSetup({ spec, name, onChange, onGone, variablesOn = false, 
       )}
       {variablesOn && (
         <Row label="Comes from" testid="value-comes-from"
-          hint={by === "reader" ? "A control on the page. Each reader's own, kept in their browser — never in the cockpit."
+          hint={by === "reader" ? "A control on the page. Each reader's own, kept in their browser — never in the dashboard."
             : by === "count" ? "How many objects the set holds as the page reads it — each reader's row policies hold."
               : by === "sum" ? "A number added up over the set's objects as the page reads them — each reader's row policies hold."
                 : by === "query" ? "The query's first value — every row's, for a list — run as written, never cut to the page's range."
@@ -833,7 +833,7 @@ export function ChoiceSetup({ spec, name }: { spec: CockpitSpec; name: string })
         <div className="aug-fs-xs" style={{ color: "var(--accent-11)", textTransform: "uppercase", letterSpacing: ".06em" }}>Chosen by the reader</div>
         <div className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 600, marginTop: 2 }}>{words(name)}</div>
       </div>
-      <Row label="Made by" hint="Each reader's own, in their browser, for as long as the cockpit is open — never the kept cockpit.">
+      <Row label="Made by" hint="Each reader's own, in their browser, for as long as the dashboard is open — never the kept dashboard.">
         <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>
           {c.kind === "chosen" ? "A row clicked" : c.kind === "ticked" ? "Rows ticked" : "A figure clicked"} in {c.madeBy.map(k => lineOf(spec.elements, k, undefined, undefined, setTitles(spec))).join(", ")}
         </span>

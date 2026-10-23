@@ -1,4 +1,4 @@
-"""The composed cockpit — a board a person asks for, arranged by a spec, measured by the cards.
+"""The composed dashboard — a board a person asks for, arranged by a spec, measured by the cards.
 
 Arc CT (ROADMAP §3.50; docs/COCKPIT_JSON_RENDER_STUDY_2026-09-28.md). The law of the arc: the
 spec arranges, the card store measures. A spec holds tabs, sections and the ids of cards; what

@@ -77,7 +77,7 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
     try {
       await deleteDashboardCard(id);
       setCards(cs => cs.filter(c => c.card.id !== id));
-      toast.success("Card removed from your cockpit");
+      toast.success("Card removed from your dashboard");
     } catch {
       toast.error("Couldn't remove card", { description: "The card store didn't accept the delete — try again." });
     }
@@ -103,7 +103,7 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
   const pinSuggestion = useCallback(async (insightId: string) => {
     try {
       await pinInsightToDashboard(connectionId, insightId, { scope: "connection", scopeRef: connectionId, schema });
-      toast.success("Pinned to your cockpit");
+      toast.success("Pinned to your dashboard");
       onPinned?.();
     } catch {
       toast.error("Couldn't pin finding", { description: "The finding's query didn't pass the trust guards." });
@@ -113,7 +113,7 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
   // ── ⌘K "Tidy cockpit" command — offered only while the cockpit has cards ──
   const tidyCommands = useMemo<Command[]>(() =>
     cards.length > 0
-      ? [{ id: "cockpit-tidy", label: "Tidy cockpit", sublabel: "Re-pack the cockpit into a clean, gap-free grid", icon: "canvas", accent: "var(--grn3)", keywords: "tidy cockpit arrange pack grid layout reset", run: () => tidyRef.current?.() }]
+      ? [{ id: "cockpit-tidy", label: "Tidy dashboard", sublabel: "Re-pack the dashboard into a clean, gap-free grid", icon: "canvas", accent: "var(--grn3)", keywords: "tidy dashboard arrange pack grid layout reset", run: () => tidyRef.current?.() }]
       : [],
   [cards.length]);
   useRegisterCommands("cockpit", tidyCommands);
@@ -140,7 +140,7 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
                   <div key={s.insightId} style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", padding: "8px 12px", fontSize: 12, color: "var(--t2)" }}>
                     <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--t1)" }}>{s.value}</span>
                     <span style={{ color: "var(--t3)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label}</span>
-                    <Button variant="ghost" size="xs" onClick={() => pinSuggestion(s.insightId)} title="Pin this figure to your cockpit"
+                    <Button variant="ghost" size="xs" onClick={() => pinSuggestion(s.insightId)} title="Pin this figure to your dashboard"
                       style={{ color: "var(--vio4)", fontWeight: 600, fontSize: 12, padding: "2px 8px" }}>Pin</Button>
                   </div>
                 ))}

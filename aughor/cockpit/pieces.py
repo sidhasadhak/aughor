@@ -1,15 +1,15 @@
-"""Arc OC-4 — what only the platform knows about a cockpit's pieces bound to the ontology (ROADMAP §3.56).
+"""Arc OC-4 — what only the platform knows about a dashboard's pieces bound to the ontology (ROADMAP §3.56).
 
 A process board names a declared process, an objects table an entity (and perhaps a segment of it), an object detail
 the table it follows, and an action button a declared action — each by id, never by copying what the id means
 (`web/lib/cockpit/catalog.ts`). The web's rules check the shape; what they cannot know is checked here before a spec
-is kept: that building cockpits from the ontology is on, and that every id resolves in the ontology this connection
+is kept: that building dashboards from the ontology is on, and that every id resolves in the ontology this connection
 serves now. A piece whose id stops resolving later says so where it is drawn.
 
 And one law about who places them: a person, by hand. A model arranges a piece — moves it, resizes it, takes it off —
 and never adds one or changes what it names, the canvas's law for a note and an image.
 
-Since 2026-10-10 three more read an entity's objects for a cockpit started from an object
+Since 2026-10-10 three more read an entity's objects for a dashboard started from an object
 (`aughor/cockpit/from_object.py`): a filter column over its categories, a figure and a chart of objects per day. They
 are checked the same way, and need their own flag beside this one.
 
@@ -81,22 +81,22 @@ def _scope(props: dict, sets: dict) -> tuple[str, str, list]:
 def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
                  wiring: Optional[dict] = None) -> list[str]:
     """A sentence for each ontology piece a spec holds that this connection cannot draw — what a keep is refused
-    with. Empty when the spec holds none, whatever the flag says, so a cockpit without them keeps as it always did."""
+    with. Empty when the spec holds none, whatever the flag says, so a dashboard without them keeps as it always did."""
     pieces = pieces_of(spec)
     if not pieces:
         return []
     from aughor.kernel.flags import flag_enabled
     if not flag_enabled(FLAG):
-        return [f"The cockpit holds {len(pieces)} piece(s) bound to the ontology, and building cockpits from the "
+        return [f"The dashboard holds {len(pieces)} piece(s) bound to the ontology, and building dashboards from the "
                 "ontology is off on this install."]
     from aughor.cockpit.from_object import FLAG as FROM_OBJECT_FLAG
     late = [key for key, (kind, _) in pieces.items() if kind in FROM_OBJECT]
     if late and not flag_enabled(FROM_OBJECT_FLAG):
-        return [f"The cockpit holds {len(late)} filter column, figure or chart piece(s), and starting a cockpit from "
+        return [f"The dashboard holds {len(late)} filter column, figure or chart piece(s), and starting a dashboard from "
                 "an object is off on this install."]
     graph = graph if graph is not None else served_graph(connection_id)
     if graph is None:
-        return ["The cockpit holds pieces bound to the ontology, and no ontology is built for this connection."]
+        return ["The dashboard holds pieces bound to the ontology, and no ontology is built for this connection."]
     from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
     said: list[str] = []
     tables: dict[str, str] = {}
@@ -198,7 +198,7 @@ def _platform(graph: Any, name: str):
 def check_listing(body: dict, graph: Any, connection_id: str) -> tuple[str, list[dict]]:
     """The type a listing reads and the columns it lists — compiled over the served ontology, never run — or
     `ObjectQueryRefused` with why. A platform-owned type is checked as its own listing reads it, from the edit layer,
-    with no object read (Arc AP-4: a case queue is kept like any cockpit)."""
+    with no object read (Arc AP-4: a case queue is kept like any dashboard)."""
     from aughor.semantic.object_query import ObjectQueryRefused, compile_object_listing
     entity = _platform(graph, str(body.get("entity") or ""))
     if entity is not None:
@@ -291,7 +291,7 @@ def pieces_written(before: Any, after: Any, *, new: bool) -> list[str]:
     for key, (kind, props) in pieces_of(after).items():
         words = _WORDS[kind]
         if new:
-            said.append(f'The cockpit holds the {words} "{key}". A new cockpit holds none: a piece bound to the '
+            said.append(f'The dashboard holds the {words} "{key}". A new dashboard holds none: a piece bound to the '
                         "ontology is the person's to place, by hand.")
         elif key not in was:
             said.append(f'The edit adds the {words} "{key}". A person places a piece bound to the ontology: you may '
@@ -411,7 +411,7 @@ def _number(release_id: str) -> Optional[int]:
 
 
 def since(connection_id: str, spec: Any, pinned: str, *, graph: Optional[Any] = None) -> Optional[dict]:
-    """What a reader is owed before a cockpit's pieces are read: the release it was composed against, the one in force,
+    """What a reader is owed before a dashboard's pieces are read: the release it was composed against, the one in force,
     and every change published between them that touches an element its pieces read — with the class it was published
     as. None when the spec holds no piece, or pieces or releases are off (the read says nothing new)."""
     from aughor.kernel.flags import flag_enabled
@@ -443,7 +443,7 @@ def _element(key: str) -> tuple[str, str]:
 
 
 def cockpits_reading(connection_id: str, names: set[str], *, graph: Optional[Any] = None) -> list[dict]:
-    """Every cockpit on the connection, whoever keeps it, whose pieces read one of ``names`` — what a change waiting
+    """Every dashboard on the connection, whoever keeps it, whose pieces read one of ``names`` — what a change waiting
     in the ontology's draft touches, beside its claims, cards and automations (Arc OC-2's release strip)."""
     from aughor.cockpit.versions import KIND, title_of
     from aughor.kernel.ledger import Ledger

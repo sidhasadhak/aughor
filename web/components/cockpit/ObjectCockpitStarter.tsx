@@ -113,7 +113,7 @@ export function ObjectCockpitStarter({ connectionId, schema, entity, sym = "$", 
       onKept(await startCockpit(connectionId, p.title, objectCockpitSpec(p, choice),
         `Started from the object ${p.name}${p.shapes?.length ? " as an overview" : ""}`));
     } catch (e) {
-      toast.error("The cockpit was not made", { description: (e as Error).message.slice(0, 200) });
+      toast.error("The dashboard was not made", { description: (e as Error).message.slice(0, 200) });
     } finally { setStarting(false); }
   };
   const ready = holdsAPiece(choice, p);
@@ -130,7 +130,7 @@ export function ObjectCockpitStarter({ connectionId, schema, entity, sym = "$", 
       onKept(await startCockpit(connectionId, spec.elements.cockpit.props.title, spec,
         `Started from the object ${p.name} as ${/^[aeiou]/.test(label) ? "an" : "a"} ${label}`));
     } catch (e) {
-      toast.error("The cockpit was not made", { description: (e as Error).message.slice(0, 200) });
+      toast.error("The dashboard was not made", { description: (e as Error).message.slice(0, 200) });
     } finally { setStarting(false); }
   };
   const why = offered.find(o => o.shape === shape)?.why;
@@ -138,7 +138,7 @@ export function ObjectCockpitStarter({ connectionId, schema, entity, sym = "$", 
   return (
     <div data-testid="object-starter">
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div className="aug-fs-h2" style={{ fontWeight: 600, color: "var(--t1)" }}>New cockpit from {p.name}</div>
+        <div className="aug-fs-h2" style={{ fontWeight: 600, color: "var(--t1)" }}>New dashboard from {p.name}</div>
         {p.total != null && (
           <span className="aug-fs-xs" style={{ color: "var(--t2)", background: "var(--bg-3)", border: "1px solid var(--b1)",
             borderRadius: "var(--r-chip)", padding: "2px 7px" }}>{formatCount(p.total)} {noun}</span>
@@ -251,11 +251,11 @@ export function ObjectCockpitStarter({ connectionId, schema, entity, sym = "$", 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
         <span className="aug-fs-sm" style={{ color: "var(--t3)", marginRight: "auto" }}>
           {shaped ? "Nothing is kept until you press Make it."
-            : ready ? "Opens in the Cockpit tab. Move, resize or remove any piece." : "Tick a figure, the chart or the table — filters alone narrow nothing."}
+            : ready ? "Opens in the Dashboards tab. Move, resize or remove any piece." : "Tick a figure, the chart or the table — filters alone narrow nothing."}
         </span>
         <Button size="sm" variant="ghost" disabled={starting} onClick={onCancel}>Cancel</Button>
         <Button size="sm" data-testid="object-starter-create" disabled={(!shaped && !ready) || starting} onClick={() => void (shaped ? make() : create())}>
-          {starting ? "Creating…" : offered.length ? "Make it" : "Create cockpit"}
+          {starting ? "Creating…" : offered.length ? "Make it" : "Create dashboard"}
         </Button>
       </div>
     </div>

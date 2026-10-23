@@ -163,7 +163,7 @@ export function QuerySetup({ connectionId, card, onKept, onClose, values }: {
     const said: string[] = [];
     for (const name of reads) {
       const def = values?.[name];
-      if (!def) { said.push(`{{${name}}} is not one of this cockpit's values.`); continue; }
+      if (!def) { said.push(`{{${name}}} is not one of this dashboard's values.`); continue; }
       const v = typedValue(def.kind, tried[name] ?? startText(def));
       if (v === null) said.push(`Give ${def.label} ${KIND_WORDS[def.kind] ?? "a value"} to try the query with.`);
       else out[name] = { kind: def.kind, value: v };
@@ -225,7 +225,7 @@ export function QuerySetup({ connectionId, card, onKept, onClose, values }: {
           </Button>
           {values && (
             <Button size="xs" variant="ghost" aria-expanded={showValues} data-testid="query-values-open" onClick={() => { setShowValues(o => !o); setShowTables(false); }}
-              title="One of the cockpit's values, read as a bound parameter: the engine binds it, never pasted into the statement.">
+              title="One of the dashboard's values, read as a bound parameter: the engine binds it, never pasted into the statement.">
               <Icon name="plus" size={13} /> A variable
             </Button>
           )}
@@ -245,7 +245,7 @@ export function QuerySetup({ connectionId, card, onKept, onClose, values }: {
         {showValues && values && (
           <div data-testid="query-values" role="list" style={{ display: "flex", flexDirection: "column", maxHeight: 160, overflow: "auto", border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
             {Object.keys(values).length === 0
-              ? <span className="aug-fs-xs" style={{ padding: 6, color: "var(--t3)" }}>This cockpit holds no value yet: add one in Variables.</span>
+              ? <span className="aug-fs-xs" style={{ padding: 6, color: "var(--t3)" }}>This dashboard holds no value yet: add one in Variables.</span>
               : Object.entries(values).map(([name, def]) => (
                 <Button key={name} role="listitem" size="xs" variant="ghost" onClick={() => { insert(`{{${name}}}`); setShowValues(false); }}
                   style={{ justifyContent: "flex-start", gap: 8 }}>
@@ -263,7 +263,7 @@ export function QuerySetup({ connectionId, card, onKept, onClose, values }: {
               return (
                 <label key={name} className="aug-fs-xs" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 120px", alignItems: "center", gap: 6, color: "var(--t2)" }}>
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    <span style={{ fontFamily: "var(--font-mono)" }}>{`{{${name}}}`}</span>{def ? ` ${def.label}` : " — not a value of this cockpit"}
+                    <span style={{ fontFamily: "var(--font-mono)" }}>{`{{${name}}}`}</span>{def ? ` ${def.label}` : " — not a value of this dashboard"}
                   </span>
                   {def && (
                     <Input aria-label={`Try ${def.label} as`} value={tried[name] ?? startText(def)} type={def.kind === "date" ? "date" : def.kind === "text" ? "text" : "number"}

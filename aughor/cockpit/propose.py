@@ -1,9 +1,9 @@
-"""A cockpit drafted for a person, as ONE proposal (Arc CT, CT-5; the home moved in CT-7).
+"""A dashboard drafted for a person, as ONE proposal (Arc CT, CT-5; the home moved in CT-7).
 
-In the Briefing a person names an area — "returns", "pricing" — and a model drafts a cockpit
+In the Briefing a person names an area — "returns", "pricing" — and a model drafts a dashboard
 of their own for it (``aughor/cockpit/ask.py``). What is staged is one proposal: the cards to
 create and the spec that arranges them. The person keeps all of it or none of it. An edit is
-the same act, with the spec arriving as RFC 6902 operations against the cockpit as it stands;
+the same act, with the spec arriving as RFC 6902 operations against the dashboard as it stands;
 kept, it is the next version.
 
 **The model writes no SQL here, and states no figure.** A new card names what it is made
@@ -17,7 +17,7 @@ repair it; a person is never shown one.
 
 **What was approved is what is made.** The proposal keeps each card's query and the version of
 the record it came from. On approval each is read again: a metric that has been changed, or
-is no longer approved, refuses the whole proposal. So does a cockpit that has moved on since
+is no longer approved, refuses the whole proposal. So does a dashboard that has moved on since
 the draft was made — an edit is written against one version and lands on that one or not at
 all.
 
@@ -70,7 +70,7 @@ MODE_EDIT = "edit"
 #: want of it.
 HOW_TO_DRAFT = (
     'To draft: call again with op "new" and the whole spec, or op "edit" and operations against the '
-    'cockpit above. A "new" cockpit replaces the one that stands, whole; to add to it or change it, '
+    'dashboard above. A "new" dashboard replaces the one that stands, whole; to add to it or change it, '
     'draft an "edit". '
     'A card is CREATED by listing it in "cards", under a name of your own and with the one record it is '
     'made from, for example {"key": "return-rate", "metric": "return_rate"}. It is PLACED by that same '
@@ -84,8 +84,8 @@ HOW_TO_DRAFT = (
     "choose the ones that matter most, and say that more can follow in an edit. "
     'A limit goes on a card, as "limit", only when the user named it; a limit you choose is refused. '
     'Leave "visible" out of an element that is always shown. '
-    "A Note and an Image on the cockpit are the person's own: an edit may move one, give it a size or take "
-    "it off, and may not add one, change a note's text or choose an image; a new cockpit holds none. "
+    "A Note and an Image on the dashboard are the person's own: an edit may move one, give it a size or take "
+    "it off, and may not add one, change a note's text or choose an image; a new dashboard holds none. "
     "A card shows what its record measures and no more: a metric is one figure for the whole connection, "
     "and a trusted query or a finding shows its own rows. When the user asks for what no record "
     "measures, such as a breakdown no record gives, say so in your answer rather than drafting "
@@ -399,7 +399,7 @@ def outline(spec: dict, titles: dict[str, str], new_ids: set[str],
     """What the spec arranges, as a person reads it: tabs, their sections, their cards, and
     each condition in words. Written from an ACCEPTED spec, so its shape can be trusted.
 
-    ``changes`` is what an edit does to the cockpit that stands, by element. Each tab, section
+    ``changes`` is what an edit does to the dashboard that stands, by element. Each tab, section
     and card then says whether the edit ``added`` it or ``changed`` it, so a person approving
     an edit reads what moves and is not left to find it among what stays."""
     els = spec["elements"]
@@ -453,8 +453,8 @@ def static_title(el: dict) -> str:
 
 
 def taken_off(before: Optional[dict], removed: list[str], titles: dict[str, str]) -> list[dict]:
-    """What an edit takes off the cockpit, as a person reads it: each card, note, image, section
-    and tab by its own name, and where it was. The outline says what the cockpit will be, so
+    """What an edit takes off the dashboard, as a person reads it: each card, note, image, section
+    and tab by its own name, and where it was. The outline says what the dashboard will be, so
     what is no longer in it is said here or nowhere."""
     els = (before or {}).get("elements") or {}
     holder = {c: k for k, el in els.items() if isinstance(el, dict) for c in el.get("children") or []}
@@ -482,11 +482,11 @@ def taken_off(before: Optional[dict], removed: list[str], titles: dict[str, str]
 
 
 def _replaced(before: dict, placed_after: set[str], removed: list[str], titles: dict[str, str]) -> list[dict]:
-    """What a NEW cockpit takes off the one that stands. A new spec may reuse an element's name
+    """What a NEW dashboard takes off the one that stands. A new spec may reuse an element's name
     for another card, so a card is taken off when it is placed nowhere in the new one, whatever
     its element is called; a tab or a section, when its element is gone. Each card once.
 
-    The third run of the receipt found two new cockpits that would have taken off 9 and 12
+    The third run of the receipt found two new dashboards that would have taken off 9 and 12
     cards, and the card a person approves on listed none of them: this was computed for an
     edit only."""
     els = before.get("elements") or {}
@@ -523,13 +523,13 @@ def _statics(spec: Any) -> dict[str, tuple[str, str]]:
 def statics_written(before: Any, after: Any, mode: str) -> list[str]:
     """The sentences for what a draft did to a person's own elements that only the person may do
     (the canvas, 2026-10-08): a model arranges a note or an image — moves it, resizes it, takes
-    it off — and never makes one, writes a note's words or chooses an image. A new cockpit holds
+    it off — and never makes one, writes a note's words or chooses an image. A new dashboard holds
     none; an edit may carry each one only as it stands."""
     was = _statics(before) if mode == MODE_EDIT else {}
     said = []
     for key, (kind, says) in _statics(after).items():
         if mode == MODE_NEW:
-            said.append(f'The cockpit holds the {kind} "{key}". A new cockpit holds no note and no image: '
+            said.append(f'The dashboard holds the {kind} "{key}". A new dashboard holds no note and no image: '
                         "those are the person's to add, by hand.")
         elif key not in was:
             said.append(f'The edit adds the {kind} "{key}". A note is the person\'s words and an image is '
@@ -549,7 +549,7 @@ def _canonical(spec: Any) -> str:
 # ── what a writer may choose from ────────────────────────────────────────────────────────────
 
 def options(home: Home, schema: Optional[str] = None) -> dict:
-    """What a cockpit for this person may be made of, and how one is written. No model call,
+    """What a dashboard for this person may be made of, and how one is written. No model call,
     no query, nothing written."""
     from aughor.semantic.metrics import list_metrics
     from aughor.semantic.trusted_queries import list_trusted
@@ -557,7 +557,7 @@ def options(home: Home, schema: Optional[str] = None) -> dict:
     text = _validate.grammar()
     if text is None:
         return {"available": False,
-                "summary": "The cockpit's rules could not run on this server, so no cockpit can be drafted. "
+                "summary": "The dashboard's rules could not run on this server, so no dashboard can be drafted. "
                            "Say so; do not draft one."}
 
     metrics = [m for m in list_metrics(connection_id=home.connection_id) if m.status == "approved"]
@@ -612,7 +612,7 @@ class Drafted:
 
 
 def _retire_pending(home: Home, by: str) -> tuple[str, ...]:
-    """One pending draft per cockpit. A newer draft replaces the older ones: two drafts written
+    """One pending draft per dashboard. A newer draft replaces the older ones: two drafts written
     against one version cannot both land, and an approver offered both is offered a stale one."""
     from aughor.actions.inbox import list_proposals, supersede_proposal
     gone = []
@@ -626,7 +626,7 @@ def _retire_pending(home: Home, by: str) -> tuple[str, ...]:
 
 def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards: Any = None,
           reasoning: str = "", said: Optional[str] = None, schema: Optional[str] = None) -> Drafted:
-    """Stage ONE proposal for this person's cockpit, or refuse with every reason found.
+    """Stage ONE proposal for this person's dashboard, or refuse with every reason found.
 
     ``said`` is what the person asked for, when the caller knows it: a limit is then set only
     where they named it (:func:`_draft_cards`). ``schema`` is the one the Briefing is read on;
@@ -635,7 +635,7 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
     from aughor.org.context import current_org_id
 
     if mode not in (MODE_NEW, MODE_EDIT):
-        return Drafted(refusals=(f'A cockpit is drafted "{MODE_NEW}" or as an "{MODE_EDIT}".',))
+        return Drafted(refusals=(f'A dashboard is drafted "{MODE_NEW}" or as an "{MODE_EDIT}".',))
 
     current = _versions.latest(home)
     live = current if current and not current["retired"] and current.get("spec") else None
@@ -652,13 +652,13 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
     limits = [v for v in _limits_asked(cards) if said is None or _named_by_the_user(v, said)]
     figures = _validate.as_written(n for n in _validate.stated_numerals(reasoning) if not _is_a_limit(n, limits))
     if figures:
-        refusals.append(f'The reasoning states a figure ({", ".join(figures)}). Say why the cockpit is '
+        refusals.append(f'The reasoning states a figure ({", ".join(figures)}). Say why the dashboard is '
                         "arranged this way; a figure is a card's to show, where it is measured. "
                         "A limit this draft sets on a card may be named.")
 
     if mode == MODE_EDIT:
         if live is None:
-            return Drafted(refusals=('There is no cockpit here to edit. Draft one with op "new".',))
+            return Drafted(refusals=('There is no dashboard here to edit. Draft one with op "new".',))
         if spec is not None:
             refusals.append('An edit carries "patches", not a "spec".')
         edited = _validate.apply_patches(live["spec"], patches)
@@ -669,9 +669,9 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
         spec = edited.spec
     else:
         if patches is not None:
-            refusals.append('A new cockpit carries its whole "spec", not "patches".')
+            refusals.append('A new dashboard carries its whole "spec", not "patches".')
         if not isinstance(spec, dict):
-            refusals.append('A new cockpit carries its whole "spec".')
+            refusals.append('A new dashboard carries its whole "spec".')
             spec = None
 
     # Every card is resolved and run even when the spec is already refused, and the spec is
@@ -709,9 +709,9 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
     if refusals:
         return Drafted(refusals=tuple(refusals))
     if final is None or verdict is None:          # nothing was offered to check
-        return Drafted(refusals=("The draft holds no cockpit.",))
+        return Drafted(refusals=("The draft holds no dashboard.",))
     if live and not made and _canonical(final) == _canonical(live["spec"]):
-        return Drafted(refusals=("The cockpit already reads this way. Nothing was drafted.",))
+        return Drafted(refusals=("The dashboard already reads this way. Nothing was drafted.",))
 
     titles = {c.id: c.title for c in _cards.cards_of(home)} | {c["id"]: c["title"] for c in made}
     title = str(final["elements"][final["root"]]["props"]["title"])
@@ -749,7 +749,7 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
 
 
 def propose_publish(home: Home, to: Any) -> Drafted:
-    """Stage ONE proposal to publish the cockpit that stands to the groups and roles ``to`` names
+    """Stage ONE proposal to publish the dashboard that stands to the groups and roles ``to`` names
     (each ``{"kind", "name"}``), or refuse with every reason. Kept, it publishes; nothing is shared
     before that (the canvas, B5)."""
     from aughor.actions.inbox import StagedProposal, stage_proposal
@@ -759,7 +759,7 @@ def propose_publish(home: Home, to: Any) -> Drafted:
     current = _versions.latest(home)
     live = current if current and not current["retired"] and current.get("spec") else None
     if live is None:
-        return Drafted(refusals=("There is no cockpit here to publish.",))
+        return Drafted(refusals=("There is no dashboard here to publish.",))
     if not isinstance(to, list) or not to:
         return Drafted(refusals=('"to" names at least one group or role, each as {"kind", "name"}.',))
     targets: list[dict] = []
@@ -773,7 +773,7 @@ def propose_publish(home: Home, to: Any) -> Drafted:
     if refusals:
         return Drafted(refusals=tuple(refusals))
     if targets == list(live.get("published_to") or []):
-        return Drafted(refusals=(f"The cockpit is already published to {', '.join(t['name'] for t in targets)}.",))
+        return Drafted(refusals=(f"The dashboard is already published to {', '.join(t['name'] for t in targets)}.",))
     title = str(live["spec"]["elements"][live["spec"]["root"]]["props"]["title"])
     p = stage_proposal(StagedProposal(
         kind=PUBLISH_KIND, org_id=current_org_id() or "", connection_id=home.connection_id,
@@ -786,20 +786,20 @@ def propose_publish(home: Home, to: Any) -> Drafted:
 
 
 def accept_publish(params: dict, *, connection_id: str, approved_by: str) -> tuple[bool, Any]:
-    """Publish what an approved proposal names — or nothing, when the cockpit has moved on."""
+    """Publish what an approved proposal names — or nothing, when the dashboard has moved on."""
     home = Home.of((params or {}).get("home"))
     if home is None or home.connection_id != connection_id:
-        return False, "This proposal names no cockpit of this connection to publish. Nothing was shared."
+        return False, "This proposal names no dashboard of this connection to publish. Nothing was shared."
     if home.owner != NOBODY_IN_PARTICULAR and approved_by.strip() != approver(home.owner):
-        return False, "This cockpit is someone else's, and only they can publish it. Nothing was shared."
+        return False, "This dashboard is someone else's, and only they can publish it. Nothing was shared."
     current = _versions.latest(home)
     now = current["version"] if current else None
     if now != params.get("base_version"):
-        return False, (f"The cockpit has changed since this was proposed: it was version {params.get('base_version')} "
+        return False, (f"The dashboard has changed since this was proposed: it was version {params.get('base_version')} "
                        f"and is now version {now}. Ask for it again.")
     kept = _versions.publish(home, list(params.get("to") or []), approved_by=approved_by)
     if not kept.kept:
-        return False, " ".join(kept.sentences) or "The cockpit already reads this way."
+        return False, " ".join(kept.sentences) or "The dashboard already reads this way."
     return True, {**home.as_params(), "version": kept.version, "artifact_id": kept.artifact_id,
                   "to": [t["name"] for t in params.get("to") or []]}
 
@@ -828,7 +828,7 @@ def _is_a_limit(numeral: Any, limits: list[float]) -> bool:
 
 def _undeclared(home: Home, schema: Optional[str], named: set[str]):
     """The sentence for a name a DRAFT places, or reads, that is no card the person has and none
-    the draft creates. The default sentence says the cockpit may not place it, which is true and
+    the draft creates. The default sentence says the dashboard may not place it, which is true and
     does not say the repair; three drafts of the receipt by a model were refused for this, and
     the writer had to work out for itself that the name belonged in "cards"."""
     offered: dict[str, tuple[str, str]] = {}
@@ -854,7 +854,7 @@ def _undeclared(home: Home, schema: Optional[str], named: set[str]):
             return ""               # placed and read: one missing card, told once, with its repair
         told.add(name)
         does = "places the card" if how == "placed" else "reads the status of the card"
-        said = (f'The cockpit {does} "{name}". The person has no card with that id, and the draft '
+        said = (f'The dashboard {does} "{name}". The person has no card with that id, and the draft '
                 "creates none of that name.")
         kind, record = records().get(name.lower().replace("-", "_"), records().get(name.lower(), ("", "")))
         if kind and _KEY.match(name):
@@ -923,22 +923,22 @@ def accept(params: dict, *, connection_id: str, approved_by: str, proposal_id: s
 
     home = Home.of((params or {}).get("home"))
     if home is None:
-        return False, "This proposal names no cockpit to keep. Nothing was made."
+        return False, "This proposal names no dashboard to keep. Nothing was made."
     if home.connection_id != connection_id:
-        return False, "The cockpit this was drafted for is on another connection. Nothing was made."
+        return False, "The dashboard this was drafted for is on another connection. Nothing was made."
     if not (approved_by or "").strip():
-        return False, "A cockpit is kept with the name of the person who approved it. None was given."
+        return False, "A dashboard is kept with the name of the person who approved it. None was given."
     # A person's cockpit is theirs: only they keep it. Where identity is off there is one
     # operator, and whoever approves is them.
     if home.owner != NOBODY_IN_PARTICULAR and approved_by.strip() != approver(home.owner):
-        return False, "This cockpit was drafted for someone else, and only they can keep it. Nothing was made."
+        return False, "This dashboard was drafted for someone else, and only they can keep it. Nothing was made."
     schema = str(params.get("schema") or "") or None
 
     current = _versions.latest(home)
     now = current["version"] if current else None
     drafted_on = params.get("base_version")
     if now != drafted_on:
-        return False, (f"The cockpit has changed since this was drafted: it was "
+        return False, (f"The dashboard has changed since this was drafted: it was "
                        f"{'version ' + str(drafted_on) if drafted_on else 'not yet made'}, and it is now "
                        f"version {now}. Ask for it again.")
 
@@ -950,7 +950,7 @@ def accept(params: dict, *, connection_id: str, approved_by: str, proposal_id: s
     for card in drafts:
         source, why = _as_drafted(connection_id, schema, card)
         if source is None:
-            return False, why + " Nothing was made. Ask for the cockpit again."
+            return False, why + " Nothing was made. Ask for the dashboard again."
         if not card.get("id") or get_card(str(card["id"])) is not None:
             return False, f'A card with the id "{card.get("id")}" already exists. Nothing was made.'
         sources.append(source)
@@ -966,7 +966,7 @@ def accept(params: dict, *, connection_id: str, approved_by: str, proposal_id: s
             try:
                 delete_card(card_id)
             except Exception as exc:
-                tolerate(exc, f"a card of a cockpit proposal that failed ({card_id}) could not be removed again",
+                tolerate(exc, f"a card of a dashboard proposal that failed ({card_id}) could not be removed again",
                          counter="cockpit.propose.undo", conn_id=home.connection_id)
 
     try:
@@ -980,12 +980,12 @@ def accept(params: dict, *, connection_id: str, approved_by: str, proposal_id: s
             note=note, also_known=ids, written_by_model=True)
     except Exception as exc:
         undo()
-        tolerate(exc, "a cockpit proposal failed part-way; what it had made was removed again",
+        tolerate(exc, "a dashboard proposal failed part-way; what it had made was removed again",
                  counter="cockpit.propose.accept", conn_id=home.connection_id)
-        return False, f"The cockpit could not be made: {exc}. Nothing was kept."
+        return False, f"The dashboard could not be made: {exc}. Nothing was kept."
     if not kept.kept:
         undo()
-        said = " ".join(kept.sentences) or "The cockpit already reads this way."
+        said = " ".join(kept.sentences) or "The dashboard already reads this way."
         return False, f"{said} Nothing was kept."
 
     title = str(spec["elements"][spec["root"]]["props"]["title"])

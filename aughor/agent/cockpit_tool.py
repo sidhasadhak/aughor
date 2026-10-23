@@ -1,10 +1,10 @@
-"""The one tool a cockpit is drafted with (Arc CT, CT-5; bound to a person's cockpit in CT-7).
+"""The one tool a dashboard is drafted with (Arc CT, CT-5; bound to a person's dashboard in CT-7).
 
 It was first offered in a Data Canvas's chat. The canvas is for investigation (§6 item
-36(l)), so it is offered nowhere a person talks to a model now: the Briefing's "new cockpit"
-runs a model with this tool ALONE, bound to the cockpit it drafts (``aughor/cockpit/ask.py``).
+36(l)), so it is offered nowhere a person talks to a model now: the Briefing's "new dashboard"
+runs a model with this tool ALONE, bound to the dashboard it drafts (``aughor/cockpit/ask.py``).
 
-It takes three shapes of call. ``options`` costs nothing and says what a cockpit here may be
+It takes three shapes of call. ``options`` costs nothing and says what a dashboard here may be
 made of and how one is written. ``new`` and ``edit`` stage ONE proposal and change nothing.
 
 The work is the platform's (``aughor/cockpit/propose.py``). This module is the agent's side
@@ -52,23 +52,23 @@ _PARAMS = {
     "type": "object",
     "properties": {
         "op": {"type": "string", "enum": ["options", "new", "edit", "publish"], "description": (
-            "options: what a cockpit here may be made of, the cockpit as it stands, and how one is written. "
-            "new: draft a whole cockpit. edit: draft a change to the one that stands. "
-            "publish: propose to share the cockpit that stands with a group or a role, named in \"to\".")},
+            "options: what a dashboard here may be made of, the dashboard as it stands, and how one is written. "
+            "new: draft a whole dashboard. edit: draft a change to the one that stands. "
+            "publish: propose to share the dashboard that stands with a group or a role, named in \"to\".")},
         "to": {"type": "array", "items": {"type": "object", "properties": {
             "kind": {"type": "string", "enum": ["group", "role"]},
             "name": {"type": "string", "description": "The group's or the role's name, as options lists them."}},
             "required": ["kind", "name"]}, "description": (
-            "publish: who the cockpit is shared with. Only a group the person belongs to, or a role options "
+            "publish: who the dashboard is shared with. Only a group the person belongs to, or a role options "
             "says they may publish to.")},
         "cards": {"type": "array", "items": _CARD, "maxItems": MAX_NEW_CARDS, "description": (
             f"new or edit: the cards to CREATE, at most {MAX_NEW_CARDS} to a draft, each made from exactly one "
             "of metric, trusted_query or finding. Every name the spec places that is not the id of a card the "
             "person has must be listed here. A card they already have is not listed; the spec places it by "
             "its id.")},
-        "spec": {"type": "object", "description": "new: the whole cockpit, as options describes it."},
+        "spec": {"type": "object", "description": "new: the whole dashboard, as options describes it."},
         "patches": {"type": "array", "items": {"type": "object"}, "description": (
-            "edit: RFC 6902 operations against the cockpit as it stands.")},
+            "edit: RFC 6902 operations against the dashboard as it stands.")},
         "reasoning": {"type": "string", "description": "One or two sentences on why it is arranged this way."},
     },
     "required": ["op"],
@@ -95,7 +95,7 @@ def _count(n: int, one: str) -> str:
 def _shows(card: dict) -> str:
     """What a new card shows, in a reader's words. Said in the summary, so a person reads it
     before keeping: the third run of the receipt found "which categories sell best" drafted
-    as a cockpit of totals, and nothing said so."""
+    as a dashboard of totals, and nothing said so."""
     if card.get("kind") != "kpi":
         return f'"{card.get("title")}", a chart of its rows'
     whole = " for the whole connection" if card.get("from") == "metric" else ""
@@ -119,7 +119,7 @@ def draft_cockpit(home: Home, args: dict, *, emit: Optional[Emit] = None, said: 
         _announce(emit, published.proposal)
         to = ", ".join(t["name"] for t in (published.proposal.params or {}).get("to") or [])
         return {"staged": True, "proposal_id": published.proposal.id, "expires_at": published.proposal.expires_at,
-                "summary": (f'Proposed to publish the cockpit "{(published.proposal.detail or {}).get("title")}" to {to} '
+                "summary": (f'Proposed to publish the dashboard "{(published.proposal.detail or {}).get("title")}" to {to} '
                             f"(proposal {published.proposal.id}). Nothing is shared yet: the person keeps it or not.")}
     if op not in (propose.MODE_NEW, propose.MODE_EDIT):
         told = f'"{op}" is not one of: options, new, edit, publish.'
@@ -152,8 +152,8 @@ def draft_cockpit(home: Home, args: dict, *, emit: Optional[Emit] = None, said: 
         _count(n.get("cards", 0), "card") + (f" ({n['new']} new)" if n.get("new") else ""),
     ]))
     before = detail.get("replaces_version")
-    what = (f'an edit to the cockpit "{detail.get("title")}", which stands at version {before}'
-            if op == propose.MODE_EDIT else f'the cockpit "{detail.get("title")}"')
+    what = (f'an edit to the dashboard "{detail.get("title")}", which stands at version {before}'
+            if op == propose.MODE_EDIT else f'the dashboard "{detail.get("title")}"')
     made = [c for c in (p.params or {}).get("cards") or [] if isinstance(c, dict)]
     shows = f" The new cards show: {'; '.join(_shows(c) for c in made)}." if made else ""
     # A new cockpit where one stands replaces it whole. Said in the summary: the third run of
@@ -161,32 +161,32 @@ def draft_cockpit(home: Home, args: dict, *, emit: Optional[Emit] = None, said: 
     whole = ""
     if op == propose.MODE_NEW and before:
         gone = [t["title"] for t in detail.get("taken_off") or [] if t.get("what") == "card"]
-        whole = (f" It replaces the cockpit that stands (version {before}) whole"
+        whole = (f" It replaces the dashboard that stands (version {before}) whole"
                  + (f", and takes off {len(gone)} of its cards: {'; '.join(gone)}." if gone
                     else "; every card on it is kept.")
-                 + " To add to that cockpit instead, draft an edit.")
+                 + " To add to that dashboard instead, draft an edit.")
     replaced = (f" It replaces the earlier draft{'s' if len(drafted.replaced) != 1 else ''} "
                 f"{', '.join(drafted.replaced)}." if drafted.replaced else "")
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
         "summary": (f"Drafted {what}: {shape} (proposal {p.id}).{shows}{whole} Nothing is changed yet. The "
-                    f"person keeps it, all of it or none of it, and it then appears among their cockpits in "
+                    f"person keeps it, all of it or none of it, and it then appears among their dashboards in "
                     f"the Briefing.{replaced}"),
     }
 
 
 def drafting_tool(home: Home, *, emit: Optional[Emit] = None, said: Optional[str] = None,
                   schema: Optional[str] = None) -> ToolSpec:
-    """``draft_cockpit``, bound to one person's cockpit. The cockpit, the person and what they
+    """``draft_cockpit``, bound to one person's dashboard. The dashboard, the person and what they
     asked for bind by closure: none of them is the model's to state."""
     return ToolSpec(
         name="draft_cockpit",
         description=(
-            "Draft a cockpit for a person's Briefing, or a change to one. A cockpit is the standing set "
+            "Draft a dashboard for a person's Briefing, or a change to one. A dashboard is the standing set "
             "of cards a person keeps watching for one area of the business: cards in sections, in tabs "
             "when there are many, some shown only on a condition such as a figure crossing its limit. "
-            "Call it FIRST with op options: that returns what a cockpit here may be made of, the "
-            "cockpit as it stands, and how one is written. Then call it with op new and the whole "
+            "Call it FIRST with op options: that returns what a dashboard here may be made of, the "
+            "dashboard as it stands, and how one is written. Then call it with op new and the whole "
             "spec, or op edit and the operations. You write no SQL and state no figure: a new card "
             "names the approved metric, the trusted query or the finding it is made from. It STAGES "
             "one proposal and changes nothing; the person keeps it or not. When it refuses it names "

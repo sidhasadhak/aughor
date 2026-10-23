@@ -1,4 +1,4 @@
-"""User-authored dashboard cards — the standing (cockpit) layer of the Briefing.
+"""User-authored dashboard cards — the standing (dashboard) layer of the Briefing.
 
 A DashboardCard is a user-authored, grounded, refreshable card that lives alongside the
 explorer's findings: a pinned KPI, a chart, a tracked topic ("watch"), or a free-text note.

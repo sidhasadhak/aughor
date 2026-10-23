@@ -1,15 +1,15 @@
-"""A cockpit published to a group or a role (the canvas, docs/COCKPIT_CANVAS_2026-10-08.md, B5).
+"""A dashboard published to a group or a role (the canvas, docs/COCKPIT_CANVAS_2026-10-08.md, B5).
 
-A cockpit is a person's own. Publishing it makes its current version readable by the members of a
+A dashboard is a person's own. Publishing it makes its current version readable by the members of a
 group or the holders of a role, under the publisher's name, with the same record a kept version
 has: publishing is a version, and so is unpublishing. A reader reads it as it stands — the period
-their own choice, a card they may not read standing and saying so — and may start a cockpit of
+their own choice, a card they may not read standing and saying so — and may start a dashboard of
 their own from it, which copies the publisher's own cards into theirs and keeps the spec as the
-first version of a new cockpit, with the notes' stamps carried as the publisher's.
+first version of a new dashboard, with the notes' stamps carried as the publisher's.
 
 **Who may publish where** (the user's call, 2026-10-08): any member, to a group they belong to; a
 role needs the role itself, or the permission that administers roles. Who may READ is the same
-list from the other side: a cockpit reaches a person through a group they are in or a role they
+list from the other side: a dashboard reaches a person through a group they are in or a role they
 hold. With identity off there is one operator, who is every group's nobody and the owner role.
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ KINDS = (GROUP, ROLE)
 
 
 class Refused(Exception):
-    """Why a cockpit is not published, read or copied, in a sentence a person can act on."""
+    """Why a dashboard is not published, read or copied, in a sentence a person can act on."""
 
 
 def _org() -> str:
@@ -43,7 +43,7 @@ def _principal(user_id: str):
 
 
 def audience_of(user_id: str) -> dict:
-    """The groups this person belongs to and the roles they hold — what a published cockpit
+    """The groups this person belongs to and the roles they hold — what a published dashboard
     reaches them through, and what they may publish to."""
     from aughor.metastore.models import user_principal
     from aughor.rbac.groups import get_group, groups_of
@@ -68,7 +68,7 @@ def may_publish_to(user_id: str, target: Any) -> tuple[Optional[dict], str]:
     """The target as it is kept — ``{"kind", "id", "name"}`` — or ``(None, why not)``. A target is
     named by its id or its name."""
     if not isinstance(target, dict):
-        return None, "A cockpit is published to a group or a role, each as {kind, id or name}."
+        return None, "A dashboard is published to a group or a role, each as {kind, id or name}."
     kind = str(target.get("kind") or "")
     ident = str(target.get("id") or target.get("name") or "").strip()
     aud = audience_of(user_id)
@@ -94,7 +94,7 @@ def may_publish_to(user_id: str, target: Any) -> tuple[Optional[dict], str]:
             return None, f'There is no role "{ident}". The roles are: {", ".join(r.label for r in BUILTIN_ROLES.values())}.'
         return None, (f'Publishing to the role "{BUILTIN_ROLES[known].label}" needs that role, or admin.manage_roles. '
                       f"You hold: {_said(aud['roles'])}.")
-    return None, f'A cockpit is published to a group or a role, not "{kind or "nothing"}".'
+    return None, f'A dashboard is published to a group or a role, not "{kind or "nothing"}".'
 
 
 def reaches(published_to: Any, audience: dict) -> bool:
@@ -109,7 +109,7 @@ def _owner_and_id(key: str, connection_id: str) -> tuple[str, str]:
 
 
 def shared_with(connection_id: str, user_id: str) -> list[dict]:
-    """The cockpits others on this connection have published to a group this person is in or a
+    """The dashboards others on this connection have published to a group this person is in or a
     role they hold, as they stand now. The person's own are not listed: they are theirs."""
     from aughor.cockpit import versions
     from aughor.kernel.ledger import Ledger
@@ -132,22 +132,22 @@ def shared_with(connection_id: str, user_id: str) -> list[dict]:
 
 
 def read_shared(connection_id: str, owner: str, cockpit_id: str, *, reader: str) -> dict:
-    """A published cockpit as it stands, for a reader it reaches: ``{"home", "cockpit"}``. The
+    """A published dashboard as it stands, for a reader it reaches: ``{"home", "cockpit"}``. The
     owner reads their own through here too, as a reader would."""
     from aughor.cockpit import versions
     home = Home(connection_id, owner, cockpit_id)
     kept = versions.latest(home)
     if kept is None or kept["retired"] or not kept.get("spec"):
-        raise Refused("This cockpit is not shared with you, or it was retired.")
+        raise Refused("This dashboard is not shared with you, or it was retired.")
     if owner != reader and not reaches(kept.get("published_to"), audience_of(reader)):
-        raise Refused("This cockpit is not shared with you.")
+        raise Refused("This dashboard is not shared with you.")
     return {"home": home, "cockpit": kept}
 
 
 def copy_for(connection_id: str, owner: str, cockpit_id: str, *, reader: str, approved_by: str) -> dict:
-    """Start a cockpit of the reader's own from a published one: the publisher's own cards are
+    """Start a dashboard of the reader's own from a published one: the publisher's own cards are
     copied into the reader's, the connection's shared cards are placed by their ids, and the spec
-    is kept as the new cockpit's first version with the notes' stamps carried as they were.
+    is kept as the new dashboard's first version with the notes' stamps carried as they were.
     Returns ``{"kept": Kept, "cockpit_id", "title"}``; a refusal is in ``kept``."""
     from aughor.cockpit import cards as _cards
     from aughor.cockpit import versions
@@ -185,14 +185,14 @@ def copy_for(connection_id: str, owner: str, cockpit_id: str, *, reader: str, ap
                 delete_card(cid)
             except Exception as undo:
                 tolerate(undo, f"a copied card ({cid}) could not be removed again", counter="cockpit.copy.undo")
-        tolerate(exc, "a published cockpit could not be copied; what was made was removed", counter="cockpit.copy")
-        return {"kept": versions.Kept(versions.FAILED, sentences=(f"The cockpit could not be copied: {exc}. Nothing was kept.",)),
+        tolerate(exc, "a published dashboard could not be copied; what was made was removed", counter="cockpit.copy")
+        return {"kept": versions.Kept(versions.FAILED, sentences=(f"The dashboard could not be copied: {exc}. Nothing was kept.",)),
                 "cockpit_id": "", "title": title}
 
     kept = versions.keep(mine, with_card_ids(spec, ids), approved_by=approved_by,
                          source=f'started from "{title}", published by {kept_src.get("published_by") or owner} (version {kept_src["version"]})',
                          written_by_model=False, stamps_are_ours=True,
-                         came_from=[("copied_from", kept_src["artifact_id"], "a published cockpit")])
+                         came_from=[("copied_from", kept_src["artifact_id"], "a published dashboard")])
     if not kept.kept:
         for cid in made:
             try:

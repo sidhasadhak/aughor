@@ -83,7 +83,7 @@ const listed = () => objects.listObjects.mock.calls.map(c => c[0] as { entity: s
 const figure = (label: string) => screen.getAllByTestId("object-figure").find(f => f.textContent?.startsWith(label)) as HTMLElement;
 const tables = () => screen.getAllByTestId("object-table");
 
-describe("a wired cockpit", () => {
+describe("a wired dashboard", () => {
   it("asks the door for each piece's set: its segment and every condition down the sets it starts from", async () => {
     draw();
     await waitFor(() => expect(figure("Waiting past the promise").textContent).toContain("1,327"));
@@ -210,7 +210,7 @@ describe("a wired cockpit", () => {
   });
 });
 
-describe("a cockpit drawn before the wiring (the arc's falsifier)", () => {
+describe("a dashboard drawn before the wiring (the arc's falsifier)", () => {
   const PLAIN = {
     root: "cockpit",
     elements: {

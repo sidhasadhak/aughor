@@ -1,4 +1,4 @@
-"""Arc CT, CT-3 (ROADMAP §3.50) — a cockpit's spec kept as versions; since CT-7 a person's own.
+"""Arc CT, CT-3 (ROADMAP §3.50) — a dashboard's spec kept as versions; since CT-7 a person's own.
 
 Run against the REAL stores — the Ledger and the card store — each pointed at a temporary
 file by ``tests/conftest.py``. The validator is the real one too, so these need node and the
@@ -27,11 +27,11 @@ FIXTURE = REPO / "web" / "lib" / "cockpit" / "premise.fixture.json"
 
 needs_rules = pytest.mark.skipif(
     shutil.which("node") is None or not V._BUNDLE.exists(),
-    reason="the cockpit's rules need node + validate.bundle.mjs")
+    reason="the dashboard's rules need node + validate.bundle.mjs")
 
 
 class Desk:
-    """One person's cockpit with two cards of their own, and the premise spec written for THOSE
+    """One person's dashboard with two cards of their own, and the premise spec written for THOSE
     cards. The person and the card ids are unique to each desk, because a card's id is its own
     across the whole store and a person's cards are theirs alone."""
 
@@ -156,7 +156,7 @@ def test_a_spec_the_rules_refuse_is_not_kept(desk):
 
     assert out.status == versions.REFUSED and out.kept is False
     assert out.version is None and out.artifact_id == ""
-    assert "A cockpit runs nothing without a click" in said(out)
+    assert "A dashboard runs nothing without a click" in said(out)
     assert len(versions.history(desk.home)) == 1
     assert versions.latest(desk.home)["spec"] == desk.spec()
 
@@ -169,7 +169,7 @@ def test_a_card_that_is_not_the_persons_is_refused_by_name(desk):
     out = desk.keep(spec)
 
     assert out.status == versions.REFUSED
-    assert f'places the card "{other.net}", which is not a card of this cockpit' in said(out)
+    assert f'places the card "{other.net}", which is not a card of this dashboard' in said(out)
     assert versions.latest(desk.home) is None
 
 
@@ -282,7 +282,7 @@ def test_going_back_is_checked_against_the_cards_as_they_are_today(desk):
 
     out = versions.restore(desk.home, 1, approved_by="user1")
     assert out.status == versions.REFUSED
-    assert f'places the card "{desk.net}", which is not a card of this cockpit' in said(out)
+    assert f'places the card "{desk.net}", which is not a card of this dashboard' in said(out)
     assert versions.latest(desk.home)["version"] == 2
 
 
@@ -317,7 +317,7 @@ def test_a_retired_cockpit_comes_back_as_the_version_after(desk):
 
     gone = versions.restore(desk.home, 2, approved_by="user1")
     assert gone.status == versions.REFUSED
-    assert "Version 2 is the one that retired the cockpit" in said(gone)
+    assert "Version 2 is the one that retired the dashboard" in said(gone)
 
     # The SAME spec as version 1 is a change now: what stands is a retirement.
     back = desk.keep()
@@ -327,7 +327,7 @@ def test_a_retired_cockpit_comes_back_as_the_version_after(desk):
 
 def test_a_cockpit_never_kept_has_nothing_to_retire(desk):
     out = versions.retire(desk.home, approved_by="user1")
-    assert out.status == versions.REFUSED and "There is no such cockpit to retire" in said(out)
+    assert out.status == versions.REFUSED and "There is no such dashboard to retire" in said(out)
     assert versions.retire(desk.home, approved_by="").status == versions.REFUSED
 
 
@@ -405,7 +405,7 @@ def test_placing_the_same_card_again_updates_it_where_it_is(desk):
 
 
 def test_a_card_is_kept_on_the_cockpits_own_connection(desk):
-    with pytest.raises(cards.Refused, match='reads the connection "superstore"; this cockpit is on "thelook"'):
+    with pytest.raises(cards.Refused, match='reads the connection "superstore"; this dashboard is on "thelook"'):
         cards.place(desk.home, DashboardCard(kind="kpi", title="Sales", connection_id="superstore"))
 
 
@@ -464,12 +464,12 @@ def _copy_of_rate(desk: Desk) -> None:
 
 @needs_rules
 def test_a_copy_of_a_card_is_refused_and_nothing_is_kept(desk):
-    """The Executive Cockpit carried Revenue and Gross Margin Rate twice — copies made by a later
+    """The Executive Dashboard carried Revenue and Gross Margin Rate twice — copies made by a later
     draft — and nothing refused them."""
     _copy_of_rate(desk)
     out = desk.keep()
     assert out.status == versions.REFUSED, said(out)
-    assert '"Return rate" would be on this cockpit 2 times' in said(out) and desk.rate in said(out)
+    assert '"Return rate" would be on this dashboard 2 times' in said(out) and desk.rate in said(out)
     assert versions.latest(desk.home) is None
 
 
@@ -488,8 +488,8 @@ def test_two_cards_of_one_approved_metric_are_one_card_whatever_their_titles(des
 
 
 def test_a_cockpit_does_not_offer_back_a_superseded_card_a_deprecated_metrics_or_a_copy(desk, monkeypatch):
-    """Removed "from all places" (the user, 2026-10-08): a duplicate taken off a cockpit is not offered
-    back by Arrange — and the cockpit says which and why."""
+    """Removed "from all places" (the user, 2026-10-08): a duplicate taken off a dashboard is not offered
+    back by Arrange — and the dashboard says which and why."""
     from types import SimpleNamespace as N
     tag = uuid.uuid4().hex[:6]
     copy = cards.place(desk.home, DashboardCard(id=f"copy{tag}", kind="kpi", title="Return rate", sql="SELECT 1"))
@@ -504,7 +504,7 @@ def test_a_cockpit_does_not_offer_back_a_superseded_card_a_deprecated_metrics_or
         N(name="gross_margin_rate", status="deprecated", connection=desk.connection)])
 
     why = cards.not_offered(desk.home, cards.cards_of(desk.home), [desk.rate, desk.net])
-    assert why[copy.id] == "a copy of “Return rate”, already on this cockpit"
+    assert why[copy.id] == "a copy of “Return rate”, already on this dashboard"
     assert why[old.id] == "superseded by “Return rate”"
     assert why[dep.id] == "made from gross_margin_rate, which was deprecated"
     assert keep.id not in why and desk.rate not in why        # a card of its own, and a placed one
@@ -520,5 +520,5 @@ def test_history_says_in_words_what_each_version_changed(desk):
     versions.retire(desk.home, approved_by="user1")
     desk.keep(renamed)
     words = [(h["version"], h["said"]) for h in versions.history(desk.home)]
-    assert words == [(4, ["Brought the cockpit back"]), (3, ["Retired the cockpit"]),
-                     (2, ["Renamed the cockpit to Returns, weekly"]), (1, ["Started the cockpit"])]
+    assert words == [(4, ["Brought the dashboard back"]), (3, ["Retired the dashboard"]),
+                     (2, ["Renamed the dashboard to Returns, weekly"]), (1, ["Started the dashboard"])]

@@ -171,8 +171,8 @@ export function CockpitArrange({ spec, lines, onChange, disabled }: {
   return (
     <div data-testid="cockpit-arrange">
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <span className="aug-label">Cockpit</span>
-        <NameField label="Cockpit name" value={String(root.props.title ?? "")} testId="arrange-cockpit-name"
+        <span className="aug-label">Dashboard</span>
+        <NameField label="Dashboard name" value={String(root.props.title ?? "")} testId="arrange-cockpit-name"
           onSave={v => onChange(rename(spec, spec.root, v))} />
       </div>
       {tabsKey

@@ -218,7 +218,7 @@ describe("cockpit_draft (Arc CT-5)", () => {
 
   it("says what is arranged, in words — tabs, sections, cards and each condition", () => {
     render(<ProposalCard proposal={draft()} actor="tester" />);
-    expect(screen.getByText("cockpit")).toBeInTheDocument();                     // the chip
+    expect(screen.getByText("dashboard")).toBeInTheDocument();                   // the chip
     expect(screen.getByText("Returns")).toBeInTheDocument();
     expect(screen.getByText("Returns desk")).toBeInTheDocument();
     const outline = screen.getByTestId("cockpit-outline");
@@ -321,13 +321,13 @@ describe("cockpit_draft (Arc CT-5)", () => {
           { title: "Return rate", new: false, change: "", tone: "", shown: "" }] }] }] },
     })} actor="tester" />);
     const gone = screen.getByTestId("cockpit-taken-off");
-    expect(gone).toHaveTextContent("Taken off the cockpit. A card taken off is kept, and other cockpits may place it:");
+    expect(gone).toHaveTextContent("Taken off the dashboard. A card taken off is kept, and other dashboards may place it:");
     expect(gone).toHaveTextContent("CardReturns by week — it was in Where and when");
     expect(gone).toHaveTextContent("SectionWhere and when — it was in Detail");
     expect(gone).toHaveTextContent(/TabDetail$/);
   });
 
-  it("a new cockpit names nothing taken off", () => {
+  it("a new dashboard names nothing taken off", () => {
     render(<ProposalCard proposal={draft()} actor="tester" />);
     expect(screen.queryByTestId("cockpit-taken-off")).toBeNull();
     expect(screen.getByText(/Every new card was run once and passed the guards/)).toBeInTheDocument();
@@ -341,22 +341,22 @@ describe("cockpit_draft (Arc CT-5)", () => {
     render(<ProposalCard proposal={draft()} actor="approver@example.com" />);
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     expect(acceptProposal).toHaveBeenCalledWith("prop-1", "approver@example.com", false, {});
-    expect(await screen.findByText("executed — kept as version 5 — it is among your cockpits in the Briefing"))
+    expect(await screen.findByText("executed — kept as version 5 — it is among your dashboards in the Briefing"))
       .toBeInTheDocument();
   });
 
   it("refused on accept, it says why in the server's own sentence and stays pending", async () => {
     acceptProposal.mockRejectedValue(new Error(
-      "draft no longer valid: The cockpit has changed since this was drafted: it was version 1, and it is now version 2."));
+      "draft no longer valid: The dashboard has changed since this was drafted: it was version 1, and it is now version 2."));
     render(<ProposalCard proposal={draft()} actor="tester" />);
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
-    expect(await screen.findByText(/The cockpit has changed since this was drafted/)).toBeInTheDocument();
+    expect(await screen.findByText(/The dashboard has changed since this was drafted/)).toBeInTheDocument();
   });
 
   it("read after it settled, it still says where it went, or why it did not", () => {
     const { unmount } = render(<ProposalCard actor="tester" proposal={draft({
       status: "executed", outcome: { version: 2, cards_created: [] } })} />);
-    expect(screen.getByText("executed — kept as version 2 — it is among your cockpits in the Briefing")).toBeInTheDocument();
+    expect(screen.getByText("executed — kept as version 2 — it is among your dashboards in the Briefing")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
     unmount();
     render(<ProposalCard actor="tester" proposal={draft({

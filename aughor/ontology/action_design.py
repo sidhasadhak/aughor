@@ -6,7 +6,7 @@ with someone else's refund rule, and nothing to say — before declaring — whi
 what a press would change. Here a draft is read as declaring would read it, and then:
 
 - **who may be pressed on**: the criteria, when they are the designer's own shape (a property compared with values),
-  are counted as the object door's filters — over every object, and over each segment a cockpit lists the action
+  are counted as the object door's filters — over every object, and over each segment a dashboard lists the action
   beside — so "25,061 orders allow it now" is a count, never an estimate;
 - **a press on a real object**: one object is read live and the draft is dry-run against it by the executor's own
   `evaluate_proposal` — the same coercion and the same criteria a press meets — with the marks it would set and the

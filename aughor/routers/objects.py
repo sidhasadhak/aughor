@@ -45,7 +45,7 @@ def _preview(as_group: Optional[str]):
 
 
 async def preview_from_request(as_group: Optional[str] = AS_GROUP) -> None:
-    """A route dependency: the group a builder previews a cockpit as, held for the rest of the request — set on the
+    """A route dependency: the group a builder previews a dashboard as, held for the rest of the request — set on the
     request's own context, as the acting agent's header is, so it reaches the read and no other request."""
     if isinstance(as_group, str) and as_group:
         from aughor.ontology.security import set_previewing

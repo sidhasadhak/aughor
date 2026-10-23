@@ -1,6 +1,6 @@
-"""What the host says to a cockpit about the range it is read for (Arc CT, CT-4).
+"""What the host says to a dashboard about the range it is read for (Arc CT, CT-4).
 
-A cockpit's conditions may read ``/range/status``. This is where that word comes from: the
+A dashboard's conditions may read ``/range/status``. This is where that word comes from: the
 range is resolved exactly as the Briefing resolves its own (``briefing.ranges.resolve_for`` —
 the connection's measured lag, the organisation's fiscal year, **no model call**), and its
 status is read off the dates.
@@ -50,7 +50,7 @@ def standing() -> dict:
 def range_state(conn_id: str, preset: Optional[str] = None, *, start: Optional[date] = None,
                 end: Optional[date] = None, workspace_id: Optional[str] = None,
                 today: Optional[date] = None) -> tuple[Optional[dict], str]:
-    """The range block a cockpit is read for, or ``(None, why)`` when the range cannot be read."""
+    """The range block a dashboard is read for, or ``(None, why)`` when the range cannot be read."""
     if not (preset or start or end):
         return standing(), ""
     from aughor.briefing import ranges

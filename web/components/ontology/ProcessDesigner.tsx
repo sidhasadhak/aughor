@@ -258,7 +258,7 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
         `Started from the process ${draft.name.trim()}`);
       requestTab("cockpit", { conn: connectionId });
     } catch (e) {
-      toast.error("The cockpit was not made", { description: errorText(e).slice(0, 240) });
+      toast.error("The dashboard was not made", { description: errorText(e).slice(0, 240) });
     } finally { setBusy(""); }
   };
 
@@ -304,7 +304,7 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
               <>
                 <span>
                   {editing ? "Saving the change to " : "Declaring "}<b>{draft.name.trim()}</b>{" "}counts it once more and writes it to the draft of this connection&apos;s
-                  ontology; it reaches the agent, the Briefing and cockpits when the release is published.
+                  ontology; it reaches the agent, the Briefing and dashboards when the release is published.
                   {openAsks.length > 0 && ` ${openAsks.length === 1 ? "One question below is" : `${openAsks.length} questions below are`} not answered — the numbers would be published as they stand.`}
                 </span>
                 <span style={{ display: "flex", gap: 6 }}>
@@ -455,7 +455,7 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
       <section style={CARD} data-testid="designer-creates">
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
           <span style={{ fontWeight: 500, color: "var(--t1)" }}>What it creates</span>
-          <span className="aug-fs-xs" style={HINT}>ready to place on a cockpit once published</span>
+          <span className="aug-fs-xs" style={HINT}>ready to place on a dashboard once published</span>
         </div>
         {preview?.creates.length ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
@@ -476,11 +476,11 @@ export function ProcessDesigner({ connectionId, schema, types, entity, takenIds,
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
           <Button size="xs" variant="outline" data-testid="designer-cockpit" disabled={phase.at !== "published" || !segment || !!busy}
             onClick={() => void startCockpit()}>
-            <Icon name="gauge" size={12} /> {busy === "cockpit" ? "Making it…" : "Start a cockpit for this process"}
+            <Icon name="gauge" size={12} /> {busy === "cockpit" ? "Making it…" : "Start a dashboard for this process"}
           </Button>
           {phase.at !== "published" && (
             <span className="aug-fs-xs" style={HINT}>
-              {!segment ? "A cockpit needs a promise to list what is late." : "Publish the process first — a cockpit reads what is published."}
+              {!segment ? "A dashboard needs a promise to list what is late." : "Publish the process first — a dashboard reads what is published."}
             </span>
           )}
         </div>

@@ -102,7 +102,7 @@ describe("the value a limit is held against", () => {
   });
 });
 
-describe("the tree a cockpit reads", () => {
+describe("the tree a dashboard reads", () => {
   it("gives every card the canvas holds a status, and says nothing of any other", () => {
     const host = hostStateOf("to_date", [
       state({ id: "a", limits: above(0.12), standing: 0.2 }),

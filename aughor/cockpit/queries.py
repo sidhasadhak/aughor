@@ -1,4 +1,4 @@
-"""Arc AP-7 — your own query on the cockpit (ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §9).
+"""Arc AP-7 — your own query on the dashboard (ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §9).
 
 A card has always run its own SQL behind the read-only door (`aughor/dashboard`). What a person could not do was write
 that SQL in the builder and choose how it is shown: a card's shape came from its result, so a date series was drawn as a
@@ -201,7 +201,7 @@ def check(shown: Shown, columns: list[dict]) -> list[str]:
 # ── variables: a value of the cockpit's, bound — never pasted in ──────────────────────────────────────────────────────
 
 def params_of(sql: str) -> list[str]:
-    """The cockpit's values a query reads, by name, each once, in the order it names them."""
+    """The dashboard's values a query reads, by name, each once, in the order it names them."""
     out: list[str] = []
     for m in PARAM.finditer(sql or ""):
         if m.group(1) not in out:
@@ -280,7 +280,7 @@ def typed_value(name: str, kind: str, value: Any) -> Any:
 def bind(sql: str, values: dict) -> tuple[str, dict]:
     """The statement with each ``{{name}}`` as the SQL editor's own ``:name`` placeholder, and the values to bind to them —
     the engine binds each; it is never pasted into the statement. ``values`` is name → ``{"kind", "value"}``: the
-    cockpit's values as the page holds them now. A name the cockpit holds no value for is refused, said, and so is one
+    dashboard's values as the page holds them now. A name the dashboard holds no value for is refused, said, and so is one
     written inside quotes or a comment, where it would be read as words and never as the value."""
     quoted = quoted_params(sql)
     if quoted:
@@ -289,7 +289,7 @@ def bind(sql: str, values: dict) -> tuple[str, dict]:
     names = params_of(sql)
     missing = [n for n in names if not isinstance((values or {}).get(n), dict)]
     if missing:
-        raise Refused(f"The query reads {', '.join('{{' + n + '}}' for n in missing)}, and this cockpit holds no value of "
+        raise Refused(f"The query reads {', '.join('{{' + n + '}}' for n in missing)}, and this dashboard holds no value of "
                       f"{'that name' if len(missing) == 1 else 'those names'}.")
     typed = {n: typed_value(n, str(values[n].get("kind") or ""), values[n].get("value")) for n in names}
     params: dict = {}
@@ -585,7 +585,7 @@ def stopped_after(db: Any, seconds: float) -> Iterator[dict]:
         try:
             db.interrupt()
         except Exception as exc:
-            tolerate(exc, "cockpit query: the engine could not be asked to stop", counter="cockpit.query_interrupt")
+            tolerate(exc, "dashboard query: the engine could not be asked to stop", counter="cockpit.query_interrupt")
     timer = threading.Timer(seconds, stop)
     timer.daemon = True
     timer.start()

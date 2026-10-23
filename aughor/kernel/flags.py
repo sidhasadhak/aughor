@@ -357,7 +357,7 @@ FLAG_DEFAULT: dict = {
                         "over the live history, no change that moved a consumer classed SAFE. Falsifier: one past "
                         "change that broke a consumer classed SAFE or MEANING",
     "ontology.cockpit_pieces": "OC-4, live on theLook 2026-10-09: the Late dispatch board's open-and-overdue count "
-                               "(25,051) opened a table of exactly that many; an object flagged from the cockpit showed "
+                               "(25,051) opened a table of exactly that many; an object flagged from the dashboard showed "
                                "in the table, the detail and its page. Falsifier: the census does not move in the "
                                "weeks after (armed: read on 2026-11-07)",
     "actions.outbox": "OC-6, live 2026-10-10: a delivered call checked, a no-answer call reconciled by the action's "
@@ -508,8 +508,8 @@ FLAG_META = {
                        "other message. Off: nothing is run again or sent.",
     },
     "ontology.cockpit_pieces": {
-        "label": "Build cockpits from the ontology",
-        "summary": "Adds cockpit pieces that read the ontology: a process board, an objects table, "
+        "label": "Build dashboards from the ontology",
+        "summary": "Adds dashboard pieces that read the ontology: a process board, an objects table, "
                    "an object detail and an action button.",
         "facts": [{"kind": "free", "text": "No model calls"}],
         "description": "The process board shows each stage and how often each promise is broken. The "
@@ -518,74 +518,74 @@ FLAG_META = {
                        "cannot be added.",
     },
     "ontology.object_cockpits": {
-        "label": "Start a cockpit from an object",
-        "summary": "Pick an object and get a cockpit of its filters, figures, a daily chart and its "
+        "label": "Start a dashboard from an object",
+        "summary": "Pick an object and get a dashboard of its filters, figures, a daily chart and its "
                    "objects. A click on a filter narrows every piece.",
         "facts": [{"kind": "free", "text": "No model calls"},
                   {"kind": "warehouse", "text": "Queries your warehouse"}],
         "description": "The pieces are proposed from what the object holds, and you tick the ones you "
-                       "want. Filters are each reader's own and never change the cockpit. Saved cards "
+                       "want. Filters are each reader's own and never change the dashboard. Saved cards "
                        "beside them say they are not filtered. Off: these pieces cannot be added.",
     },
     "cockpit.wiring": {
-        "label": "Wire a cockpit's pieces and actions",
+        "label": "Wire a dashboard's pieces and actions",
         "summary": "Pieces read named sets, and a row chosen in one is read by the others. Buttons run actions on "
                    "the chosen or ticked rows.",
         "facts": [{"kind": "free", "text": "No model calls"},
                   {"kind": "warehouse", "text": "Queries your warehouse"}],
         "description": "A set is a named group of objects, such as the ones waiting past a promise. A button runs a "
                        "declared action, with its own checks and approvals, once per chosen or ticked row. Off: a "
-                       "cockpit's pieces read only their own entity.",
+                       "dashboard's pieces read only their own entity.",
     },
     "cockpit.app_pieces": {
-        "label": "Split cockpits into sections and add more pieces",
+        "label": "Split dashboards into sections and add more pieces",
         "summary": "A section splits into columns, rows or tabs, and an empty one offers a piece. The picker "
                    "places every piece by hand.",
         "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Changes only your own cockpits"}],
+                  {"kind": "private", "text": "Changes only your own dashboards"}],
         "description": "A section holds pieces on its twelve columns, or is split into sections of its own. Sections "
                        "side by side take widths one column at a time. An empty section offers a piece or a split, and a "
-                       "reader is drawn nothing there. Off: a cockpit's sections hold pieces only.",
+                       "reader is drawn nothing there. Off: a dashboard's sections hold pieces only.",
     },
     "cockpit.shapes": {
-        "label": "Start a cockpit from a shape",
+        "label": "Start a dashboard from a shape",
         "summary": "Starting from an object offers the shapes its ontology fits, and says why. A queue, a map, one "
                    "object, a timeline or an overview.",
         "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Changes only your own cockpits"}],
+                  {"kind": "private", "text": "Changes only your own dashboards"}],
         "description": "A queue fits what waits past a promise with actions on it. A map fits a latitude and a "
                        "longitude, and a timeline two moments on each object. One object fits a name and several kinds "
                        "of objects linking to it. One to three are offered, the best first, each with a sentence of why "
                        "from the data. Off: every object starts one way.",
     },
     "cockpit.queries": {
-        "label": "Your own query on a cockpit",
+        "label": "Your own query on a dashboard",
         "summary": "Write SQL over one table, several or another schema. Show it as a table, a figure or a chart "
                    "set up as you choose.",
         "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Changes only your own cockpits"}],
+                  {"kind": "private", "text": "Changes only your own dashboards"}],
         "description": "Choose what runs along the bottom and in what buckets, what is summed, and what splits it — "
                        "stacked, side by side or as shares. Your query runs read-only and stops after the connection's "
                        "time limit. Off: a card is drawn by the shape of its result.",
     },
     "cockpit.variables": {
-        "label": "Variables on a cockpit",
+        "label": "Variables on a dashboard",
         "summary": "A value may come from the reader, a set's count or the object chosen. Sets and your own queries read it.",
         "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Changes only your own cockpits"}],
-        "description": "A reader changes a value on the page, kept in their browser and never in the cockpit. A set "
+                  {"kind": "private", "text": "Changes only your own dashboards"}],
+        "description": "A reader changes a value on the page, kept in their browser and never in the dashboard. A set "
                        "compares any value, and a query of your own reads one as a bound parameter, never pasted in. "
                        "Off: a value is set once by its author.",
     },
     "cockpit.builder": {
-        "label": "Build cockpits in place",
-        "summary": "A cockpit opens to be read, and Edit shows it between its outline and the setup of what you "
+        "label": "Build dashboards in place",
+        "summary": "A dashboard opens to be read, and Edit shows it between its outline and the setup of what you "
                    "pick. Every size moves one step at a time.",
         "facts": [{"kind": "free", "text": "No model calls"},
-                  {"kind": "private", "text": "Changes only your own cockpits"}],
+                  {"kind": "private", "text": "Changes only your own dashboards"}],
         "description": "A table's columns and sort, a figure's calculation and a chart's measure and split are "
                        "chosen in the setup, never typed. Each change is kept as a version you can go back to. "
-                       "Off: a cockpit is arranged by its six sizes and Arrange.",
+                       "Off: a dashboard is arranged by its six sizes and Arrange.",
     },
     "ontology.keyed_metrics": {
         "label": "Compute approved metrics for any segment",
@@ -658,12 +658,12 @@ FLAG_META = {
         "description": "A row policy names a group and the conditions its objects meet. A sensitive "
                        "property names the groups that may read it; others see it empty, with the reason, "
                        "and it cannot shape an answer. An agent acting for a person reads only what both "
-                       "may. It applies to cockpits, object pages and outside programs. Off: every reader "
+                       "may. It applies to dashboards, object pages and outside programs. Off: every reader "
                        "sees every object and property.",
     },
     "cockpit.composed": {
-        "label": "A cockpit in each Data Canvas",
-        "summary": "Adds a Cockpit tab to the Data Canvas. Arrange its cards in tabs and sections, "
+        "label": "A dashboard in each Data Canvas",
+        "summary": "Adds a Dashboards tab to the Data Canvas. Arrange its cards in tabs and sections, "
                    "and show a card only when a condition holds.",
         "facts": [{"kind": "free", "text": "No model calls"}],
         "description": "For example, a card can appear only while a watch is over its limit. Every "
@@ -837,29 +837,29 @@ EXPERIMENT: dict = {
     # Arc AP-1, 2026-10-10. It changes where a cockpit is changed, so it is watched before it graduates.
     # Arc AP-2 and AP-3, 2026-10-11. It changes what a cockpit can do — an action a reader runs from it — so it is watched
     # before it graduates.
-    "cockpit.wiring": "does a wired cockpit become a place work is done — of the wired cockpits, is an action run from "
-                      "one at least weekly? Falsifiers (§3.57): a cockpit drawn before the wiring renders differently "
+    "cockpit.wiring": "does a wired dashboard become a place work is done — of the wired dashboards, is an action run from "
+                      "one at least weekly? Falsifiers (§3.57): a dashboard drawn before the wiring renders differently "
                       "with it on, or a run reaches the executor without its declared criteria — either stops it",
-    "cockpit.app_pieces": "does a cockpit built from sections stay read — of the cockpits split into sections, is each "
-                          "read as often as one that is not? Falsifiers (§3.57): a cockpit drawn before sections renders "
+    "cockpit.app_pieces": "does a dashboard built from sections stay read — of the dashboards split into sections, is each "
+                          "read as often as one that is not? Falsifiers (§3.57): a dashboard drawn before sections renders "
                           "differently with it on, or one split into sections is read less often in two weeks",
-    "cockpit.shapes": "does a cockpit started from a shape get read again — of the cockpits started from an object, is "
+    "cockpit.shapes": "does a dashboard started from a shape get read again — of the dashboards started from an object, is "
                       "each shape's opened on three or more days in its first two weeks more often than one started "
-                      "before shapes? Falsifier (§3.57, AP-5): a shape's cockpits are read no more often than today's",
-    "cockpit.queries": "do people show their own queries — of the cards made on cockpits in two weeks, is one in five or "
+                      "before shapes? Falsifier (§3.57, AP-5): a shape's dashboards are read no more often than today's",
+    "cockpit.queries": "do people show their own queries — of the cards made on dashboards in two weeks, is one in five or "
                        "more a query of their own? Falsifier (§3.57, AP-7): fewer than one in five, and the setup is not "
                        "what they needed",
-    "cockpit.variables": "do readers change what a cockpit shows — of the cockpits with a value a reader sets, is one in "
+    "cockpit.variables": "do readers change what a dashboard shows — of the dashboards with a value a reader sets, is one in "
                          "five or more changed by a reader within two weeks? Falsifier (§3.57, AP-8): a variable reaches SQL "
                          "other than as a bound parameter — stop",
-    "cockpit.builder": "is the setup where people change a cockpit — of the cockpits started from an object, is one in "
+    "cockpit.builder": "is the setup where people change a dashboard — of the dashboards started from an object, is one in "
                        "five or more edited within two weeks of starting? Falsifier (§3.57): fewer than one in five, "
                        "and the setup is not where people look",
     # The cockpit started from an object, 2026-10-10. It is a new way to read objects, so it is watched before it
     # graduates.
-    "ontology.object_cockpits": "does a cockpit started from an object get read again — opened on three or more "
+    "ontology.object_cockpits": "does a dashboard started from an object get read again — opened on three or more "
                                 "days in its first two weeks — more often than one started empty or for a "
-                                "process? Falsifier: started cockpits are opened no more than the others, and "
+                                "process? Falsifier: started dashboards are opened no more than the others, and "
                                 "the starter and its three pieces go",
     # Arc OC-3 (ROADMAP §3.56), 2026-10-09. It changes what the question frame hands an analysis, so it is measured
     # before it graduates.
@@ -1042,7 +1042,7 @@ MIGRATION: dict = {
 
 GRADUATION_QUEUE: dict = {
     # Arc OC-7 (ROADMAP §3.56), queued 2026-10-10. No model call.
-    "ontology.security": "receipt: on a scratch install, two people open the same cockpit and see different rows and a "
+    "ontology.security": "receipt: on a scratch install, two people open the same dashboard and see different rows and a "
                          "masked property, each told why, and an agent acting for one reads no more than that person does. "
                          "Falsifier: a policy test that passes with enforcement off is testing nothing — the suite "
                          "turns it off and every policy assertion must fail. Live needs sign-in (the organisation "
@@ -1063,9 +1063,9 @@ GRADUATION_QUEUE: dict = {
                                 "the in-process Socket Mode spike is reopened.",
     # Arc CT-4 (ROADMAP §3.50), queued 2026-09-28. It adds no model call and changes no prompt,
     # so there is no grid to buy: it graduates on being USED.
-    "cockpit.composed": "receipt: on theLook, a person opens a Data Canvas's Cockpit tab and sees "
+    "cockpit.composed": "receipt: on theLook, a person opens a Data Canvas's Dashboards tab and sees "
                         "its cards cut to the range they chose, and a card that appears when its "
-                        "watch crosses its limit. Falsifier (§3.50, the third): an approved cockpit "
+                        "watch crosses its limit. Falsifier (§3.50, the third): an approved dashboard "
                         "that nobody reopens within a week was not wanted — then the tab goes, "
                         "and the flag with it",
     # EMPTY again as of 2026-08-28: ask.resume_stream (FL-1b, queued 2026-08-28)

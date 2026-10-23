@@ -150,7 +150,7 @@ describe("what a structure does to the edits before it", () => {
     expect(sectionsOf(spec).map(x => x.key)).toEqual(["today", key]);
   });
 
-  it("keeps a section in a layout as an empty box when its last piece goes; one of the cockpit's own goes, as before", () => {
+  it("keeps a section in a layout as an empty box when its last piece goes; one of the dashboard's own goes, as before", () => {
     const { spec } = splitSection(desk(), "today", "right");
     const emptied = takeOff(spec, "note");
     expect(emptied.elements.today).toEqual({ type: "Section", props: { title: "Today", grid: 12, w: 6 }, children: [] });
@@ -177,7 +177,7 @@ describe("what a structure does to the edits before it", () => {
   });
 });
 
-describe("the writer of a cockpit", () => {
+describe("the writer of a dashboard", () => {
   it("hears nothing of the structure while it is off — the text is the one before it, byte for byte", () => {
     expect(grammar()).toBe(grammar({ grid: false, structure: false }));
     expect(grammar()).not.toMatch(/layout/);
@@ -211,7 +211,7 @@ describe("a drawer (Arc AP-4: what opens beside the page)", () => {
     expect(sectionsOf(spec).map(x => [x.key, !!x.drawer])).toEqual([["today", false], [key, true]]);
   });
 
-  it("opens only on an object a click chooses, and is no cockpit's only child", () => {
+  it("opens only on an object a click chooses, and is no dashboard's only child", () => {
     const { spec, key } = addDrawer(chosen(), "The order", "chosen-order");
     const stray = structuredClone(spec);
     stray.elements[key!].props.opens_on = "ticked-orders";
@@ -244,7 +244,7 @@ describe("a drawer (Arc AP-4: what opens beside the page)", () => {
     }
   });
 
-  it("is never told to the writer of a cockpit", () => {
+  it("is never told to the writer of a dashboard", () => {
     expect(grammar({ grid: true, structure: true })).not.toMatch(/Drawer|drawer/);
   });
 });

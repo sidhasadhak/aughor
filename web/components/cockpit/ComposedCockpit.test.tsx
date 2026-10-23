@@ -161,7 +161,7 @@ describe("a spec the rules refuse", () => {
 
     expect(screen.queryAllByTestId("cockpit-card")).toEqual([]);
     expect(screen.queryByRole("tab")).toBeNull();
-    expect(screen.getByTestId("cockpit-refusal")).toHaveTextContent("A cockpit runs nothing without a click");
+    expect(screen.getByTestId("cockpit-refusal")).toHaveTextContent("A dashboard runs nothing without a click");
   });
 
   it("a spec that seeds a card's status cannot forge what the host says", () => {

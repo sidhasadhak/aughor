@@ -185,8 +185,8 @@ describe("placing and moving on the grid", () => {
   });
 });
 
-describe("a new tab, on a cockpit started from an object (study §1.6, defect 2)", () => {
-  it("keeps the filter column the cockpit's own first child, beside the tabs, and the rules accept it", () => {
+describe("a new tab, on a dashboard started from an object (study §1.6, defect 2)", () => {
+  it("keeps the filter column the dashboard's own first child, beside the tabs, and the rules accept it", () => {
     const s = moveSectionToNewTab(objectCockpit(), "sec", "Detail");
     const root = s.elements[s.root];
     expect(s.elements[root.children[0]].type).toBe("ObjectFilters");

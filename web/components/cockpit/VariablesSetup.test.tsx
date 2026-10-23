@@ -88,7 +88,7 @@ describe("the Variables pane", () => {
     expect(screen.getByTestId("data-choice")).toHaveTextContent("used in 1");                 // Its status reads it; the table makes it
   });
 
-  it("starts a new set from the connection's first entity on a cockpit whose cards are all queries", async () => {
+  it("starts a new set from the connection's first entity on a dashboard whose cards are all queries", async () => {
     const onChange = vi.fn();
     const spec: CockpitSpec = { root: "cockpit", values: desk().values, elements: { cockpit: { type: "Cockpit", props: { title: "Sales" }, children: ["sec"] },
       sec: { type: "Section", props: { title: "Sales" }, children: ["q"] }, q: { type: "Card", props: { card: "q1" }, children: [] } } };
@@ -219,7 +219,7 @@ describe("Arc AP-8c — a value summed over a set, read from a query, yes or no,
     expect(screen.queryByLabelText("Kind")).toBeNull();                                // a sum is a number
   });
 
-  it("reads a query of the person's own the cockpit places — offered only when there is one — and its column", async () => {
+  it("reads a query of the person's own the dashboard places — offered only when there is one — and its column", async () => {
     const onChange = vi.fn();
     const { unmount } = render(<ValueSetup spec={desk()} name="country" onChange={onChange} onGone={vi.fn()} variablesOn connectionId="thelook" />);
     expect(optionsOf(screen.getByLabelText("Comes from")).map(o => o.value)).not.toContain("query");
@@ -346,7 +346,7 @@ describe("a query of the person's own, reading values", () => {
     fireEvent.change(screen.getByLabelText("SQL"), { target: { value: "SELECT 1 WHERE {{waiting-count}} > 3 AND {{nowhere}} = 1" } });
     fireEvent.click(screen.getByTestId("query-run"));
     expect(await screen.findByTestId("query-refused")).toHaveTextContent("Give Waiting count a number to try the query with.");
-    expect(screen.getByTestId("query-refused")).toHaveTextContent("{{nowhere}} is not one of this cockpit's values.");
+    expect(screen.getByTestId("query-refused")).toHaveTextContent("{{nowhere}} is not one of this dashboard's values.");
     expect(api.previewCockpitQuery).not.toHaveBeenCalled();
     fireEvent.change(within(screen.getByTestId("query-tried")).getByLabelText("Try Waiting count as"), { target: { value: "1009" } });
     fireEvent.change(screen.getByLabelText("SQL"), { target: { value: "SELECT 1 WHERE {{waiting-count}} > 3" } });

@@ -1,7 +1,7 @@
-"""Arc AP-6 — preview a cockpit as a group (ROADMAP §3.57; the study's receipt: "Preview the desk as a group with a row
+"""Arc AP-6 — preview a dashboard as a group (ROADMAP §3.57; the study's receipt: "Preview the desk as a group with a row
 policy; see the rows it withholds said").
 
-A builder reads the cockpit as they and a member of the group would: the group is one more party among the reader's.
+A builder reads the dashboard as they and a member of the group would: the group is one more party among the reader's.
 Every party's row condition holds and a property is masked when any party may not read it, so a preview only ever
 narrows — a person who may see more than the group sees exactly the group's objects, one who may see less sees only
 what both may, and nobody is shown an object they may not see. What is withheld is said, naming the group.

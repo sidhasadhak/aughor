@@ -1,7 +1,7 @@
 """Arc AP-2 — the object door's relative condition: `in_last` keeps the objects whose date or time falls in the last N
 days, today (UTC) included, resolved to a date where the query is compiled (docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md
-§4.3: "One addition the door needs"). A cockpit's set "placed in the last 14 days" reads the same fortnight for every
-reader today, and a different one tomorrow — never a date frozen into the kept cockpit.
+§4.3: "One addition the door needs"). A dashboard's set "placed in the last 14 days" reads the same fortnight for every
+reader today, and a different one tomorrow — never a date frozen into the kept dashboard.
 """
 from __future__ import annotations
 

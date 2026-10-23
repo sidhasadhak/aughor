@@ -90,16 +90,16 @@ describe("a note and an image, drawn", () => {
 
   it("an image the reader may not see stands as its caption and says why", () => {
     render(<ComposedCockpit spec={canvas()} cards={CARDS} host={host("final", "within")} doors={READER}
-      images={{ ab12cd34ef56: { ...PROMO, readable: false, why: "This image is not in this connection's cockpit volume, or it is gone." } }} />);
+      images={{ ab12cd34ef56: { ...PROMO, readable: false, why: "This image is not in this connection's dashboard volume, or it is gone." } }} />);
     const image = screen.getByTestId("cockpit-image");
     expect(within(image).queryByTestId("cockpit-image-bytes")).toBeNull();
-    expect(within(image).getByTestId("cockpit-image-withheld")).toHaveTextContent("not in this connection's cockpit volume");
+    expect(within(image).getByTestId("cockpit-image-withheld")).toHaveTextContent("not in this connection's dashboard volume");
     expect(image).toHaveTextContent("Promo calendar");
   });
 
   it("an image the read said nothing of is not shown either, and says so", () => {
     render(<ComposedCockpit spec={canvas()} cards={CARDS} host={host("final", "within")} doors={READER} />);
-    expect(screen.getByTestId("cockpit-image-withheld")).toHaveTextContent("the cockpit's read said nothing of it");
+    expect(screen.getByTestId("cockpit-image-withheld")).toHaveTextContent("the dashboard's read said nothing of it");
   });
 
   it("a note's link opens elsewhere and is kept to http and https", () => {
@@ -182,7 +182,7 @@ describe("the doors", () => {
     const doors = owner();
     render(<ComposedCockpit spec={canvas()} cards={CARDS} host={host("final", "within")} doors={doors} images={{ ab12cd34ef56: PROMO }} />);
     const note = screen.getByTestId("cockpit-note");
-    fireEvent.click(within(note).getByRole("button", { name: "Take off this cockpit" }));
+    fireEvent.click(within(note).getByRole("button", { name: "Take off this dashboard" }));
     expect(doors.onTakeOff).toHaveBeenCalledWith("note-1");
 
     change(within(cellOf("c91b2002")).getByTestId("size-pick"), { target: { value: "hero" } });
@@ -201,7 +201,7 @@ describe("the doors", () => {
     render(<ComposedCockpit spec={canvas()} cards={CARDS} host={host("final", "within")} doors={READER} images={{ ab12cd34ef56: PROMO }} />);
     expect(screen.queryAllByTestId("resize-corner")).toEqual([]);
     expect(screen.queryAllByTestId("size-pick")).toEqual([]);
-    expect(within(screen.getByTestId("cockpit-note")).queryByRole("button", { name: "Take off this cockpit" })).toBeNull();
+    expect(within(screen.getByTestId("cockpit-note")).queryByRole("button", { name: "Take off this dashboard" })).toBeNull();
   });
 });
 

@@ -50,7 +50,7 @@ export function BriefingStrip({ connectionId, schema, cockpitId, range, onOpenCo
         if (cancelled) return;
         setData(read); setCards(runs);
       } catch (e) {
-        if (!cancelled) setProblem((e as Error).message || "The cockpit could not be read.");
+        if (!cancelled) setProblem((e as Error).message || "The dashboard could not be read.");
       }
     })();
     return () => { cancelled = true; };
@@ -75,22 +75,22 @@ export function BriefingStrip({ connectionId, schema, cockpitId, range, onOpenCo
   return (
     <div data-testid="briefing-strip" data-cockpit={cockpitId}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
-        <span className="aug-label" style={{ color: "var(--vio4)" }}>Your cockpit{title ? ` · ${title}` : ""}</span>
+        <span className="aug-label" style={{ color: "var(--vio4)" }}>Your dashboard{title ? ` · ${title}` : ""}</span>
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-          read for {data?.range.covers || "the Briefing's range"} · arranged in the Cockpit tab
+          read for {data?.range.covers || "the Briefing's range"} · arranged in the Dashboards tab
         </span>
         {onOpenCockpit && <Button size="xs" variant="ghost" onClick={onOpenCockpit}>Open it</Button>}
         {data && <Button size="xs" variant="ghost" style={{ marginLeft: "auto" }} onClick={() => setTick(t => t + 1)}>↻ Refresh</Button>}
       </div>
       {problem ? (
         <div className="aug-fs-sm" data-testid="briefing-strip-problem" style={{ color: "var(--t2)" }}>
-          This cockpit could not be read: {problem}. It still stands in the Cockpit tab.
+          This dashboard could not be read: {problem}. It still stands in the Dashboards tab.
         </div>
       ) : !data ? (
-        <Loading what="your cockpit" style={{ padding: "8px 0" }} />
+        <Loading what="your dashboard" style={{ padding: "8px 0" }} />
       ) : kept?.retired || !kept?.spec ? (
         <div className="aug-fs-sm" data-testid="briefing-strip-retired" style={{ color: "var(--t2)" }}>
-          This cockpit was retired. Choose another under Sections.
+          This dashboard was retired. Choose another under Sections.
         </div>
       ) : (
         <ComposedCockpit spec={kept.spec} cards={cards} host={host} doors={doors} sym={data.currency_symbol || "$"}

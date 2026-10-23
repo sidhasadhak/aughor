@@ -2,7 +2,7 @@
 finding becomes.
 
 These lived inside ``routers/dashboard.py`` and were the router's own. Arc CT's CT-5 makes
-cards from a second place — an approved cockpit proposal — and a card made there is owed the
+cards from a second place — an approved dashboard proposal — and a card made there is owed the
 same guarantee as one pinned from the Briefing: it ran cleanly through the guard battery
 before it was stored. So the guard and the builder moved here, and both doors call them.
 

@@ -201,7 +201,7 @@ def test_a_dataset_that_ended_has_no_figure_for_the_range_and_an_empty_count_is_
     """Uber's rides end 2024-12-30. Every recent range read nothing for them — and a COUNT read 0,
     which was shown as a measured figure. Then (2026-10-07) the last month the data covers was shown
     among the range's figures; now (the user, 2026-10-23) the range has no figure for it and the reason
-    names the day its data ends — in the Briefing and the Cockpit alike."""
+    names the day its data ends — in the Briefing and the Dashboard alike."""
     from datetime import date
 
     from aughor.briefing import ranges

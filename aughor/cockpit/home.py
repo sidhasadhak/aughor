@@ -1,8 +1,8 @@
-"""Where a cockpit lives: a person's, on one connection (Arc CT, CT-7; ROADMAP §3.50).
+"""Where a dashboard lives: a person's, on one connection (Arc CT, CT-7; ROADMAP §3.50).
 
 The first home was a Data Canvas. The user moved it (§6 item 36(c), superseded): the Briefing
-is the connection's, and a cockpit is a person's own — their dashboard, and a Briefing tailored
-to the areas they look into. So a cockpit is now three things: the connection
+is the connection's, and a dashboard is a person's own — their dashboard, and a Briefing tailored
+to the areas they look into. So a dashboard is now three things: the connection
 it reads, the person it belongs to, and that person's own name for it — "Returns", "Pricing".
 A person keeps as many as they like.
 
@@ -11,7 +11,7 @@ A person keeps as many as they like.
 off and one operator uses every device. It is never a value the page or a model supplies.
 
 **Its cards** are the cards the connection shares — the ones pinned for everyone, as the
-Briefing's cockpit has always read them — and the person's own. A card a person's cockpit
+Briefing's dashboard has always read them — and the person's own. A card a person's dashboard
 creates is theirs (the card store's ``user`` scope), so a limit set on it is theirs too.
 """
 from __future__ import annotations
@@ -33,15 +33,15 @@ _NOT_ID = re.compile(r"[^a-z0-9]+")
 
 @dataclass(frozen=True)
 class Home:
-    """One person's cockpit on one connection."""
+    """One person's dashboard on one connection."""
     connection_id: str
     owner: str
     cockpit_id: str
 
     @property
     def key(self) -> str:
-        """The Ledger's natural key. A canvas cockpit was ``cockpit:<canvas>``; a person's
-        says whose it is in the key itself, so a list of a person's cockpits is a prefix."""
+        """The Ledger's natural key. A canvas dashboard was ``cockpit:<canvas>``; a person's
+        says whose it is in the key itself, so a list of a person's dashboards is a prefix."""
         return f"{prefix(self.connection_id, self.owner)}{self.cockpit_id}"
 
     def as_params(self) -> dict:
@@ -65,7 +65,7 @@ def valid_id(cockpit_id: str) -> bool:
 
 
 def new_id(name: str) -> str:
-    """A cockpit id from the name a person gave it: readable, and never one they already
+    """A dashboard id from the name a person gave it: readable, and never one they already
     have — the suffix is random, not counted, so two tabs starting one at once do not meet."""
     slug = _NOT_ID.sub("-", (name or "").lower()).strip("-")[:32] or "cockpit"
     return f"{slug}-{uuid.uuid4().hex[:6]}"

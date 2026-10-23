@@ -1012,9 +1012,13 @@ function resolveDeepLinkTab(t: NavTab): ResolvedTab {
   return none;
 }
 
+/** Dashboards were called cockpits until 2026-10-23: a link may name either, and both open the same screen. */
+const LINK_ALIASES: Record<string, string> = { dashboards: "cockpit" };
+
 function tabFromUrl(): NavTab | null {
   if (typeof window === "undefined") return null;
-  const t = new URLSearchParams(window.location.search).get("tab") as NavTab | null;
+  const raw = new URLSearchParams(window.location.search).get("tab");
+  const t = (raw && (LINK_ALIASES[raw] ?? raw)) as NavTab | null;
   return t && VALID_TABS.has(t) ? t : null;
 }
 
@@ -1033,7 +1037,8 @@ const RECORD_LAYERS = new Set<RecordLayer>(["inquiries", "decisions", "missions"
 
 function layerFromUrl(): string | null {
   if (typeof window === "undefined") return null;
-  return new URLSearchParams(window.location.search).get("layer");
+  const raw = new URLSearchParams(window.location.search).get("layer");
+  return raw && (LINK_ALIASES[raw] ?? raw);
 }
 
 export default function Home() {
@@ -1217,8 +1222,9 @@ export default function Home() {
     // is deliberately never written, so its forced visual mode stays a property of
     // real legacy links only.
     const writeTab: NavTab = tab === "data" ? (dataLayer as NavTab) : tab;
+    // A link says what a person reads: the cockpit layer is written as `dashboards` (read back by LINK_ALIASES).
     const wantLayer =
-      tab === "intelligence" ? intelLayer
+      tab === "intelligence" ? (intelLayer === "cockpit" ? "dashboards" : intelLayer)
       : tab === "operations" ? opsLayer
       : tab === "evals" ? evalsLayer
       : tab === "agentic-ops" ? agentsLayer

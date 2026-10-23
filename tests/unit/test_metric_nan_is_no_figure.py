@@ -1,7 +1,7 @@
 """A ratio over an empty range is not a figure (2026-10-07).
 
 DuckDB answers `COUNT(...) * 1.0 / COUNT(...)` over no rows with NaN, not NULL. Uber's rides end
-in 2024, so every recent range is empty, and Ride Completion Rate's NaN reached the Cockpit as a
+in 2024, so every recent range is empty, and Ride Completion Rate's NaN reached the Dashboard as a
 measured figure: the response could not be written as JSON, the API answered 500, and the page
 said only "Failed to fetch".
 """

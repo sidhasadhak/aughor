@@ -1,7 +1,7 @@
 """Arc AP-8b — a set read whole by a condition: its linked objects, and sets combined (ROADMAP §3.57; the study's §9.2,
 screen 12 of `design-mockups/cockpit-builder.html`).
 
-A cockpit's set could narrow its own objects, and nothing more: a condition through a to-many link held ONE condition,
+A dashboard's set could narrow its own objects, and nothing more: a condition through a to-many link held ONE condition,
 so "the customers of the waiting orders" — orders overdue AND in the window AND in the country, all on the SAME order —
 could not be said, nor "either", "both" or "but not" of two sets. Now a condition names whole sets (`in_set`,
 `not_in_set`): each set is one EXISTS over its entity holding its segment and every one of its conditions, tied to the

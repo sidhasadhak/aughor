@@ -139,7 +139,7 @@ describe("a value the reader sets", () => {
     expect(listedFor("user.country").at(-1)).toEqual({ path: "user.country", op: "=", value: "Japan" });
   });
 
-  it("draws nothing on a cockpit whose values are all its author's, and its pieces ask the door as before", async () => {
+  it("draws nothing on a dashboard whose values are all its author's, and its pieces ask the door as before", async () => {
     const plain = { root: "cockpit", values: { window: { label: "Window", kind: "days", value: 14 } }, sets: { placed: SPEC.sets.placed },
       elements: { cockpit: SPEC.elements.cockpit, sec: { ...SPEC.elements.sec, children: ["table"] },
         table: { type: "ObjectTable", props: { set: "placed", columns: ["status"] }, children: [] } } };
@@ -197,9 +197,9 @@ describe("a query of the person's own that reads values", () => {
     await waitFor(() => expect(runs().at(-1)).toEqual({ status: { kind: "text", value: "Processing" } }));
   });
 
-  it("says in its place why it cannot run when it reads a value the cockpit does not hold, and asks nothing", async () => {
+  it("says in its place why it cannot run when it reads a value the dashboard does not hold, and asks nothing", async () => {
     draw(SPEC, [{ card: card("SELECT 1 WHERE x = {{nowhere}}") }]);
-    expect(await screen.findByTestId("query-tile-unread")).toHaveTextContent("It reads {{nowhere}}, and this cockpit holds no value of that name.");
+    expect(await screen.findByTestId("query-tile-unread")).toHaveTextContent("It reads {{nowhere}}, and this dashboard holds no value of that name.");
     expect(api.runDashboardCard).not.toHaveBeenCalled();
   });
 

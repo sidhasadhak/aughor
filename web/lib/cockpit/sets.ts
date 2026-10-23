@@ -108,8 +108,8 @@ function walkSet(spec: WireSpec, name: string, valueOf: ((value: string) => Valu
     if (chain.includes(at)) return { refused: `The sets ${[...chain, at].map(q).join(" → ")} start from each other in a ring.` };
     const set: CockpitSetDef | undefined = sets[at];
     if (!set) {
-      return { refused: chain.length ? `The set ${q(chain[chain.length - 1])} starts from ${q(at)}, which this cockpit does not hold.`
-        : `This cockpit holds no set named ${q(at)}.` };
+      return { refused: chain.length ? `The set ${q(chain[chain.length - 1])} starts from ${q(at)}, which this dashboard does not hold.`
+        : `This dashboard holds no set named ${q(at)}.` };
     }
     if (chain.length && (set.traverse || set.combine)) {
       // a set it starts from that reaches other objects, or is combined: its objects, read whole
@@ -135,7 +135,7 @@ function walkSet(spec: WireSpec, name: string, valueOf: ((value: string) => Valu
       const cond: DoorCondition = { path: c.path, op: c.op };
       if (c.value_from) {
         const v = values[c.value_from];
-        if (!v) return { refused: `The set ${q(at)} reads the value ${q(c.value_from)}, which this cockpit does not hold.` };
+        if (!v) return { refused: `The set ${q(at)} reads the value ${q(c.value_from)}, which this dashboard does not hold.` };
         if (c.op === "in_last" && v.kind !== "days") {
           return { refused: `The set ${q(at)} counts the last days by the value ${q(c.value_from)}, which is a ${v.kind}, not a number of days.` };
         }

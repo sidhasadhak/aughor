@@ -153,7 +153,7 @@ describe("a value read from a query", () => {
   it("that is not placed, or reads itself back, says so in place of what reads it", async () => {
     // the card it names is placed, and it is not one of the cockpit's cards the person has
     const { unmount } = draw(SPEC, []);
-    await waitFor(() => expect(screen.getAllByText(/not a card this cockpit places/).length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText(/not a card this dashboard places/).length).toBeGreaterThan(0));
     unmount();
     draw(SPEC, [{ card: card("SELECT {{top}} AS country") }]);
     await waitFor(() => expect(screen.getAllByText(/Top country → Top country read each other in a ring/).length).toBeGreaterThan(0));

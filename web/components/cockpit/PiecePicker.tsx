@@ -239,7 +239,7 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, que
         return { why: "", props: { process: p.id } };
       }
       case "ObjectFilters": {
-        if (hasFilters) return { why: "The cockpit has its filter column. It holds one." };
+        if (hasFilters) return { why: "The dashboard has its filter column. It holds one." };
         if (!entity) return { why: "Choose what it filters above." };
         if (!ef || fields?.entity !== entity) return { why: "Reading what the ontology offers…" };
         const props = ef.fields.filter(isCategory).slice(0, Math.min(3, MAX_FILTERS))
@@ -301,7 +301,7 @@ export function PiecePicker({ spec, section, connectionId, schema, wiringOn, que
       <DialogContent data-testid="piece-picker" style={{ maxWidth: 640 }}>
         <DialogHeader>
           <DialogTitle>Add a piece</DialogTitle>
-          <DialogDescription>{target ? `To ${sectionTitle}.` : "To the cockpit."} Its setup changes the rest after.</DialogDescription>
+          <DialogDescription>{target ? `To ${sectionTitle}.` : "To the dashboard."} Its setup changes the rest after.</DialogDescription>
         </DialogHeader>
         <div style={{ display: "grid", gridTemplateColumns: sets.length ? "1fr 1fr" : "1fr", gap: 8 }}>
           <SelectField aria-label="What it reads" value={entity} onChange={e => { setEntity(e.target.value); setReads(""); }}>

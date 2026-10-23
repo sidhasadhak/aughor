@@ -1,4 +1,4 @@
-"""BR-9 (2026-09-26): a cockpit card run for a range.
+"""BR-9 (2026-09-26): a dashboard card run for a range.
 
 Pinned: with a range the card's SQL is cut to it on the main date of the first table it reads
 and `scoped` says what the number covers; a card whose tables have no date runs standing and
@@ -116,7 +116,7 @@ def _answers(monkeypatch, seen: list, by_window: dict):
 
 
 def test_asked_to_compare_a_cut_figure_is_read_for_its_comparison_the_same_way(monkeypatch):
-    """A cockpit's card says how its figure moved against the window its range is compared
+    """A dashboard's card says how its figure moved against the window its range is compared
     with — the card's own SQL, cut on the same date, so the two differ only by their dates."""
     monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     _stub(monkeypatch, {})

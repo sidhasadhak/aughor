@@ -54,7 +54,7 @@ describe("the words", () => {
     expect(stuck.kind).toBe("refused");
   });
 
-  it("names the cockpit that rides with the Briefing, and shows the section it rides in", () => {
+  it("names the dashboard that rides with the Briefing, and shows the section it rides in", () => {
     const hidden = toggled(DEFAULT_SECTIONS, "cockpit", false);
     const out = proposeFromWords("show the Growth review strip with it", hidden, COCKPITS);
     expect(out.kind).toBe("proposal");
@@ -62,7 +62,7 @@ describe("the words", () => {
     expect(out.lines).toEqual(["Let “Growth review” ride with your Briefing"]);
     expect(out.next.strip).toBe("growth-review-1a2b");
     expect(out.next.sections.find(s => s.id === "cockpit")?.on).toBe(true);
-    const none = proposeFromWords("no cockpit strip", out.next, COCKPITS);
+    const none = proposeFromWords("no dashboard strip", out.next, COCKPITS);
     expect(none.kind === "proposal" && none.next.strip).toBe("");
   });
 

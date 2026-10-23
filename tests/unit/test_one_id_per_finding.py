@@ -1,6 +1,6 @@
 """One id, one finding (`explorer.store`).
 
-The cockpit's ledger picker threw "two children with the same key, `pinned__0`" (2026-10-09). On theLook's live
+The dashboard's ledger picker threw "two children with the same key, `pinned__0`" (2026-10-09). On theLook's live
 state 35 ids named 62 findings: each pinned key question four times over — the read-back of an unchanged finding
 appended a copy of what the list already held — and `synth__share__1` three DIFFERENT findings, numbered from zero
 on each run, of which a card could only ever be made from the first. Read, the store now gives one id per finding;

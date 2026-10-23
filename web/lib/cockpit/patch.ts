@@ -44,7 +44,7 @@ class Refusal extends Error {}
 
 function tokens(pointer: unknown, what: string): string[] {
   if (typeof pointer !== "string") throw new Refusal(`its ${what} is ${JSON.stringify(pointer)}; a ${what} is a string such as "/elements/sec-a/props/title"`);
-  if (pointer === "") throw new Refusal(`its ${what} is the whole spec; an edit changes a part of a cockpit, and a new cockpit is drafted whole`);
+  if (pointer === "") throw new Refusal(`its ${what} is the whole spec; an edit changes a part of a dashboard, and a new dashboard is drafted whole`);
   if (!pointer.startsWith("/")) throw new Refusal(`its ${what} ${q(pointer)} does not begin with "/"`);
   const out = pointer.slice(1).split("/").map(t => t.replace(/~1/g, "/").replace(/~0/g, "~"));
   const unsafe = out.find(t => UNSAFE.has(t));
@@ -139,7 +139,7 @@ function applyOne(doc: unknown, patch: unknown): void {
   if (op === "test") {
     const found = read(doc, tokens(path, "path"), path);
     if (!same(found, value)) {
-      throw new Refusal(`${q(path)} holds ${JSON.stringify(found)}, not ${JSON.stringify(value)}; the cockpit is not as the edit took it to be`);
+      throw new Refusal(`${q(path)} holds ${JSON.stringify(found)}, not ${JSON.stringify(value)}; the dashboard is not as the edit took it to be`);
     }
     return;
   }
@@ -158,12 +158,12 @@ function applyOne(doc: unknown, patch: unknown): void {
 
 export function applyCockpitPatches(spec: unknown, patches: unknown): PatchResult {
   const refuse = (index: number, message: string): PatchResult => ({ ok: false, spec: null, issues: [{ index, message }] });
-  if (!isObj(spec)) return refuse(0, "There is no cockpit to edit.");
+  if (!isObj(spec)) return refuse(0, "There is no dashboard to edit.");
   if (!Array.isArray(patches) || !patches.length) {
     return refuse(0, "An edit is a list of operations, and this one holds none.");
   }
   if (patches.length > MAX_PATCHES) {
-    return refuse(0, `The edit holds ${patches.length} operations. An edit holds at most ${MAX_PATCHES}; a larger change is a new cockpit.`);
+    return refuse(0, `The edit holds ${patches.length} operations. An edit holds at most ${MAX_PATCHES}; a larger change is a new dashboard.`);
   }
   const doc = clone(spec);
   for (let i = 0; i < patches.length; i++) {

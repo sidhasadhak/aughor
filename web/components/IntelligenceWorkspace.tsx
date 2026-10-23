@@ -84,7 +84,7 @@ const GRAPH_LAYER: WorkspaceLayer<IntelLayer> = { id: "graph", icon: "kgraph", l
 // Arc CT-7 — the person's cockpits, beside the Briefing: the Briefing is the connection's, a
 // cockpit is the person's own. Present only with `cockpit.composed` on, and never for a canvas,
 // which is for questions and deep analysis. Off, the layers are exactly what they were.
-const COCKPIT_LAYER: WorkspaceLayer<IntelLayer> = { id: "cockpit", icon: "gauge", label: "Cockpit", blurb: "Your own cockpits — the cards you keep watching" };
+const COCKPIT_LAYER: WorkspaceLayer<IntelLayer> = { id: "cockpit", icon: "gauge", label: "Dashboards", blurb: "Your own dashboards — the cards you keep watching" };
 
 type Props = {
   connectionId: string;

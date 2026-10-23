@@ -120,13 +120,13 @@ describe("with the flag off", () => {
   it("says so, and reads nothing more", async () => {
     api.listCockpits.mockResolvedValue(null);
     show();
-    expect(await screen.findByText("Cockpits are off on this install")).toBeInTheDocument();
+    expect(await screen.findByText("Dashboards are off on this install")).toBeInTheDocument();
     expect(screen.queryByTestId("briefing-cockpits")).toBeNull();
     expect(api.getCockpit).not.toHaveBeenCalled();
   });
 });
 
-describe("a person's cockpits", () => {
+describe("a person's dashboards", () => {
   it("lists them in a strip and draws the one the person left off on, each card it places run as written", async () => {
     show();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
@@ -170,7 +170,7 @@ describe("a person's cockpits", () => {
     await waitFor(() => expect(api.getCockpit).toHaveBeenCalledWith("thelook", "pricing-1", null));
   });
 
-  it("'Remove' on a card takes it off THIS cockpit and keeps the card", async () => {
+  it("'Remove' on a card takes it off THIS dashboard and keeps the card", async () => {
     show();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
     const doors = drawn.props.at(-1)!.doors as { onRemove: (id: string) => void };
@@ -181,7 +181,7 @@ describe("a person's cockpits", () => {
     expect(JSON.stringify(spec)).not.toContain("c91b2002");
   });
 
-  it("a card pinned from here lands on the cockpit in view", async () => {
+  it("a card pinned from here lands on the dashboard in view", async () => {
     show();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
     expect(screen.queryByTestId("composer-stub")).toBeNull();
@@ -197,7 +197,7 @@ describe("a person's cockpits", () => {
   });
 });
 
-describe("a retired cockpit", () => {
+describe("a retired dashboard", () => {
   it("is retired from the toolbar, after one confirmation — not from inside History, where it read as absent", async () => {
     api.retireCockpit.mockResolvedValue({ status: "kept", kept: true, version: 4, artifact_id: "a4", sentences: [] });
     show();
@@ -211,10 +211,10 @@ describe("a retired cockpit", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retire it" }));
     await waitFor(() => expect(api.retireCockpit).toHaveBeenCalledWith("thelook", "returns-1"));
     fireEvent.click(screen.getByRole("button", { name: /History/ }));
-    expect(screen.queryByRole("button", { name: "Retire this cockpit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retire this dashboard" })).toBeNull();
   });
 
-  it("leaves the strip for good: nothing offers to bring a retired cockpit back (the user, 2026-10-11 — once it's gone it's gone)", async () => {
+  it("leaves the strip for good: nothing offers to bring a retired dashboard back (the user, 2026-10-11 — once it's gone it's gone)", async () => {
     api.listCockpits.mockResolvedValue({ ...LIST, cockpits: [LIST.cockpits[0], { ...LIST.cockpits[1], retired: true, version: 4, title: "Pricing" }] });
     show();
     await waitFor(() => expect(stripTabs()).toEqual(["Metrics", "Returns"]));
@@ -255,28 +255,28 @@ describe("arranging by hand", () => {
   });
 });
 
-describe("with no cockpits yet", () => {
-  it("offers to start 'My cockpit' from the cards already pinned, with no model", async () => {
+describe("with no dashboards yet", () => {
+  it("offers to start 'My dashboard' from the cards already pinned, with no model", async () => {
     api.listCockpits.mockResolvedValue({ ...LIST, cockpits: [] });
     api.startMyCockpit.mockResolvedValue({ status: "kept", kept: true, version: 1, artifact_id: "a1", sentences: [], cockpit_id: "my-cockpit" });
     show();
-    fireEvent.click(await screen.findByRole("button", { name: "Start “My cockpit” from 3 pinned cards" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start “My dashboard” from 3 pinned cards" }));
     await waitFor(() => expect(api.startMyCockpit).toHaveBeenCalledWith("thelook"));
     expect(api.draftCockpit).not.toHaveBeenCalled();
   });
 
-  it("offers to move a cockpit that lived in a Data Canvas", async () => {
-    api.listCockpits.mockResolvedValue({ ...LIST, cockpits: [], from_canvases: [{ ...version(3), canvas_id: "d617964b", title: "Executive Cockpit" }] });
-    api.moveCanvasCockpit.mockResolvedValue({ moved: true, cockpit_id: "executive-cockpit-1", title: "Executive Cockpit", version: 1, sentences: [] });
+  it("offers to move a dashboard that lived in a Data Canvas", async () => {
+    api.listCockpits.mockResolvedValue({ ...LIST, cockpits: [], from_canvases: [{ ...version(3), canvas_id: "d617964b", title: "Executive Dashboard" }] });
+    api.moveCanvasCockpit.mockResolvedValue({ moved: true, cockpit_id: "executive-cockpit-1", title: "Executive Dashboard", version: 1, sentences: [] });
     show();
     const offer = await screen.findByTestId("cockpit-move-offer");
-    expect(offer).toHaveTextContent("“Executive Cockpit” was kept in a Data Canvas");
+    expect(offer).toHaveTextContent("“Executive Dashboard” was kept in a Data Canvas");
     fireEvent.click(within(offer).getByRole("button", { name: "Move it here" }));
     await waitFor(() => expect(api.moveCanvasCockpit).toHaveBeenCalledWith("thelook", "d617964b"));
   });
 });
 
-describe("a new cockpit started without a model", () => {
+describe("a new dashboard started without a model", () => {
   // The walk-through (2026-10-09): + New cockpit offered only a model's draft, and a cockpit for a process only inside
   // the designer's own session.
   const kept = () => api.keepCockpit.mock.calls.at(-1) as [string, string, { elements: Record<string, { type: string; props: Record<string, unknown>; children: string[] }> }, string];
@@ -287,8 +287,8 @@ describe("a new cockpit started without a model", () => {
     const startIt = screen.getByTestId("cockpit-start-empty");
     expect(startIt).toBeDisabled();
     expect(screen.getByTestId("cockpit-new")).toHaveTextContent("Name it.");                 // never a silent dead end
-    fireEvent.change(screen.getByLabelText("The cockpit's name"), { target: { value: "Carrier performance" } });
-    fireEvent.change(screen.getByLabelText("What this cockpit is for — its first note"), { target: { value: "Which carriers miss pickups." } });
+    fireEvent.change(screen.getByLabelText("The dashboard's name"), { target: { value: "Carrier performance" } });
+    fireEvent.change(screen.getByLabelText("What this dashboard is for — its first note"), { target: { value: "Which carriers miss pickups." } });
     fireEvent.click(startIt);
     await waitFor(() => expect(api.keepCockpit).toHaveBeenCalled());
     const [conn, id, spec, note] = kept();
@@ -328,7 +328,7 @@ describe("a new cockpit started without a model", () => {
   });
 });
 
-describe("a new cockpit from an area", () => {
+describe("a new dashboard from an area", () => {
   const PROPOSAL = {
     id: "p1", kind: "cockpit_draft", status: "pending", reasoning: "Returns first, then what they cost.",
     params: { home: { connection_id: "thelook", owner: "default", cockpit_id: "returns-9" }, spec: SPEC,
@@ -343,19 +343,19 @@ describe("a new cockpit from an area", () => {
     show();
     fireEvent.click(await screen.findByTestId("cockpit-new-open"));
     fireEvent.click(screen.getByTestId("cockpit-new-draft"));                 // the one way here that asks a model
-    fireEvent.change(screen.getByLabelText("What this cockpit is for"), { target: { value: "Returns" } });
+    fireEvent.change(screen.getByLabelText("What this dashboard is for"), { target: { value: "Returns" } });
     fireEvent.click(screen.getByRole("button", { name: "Draft it" }));
   }
 
   it("drafts it, shows it to be arranged, and keeps it as drafted", async () => {
-    api.draftCockpit.mockResolvedValue({ staged: true, proposal_id: "p1", cockpit_id: "returns-9", summary: "Drafted the cockpit \"Returns\".", rounds: 1, stop_reason: "answered", sentences: [] });
+    api.draftCockpit.mockResolvedValue({ staged: true, proposal_id: "p1", cockpit_id: "returns-9", summary: "Drafted the dashboard \"Returns\".", rounds: 1, stop_reason: "answered", sentences: [] });
     api.getProposalById.mockResolvedValue(PROPOSAL);
     api.acceptProposal.mockResolvedValue({ status: "executed" });
     await draftReturns();
 
     const draft = await screen.findByTestId("cockpit-draft");
     expect(api.draftCockpit).toHaveBeenCalledWith("thelook", "Returns", "thelook");
-    expect(draft).toHaveTextContent("Drafted the cockpit \"Returns\".");
+    expect(draft).toHaveTextContent("Drafted the dashboard \"Returns\".");
     expect(draft).toHaveTextContent("Why it is arranged this way: Returns first, then what they cost.");
     const lines = within(draft).getAllByTestId("arrange-card");
     expect(lines[0]).toHaveTextContent("Return rate");                       // a card the person has, by name
@@ -402,10 +402,10 @@ describe("a new cockpit from an area", () => {
   });
 });
 
-describe("the metrics, the cockpit a person opens on", () => {
+describe("the metrics, the dashboard a person opens on", () => {
   beforeEach(() => { localStorage.clear(); });
 
-  it("is first in the strip and open when nothing was chosen; no cockpit of the person's is read", async () => {
+  it("is first in the strip and open when nothing was chosen; no dashboard of the person's is read", async () => {
     api.getSystemFlags.mockResolvedValue({ "briefing.ranges": { value: true } });
     show();
     const metrics = await screen.findByRole("tab", { name: "Metrics" });
@@ -432,15 +432,15 @@ describe("the metrics, the cockpit a person opens on", () => {
     expect(api.measureRange).not.toHaveBeenCalled();
   });
 
-  it("still explains what a cockpit of your own is when you have none", async () => {
+  it("still explains what a dashboard of your own is when you have none", async () => {
     api.listCockpits.mockResolvedValue({ ...LIST, cockpits: [] });
     show();
     expect(await screen.findByTestId("metrics-cockpit")).toBeInTheDocument();
     // one muted line and its door, under the metrics; what a cockpit of your own is, on its hover
     const none = screen.getByTestId("cockpit-none-yet");
-    expect(none).toHaveTextContent("No cockpit of your own yet");
+    expect(none).toHaveTextContent("No dashboard of your own yet");
     expect(none.getAttribute("title")).toMatch(/the set of cards you keep watching for one area/);
-    expect(within(none).getByRole("button", { name: /New cockpit|Start “My cockpit”/ })).toBeInTheDocument();
+    expect(within(none).getByRole("button", { name: /New dashboard|Start “My dashboard”/ })).toBeInTheDocument();
   });
 });
 
@@ -643,17 +643,17 @@ describe("the canvas: a finding from the ledger, a change in words, publishing (
     const doors = drawn.props.at(-1)!.doors as Record<string, unknown>;
     expect(doors.onRemove).toBeUndefined();
     expect(doors.onResize).toBeUndefined();
-    fireEvent.click(within(sharedView).getByRole("button", { name: "Start my cockpit from this" }));
+    fireEvent.click(within(sharedView).getByRole("button", { name: "Start my dashboard from this" }));
     await waitFor(() => expect(api.copySharedCockpit).toHaveBeenCalledWith("thelook", "priya@example.com", "sales-weekly-1"));
   });
 });
 
-describe("building a cockpit in place (Arc AP-1)", () => {
+describe("building a dashboard in place (Arc AP-1)", () => {
   type Doors = Record<string, unknown> & { onRegrid?: (k: string, b: { w: number; h: number }, m: object) => void };
   const doors = () => drawn.props.at(-1)!.doors as Doors;
   const shown = () => (drawn.props.at(-1)!.spec as { elements: Record<string, { props: Record<string, unknown> }> }).elements;
 
-  it("off, a cockpit is arranged as it always was: its bar of doors, Arrange, sizes by name, and no Edit", async () => {
+  it("off, a dashboard is arranged as it always was: its bar of doors, Arrange, sizes by name, and no Edit", async () => {
     show();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
     expect(screen.queryByTestId("cockpit-edit")).toBeNull();
@@ -667,7 +667,7 @@ describe("building a cockpit in place (Arc AP-1)", () => {
     expect(doors().onSelect).toBeUndefined();
   });
 
-  it("on, a cockpit opens to be read: one bar — its history and Edit — and the reader's own doors only", async () => {
+  it("on, a dashboard opens to be read: one bar — its history and Edit — and the reader's own doors only", async () => {
     api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true } });
     show();
     expect(await screen.findByTestId("cockpit-edit")).toBeInTheDocument();
@@ -682,7 +682,7 @@ describe("building a cockpit in place (Arc AP-1)", () => {
     document.documentElement.removeAttribute("data-nav");
     await openBuilder();
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
-    expect(screen.getByLabelText("The cockpit being edited")).toBeInTheDocument();
+    expect(screen.getByLabelText("The dashboard being edited")).toBeInTheDocument();
     expect(document.documentElement.getAttribute("data-nav")).toBe("collapsed");
     expect(localStorage.getItem("aughor_nav_collapsed")).toBeNull();
     expect(screen.getByTestId("builder-saved")).toHaveTextContent("version 3");
@@ -772,7 +772,7 @@ describe("action buttons, placed by hand (Arc AP-3)", () => {
     await screen.findByTestId("cockpit-builder");
   };
 
-  it("are offered only where cockpits are wired", async () => {
+  it("are offered only where dashboards are wired", async () => {
     await builderWith({});
     expect(screen.getByTestId("cockpit-note-new")).toBeInTheDocument();
     expect(screen.queryByTestId("cockpit-buttons-new")).toBeNull();
@@ -840,7 +840,7 @@ describe("History, in words (Arc AP-6)", () => {
 });
 
 describe("previewing as a group (Arc AP-6)", () => {
-  it("reads the cockpit as the person and a member of the group, with no door that changes it, and says what is withheld", async () => {
+  it("reads the dashboard as the person and a member of the group, with no door that changes it, and says what is withheld", async () => {
     api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true }, "ontology.security": { value: true } });
     api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [{ id: "support", name: "Support" }, { id: "fulfilment", name: "Fulfilment" }] });
     show();
@@ -875,7 +875,7 @@ describe("previewing as a group (Arc AP-6)", () => {
     expect((drawn.props.at(-1) as { asGroup?: string }).asGroup).toBeUndefined();
   });
 
-  it("ends when the builder closes or another cockpit opens in it: the cockpit is read as the person again", async () => {
+  it("ends when the builder closes or another dashboard opens in it: the dashboard is read as the person again", async () => {
     api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [{ id: "support", name: "Support" }] });
     await openBuilder();
     await waitFor(() => expect(optionsOf(screen.getByLabelText("Preview as")).map(o => o.value)).toEqual(["", "support"]));
@@ -891,13 +891,13 @@ describe("previewing as a group (Arc AP-6)", () => {
     expect(screen.getByLabelText("Preview as")).toHaveValue("");
     await choose(screen.getByLabelText("Preview as"), "support");
     await screen.findByTestId("cockpit-preview-banner");
-    await choose(screen.getByLabelText("The cockpit being edited"), "pricing-1");
+    await choose(screen.getByLabelText("The dashboard being edited"), "pricing-1");
     await waitFor(() => expect(screen.queryByTestId("cockpit-preview-banner")).toBeNull());
     expect(screen.getByTestId("cockpit-builder")).toBeInTheDocument();
   });
 });
 
-describe("the checks chip, as the cockpit's cells say what they read (Arc AP-6)", () => {
+describe("the checks chip, as the dashboard's cells say what they read (Arc AP-6)", () => {
   const doors = () => drawn.props.at(-1)!.doors as { onReadState?: (key: string, state: { status: "ok" | "refused" | "reading"; reason: string } | null) => void };
 
   it("counts what each cell said, lists what to fix, and lets go of a cell once it is gone", async () => {
@@ -913,7 +913,7 @@ describe("the checks chip, as the cockpit's cells say what they read (Arc AP-6)"
   });
 });
 
-describe("your own query on the cockpit (Arc AP-7)", () => {
+describe("your own query on the dashboard (Arc AP-7)", () => {
   const QUERIES = { "cockpit.builder": { value: true }, "cockpit.app_pieces": { value: true }, "cockpit.queries": { value: true } };
   const SHOWN = { as: "bar", summed: true, x: "day", bucket: "day", series: [{ column: "sales", agg: "sum" }], split: "", top: 5,
     segments: "stacked", running: false, labels: false, columns: [], sort: "", descending: true, label: "" };
@@ -966,7 +966,7 @@ describe("your own query on the cockpit (Arc AP-7)", () => {
     expect(api.keepCockpitQuery).toHaveBeenCalledWith("thelook", expect.objectContaining({ replaces: "c91b2002" }));
   });
 
-  it("leaves a query that reads the cockpit's values to its own cell, and runs every other card as written (Arc AP-8)", async () => {
+  it("leaves a query that reads the dashboard's values to its own cell, and runs every other card as written (Arc AP-8)", async () => {
     api.getCockpit.mockResolvedValue({ ...READ, cards: [READ.cards[0],
       { ...queryCard("c91b2002"), sql: "SELECT day, sales FROM thelook.orders WHERE country = {{country}}" }, READ.cards[2]] });
     show();
@@ -976,7 +976,7 @@ describe("your own query on the cockpit (Arc AP-7)", () => {
     expect(held.run).toBeUndefined();
   });
 
-  it("offers the cockpit's values to a query's setup while variables are on, and none while they are off", async () => {
+  it("offers the dashboard's values to a query's setup while variables are on, and none while they are off", async () => {
     const valued = { ...SPEC, values: { country: { label: "Country", kind: "text", value: "China", from: { by: "reader" } } } };
     api.getCockpit.mockResolvedValue({ ...READ, cockpit: { ...READ.cockpit, spec: valued }, cards: [READ.cards[0], queryCard("c91b2002"), READ.cards[2]] });
     for (const variables of [true, false]) {

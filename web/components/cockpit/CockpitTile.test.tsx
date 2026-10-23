@@ -115,7 +115,7 @@ describe("a figure", () => {
   it("its doors are the card's: refresh and take off", () => {
     tile(card(), ranged(0.1003, JUNE));
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    fireEvent.click(screen.getByRole("button", { name: "Take off this cockpit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Take off this dashboard" }));
     expect(DOORS.onRefresh).toHaveBeenCalledWith("c1");
     expect(DOORS.onRemove).toHaveBeenCalledWith("c1");
   });

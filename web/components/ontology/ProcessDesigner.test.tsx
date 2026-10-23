@@ -149,7 +149,7 @@ describe("the process designer", () => {
     expect((await screen.findByTestId("designer-sample")).textContent).toContain("576 in all");
   });
 
-  it("declares, publishes the release, and starts a cockpit holding the board, the late list and one object", async () => {
+  it("declares, publishes the release, and starts a dashboard holding the board, the late list and one object", async () => {
     const user = userEvent.setup();
     const { onDeclared, rerender } = designer();
     calls.declare.mockResolvedValue({ id: "order_delivery" });

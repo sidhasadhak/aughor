@@ -1,4 +1,4 @@
-"""Arc AP-7 — your own query on the cockpit (ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §9).
+"""Arc AP-7 — your own query on the dashboard (ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §9).
 
 A card that reads a person's own SQL says how it is shown, and is drawn so: the platform sums the statement's rows by
 what runs along the bottom — a date put in buckets — and by what splits it, the top few values and the rest as Other,

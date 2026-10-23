@@ -1,4 +1,4 @@
-"""Graduate-card-to-Monitor endpoint (Briefing cockpit, Slice 4 — watch → alert).
+"""Graduate-card-to-Monitor endpoint (Briefing dashboard, Slice 4 — watch → alert).
 
 The card's guarded SQL becomes a scheduled threshold Monitor, and the thresholds + monitor id
 are recorded back on the card. The monitor store + scheduler are stubbed so the test stays

@@ -31,11 +31,11 @@ export function MakeCockpit({ connectionId, schema, entity, name }: {
   return (
     <>
       <Button size="xs" variant="secondary" data-testid="make-cockpit" style={{ marginLeft: "auto" }} onClick={() => setOpen(true)}>
-        <Icon name="canvas" size={12} /> Make a cockpit
+        <Icon name="canvas" size={12} /> Make a dashboard
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent maxWidth="760px">
-          <DialogTitle className="sr-only">New cockpit from {name}</DialogTitle>
+          <DialogTitle className="sr-only">New dashboard from {name}</DialogTitle>
           {open && (
             <ObjectCockpitStarter connectionId={connectionId} schema={schema} entity={entity} sym={effectiveCurrencySymbol() || "$"}
               onCancel={() => setOpen(false)}

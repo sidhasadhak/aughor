@@ -105,7 +105,7 @@ const PROPOSAL: CockpitFromObject = {
   caveats: [],
 };
 
-describe("the cockpit a person's ticks make", () => {
+describe("the dashboard a person's ticks make", () => {
   it("lays everything out as the approved mockup does, and the rules accept it", () => {
     const spec = objectCockpitSpec(PROPOSAL, everything(PROPOSAL)) as { root: string; elements: Record<string, { type: string; props: Record<string, unknown>; children: string[] }> };
     expect(checkCockpitSpec(spec).issues).toEqual([]);

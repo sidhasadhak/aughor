@@ -1,4 +1,4 @@
-"""Arc CT, CT-2 (ROADMAP §3.50) — the cockpit's validator: accepted whole or refused whole.
+"""Arc CT, CT-2 (ROADMAP §3.50) — the dashboard's validator: accepted whole or refused whole.
 
 Every refusal below is asserted by a token of ITS OWN sentence. ``accepted is False`` alone
 proves nothing: a spec refused for a different reason than the one under test would pass as
@@ -24,7 +24,7 @@ CARDS = {"c7f3a001", "c91b2002"}
 
 needs_rules = pytest.mark.skipif(
     shutil.which("node") is None or not V._BUNDLE.exists(),
-    reason="the cockpit's rules need node + validate.bundle.mjs")
+    reason="the dashboard's rules need node + validate.bundle.mjs")
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def test_a_card_this_canvas_does_not_hold_is_refused_by_name(premise):
     verdict = V.check_spec(premise, known_cards={"c7f3a001"})
     assert verdict.status == V.REFUSED
     assert verdict.cards == ()
-    assert 'places the card "c91b2002", which is not a card of this cockpit' in said(verdict)
+    assert 'places the card "c91b2002", which is not a card of this dashboard' in said(verdict)
     assert "c7f3a001" not in said(verdict)          # the card it does hold is not named
 
 
@@ -66,7 +66,7 @@ def test_a_condition_may_not_read_the_status_of_a_card_outside_the_canvas(premis
     verdict = V.check_spec(premise, known_cards=CARDS)
     assert verdict.status == V.REFUSED
     assert said(verdict) == ('A condition reads the status of the card "feedbeef", '
-                             'which is not a card of this cockpit.')
+                             'which is not a card of this dashboard.')
 
 
 @needs_rules
@@ -131,8 +131,8 @@ def test_every_reason_is_said_not_only_the_first(premise):
 
 @needs_rules
 @pytest.mark.parametrize("field,value,token", [
-    ("watch", {"/tab": {"action": "x"}}, "A cockpit runs nothing without a click"),
-    ("on", {"press": {"action": "x"}}, "A cockpit defines no action of its own"),
+    ("watch", {"/tab": {"action": "x"}}, "A dashboard runs nothing without a click"),
+    ("on", {"press": {"action": "x"}}, "A dashboard defines no action of its own"),
     ("repeat", {"statePath": "/cards"}, "places each card by its id"),
 ])
 def test_what_a_spec_may_not_carry(premise, field, value, token):
@@ -164,7 +164,7 @@ def test_a_figure_typed_into_a_card_is_refused(premise):
 def test_what_is_not_a_spec_is_refused(spec):
     verdict = V.check_spec(spec, known_cards=CARDS)
     assert verdict.status == V.REFUSED
-    assert 'A cockpit spec is an object with a "root"' in said(verdict)
+    assert 'A dashboard spec is an object with a "root"' in said(verdict)
 
 
 def test_a_spec_that_is_not_json_is_refused_before_anything_runs(premise):
@@ -217,7 +217,7 @@ def test_the_server_holds_a_section_on_the_grid_to_the_same_rules(premise):
 
 @needs_rules
 def test_a_cards_tones_are_the_answer_vocabularys_tones():
-    """One scale of tones, not two: a cockpit card and an answer part mean the same by "bad"."""
+    """One scale of tones, not two: a dashboard card and an answer part mean the same by "bad"."""
     from aughor.agent.present_tool import TONES
     assert set(V.vocabulary()["tones"]) == set(TONES)
 

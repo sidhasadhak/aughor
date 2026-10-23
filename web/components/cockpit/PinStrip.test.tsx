@@ -16,7 +16,7 @@ const pin = (over: Partial<CockpitPin> = {}): CockpitPin =>
   ({ pinned: "c/thelook@2", current: "c/thelook@2", changes: [], ...over });
 
 describe("the pin strip", () => {
-  it("says the release in force quietly when it is the one the cockpit was composed against", () => {
+  it("says the release in force quietly when it is the one the dashboard was composed against", () => {
     render(<PinStrip pin={pin()} spec={SPEC} onRepin={vi.fn()} />);
     expect(screen.getByTestId("cockpit-pin").textContent).toContain("read release 2 of the ontology, the one it was composed against");
     expect(screen.queryByTestId("cockpit-repin")).toBeNull();
@@ -37,7 +37,7 @@ describe("the pin strip", () => {
     expect(screen.getByTestId("cockpit-repin").textContent).toBe("Re-pin to release 4");
   });
 
-  it("offers a reader of a published cockpit no re-pin, and says when one was never pinned", () => {
+  it("offers a reader of a published dashboard no re-pin, and says when one was never pinned", () => {
     render(<PinStrip spec={SPEC} pin={pin({ pinned: "", current: "c/thelook@4" })} />);
     expect(screen.getByTestId("cockpit-pin").textContent).toContain("Not pinned to a release; its pieces read release 4.");
     expect(screen.queryByTestId("cockpit-repin")).toBeNull();

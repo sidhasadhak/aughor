@@ -1,6 +1,6 @@
-"""Starting a cockpit from an object (2026-10-10; the screen the user approved, design-mockups/cockpit-from-object.html).
+"""Starting a dashboard from an object (2026-10-10; the screen the user approved, design-mockups/cockpit-from-object.html).
 
-A person picks an object — on the Ontology tab, or under New cockpit — and is offered a cockpit made of what that
+A person picks an object — on the Ontology tab, or under New dashboard — and is offered a dashboard made of what that
 object holds: its categories as filters, its numbers as figures, its date as a chart of objects per day, and its
 objects as a table with a detail and the actions declared on it. Every offer is read from the served ontology and
 measured through the object door before it is made. A category with one value, or too many to filter by, is not
@@ -123,7 +123,7 @@ def _entity_of(graph: Any, name: str) -> str:
 
 
 def propose(graph: Any, entity_name: str, run: Run, *, today: Optional[date] = None) -> dict:
-    """What a cockpit started from ``entity_name`` is offered, each piece with a preview read through ``run``."""
+    """What a dashboard started from ``entity_name`` is offered, each piece with a preview read through ``run``."""
     from aughor.ontology.security import rows_said
     from aughor.semantic.object_query import find_object_type, find_property, link_problem, object_links
 

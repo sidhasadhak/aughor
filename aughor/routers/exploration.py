@@ -984,7 +984,7 @@ def read_briefing_desk(conn_id: str, schema: str | None = None, workspace_id: st
 @router.post("/exploration/{conn_id}/briefing/measures")
 def measure_range_metrics(conn_id: str, schema: str | None = None, workspace_id: str | None = None,
                           preset: str | None = None, start: str | None = None, end: str | None = None):
-    """The range's approved metrics, measured — the Cockpit's default view (ROADMAP §6 item 43). No
+    """The range's approved metrics, measured — the Dashboard's default view (ROADMAP §6 item 43). No
     narrative is written and no model is called. When the range's Briefing was built for the same window
     within its cache age, its figures are returned as they stand, so the two pages cannot disagree about
     one; otherwise the metrics are measured now, the result cache first."""

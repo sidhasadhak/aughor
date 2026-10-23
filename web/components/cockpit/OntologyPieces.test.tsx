@@ -88,7 +88,7 @@ beforeEach(() => {
 
 const draw = () => render(<ComposedCockpit spec={SPEC} cards={[]} host={HOST} doors={{ onRefresh: vi.fn() }} connectionId="thelook" schema="thelook" />);
 
-describe("a late dispatch cockpit (Arc OC-4)", () => {
+describe("a late dispatch dashboard (Arc OC-4)", () => {
   it("draws the board's stages and promise, and the table's total is the count the board shows", async () => {
     draw();
     const board = await screen.findByTestId("process-board");
@@ -114,7 +114,7 @@ describe("a late dispatch cockpit (Arc OC-4)", () => {
     await act(async () => { fireEvent.click(button); });
     // Arc OC-6 — the version of the property the action sets, as this detail read it: none set yet, so 0
     expect(objects.runOrPropose).toHaveBeenCalledWith("flag_for_review", { order: "48377" }, "thelook", "thelook",
-      "from a cockpit, on Order 48377", { flagged_for_review: 0 });
+      "from a dashboard, on Order 48377", { flagged_for_review: 0 });
     await waitFor(() => expect(within(detail()).getByTestId("object-detail-edit").textContent).toContain("ana via flag_for_review"));
     const rows = screen.getAllByTestId("object-table-row").map(r => r.textContent);
     expect(rows[1]).toContain("yes");

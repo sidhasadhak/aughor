@@ -109,7 +109,7 @@ const PiecesContext = createContext<PiecesValue | null>(null);
 
 export function usePieces(): PiecesValue {
   const ctx = useContext(PiecesContext);
-  if (!ctx) throw new Error("an ontology piece was drawn outside its cockpit");
+  if (!ctx) throw new Error("an ontology piece was drawn outside its dashboard");
   return ctx;
 }
 
@@ -230,10 +230,10 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
   }, []);
   const processes = useCallback(() => (connectionId
     ? once(`processes|${schema ?? ""}|${tick}`, () => getProcesses(connectionId, schema))
-    : Promise.reject(new Error("This cockpit names no connection."))), [connectionId, schema, tick, once]);
+    : Promise.reject(new Error("This dashboard names no connection."))), [connectionId, schema, tick, once]);
   const actions = useCallback(() => (connectionId
     ? once(`actions|${schema ?? ""}`, () => getDeclaredActions(connectionId, schema))
-    : Promise.reject(new Error("This cockpit names no connection."))), [connectionId, schema, once]);
+    : Promise.reject(new Error("This dashboard names no connection."))), [connectionId, schema, once]);
   // each line said once to the page: a table, a figure and a chart of the same objects hear the same policy
   const heard = useRef(new Set<string>());
   const onSaidRef = useRef(onSaid);
@@ -389,7 +389,7 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
         sent?: Record<string, { kind: string; value: unknown }>; refused?: string; pending?: boolean };
       if (ask.pending) continue;
       if (!ask.placed || ask.refused) {
-        const refused = ask.refused ?? "The query it reads is not a card this cockpit places.";
+        const refused = ask.refused ?? "The query it reads is not a card this dashboard places.";
         setQueried(prev => ({ ...prev, [name]: { asked: at, value: null, refused } }));
         continue;
       }
@@ -789,7 +789,7 @@ export function ObjectDetailPiece({ follows, children }: { follows: string; chil
   }, [chosen?.objectType, chosen?.pk, connectionId, schema, tick, asGroup]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!followable.has(follows)) {
-    return <Unread what="Follows nothing here">This detail follows “{follows}”, which no piece on this cockpit chooses in.</Unread>;
+    return <Unread what="Follows nothing here">This detail follows “{follows}”, which no piece on this dashboard chooses in.</Unread>;
   }
   if (!chosen) {
     return (
@@ -893,7 +893,7 @@ export function ActionButtonPiece({ action }: { action: string }) {
       // Arc OC-6 — the version of each property the action sets, as this detail read it (0: none set yet)
       const expected = Object.fromEntries((declared.edits ?? []).map(e => [e.property,
         page.properties.find(p => p.name.toLowerCase() === e.property.toLowerCase() && p.overlay)?.overlay?.version ?? 0]));
-      const out = await runOrPropose(declared.id, params, connectionId, schema, `from a cockpit, on ${page.type_name} ${page.pk}`,
+      const out = await runOrPropose(declared.id, params, connectionId, schema, `from a dashboard, on ${page.type_name} ${page.pk}`,
         Object.keys(expected).length ? expected : undefined);
       if (out.status === "ran") { setSaid(ranSaid(out.verification)); setAsking(false); setValues({}); bump(); }
       else if (out.status === "proposed") { setSaid("It needs approval — proposed in Actions."); setAsking(false); }
@@ -1194,7 +1194,7 @@ function ReaderValue({ name, label, kind, value, options, changed, start, onSet,
         </span>
       )}
       {changed && (
-        <Button size="xs" variant="ghost" data-testid="cockpit-value-reset" title={`Back to ${valueText(kind, start)}${unit ? ` ${unit}` : ""}, as the cockpit was made`}
+        <Button size="xs" variant="ghost" data-testid="cockpit-value-reset" title={`Back to ${valueText(kind, start)}${unit ? ` ${unit}` : ""}, as the dashboard was made`}
           onClick={onReset}>Reset</Button>
       )}
     </span>

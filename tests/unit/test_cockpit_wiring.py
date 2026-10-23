@@ -1,9 +1,9 @@
-"""Arc AP-2 and AP-3 — a cockpit wired as an App, as the server holds it (ROADMAP §3.57;
+"""Arc AP-2 and AP-3 — a dashboard wired as an App, as the server holds it (ROADMAP §3.57;
 docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.1b, §4.3 and §4.5).
 
-A wired cockpit names sets its pieces read and values its sets read; a table names what a click chooses and what its
+A wired dashboard names sets its pieces read and values its sets read; a table names what a click chooses and what its
 ticks collect; a figure switches a list; action buttons run declared actions on what a reader chose or ticked. While
-`cockpit.wiring` is off a spec that says any of it is refused, and a cockpit that says none of it keeps exactly as
+`cockpit.wiring` is off a spec that says any of it is refused, and a dashboard that says none of it keeps exactly as
 before, whatever the flag says. What only the platform knows is checked before a keep: every set compiles through the
 object door over what this connection serves, and each button's action is declared and takes each parameter from a
 source that can hold it — an order from a chosen order, never a customer; a value from the form or a fixed value, never
@@ -24,7 +24,7 @@ from tests.unit.test_cockpit_canvas import FIXTURE, ME, volumes  # noqa: F401 �
 from tests.unit.test_cockpit_pieces import _graph as _pieces_graph
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
-                                 reason="the cockpit's rules need node + validate.bundle.mjs")
+                                 reason="the dashboard's rules need node + validate.bundle.mjs")
 #: Everything a wired desk needs on: wiring, the ontology's pieces, and the pieces of a cockpit started from an object.
 ALL = {wiring.FLAG, pieces.FLAG, "ontology.object_cockpits"}
 
@@ -124,7 +124,7 @@ def test_off_a_wired_cockpit_is_refused_and_says_what_wires_it(monkeypatch):
     _flags(monkeypatch, set())
     said = wiring.refused_off(_desk())
     assert len(said) == 1, said
-    assert "wiring a cockpit is off on this install" in said[0] and "sets, values, fig-active, table, lines, buttons" in said[0]
+    assert "wiring a dashboard is off on this install" in said[0] and "sets, values, fig-active, table, lines, buttons" in said[0]
 
 
 def test_the_refusal_names_six_things_and_says_there_are_more(monkeypatch):
@@ -269,7 +269,7 @@ def test_a_table_reading_a_set_is_probed_over_its_entity_segment_and_conditions(
 def test_a_piece_reading_a_set_that_cannot_be_read_is_said_once_by_the_wiring_check(monkeypatch, no_edits):
     _flags(monkeypatch, ALL)
     spec = {"elements": {"t": {"type": "ObjectTable", "props": {"set": "gone", "columns": ["status"]}, "children": []}}}
-    assert pieces.not_resolved("c", spec, graph=_graph(), wiring=_read(gone={"refused": "This cockpit holds no set named \"gone\"."})) == []
+    assert pieces.not_resolved("c", spec, graph=_graph(), wiring=_read(gone={"refused": "This dashboard holds no set named \"gone\"."})) == []
 
 
 def test_a_figure_and_a_chart_reading_a_set_ask_over_its_segment_and_conditions():
@@ -301,7 +301,7 @@ def test_what_a_piece_reads_through_a_set_is_what_a_release_tracks_down_the_sets
 
 def test_a_new_cockpit_from_a_model_names_no_set_or_value():
     said = wiring.wiring_written(None, _desk(), new=True)
-    assert len(said) == 1 and "A new cockpit is wired by a person, by hand." in said[0], said
+    assert len(said) == 1 and "A new dashboard is wired by a person, by hand." in said[0], said
     assert wiring.wiring_written(None, json.loads(FIXTURE.read_text()), new=True) == []
 
 
@@ -341,7 +341,7 @@ def test_the_keep_door_refuses_a_wired_cockpit_while_off_and_keeps_it_while_on(v
         return versions.keep(home, s, approved_by="user:amit", source="a person's own hand", written_by_model=False)
     _flags(monkeypatch, ALL - {wiring.FLAG})
     off = keep(_desk())
-    assert off.status == "refused" and "wiring a cockpit is off" in " ".join(off.sentences), off.sentences
+    assert off.status == "refused" and "wiring a dashboard is off" in " ".join(off.sentences), off.sentences
     assert versions.latest(home) is None                                     # nothing was kept
     _flags(monkeypatch, ALL)
     wrong = keep(_desk(**{"elements.buttons.props.buttons": [{"action": "refund", "params": {}}]}))
@@ -353,8 +353,8 @@ def test_the_keep_door_refuses_a_wired_cockpit_while_off_and_keeps_it_while_on(v
 
 @needs_rules
 def test_a_models_draft_arranges_a_wired_cockpit_and_never_wires_one(volumes, monkeypatch, no_edits):  # noqa: F811
-    """Run through the draft path itself, not read from its source: a model's new cockpit naming sets is refused; an edit
-    of a wired cockpit that moves a piece is staged, naming it; one that changes a set is refused."""
+    """Run through the draft path itself, not read from its source: a model's new dashboard naming sets is refused; an edit
+    of a wired dashboard that moves a piece is staged, naming it; one that changes a set is refused."""
     from aughor.cockpit import propose
     tag = uuid.uuid4().hex[:6]
     home = Home(f"wire{tag}", ME, f"desk-{tag}")
@@ -362,7 +362,7 @@ def test_a_models_draft_arranges_a_wired_cockpit_and_never_wires_one(volumes, mo
     monkeypatch.setattr(pieces, "served_graph", lambda conn: graph)
     _flags(monkeypatch, ALL)
     new = propose.draft(home, mode=propose.MODE_NEW, spec=_desk())
-    assert not new.staged and any("A new cockpit is wired by a person, by hand." in r for r in new.refusals), new.refusals
+    assert not new.staged and any("A new dashboard is wired by a person, by hand." in r for r in new.refusals), new.refusals
     assert versions.keep(home, _desk(), approved_by="user:amit", source="a person's own hand", written_by_model=False).kept
     moved = propose.draft(home, mode=propose.MODE_EDIT, patches=[
         {"op": "move", "from": "/elements/desk/children/4", "path": "/elements/desk/children/0"}])
@@ -372,7 +372,7 @@ def test_a_models_draft_arranges_a_wired_cockpit_and_never_wires_one(volumes, mo
     rewired = propose.draft(home, mode=propose.MODE_EDIT, patches=[
         {"op": "replace", "path": "/sets/placed/label", "value": "Placed lately"}])
     assert not rewired.staged
-    assert any("changes the cockpit's sets or values" in r for r in rewired.refusals), rewired.refusals
+    assert any("changes the dashboard's sets or values" in r for r in rewired.refusals), rewired.refusals
 
 
 def test_a_filter_column_counting_within_a_set_is_probed_over_it_and_one_that_does_not_as_before():

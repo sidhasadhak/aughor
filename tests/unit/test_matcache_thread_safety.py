@@ -2,7 +2,7 @@
 
 Live, 2026-10-15 17:37 UTC: the API died with a segmentation fault inside `_duckdb` on a worker
 thread (macOS crash report `python3.11-2026-10-15-193753.ips`) while sixteen `/query/run` calls
-measured the LuxExperience cockpit at once, each reading and writing this cache; the Briefing desk's
+measured the LuxExperience dashboard at once, each reading and writing this cache; the Briefing desk's
 metric moves and the monitors scheduler's eviction share the same handle. A DuckDB connection object
 is not safe for concurrent use from two threads. Every public function now holds `_LOCK` around its
 use of `_db()`, and this holds it to that: a handle used off the lock is the crash coming back.

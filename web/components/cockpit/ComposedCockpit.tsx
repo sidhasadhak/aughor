@@ -122,7 +122,7 @@ const SectionKeys = createContext<{ key: string | null; columns: number; childre
 
 function useCockpit(): CockpitContextValue {
   const ctx = useContext(CockpitContext);
-  if (!ctx) throw new Error("a cockpit component was drawn outside ComposedCockpit");
+  if (!ctx) throw new Error("a dashboard component was drawn outside ComposedCockpit");
   return ctx;
 }
 
@@ -778,7 +778,7 @@ function CockpitCard({ element }: ComponentRenderProps<{ card: string; tone?: To
       {key => <>{filtering.on && <NotFiltered />}{status === "withheld"
         ? <WithheldTile />
         : !cs
-          ? <SaidTile what="Not one of your cards">The cockpit places a card you do not have.</SaidTile>
+          ? <SaidTile what="Not one of your cards">The dashboard places a card you do not have.</SaidTile>
           : (
             <CardBoundary key={`${id}:${cs.run ? JSON.stringify(cs.run.rows).length : 0}:${cs.failed ? 1 : 0}`}>
               <CockpitTile cs={cs as CardState & { card: CockpitCard }} status={status} sym={sym} doors={doors}
@@ -1138,8 +1138,8 @@ export function ComposedCockpit({ spec, cards, host, doors, sym = "$", images = 
   if (!check.valid) {
     return (
       <Refusal
-        kind="Refused · the cockpit's spec"
-        claim="This cockpit is not drawn, because its spec breaks the rules a cockpit is held to."
+        kind="Refused · the dashboard's spec"
+        claim="This dashboard is not drawn, because its spec breaks the rules a dashboard is held to."
         detail={
           <ul data-testid="cockpit-refusal" style={{ margin: 0, paddingLeft: 18 }}>
             {check.issues.map((issue, i) => <li key={`${issue.code}-${issue.elementKey ?? ""}-${i}`}>{issue.message}</li>)}

@@ -2,11 +2,11 @@
 docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.4).
 
 A list of objects as cards, a map, a timeline, a choose-one and a search are pieces bound to the ontology: a person
-places them, a model never adds one, and what each reads is checked through the object door before a cockpit is kept —
+places them, a model never adds one, and what each reads is checked through the object door before a dashboard is kept —
 compiled over what this connection serves, never run. A map places by numbers and a timeline draws between moments; a
 list sorted by a property it does not show has that property listed beside its cards, since the door sorts by a listed
-property only. While `cockpit.app_pieces` is off a cockpit holding one is refused, said apart from the structure, and a
-cockpit holding none keeps exactly as before.
+property only. While `cockpit.app_pieces` is off a dashboard holding one is refused, said apart from the structure, and a
+dashboard holding none keeps exactly as before.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from tests.unit.test_cockpit_canvas import FIXTURE, ME, volumes  # noqa: F401 �
 from tests.unit.test_cockpit_pieces import _graph
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
-                                 reason="the cockpit's rules need node + validate.bundle.mjs")
+                                 reason="the dashboard's rules need node + validate.bundle.mjs")
 
 
 def _flags(monkeypatch, on: set[str]) -> None:
@@ -186,7 +186,7 @@ def test_off_the_new_pieces_are_refused_and_said_apart_from_the_structure(monkey
     split = _desk(("list",))
     split["elements"]["desk"]["props"]["layout"] = "rows"
     two = app_pieces.refused_off(split)
-    assert len(two) == 2 and "splitting a cockpit into sections is off" in two[0] and "— list —" in two[1], two
+    assert len(two) == 2 and "splitting a dashboard into sections is off" in two[0] and "— list —" in two[1], two
     _flags(monkeypatch, {app_pieces.FLAG})
     assert app_pieces.refused_off(_desk()) == []
 

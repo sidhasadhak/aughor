@@ -1,9 +1,9 @@
-"""Arc AP-4 — a cockpit built from a structure of pieces, as the server holds it (ROADMAP §3.57; the user, 2026-10-11:
+"""Arc AP-4 — a dashboard built from a structure of pieces, as the server holds it (ROADMAP §3.57; the user, 2026-10-11:
 "a widget based structure would be really helpful").
 
 A section laid out in columns, rows or tabs of sections of its own, one that says its width among them, one that holds
 nothing yet, and one that goes untitled are refused while `cockpit.app_pieces` is off — an install that has not turned it
-on keeps the cockpit it had, and its writer is told nothing of it; a cockpit that says none of it keeps exactly as
+on keeps the dashboard it had, and its writer is told nothing of it; a dashboard that says none of it keeps exactly as
 before, whatever the flag says.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ from aughor.cockpit.home import Home
 from tests.unit.test_cockpit_canvas import FIXTURE, ME, volumes  # noqa: F401 — the fixture, by name
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
-                                 reason="the cockpit's rules need node + validate.bundle.mjs")
+                                 reason="the dashboard's rules need node + validate.bundle.mjs")
 
 
 def _flags(monkeypatch, on: set[str]) -> None:
@@ -53,7 +53,7 @@ def test_only_what_a_structure_says_is_found_and_nothing_else():
 def test_off_a_structured_cockpit_is_refused_and_says_what_on_it_is_not(monkeypatch):
     _flags(monkeypatch, set())
     said = app_pieces.refused_off(_split())
-    assert len(said) == 1 and "body, left, right" in said[0] and "splitting a cockpit into sections is off" in said[0], said
+    assert len(said) == 1 and "body, left, right" in said[0] and "splitting a dashboard into sections is off" in said[0], said
     _flags(monkeypatch, {app_pieces.FLAG})
     assert app_pieces.refused_off(_split()) == []
 
@@ -73,7 +73,7 @@ def test_the_keep_door_refuses_a_structure_while_off_and_keeps_it_while_on(volum
         return versions.keep(home, s, approved_by="user:amit", source="a person's own hand", written_by_model=False)
     _flags(monkeypatch, {"cockpit.builder"})
     off = keep(_split())
-    assert off.status == "refused" and "splitting a cockpit into sections is off" in " ".join(off.sentences), off.sentences
+    assert off.status == "refused" and "splitting a dashboard into sections is off" in " ".join(off.sentences), off.sentences
     assert versions.latest(home) is None
     _flags(monkeypatch, {"cockpit.builder", app_pieces.FLAG})
     kept = keep(_split())

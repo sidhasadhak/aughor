@@ -1199,9 +1199,9 @@ def _accept_brief_draft(p: StagedProposal, *, actor: str):
 
 
 def _accept_cockpit_draft(p: StagedProposal, *, actor: str):
-    """Make the cockpit a person approved (Arc CT-5; a person's own since CT-7): every card it
-    creates, then the spec as the cockpit's next version — ALL OR NOTHING, the bundles' own law. The making lives
-    with the cockpit (``aughor/cockpit/propose.py``), which checks everything before it
+    """Make the dashboard a person approved (Arc CT-5; a person's own since CT-7): every card it
+    creates, then the spec as the dashboard's next version — ALL OR NOTHING, the bundles' own law. The making lives
+    with the dashboard (``aughor/cockpit/propose.py``), which checks everything before it
     writes anything and removes what it made if the rest fails; this executor records what
     happened. ``actor`` is the person who approved, and the version is kept in their name."""
     _Result = _executor_result()
@@ -1219,14 +1219,14 @@ def _accept_cockpit_draft(p: StagedProposal, *, actor: str):
         return _Result("dispatch_error", False, p.action_id,
                        message=f"draft no longer valid: {out}")
     made = len(out["cards_created"])
-    said = (f"cockpit '{out['title']}' kept as version {out['version']} in the Briefing"
+    said = (f"dashboard '{out['title']}' kept as version {out['version']} in the Briefing"
             + (f", with {made} new card{'s' if made != 1 else ''}" if made else ""))
     _record_outcome(p.id, "executed", said, out)
     return _Result("executed", True, p.action_id, message=said, outcome=out, detail=out)
 
 
 def _accept_cockpit_publish(p: StagedProposal, *, actor: str):
-    """Publish the cockpit a person approved sharing (the canvas, B5): a version under their
+    """Publish the dashboard a person approved sharing (the canvas, B5): a version under their
     name, to the groups and roles the proposal names — or nothing, when it has moved on."""
     _Result = _executor_result()
     from aughor.cockpit import propose
@@ -1238,7 +1238,7 @@ def _accept_cockpit_publish(p: StagedProposal, *, actor: str):
     if not ok:
         _record_outcome(p.id, "failed", str(out), {})
         return _Result("dispatch_error", False, p.action_id, message=f"not published: {out}")
-    said = f"cockpit '{(p.detail or {}).get('title')}' published to {', '.join(out['to'])} as version {out['version']}"
+    said = f"dashboard '{(p.detail or {}).get('title')}' published to {', '.join(out['to'])} as version {out['version']}"
     _record_outcome(p.id, "executed", said, out)
     return _Result("executed", True, p.action_id, message=said, outcome=out, detail=out)
 

@@ -3,7 +3,7 @@
 Mirrors aughor/savedquery/store.py: one `dashboard_cards` table, flat columns for the
 queryable identity/scope fields + JSON columns for the nested (frontend-owned or structured)
 parts, idempotent schema creation on every operation. Scoped: `list_cards` filters by any of
-connection_id / scope / scope_ref so a canvas cockpit, a shared workspace dashboard, or a
+connection_id / scope / scope_ref so a canvas dashboard, a shared workspace dashboard, or a
 personal set can each be fetched independently.
 """
 from __future__ import annotations
@@ -168,7 +168,7 @@ def _record_revision(card: Optional[DashboardCard]) -> None:
 
     ``ON CONFLICT ... DO UPDATE`` overwrites the only copy — before this an edited card's
     prior SQL, thresholds and render spec were simply gone, on the artifact whose numbers a
-    cockpit shows every day. Recorded only on a real update (the savedquery precedent: the
+    dashboard shows every day. Recorded only on a real update (the savedquery precedent: the
     UPDATE is what creates the first revision — the create is still readable as the live
     row). No-op when ``lifecycle.publish`` is off.
     """
@@ -197,7 +197,7 @@ def get_card(card_id: str) -> Optional[DashboardCard]:
 
 
 def get_layout(connection_id: str, user_id: str) -> dict:
-    """The saved cockpit layout ({card_id: {x, y, w, h}}) for a user on a connection ({} if none)."""
+    """The saved dashboard layout ({card_id: {x, y, w, h}}) for a user on a connection ({} if none)."""
     c = _conn()
     ensure_once(c, _ensure_schema)
     row = c.execute(
@@ -208,7 +208,7 @@ def get_layout(connection_id: str, user_id: str) -> dict:
 
 
 def set_layout(connection_id: str, user_id: str, layout: dict) -> None:
-    """Persist a user's cockpit layout (position + size per card) for a connection."""
+    """Persist a user's dashboard layout (position + size per card) for a connection."""
     c = _conn()
     ensure_once(c, _ensure_schema)
     c.execute(
@@ -264,7 +264,7 @@ def list_cards(
 ) -> List[DashboardCard]:
     """Cards matching the given filters, newest-updated first. Any filter left None is
     ignored, so `list_cards(scope='canvas', scope_ref=canvas_id)` returns one canvas's
-    cockpit and `list_cards()` returns everything."""
+    dashboard and `list_cards()` returns everything."""
     clauses, params = [], []
     if connection_id is not None:
         clauses.append("connection_id = ?"); params.append(connection_id)

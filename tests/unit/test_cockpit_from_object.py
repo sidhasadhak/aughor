@@ -1,11 +1,11 @@
-"""Starting a cockpit from an object (2026-10-10; design-mockups/cockpit-from-object.html).
+"""Starting a dashboard from an object (2026-10-10; design-mockups/cockpit-from-object.html).
 
 What the starter offers is read from the served ontology and measured through the object door before it is offered.
 Every figure and preview here is held to a hand-written query over the seeded samples warehouse: the count, a money
 figure (averaged where its sum would mean nothing — a price per unit, a price of a thing that simply exists), each
 filter's values and counts, and the chart's daily counts over the last days the objects hold. A category that picks
 out single objects, a property the reader may not read, and an action declared on another object are never offered.
-The three pieces it adds are checked like every piece bound to the ontology before a cockpit is kept.
+The three pieces it adds are checked like every piece bound to the ontology before a dashboard is kept.
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def db(tmp_path_factory):
 
 def _graph() -> OntologyGraph:
     """The samples' graph with two declared actions — "flag for review" on Order, "hold customer" on Customer — as the
-    cockpit pieces' suite declares them."""
+    dashboard pieces' suite declares them."""
     return _pieces_graph()
 
 

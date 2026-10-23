@@ -1085,7 +1085,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
       });
       setPinStatus("done");
       onPinned?.();
-      toast.success("Pinned to your cockpit");
+      toast.success("Pinned to your dashboard");
     } catch {
       setPinStatus("error");
       toast.error("Couldn't pin finding", { description: "The finding's query didn't pass the trust guards." });
@@ -3656,13 +3656,13 @@ export function BriefingPanel({
       )}
       {cockpitsOn && !sections.strip && (
         <div className="aug-fs-sm" data-testid="briefing-strip-none" style={{ color: "var(--t3)", borderTop: "1px solid var(--vio2)", paddingTop: 12 }}>
-          No cockpit rides with your Briefing. Choose one of yours under Sections; it is arranged in the Cockpit tab.
+          No dashboard rides with your Briefing. Choose one of yours under Sections; it is arranged in the Dashboards tab.
         </div>
       )}
       {!cockpitsOn && (
         <div style={{ marginTop: 16, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
           <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 12 }}>
-            Your cockpit
+            Your dashboard
             {/* BR-9 — under a range each card runs cut to it and says what it covers (or that it
                 could not be); the label names the range the cards were asked for. */}
             {rangeSelected ? <span data-testid="cockpit-note" style={{ fontWeight: 400, color: "var(--t3)" }}>{rangeBlock ? ` · asked for ${rangeBlock.covers}` : " · asked for this range"}</span> : null}

@@ -36,7 +36,7 @@ describe("ids made from a person's words", () => {
   });
 });
 
-describe("a new cockpit's id", () => {
+describe("a new dashboard's id", () => {
   it("is the server's shape — lower-case words joined by hyphens, then a random suffix", () => {
     expect(cockpitIdFor("Order delivery", () => "a1b2c3")).toBe("order-delivery-a1b2c3");
     expect(cockpitIdFor("Délai d'expédition — 2 jours", () => "000000")).toBe("delai-d-expedition-2-jours-000000");

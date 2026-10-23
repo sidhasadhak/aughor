@@ -127,7 +127,7 @@ function OneButton({ def, declared }: { def: ActionButtonDef; declared: Declared
     try {
       for (const params of runsOf(plan, asked, keys)) {
         try {
-          const out = await runOrPropose(declared.id, params, connectionId, schema, `from a cockpit's button: ${label}`);
+          const out = await runOrPropose(declared.id, params, connectionId, schema, `from a dashboard's button: ${label}`);
           // a server that failed is said as one, never as a refusal the action made
           outcomes.push(out.status !== "refused" ? { status: out.status }
             : /^HTTP 5\d\d$/.test(out.message) ? { status: "failed", message: `the server failed while running it (${out.message}) — Actions shows what landed` }

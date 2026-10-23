@@ -1,4 +1,4 @@
-"""Unit tests for the dashboard-card store (Briefing cockpit, Slice 0 foundation).
+"""Unit tests for the dashboard-card store (Briefing dashboard, Slice 0 foundation).
 
 Hermetic: conftest points AUGHOR_DASHBOARD_DB at a throwaway temp dir. Each test uses a
 distinct connection_id / scope_ref so list-count assertions never see another test's rows.

@@ -114,7 +114,7 @@ describe("a structure, built", () => {
     return { onChange, onAddPiece, line, view };
   }
 
-  it("splits a chosen section to its right, hands the cockpit on in columns, and chooses the new section", () => {
+  it("splits a chosen section to its right, hands the dashboard on in columns, and chooses the new section", () => {
     const { onChange, line } = build(split());
     fireEvent.click(line("left"));
     fireEvent.click(screen.getByTestId("builder-split-right"));
@@ -207,13 +207,13 @@ describe("the piece picker", () => {
     filtered.elements.filters = { type: "ObjectFilters", props: { entity: "order", properties: [{ path: "status", label: "Status" }] }, children: [] };
     const { onPlace, entry } = pick(filtered);
     expect(entry("ObjectFilters")).toBeDisabled();
-    expect(entry("ObjectFilters")).toHaveTextContent("The cockpit has its filter column. It holds one.");
+    expect(entry("ObjectFilters")).toHaveTextContent("The dashboard has its filter column. It holds one.");
     expect(entry("ObjectDetail")).toHaveTextContent("A detail follows a table, a list, a map or a timeline. Place one first.");
     fireEvent.click(entry("ObjectDetail"));
     expect(onPlace).not.toHaveBeenCalled();
   });
 
-  it("places the filter column as the cockpit's first child, counting within the set chosen", async () => {
+  it("places the filter column as the dashboard's first child, counting within the set chosen", async () => {
     const { onPlace, entry } = pick(desk());
     await choose(screen.getByLabelText("Which of them"), "late");
     await waitFor(() => expect(entry("ObjectFilters")).not.toBeDisabled());
@@ -334,7 +334,7 @@ describe("the piece picker", () => {
     expect(checkCockpitSpec(next).issues).toEqual([]);
   });
 
-  it("offers neither a choose-one nor linked objects while the cockpit cannot be wired, and says so", async () => {
+  it("offers neither a choose-one nor linked objects while the dashboard cannot be wired, and says so", async () => {
     byName();
     render(<PiecePicker spec={desk()} section="right" connectionId="thelook" wiringOn={false} onPlace={vi.fn()} onHandOff={vi.fn()} onClose={vi.fn()} />);
     const entry = (kind: string) => screen.getAllByTestId("piece-picker-entry").find(e => e.dataset.kind === kind)!;
@@ -343,7 +343,7 @@ describe("the piece picker", () => {
     expect(entry("Linked")).toHaveTextContent("Linking to a chosen object needs wiring, which is off here.");
   });
 
-  it("places a detail following a list by its key when the cockpit holds no table", async () => {
+  it("places a detail following a list by its key when the dashboard holds no table", async () => {
     byName();
     const listed = desk();
     listed.elements.left.children.push("queue");

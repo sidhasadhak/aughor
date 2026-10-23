@@ -313,7 +313,7 @@ def _phrases(spec: RangeSpec) -> dict:
 
 
 def compared_word(spec: RangeSpec) -> str:
-    """What the range is compared with, short enough to follow "higher than" on a cockpit's card.
+    """What the range is compared with, short enough to follow "higher than" on a dashboard's card.
     ``phrases`` says it in full, with its dates; a card carries the full phrase as its title."""
     p = PRESET_PERIOD.get(spec.preset) or EDGE_UNIT.get(spec.preset)
     if spec.compare_withheld:
@@ -555,7 +555,7 @@ def governed_metrics(conn_id: str, schema: Optional[str] = None) -> list:
     the same list.
 
     ``schema`` — the dataset in view: its own definitions and the ones promoted to every dataset,
-    never another dataset's. The Cockpit of the workspace's Uber data measured Daily Gross Revenue,
+    never another dataset's. The Dashboard of the workspace's Uber data measured Daily Gross Revenue,
     which reads the `main` dataset, beside the rides (2026-10-07)."""
     from aughor.briefing.reading_order import industry_reading, ordered
     from aughor.semantic.metrics import list_metrics
@@ -748,7 +748,7 @@ def measure_range(conn_id: str, spec: RangeSpec, *, run_sql: Callable[[str], tup
 
     A metric whose data ENDED before the range has no figure for it: it lands in ``unmeasured``, its
     reason naming the day its data ends (``data_ends``). A range's figures are its own and nothing
-    else, in the Briefing and the Cockpit alike (the user, 2026-10-23, on LuxExperience's week: four
+    else, in the Briefing and the Dashboard alike (the user, 2026-10-23, on LuxExperience's week: four
     of its ten figures had been read over their own last weeks, each dated in amber under its name).
     A range with no rows is never a figure: a count over it answers 0, and that 0 was shown as
     measured."""
@@ -893,7 +893,7 @@ def _currency(conn_id: str, schema: Optional[str]) -> Optional[str]:
 
 def measured_block(conn_id: str, spec: RangeSpec, *, profile: Any = None, workspace_id: Optional[str] = None,
                    runner: Optional[Callable[[], Any]] = None, schema: Optional[str] = None) -> dict:
-    """The range's approved metrics, measured, and nothing else — the Cockpit's default view (ROADMAP
+    """The range's approved metrics, measured, and nothing else — the Dashboard's default view (ROADMAP
     §6 item 43). The same measurement and the same wording a range Briefing carries, with no recipe
     section, no narrative and no model call."""
     from aughor.knowledge import period_brief

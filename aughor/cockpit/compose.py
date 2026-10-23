@@ -1,4 +1,4 @@
-"""A first cockpit, written by code from cards a person already has (Arc CT, CT-4; CT-7).
+"""A first dashboard, written by code from cards a person already has (Arc CT, CT-4; CT-7).
 
 **No model.** A person with cards should not need one to get a cockpit: this
 groups the cards by their kind into sections, in a fixed order, and the result is kept like
@@ -27,7 +27,7 @@ def default_spec(title: str, cards: Iterable[Any], order: Iterable[str] = ()) ->
     sections when there are none — which the validator refuses, and rightly.
 
     ``order`` is the card ids in the order a person already arranged them (the Briefing kept
-    each card's place before cockpits had names). Within a section cards keep that order;
+    each card's place before dashboards had names). Within a section cards keep that order;
     a card it does not name follows, by title."""
     rank = {str(card_id): i for i, card_id in enumerate(order)}
     known = {kind for kind, *_ in SECTIONS}

@@ -829,7 +829,7 @@ def get_layout(automation_id: str, user_id: str) -> dict:
 def set_layout(automation_id: str, user_id: str, layout: dict) -> None:
     """Persist the whole arrangement, replacing what was there.
 
-    Whole-replace rather than merge, the way the cockpit's layout does it: a step that was
+    Whole-replace rather than merge, the way the dashboard's layout does it: a step that was
     removed must not keep a coordinate in the row forever, and merging would mean the
     stored layout only ever grows.
     """

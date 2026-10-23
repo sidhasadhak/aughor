@@ -24,7 +24,7 @@ def _desk() -> dict:
 
 
 def test_a_first_version_says_it_started_the_cockpit():
-    assert changelog.said(None, _desk()) == ["Started the cockpit"]
+    assert changelog.said(None, _desk()) == ["Started the dashboard"]
 
 
 def test_each_change_is_said_by_what_the_element_is_and_names():

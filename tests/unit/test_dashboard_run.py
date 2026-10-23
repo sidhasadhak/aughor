@@ -1,4 +1,4 @@
-"""Run/refresh endpoint (Briefing cockpit, Slice 0 → sets up Slice 1's trend).
+"""Run/refresh endpoint (Briefing dashboard, Slice 0 → sets up Slice 1's trend).
 
 Verifies: a single numeric cell becomes the card's tracked value and rolls the previous one
 into prev_value (delta); multi-row/error results don't set a scalar; a note card is a no-op;

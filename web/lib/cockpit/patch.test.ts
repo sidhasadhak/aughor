@@ -94,7 +94,7 @@ describe("an edit that is refused whole", () => {
     ["a path that is no string", { op: "remove", path: 7 }, /its path is 7/],
     ["a position past the end", { op: "add", path: "/elements/sec-limits/children/5", value: "x" }, /position "5" of a list of 1/],
     ["a position that is no number", { op: "add", path: "/elements/sec-limits/children/last", value: "x" }, /position "last"/],
-    ["a test that does not hold", { op: "test", path: "/elements/cockpit/props/title", value: "Sales" }, /holds "Returns", not "Sales"; the cockpit is not as the edit took it to be/],
+    ["a test that does not hold", { op: "test", path: "/elements/cockpit/props/title", value: "Sales" }, /holds "Returns", not "Sales"; the dashboard is not as the edit took it to be/],
     ["a value left out", { op: "replace", path: "/elements/cockpit/props/title" }, /"replace" carries no "value"/],
     ["a move into itself", { op: "move", from: "/elements/cockpit", path: "/elements/cockpit/props/x" }, /moves "\/elements\/cockpit" into itself/],
     ["a copy from nowhere", { op: "copy", from: "/elements/ghost", path: "/elements/new" }, /"\/elements\/ghost" is not in the spec/],
@@ -130,8 +130,8 @@ describe("an edit that is refused whole", () => {
     expect(refused(many)).toMatch(new RegExp(`holds ${MAX_PATCHES + 1} operations\\. An edit holds at most ${MAX_PATCHES}`));
   });
 
-  it("an edit of no cockpit", () => {
-    expect(refused([{ op: "remove", path: "/root" }], null)).toMatch(/There is no cockpit to edit/);
+  it("an edit of no dashboard", () => {
+    expect(refused([{ op: "remove", path: "/root" }], null)).toMatch(/There is no dashboard to edit/);
   });
 });
 

@@ -1,5 +1,5 @@
-"""The cockpit as a canvas (docs/COCKPIT_CANVAS_2026-10-08.md): a note and an image on a person's
-cockpit, their stamps the server's, a model that may arrange them and never make one, and an
+"""The dashboard as a canvas (docs/COCKPIT_CANVAS_2026-10-08.md): a note and an image on a person's
+dashboard, their stamps the server's, a model that may arrange them and never make one, and an
 image that is this connection's or is not shown.
 
 The laws under test are §3 of the note. Each is asserted by a token of the sentence a person
@@ -25,7 +25,7 @@ FIXTURE = REPO / "web" / "lib" / "cockpit" / "premise.fixture.json"
 
 needs_rules = pytest.mark.skipif(
     shutil.which("node") is None or not V._BUNDLE.exists(),
-    reason="the cockpit's rules need node + validate.bundle.mjs")
+    reason="the dashboard's rules need node + validate.bundle.mjs")
 
 ME = "default"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
@@ -184,7 +184,7 @@ def test_a_cockpit_places_only_an_image_of_its_own_connection(volumes):
     theirs = images.put_image(other.connection, "promo.png", PNG, uploaded_by="user:priya")["object"]
     refused = Desk().with_image(theirs).keep()
     assert refused.status == versions.REFUSED
-    assert "not an image uploaded to this connection's cockpits" in said(refused)
+    assert "not an image uploaded to this connection's dashboards" in said(refused)
 
 
 # ── a model arranges a note or an image and never makes one ──────────────────────────────────
@@ -199,7 +199,7 @@ def _premise_with_statics():
 def test_a_new_cockpit_from_a_model_holds_no_note_and_no_image():
     said_ = propose.statics_written(None, _premise_with_statics(), propose.MODE_NEW)
     assert len(said_) == 2
-    assert all("A new cockpit holds no note and no image" in s for s in said_)
+    assert all("A new dashboard holds no note and no image" in s for s in said_)
 
 
 def test_an_edit_may_move_or_resize_a_note_and_may_not_add_one_or_write_it():

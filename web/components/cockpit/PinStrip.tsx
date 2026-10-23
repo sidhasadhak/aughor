@@ -31,7 +31,7 @@ export function PinStrip({ pin, spec, busy, onRepin }: {
   const now = pin.current ? `release ${numberOf(pin.current)}` : "no release";
   const repin = onRepin && pin.current && (
     <Button size="xs" variant={pin.changes.length ? "secondary" : "ghost"} disabled={busy} data-testid="cockpit-repin"
-      title={`Keep this cockpit as it is, composed against ${now}`} onClick={onRepin}>
+      title={`Keep this dashboard as it is, composed against ${now}`} onClick={onRepin}>
       {pin.pinned ? `Re-pin to ${now}` : `Pin to ${now}`}
     </Button>
   );

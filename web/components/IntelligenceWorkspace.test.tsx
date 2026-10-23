@@ -124,7 +124,7 @@ describe("IntelligenceWorkspace — the Briefing asks for its brief only when it
 });
 
 
-describe("IntelligenceWorkspace — the Cockpit tab, beside the Briefing (Arc CT-7)", () => {
+describe("IntelligenceWorkspace — the Dashboards tab, beside the Briefing (Arc CT-7)", () => {
   // By the name a person hears: a Radix tab holds its label twice (one hidden, for its width).
   const tabs = () => screen.getAllByRole("tab").map(t => t.querySelector(".rt-TabsTriggerInner")?.textContent?.trim());
   const flags = (on: boolean) => vi.mocked(getSystemFlags).mockResolvedValue(
@@ -133,8 +133,8 @@ describe("IntelligenceWorkspace — the Cockpit tab, beside the Briefing (Arc CT
   it("is there with the flag on, right after the Briefing, and opening it asks for no brief", async () => {
     flags(true);
     render(shell("cockpit"));
-    await waitFor(() => expect(tabs()).toContain("Cockpit"));
-    expect(tabs().slice(0, 2)).toEqual(["Briefing", "Cockpit"]);
+    await waitFor(() => expect(tabs()).toContain("Dashboards"));
+    expect(tabs().slice(0, 2)).toEqual(["Briefing", "Dashboards"]);
     await settle();
     expect(generateBriefingNarrative).not.toHaveBeenCalled();
   });
@@ -145,7 +145,7 @@ describe("IntelligenceWorkspace — the Cockpit tab, beside the Briefing (Arc CT
     render(<IntelligenceWorkspace connectionId={CONN} layer="cockpit" onLayerChange={onLayerChange}
       onInvestigate={noop} connections={[{ id: CONN, name: "Warehouse" }]} workspaceId="default" />);
     await waitFor(() => expect(onLayerChange).toHaveBeenCalledWith("briefing"));
-    expect(tabs()).not.toContain("Cockpit");
+    expect(tabs()).not.toContain("Dashboards");
   });
 
   it("is not there for a canvas, which is for questions and deep analysis", async () => {
@@ -153,6 +153,6 @@ describe("IntelligenceWorkspace — the Cockpit tab, beside the Briefing (Arc CT
     render(<IntelligenceWorkspace connectionId={CONN} layer="briefing" onLayerChange={noop} onInvestigate={noop}
       canvasId="cv1" workspaceId="default" />);
     await settle();
-    expect(tabs()).not.toContain("Cockpit");
+    expect(tabs()).not.toContain("Dashboards");
   });
 });

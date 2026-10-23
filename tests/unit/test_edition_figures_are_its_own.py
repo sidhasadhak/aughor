@@ -8,7 +8,7 @@ should make it clear… that written period should be the only one being compare
 were candidate findings for the narrator, so a June 2025 move could lead an October edition.
 
 Now a metric whose data ended before the range is NOT one of its figures: it is said as not measured,
-with the day its data ends — in the Briefing and, at the user's word the same day, the Cockpit too. Its
+with the day its data ends — in the Briefing and, at the user's word the same day, the Dashboard too. Its
 own last week is not read at all.
 """
 from __future__ import annotations

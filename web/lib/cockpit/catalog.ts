@@ -267,7 +267,7 @@ export const cockpitCatalog = defineCatalog(schema, {
     Cockpit: {
       props: z.object({ title: z.string().min(1).max(MAX_TITLE) }),
       slots: ["default"],
-      description: "The root. Holds one Tabs, or one or more Section. Its title names the cockpit; it is not drawn as a header.",
+      description: "The root. Holds one Tabs, or one or more Section. Its title names the dashboard; it is not drawn as a header.",
     },
     Tabs: {
       props: z.object({ value: z.string() }),
@@ -366,7 +366,7 @@ export const cockpitCatalog = defineCatalog(schema, {
          *  ever); left out, every object of its entity. A reader's ticks still narrow every set of its entity. */
         set: z.string().regex(WIRE_NAME).nullable().optional(),
       }),
-      description: "The cockpit's filter column: each property's values with how many objects hold each. A reader's click narrows every piece over the same entity, for that reader only. The cockpit's first child, at most one.",
+      description: "The dashboard's filter column: each property's values with how many objects hold each. A reader's click narrows every piece over the same entity, for that reader only. The dashboard's first child, at most one.",
     },
     ObjectFigure: {
       props: z.object({
@@ -462,7 +462,7 @@ export const cockpitCatalog = defineCatalog(schema, {
         opens_on: z.string().regex(WIRE_NAME),
       }),
       slots: ["default"],
-      description: "Pieces opened beside the page when a reader chooses an object, and closed by letting go of it. The cockpit's own.",
+      description: "Pieces opened beside the page when a reader chooses an object, and closed by letting go of it. The dashboard's own.",
     },
   },
   actions: {},

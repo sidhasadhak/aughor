@@ -93,13 +93,13 @@ describe("a value of yes or no, and a list", () => {
 });
 
 describe("a value summed over a set", () => {
-  it("is a number over a set the cockpit holds, holds none of its own, and reads its set", () => {
+  it("is a number over a set the dashboard holds, holds none of its own, and reads its set", () => {
     const words = desk();
     words.values!.spend = { label: "Spend", kind: "text", from: { by: "sum", set: "waiting", path: "total_amount" } };
     expect(issues(words).join(" ")).toContain('The value "spend" sums a set, so it holds a number — not words.');
     const gone = desk();
     gone.values!.spend = { label: "Spend", kind: "number", from: { by: "sum", set: "nowhere", path: "total_amount" } };
-    expect(issues(gone).join(" ")).toContain('The value "spend" sums the set "nowhere", which this cockpit does not hold.');
+    expect(issues(gone).join(" ")).toContain('The value "spend" sums the set "nowhere", which this dashboard does not hold.');
     const own = desk();
     own.values!.spend = { label: "Spend", kind: "number", value: 3, from: { by: "sum", set: "waiting", path: "total_amount" } };
     expect(issues(own).join(" ")).toContain('The value "spend" is summed from a set and holds one of its own.');
@@ -116,10 +116,10 @@ describe("a value summed over a set", () => {
 });
 
 describe("a value read from a query", () => {
-  it("reads a card the cockpit places, never days, and holds none of its own", () => {
+  it("reads a card the dashboard places, never days, and holds none of its own", () => {
     const loose = desk();
     loose.values!.top = { label: "Top", kind: "text", from: { by: "query", card: "c-gone" } };
-    expect(issues(loose).join(" ")).toContain('The value "top" reads the query "c-gone", which this cockpit does not place.');
+    expect(issues(loose).join(" ")).toContain('The value "top" reads the query "c-gone", which this dashboard does not place.');
     const days = desk();
     days.values!.top = { label: "Top", kind: "days", from: { by: "query", card: "c-top" } };
     expect(issues(days).join(" ")).toContain("a query's value is a number, not days");

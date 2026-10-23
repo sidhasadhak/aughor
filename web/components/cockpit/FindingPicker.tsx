@@ -95,7 +95,7 @@ export function FindingPicker({ connectionId, schema, placed, busy, onPlaced, on
                       <span className="aug-fs-sm" style={{ flex: 1, minWidth: 0, color: measured ? "var(--t1)" : "var(--t3)" }}>
                         {f.finding}
                         {!measured && <span style={{ color: "var(--t3)" }}> · no query — nothing to measure</span>}
-                        {on && <span style={{ color: "var(--t3)" }}> · on this cockpit</span>}
+                        {on && <span style={{ color: "var(--t3)" }}> · on this dashboard</span>}
                       </span>
                       <Button size="xs" variant="outline" disabled={busy || !measured || on || !!pinning}
                         onClick={() => void place(f)}>{pinning === f.id ? "Running…" : "Place"}</Button>

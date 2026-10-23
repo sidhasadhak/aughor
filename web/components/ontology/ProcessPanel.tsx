@@ -147,14 +147,14 @@ function StartCockpitFor({ process, connectionId }: { process: ProcessDetail; co
         `Started from the process ${process.display_name}`);
       requestTab("cockpit", { conn: connectionId });
     } catch (e) {
-      toast.error("The cockpit was not made", { description: errorText(e).slice(0, 240) });
+      toast.error("The dashboard was not made", { description: errorText(e).slice(0, 240) });
     } finally { setBusy(false); }
   };
   return (
     <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
       <Button size="xs" variant="outline" data-testid="process-start-cockpit" disabled={busy || process.verified === false}
         onClick={() => void start()}>
-        <Icon name="plus" size={12} /> {busy ? "Starting…" : "Start a cockpit for this process"}
+        <Icon name="plus" size={12} /> {busy ? "Starting…" : "Start a dashboard for this process"}
       </Button>
       <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
         {process.verified === false ? "Not until it counts — see the note above." : processCockpitHolds(process)}

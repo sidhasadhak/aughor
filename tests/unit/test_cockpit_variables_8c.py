@@ -1,10 +1,10 @@
 """Arc AP-8c — the rest of the variables (ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §9.2).
 
 A value may now be yes or no, or a list; and it may come from a property summed over a set's objects, or from the first
-value of a query of the person's own the cockpit places (every row's, for a list). A query binds yes or no as the
+value of a query of the person's own the dashboard places (every row's, for a list). A query binds yes or no as the
 engine's boolean and a list one placeholder per item — `country IN ({{countries}})` — never pasted into its statement.
 Before a spec is kept the server checks what only it knows: that a sum's property is one the object door can add up, and
-that a value's query is a query of the person's own the cockpit places that does not read the value back.
+that a value's query is a query of the person's own the dashboard places that does not read the value back.
 """
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ def test_a_value_s_query_is_one_of_the_person_s_own_the_cockpit_places_and_never
         return variables.not_resolved("c", s, graph=_graph(), wiring={"values": {"top": {"by": "query", "card": s["values"]["top"]["from"]["card"]}}})
 
     assert said(spec(cards["mine"], cards["mine"])) == []
-    not_ours = ['The value "top" reads the first value of a query, and that is not a query of yours this cockpit places.']
+    not_ours = ['The value "top" reads the first value of a query, and that is not a query of yours this dashboard places.']
     assert said(spec(cards["loose"], cards["mine"])) == not_ours                     # not placed
     assert said(spec(cards["metric"], cards["metric"])) == not_ours                  # placed, not a query of one's own
     assert said(spec("gone", "gone")) == not_ours                                     # no such card

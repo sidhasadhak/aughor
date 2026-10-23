@@ -64,7 +64,7 @@ const draw = (buttons: unknown[]) => render(<ComposedCockpit spec={spec(buttons)
 const row = (i: number) => screen.getAllByTestId("object-table-row")[i];
 const said = () => screen.getAllByTestId("action-buttons-said").map(s => s.textContent);
 
-describe("a button on a cockpit", () => {
+describe("a button on a dashboard", () => {
   it("is disabled and says why until what it runs on is chosen or ticked — or is hidden, as its author chose", async () => {
     draw([OPEN, FLAG, { ...FLAG, label: "Hidden one", blocked: "hide" }]);
     await waitFor(() => expect(screen.getByRole("button", { name: "Open a case" })).toBeDisabled());
@@ -87,7 +87,7 @@ describe("a button on a cockpit", () => {
     await act(async () => { fireEvent.click(run); });
     expect(objects.runOrPropose).toHaveBeenCalledTimes(1);
     expect(objects.runOrPropose).toHaveBeenCalledWith("open_case", { order: "38330", assignee: "Dispatch team" }, "thelook", undefined,
-      "from a cockpit's button: Open a case");
+      "from a dashboard's button: Open a case");
     await waitFor(() => expect(said()).toEqual(["Done."]));
     await waitFor(() => expect(objects.listObjects.mock.calls.length).toBeGreaterThan(reads));   // read again
   });

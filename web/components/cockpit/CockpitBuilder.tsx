@@ -81,7 +81,7 @@ export function LayoutTree({ spec, selected, onSelect, cardTitle, entityTitle }:
 }) {
   const lines = outline(spec);
   return (
-    <div role="tree" aria-label="The cockpit's layout" data-testid="builder-layout" style={{ padding: "0 6px 8px" }}>
+    <div role="tree" aria-label="The dashboard's layout" data-testid="builder-layout" style={{ padding: "0 6px 8px" }}>
       {lines.map(line => {
         const { kind, title } = nameOf(spec.elements, line.key, cardTitle, entityTitle, setTitles(spec));
         const el = spec.elements[line.key];
@@ -287,7 +287,7 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
                 </span>
                 <span style={{ color: "var(--t1)" }}>{wireKind === "set" ? spec.sets?.[wireName]?.label : wireKind === "value" ? spec.values?.[wireName]?.label : wireName.replace(/[-_]/g, " ")}</span>
                 <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: 10, flex: 1 }}>
-                  {reads.length ? `the ${reads.length === 1 ? "piece that reads it is" : `${reads.length} pieces that read it are`} dashed` : "nothing on the cockpit reads it yet"}
+                  {reads.length ? `the ${reads.length === 1 ? "piece that reads it is" : `${reads.length} pieces that read it are`} dashed` : "nothing on the dashboard reads it yet"}
                 </span>
               </>
             ) : named ? (
@@ -355,12 +355,12 @@ export function CockpitBuilder({ spec, onChange, cardTitle, bar, add, words, asi
                 )}
               </>
             ) : (
-              <span style={{ color: "var(--t3)", flex: 1 }}>Choose a piece on the cockpit, or a line in its layout.</span>
+              <span style={{ color: "var(--t3)", flex: 1 }}>Choose a piece on the dashboard, or a line in its layout.</span>
             )}
             {checks && <ChecksChip spec={spec} checks={checks} onChoose={choose} cardTitle={cardTitle} entityTitle={entityTitle} />}
             <Rule />
             <Button size="xs" variant="ghost" data-testid="builder-zoom" disabled={fits >= 1}
-              title={fits >= 1 ? "The cockpit is drawn at its full size" : whole ? "Fit the cockpit to the canvas" : "Draw the cockpit at its full size"}
+              title={fits >= 1 ? "The dashboard is drawn at its full size" : whole ? "Fit the dashboard to the canvas" : "Draw the dashboard at its full size"}
               onClick={() => setWhole(w => !w)}>
               {scale < 1 ? `Fit · ${zoom}%` : "100%"}
             </Button>

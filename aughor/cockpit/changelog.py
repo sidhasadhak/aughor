@@ -1,4 +1,4 @@
-"""Arc AP-6 — a changelog in words: what each kept version of a cockpit changed, said as a person reads it (ROADMAP §3.57;
+"""Arc AP-6 — a changelog in words: what each kept version of a dashboard changed, said as a person reads it (ROADMAP §3.57;
 docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.7, "a changelog in words from `changes`").
 
 A version recorded which elements it added, removed or changed, by their keys, and History said "2 added · 1 changed".
@@ -37,7 +37,7 @@ def what(el: Any, sets: Optional[dict] = None, titles: Optional[dict] = None) ->
     if label:
         props = {**props, "set": label, "entity": None}
     if kind == "Cockpit":
-        return "the cockpit"
+        return "the dashboard"
     if kind == "Section":
         layout = props.get("layout")
         if layout and not props.get("title"):
@@ -81,7 +81,7 @@ def _changed(b: dict, a: dict, sets: Optional[dict] = None, titles: Optional[dic
         return f"Renamed {what(b, sets, titles)} to {next(str(ap[k]) for k in sorted(differ) if ap.get(k))}" \
             if any(ap.get(k) for k in differ) else f"Took the name off {what(b, sets, titles)}"
     if differ:
-        return f"Changed what {what(a, sets, titles)} shows" if a.get("type") != "Cockpit" else "Renamed the cockpit"
+        return f"Changed what {what(a, sets, titles)} shows" if a.get("type") != "Cockpit" else "Renamed the dashboard"
     if b.get("children") != a.get("children"):
         return f"Rearranged {what(a, sets, titles)}"
     return None
@@ -121,7 +121,7 @@ def said(before: Any, after: Any, titles: Optional[dict] = None) -> list[str]:
     ``titles`` names the cards the two specs place, by card id."""
     bels, aels = _elements(before), _elements(after)
     if not bels and aels:
-        return ["Started the cockpit"]
+        return ["Started the dashboard"]
     bsets = (before.get("sets") if isinstance(before, dict) else None) or {}
     asets = (after.get("sets") if isinstance(after, dict) else None) or {}
     lines: list[str] = []

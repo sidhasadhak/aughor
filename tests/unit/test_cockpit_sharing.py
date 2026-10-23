@@ -1,4 +1,4 @@
-"""A cockpit published to a group or a role (docs/COCKPIT_CANVAS_2026-10-08.md, B5), and a change
+"""A dashboard published to a group or a role (docs/COCKPIT_CANVAS_2026-10-08.md, B5), and a change
 asked for in words.
 
 Identity is on in these tests, through the self-host headers, so that a group has members and a
@@ -29,13 +29,13 @@ FIXTURE = REPO / "web" / "lib" / "cockpit" / "premise.fixture.json"
 
 needs_rules = pytest.mark.skipif(
     shutil.which("node") is None or not V._BUNDLE.exists(),
-    reason="the cockpit's rules need node + validate.bundle.mjs")
+    reason="the dashboard's rules need node + validate.bundle.mjs")
 
 AMIT, PRIYA, SAM = "amit@example.com", "priya@example.com", "sam@example.com"
 
 
 class Office:
-    """One org with a Sales group (Amit, Priya), Sam outside it, and Amit's cockpit on a connection."""
+    """One org with a Sales group (Amit, Priya), Sam outside it, and Amit's dashboard on a connection."""
 
     def __init__(self):
         tag = uuid.uuid4().hex[:6]
@@ -190,7 +190,7 @@ def test_options_tell_the_writer_who_the_cockpit_may_be_published_to():
 def test_a_change_in_words_needs_a_cockpit_that_stands(monkeypatch):
     from aughor.cockpit import ask
     out = ask.edit_in_words("conn-x", AMIT, "nothing-here", "make the net sales card bigger")
-    assert not out["staged"] and out["sentences"] == ["There is no cockpit here to change."]
+    assert not out["staged"] and out["sentences"] == ["There is no dashboard here to change."]
     out = ask.edit_in_words("conn-x", AMIT, "nothing-here", "   ")
     assert not out["staged"] and "Say what to change" in out["sentences"][0]
 

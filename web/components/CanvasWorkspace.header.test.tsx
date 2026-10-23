@@ -59,7 +59,7 @@ const tabs = () => screen.getAllByRole("button").map(b => b.textContent?.trim())
 const settle = () => new Promise(r => setTimeout(r, 10));
 
 describe("the Data Canvas", () => {
-  it("has its three views and no cockpit, with the cockpit flag on", async () => {
+  it("has its three views and no dashboard, with the dashboard flag on", async () => {
     show();
     await settle();
     expect(tabs()).toEqual(["Chat", "History", "Artifacts"]);

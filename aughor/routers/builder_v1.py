@@ -83,7 +83,7 @@ def get_action_schema(action_id: str, connection_id: str = BUILTIN_ID, schema_na
 @router.post("/objects/v1/list")
 def post_objects_v1_list(listing: ObjectListing, connection_id: str = BUILTIN_ID,
                          schema_name: Optional[str] = Query(default=None)):
-    """One page of objects — the cockpit's listing door, with the release it was read under. An entity, or a segment
+    """One page of objects — the dashboard's listing door, with the release it was read under. An entity, or a segment
     of it (late, overdue, a rule's objects), the columns asked for, at most 200 a page."""
     _on()
     from aughor.routers.objects import post_object_listing

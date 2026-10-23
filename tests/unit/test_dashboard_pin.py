@@ -1,4 +1,4 @@
-"""Pin-from-insight endpoint (Briefing cockpit, Slice 0 — Door 1).
+"""Pin-from-insight endpoint (Briefing dashboard, Slice 0 — Door 1).
 
 Verifies the ENDPOINT's contract, not the guard battery (which is tested in aughor/sql):
 the finding is resolved from the brief's domain insights, its SQL is re-run through

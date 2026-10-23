@@ -1638,7 +1638,7 @@ export function QueryBuilder({
       });
       setShowPinName(false); setPinState("pinned");
       setTimeout(() => setPinState("idle"), 1800);
-      toast.success("Pinned to your cockpit");
+      toast.success("Pinned to your dashboard");
     } catch (e) {
       const msg = (e as Error).message || "Failed to pin";
       setPinError(msg);
@@ -1653,7 +1653,7 @@ export function QueryBuilder({
   useEffect(() => { runRefCmd.current = triggerRun; pinRefCmd.current = onPinClick; });
   const qbCommands = useMemo<Command[]>(() => [
     { id: "query-run", label: "Run query", sublabel: "Execute the current query", icon: "builder", accent: "var(--blue3)", keywords: "execute run sql query", run: () => runRefCmd.current() },
-    { id: "query-pin", label: "Pin query to cockpit", sublabel: "Guard-check and pin this query as a briefing card", icon: "spark", accent: "var(--vio3)", keywords: "pin dashboard cockpit save card", run: () => pinRefCmd.current() },
+    { id: "query-pin", label: "Pin query to dashboard", sublabel: "Guard-check and pin this query as a briefing card", icon: "spark", accent: "var(--vio3)", keywords: "pin dashboard dashboard save card", run: () => pinRefCmd.current() },
   ], []);
   useRegisterCommands("query-builder", qbCommands);
   // Customize-tab option lists
@@ -1715,7 +1715,7 @@ export function QueryBuilder({
           <div className="relative flex items-center gap-1.5">
             {/* Pin to briefing cockpit — Door 2 (guarded on save) */}
             <Button variant="ghost" size="xs" onClick={onPinClick} disabled={!sql.trim() || pinState === "pinning"}
-              title="Pin this query to the briefing cockpit — re-guarded on save"
+              title="Pin this query to the briefing dashboard — re-guarded on save"
               className={`h-auto font-normal aug-fs-xs rounded-[var(--r3)] px-2.5 py-1 transition disabled:opacity-40 gap-1 ${SVG_SIZE_AUTO} ${
                 pinState === "pinned" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-500/10"
                   : "border-violet-500/40 bg-violet-500/10 text-violet-300 hover:text-violet-300 hover:bg-violet-500/20 dark:hover:bg-violet-500/20"
@@ -1729,7 +1729,7 @@ export function QueryBuilder({
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowPinName(false)} />
                 <div className="absolute right-0 top-full mt-2 z-50 w-80 rounded-md border border-zinc-700 bg-zinc-900 shadow-[var(--shadow-sm)] p-3">
-                  <p className="aug-fs-xs font-semibold text-zinc-300 mb-1">Pin to briefing cockpit</p>
+                  <p className="aug-fs-xs font-semibold text-zinc-300 mb-1">Pin to briefing dashboard</p>
                   <p className="aug-fs-xs text-zinc-500 mb-2.5 leading-snug">Re-run through the trust guards on save — a query that fails a guard is refused, not pinned.</p>
                   <Input autoFocus value={pinName} onChange={e => setPinName(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter") doPinQuery(pinName); if (e.key === "Escape") setShowPinName(false); }}

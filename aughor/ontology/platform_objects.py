@@ -8,11 +8,11 @@ property it set — so a case's whole history reads back, its status moves only 
 (`OntologyEntity.edit_states`), and a press against a version someone changed since is refused. No customer row moves.
 
 The object door compiles SQL against a warehouse, so it refuses a platform-owned type and says why; the object page,
-the listing and the cockpit's pieces read one through here. An object of another type a case names in a property
+the listing and the dashboard's pieces read one through here. An object of another type a case names in a property
 (`about: "order:6"`) is linked both ways: the case's page opens the order, the order's page lists its cases.
 
 Arc AP-4 — and counted here: how many objects, or how many different values of a property, in all or by one property —
-what a cockpit's figure and its filter column ask of a case queue (`query`). Anything more is refused and says so.
+what a dashboard's figure and its filter column ask of a case queue (`query`). Anything more is refused and says so.
 """
 from __future__ import annotations
 

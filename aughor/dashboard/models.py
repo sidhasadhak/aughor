@@ -1,13 +1,13 @@
 """Dashboard-card data model.
 
-A DashboardCard is a user-authored card on the Briefing cockpit. It carries its own grounded
+A DashboardCard is a user-authored card on the Briefing dashboard. It carries its own grounded
 SQL (so it is self-contained and can be re-run + trust-guarded without a join), an opaque
 render spec the frontend owns (a subset of the Chart component's props), a refresh record for
 delta/trend, optional thresholds (for graduating to a Monitor), and provenance (the finding it
 was pinned from + its receipt). `render` is treated as opaque JSON — the frontend owns its
 shape, the store round-trips it — exactly as SavedQuery treats `spec`.
 
-Scope decides where a card shows and who owns it: a canvas's own cockpit (`canvas`), a shared
+Scope decides where a card shows and who owns it: a canvas's own dashboard (`canvas`), a shared
 workspace dashboard (`workspace`), or a personal one (`user`); `scope_ref` is the id within
 that scope (canvas_id / workspace_id / user_id).
 """

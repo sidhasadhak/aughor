@@ -1,10 +1,10 @@
-"""Arc AP-1 — a cockpit built in place, as the server holds it (ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md).
+"""Arc AP-1 — a dashboard built in place, as the server holds it (ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md).
 
-What a cockpit built in place says — a section on the twelve-column grid, each element's room in columns and rows, the
+What a dashboard built in place says — a section on the twelve-column grid, each element's room in columns and rows, the
 filter column's width, a chart's measure and split — is refused while `cockpit.builder` is off, so an install that has
-not turned it on keeps the cockpit it had; its writer is told nothing about the grid; and a cockpit that says none of it
+not turned it on keeps the dashboard it had; its writer is told nothing about the grid; and a dashboard that says none of it
 keeps exactly as before, whatever the flag says. Resizing a piece on the grid is arrangement, as resizing it by name
-was: it neither moves the release the cockpit is pinned to nor counts, in a model's edit, as changing what it reads.
+was: it neither moves the release the dashboard is pinned to nor counts, in a model's edit, as changing what it reads.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from aughor.dashboard.models import DashboardCard
 from tests.unit.test_cockpit_canvas import FIXTURE, ME, volumes  # noqa: F401 — the fixture, by name
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
-                                 reason="the cockpit's rules need node + validate.bundle.mjs")
+                                 reason="the dashboard's rules need node + validate.bundle.mjs")
 
 
 def _builder(monkeypatch, on: bool) -> None:
@@ -63,7 +63,7 @@ def test_each_prop_only_a_cockpit_built_in_place_writes_is_found_and_no_other(ki
 def test_off_a_cockpit_built_in_place_is_refused_and_says_why(monkeypatch):
     _builder(monkeypatch, False)
     said = builder.refused(_on_grid(_plain()))
-    assert len(said) == 1 and "building cockpits in place is off" in said[0] and "4 element(s)" in said[0]
+    assert len(said) == 1 and "building dashboards in place is off" in said[0] and "4 element(s)" in said[0]
 
 
 def test_on_it_is_not_refused(monkeypatch):
@@ -91,7 +91,7 @@ def test_the_keep_door_refuses_a_grid_while_off_and_keeps_it_while_on(volumes, m
         return versions.keep(home, s, approved_by="user:amit", source="a person's own hand", written_by_model=False)
     _builder(monkeypatch, False)
     off = keep(spec)
-    assert off.status == "refused" and "building cockpits in place is off" in " ".join(off.sentences)
+    assert off.status == "refused" and "building dashboards in place is off" in " ".join(off.sentences)
     assert versions.latest(home) is None                                     # nothing was kept
     _builder(monkeypatch, True)
     assert keep(spec).kept

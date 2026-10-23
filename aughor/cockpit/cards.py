@@ -1,14 +1,14 @@
-"""A cockpit's cards — kept in the card store (Arc CT, CT-3; the home moved in CT-7).
+"""A dashboard's cards — kept in the card store (Arc CT, CT-3; the home moved in CT-7).
 
 **No new store.** ``aughor.dashboard`` has kept cards by scope since it was written. A
-person's cockpit reads two of its scopes:
+person's dashboard reads two of its scopes:
 
 * ``connection`` — the cards pinned for everyone on the connection. These are the cards the
-  Briefing's cockpit drew before cockpits had names, and anyone's cockpit may place them.
-* ``user`` — the person's own. A card a person's cockpit creates is kept here, so a limit
-  set on it is theirs and nobody else's cockpit shows it.
+  Briefing's dashboard drew before dashboards had names, and anyone's dashboard may place them.
+* ``user`` — the person's own. A card a person's dashboard creates is kept here, so a limit
+  set on it is theirs and nobody else's dashboard shows it.
 
-A card placed in a cockpit is not moved by being placed: the spec points at it.
+A card placed in a dashboard is not moved by being placed: the spec points at it.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def own(home: Home) -> list[DashboardCard]:
 
 
 def cards_of(home: Home) -> list[DashboardCard]:
-    """Every card this person's cockpit may place: their own, then the connection's."""
+    """Every card this person's dashboard may place: their own, then the connection's."""
     return [*own(home), *shared(home.connection_id)]
 
 
@@ -62,7 +62,7 @@ def place(home: Home, card: DashboardCard, *, metric: Optional[Any] = None) -> D
     if card.connection_id and card.connection_id != home.connection_id:
         raise Refused(
             f'The card "{card.title or card.id}" reads the connection "{card.connection_id}"; '
-            f'this cockpit is on "{home.connection_id}". A cockpit holds cards of its own connection.')
+            f'this dashboard is on "{home.connection_id}". A dashboard holds cards of its own connection.')
 
     provenance = card.provenance
     if metric is not None:
@@ -92,9 +92,9 @@ def same_card_key(card: Any) -> str:
 
 
 def not_offered(home: Home, held: list, placed: Iterable[str]) -> dict[str, str]:
-    """Why each card the cockpit does NOT place is not offered back to it, by card id (the user,
+    """Why each card the dashboard does NOT place is not offered back to it, by card id (the user,
     2026-10-08: duplicates removed "from all places"): superseded by another card, made from a
-    metric that was deprecated, or a copy of a card already on the cockpit. Said beside the list,
+    metric that was deprecated, or a copy of a card already on the dashboard. Said beside the list,
     never silently dropped."""
     from aughor.semantic.metrics import list_metrics
 
@@ -116,12 +116,12 @@ def not_offered(home: Home, held: list, placed: Iterable[str]) -> dict[str, str]
         elif metric and metric in deprecated:
             out[c.id] = f"made from {metric}, which was deprecated"
         elif twin is not None:
-            out[c.id] = f"a copy of “{twin.title or twin.id}”, already on this cockpit"
+            out[c.id] = f"a copy of “{twin.title or twin.id}”, already on this dashboard"
     return out
 
 
 def take_over(home: Home, card: DashboardCard) -> DashboardCard:
-    """Make a card that belonged to a canvas this person's own (CT-10: a canvas cockpit moved
+    """Make a card that belonged to a canvas this person's own (CT-10: a canvas dashboard moved
     to the Briefing). The card is the same card — its id, its query, its history — kept in a
     new place; the one move this module makes, and only for a card of the same connection."""
     from aughor.dashboard.store import upsert_card

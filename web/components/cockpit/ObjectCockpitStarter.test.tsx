@@ -97,7 +97,7 @@ describe("the starter's shapes", () => {
     draw();
     await waitFor(() => expect(screen.getAllByTestId("object-starter-filter")).toHaveLength(1));
     expect(screen.queryByTestId("object-starter-shapes")).toBeNull();
-    expect(screen.getByTestId("object-starter-create")).toHaveTextContent("Create cockpit");
+    expect(screen.getByTestId("object-starter-create")).toHaveTextContent("Create dashboard");
   });
 });
 

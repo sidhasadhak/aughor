@@ -10,7 +10,7 @@ it meant. Behind `ontology.release`:
   and screens read the draft laid over them (`overrides.viewing("draft")`).
 * **The draft is read as a diff.** Each change carries its class from the compatibility catalogue
   (`ontology.compatibility`) — ERR, MEANING, WARN or SAFE — what changed field by field, and what it touches: the
-  automations, the Record's claims and the cockpit cards that name it.
+  automations, the Record's claims and the dashboard cards that name it.
 * **Publishing is a person's act.** It is refused while an ERR stands. It moves each change into the published tree
   (each a version in the declaration's history), records the release — every element and the version it pins, and a
   hash of the whole — and restates every claim a MEANING change touches, so a number computed under the old meaning says so.
@@ -156,7 +156,7 @@ def element_names(kind: str, target_id: str, fields: Optional[dict]) -> set[str]
 
 
 def _touches(conn: str, names: set[str], automations: list[dict], metrics: list[dict] = ()) -> dict:
-    """What names one of ``names``: the Record's current claims on the connection, cockpit cards, and the automations
+    """What names one of ``names``: the Record's current claims on the connection, dashboard cards, and the automations
     and keyed metrics (Arc OC-3) the dependents index found."""
     claims, cards = [], []
     try:
@@ -189,7 +189,7 @@ def _touches(conn: str, names: set[str], automations: list[dict], metrics: list[
             out["cockpits"] = cockpits_reading(conn, names)
         except Exception as exc:  # noqa: BLE001
             from aughor.kernel.errors import tolerate
-            tolerate(exc, "the cockpits a change touches could not be read", counter="ontology.release")
+            tolerate(exc, "the dashboards a change touches could not be read", counter="ontology.release")
             out["cockpits"] = []
     return out
 

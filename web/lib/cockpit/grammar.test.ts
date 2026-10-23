@@ -43,7 +43,7 @@ describe("the grammar", () => {
     expect(text).toContain(`at most ${MAX_PATCHES} operations`);
   });
 
-  it("does not teach what a cockpit refuses", () => {
+  it("does not teach what a dashboard refuses", () => {
     // The library's own prompt spends most of its length on these.
     for (const word of ["\"on\"", "watch", "repeat", "$computed", "$template", "$cond", "action"]) {
       expect(text).not.toContain(word);

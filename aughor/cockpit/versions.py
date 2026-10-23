@@ -1,10 +1,10 @@
-"""A cockpit's spec, kept as versions (Arc CT, CT-3; the home moved to a person in CT-7).
+"""A dashboard's spec, kept as versions (Arc CT, CT-3; the home moved to a person in CT-7).
 
 **No new store.** The Ledger already keeps versioned artifacts — ``artifact_write`` writes the
 next version for a natural key and stamps ``superseded_by`` on the one before, with lineage
-and a tenant — and BR-6 keeps every Briefing that way. A cockpit's spec is the same shape, so
-it is an artifact of kind ``cockpit``, one natural key per person's cockpit
-(``aughor/cockpit/home.py``). A person's cockpits are the current artifacts under their prefix.
+and a tenant — and BR-6 keeps every Briefing that way. A dashboard's spec is the same shape, so
+it is an artifact of kind ``cockpit``, one natural key per person's dashboard
+(``aughor/cockpit/home.py``). A person's dashboards are the current artifacts under their prefix.
 
 **Keeping is an act of approval, and it can be refused.** That is the difference from a
 Briefing's history, which is written in passing and must never break the page it records.
@@ -17,12 +17,12 @@ where it came from. Without both it is refused.
 
 **Supersede, never delete.** An edit is the next version. Going back is the next version too:
 ``restore`` keeps an earlier spec again, checked against the cards as they are today. Retiring
-a cockpit is a version that says so, and its history stays readable.
+a dashboard is a version that says so, and its history stays readable.
 
 **A version is a change of the spec**, not an act of approving: approving the same spec twice
 writes nothing, by the same reasoning that keeps a Briefing from versioning on every visit.
 
-A cockpit that lived in a Data Canvas before the home moved is read here by its old key, and
+A dashboard that lived in a Data Canvas before the home moved is read here by its old key, and
 retired when it moves (``canvas_*``); nothing new is kept under a canvas.
 """
 from __future__ import annotations
@@ -65,7 +65,7 @@ class Kept:
 
 
 def canvas_key(canvas_id: str) -> str:
-    """Where a canvas's cockpit was kept, before the home moved."""
+    """Where a canvas's dashboard was kept, before the home moved."""
     return f"cockpit:{canvas_id}"
 
 
@@ -86,7 +86,7 @@ def changes(before: Optional[dict], after: Optional[dict]) -> dict[str, list[str
 
 
 def _mine(row: Optional[dict]) -> Optional[dict]:
-    """The row, if it is this tenant's cockpit. The Ledger reads a natural key across
+    """The row, if it is this tenant's dashboard. The Ledger reads a natural key across
     tenants; a key is not a secret, so the tenant is checked here."""
     from aughor.org.context import current_org_id
     if not row or row.get("kind") != KIND:
@@ -97,7 +97,7 @@ def _mine(row: Optional[dict]) -> Optional[dict]:
 
 
 def is_mine(row: Optional[dict]) -> bool:
-    """Whether a Ledger row is a cockpit version of this tenant's — the read every lister makes."""
+    """Whether a Ledger row is a dashboard version of this tenant's — the read every lister makes."""
     return _mine(row) is not None
 
 
@@ -140,8 +140,8 @@ def _latest_row(key: str) -> Optional[dict]:
 
 
 def latest(home: Home) -> Optional[dict]:
-    """The newest version, with its spec — or None when this person has no such cockpit.
-    A retired cockpit is returned, with ``retired`` True and no spec: that it was retired,
+    """The newest version, with its spec — or None when this person has no such dashboard.
+    A retired dashboard is returned, with ``retired`` True and no spec: that it was retired,
     when and by whom is something a reader is owed."""
     row = _latest_row(home.key)
     return _entry(row, with_spec=True) if row else None
@@ -173,9 +173,9 @@ def history(home: Home, *, limit: int = 50) -> list[dict]:
         payload = row["payload"]
         before = rows[i + 1]["payload"] if i + 1 < len(rows) else {}
         if payload.get("retired"):
-            entry["said"] = ["Retired the cockpit"]
+            entry["said"] = ["Retired the dashboard"]
         elif before.get("retired"):
-            entry["said"] = ["Brought the cockpit back"]
+            entry["said"] = ["Brought the dashboard back"]
         elif before and _canonical(before.get("spec")) == _canonical(payload.get("spec")):
             entry["said"] = []                  # published, unpublished or re-pinned: its source says which
         else:
@@ -194,8 +194,8 @@ def version(home: Home, number: int) -> Optional[dict]:
 
 
 def of_person(connection_id: str, owner: str) -> list[dict]:
-    """This person's cockpits on this connection, as they stand now — retired ones included,
-    and said to be — oldest first, so the strip keeps its order as cockpits are added."""
+    """This person's dashboards on this connection, as they stand now — retired ones included,
+    and said to be — oldest first, so the strip keeps its order as dashboards are added."""
     from aughor.kernel.ledger import Ledger
     mine = prefix(connection_id, owner)
     rows = [r for r in Ledger.default().artifacts_of_kind(KIND, conn_id=connection_id, limit=1000)
@@ -219,10 +219,10 @@ def _first_kept(key: str) -> str:
 def _provenance_missing(approved_by: str, source: str) -> Optional[Kept]:
     if not (approved_by or "").strip():
         return Kept(REFUSED, sentences=(
-            "A cockpit is kept with the name of the person who approved it. None was given.",))
+            "A dashboard is kept with the name of the person who approved it. None was given.",))
     if not (source or "").strip():
         return Kept(REFUSED, sentences=(
-            "A cockpit is kept with where it came from — a proposal, or a person's own hand. "
+            "A dashboard is kept with where it came from — a proposal, or a person's own hand. "
             "Nothing was given.",))
     return None
 
@@ -235,17 +235,17 @@ def _write(key: str, connection_id: Optional[str], payload: dict, prior: Optiona
             KIND, key, payload, conn_id=connection_id or None, canvas_id=canvas_id,
             lineage=[*([("supersedes", prior["id"], why)] if prior else []), *also] or None)
     except Exception as exc:
-        tolerate(exc, f"a cockpit's version ({key}) could not be written; the caller is told it FAILED",
+        tolerate(exc, f"a dashboard's version ({key}) could not be written; the caller is told it FAILED",
                  counter="cockpit.version.write", conn_id=connection_id or None, canvas_id=canvas_id)
         return Kept(FAILED, sentences=(
-            f"The cockpit could not be kept: {type(exc).__name__}: {exc}. Nothing was changed.",))
+            f"The dashboard could not be kept: {type(exc).__name__}: {exc}. Nothing was changed.",))
     return Kept(KEPT, version=int((prior or {}).get("version") or 0) + 1, artifact_id=art_id)
 
 
 def twin_cards(placed: Iterable[str], before: Iterable[str] = ()) -> list[str]:
     """A sentence for each card this keep places a second time under another id — the same metric or
-    the same query (the user, 2026-10-08: the Executive Cockpit showed Revenue and Gross Margin Rate
-    twice and the return rate three times). Only copies this keep ADDS are refused: a cockpit kept
+    the same query (the user, 2026-10-08: the Executive Dashboard showed Revenue and Gross Margin Rate
+    twice and the return rate three times). Only copies this keep ADDS are refused: a dashboard kept
     with copies before can still be kept, and is told nothing new."""
     from aughor.cockpit.cards import same_card_key
     from aughor.dashboard.store import get_card
@@ -264,7 +264,7 @@ def twin_cards(placed: Iterable[str], before: Iterable[str] = ()) -> list[str]:
     for key, cards in groups(placed).items():
         if len(cards) > 1 and len(cards) > was.get(key, 0):
             title = cards[0].title or cards[0].id
-            said.append(f'"{title}" would be on this cockpit {len(cards)} times — cards '
+            said.append(f'"{title}" would be on this dashboard {len(cards)} times — cards '
                         f'{", ".join(c.id for c in cards)} measure the same thing. Keep one.')
     return said
 
@@ -310,8 +310,8 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
     ``also_known`` names cards the same approval has just created. ``written_by_model`` says
     whose words its titles are; it defaults to True, the strict reading, and is kept with the
     version so that going back to it holds it to the rule it was first held to.
-    ``came_from`` is lineage beyond the version before — where a cockpit moved from.
-    ``repin`` (Arc OC-4) pins a cockpit holding pieces to the ontology release in force now — a person read what
+    ``came_from`` is lineage beyond the version before — where a dashboard moved from.
+    ``repin`` (Arc OC-4) pins a dashboard holding pieces to the ontology release in force now — a person read what
     changed since the release it was composed against, and keeps it; the spec may be unchanged.
     """
     missing = _provenance_missing(approved_by, source)
@@ -369,7 +369,7 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
 
 
 def publish(home: Home, to: list[dict], *, approved_by: str) -> Kept:
-    """Publish the cockpit as it stands to ``to`` — groups and roles, each ``{"kind", "id", "name"}``
+    """Publish the dashboard as it stands to ``to`` — groups and roles, each ``{"kind", "id", "name"}``
     as :mod:`aughor.cockpit.sharing` resolved them — or, with an empty ``to``, unpublish it.
     Either is a version: the spec is the same, and who it reaches changed."""
     missing = _provenance_missing(approved_by, "published")
@@ -377,10 +377,10 @@ def publish(home: Home, to: list[dict], *, approved_by: str) -> Kept:
         return missing
     prior = _latest_row(home.key)
     if prior is None:
-        return Kept(REFUSED, sentences=("There is no such cockpit to publish.",))
+        return Kept(REFUSED, sentences=("There is no such dashboard to publish.",))
     before = prior["payload"]
     if before.get("retired") or not before.get("spec"):
-        return Kept(REFUSED, sentences=("A retired cockpit is not published. Bring it back first.",))
+        return Kept(REFUSED, sentences=("A retired dashboard is not published. Bring it back first.",))
     targets = [{"kind": str(t["kind"]), "id": str(t["id"]), "name": str(t.get("name") or t["id"])} for t in to]
     if targets == list(before.get("published_to") or []):
         return Kept(UNCHANGED, version=prior.get("version"), artifact_id=prior.get("id") or "")
@@ -403,10 +403,10 @@ def restore(home: Home, number: int, *, approved_by: str) -> Kept:
     refusal, which is the honest answer."""
     earlier = version(home, number)
     if earlier is None:
-        return Kept(REFUSED, sentences=(f"This cockpit has no version {number}.",))
+        return Kept(REFUSED, sentences=(f"This dashboard has no version {number}.",))
     if earlier["retired"] or earlier.get("spec") is None:
         return Kept(REFUSED, sentences=(
-            f"Version {number} is the one that retired the cockpit; it holds no spec to go back to.",))
+            f"Version {number} is the one that retired the dashboard; it holds no spec to go back to.",))
     return keep(home, earlier["spec"], approved_by=approved_by,
                 source=f"restored from version {number}",
                 written_by_model=earlier["written_by_model"], stamps_are_ours=True)
@@ -427,31 +427,31 @@ def _retired_payload(before: dict, approved_by: str, note: str) -> dict:
 
 
 def retire(home: Home, *, approved_by: str, note: str = "") -> Kept:
-    """Retire this cockpit. Written as a version that says so: the history stays, and a later
+    """Retire this dashboard. Written as a version that says so: the history stays, and a later
     ``keep`` or ``restore`` brings it back as the version after it."""
     missing = _provenance_missing(approved_by, "retired")
     if missing:
         return missing
     prior = _latest_row(home.key)
     if prior is None:
-        return Kept(REFUSED, sentences=("There is no such cockpit to retire.",))
+        return Kept(REFUSED, sentences=("There is no such dashboard to retire.",))
     before = prior["payload"]
     if before.get("retired"):
         return Kept(UNCHANGED, version=prior.get("version"), artifact_id=prior.get("id") or "")
     return _write(home.key, home.connection_id, _retired_payload(before, approved_by, note), prior,
-                  "the cockpit was retired")
+                  "the dashboard was retired")
 
 
 # ── a cockpit that lived in a canvas ────────────────────────────────────────────────────────
 
 def canvas_latest(canvas_id: str) -> Optional[dict]:
-    """A canvas's cockpit as it was left, with its spec — or None."""
+    """A canvas's dashboard as it was left, with its spec — or None."""
     row = _latest_row(canvas_key(canvas_id))
     return _entry(row, with_spec=True) if row else None
 
 
 def canvas_cockpits(connection_id: str) -> list[dict]:
-    """The canvas cockpits on this connection that still stand — each one waiting to be moved
+    """The canvas dashboards on this connection that still stand — each one waiting to be moved
     to a person's Briefing. A retired one is not listed: it has moved, or was let go."""
     from aughor.kernel.ledger import Ledger
     out = []
@@ -465,12 +465,12 @@ def canvas_cockpits(connection_id: str) -> list[dict]:
 
 
 def retire_canvas(canvas_id: str, *, approved_by: str, note: str) -> Kept:
-    """Retire a canvas's cockpit — the last version it will have under the canvas."""
+    """Retire a canvas's dashboard — the last version it will have under the canvas."""
     prior = _latest_row(canvas_key(canvas_id))
     if prior is None:
-        return Kept(REFUSED, sentences=("This canvas has no cockpit.",))
+        return Kept(REFUSED, sentences=("This canvas has no dashboard.",))
     before = prior["payload"]
     if before.get("retired"):
         return Kept(UNCHANGED, version=prior.get("version"), artifact_id=prior.get("id") or "")
     return _write(canvas_key(canvas_id), prior.get("conn_id"), _retired_payload(before, approved_by, note),
-                  prior, "the cockpit moved", canvas_id=canvas_id)
+                  prior, "the dashboard moved", canvas_id=canvas_id)

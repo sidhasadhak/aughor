@@ -1,12 +1,12 @@
-"""A person's cockpits in the Briefing — list, read, start, keep, go back, retire, draft, move
+"""A person's dashboards in the Briefing — list, read, start, keep, go back, retire, draft, move
 (Arc CT, CT-7 to CT-10; ROADMAP §3.50).
 
 Behind ``cockpit.composed``. Off, every route here answers 404 and the Briefing draws its
-cockpit as it always did. On, **one route calls a model** — ``POST /cockpits/draft``, when a
+dashboard as it always did. On, **one route calls a model** — ``POST /cockpits/draft``, when a
 person names an area and asks for a draft. Every other route reads what was kept, or keeps
 what a person wrote, and calls none.
 
-A cockpit is the asker's own (``aughor/cockpit/home.py``): the person comes from the request,
+A dashboard is the asker's own (``aughor/cockpit/home.py``): the person comes from the request,
 never from a parameter, so no route here can read or change someone else's. Every connection a
 route names is checked by the router's guard, which is why the connection is a query parameter
 on every route, the writes included.
@@ -73,14 +73,14 @@ class AskRequest(BaseModel):
 
 
 class PublishRequest(BaseModel):
-    """Who the cockpit is published to: groups and roles, each by kind and id or name."""
+    """Who the dashboard is published to: groups and roles, each by kind and id or name."""
     to: list[dict[str, Any]]
 
 
 def _on() -> None:
     from aughor.kernel.flags import flag_enabled
     if not flag_enabled("cockpit.composed"):
-        raise HTTPException(status_code=404, detail="cockpits need the 'cockpit.composed' flag")
+        raise HTTPException(status_code=404, detail="dashboards need the 'cockpit.composed' flag")
 
 
 def _home(request: Request, connection_id: str, cockpit_id: str):
@@ -88,7 +88,7 @@ def _home(request: Request, connection_id: str, cockpit_id: str):
     if not connection_id:
         raise HTTPException(status_code=422, detail="connection_id is required")
     if not valid_id(cockpit_id):
-        raise HTTPException(status_code=404, detail="No such cockpit")
+        raise HTTPException(status_code=404, detail="No such dashboard")
     return Home(connection_id, person_of(request), cockpit_id)
 
 
@@ -116,7 +116,7 @@ def _day(value: Optional[str], what: str) -> Optional[date]:
 
 
 def _as_read(card, connection_id: str) -> dict:
-    """A card as a cockpit draws it: the card, whose it is, the record it was made from, and —
+    """A card as a dashboard draws it: the card, whose it is, the record it was made from, and —
     for a card made from a metric — the metric's unit and the range that unit states, read by
     the same reader the Briefing's figures are (`business_profile/validate.stated_range`)."""
     from aughor.business_profile.validate import stated_range
@@ -137,7 +137,7 @@ def _as_read(card, connection_id: str) -> dict:
 
 
 def _layout_order(connection_id: str, owner: str) -> list[str]:
-    """The card ids in the order the person arranged them in the Briefing before cockpits had
+    """The card ids in the order the person arranged them in the Briefing before dashboards had
     names: top to bottom, then left to right."""
     from aughor.dashboard.store import get_layout
     layout = get_layout(connection_id, owner) or {}
@@ -148,8 +148,8 @@ def _layout_order(connection_id: str, owner: str) -> list[str]:
 
 @router.get("/cockpits")
 def list_cockpits(request: Request, connection_id: str) -> dict:
-    """The asker's cockpits on this connection, the cards they may place, and the canvas
-    cockpits waiting to be moved here. No model call, and nothing is written."""
+    """The asker's dashboards on this connection, the cards they may place, and the canvas
+    dashboards waiting to be moved here. No model call, and nothing is written."""
     _on()
     from aughor.cockpit import cards, versions
     from aughor.cockpit.home import FIRST, Home, person_of
@@ -166,7 +166,7 @@ def list_cockpits(request: Request, connection_id: str) -> dict:
 
 @router.get("/cockpits/audiences")
 def audiences(request: Request, connection_id: str) -> dict:
-    """The groups the asker belongs to and the roles they hold: who they may publish a cockpit to
+    """The groups the asker belongs to and the roles they hold: who they may publish a dashboard to
     (the canvas, B5). Declared before the cockpit-by-id read, which would take the word for an id."""
     _on()
     from aughor.cockpit import sharing
@@ -176,7 +176,7 @@ def audiences(request: Request, connection_id: str) -> dict:
 
 @router.get("/cockpits/shared")
 def shared_cockpits(request: Request, connection_id: str) -> dict:
-    """The cockpits others published to a group the asker is in or a role they hold."""
+    """The dashboards others published to a group the asker is in or a role they hold."""
     _on()
     from aughor.cockpit import sharing
     from aughor.cockpit.home import person_of
@@ -187,7 +187,7 @@ def shared_cockpits(request: Request, connection_id: str) -> dict:
 def read_shared_cockpit(request: Request, owner: str, cockpit_id: str, connection_id: str,
                         preset: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None,
                         workspace_id: Optional[str] = None) -> dict:
-    """A published cockpit as it stands, for a reader it reaches: read-only, for the reader's own
+    """A published dashboard as it stands, for a reader it reaches: read-only, for the reader's own
     period; a card the reader may not read stands and says so."""
     _on()
     from aughor.cockpit import cards, host, images, sharing
@@ -221,8 +221,8 @@ def read_shared_cockpit(request: Request, owner: str, cockpit_id: str, connectio
 
 @router.post("/cockpits/shared/{owner}/{cockpit_id}/copy")
 def copy_shared_cockpit(request: Request, owner: str, cockpit_id: str, connection_id: str) -> dict:
-    """Start a cockpit of the asker's own from a published one: the publisher's cards copied into
-    theirs, the spec kept as the new cockpit's first version. The publisher's is untouched."""
+    """Start a dashboard of the asker's own from a published one: the publisher's cards copied into
+    theirs, the spec kept as the new dashboard's first version. The publisher's is untouched."""
     _on()
     from aughor.cockpit import sharing
     from aughor.cockpit.home import person_of
@@ -236,17 +236,17 @@ def copy_shared_cockpit(request: Request, owner: str, cockpit_id: str, connectio
 
 @router.get("/cockpits/from-object")
 def propose_from_object(entity: str, connection_id: str, schema_name: Optional[str] = None) -> dict:
-    """What a cockpit started from ``entity`` is offered (2026-10-10): its categories as filters, its numbers as
+    """What a dashboard started from ``entity`` is offered (2026-10-10): its categories as filters, its numbers as
     figures, a chart of its objects per day, a table of them and the actions declared on them — each measured through
     the object door, with a preview. Nothing is kept and no model is asked; the person ticks what they want and keeps
-    it as any new cockpit is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path."""
+    it as any new dashboard is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path."""
     _on()
     from aughor.cockpit import from_object, pieces
     from aughor.kernel.flags import flag_enabled
     from aughor.routers.ontology import served_ontology_graph
     from aughor.semantic.object_query import ObjectQueryRefused
     if not (flag_enabled(pieces.FLAG) and flag_enabled(from_object.FLAG)):
-        raise HTTPException(status_code=404, detail="Starting a cockpit from an object is off on this install.")
+        raise HTTPException(status_code=404, detail="Starting a dashboard from an object is off on this install.")
     graph = served_ontology_graph(connection_id, schema_name)
     if graph is None:
         raise HTTPException(status_code=404, detail="No ontology is built for this connection yet.")
@@ -262,14 +262,14 @@ def propose_from_object(entity: str, connection_id: str, schema_name: Optional[s
 
 @router.get("/cockpits/shapes")
 def suggested_shapes(connection_id: str, schema_name: Optional[str] = None) -> dict:
-    """Arc AP-5 — what each object suggests a cockpit be: the shape that fits it best, with a short line of why, read
+    """Arc AP-5 — what each object suggests a dashboard be: the shape that fits it best, with a short line of why, read
     from the served ontology alone — no warehouse read, no model. Registered before ``/cockpits/{cockpit_id}``."""
     _on()
     from aughor.cockpit import app_pieces, from_object, pieces, shapes, wiring
     from aughor.kernel.flags import flag_enabled
     from aughor.routers.ontology import served_ontology_graph
     if not (flag_enabled(pieces.FLAG) and flag_enabled(from_object.FLAG) and shapes.on()):
-        raise HTTPException(status_code=404, detail="Starting a cockpit from a shape is off on this install.")
+        raise HTTPException(status_code=404, detail="Starting a dashboard from a shape is off on this install.")
     graph = served_ontology_graph(connection_id, schema_name)
     if graph is None:
         raise HTTPException(status_code=404, detail="No ontology is built for this connection yet.")
@@ -285,7 +285,7 @@ def _queries_on() -> None:
     from aughor.cockpit import queries
     from aughor.kernel.flags import flag_enabled
     if not flag_enabled(queries.FLAG):
-        raise HTTPException(status_code=404, detail="A query of your own on a cockpit is off on this install.")
+        raise HTTPException(status_code=404, detail="A query of your own on a dashboard is off on this install.")
 
 
 def _read_query(connection_id: str, req: QueryRequest) -> dict:
@@ -345,7 +345,7 @@ def _read_query(connection_id: str, req: QueryRequest) -> dict:
             db.close()
         except Exception as exc:
             from aughor.kernel.errors import tolerate
-            tolerate(exc, "cockpit query: connection close failed after a preview", counter="cockpit.query_close")
+            tolerate(exc, "dashboard query: connection close failed after a preview", counter="cockpit.query_close")
 
 
 @router.post("/cockpits/queries/preview")
@@ -362,7 +362,7 @@ def preview_query(connection_id: str, req: QueryRequest) -> dict:
 def keep_query(request: Request, connection_id: str, req: QueryRequest) -> dict:
     """Arc AP-7 — keep a person's own query as a card of theirs, as it is to be shown. The query is run first and the
     setup checked against what it returns; a refusal says why and keeps nothing. A change to a card of theirs is a new
-    card, and the one it replaces is superseded, never deleted — so a cockpit's earlier versions still read their own."""
+    card, and the one it replaces is superseded, never deleted — so a dashboard's earlier versions still read their own."""
     _on()
     _queries_on()
     from aughor.cockpit import cards
@@ -396,7 +396,7 @@ def keep_query(request: Request, connection_id: str, req: QueryRequest) -> dict:
 def read_cockpit(request: Request, cockpit_id: str, connection_id: str, preset: Optional[str] = None,
                  start: Optional[str] = None, end: Optional[str] = None,
                  workspace_id: Optional[str] = None) -> dict:
-    """One of the asker's cockpits as it stands: its newest version with its spec, every card
+    """One of the asker's dashboards as it stands: its newest version with its spec, every card
     it may place (theirs and the connection's), the range it is read for, and its history."""
     _on()
     from aughor.cockpit import cards, host, images, versions
@@ -405,10 +405,10 @@ def read_cockpit(request: Request, cockpit_id: str, connection_id: str, preset: 
     home = _home(request, connection_id, cockpit_id)
     kept = versions.latest(home)
     if kept is None:
-        raise HTTPException(status_code=404, detail="No such cockpit")
+        raise HTTPException(status_code=404, detail="No such dashboard")
     ranges_on = flag_enabled("briefing.ranges")
     if (preset or start or end) and not ranges_on:
-        raise HTTPException(status_code=404, detail="a cockpit for a date range needs the 'briefing.ranges' flag")
+        raise HTTPException(status_code=404, detail="a dashboard for a date range needs the 'briefing.ranges' flag")
     block, why = host.range_state(connection_id, preset, start=_day(start, "start"), end=_day(end, "end"),
                                   workspace_id=workspace_id)
     if block is None:
@@ -430,7 +430,7 @@ def read_cockpit(request: Request, cockpit_id: str, connection_id: str, preset: 
 
 
 def _pinned(connection_id: str, kept: dict) -> dict:
-    """Arc OC-4 — for a cockpit holding pieces bound to the ontology: the release it was composed against, the one in
+    """Arc OC-4 — for a dashboard holding pieces bound to the ontology: the release it was composed against, the one in
     force, and every change between them that touches what its pieces read. Nothing at all for one without them."""
     from aughor.cockpit.pieces import since
     said = since(connection_id, kept.get("spec"), str(kept.get("ontology_release") or ""))
@@ -439,8 +439,8 @@ def _pinned(connection_id: str, kept: dict) -> dict:
 
 @router.post("/cockpits/images")
 async def upload_image(request: Request, connection_id: str, file: UploadFile) -> dict:
-    """Take an image into this connection's cockpit volume — PNG, JPEG, GIF, WebP or SVG, up to
-    5 MB, read from its bytes — to be placed on a cockpit by the object id this answers with.
+    """Take an image into this connection's dashboard volume — PNG, JPEG, GIF, WebP or SVG, up to
+    5 MB, read from its bytes — to be placed on a dashboard by the object id this answers with.
     By hand only: no model uploads an image."""
     _on()
     from aughor.cockpit import images
@@ -454,7 +454,7 @@ async def upload_image(request: Request, connection_id: str, file: UploadFile) -
 
 @router.get("/cockpits/images/{object_id}")
 def read_image(request: Request, object_id: str, connection_id: str) -> Response:
-    """An image a cockpit on this connection places, as bytes, with the reader's own access."""
+    """An image a dashboard on this connection places, as bytes, with the reader's own access."""
     _on()
     from aughor.cockpit import images
     try:
@@ -471,7 +471,7 @@ def read_image(request: Request, object_id: str, connection_id: str) -> Response
 
 @router.put("/cockpits/{cockpit_id}")
 def keep_cockpit(request: Request, cockpit_id: str, connection_id: str, req: KeepRequest) -> dict:
-    """Keep a spec the person wrote — a card moved, a section renamed — as the cockpit's next
+    """Keep a spec the person wrote — a card moved, a section renamed — as the dashboard's next
     version, or a refusal with the reasons."""
     _on()
     from aughor.cockpit import versions
@@ -484,7 +484,7 @@ def keep_cockpit(request: Request, cockpit_id: str, connection_id: str, req: Kee
 
 @router.post("/cockpits/start")
 def start_first(request: Request, connection_id: str) -> dict:
-    """Start "My cockpit" from the cards pinned in the Briefing before cockpits had names, in the
+    """Start "My dashboard" from the cards pinned in the Briefing before dashboards had names, in the
     order the person arranged them. Written by code, kept like any other spec."""
     _on()
     from aughor.cockpit import cards, compose, versions
@@ -493,13 +493,13 @@ def start_first(request: Request, connection_id: str) -> dict:
     if versions.latest(home) is not None:
         raise HTTPException(status_code=409, detail={
             "status": "refused", "kept": False, "version": None, "artifact_id": "",
-            "sentences": ['You already have "My cockpit". Its history is kept; go back to a version from there.']})
+            "sentences": ['You already have "My dashboard". Its history is kept; go back to a version from there.']})
     held = cards.cards_of(home)
     if not held:
         raise HTTPException(status_code=422, detail={
             "status": "refused", "kept": False, "version": None, "artifact_id": "",
-            "sentences": ["There are no pinned cards to start from. Name an area to draft a cockpit instead."]})
-    spec = compose.default_spec("My cockpit", held, order=_layout_order(connection_id, home.owner))
+            "sentences": ["There are no pinned cards to start from. Name an area to draft a dashboard instead."]})
+    spec = compose.default_spec("My dashboard", held, order=_layout_order(connection_id, home.owner))
     return _answer(versions.keep(home, spec, approved_by=_approved_by(request),
                                  source="started from the cards pinned in the Briefing",
                                  written_by_model=False),
@@ -508,9 +508,9 @@ def start_first(request: Request, connection_id: str) -> dict:
 
 @router.post("/cockpits/draft")
 def draft_cockpit(request: Request, connection_id: str, req: DraftRequest) -> dict:
-    """⚑ Spends model calls. Draft a new cockpit for the area the person named: one short
+    """⚑ Spends model calls. Draft a new dashboard for the area the person named: one short
     model run with the drafting tool alone. What comes back is a proposal to keep or not, or
-    the reasons none was drafted — never a cockpit changed."""
+    the reasons none was drafted — never a dashboard changed."""
     _on()
     from aughor.cockpit.ask import draft_for_area
     from aughor.cockpit.home import person_of
@@ -519,8 +519,8 @@ def draft_cockpit(request: Request, connection_id: str, req: DraftRequest) -> di
 
 @router.post("/cockpits/move")
 def move_cockpit(request: Request, connection_id: str, req: MoveRequest) -> dict:
-    """Move a canvas's cockpit to the asker's Briefing. One act: the cards it places become
-    theirs, its spec their cockpit's first version, and the canvas's is retired with a note."""
+    """Move a canvas's dashboard to the asker's Briefing. One act: the cards it places become
+    theirs, its spec their dashboard's first version, and the canvas's is retired with a note."""
     _on()
     from aughor.cockpit.home import person_of
     from aughor.cockpit.move import move_from_canvas
@@ -532,7 +532,7 @@ def move_cockpit(request: Request, connection_id: str, req: MoveRequest) -> dict
 
 @router.post("/cockpits/{cockpit_id}/ask")
 def ask_cockpit(request: Request, cockpit_id: str, connection_id: str, req: AskRequest) -> dict:
-    """⚑ Spends model calls. A change to one of the asker's cockpits, asked for in words — add a
+    """⚑ Spends model calls. A change to one of the asker's dashboards, asked for in words — add a
     finding, move or resize an element, take a note off, share it with a team. One short model
     run with the drafting tool alone; what comes back is a proposal to keep or not."""
     _on()
@@ -544,7 +544,7 @@ def ask_cockpit(request: Request, cockpit_id: str, connection_id: str, req: AskR
 
 @router.post("/cockpits/{cockpit_id}/publish")
 def publish_cockpit(request: Request, cockpit_id: str, connection_id: str, req: PublishRequest) -> dict:
-    """Publish the cockpit as it stands to groups the asker belongs to and roles they may publish
+    """Publish the dashboard as it stands to groups the asker belongs to and roles they may publish
     to. A version, under their name; a reader sees it under "Shared with you"."""
     _on()
     from aughor.cockpit import sharing, versions
@@ -566,7 +566,7 @@ def publish_cockpit(request: Request, cockpit_id: str, connection_id: str, req: 
 
 @router.post("/cockpits/{cockpit_id}/unpublish")
 def unpublish_cockpit(request: Request, cockpit_id: str, connection_id: str) -> dict:
-    """Stop sharing a cockpit. A version too: its history says when it reached whom."""
+    """Stop sharing a dashboard. A version too: its history says when it reached whom."""
     _on()
     from aughor.cockpit import versions
     home = _home(request, connection_id, cockpit_id)
@@ -586,7 +586,7 @@ def restore_cockpit(request: Request, cockpit_id: str, connection_id: str, req: 
 
 @router.post("/cockpits/{cockpit_id}/retire")
 def retire_cockpit(request: Request, cockpit_id: str, connection_id: str, req: RetireRequest) -> dict:
-    """Retire a cockpit. Its history stays."""
+    """Retire a dashboard. Its history stays."""
     _on()
     from aughor.cockpit import versions
     home = _home(request, connection_id, cockpit_id)

@@ -1,8 +1,8 @@
-"""Arc OC-4 — a cockpit's pieces bound to the ontology, as the server holds them (ROADMAP §3.56).
+"""Arc OC-4 — a dashboard's pieces bound to the ontology, as the server holds them (ROADMAP §3.56).
 
 The web's rules check a piece's shape; what only the platform knows is checked here before a spec is kept: that
-building cockpits from the ontology is on, and that every id a piece names — a process, an entity and its segment and
-columns, a declared action, on the entity its detail shows — resolves in what this connection serves now. A cockpit
+building dashboards from the ontology is on, and that every id a piece names — a process, an entity and its segment and
+columns, a declared action, on the entity its detail shows — resolves in what this connection serves now. A dashboard
 with no piece keeps exactly as before, whatever the flag says. A model arranges a piece and never adds one or changes
 what it names. And the action button's second answer: an action that needs approval is staged for a person, with no
 model called, and only while the flag is on and the caller asked.
@@ -23,7 +23,7 @@ from tests.unit.test_cockpit_canvas import FIXTURE, ME, volumes  # noqa: F401 �
 from tests.unit.test_object_bindings import GRAPH
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
-                                 reason="the cockpit's rules need node + validate.bundle.mjs")
+                                 reason="the dashboard's rules need node + validate.bundle.mjs")
 FLAG = "ontology.cockpit_pieces"
 
 
@@ -126,7 +126,7 @@ def _pieces_only() -> dict:
 
 def test_a_new_cockpit_from_a_model_holds_no_piece():
     said = pieces.pieces_written(None, _pieces_only(), new=True)
-    assert len(said) == 2 and all("A new cockpit holds none" in s for s in said)
+    assert len(said) == 2 and all("A new dashboard holds none" in s for s in said)
 
 
 def test_an_edit_may_resize_or_take_off_a_piece_and_may_not_add_one_or_change_what_it_reads():
@@ -227,12 +227,12 @@ def test_without_asking_or_with_the_flag_off_a_gated_action_answers_428_as_befor
 
 def test_asked_and_on_a_gated_action_is_staged_for_a_person_and_nothing_runs(gated, monkeypatch):
     _flag(monkeypatch, True)
-    r = _press(gated, propose_if_gated=True, reasoning="from a cockpit")
+    r = _press(gated, propose_if_gated=True, reasoning="from a dashboard")
     assert r.status_code == 200 and r.json()["status"] == "proposed", r.text
     from aughor.actions.inbox import get_proposal
     staged = get_proposal(r.json()["inbox_id"])
     assert (staged.action_id, staged.status, staged.source) == ("flag_for_review", "pending", "cockpit")
-    assert staged.params == {"order": "Order:O000001", "reason": "late"} and staged.reasoning == "from a cockpit"
+    assert staged.params == {"order": "Order:O000001", "reason": "late"} and staged.reasoning == "from a dashboard"
 
 
 def test_a_run_answers_with_what_its_check_found_and_its_ledger_entry(gated, monkeypatch):

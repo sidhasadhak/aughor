@@ -1,11 +1,11 @@
-"""Arc CT, CT-7 and CT-10 (ROADMAP §3.50) — a person's cockpits over HTTP.
+"""Arc CT, CT-7 and CT-10 (ROADMAP §3.50) — a person's dashboards over HTTP.
 
 The flag is off by default, and off it must change nothing: the routes answer 404 and the
 Briefing's own card routes answer exactly as they did. On, one route calls a model — the
 draft for an area — and every other route calls none.
 
 Identity is off in the suite, so every request is the same person ("default"). Each desk is
-therefore on a connection of its own: a person's cards and cockpits are keyed by connection,
+therefore on a connection of its own: a person's cards and dashboards are keyed by connection,
 and two tests must not read each other's.
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ FIXTURE = REPO / "web" / "lib" / "cockpit" / "premise.fixture.json"
 
 needs_rules = pytest.mark.skipif(
     shutil.which("node") is None or not V._BUNDLE.exists(),
-    reason="the cockpit's rules need node + validate.bundle.mjs")
+    reason="the dashboard's rules need node + validate.bundle.mjs")
 
 ME = "default"          # identity is off: the one operator
 
@@ -151,7 +151,7 @@ def test_reading_writes_nothing(client, desk, on):
 
 @needs_rules
 def test_a_card_reads_with_the_record_it_was_made_from_and_its_metrics_unit(client, desk, on, monkeypatch):
-    """The cockpit draws a figure at the scale its metric's unit states — the Briefing's own
+    """The dashboard draws a figure at the scale its metric's unit states — the Briefing's own
     reading of it — and says what stands behind it."""
     import types
     rate = card_store.get_card(desk.rate)
@@ -270,7 +270,7 @@ def test_a_refusal_is_an_error_that_carries_its_reasons(client, desk, on):
     assert r.status_code == 422
     detail = r.json()["detail"]
     assert detail["status"] == "refused" and detail["kept"] is False and detail["version"] is None
-    assert any("A cockpit runs nothing without a click" in s for s in detail["sentences"])
+    assert any("A dashboard runs nothing without a click" in s for s in detail["sentences"])
     assert versions.latest(desk.home) is None
 
 
@@ -316,7 +316,7 @@ def test_the_first_cockpit_groups_the_cards_by_kind_in_a_fixed_order():
 
 
 def test_the_first_cockpit_keeps_the_order_the_person_arranged():
-    spec = compose.default_spec("My cockpit", [_C("k1", "kpi", "Alpha"), _C("k2", "kpi", "Beta"),
+    spec = compose.default_spec("My dashboard", [_C("k1", "kpi", "Alpha"), _C("k2", "kpi", "Beta"),
                                                _C("k3", "kpi", "Gamma")], order=["k3", "k1"])
     assert spec["elements"]["sec-figures"]["children"] == ["card-k3", "card-k1", "card-k2"]
 
@@ -336,7 +336,7 @@ def test_my_cockpit_is_started_from_the_pinned_cards_in_the_persons_order(client
     kept = client.get(f"/cockpits/{FIRST}", params=desk.q).json()["cockpit"]
     assert kept["source"] == "started from the cards pinned in the Briefing"
     assert kept["written_by_model"] is False
-    assert kept["spec"]["elements"]["cockpit"]["props"]["title"] == "My cockpit"
+    assert kept["spec"]["elements"]["cockpit"]["props"]["title"] == "My dashboard"
     assert kept["spec"]["elements"]["sec-figures"]["children"] == [
         f"card-{pins[2].id}", f"card-{pins[0].id}", f"card-{pins[1].id}"]     # top row left to right, then down
 
@@ -349,7 +349,7 @@ def test_with_nothing_pinned_there_is_nothing_to_start_from_and_it_says_so(clien
     r = client.post("/cockpits/start", params=empty.q)
     assert r.status_code == 422
     assert r.json()["detail"]["sentences"] == [
-        "There are no pinned cards to start from. Name an area to draft a cockpit instead."]
+        "There are no pinned cards to start from. Name an area to draft a dashboard instead."]
     assert versions.latest(Home(empty.connection, ME, FIRST)) is None
 
 
@@ -394,7 +394,7 @@ def test_the_draft_route_hands_the_area_and_the_person_to_the_drafter(client, de
 # ── moving a canvas's cockpit here ────────────────────────────────────────────
 
 class Canvas:
-    """A canvas on the desk's connection whose cockpit was kept before the home moved: its
+    """A canvas on the desk's connection whose dashboard was kept before the home moved: its
     cards at canvas scope, its spec under the canvas's own key — three versions of it."""
 
     def __init__(self, desk: Desk):
@@ -474,7 +474,7 @@ def test_no_route_but_the_draft_calls_a_model(client, on, monkeypatch):
     from aughor.llm.provider import LLMProvider
 
     def spent(self, *a, **kw):
-        raise AssertionError("a cockpit route called a model")
+        raise AssertionError("a dashboard route called a model")
 
     for method in ("complete", "complete_with_tools", "complete_streaming"):
         assert hasattr(LLMProvider, method), f"LLMProvider.{method} is gone; this guard guards nothing"

@@ -11,7 +11,7 @@ import type { ComponentName } from "@/lib/cockpit/catalog";
 
 /** Each component's word, as a reader says it. */
 export const KIND_WORDS: Record<ComponentName, string> = {
-  Cockpit: "cockpit",
+  Cockpit: "dashboard",
   Tabs: "tabs",
   Tab: "tab",
   Section: "section",

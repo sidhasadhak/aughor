@@ -258,7 +258,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
       setReviewing(false);
       onDeclared?.(made.id);
       setRelease(await getRelease(connectionId, schema).catch(() => null));
-      toast.success("Declared. It reaches cockpits and the agent when the release is published.");
+      toast.success("Declared. It reaches dashboards and the agent when the release is published.");
     } catch (e) {
       toast.error(...refusal("Not declared", e));
     } finally { setBusy(""); }
@@ -633,7 +633,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
               </p>
             )}
             <p className="aug-fs-xs" style={{ color: "var(--t2)", margin: 0 }}>
-              <Icon name="run" size={11} /> A button for {oneOf(entityLabel)}&apos;s detail on a cockpit
+              <Icon name="run" size={11} /> A button for {oneOf(entityLabel)}&apos;s detail on a dashboard
               {draft.does === "tell" ? ", that sends a message and keeps its delivery as the proof it was sent"
                 : draft.does === "analyse" ? ", that starts a deep analysis and keeps its job as the proof it started" : ""}.
             </p>
@@ -643,7 +643,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
             <p className="aug-fs-sm" style={{ ...LABEL, color: "var(--t1)", fontWeight: 500 }}>Where it appears</p>
             {places.length === 0 ? (
               <p className="aug-fs-xs" style={HINT}>
-                No cockpit of yours shows {plural} one at a time yet. Its button can be added later, with From the ontology on a cockpit.
+                No dashboard of yours shows {plural} one at a time yet. Its button can be added later, with From the ontology on a dashboard.
               </p>
             ) : places.map(p => {
               const id = `${p.cockpitId}/${p.detailKey}`;
@@ -663,7 +663,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
             {places.length > 0 && (
               <Button size="xs" variant="secondary" data-testid="action-place" disabled={phase.at !== "published" || !chosen.length || !!busy}
                 onClick={() => void place()}>
-                {busy === "place" ? "Adding…" : phase.at === "placed" ? "Added" : "Add the button to the cockpits ticked"}
+                {busy === "place" ? "Adding…" : phase.at === "placed" ? "Added" : "Add the button to the dashboards ticked"}
               </Button>
             )}
             {places.length > 0 && phase.at !== "published" && phase.at !== "placed" && (

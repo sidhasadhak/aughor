@@ -171,7 +171,7 @@ describe("what a spec may not carry", () => {
 
   it("a component outside the catalog", () => {
     expect(refused(s => { s.elements["card-rate"].type = "Iframe"; }))
-      .toMatch(/"card-rate" is a "Iframe"\. A cockpit is made of: Cockpit, Tabs, Tab, Section, Card/);
+      .toMatch(/"card-rate" is a "Iframe"\. A dashboard is made of: Cockpit, Tabs, Tab, Section, Card/);
   });
 
   it.each([
@@ -214,8 +214,8 @@ describe("the state a spec may seed", () => {
   });
 });
 
-describe("the shape of a cockpit", () => {
-  it("has a Cockpit at its root", () => {
+describe("the shape of a dashboard", () => {
+  it("has a Dashboard at its root", () => {
     expect(refused(s => { s.root = "sec-headline"; })).toMatch(/The root "sec-headline" is a Section/);
   });
 
@@ -263,12 +263,12 @@ describe("the shape of a cockpit", () => {
   it("is not more than it may be", () => {
     expect(refused(s => {
       for (let i = 0; i < MAX_ELEMENTS; i++) s.elements[`x${i}`] = { type: "Card", props: { card: "c91b2002" }, children: [] };
-    })).toMatch(new RegExp(`A cockpit holds at most ${MAX_ELEMENTS}`));
+    })).toMatch(new RegExp(`A dashboard holds at most ${MAX_ELEMENTS}`));
     expect(refused(s => {
       const more = Array.from({ length: MAX_CARDS }, (_, i) => `m${i}`);
       for (const k of more) s.elements[k] = { type: "Card", props: { card: "c91b2002" }, children: [] };
       s.elements["sec-headline"].children = ["alert-rate", "card-rate", "card-net", ...more];
-    })).toMatch(new RegExp(`A cockpit places at most ${MAX_CARDS}`));
+    })).toMatch(new RegExp(`A dashboard places at most ${MAX_CARDS}`));
   });
 
   it.each([null, 7, "spec", [], {}, { root: "cockpit" }, { elements: {} }])("%j is not a spec", (spec) => {
@@ -296,7 +296,7 @@ describe("a refusal names every kind of fault, in one round (CT-5)", () => {
     expect(said).toMatch(/opens on the tab "finance", which it does not hold/);
   });
 
-  it("a root that is no Cockpit does not hide what is wrong beneath it", () => {
+  it("a root that is no Dashboard does not hide what is wrong beneath it", () => {
     const said = refused(s => { s.root = "sec-headline"; s.elements["card-net"].props = { card: 42 }; });
     expect(said).toMatch(/The root "sec-headline" is a Section/);
     expect(said).toMatch(/"card-net" has a problem with "card"/);
@@ -438,7 +438,7 @@ describe("the ontology's pieces (Arc OC-4)", () => {
     expect(checkCockpitSpec(s).issues).toEqual([]);
   });
 
-  it("refuses a detail that follows anything but a table in the same cockpit", () => {
+  it("refuses a detail that follows anything but a table in the same dashboard", () => {
     expect(refused(s => withPieces(s, { follows: "b1" })))
       .toContain('The object detail "d1" follows "b1", which is neither a piece a click chooses in nor an object a click chooses.');
   });
@@ -467,7 +467,7 @@ describe("the ontology's pieces (Arc OC-4)", () => {
 });
 
 
-describe("a cockpit started from an object (2026-10-10)", () => {
+describe("a dashboard started from an object (2026-10-10)", () => {
   const FILTERS = { type: "ObjectFilters", props: { entity: "Order", properties: [
     { path: "status", label: "Status" }, { path: "order_to_user.country", label: "Customer country", via: "Customer" }] }, children: [] };
   const withColumn = (s: Spec) => {
@@ -481,7 +481,7 @@ describe("a cockpit started from an object (2026-10-10)", () => {
   const FIGURE = { type: "ObjectFigure", props: { entity: "Order", label: "Revenue", agg: "sum", path: "revenue", format: "money" }, children: [] };
   const CHART = { type: "ObjectChart", props: { entity: "Order", label: "Orders per day", time: "created_at", days: 30, size: "full" }, children: [] };
 
-  it("accepts a filter column as the cockpit's first child, beside its tabs, with a figure and a chart", () => {
+  it("accepts a filter column as the dashboard's first child, beside its tabs, with a figure and a chart", () => {
     const s = premise();
     withColumn(s);
     placed(s, "g1", structuredClone(FIGURE));
@@ -491,7 +491,7 @@ describe("a cockpit started from an object (2026-10-10)", () => {
 
   it("refuses a filter column anywhere but first", () => {
     expect(refused(s => { withColumn(s); s.elements.cockpit.children = ["tabs", "f1"]; }))
-      .toContain('The cockpit "cockpit" holds its filter column after its tabs or sections. A filter column is the cockpit\'s first child');
+      .toContain('The dashboard "cockpit" holds its filter column after its tabs or sections. A filter column is the dashboard\'s first child');
   });
 
   it("refuses a second filter column", () => {
@@ -499,12 +499,12 @@ describe("a cockpit started from an object (2026-10-10)", () => {
       withColumn(s);
       s.elements.f2 = structuredClone(FILTERS);
       (s.elements.cockpit.children as string[]).splice(1, 0, "f2");
-    })).toContain('The cockpit "cockpit" holds more than one filter column. It holds one, as its first child.');
+    })).toContain('The dashboard "cockpit" holds more than one filter column. It holds one, as its first child.');
   });
 
   it("refuses a filter column that narrows nothing", () => {
     expect(refused(s => { withColumn(s); s.elements.cockpit.children = ["f1"]; }))
-      .toContain('The cockpit "cockpit" holds a filter column and nothing it narrows.');
+      .toContain('The dashboard "cockpit" holds a filter column and nothing it narrows.');
   });
 
   it("refuses a filter column inside a section", () => {

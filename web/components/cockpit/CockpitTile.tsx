@@ -209,7 +209,7 @@ function Doors({ card, doors, onAlert, place }: { card: CockpitCard; doors: Tile
       <Button variant="ghost" size="icon-xs" aria-label="Refresh" title="Run this card again"
         onClick={() => doors.onRefresh(card.id)}><Icon name="refresh" /></Button>
       {doors.onRemove && (
-        <Button variant="ghost" size="icon-xs" aria-label="Take off this cockpit" title="Take it off this cockpit. The card is kept."
+        <Button variant="ghost" size="icon-xs" aria-label="Take off this dashboard" title="Take it off this dashboard. The card is kept."
           onClick={() => doors.onRemove?.(card.id)}><Icon name="close" /></Button>
       )}
     </div>

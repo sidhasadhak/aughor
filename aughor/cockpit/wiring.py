@@ -1,19 +1,19 @@
-"""Arc AP-2 and AP-3 — a cockpit wired as an App (ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.1b, §4.3
+"""Arc AP-2 and AP-3 — a dashboard wired as an App (ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.1b, §4.3
 and §4.5).
 
-A wired cockpit names sets its pieces read and values its sets read, a table names what a click chooses and what its
+A wired dashboard names sets its pieces read and values its sets read, a table names what a click chooses and what its
 ticks collect, a figure switches a list, and action buttons run declared actions on what a reader chose or ticked. The
 web's rules hold the wiring's shape — every name resolves, no ring of sets — from the same file the browser draws with
 (`web/lib/cockpit/rules.ts`), and what a set reads comes from one function there too (`web/lib/cockpit/sets.ts`, run here
 through the validator bundle). What only the platform knows is checked here before a spec is kept:
 
-  - that wiring is on here — off, a spec that says any of it is refused, and the cockpit is what it was;
+  - that wiring is on here — off, a spec that says any of it is refused, and the dashboard is what it was;
   - that every set compiles through the object door over the ontology this connection serves;
   - that each button's action is declared, and takes for each object parameter a source holding objects of its
     entity — "an order parameter takes a chosen order, never a customer" — and for a value parameter the form or a
     fixed value, never a choice.
 
-And who wires: a person. A model's edit may arrange a wired cockpit; it never changes its sets or values, and never
+And who wires: a person. A model's edit may arrange a wired dashboard; it never changes its sets or values, and never
 what a piece reads (`pieces.pieces_written`, whose comparison leaves out only a piece's room).
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ def _elements(spec: Any) -> dict:
 
 
 def wired(spec: Any) -> list[str]:
-    """What in ``spec`` only a wired cockpit says: its sets, its values, and each element that reads a set or makes a
+    """What in ``spec`` only a wired dashboard says: its sets, its values, and each element that reads a set or makes a
     choice, or holds action buttons — in that order, each once."""
     out = [k for k in ("sets", "values") if isinstance(spec, dict) and spec.get(k)]
     for key, el in _elements(spec).items():
@@ -51,12 +51,12 @@ def wired(spec: Any) -> list[str]:
 
 def refused_off(spec: Any) -> list[str]:
     """A sentence when ``spec`` is wired and wiring is off here — what a keep is refused with. Empty when it is not
-    wired, whatever the flag says, so a cockpit that is not keeps as it always did."""
+    wired, whatever the flag says, so a dashboard that is not keeps as it always did."""
     said = wired(spec)
     if not said or on():
         return []
-    return [f"The cockpit is wired — {', '.join(said[:6])}{'…' if len(said) > 6 else ''} read sets, make choices or run "
-            "actions — and wiring a cockpit is off on this install."]
+    return [f"The dashboard is wired — {', '.join(said[:6])}{'…' if len(said) > 6 else ''} read sets, make choices or run "
+            "actions — and wiring a dashboard is off on this install."]
 
 
 def read(spec: Any) -> Optional[dict]:
@@ -72,16 +72,16 @@ def read(spec: Any) -> Optional[dict]:
 def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
                  wiring: Optional[dict] = None) -> list[str]:
     """A sentence for each set that does not compile here, and each button whose action is not declared or whose
-    source holds the wrong kind of thing. Empty for a cockpit that is not wired."""
+    source holds the wrong kind of thing. Empty for a dashboard that is not wired."""
     if not wired(spec):
         return []
     wiring = wiring if wiring is not None else read(spec)
     if wiring is None:
-        return ["The cockpit's wiring could not be read, so it was not checked; it is not kept unchecked."]
+        return ["The dashboard's wiring could not be read, so it was not checked; it is not kept unchecked."]
     from aughor.cockpit.pieces import check_query, served_graph
     graph = graph if graph is not None else served_graph(connection_id)
     if graph is None:
-        return ["The cockpit reads sets, and no ontology is built for this connection."]
+        return ["The dashboard reads sets, and no ontology is built for this connection."]
     from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
     said: list[str] = []
     for name, s in (wiring.get("sets") or {}).items():
@@ -129,15 +129,15 @@ def not_resolved(connection_id: str, spec: Any, *, graph: Optional[Any] = None,
 
 
 def wiring_written(before: Any, after: Any, *, new: bool) -> list[str]:
-    """The sentences for what a model's draft did to a cockpit's sets and values, which only a person may change: a
-    new cockpit holds none, and an edit leaves them as they were. Pieces' own wiring is `pieces.pieces_written`'s."""
+    """The sentences for what a model's draft did to a dashboard's sets and values, which only a person may change: a
+    new dashboard holds none, and an edit leaves them as they were. Pieces' own wiring is `pieces.pieces_written`'s."""
     def wiring_of(spec: Any) -> str:
         return json.dumps({k: (spec or {}).get(k) or {} for k in ("sets", "values")} if isinstance(spec, dict) else {},
                           sort_keys=True, default=str)
     if new:
-        return ["The cockpit names sets or values. A new cockpit is wired by a person, by hand."] \
+        return ["The dashboard names sets or values. A new dashboard is wired by a person, by hand."] \
             if wired({"sets": (after or {}).get("sets"), "values": (after or {}).get("values")}) else []
     if wiring_of(before) != wiring_of(after):
-        return ["The edit changes the cockpit's sets or values. A person wires a cockpit: you may arrange it, never "
+        return ["The edit changes the dashboard's sets or values. A person wires a cockpit: you may arrange it, never "
                 "change what its pieces read."]
     return []

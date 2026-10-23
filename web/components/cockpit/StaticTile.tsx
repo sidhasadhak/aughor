@@ -82,7 +82,7 @@ export function NoteTile({ elementKey, text, author, writtenAt, size, doors }: {
         )}
         {doors.onResize && <SizePick value={size} label="Size of the note" onPick={s => doors.onResize?.(elementKey, s)} />}
         {doors.onTakeOff && (
-          <Button variant="ghost" size="icon-xs" aria-label="Take off this cockpit" title="Take the note off. The version before keeps it."
+          <Button variant="ghost" size="icon-xs" aria-label="Take off this dashboard" title="Take the note off. The version before keeps it."
             onClick={() => doors.onTakeOff?.(elementKey)}><Icon name="close" /></Button>
         )}
       </DoorsBar>
@@ -129,7 +129,7 @@ export function ImageTile({ elementKey, caption, stamp, size, doors }: {
         )}
         {doors.onResize && <SizePick value={size} label="Size of the image" onPick={s => doors.onResize?.(elementKey, s)} />}
         {doors.onTakeOff && (
-          <Button variant="ghost" size="icon-xs" aria-label="Take off this cockpit" title="Take the image off. The version before keeps it."
+          <Button variant="ghost" size="icon-xs" aria-label="Take off this dashboard" title="Take the image off. The version before keeps it."
             onClick={() => doors.onTakeOff?.(elementKey)}><Icon name="close" /></Button>
         )}
       </DoorsBar>
@@ -154,7 +154,7 @@ export function ImageTile({ elementKey, caption, stamp, size, doors }: {
         </div>
       ) : (
         <div className="aug-fs-sm" data-testid="cockpit-image-withheld" style={{ color: "var(--t2)", display: "flex", alignItems: "center", gap: 8 }}>
-          <Icon name="eyeoff" size={16} /> {stamp?.why || "This image is not shown: the cockpit's read said nothing of it."}
+          <Icon name="eyeoff" size={16} /> {stamp?.why || "This image is not shown: the dashboard's read said nothing of it."}
         </div>
       )}
       <Foot icon="attach">

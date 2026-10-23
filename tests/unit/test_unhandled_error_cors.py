@@ -1,7 +1,7 @@
 """An unexpected error is readable by the page that asked (2026-10-07).
 
 Starlette runs the catch-all `Exception` handler outside CORSMiddleware, so its 500 carried no
-CORS header: the Cockpit's NaN crash reached the browser as "Failed to fetch", not as the
+CORS header: the Dashboard's NaN crash reached the browser as "Failed to fetch", not as the
 `{error, request_id}` body that names the traceback in the log.
 """
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """Data that cannot be reached is said of the DATA, never as a metric waiting on a person (2026-10-23).
 
 LuxExperience's Postgres was down. The range measurement said so as one row under not-measured, named
-"headline metrics"; the Cockpit counted it as "1 approved metric can't be measured for a period" and offered
+"headline metrics"; the Dashboard counted it as "1 approved metric can't be measured for a period" and offered
 "Set their dates". The user read it as a metric still to review, approved Repeat Purchase Rate in the Semantic
 Layer to clear it (04:16 UTC), came back — the Postgres still down — and found the same row: "it does not
 refresh". Nothing was stale; an outage was dressed as a metric.

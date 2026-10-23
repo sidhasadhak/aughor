@@ -9,7 +9,7 @@ What each wiring protects:
 * **canvas** — a scope edit silently redefines what every investigation on that canvas can
   see; before this the prior scope was simply gone.
 * **dashboard card** — the upsert's ``ON CONFLICT DO UPDATE`` overwrites SQL, thresholds and
-  render spec on the artifact a cockpit shows daily. The create is not a revision (the
+  render spec on the artifact a dashboard shows daily. The create is not a revision (the
   savedquery precedent: the UPDATE is what creates the first revision).
 * **eval suite** — the corpus IS the artifact, and it is edited destructively while the
   suite's run history still cites the deleted case_ids. Revisions are recorded after each

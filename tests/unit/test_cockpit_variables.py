@@ -1,4 +1,4 @@
-"""Arc AP-8 — variables on a cockpit, as the server holds them (ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md
+"""Arc AP-8 — variables on a dashboard, as the server holds them (ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md
 §9.2).
 
 A value comes from its author, the reader on the page, a set's count or a property of the object a reader chose; a set
@@ -26,7 +26,7 @@ from tests.unit.test_cockpit_canvas import ME, volumes  # noqa: F401 — the fix
 from tests.unit.test_cockpit_wiring import ALL, _desk, _flags, _graph
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
-                                 reason="the cockpit's rules need node + validate.bundle.mjs")
+                                 reason="the dashboard's rules need node + validate.bundle.mjs")
 CONN = "variables-t"
 ROWS = ("SELECT o.order_id, c.country, o.order_date, o.total_amount FROM ecommerce.orders o "
         "JOIN ecommerce.customers c ON c.customer_id = o.customer_id")
@@ -87,8 +87,8 @@ def test_each_value_a_query_reads_becomes_the_sql_editor_s_own_placeholder_and_a
 
 
 @pytest.mark.parametrize("sql,values,says", [
-    ("SELECT {{country}}", {}, "this cockpit holds no value of that name"),
-    ("SELECT {{a}}, {{b}}", {}, "{{a}}, {{b}}, and this cockpit holds no value of those names"),
+    ("SELECT {{country}}", {}, "this dashboard holds no value of that name"),
+    ("SELECT {{a}}, {{b}}", {}, "{{a}}, {{b}}, and this dashboard holds no value of those names"),
     ("SELECT {{w}}", {"w": {"kind": "days", "value": None}}, "which holds nothing yet"),
     ("SELECT {{w}}", {"w": {"kind": "text", "value": ""}}, "which holds nothing yet"),
     ("SELECT {{w}}", {"w": {"kind": "days", "value": 2.5}}, "as a whole number of days"),
@@ -161,7 +161,7 @@ def test_off_a_query_that_reads_a_value_is_refused_and_one_that_reads_none_runs_
     with flag_overrides({"cockpit.composed": True, "cockpit.queries": True, "cockpit.variables": False}):
         r = client.post("/cockpits/queries/preview", params={"connection_id": conn},
                         json={"sql": ASKED, "shown": TABLE, "values": VALUES})
-        assert r.json()["refused"] == ["The query reads {{country}}, {{since}}, {{least}} — the cockpit's values — and "
+        assert r.json()["refused"] == ["The query reads {{country}}, {{since}}, {{least}} — the dashboard's values — and "
                                        "variables are off on this install."]
         r = client.post("/cockpits/queries", params={"connection_id": conn}, json={"sql": ASKED, "values": VALUES})
         assert r.status_code == 422 and "variables are off" in r.json()["detail"]["refused"][0]
@@ -179,7 +179,7 @@ def test_a_preview_binds_the_values_it_is_sent_and_says_which_it_reads(client, o
     assert sorted(r[0] for r in body["shown"]["rows"]) == want[:Q.TABLE_ROWS]
     missing = client.post("/cockpits/queries/preview", params={"connection_id": conn},
                           json={"sql": ASKED, "shown": TABLE, "values": {"country": VALUES["country"]}}).json()
-    assert missing["refused"] == ["The query reads {{since}}, {{least}}, and this cockpit holds no value of those names."]
+    assert missing["refused"] == ["The query reads {{since}}, {{least}}, and this dashboard holds no value of those names."]
 
 
 def test_a_kept_query_keeps_its_values_by_name_and_each_run_binds_the_page_s_own(client, on, rows):
@@ -198,7 +198,7 @@ def test_a_kept_query_keeps_its_values_by_name_and_each_run_binds_the_page_s_own
     # a figure read for one reader's values is theirs: the card's standing value is not moved by it
     assert get_card(card["id"]).refresh.last_value is None
     bare = client.post(f"/cards/{card['id']}/run").json()
-    assert bare["shown"] is None and bare["error"] == ("The query reads {{country}}, {{since}}, {{least}}, and this cockpit "
+    assert bare["shown"] is None and bare["error"] == ("The query reads {{country}}, {{since}}, {{least}}, and this dashboard "
                                                        "holds no value of those names.")
     with flag_overrides({"cockpit.variables": False}):
         off = client.post(f"/cards/{card['id']}/run", json={"values": VALUES}).json()
@@ -216,7 +216,7 @@ def test_a_query_reading_values_is_read_as_it_says_for_a_range_and_says_why(clie
     monkeypatch.setattr("aughor.routers.dashboard._card_range", lambda *a, **k: spec)
     run = client.post(f"/cards/{card['id']}/run", params={"preset": "last_7_days"}, json={"values": VALUES}).json()
     assert run["error"] is None and run["scoped"]["standing"] is True
-    assert run["scoped"]["why"] == "It reads the cockpit's own values, so it is read as its query says, not cut to the range."
+    assert run["scoped"]["why"] == "It reads the dashboard's own values, so it is read as its query says, not cut to the range."
 
 
 # ── what the server checks before a cockpit is kept ───────────────────────────────────────────────────────────────────
@@ -238,7 +238,7 @@ def test_only_what_variables_say_is_refused_off_and_a_desk_of_the_author_s_days_
     _flags(monkeypatch, set())
     assert variables.refused_off(_desk()) == []
     said = variables.refused_off(reader)
-    assert said == ["The cockpit reads variables — the value 'window' come from the reader, a count or a chosen object, "
+    assert said == ["The dashboard reads variables — the value 'window' come from the reader, a count or a chosen object, "
                     "compare a value in a set, or read a set's linked objects or another set whole — and variables are "
                     "off on this install."]
     # Arc AP-8b — a set's linked objects, and a set combined with another, are variables' too
@@ -313,7 +313,7 @@ def test_the_keep_door_refuses_variables_while_off_a_property_the_entity_lacks_a
     placed["elements"]["desk"]["children"].append("q")
     placed["elements"]["q"] = {"type": "Card", "props": {"card": card.id}, "children": []}
     gone = keep(placed)
-    assert not gone.kept and 'The card "By country" reads {{country}}, and this cockpit holds no value of that name.' \
+    assert not gone.kept and 'The card "By country" reads {{country}}, and this dashboard holds no value of that name.' \
         in gone.sentences, gone.sentences
     placed["values"]["country"] = {"label": "Country", "kind": "text", "value": "China", "from": {"by": "reader"}}
     assert keep(placed).kept

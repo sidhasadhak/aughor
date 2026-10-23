@@ -18,7 +18,7 @@ const block = (key: string, covers: string, value: string): BriefingRangeBlock =
     previous: 1, last_year: null, rel: 0, rel_last_year: null, status: "final", current_text: value, previous_text: "$1" }],
 });
 
-describe("the metrics cockpit while a new period is read", () => {
+describe("the metrics dashboard while a new period is read", () => {
   it("says which period is being read, dims the old figures, and clears when the new ones arrive", async () => {
     api.readExpectedNext.mockResolvedValue({ target: null, items: [], why: "" });
     api.measureRange.mockResolvedValueOnce({ period: block("k1", "September 2026", "$300"), from_briefing: false, measured_at: "2026-10-08T10:00:00Z", scope_key: "c" });
@@ -43,7 +43,7 @@ describe("the metrics cockpit while a new period is read", () => {
   });
 });
 
-describe("the metrics cockpit when the data cannot be reached (LuxExperience, 2026-10-23)", () => {
+describe("the metrics dashboard when the data cannot be reached (LuxExperience, 2026-10-23)", () => {
   // The Postgres was down: the server said so as a "headline metrics" row under not-measured, the cockpit showed
   // "1 approved metric can't be measured for a period · Set their dates", and the user approved Repeat Purchase
   // Rate to clear it — and came back to the same row. It is said of the data now, and nothing asks for a metric.

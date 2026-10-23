@@ -83,7 +83,7 @@ describe("the builder's edits", () => {
     expect(canMove(s, "cockpit", 1)).toBe(false);
   });
 
-  it("takes a section off with everything it holds, and the cockpit left is one the rules accept", () => {
+  it("takes a section off with everything it holds, and the dashboard left is one the rules accept", () => {
     const s = takeOffAll(objectCockpit(), "sec");
     expect(Object.keys(s.elements).sort()).toEqual(["cockpit", "filters", "note", "sec-2"]);
     expect(s.elements.cockpit.children).toEqual(["filters", "sec-2"]);
@@ -98,7 +98,7 @@ describe("the builder's edits", () => {
     expect(issues(s)).toEqual([]);
   });
 
-  it("outlines a cockpit in the order it is drawn, the row of tabs not a line", () => {
+  it("outlines a dashboard in the order it is drawn, the row of tabs not a line", () => {
     expect(outline(objectCockpit()).map(l => `${l.depth}:${l.key}`)).toEqual([
       "0:cockpit", "1:filters", "1:sec", "2:figure-0", "2:chart", "2:table", "2:detail", "3:flag", "1:sec-2", "2:note",
     ]);
@@ -151,8 +151,8 @@ describe("a chart's measure and split are held to one sense", () => {
   });
 });
 
-describe("what a cockpit's writer is told", () => {
-  it("says nothing of the grid while cockpits are not built in place, and two fragments more while they are", () => {
+describe("what a dashboard's writer is told", () => {
+  it("says nothing of the grid while dashboards are not built in place, and two fragments more while they are", () => {
     const off = grammar();
     const on = grammar({ grid: true });
     expect(off).not.toMatch(/grid/);

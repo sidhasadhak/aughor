@@ -542,7 +542,7 @@ def get_ontology_release(
 ):
     """Arc OC-2 — the scope's releases and its draft (ROADMAP §3.56): the release consumers read, every earlier one, and
     each change waiting to be published with its class (ERR · MEANING · WARN · SAFE), its reasons, what changed field
-    by field, and the automations, claims and cockpit cards it touches. While `ontology.release` is off the draft is
+    by field, and the automations, claims and dashboard cards it touches. While `ontology.release` is off the draft is
     empty and says so: a declaration is published when it is saved."""
     from aughor.ontology import release as R
     effective = _served_scope(connection_id, schema_name)
@@ -3602,7 +3602,7 @@ def _checked_action(action_id: str, fields: dict, graph):
 
 class _ActionPreview(BaseModel):
     """A draft action for the designer to read: its id, the declaration as the declare door takes it, the segments a
-    cockpit lists it beside, and the person's own example of what a press is given (``{"reason": "Missed pickup"}``)."""
+    dashboard lists it beside, and the person's own example of what a press is given (``{"reason": "Missed pickup"}``)."""
     id: str = Field(min_length=1)
     action: _DeclaredActionBody
     segments: list[str] = Field(default_factory=list, max_length=8)

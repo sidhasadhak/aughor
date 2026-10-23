@@ -1,7 +1,7 @@
 """Arc OC-4 — a page of objects through the object door's own compiler (ROADMAP §3.56).
 
 Before: the door answered aggregates only. `POST /objects/query` grouped and counted, and the one listing that existed
-(`list_linked`) read a single object's links with no total and no edit merged. A cockpit's objects table needs one row
+(`list_linked`) read a single object's links with no total and no edit merged. A dashboard's objects table needs one row
 per object, the columns a person chose, a sort that holds still across pages, and the total the set holds. Every
 claim here is held to a hand-written query over the seeded samples warehouse: the page, the sort with the key breaking
 ties, the total under a segment and filters, an accepted edit listed like a column, and — behind

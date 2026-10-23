@@ -68,7 +68,7 @@ describe("each edit", () => {
     accepted(s);
   });
 
-  it("does not leave the cockpit opening on a tab it took away", () => {
+  it("does not leave the dashboard opening on a tab it took away", () => {
     const s = premise();
     s.state = { tab: "watches" };
     const after = accepted(takeOff(s, "watch-rate"));
@@ -109,7 +109,7 @@ describe("each edit", () => {
     expect(children(placeCard(premise(), "c0ffee01"), "sec-headline")).toContain("card-c0ffee01");  // the first section
   });
 
-  it("swaps a changed card in wherever the cockpit places the one it replaces, and touches nothing else (Arc AP-7)", () => {
+  it("swaps a changed card in wherever the dashboard places the one it replaces, and touches nothing else (Arc AP-7)", () => {
     const placed = placeCard(placeCard(premise(), "q1", "sec-limits"), "q1", "sec-headline");
     const s = accepted(swapCard(placed, "q1", "q2"));
     const cards = Object.values(s.elements).filter(e => e.type === "Card").map(e => e.props.card);
@@ -119,7 +119,7 @@ describe("each edit", () => {
     expect(placed.elements["card-q1"].props.card).toBe("q1");                    // the spec handed in is not changed
   });
 
-  it("renames the cockpit, a section and a tab, and an empty name changes nothing", () => {
+  it("renames the dashboard, a section and a tab, and an empty name changes nothing", () => {
     let s = rename(premise(), "cockpit", "Returns watch");
     s = rename(s, "sec-headline", "At a glance");
     s = accepted(rename(s, "tab-watches", "Limits"));
@@ -140,7 +140,7 @@ describe("each edit", () => {
     expect(tabsOf(t).map(x => [x.name, x.label])).toEqual([["overview", "Overview"], ["watching", "Watching"]]);
   });
 
-  it("gives a cockpit with no tabs its first two: what it held, and the new one", () => {
+  it("gives a dashboard with no tabs its first two: what it held, and the new one", () => {
     const flat: CockpitSpec = { root: "c", elements: {
       c: { type: "Cockpit", props: { title: "Returns" }, children: ["s1", "s2"] },
       s1: { type: "Section", props: { title: "Headline" }, children: ["k1"] },
@@ -154,7 +154,7 @@ describe("each edit", () => {
     expect(t.state).toEqual({ tab: "overview" });
   });
 
-  it("taking the last card off leaves an empty cockpit, which the rules refuse in their own words", () => {
+  it("taking the last card off leaves an empty dashboard, which the rules refuse in their own words", () => {
     let s: CockpitSpec = { root: "c", elements: {
       c: { type: "Cockpit", props: { title: "One" }, children: ["s"] },
       s: { type: "Section", props: { title: "Only" }, children: ["k"] },

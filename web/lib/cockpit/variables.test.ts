@@ -89,7 +89,7 @@ describe("the rules a value is held to", () => {
     ["a chosen object's value that holds one", { label: "W", kind: "text", value: "x", from: { by: "chosen", choice: "chosen-order", path: "status" } }, "is read from the object chosen and holds one"],
     ["a day written another way", { label: "W", kind: "date", value: "11/10/2026" }, "is a day and holds \"11/10/2026\". A day is written 2026-10-11"],
     ["a count that is not a number", { label: "W", kind: "text", from: { by: "count", set: "waiting" } }, "counts a set, so it holds a number — not words"],
-    ["a count of a set the cockpit lacks", { label: "W", kind: "number", from: { by: "count", set: "nowhere" } }, "counts the set \"nowhere\", which this cockpit does not hold"],
+    ["a count of a set the dashboard lacks", { label: "W", kind: "number", from: { by: "count", set: "nowhere" } }, "counts the set \"nowhere\", which this dashboard does not hold"],
     ["a property of a choice no click makes", { label: "W", kind: "text", from: { by: "chosen", choice: "nobody", path: "status" } }, "and no click chooses \"nobody\""],
     ["a reader's choice of the wrong kind", { label: "W", kind: "days", value: 7, from: { by: "reader", options: [7, "fortnight"] } }, "holds \"fortnight\". A days holds a number"],
     ["a start that is not among the choices", { label: "W", kind: "days", value: 10, from: { by: "reader", options: [7, 14] } }, "starts from 10, which is not one of the choices it offers"],
@@ -138,7 +138,7 @@ describe("a query's values", () => {
     expect(valuesFor(["waiting-count"], defs, now({ "waiting-count": { refused: "The door is down." } })))
       .toEqual({ refused: "It reads Waiting count, which cannot be read: The door is down." });
     expect(valuesFor(["country"], defs, now({ country: { value: "" } }))).toEqual({ refused: "It reads Country, which holds nothing yet." });
-    expect(valuesFor(["nowhere"], defs, now({}))).toEqual({ refused: "It reads {{nowhere}}, and this cockpit holds no value of that name." });
+    expect(valuesFor(["nowhere"], defs, now({}))).toEqual({ refused: "It reads {{nowhere}}, and this dashboard holds no value of that name." });
   });
 
   it("take what a reader types only when it is a value of their kind", () => {

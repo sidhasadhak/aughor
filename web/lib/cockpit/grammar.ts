@@ -93,7 +93,7 @@ function component(name: WrittenName, grid: boolean, structure: boolean): string
  *  without them the text is as it was before Arc AP. */
 export function grammar({ grid = false, structure = false }: { grid?: boolean; structure?: boolean } = {}): string {
   return [
-    "A cockpit is one JSON object: {\"root\": <element key>, \"state\": {\"tab\": <tab name>}, \"elements\": {<key>: <element>}}.",
+    "A dashboard is one JSON object: {\"root\": <element key>, \"state\": {\"tab\": <tab name>}, \"elements\": {<key>: <element>}}.",
     "An element is {\"type\", \"props\", \"children\"} and, where allowed, \"visible\". \"children\" is a list of element keys, "
       + "and [] when the element holds none. An element carries nothing else, and a prop is written, never computed.",
     "",
@@ -101,7 +101,7 @@ export function grammar({ grid = false, structure = false }: { grid?: boolean; s
     ...WRITTEN.map(name => component(name, grid, structure)),
     "",
     "Every element but the root is held by exactly one other. \"state\" may seed \"tab\" with the name of the tab to open on, "
-      + "and nothing else; it is left out when the cockpit has no tabs.",
+      + "and nothing else; it is left out when the dashboard has no tabs.",
     "",
     `Conditions. Only these may carry "visible": ${MAY_BE_CONDITIONAL.join(", ")}. A condition compares a status the host publishes, `
       + "with \"eq\" or \"neq\":",
@@ -120,14 +120,14 @@ export function grammar({ grid = false, structure = false }: { grid?: boolean; s
       + (grid ? ` In a section with "grid": ${GRID.columns}, each element says w (1 to ${GRID.columns} columns) and h (rows) instead, and keeps them when moved.` : ""),
     "",
     `A ${STATIC.join(" and an ")} are the person's own. You may move one, resize it or take it off, because that is arrangement. `
-      + "You may not add one, change a note's text or choose an image: an edit that does is refused. A new cockpit holds none.",
+      + "You may not add one, change a note's text or choose an image: an edit that does is refused. A new dashboard holds none.",
     "",
     `Size. At most ${MAX_ELEMENTS} elements, ${MAX_TABS} tabs, and ${MAX_CARDS} cards placed.`,
     "",
     "An example, which places three cards by the names its draft gave them:",
     JSON.stringify(GRAMMAR_EXAMPLE),
     "",
-    "An edit is a list of RFC 6902 operations against the cockpit as it stands: add, remove, replace, move, copy, test. "
+    "An edit is a list of RFC 6902 operations against the dashboard as it stands: add, remove, replace, move, copy, test. "
       + "Each has a \"path\" such as \"/elements/sec-headline/props/title\", or \"/elements/sec-headline/children/-\" for the end of a list. "
       + "An operation applies exactly or the whole edit is refused: replacing or removing what is not there is a refusal. "
       + `An edit holds at most ${MAX_PATCHES} operations.`,

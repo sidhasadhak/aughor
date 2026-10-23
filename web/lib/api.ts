@@ -2993,7 +2993,7 @@ export interface CockpitMoved {
 /** A cockpit write that was refused. `sentences` are the validator's own, to show as they are. */
 export class CockpitRefused extends Error {
   constructor(public readonly outcome: CockpitKept) {
-    super(outcome.sentences.join(" ") || "The cockpit was not kept.");
+    super(outcome.sentences.join(" ") || "The dashboard was not kept.");
     this.name = "CockpitRefused";
   }
 }
@@ -3030,7 +3030,7 @@ export async function listCockpits(connectionId: string): Promise<CockpitList | 
   if (res.status === 404) return null;
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(err, "Failed to read your cockpits"));
+    throw new Error(fastApiError(err, "Failed to read your dashboards"));
   }
   return res.json();
 }
@@ -3040,7 +3040,7 @@ export async function getCockpit(connectionId: string, cockpitId: string, range?
   const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}`, connectionId, rangeParams(range)));
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(err, "Failed to read the cockpit"));
+    throw new Error(fastApiError(err, "Failed to read the dashboard"));
   }
   return res.json();
 }
@@ -3054,13 +3054,13 @@ export async function keepCockpit(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(repin ? { spec, note, repin } : { spec, note }),
   });
-  return cockpitWrite(res, "Failed to keep the cockpit");
+  return cockpitWrite(res, "Failed to keep the dashboard");
 }
 
 /** Start "My cockpit" from the cards pinned in the Briefing, in the order they were arranged. No model. */
 export async function startMyCockpit(connectionId: string): Promise<CockpitKept> {
   const res = await fetch(cockpitUrl("/cockpits/start", connectionId), { method: "POST" });
-  return cockpitWrite(res, "Failed to start your cockpit");
+  return cockpitWrite(res, "Failed to start your dashboard");
 }
 
 /** What a cockpit started from an object is offered (2026-10-10, `aughor/cockpit/from_object.py`): each piece with a
@@ -3149,7 +3149,7 @@ export async function draftCockpit(connectionId: string, area: string, schema?: 
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(err, "Failed to draft the cockpit"));
+    throw new Error(fastApiError(err, "Failed to draft the dashboard"));
   }
   return res.json();
 }
@@ -3165,7 +3165,7 @@ export async function moveCanvasCockpit(connectionId: string, canvasId: string):
   if (res.ok) return body as CockpitMoved;
   const detail = (body as { detail?: unknown }).detail;
   if (detail && typeof detail === "object" && Array.isArray((detail as CockpitMoved).sentences)) return detail as CockpitMoved;
-  throw new Error(fastApiError(body, "Failed to move the cockpit"));
+  throw new Error(fastApiError(body, "Failed to move the dashboard"));
 }
 
 /** Go back to an earlier version: it is kept again, as the newest. */
@@ -3210,13 +3210,13 @@ export async function publishCockpit(connectionId: string, cockpitId: string, to
   const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/publish`, connectionId), {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to }),
   });
-  return cockpitWrite(res, "Failed to publish the cockpit");
+  return cockpitWrite(res, "Failed to publish the dashboard");
 }
 
 /** Stop sharing a cockpit. A version too. */
 export async function unpublishCockpit(connectionId: string, cockpitId: string): Promise<CockpitKept> {
   const res = await fetch(cockpitUrl(`/cockpits/${encodeURIComponent(cockpitId)}/unpublish`, connectionId), { method: "POST" });
-  return cockpitWrite(res, "Failed to unpublish the cockpit");
+  return cockpitWrite(res, "Failed to unpublish the dashboard");
 }
 
 /** A cockpit someone else published to a group the asker is in or a role they hold. */
@@ -3235,7 +3235,7 @@ export async function listSharedCockpits(connectionId: string): Promise<SharedCo
   if (res.status === 404) return [];
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(err, "Failed to read the cockpits shared with you"));
+    throw new Error(fastApiError(err, "Failed to read the dashboards shared with you"));
   }
   return (await res.json()).cockpits as SharedCockpitListed[];
 }
@@ -3260,7 +3260,7 @@ export async function getSharedCockpit(connectionId: string, owner: string, cock
   const res = await fetch(cockpitUrl(`/cockpits/shared/${encodeURIComponent(owner)}/${encodeURIComponent(cockpitId)}`, connectionId, rangeParams(range)));
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(fastApiError(err, "Failed to read the shared cockpit"));
+    throw new Error(fastApiError(err, "Failed to read the shared dashboard"));
   }
   return res.json();
 }
@@ -3268,7 +3268,7 @@ export async function getSharedCockpit(connectionId: string, owner: string, cock
 /** Start a cockpit of the asker's own from a published one. */
 export async function copySharedCockpit(connectionId: string, owner: string, cockpitId: string): Promise<CockpitKept & { title?: string }> {
   const res = await fetch(cockpitUrl(`/cockpits/shared/${encodeURIComponent(owner)}/${encodeURIComponent(cockpitId)}/copy`, connectionId), { method: "POST" });
-  return cockpitWrite(res, "Failed to start a cockpit from this one");
+  return cockpitWrite(res, "Failed to start a dashboard from this one");
 }
 
 /** Retire a cockpit. Its history stays. */
@@ -3278,7 +3278,7 @@ export async function retireCockpit(connectionId: string, cockpitId: string, not
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ note }),
   });
-  return cockpitWrite(res, "Failed to retire the cockpit");
+  return cockpitWrite(res, "Failed to retire the dashboard");
 }
 
 export async function deleteDashboardCard(cardId: string): Promise<void> {

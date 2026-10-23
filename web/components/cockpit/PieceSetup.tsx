@@ -604,7 +604,7 @@ function ChoicesRows({ spec, k, p, noun, set }: { spec: CockpitSpec; k: string; 
     <>
       <Row label="A click" testid="setup-chooses" hint={p.chooses ? `Chooses “${wireWords(String(p.chooses))}”: a detail, a set or a button reads it.` : `Chooses a ${thing} for a detail that follows this piece.`}>
         <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--t2)" }}>
-          <Tick checked={!!p.chooses} aria-label="A click chooses for the cockpit"
+          <Tick checked={!!p.chooses} aria-label="A click chooses for the dashboard"
             onChange={e => set({ chooses: e.target.checked ? freshWireName(spec, `chosen ${noun}`) : null }, "what a click chooses named by hand")} />
           Names the {noun.toLowerCase()} it chooses, for other pieces
         </label>
@@ -676,8 +676,8 @@ export function PieceSetup({ spec, selected, onChange, connectionId, schema, car
   if (!selected || !el) {
     return (
       <div className="aug-fs-sm" data-testid="setup-empty" style={{ padding: "16px 14px", color: "var(--t3)", lineHeight: 1.5 }}>
-        Choose a piece on the cockpit, or a line in its layout, to set it up. Its size moves one grade at a time — drag an
-        edge, use − and + above the cockpit, or Alt and the arrow keys.
+        Choose a piece on the dashboard, or a line in its layout, to set it up. Its size moves one grade at a time — drag an
+        edge, use − and + above the dashboard, or Alt and the arrow keys.
       </div>
     );
   }

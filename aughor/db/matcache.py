@@ -123,7 +123,7 @@ def get_cached_entry(
 
     A statement that names a table or schema a person turned off is a miss, never a hit (the exploration
     principles §6, found live 2026-10-08): the cache sits in front of the SQL door, so a result stored
-    before the table was turned off was served after it — the Cockpit measured Uber's metrics from a table
+    before the table was turned off was served after it — the Dashboard measured Uber's metrics from a table
     that was off. As a miss the caller runs the statement, and the door refuses it with the reason.
 
     ``extras`` is the format-specific payload stored alongside the rows — typed columns and the

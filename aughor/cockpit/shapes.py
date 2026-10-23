@@ -1,4 +1,4 @@
-"""Arc AP-5 — shapes in the starter: what a cockpit started from an object is FOR, read from what the ontology holds
+"""Arc AP-5 — shapes in the starter: what a dashboard started from an object is FOR, read from what the ontology holds
 (ROADMAP §3.57; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.6; design-mockups/cockpit-builder.html screens 1 and 7).
 
 The study measured that every entity got the same five pieces, or a subset: a distribution centre one figure, a case
@@ -184,7 +184,7 @@ def _queue(graph: Any, entity: Any) -> Optional[dict]:
 
 
 def _actions(graph: Any, entity: Any) -> list[dict]:
-    """The actions declared on this entity a cockpit can fill: each object parameter of the entity's own from the
+    """The actions declared on this entity a dashboard can fill: each object parameter of the entity's own from the
     chosen object, each value asked in the form when it is needed — an action needing an object of another type is
     left out, since nothing on the page holds one."""
     out = []

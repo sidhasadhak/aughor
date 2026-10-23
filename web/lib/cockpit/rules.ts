@@ -101,10 +101,10 @@ const ELEMENT_FIELDS = new Set(["type", "props", "children", "visible"]);
 
 /** Why each field a spec may not carry is refused, said to whoever wrote it. */
 const REFUSED_FIELDS: Record<string, string> = {
-  watch: "A cockpit runs nothing without a click, so \"watch\" is refused.",
-  on: "A cockpit defines no action of its own; a card keeps the doors it already has.",
-  repeat: "A cockpit places each card by its id; \"repeat\" is refused.",
-  slots: "A cockpit holds its elements in \"children\"; \"slots\" is refused.",
+  watch: "A dashboard runs nothing without a click, so \"watch\" is refused.",
+  on: "A dashboard defines no action of its own; a card keeps the doors it already has.",
+  repeat: "A dashboard places each card by its id; \"repeat\" is refused.",
+  slots: "A dashboard holds its elements in \"children\"; \"slots\" is refused.",
 };
 
 /** The first expression key found anywhere inside a prop's value, or null. */
@@ -148,7 +148,7 @@ function checkProps(key: string, type: ComponentName, props: Obj, out: CockpitIs
     if (expr) {
       out.push({ code: "expression_in_prop", elementKey: key,
         message: `The ${type.toLowerCase()} ${q(key)} sets ${q(name)} from an expression (${expr}). `
-          + "In a cockpit a prop is written, never computed." });
+          + "In a dashboard a prop is written, never computed." });
     }
   }
   if (out.some(i => i.elementKey === key && i.code === "expression_in_prop")) return;
@@ -194,8 +194,8 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
   if (values === null) issues.push({ code: "bad_prop", message: "The spec's \"values\" is not a map of named values." });
   const setNames = Object.keys(sets ?? {});
   const valueNames = Object.keys(values ?? {});
-  if (setNames.length > MAX_SETS) issues.push({ code: "too_large", message: `The cockpit holds ${setNames.length} sets. It holds at most ${MAX_SETS}.` });
-  if (valueNames.length > MAX_VALUES) issues.push({ code: "too_large", message: `The cockpit holds ${valueNames.length} values. It holds at most ${MAX_VALUES}.` });
+  if (setNames.length > MAX_SETS) issues.push({ code: "too_large", message: `The dashboard holds ${setNames.length} sets. It holds at most ${MAX_SETS}.` });
+  if (valueNames.length > MAX_VALUES) issues.push({ code: "too_large", message: `The dashboard holds ${valueNames.length} values. It holds at most ${MAX_VALUES}.` });
   const sound_ = new Set<string>();
   for (const [name, raw] of Object.entries(values ?? {})) {
     const parsed = cockpitValue.safeParse(raw);
@@ -253,12 +253,12 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
     if (v.from?.by === "count" || v.from?.by === "sum") {
       const verb = v.from.by === "count" ? "counts" : "sums";
       if (v.kind !== "number") issues.push({ code: "bad_prop", message: `The value ${q(name)} ${verb} a set, so it holds a number — not ${KIND_WORDS[v.kind]}.` });
-      if (!setNamesOf(spec).includes(v.from.set)) issues.push({ code: "bad_prop", message: `The value ${q(name)} ${verb} the set ${q(v.from.set)}, which this cockpit does not hold.` });
+      if (!setNamesOf(spec).includes(v.from.set)) issues.push({ code: "bad_prop", message: `The value ${q(name)} ${verb} the set ${q(v.from.set)}, which this dashboard does not hold.` });
     } else if (v.from?.by === "query") {
       // Arc AP-8c — a query of the cockpit's own: a card it places
       const card = v.from.card;
       if (!Object.values(spec.elements).some(el => el?.type === "Card" && el.props?.card === card)) {
-        issues.push({ code: "bad_prop", message: `The value ${q(name)} reads the query ${q(card)}, which this cockpit does not place.` });
+        issues.push({ code: "bad_prop", message: `The value ${q(name)} reads the query ${q(card)}, which this dashboard does not place.` });
       }
       if (v.kind === "days") issues.push({ code: "bad_prop", message: `The value ${q(name)} reads a query, and a query's value is a number, not days. Make it a number.` });
     } else if (v.from?.by === "chosen") {
@@ -346,7 +346,7 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
       if (named.length !== 1) {
         issues.push({ code: "bad_prop", elementKey: key, message: `${what} names ${named.length ? named.join(" and ") : "neither an entity nor a set"}. It reads one: an entity, or a set.` });
       } else if (p.set && !isSet(p.set)) {
-        issues.push({ code: "bad_prop", elementKey: key, message: `${what} reads the set ${q(String(p.set))}, which this cockpit does not hold.` });
+        issues.push({ code: "bad_prop", elementKey: key, message: `${what} reads the set ${q(String(p.set))}, which this dashboard does not hold.` });
       } else if (p.set && p.segment) {
         issues.push({ code: "bad_prop", elementKey: key, message: `${what} reads a set and also names a segment. A set keeps its own segment.` });
       }
@@ -355,13 +355,13 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
     if (el.type === "ObjectFilters" && p.set != null) {
       const within = isSet(p.set) ? readSet(spec, String(p.set)) : null;
       if (!within) {
-        issues.push({ code: "bad_prop", elementKey: key, message: `The filter column ${q(key)} counts within the set ${q(String(p.set))}, which this cockpit does not hold.` });
+        issues.push({ code: "bad_prop", elementKey: key, message: `The filter column ${q(key)} counts within the set ${q(String(p.set))}, which this dashboard does not hold.` });
       } else if (!isRefused(within) && within.entity.toLowerCase() !== String(p.entity ?? "").toLowerCase()) {
         issues.push({ code: "bad_prop", elementKey: key, message: `The filter column ${q(key)} filters ${String(p.entity)} and counts within ${q(String(p.set))}, a set of ${within.entity}. It counts within a set of what it filters.` });
       }
     }
     if (el.type === "ObjectFigure" && p.of != null && !isSet(p.of)) {
-      issues.push({ code: "bad_prop", elementKey: key, message: `${what} is said beside the set ${q(String(p.of))}, which this cockpit does not hold.` });
+      issues.push({ code: "bad_prop", elementKey: key, message: `${what} is said beside the set ${q(String(p.of))}, which this dashboard does not hold.` });
     }
     if (el.type === "ObjectFigure" && p.shows != null && !p.set) {
       issues.push({ code: "bad_prop", elementKey: key, message: `${what} shows its set in a table and reads no set. A figure that switches a list reads a set.` });
@@ -383,11 +383,11 @@ function checkWiring(spec: WireSpec, sound: Map<string, { type: ComponentName; p
               issues.push({ code: "bad_prop", elementKey: key, message: `${which} takes ${q(param)} from ${q(src.from)}, which is not an object a click chooses or ticks collect.` });
             }
           } else if ("set" in src && !isSet(src.set)) {
-            issues.push({ code: "bad_prop", elementKey: key, message: `${which} takes ${q(param)} from the set ${q(src.set)}, which this cockpit does not hold.` });
+            issues.push({ code: "bad_prop", elementKey: key, message: `${which} takes ${q(param)} from the set ${q(src.set)}, which this dashboard does not hold.` });
           }
         }
         for (const n of b.after?.read ?? []) {
-          if (!isSet(n)) issues.push({ code: "bad_prop", elementKey: key, message: `${which} reads the set ${q(n)} again after it runs, and this cockpit does not hold it.` });
+          if (!isSet(n)) issues.push({ code: "bad_prop", elementKey: key, message: `${which} reads the set ${q(n)} again after it runs, and this dashboard does not hold it.` });
         }
       });
     }
@@ -525,7 +525,7 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
 
   if (!isObj(spec) || typeof spec.root !== "string" || !isObj(spec.elements)) {
     issues.push({ code: "not_a_spec",
-      message: "A cockpit spec is an object with a \"root\" and a map of \"elements\"." });
+      message: "A dashboard spec is an object with a \"root\" and a map of \"elements\"." });
     return done();
   }
   const extra = Object.keys(spec).filter(k => !["root", "elements", "state", "sets", "values"].includes(k));
@@ -537,7 +537,7 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
   const keys = Object.keys(elements);
   if (keys.length > MAX_ELEMENTS) {
     issues.push({ code: "too_large",
-      message: `The spec holds ${keys.length} elements. A cockpit holds at most ${MAX_ELEMENTS}.` });
+      message: `The spec holds ${keys.length} elements. A dashboard holds at most ${MAX_ELEMENTS}.` });
     return done();
   }
 
@@ -567,7 +567,7 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
     }
     if (!isComponent(el.type)) {
       issues.push({ code: "unknown_component", elementKey: key,
-        message: `The element ${q(key)} is a ${q(el.type)}. A cockpit is made of: ${list(COMPONENT_NAMES)}.` });
+        message: `The element ${q(key)} is a ${q(el.type)}. A dashboard is made of: ${list(COMPONENT_NAMES)}.` });
       continue;
     }
     const hasProps = isObj(el.props);
@@ -602,7 +602,7 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
   const root = sound.get(spec.root);
   if (root && root.type !== "Cockpit") {
     issues.push({ code: "bad_root", elementKey: spec.root,
-      message: `The root ${q(spec.root)} is a ${root.type}. The root of a cockpit is a Cockpit.` });
+      message: `The root ${q(spec.root)} is a ${root.type}. The root of a dashboard is a Dashboard.` });
   }
 
   const tabNames = new Map<string, string>();
@@ -622,21 +622,21 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
           + (may.length ? `A ${el.type} holds: ${list(may)}.` : `A ${el.type} holds nothing.`) });
     } else if (el.type === "Cockpit" && new Set(kinds.filter(k => k !== "ObjectFilters" && k !== "Drawer")).size > 1) {
       issues.push({ code: "bad_child", elementKey: key,
-        message: `The cockpit ${q(key)} holds tabs and sections side by side. It holds one Tabs, or sections, not both.` });
+        message: `The dashboard ${q(key)} holds tabs and sections side by side. It holds one Tabs, or sections, not both.` });
     } else if (el.type === "Cockpit" && kinds.filter(k => k === "Tabs").length > 1) {
       issues.push({ code: "bad_child", elementKey: key,
-        message: `The cockpit ${q(key)} holds more than one Tabs. It holds one.` });
+        message: `The dashboard ${q(key)} holds more than one Tabs. It holds one.` });
     } else if (el.type === "Cockpit" && kinds.filter(k => k === "ObjectFilters").length > 1) {
       issues.push({ code: "bad_child", elementKey: key,
-        message: `The cockpit ${q(key)} holds more than one filter column. It holds one, as its first child.` });
+        message: `The dashboard ${q(key)} holds more than one filter column. It holds one, as its first child.` });
     } else if (el.type === "Cockpit" && kinds.includes("ObjectFilters") && kinds[0] !== "ObjectFilters") {
       issues.push({ code: "bad_child", elementKey: key,
-        message: `The cockpit ${q(key)} holds its filter column after its tabs or sections. A filter column is the cockpit's first child, drawn beside the rest.` });
+        message: `The dashboard ${q(key)} holds its filter column after its tabs or sections. A filter column is the dashboard's first child, drawn beside the rest.` });
     } else if (el.type === "Cockpit" && kinds.length > 0 && kinds.every(k => k === "ObjectFilters" || k === "Drawer")) {
       issues.push({ code: "bad_child", elementKey: key,
         message: kinds.includes("ObjectFilters")
-          ? `The cockpit ${q(key)} holds a filter column and nothing it narrows. It holds one Tabs, or sections, beside it.`
-          : `The cockpit ${q(key)} holds only drawers. It holds one Tabs, or sections, for a drawer to open beside.` });
+          ? `The dashboard ${q(key)} holds a filter column and nothing it narrows. It holds one Tabs, or sections, beside it.`
+          : `The dashboard ${q(key)} holds only drawers. It holds one Tabs, or sections, for a drawer to open beside.` });
     } else if (MAY_HOLD[el.type].length && !PLACED.includes(el.type) && el.type !== "Section" && el.type !== "Drawer" && !el.children.length) {
       // Arc AP-4 — a section may hold nothing yet: the builder offers it a piece, and a reader is drawn none
       issues.push({ code: "bad_child", elementKey: key,
@@ -645,7 +645,7 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
 
     if (key !== spec.root && el.type === "Cockpit") {
       issues.push({ code: "bad_root", elementKey: key,
-        message: `The element ${q(key)} is a second Cockpit. A spec holds one, at its root.` });
+        message: `The element ${q(key)} is a second Dashboard. A spec holds one, at its root.` });
     }
     // A name, an id or a title is read only from props that passed. One that was refused is
     // not read again here, where two tabs with no name would be called namesakes.
@@ -749,10 +749,10 @@ export function checkCockpitSpec(spec: unknown): CockpitCheck {
   }
 
   if (tabCount > MAX_TABS) {
-    issues.push({ code: "too_large", message: `The spec holds ${tabCount} tabs. A cockpit holds at most ${MAX_TABS}.` });
+    issues.push({ code: "too_large", message: `The spec holds ${tabCount} tabs. A dashboard holds at most ${MAX_TABS}.` });
   }
   if (cardCount > MAX_CARDS) {
-    issues.push({ code: "too_large", message: `The spec places ${cardCount} cards. A cockpit places at most ${MAX_CARDS}.` });
+    issues.push({ code: "too_large", message: `The spec places ${cardCount} cards. A dashboard places at most ${MAX_CARDS}.` });
   }
 
   if (spec.state !== undefined) {

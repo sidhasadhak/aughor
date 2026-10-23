@@ -1,4 +1,4 @@
-"""Dashboard-card CRUD — the standing (cockpit) layer of the Briefing.
+"""Dashboard-card CRUD — the standing (dashboard) layer of the Briefing.
 
 Slice 0 of the briefing-cockpit initiative (docs/BRIEFING_COCKPIT_2026-07-18.md): a thin,
 scope-filtered CRUD over the dashboard-card store, exposing the primitive. Deliberately
@@ -27,8 +27,8 @@ router = APIRouter(tags=["dashboard"], dependencies=[Depends(connection_owner_gu
 
 
 def _layout_user_id(request: Request) -> str:
-    """The account key for cockpit layout — the identified user, or a shared 'default' on
-    localhost / identity-off so a single operator still gets the same cockpit on any device.
+    """The account key for dashboard layout — the identified user, or a shared 'default' on
+    localhost / identity-off so a single operator still gets the same dashboard on any device.
     Upgrades to true per-user the moment RBAC identity is bound, with no migration."""
     try:
         from aughor.security.authz import get_principal
@@ -45,7 +45,7 @@ def list_cards_route(
     scope_ref: Optional[str] = None,
 ) -> list[dict]:
     """Cards matching the filters (any left unset is ignored), newest-updated first.
-    Fetch a canvas cockpit with `?scope=canvas&scope_ref=<canvas_id>`."""
+    Fetch a canvas dashboard with `?scope=canvas&scope_ref=<canvas_id>`."""
     return [
         c.model_dump()
         for c in list_cards(connection_id=connection_id, scope=scope, scope_ref=scope_ref)
@@ -61,14 +61,14 @@ class LayoutRequest(BaseModel):
 # path would swallow "layout" as a card_id.
 @router.get("/cards/layout")
 def get_layout_route(request: Request, connection_id: str) -> Dict[str, Any]:
-    """The caller's saved cockpit layout for a connection ({card_id: {x, y, w, h}}); {} if none.
+    """The caller's saved dashboard layout for a connection ({card_id: {x, y, w, h}}); {} if none.
     Server-side + account-keyed, so any device/login sees the same arrangement."""
     return get_layout(connection_id, _layout_user_id(request))
 
 
 @router.put("/cards/layout")
 def put_layout_route(request: Request, req: LayoutRequest) -> dict:
-    """Persist the caller's cockpit layout (position + size per card) for a connection."""
+    """Persist the caller's dashboard layout (position + size per card) for a connection."""
     set_layout(req.connection_id, _layout_user_id(request), req.layout or {})
     return {"ok": True}
 
@@ -164,7 +164,7 @@ def _guarded_or_refuse(
 
 class PinInsightRequest(BaseModel):
     """Pin the finding `insight_id` (from `connection_id`'s briefing) as a card scoped to
-    `scope`/`scope_ref` (e.g. a canvas cockpit)."""
+    `scope`/`scope_ref` (e.g. a canvas dashboard)."""
     model_config = ConfigDict(populate_by_name=True)
     connection_id: str
     insight_id: str
@@ -243,7 +243,7 @@ def pin_query_route(req: PinQueryRequest) -> dict:
     anything that errors or is BLOCKED — so the second authoring door carries the identical
     trust guarantee as the first, now on user-authored SQL. `kind` is derived from the result
     shape (a single numeric cell → kpi, otherwise chart); the render spec is stored opaque for
-    the card to draw and the card lands on the connection's cockpit.
+    the card to draw and the card lands on the connection's dashboard.
     """
     sql = (req.sql or "").strip()
     if not sql:
@@ -282,7 +282,7 @@ def graduate_card_route(card_id: str, req: GraduateCardRequest) -> dict:
     """Graduate a KPI/watch card to a scheduled Monitor — the last step of the card lifecycle:
     run its already-guarded SQL as a recurring threshold check (`reanchor_window` ON so a frozen
     date window can't go stale), then record the thresholds + monitor id back on the card so the
-    cockpit shows it's now alerting. The card stops being a passive slot and becomes proactive
+    dashboard shows it's now alerting. The card stops being a passive slot and becomes proactive
     push, reusing the monitor engine rather than forking a second alerting path.
     """
     from pydantic import ValidationError
@@ -352,7 +352,7 @@ def _card_range(conn_id: str, preset: Optional[str], start: Optional[str], end: 
 
 
 class CardRunValues(BaseModel):
-    """Arc AP-8 — the cockpit's values a card of a person's own query reads as ``{{name}}``, as the page holds them now:
+    """Arc AP-8 — the dashboard's values a card of a person's own query reads as ``{{name}}``, as the page holds them now:
     name → ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement."""
     values: Dict[str, Dict[str, Any]] = {}
 
@@ -372,7 +372,7 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
     a card whose tables have no date runs standing and `scoped` says why. A range run never
     rolls into the card's standing value history.
 
-    With `compare` (a cockpit asks it), a figure cut to a range is also read for the window the
+    With `compare` (a dashboard asks it), a figure cut to a range is also read for the window the
     range is compared with, cut the same way, so the two differ only by their dates — `previous`.
     It is at equal age only when the range is final: a cut does not bound a cohort's outcomes to
     an as-of the way a metric's own measurement does, so before then part of any difference is
@@ -408,7 +408,7 @@ def run_card_route(card_id: str, preset: Optional[str] = None, start: Optional[s
         # its values are bound into
         from aughor.briefing.ranges import phrases
         scoped = {"covers": phrases(spec)["covers"], "standing": True, "grain": None,
-                  "why": "It reads the cockpit's own values, so it is read as its query says, not cut to the range."}
+                  "why": "It reads the dashboard's own values, so it is read as its query says, not cut to the range."}
     elif spec is not None:
         from aughor.briefing.ranges import phrases
         from aughor.briefing.reask import grain_for
@@ -499,7 +499,7 @@ def _shown_of(card):
 
 
 def _reads_values(card) -> bool:
-    """Arc AP-8 — whether a card's query reads any of the cockpit's values (``{{name}}``)."""
+    """Arc AP-8 — whether a card's query reads any of the dashboard's values (``{{name}}``)."""
     from aughor.cockpit import queries
     return bool(queries.params_of(card.sql or ""))
 
@@ -507,7 +507,7 @@ def _reads_values(card) -> bool:
 def _run_shown(db, card, shown, unread: str, sql: str, scoped, *, values: Optional[dict] = None) -> dict:
     """Arc AP-7 — run a query card as it is shown: refused while a row policy narrows a table it reads (it reads the
     table straight), summed around the person's statement, stopped after the connection's time limit. Arc AP-8 — the
-    cockpit's values it reads are bound by the engine, as the page holds them now; one it holds nothing for is said."""
+    dashboard's values it reads are bound by the engine, as the page holds them now; one it holds nothing for is said."""
     from aughor.cockpit import pieces, queries
 
     def said(why: str) -> dict:

@@ -116,7 +116,7 @@ function Refused({ outcome }: { outcome: CockpitKept }) {
     <div style={{ marginBottom: 12 }}>
       <Refusal
         kind={outcome.status === "not_checked" ? "Not checked · nothing was kept" : "Refused · nothing was kept"}
-        claim="The cockpit was not changed."
+        claim="The dashboard was not changed."
         detail={
           <ul data-testid="cockpit-write-refusal" style={{ margin: 0, paddingLeft: 18 }}>
             {outcome.sentences.map((s, i) => <li key={`${i}-${s.slice(0, 24)}`}>{s}</li>)}
@@ -169,7 +169,7 @@ function ImageComposer({ connectionId, busy, onPlace, onClose }: {
   return (
     <div data-testid="cockpit-image-composer" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
       <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>
-        PNG, JPEG, GIF, WebP or SVG, up to 5 MB, into this connection's cockpit volume. It shows who uploaded it and when,
+        PNG, JPEG, GIF, WebP or SVG, up to 5 MB, into this connection's dashboard volume. It shows who uploaded it and when,
         and no period or comparison: a static thing says it is static.
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -260,7 +260,7 @@ function DraftReview({ connectionId, cockpitId, result, proposal, held, onKept, 
       )}
       {publish ? (
         <div className="aug-fs-sm" data-testid="cockpit-publish-proposal" style={{ color: "var(--t1)" }}>
-          Publish this cockpit as an App, as it stands, to {(detail.to ?? []).join(", ")} — read-only for its readers, under your name.
+          Publish this dashboard as an App, as it stands, to {(detail.to ?? []).join(", ")} — read-only for its readers, under your name.
           Your notes and images travel marked as yours.
         </div>
       ) : spec ? (
@@ -327,7 +327,7 @@ function NewCockpit({ connectionId, schema, fromObject, sym, onKept, onClose }: 
     try {
       onKept(await startCockpit(connectionId, title, spec, note));
     } catch (e) {
-      toast.error("The cockpit was not made", { description: (e as Error).message.slice(0, 200) });
+      toast.error("The dashboard was not made", { description: (e as Error).message.slice(0, 200) });
     } finally { setStarting(false); }
   };
   const [area, setArea] = useState("");
@@ -359,9 +359,9 @@ function NewCockpit({ connectionId, schema, fromObject, sym, onKept, onClose }: 
 
       {way === "empty" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 560 }}>
-          <Input aria-label="The cockpit's name" placeholder="Carrier performance" value={name} disabled={starting}
+          <Input aria-label="The dashboard's name" placeholder="Carrier performance" value={name} disabled={starting}
             onChange={e => setName(e.target.value)} />
-          <Textarea aria-label="What this cockpit is for — its first note" rows={2} value={purpose} disabled={starting}
+          <Textarea aria-label="What this dashboard is for — its first note" rows={2} value={purpose} disabled={starting}
             placeholder="Which carriers miss pickups, and what we do about it." onChange={e => setPurpose(e.target.value)} />
           <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <Button size="sm" data-testid="cockpit-start-empty" disabled={!name.trim() || !purpose.trim() || starting}
@@ -369,7 +369,7 @@ function NewCockpit({ connectionId, schema, fromObject, sym, onKept, onClose }: 
               {starting ? "Starting…" : "Start it"}
             </Button>
             <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
-              {!name.trim() ? "Name it." : !purpose.trim() ? "Say what it is for — it becomes the cockpit's first note."
+              {!name.trim() ? "Name it." : !purpose.trim() ? "Say what it is for — it becomes the dashboard's first note."
                 : "Then add cards, findings and pieces from the toolbar. No model is asked."}
             </span>
           </span>
@@ -444,7 +444,7 @@ function NewCockpit({ connectionId, schema, fromObject, sym, onKept, onClose }: 
 
       {way === "draft" && (<>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <Input aria-label="What this cockpit is for" placeholder="What is it for? Returns, pricing, marketing…"
+        <Input aria-label="What this dashboard is for" placeholder="What is it for? Returns, pricing, marketing…"
           value={area} onChange={e => setArea(e.target.value)} disabled={drafting || !!proposal}
           onKeyDown={e => { if (e.key === "Enter" && area.trim() && !drafting) void draft(); }}
           style={{ maxWidth: 420, flex: 1 }} />
@@ -461,7 +461,7 @@ function NewCockpit({ connectionId, schema, fromObject, sym, onKept, onClose }: 
 
       {result && !result.staged && (
         <div style={{ marginTop: 12 }}>
-          <Refusal kind="Not drafted" claim="No cockpit was drafted for this."
+          <Refusal kind="Not drafted" claim="No dashboard was drafted for this."
             detail={<ul data-testid="cockpit-not-drafted" style={{ margin: 0, paddingLeft: 18 }}>
               {result.sentences.map((s, i) => <li key={`${i}-${s.slice(0, 24)}`}>{s}</li>)}
             </ul>} />
@@ -511,7 +511,7 @@ function AskChange({ connectionId, cockpitId, schema, held, onKept }: {
         </Button>
       </div>
       <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
-        {asking ? "A model is reading the cockpit and drafting the change. This can take a minute."
+        {asking ? "A model is reading the dashboard and drafting the change. This can take a minute."
           : "Asks a model once; it may arrange, add a finding or share — never write a note or pick an image. Nothing changes until you keep it."}
       </div>
       {result && !result.staged && (
@@ -554,7 +554,7 @@ function PublishPanel({ connectionId, cockpitId, publishedTo, busy, onDone, onCl
       <div className="aug-label">Publish as an App to</div>
       {problem ? <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>Who you may publish to could not be read: {problem}</div>
         : !audiences ? <Loading what="who you may publish to" style={{ padding: "4px 0" }} />
-        : !all.length ? <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>You belong to no group and hold no role a cockpit can be published to.</div>
+        : !all.length ? <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>You belong to no group and hold no role a dashboard can be published to.</div>
         : (
           <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
             {all.map(a => (
@@ -618,7 +618,7 @@ function SharedCockpitView({ connectionId, schema, owner, cockpitId, range, chos
         if (cancelled) return;
         setData(read); setCards(runs);
       } catch (e) {
-        if (!cancelled) setProblem((e as Error).message || "The cockpit could not be read.");
+        if (!cancelled) setProblem((e as Error).message || "The dashboard could not be read.");
       }
     })();
     return () => { cancelled = true; };
@@ -638,15 +638,15 @@ function SharedCockpitView({ connectionId, schema, owner, cockpitId, range, chos
     setBusy(true);
     try {
       const out = await copySharedCockpit(connectionId, owner, cockpitId);
-      toast.success(`“${out.title ?? "The cockpit"}” is yours now, as version ${out.version}. The published one is unchanged.`);
+      toast.success(`“${out.title ?? "The dashboard"}” is yours now, as version ${out.version}. The published one is unchanged.`);
       if (out.cockpit_id) onStarted(out.cockpit_id);
     } catch (e) {
       const why = e instanceof CockpitRefused ? e.outcome.sentences.join(" ") : (e as Error).message;
-      toast.error("No cockpit was started", { description: why.slice(0, 200) });
+      toast.error("No dashboard was started", { description: why.slice(0, 200) });
     } finally { setBusy(false); }
   };
-  if (problem) return <ErrorState kind="Not read" what="This shared cockpit could not be read." means={problem} />;
-  if (!data) return <div className="aug-fs-sm" data-testid="cockpit-loading" style={{ color: "var(--t3)" }}>Reading the shared cockpit…</div>;
+  if (problem) return <ErrorState kind="Not read" what="This shared dashboard could not be read." means={problem} />;
+  if (!data) return <div className="aug-fs-sm" data-testid="cockpit-loading" style={{ color: "var(--t3)" }}>Reading the shared dashboard…</div>;
   return (
     <div data-testid="cockpit-shared" data-owner={owner} data-cockpit={cockpitId}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
@@ -657,7 +657,7 @@ function SharedCockpitView({ connectionId, schema, owner, cockpitId, range, chos
           An App by {personName(data.published_by)}, for {data.published_to.map(t => t.name).join(", ")} · version {data.cockpit.version} · read-only
         </span>
         <Button size="xs" variant="secondary" disabled={busy} style={{ marginLeft: "auto" }} onClick={() => void start()}>
-          Start my cockpit from this
+          Start my dashboard from this
         </Button>
       </div>
       {data.ontology && <PinStrip pin={data.ontology} spec={data.cockpit.spec} />}
@@ -854,7 +854,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
         known.current = new Set(read.cards.map(c => c.id));
         setData(read); setCards(runs); setProblem("");
       } catch (e) {
-        if (!cancelled) setProblem((e as Error).message || "The cockpit could not be read.");
+        if (!cancelled) setProblem((e as Error).message || "The dashboard could not be read.");
       } finally {
         if (!cancelled) setReading(false);
       }
@@ -901,7 +901,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const takeOffOne = useCallback((id: string) => {
     if (!data?.cockpit.spec) return;
     void write(() => keepCockpit(connectionId, data.cockpit_id, takeOffCard(data.cockpit.spec, id), "a card taken off"),
-      () => "Taken off this cockpit. The card is kept.");
+      () => "Taken off this dashboard. The card is kept.");
   }, [connectionId, data, write]);
 
   // One edit of the spec by hand, kept as the next version: what every door on a tile comes to. It is made on the newest
@@ -1021,14 +1021,14 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   if (list === "off") {
     return (
       <div style={{ padding: "24px 32px" }}>
-        <EmptyState icon="gauge" title="Cockpits are off on this install">
-          Cockpits need the cockpit flag, which is off here. The Briefing keeps its own cockpit meanwhile.
+        <EmptyState icon="gauge" title="Dashboards are off on this install">
+          Dashboards need the dashboard flag, which is off here. The Briefing keeps its own dashboard meanwhile.
         </EmptyState>
       </div>
     );
   }
   if (list === null) {
-    return <div className="aug-fs-sm" data-testid="cockpits-loading" style={{ color: "var(--t3)", padding: "24px 32px" }}>Reading your cockpits…</div>;
+    return <div className="aug-fs-sm" data-testid="cockpits-loading" style={{ color: "var(--t3)", padding: "24px 32px" }}>Reading your dashboards…</div>;
   }
 
   const live = list.cockpits.filter(c => !c.retired);
@@ -1044,32 +1044,32 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
 
   const startOwn = pinned > 0 ? (
     <Button variant="secondary" size="xs" disabled={busy}
-      onClick={() => void write(() => startMyCockpit(connectionId), () => "“My cockpit” started from your pinned cards.")}>
-      Start “My cockpit” from {pinned} pinned {pinned === 1 ? "card" : "cards"}
+      onClick={() => void write(() => startMyCockpit(connectionId), () => "“My dashboard” started from your pinned cards.")}>
+      Start “My dashboard” from {pinned} pinned {pinned === 1 ? "card" : "cards"}
     </Button>
   ) : (
-    <Button variant="secondary" size="xs" onClick={() => setNewOpen(true)}>New cockpit</Button>
+    <Button variant="secondary" size="xs" onClick={() => setNewOpen(true)}>New dashboard</Button>
   );
   // Under the Metrics cockpit, a person's own cockpits are one muted line and their door — the explanation on hover.
   const noneYetLine = (
     <div className="aug-fs-sm" data-testid="cockpit-none-yet" style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--t3)" }}
-      title="A cockpit is the set of cards you keep watching for one area — returns, pricing, marketing. It is yours: nobody else sees it or changes it.">
-      {list.cockpits.length ? "No cockpit of your own in use" : "No cockpit of your own yet"} — the cards you keep watching for one area
+      title="A dashboard is the set of cards you keep watching for one area — returns, pricing, marketing. It is yours: nobody else sees it or changes it.">
+      {list.cockpits.length ? "No dashboard of your own in use" : "No dashboard of your own yet"} — the cards you keep watching for one area
       {startOwn}
     </div>
   );
   const noneYet = (
         <EmptyState icon="gauge" variant="inline"
-          title={list.cockpits.length ? "You have no cockpits in use" : "You have no cockpits yet"}
+          title={list.cockpits.length ? "You have no dashboards in use" : "You have no dashboards yet"}
           action={pinned > 0 ? (
             <Button variant="secondary" size="sm" disabled={busy}
-              onClick={() => void write(() => startMyCockpit(connectionId), () => "“My cockpit” started from your pinned cards.")}>
-              Start “My cockpit” from {pinned} pinned {pinned === 1 ? "card" : "cards"}
+              onClick={() => void write(() => startMyCockpit(connectionId), () => "“My dashboard” started from your pinned cards.")}>
+              Start “My dashboard” from {pinned} pinned {pinned === 1 ? "card" : "cards"}
             </Button>
           ) : (
-            <Button variant="secondary" size="sm" onClick={() => setNewOpen(true)}>New cockpit</Button>
+            <Button variant="secondary" size="sm" onClick={() => setNewOpen(true)}>New dashboard</Button>
           )}>
-          A cockpit is the set of cards you keep watching for one area — returns, pricing, marketing. It is yours:
+          A dashboard is the set of cards you keep watching for one area — returns, pricing, marketing. It is yours:
           nobody else sees it or changes it. Name an area and one is drafted for you to keep, or start from the cards already pinned here.
         </EmptyState>
   );
@@ -1161,7 +1161,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           bar={(
             <EditBar saved={saved} canUndo={stacks.past.length > 0} canRedo={stacks.future.length > 0} onUndo={undo} onRedo={redo} onDone={done}
               picker={(
-                <SelectField aria-label="The cockpit being edited" value={chosen} onChange={e => choose(e.target.value, true)} style={{ maxWidth: 240 }}>
+                <SelectField aria-label="The dashboard being edited" value={chosen} onChange={e => choose(e.target.value, true)} style={{ maxWidth: 240 }}>
                   {live.map(c => <option key={c.cockpit_id} value={c.cockpit_id}>{c.title || c.cockpit_id}</option>)}
                 </SelectField>
               )}
@@ -1179,12 +1179,12 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                     setShowHistory(h => !h);
                   }}><Icon name="history" /> History</Button>
                   <Button size="xs" variant={kept.published_to?.length ? "secondary" : "ghost"} disabled={busy} data-testid="cockpit-publish-open"
-                    aria-expanded={publishing} title="Share this cockpit, as it stands, with a group you belong to or a role you hold."
+                    aria-expanded={publishing} title="Share this dashboard, as it stands, with a group you belong to or a role you hold."
                     onClick={() => setPublishing(p => !p)}>
                     <Icon name="send" /> {kept.published_to?.length ? `An App for ${kept.published_to.map(t => t.name).join(", ")}` : "Publish as an App"}
                   </Button>
                   <Button size="xs" variant="ghost" disabled={busy} data-testid="cockpit-retire-open" aria-expanded={retiring}
-                    title="Take this cockpit off your strip for good. Its history stays in the record."
+                    title="Take this dashboard off your strip for good. Its history stays in the record."
                     onClick={() => setRetiring(r => !r)}><Icon name="close" /> Retire</Button>
                 </>
               )} />
@@ -1195,11 +1195,11 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
                 <Icon name="plus" /> Card
               </Button>
               <Button size="xs" variant="ghost" disabled={busy || noting} data-testid="cockpit-note-new"
-                title="Your own words on this cockpit. By hand only: a model never writes a note." onClick={() => { shut(); setNoting(true); }}>
+                title="Your own words on this dashboard. By hand only: a model never writes a note." onClick={() => { shut(); setNoting(true); }}>
                 <Icon name="plus" /> Note
               </Button>
               <Button size="xs" variant="ghost" disabled={busy || imaging} data-testid="cockpit-image-new"
-                title="An image of your own on this cockpit. By hand only: a model never chooses one." onClick={() => { shut(); setImaging(true); }}>
+                title="An image of your own on this dashboard. By hand only: a model never chooses one." onClick={() => { shut(); setImaging(true); }}>
                 <Icon name="plus" /> Image
               </Button>
               <Button size="xs" variant="ghost" disabled={busy || picking} data-testid="cockpit-finding-new"
@@ -1283,10 +1283,10 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               {retiring && (
                 <Callout tone="amber" style={{ margin: "0 0 10px" }} data-testid="cockpit-retire-confirm">
                   <span className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    Retire this cockpit? It leaves your strip for good and cannot be brought back; its history stays in the record.
+                    Retire this dashboard? It leaves your strip for good and cannot be brought back; its history stays in the record.
                     <Button size="xs" disabled={busy} onClick={() => {
                       setRetiring(false); setEditing(false); previewAsGroup("");
-                      void write(() => retireCockpit(connectionId, data.cockpit_id), () => "Cockpit retired. Its history stays.");
+                      void write(() => retireCockpit(connectionId, data.cockpit_id), () => "Dashboard retired. Its history stays.");
                     }}>Retire it</Button>
                     <Button size="xs" variant="ghost" onClick={() => setRetiring(false)}>Keep it</Button>
                   </span>
@@ -1332,16 +1332,16 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
       {/* The strip: the connection's metrics first (nobody's to arrange), then the person's own
           cockpits under the layer's label — violet is the user's, as the Briefing has always marked
           it — and, at the end, the door to a new one. */}
-      <TabStrip label="Your cockpits" size="1" value={chosen} onChange={choose} style={{ marginBottom: 12 }}
+      <TabStrip label="Your dashboards" size="1" value={chosen} onChange={choose} style={{ marginBottom: 12 }}
         tabs={[
           { id: METRICS_COCKPIT, label: "Metrics" },
-          { heading: <span className="aug-label" style={{ color: "var(--vio4)" }}>Your cockpits</span> },
+          { heading: <span className="aug-label" style={{ color: "var(--vio4)" }}>Your dashboards</span> },
           ...live.map(c => ({ id: c.cockpit_id, label: c.title || c.cockpit_id })),
           // Published to a group the person is in or a role they hold: read-only, under the publisher's name.
           ...(shared.length ? [{ heading: <span className="aug-label" style={{ color: "var(--t3)" }}>Apps shared with you</span> }] : []),
           ...shared.map(s => ({ id: `shared:${s.owner}/${s.cockpit_id}`, label: `${s.title || s.cockpit_id} · ${person(s.published_by || s.owner)}` })),
         ]}
-        trailing={<Button size="xs" variant="ghost" data-testid="cockpit-new-open" onClick={() => setNewOpen(o => !o)}>+ New cockpit</Button>} />
+        trailing={<Button size="xs" variant="ghost" data-testid="cockpit-new-open" onClick={() => setNewOpen(o => !o)}>+ New dashboard</Button>} />
 
       {newOpen && (
         <NewCockpit connectionId={connectionId} schema={schema} onClose={() => setNewOpen(false)}
@@ -1367,7 +1367,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
 
       {refusal && <Refused outcome={refusal} />}
       {problem && (
-        <ErrorState kind="Failed" what="Your cockpit could not be read." means={problem}
+        <ErrorState kind="Failed" what="Your dashboard could not be read." means={problem}
           doors={[{ label: "Try again", onClick: reload, primary: true }]} />
       )}
 
@@ -1398,14 +1398,14 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               )}
               {!arranging && !builderOn && (
                 <Button size="xs" variant="ghost" disabled={busy || noting} data-testid="cockpit-note-new"
-                  title="Your own words on this cockpit. By hand only: a model never writes a note."
+                  title="Your own words on this dashboard. By hand only: a model never writes a note."
                   onClick={() => { setNoting(true); setComposing(false); setImaging(false); }}>
                   <Icon name="plus" /> Note
                 </Button>
               )}
               {!arranging && !builderOn && (
                 <Button size="xs" variant="ghost" disabled={busy || imaging} data-testid="cockpit-image-new"
-                  title="An image of your own on this cockpit. By hand only: a model never chooses one."
+                  title="An image of your own on this dashboard. By hand only: a model never chooses one."
                   onClick={() => { setImaging(true); setComposing(false); setNoting(false); setPicking(false); }}>
                   <Icon name="plus" /> Image
                 </Button>
@@ -1426,7 +1426,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               )}
               {!arranging && !builderOn && (
                 <Button size="xs" variant={kept.published_to?.length ? "secondary" : "ghost"} disabled={busy} data-testid="cockpit-publish-open"
-                  aria-expanded={publishing} title="Share this cockpit, as it stands, with a group you belong to or a role you hold."
+                  aria-expanded={publishing} title="Share this dashboard, as it stands, with a group you belong to or a role you hold."
                   onClick={() => setPublishing(p => !p)}>
                   <Icon name="send" /> {kept.published_to?.length ? `An App for ${kept.published_to.map(t => t.name).join(", ")}` : "Publish as an App"}
                 </Button>
@@ -1446,14 +1446,14 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               </Button>
               {builderOn && (
                 <Button size="xs" variant="secondary" data-testid="cockpit-edit" disabled={busy || reading}
-                  title="Build this cockpit in place: its layout, each piece's setup, and sizes one grade at a time."
+                  title="Build this dashboard in place: its layout, each piece's setup, and sizes one grade at a time."
                   onClick={() => { setShowHistory(false); setRefusal(null); setEditing(true); }}>
                   <Icon name="edit" /> Edit
                 </Button>
               )}
               {!arranging && !builderOn && (
                 <Button size="xs" variant="ghost" disabled={busy} data-testid="cockpit-retire-open" aria-expanded={retiring}
-                  title="Take this cockpit off your strip for good. Its history stays in the record."
+                  title="Take this dashboard off your strip for good. Its history stays in the record."
                   onClick={() => setRetiring(r => !r)}>
                   <Icon name="close" /> Retire
                 </Button>
@@ -1464,10 +1464,10 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           {retiring && (
             <Callout tone="amber" style={{ margin: "8px 0" }} data-testid="cockpit-retire-confirm">
               <span className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                Retire this cockpit? It leaves your strip for good and cannot be brought back; its history stays in the record.
+                Retire this dashboard? It leaves your strip for good and cannot be brought back; its history stays in the record.
                 <Button size="xs" disabled={busy} onClick={() => {
                   setRetiring(false);
-                  void write(() => retireCockpit(connectionId, data.cockpit_id), () => "Cockpit retired. Its history stays.");
+                  void write(() => retireCockpit(connectionId, data.cockpit_id), () => "Dashboard retired. Its history stays.");
                 }}>Retire it</Button>
                 <Button size="xs" variant="ghost" onClick={() => setRetiring(false)}>Keep it</Button>
               </span>
@@ -1481,7 +1481,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
               <CockpitArrange spec={arranging} lines={lines} onChange={setArranging} disabled={busy} />
               {unplaced.length > 0 && (
                 <div data-testid="cockpit-tray" style={{ marginTop: 12 }}>
-                  <div className="aug-label" style={{ marginBottom: 6 }}>Cards you have that are not on this cockpit</div>
+                  <div className="aug-label" style={{ marginBottom: 6 }}>Cards you have that are not on this dashboard</div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {unplaced.map(c => (
                       <Button key={c.id} size="xs" variant="outline" onClick={() => setArranging(s => (s ? placeCard(s, c.id) : s))}>
@@ -1532,7 +1532,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
           )}
         </>
       ) : !problem ? (
-        <div className="aug-fs-sm" data-testid="cockpit-loading" style={{ color: "var(--t3)" }}>Reading the cockpit…</div>
+        <div className="aug-fs-sm" data-testid="cockpit-loading" style={{ color: "var(--t3)" }}>Reading the dashboard…</div>
       ) : null}
     </div>
   );

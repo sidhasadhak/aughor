@@ -66,7 +66,7 @@ const LUX_STORED: BriefingRangeBlock = {
   unmeasured: NOT_SET,
 };
 
-describe("the Metrics cockpit, figures first", () => {
+describe("the Metrics dashboard, figures first", () => {
   it("leads with what moved — the period's own figure — against its comparison, as two bars", async () => {
     render(<MetricsFigures connectionId="dcc63d83" schema="luxexperience" block={LUX} />);
     const hero = await screen.findByTestId("cockpit-hero");

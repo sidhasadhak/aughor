@@ -1,6 +1,6 @@
-"""Arc AP-4 — a case queue: a platform-owned type counted, and kept in a cockpit like any other (ROADMAP §3.57).
+"""Arc AP-4 — a case queue: a platform-owned type counted, and kept in a dashboard like any other (ROADMAP §3.57).
 
-A case lives in the edit layer, not a warehouse (Arc OC-6), so the object door's compiler refuses it. A cockpit's figure
+A case lives in the edit layer, not a warehouse (Arc OC-6), so the object door's compiler refuses it. A dashboard's figure
 and its filter column ask how many: here they are counted where the cases live — how many, or how many different
 values of a property, in all or by one property, kept to the conditions given, a reader's search words among them —
 and the keep door checks a case queue's pieces the same way, with no case read. Anything the edit layer cannot answer

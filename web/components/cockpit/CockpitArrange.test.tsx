@@ -28,7 +28,7 @@ function arrange() {
 }
 
 describe("CockpitArrange", () => {
-  it("lays the cockpit out as tabs, their sections, and the cards in each, by name", () => {
+  it("lays the dashboard out as tabs, their sections, and the cards in each, by name", () => {
     arrange();
     expect(screen.getAllByTestId("arrange-tab-name").map(i => (i as HTMLInputElement).value)).toEqual(["Overview", "Watches"]);
     expect(screen.getAllByTestId("arrange-section-name").map(i => (i as HTMLInputElement).value)).toEqual(["Headline", "Limits"]);
