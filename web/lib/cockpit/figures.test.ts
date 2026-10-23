@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { BriefingRangeBlock, BriefingRangeMeasure, BriefingRangeUnmeasured } from "@/lib/api";
-import { endsWords, heroOf, olderFigures, periodShort, spanWords, unmeasuredByReason, withLatest } from "@/lib/cockpit/figures";
+import { endedMetrics, endsWords, heroOf, ownFigures, periodShort, spanWords, unmeasuredByReason } from "@/lib/cockpit/figures";
 
 const m = (over: Partial<BriefingRangeMeasure>): BriefingRangeMeasure => ({
   name: "Revenue", metric: "revenue", unit: "$", time_kind: "flow", confirmed: true, current: 110, previous: 100,
@@ -42,8 +42,8 @@ describe("what moved", () => {
       anchored: { start: "2025-05-01", end: "2025-06-01", data_ends: "2025-06-29", covers: "May 2025", compared_with: "April 2025", why: "its data ends 2025-06-29" } });
     const part = m({ metric: "cover", name: "Weeks of cover", rel: 0.5, current_partial: "2025-06-30 to 2025-06-30" });
     const young = m({ metric: "rev", name: "Revenue", rel: 0.4, equal_age: { equal: false, why: "the comparison is older" } });
-    // a figure from May 2025, a part-covered one and one not at equal age moved more — none of them leads
-    expect(heroOf(block([aov, old, part, young]))?.metric).toBe("aov");
+    // a figure stored from May 2025, a part-covered one and one not at equal age moved more — none of them leads
+    expect(heroOf(ownFigures(block([aov, old, part, young])))?.metric).toBe("aov");
     expect(heroOf(block([m({ rel: 0.02 }), m({ metric: "units", rel: -0.3 })]))?.metric).toBe("units");
   });
 
@@ -53,35 +53,33 @@ describe("what moved", () => {
 });
 
 describe("what needs a person, said once", () => {
-  it("groups the unmeasured by reason and lists the figures older than the period", () => {
+  it("groups what a person can fix by reason, and names the metrics whose data ended apart", () => {
     const reason = "its dates cannot be set by rule: its table has no date the profiler recognised";
-    const b = block([m({ metric: "gmv", name: "GMV", anchored: { start: "2025-05-01", end: "2025-06-01", data_ends: "2025-06-29",
-      covers: "May 2025", compared_with: "April 2025", why: "" } })],
-    [{ name: "Gross Margin %", reason }, { name: "ROAS", reason }, { name: "Cart → order", reason: "it has no formula" }]);
+    const b = block([m({})],
+    [{ name: "GMV", metric: "gmv", reason: "its data ends 2025-06-29, before this range", data_ends: "2025-06-29" },
+     { name: "Gross Margin %", reason }, { name: "ROAS", reason }, { name: "Cart → order", reason: "it has no formula" }]);
     expect(unmeasuredByReason(b)).toEqual([{ reason, names: ["Gross Margin %", "ROAS"] }, { reason: "it has no formula", names: ["Cart → order"] }]);
-    expect(olderFigures(b)).toEqual([{ name: "GMV", covers: "May 2025", dataEnds: "2025-06-29" }]);
+    expect(endedMetrics(b)).toEqual([{ name: "GMV", dataEnds: "2025-06-29" }]);
   });
 });
 
-describe("the Cockpit's figures from before its period (2026-10-23)", () => {
-  // The range's figures are its own: an ended metric's last figure rides on its not-measured row. The Cockpit's
-  // cards name their period, so it is put back among them — and said under "from before this period".
-  const gmv = m({ metric: "gmv", name: "GMV", anchored: { start: "2025-06-01", end: "2025-07-01", data_ends: "2025-06-29",
+describe("a range's figures are its own (2026-10-23)", () => {
+  // A block stored before the rule kept an ended metric's other-period figure among its own.
+  const gmv = m({ metric: "gmv", name: "GMV", rel: 0.15, anchored: { start: "2025-06-01", end: "2025-07-01", data_ends: "2025-06-29",
     covers: "June 2025", compared_with: "May 2025", why: "" } });
-  const b = block([m({})], [
-    { name: "GMV", metric: "gmv", reason: "its data ends 2025-06-29, before this range", data_ends: "2025-06-29", latest: gmv },
-    { name: "ROAS", reason: "its data has no rows in this range" }]);
+  const stored = block([m({}), gmv], [{ name: "ROAS", reason: "its data has no rows in this range" }]);
 
-  it("puts an ended metric's last figure back among the figures, and leaves the rest not measured", () => {
-    const seen = withLatest(b);
-    expect(seen.measured.map(x => x.metric)).toEqual(["revenue", "gmv"]);
-    expect(seen.unmeasured.map(u => u.name)).toEqual(["ROAS"]);
-    expect(olderFigures(seen)).toEqual([{ name: "GMV", covers: "June 2025", dataEnds: "2025-06-29" }]);
-    expect(heroOf(seen)?.metric).toBe("revenue");                      // an older figure never leads
+  it("reads a stored block's other-period figure as not measured, with the day its data ends", () => {
+    const own = ownFigures(stored);
+    expect(own.measured.map(x => x.metric)).toEqual(["revenue"]);
+    expect(own.unmeasured).toEqual([
+      { name: "GMV", metric: "gmv", data_ends: "2025-06-29", reason: "its data ends 2025-06-29, before this range" },
+      { name: "ROAS", reason: "its data has no rows in this range" }]);
+    expect(endedMetrics(own)).toEqual([{ name: "GMV", dataEnds: "2025-06-29" }]);
   });
 
-  it("hands back the same block when nothing ended", () => {
+  it("hands back the same block when every figure is its own", () => {
     const plain = block([m({})], [{ name: "ROAS", reason: "its data has no rows in this range" }]);
-    expect(withLatest(plain)).toBe(plain);
+    expect(ownFigures(plain)).toBe(plain);
   });
 });

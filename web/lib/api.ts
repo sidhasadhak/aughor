@@ -7556,20 +7556,18 @@ export interface BriefingRangeMeasure {
   equal_age?: { equal: boolean; why: string };
   /** The income-statement line it reads on, when the connection's industry declares a statement. */
   line?: { line: string; label: string } | null;
-  /** Set only on an ended metric's `latest` figure (`BriefingRangeUnmeasured`): the month (week, day)
-   *  it last covers — its own `covers` / `compared_with`, not the range's. A range's own figures carry none. */
+  /** Set only on a figure stored before 2026-10-23, read over the period its data last covered instead of
+   *  the range; `ownFigures` reads it as not measured, as the server now says it. */
   anchored?: { start: string; end: string; data_ends: string; covers: string; compared_with: string; why: string } | null;
 }
 
-/** A metric the range has no figure for, and why. When its data ENDED before the range, the day it ends
- *  (`data_ends`) and the figure for the range it last covers (`latest`) — the Cockpit's card for it; never
- *  one of the range's figures (the user, 2026-10-23: the edition's period is the one compared). */
+/** A metric the range has no figure for, and why — with the day its data ends (`data_ends`) when it ENDED before
+ *  the range (the user, 2026-10-23: the period named is the one compared; another period's figure is never shown). */
 export interface BriefingRangeUnmeasured {
   name: string;
   reason: string;
   metric?: string;
   data_ends?: string;
-  latest?: BriefingRangeMeasure;
 }
 
 /** Arc BR-4 — a segment's move inside a metric (what moved). */

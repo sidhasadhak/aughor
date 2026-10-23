@@ -19,6 +19,7 @@ import { GuardChip } from "@/components/ui/trust";
  */
 
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
+import { ownFigures } from "@/lib/cockpit/figures";
 import { compactNumber, countNoun, formatCount, formatDateTime, formatMetricValue, formatTimestamp, formatVariance, normalizeNumberPrecision, pct } from "@/lib/format";
 import { noveltyLabel, noveltyOutOf, noveltyShare } from "@/lib/novelty";
 import {
@@ -3101,8 +3102,10 @@ export function BriefingPanel({
 
   const hasPatterns    = scopedPatterns.length > 0;
   const hasNarrative   = !!narrative?.narrative;
-  // Arc BR-3 — the range on screen, when the Briefing is a range's; the page reads it.
-  const rangeBlock     = hasNarrative && isRangeBlock(narrative?.period) ? narrative!.period as BriefingRangeBlock : null;
+  // Arc BR-3 — the range on screen, when the Briefing is a range's; the page reads it. Its figures are its own: an
+  // edition stored before 2026-10-23 is read by that rule, so no tile, strip or box shows another period's figure.
+  const storedBlock    = hasNarrative && isRangeBlock(narrative?.period) ? narrative!.period as BriefingRangeBlock : null;
+  const rangeBlock     = useMemo(() => (storedBlock ? ownFigures(storedBlock) : null), [storedBlock]);
   // A range is chosen but its Briefing is not on screen yet (building, or refused): the hero
   // must not fall back to the standing view's figures, which read as this range's.
   const rangePending   = rangesOn && !canvasId && range.preset !== "standing" && !rangeBlock;

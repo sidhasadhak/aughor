@@ -1,7 +1,8 @@
 /**
  * The Metrics cockpit read as figures (`design-mockups/cockpit-day-figures.html`, the user 2026-10-12: "that is how
  * I'd like my COCKPITS to look"): which figure moved most, what each is compared with in a few words, what cannot be
- * measured and why, and which figures are older than the period they sit in. Pure: nothing here fetches.
+ * measured and why, and which metrics' data ended before the period. Every figure is the period's own (the user,
+ * 2026-10-23). Pure: nothing here fetches.
  */
 import type { BriefingRangeBlock, BriefingRangeMeasure } from "@/lib/api";
 
@@ -31,10 +32,8 @@ export function periodShort(start: string, endExclusive: string, period: string)
   return `${dm(s)} – ${dm(last)}`;
 }
 
-/** The period a figure was read for and the one it is compared with, in a few words — its own when its data ends
- *  before the cockpit's period (`anchored`), the cockpit's otherwise. */
-export function figurePeriods(m: BriefingRangeMeasure, block: BriefingRangeBlock): { current: string; previous: string } {
-  if (m.anchored) return { current: m.anchored.covers, previous: m.anchored.compared_with };
+/** The period a figure was read for and the one it is compared with, in a few words. */
+export function figurePeriods(block: BriefingRangeBlock): { current: string; previous: string } {
   return {
     current: periodShort(block.start, block.end, block.period),
     previous: periodShort(block.previous_start, block.previous_end, block.period),
@@ -50,15 +49,14 @@ export function moveOf(m: BriefingRangeMeasure): number | null {
 }
 
 /**
- * What moved: the figure with the largest change of the ones that are this period's own. A figure read for an earlier
- * month because its data stops there is not what moved in this one, and a part-covered or not-yet-equal-age reading
- * is not a like-for-like change — none of them leads. Null when nothing moved.
+ * What moved: the figure with the largest change. A part-covered or not-yet-equal-age reading is not a like-for-like
+ * change, so it never leads. Null when nothing moved.
  */
 export function heroOf(block: BriefingRangeBlock): BriefingRangeMeasure | null {
   let best: BriefingRangeMeasure | null = null;
   let size = 0;
   for (const m of block.measured) {
-    if (m.anchored || m.current_partial || m.previous_partial || (m.equal_age && !m.equal_age.equal)) continue;
+    if (m.current_partial || m.previous_partial || (m.equal_age && !m.equal_age.equal)) continue;
     const move = moveOf(m);
     if (move === null || move === 0) continue;
     if (Math.abs(move) > size) { best = m; size = Math.abs(move); }
@@ -66,26 +64,35 @@ export function heroOf(block: BriefingRangeBlock): BriefingRangeMeasure | null {
   return best;
 }
 
-/** The metrics that cannot be measured, one row per reason: the same reason for four metrics is said once. */
+/** The metrics a person can make measurable, one row per reason: the same reason for four metrics is said once. A
+ *  metric whose data ended is not among them — no setting brings its rows back (`endedMetrics`). */
 export function unmeasuredByReason(block: BriefingRangeBlock): { reason: string; names: string[] }[] {
   const out = new Map<string, string[]>();
-  for (const u of block.unmeasured) out.set(u.reason, [...(out.get(u.reason) ?? []), u.name]);
+  for (const u of block.unmeasured) if (!u.data_ends) out.set(u.reason, [...(out.get(u.reason) ?? []), u.name]);
   return [...out].map(([reason, names]) => ({ reason, names }));
 }
 
-/** The block as the Cockpit reads it. A range's figures are its own (the user, 2026-10-23): an ended metric's figure
- *  for the period it last covers rides on its not-measured row (`latest`). The Cockpit's cards each name their
- *  period, so it is put back among the figures here — and said under "from before this period" below. */
-export function withLatest(block: BriefingRangeBlock): BriefingRangeBlock {
-  if (!block.unmeasured.some(u => u.latest)) return block;
-  return { ...block, measured: [...block.measured, ...block.unmeasured.flatMap(u => (u.latest ? [u.latest] : []))],
-           unmeasured: block.unmeasured.filter(u => !u.latest) };
+/** The metrics whose data ended before the period, so it has no figure for them. */
+export function endedMetrics(block: BriefingRangeBlock): { name: string; dataEnds: string }[] {
+  return block.unmeasured.filter(u => u.data_ends).map(u => ({ name: u.name, dataEnds: u.data_ends! }));
 }
 
-/** The figures read for an earlier period than the cockpit's, because their data stops before it. */
-export function olderFigures(block: BriefingRangeBlock): { name: string; covers: string; dataEnds: string }[] {
-  return block.measured.filter(m => m.anchored)
-    .map(m => ({ name: m.name, covers: m.anchored!.covers, dataEnds: m.anchored!.data_ends }));
+/** A range's figures as both pages print them: its own and nothing else. A block stored before 2026-10-23 kept an
+ *  ended metric's other-period figure among its own (`anchored`); it is read here as the server now says it — not
+ *  measured, with the day its data ends — so a stored edition reads by the same rule. */
+export function ownFigures(block: BriefingRangeBlock): BriefingRangeBlock {
+  if (!block.measured.some(m => m.anchored)) return block;
+  return {
+    ...block,
+    measured: block.measured.filter(m => !m.anchored),
+    unmeasured: [
+      ...block.measured.filter(m => m.anchored).map(m => ({
+        name: m.name, metric: m.metric, data_ends: m.anchored!.data_ends,
+        reason: `its data ends ${m.anchored!.data_ends}, before this range`,
+      })),
+      ...block.unmeasured,
+    ],
+  };
 }
 
 /** A reason as the start of a sentence a reader finishes: "its dates cannot be set by rule: its table has …" → "Its

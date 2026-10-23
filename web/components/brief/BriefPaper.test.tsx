@@ -144,8 +144,7 @@ describe("rangeNumbers — every figure is the edition's own (LuxExperience's we
     name: "Average Order Value (AOV)", metric: "aov", unit: "EUR", time_kind: "flow", confirmed: false,
     current: 581.12, previous: 590.72, last_year: 454.19, rel: -0.0162, rel_last_year: 0.279, status: "final",
     current_text: "€581", previous_text: "€591", ...over });
-  // Clienteling ended June 2025: the server has no figure for it this week, and carries the week it last
-  // covers beside the reason, for the Cockpit — the box must not print it.
+  // Clienteling ended June 2025: the server has no figure for it this week.
   const block = {
     compared_with: "the week before, 2026-10-05 to 2026-10-11", covers: "the week 2026-10-12 to 2026-10-18",
     measured: [
@@ -155,10 +154,7 @@ describe("rangeNumbers — every figure is the edition's own (LuxExperience's we
     ],
     unmeasured: [
       { name: "Clienteling-Influenced GMV per Interaction", metric: "gmv_int", data_ends: "2025-06-29",
-        reason: "its data ends 2025-06-29, before this range",
-        latest: m({ name: "Clienteling-Influenced GMV per Interaction", metric: "gmv_int", current: 13809, current_text: "13,809",
-                    anchored: { start: "2025-06-23", end: "2025-06-30", data_ends: "2025-06-29", covers: "the week 2025-06-23 to 2025-06-29",
-                                compared_with: "the week before", why: "x" } }) },
+        reason: "its data ends 2025-06-29, before this range" },
       { name: "Marketing ROAS", reason: "its data has no rows in this range" },
     ],
   } as unknown as BriefingRangeBlock;
@@ -175,8 +171,11 @@ describe("rangeNumbers — every figure is the edition's own (LuxExperience's we
   });
 
   it("prints an edition stored before the rule by the same rule", () => {
-    const stored = { ...block, unmeasured: [block.unmeasured[1]],
-                     measured: [...block.measured, block.unmeasured[0].latest!] } as BriefingRangeBlock;
+    // stored with Clienteling's own last week among the edition's figures
+    const lastWeek = m({ name: "Clienteling-Influenced GMV per Interaction", metric: "gmv_int", current: 13809, current_text: "13,809",
+      anchored: { start: "2025-06-23", end: "2025-06-30", data_ends: "2025-06-29", covers: "the week 2025-06-23 to 2025-06-29",
+                  compared_with: "the week before", why: "x" } });
+    const stored = { ...block, unmeasured: [block.unmeasured[1]], measured: [...block.measured, lastWeek] } as BriefingRangeBlock;
     const rows = rangeNumbers(stored);
     expect(rows.map(r => r.label)).toEqual(["Average Order Value (AOV)", "Session Conversion Rate",
       "Clienteling-Influenced GMV per Interaction", "Marketing ROAS"]);

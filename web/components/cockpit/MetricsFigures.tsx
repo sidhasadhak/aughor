@@ -6,9 +6,10 @@
  * (the hero: the figure, its change, this period against the one it is compared with as two bars), then every other
  * figure, then what needs a person, then the whole table behind Details.
  *
- * Nothing the table said is lost. A figure read for an earlier month because its data stops there says that month on
- * its card, never passes as this period's (it never leads, either); one still settling says so; a metric that cannot
- * be measured is a hatched card and its reason is said once, under Needs you, with the way to set it. The table — a
+ * Nothing the table said is lost. Every figure is this period's own (the user, 2026-10-23: the period named is the one
+ * compared); a metric whose data ended before it is a hatched card saying when, and is named once under Needs you. One
+ * still settling says so; a metric that cannot be measured is a hatched card and its reason is said once, under Needs
+ * you, with the way to set it. The table — a
  * year earlier, the expected next band, each status, Copy and CSV — is kept mounted behind Details: its bands are
  * booked as predictions the first time a period is read, as they were.
  */
@@ -20,7 +21,7 @@ import { CARD, Chip, Figure, Figures, Label, MUTED, NUM, NeedsRow, NeedsYou, ONE
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import type { BriefingRangeBlock, BriefingRangeMeasure } from "@/lib/api";
-import { dayWords, endsWords, figurePeriods, heroOf, moveOf, olderFigures, sentence, spanWords, unmeasuredByReason, withLatest } from "@/lib/cockpit/figures";
+import { dayWords, endedMetrics, endsWords, figurePeriods, heroOf, moveOf, ownFigures, sentence, spanWords, unmeasuredByReason } from "@/lib/cockpit/figures";
 import { countNoun } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { requestTab } from "@/lib/navigate";
@@ -48,13 +49,10 @@ function changeChip(m: BriefingRangeMeasure, against: string) {
 
 /** What a figure's card says under its value: its change and what it is against, and every caveat as a chip. */
 function FigureSub({ m, block }: { m: BriefingRangeMeasure; block: BriefingRangeBlock }) {
-  const { previous } = figurePeriods(m, block);
+  const { previous } = figurePeriods(block);
   const partial = m.current_partial || m.previous_partial;
   return (
     <>
-      {m.anchored && (
-        <Chip tone="amber" title={m.anchored.why} testId={`figure-older-${m.metric}`}>{m.anchored.covers}</Chip>
-      )}
       {partial ? (
         <span title="Its data covers only part of the period, so no change is stated">{`covers only ${spanWords(partial)}`}</span>
       ) : m.previous === null ? (
@@ -77,7 +75,7 @@ function FigureSub({ m, block }: { m: BriefingRangeMeasure; block: BriefingRange
 
 /** The hero: the figure that moved most, its change, and this period against its comparison as two bars. */
 function Hero({ m, block, onOpen }: { m: BriefingRangeMeasure; block: BriefingRangeBlock; onOpen?: () => void }) {
-  const { current, previous } = figurePeriods(m, block);
+  const { current, previous } = figurePeriods(block);
   const max = Math.max(Math.abs(m.current ?? 0), Math.abs(m.previous ?? 0)) || 1;
   const bar = (v: number | null, color: string) => (
     <span aria-hidden style={{ display: "block", height: 10, borderRadius: 5, background: "var(--bg-2)", overflow: "hidden" }}>
@@ -137,7 +135,7 @@ function SmallFigure({ m, block, onOpen }: { m: BriefingRangeMeasure; block: Bri
 export function MetricsFigures({ connectionId, schema, block: measuredBlock }: {
   connectionId: string; schema?: string; block: BriefingRangeBlock;
 }) {
-  const block = withLatest(measuredBlock);
+  const block = ownFigures(measuredBlock);
   const open = useOpenMetric();
   const [details, setDetails] = useState(false);
   const hero = heroOf(block);
@@ -145,7 +143,7 @@ export function MetricsFigures({ connectionId, schema, block: measuredBlock }: {
   const big = rest.slice(0, BIG);
   const small = rest.slice(BIG);
   const unmeasured = unmeasuredByReason(block);
-  const older = olderFigures(block);
+  const ended = endedMetrics(block);
   const opener = (m: BriefingRangeMeasure) => (open ? () => open({ measure: m, block }) : undefined);
 
   return (
@@ -168,7 +166,7 @@ export function MetricsFigures({ connectionId, schema, block: measuredBlock }: {
             <div key={k} data-testid="figure-unmeasured" title={sentence(u.reason)} style={HATCH}>
               <span className="aug-fs-xs" style={{ ...MUTED, ...ONE_LINE, display: "block" }}>{u.name}</span>
               <div className="aug-fs-h1" style={{ fontWeight: 600, color: "var(--t3)", margin: "2px 0" }}>—</div>
-              <Chip>not measured</Chip>
+              <Chip>{u.data_ends ? `data ended ${endsWords([u.data_ends])}` : "not measured"}</Chip>
             </div>
           ))}
         </div>
@@ -183,11 +181,11 @@ export function MetricsFigures({ connectionId, schema, block: measuredBlock }: {
               actions={<Button size="xs" variant="secondary" onClick={() => requestTab("semantic", { conn: connectionId })}>
                 Set their dates</Button>} />
           )),
-          older.length > 0 && (
-            <NeedsRow key="older" testId="needs-older"
-              title={`${countNoun(older.length, "figure")} ${older.length === 1 ? "is" : "are"} from before this period`}
-              detail={<span title={older.map(o => `${o.name}: ${o.covers}, its data ends ${dayWords(o.dataEnds)}`).join("\n")}>
-                {`${older.map(o => o.name).join(", ")} — their data stops ${endsWords(older.map(o => o.dataEnds))}; each card says its month`}
+          ended.length > 0 && (
+            <NeedsRow key="ended" testId="needs-ended"
+              title={`${countNoun(ended.length, "approved metric")} ${ended.length === 1 ? "has" : "have"} no data for this period`}
+              detail={<span title={ended.map(e => `${e.name}: its data ends ${dayWords(e.dataEnds)}`).join("\n")}>
+                {`${ended.map(e => e.name).join(", ")} — ${ended.length === 1 ? "its data stops" : "their data stops"} ${endsWords(ended.map(e => e.dataEnds))}`}
               </span>} />
           ),
         ]}

@@ -538,12 +538,6 @@ def test_a_custom_range_past_the_data_is_cut_and_says_so_and_without_an_edge_rea
     assert (asked.last_day, asked.previous_start, asked.edge_note) == (OCT8, date(2026, 9, 23), "")
 
 
-def test_a_metric_whose_data_stopped_reads_the_same_kind_of_period_at_its_end():
-    moved = ranges.anchored_spec(_edge("current_month"), date(2024, 6, 15))
-    assert (moved.start, moved.last_day, moved.preset, moved.as_of) == (
-        date(2024, 6, 1), date(2024, 6, 15), "current_month", OCT8)
-
-
 def _dated(name, table, kind="flow"):
     from types import SimpleNamespace as N
     return N(name=name, label=name, time_kind=kind, time_column=f"{table}.created_at", until_column="x",

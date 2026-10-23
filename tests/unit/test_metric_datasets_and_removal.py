@@ -200,8 +200,8 @@ def test_a_definition_can_be_renamed_moved_and_promoted_and_a_draft_removed(clie
 def test_a_dataset_that_ended_has_no_figure_for_the_range_and_an_empty_count_is_no_figure(monkeypatch):
     """Uber's rides end 2024-12-30. Every recent range read nothing for them — and a COUNT read 0,
     which was shown as a measured figure. Then (2026-10-07) the last month the data covers was shown
-    among the range's figures; now (the user, 2026-10-23) the range has no figure for it, the reason
-    names the day its data ends, and that last month rides beside it for the Cockpit's card."""
+    among the range's figures; now (the user, 2026-10-23) the range has no figure for it and the reason
+    names the day its data ends — in the Briefing and the Cockpit alike."""
     from datetime import date
 
     from aughor.briefing import ranges
@@ -217,7 +217,10 @@ def test_a_dataset_that_ended_has_no_figure_for_the_range_and_an_empty_count_is_
     monkeypatch.setattr(mt, "ensure_dates", lambda *a, **k: {})
     monkeypatch.setattr(mt, "measure_sql", lambda m, windows, **k: ("Q " + " ".join(f"{w.label}={w.start}" for w in windows), ""))
 
+    asked: list[str] = []
+
     def run_sql(sql):
+        asked.append(sql)
         if "MAX(" in sql.upper():
             return ["first_day", "last_day"], [("2024-01-01", "2024-12-30")], ""   # the edge reads both ends
         if "current=2024-12-01" in sql:
@@ -231,10 +234,7 @@ def test_a_dataset_that_ended_has_no_figure_for_the_range_and_an_empty_count_is_
     [row] = out["unmeasured"]
     assert row["reason"] == "its data ends 2024-12-30, before this range"
     assert row["data_ends"] == "2024-12-30"
-    got = row["latest"]
-    assert got["current"] == 4100 and got["previous"] == 3900
-    assert got["anchored"]["data_ends"] == "2024-12-30"
-    assert "December 2024" in got["anchored"]["covers"], got["anchored"]
+    assert not any("current=2024-12-01" in sql for sql in asked), "December 2024 was read for a range it is not"
 
     # The same metric where its data does not end before the range: an empty month is not 0.
     def empty(sql):

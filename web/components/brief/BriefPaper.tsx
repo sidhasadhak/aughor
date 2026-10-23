@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { changeOf } from "@/components/brief/MetricDetail";
-import { endsWords, sentence } from "@/lib/cockpit/figures";
+import { endsWords, ownFigures, sentence } from "@/lib/cockpit/figures";
 import { endedDay } from "@/lib/format";
 import { requestTab } from "@/lib/navigate";
 import type { BriefingDesk, BriefingRangeBlock, DeskColumn, DeskItem } from "@/lib/api";
@@ -134,20 +134,16 @@ export interface PaperNumber {
  *  LuxExperience's ten weekly figures were other weeks, each dated in amber under its name). A metric
  *  whose data ended before the range has no figure: its chip says when its data ended. A part-period
  *  figure says which days it holds. A metric not measured is said, never a zero. */
-export function rangeNumbers(block: BriefingRangeBlock): PaperNumber[] {
-  // An edition built before 2026-10-23 kept an ended metric's other-week figure among its own (`anchored`):
-  // it prints as ended too, so a stored edition reads by the same rule.
-  const kept = block.measured.filter(m => m.anchored);
-  const ended = [...kept.map(m => ({ name: m.name, reason: m.anchored!.why, data_ends: m.anchored!.data_ends })),
-                 ...block.unmeasured];
+export function rangeNumbers(stored: BriefingRangeBlock): PaperNumber[] {
+  const block = ownFigures(stored);        // an edition stored before 2026-10-23 reads by the same rule
   return [
-    ...block.measured.filter(m => !m.anchored).map(m => {
+    ...block.measured.map(m => {
       const t = changeOf(m, "previous");
       return { key: m.metric, label: m.name, value: m.current_text ?? "—",
                change: t && m.rel !== null ? { text: t, sign: Math.sign(m.rel) } : undefined,
                note: m.current_partial ? `only ${m.current_partial}` : undefined };
     }),
-    ...ended.map(u => ({ key: `unmeasured:${u.name}`, label: u.name, value: "",
+    ...block.unmeasured.map(u => ({ key: `unmeasured:${u.name}`, label: u.name, value: "",
                                     unknown: u.data_ends ? `data ended ${endsWords([u.data_ends])}` : "not measured",
                                     why: sentence(u.reason) })),
   ];

@@ -8,8 +8,8 @@ should make it clear… that written period should be the only one being compare
 were candidate findings for the narrator, so a June 2025 move could lead an October edition.
 
 Now a metric whose data ended before the range is NOT one of its figures: it is said as not measured,
-with the day its data ends; the range it last covers rides beside the reason for the Cockpit's card,
-which names its month.
+with the day its data ends — in the Briefing and, at the user's word the same day, the Cockpit too. Its
+own last week is not read at all.
 """
 from __future__ import annotations
 
@@ -61,21 +61,27 @@ def _measure(monkeypatch):
 def test_a_metric_whose_data_ended_is_not_one_of_the_weeks_figures(monkeypatch):
     _spec, out = _measure(monkeypatch)
     assert [m["name"] for m in out["measured"]] == ["Orders"]
-    assert all(m["anchored"] is None for m in out["measured"])
+    assert not any(m.get("anchored") for m in out["measured"])
     [row] = out["unmeasured"]
     assert row["name"] == "Clienteling GMV"
     assert row["reason"] == "its data ends 2025-06-29, before this range"
     assert row["data_ends"] == "2025-06-29"
 
 
-def test_the_week_it_last_covers_rides_beside_the_reason_for_the_cockpit(monkeypatch):
-    _spec, out = _measure(monkeypatch)
-    latest = out["unmeasured"][0]["latest"]
-    assert latest["current"] == 13809 and latest["previous"] == 15574
-    assert latest["anchored"]["covers"] == "the week 2025-06-23 to 2025-06-29"
-    # Worded like the range's own figures, by the same door the Cockpit reads.
-    ranges.say_figures(out["measured"] + ranges.latest_figures(out), None)
-    assert latest["current_text"] == "13,809"
+def test_its_own_last_week_is_not_read(monkeypatch):
+    asked: list[str] = []
+
+    def spy(sql):
+        asked.append(sql)
+        return _run_sql(sql)
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **k: [ORDERS, CLIENTELING])
+    monkeypatch.setattr(mt, "ensure_dates", lambda *a, **k: {})
+    monkeypatch.setattr(mt, "measure_sql", lambda m, windows, **k: (
+        f"Q {m.name} " + " ".join(f"{w.label}={w.start}" for w in windows), ""))
+    spec, _ = ranges.resolve_range("last_week", today=date(2026, 10, 23), lag_days=1)
+    out = ranges.measure_range("c", spec, run_sql=spy, dialect="duckdb")
+    assert "latest" not in out["unmeasured"][0]
+    assert not any("2025-06" in sql for sql in asked if sql.startswith("Q ")), asked
 
 
 def test_the_narrator_is_offered_no_move_from_another_week(monkeypatch):
