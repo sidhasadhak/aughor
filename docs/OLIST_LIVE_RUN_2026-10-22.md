@@ -586,6 +586,11 @@ Record, Inbox and the closed loop; the agent wizard's draft, scope and honesty a
    one decimal; findings are asked to write ratios as percentages; the definition check reads 13,494,400.74,
    not 1.34944e+07. Olist confirmed BRL live.
 4. "Adopt the explorer's eight" as one door with the right dates (D); composite keys (Gap 13).
+   **Built 2026-10-23:** the Semantic Layer's "Adopt the proposals" card ticks and dates every proposal with a
+   formula and approves the set ONCE (the approval names the dataset and the metrics); a proposal's date leads
+   with the parent table's and the record's own creation date (GMV: order_purchase_timestamp, not the shipping
+   deadline); `order_status = ['delivered']` reads as its value; a key may be several columns, and Olist's three
+   pairs each measure unique over every row. Not approved live: the seven Olist proposals wait for a person.
 5. One answer to "what ran" across Now, Agent runs, History, Agent Ops; a monitor shows what it read (E).
 6. The user's own item: rename "Phase 8"-style names (PENDING 53). **Done 2026-10-23 (#623).**
 Not done in this run: the other seven Olist metrics, Health targets, a document upload, Slack reach, the
