@@ -125,6 +125,17 @@ Their rank against 1–37 is the user's; the survey is in §3.48 (BR-0), and the
     Home recommended: a draft pack scoped to one connection (version, scope, status, source and a person-only
     activation gate already exist). **Six calls are the user's (study §6).** *🅿️ PARKED by the user 2026-10-24: "Lets park this learnings study for now".*
 
+57. [ ] **Make the decision loop turn honestly** (the user, 2026-10-24, on an analysis of Moser's *Why Palantir Is
+    Really a Decision Company*) — **studied 2026-10-24**, nothing built: `docs/DECISION_LOOP_STUDY_2026-10-24.md`.
+    Aughor already has the decision record (`aughor/record/decisions.py`, the 2027 study §K); live it holds 2
+    decisions, none with an expectation or an outcome, no recommendation was ever accepted, and the outcome score
+    credits a trend (the history band is missed above for revenue 5 of 8, units sold 7 of 8). Plan: D-1 book
+    decisions in full where they are made (Home's Decide cites the finding and asks an expectation; "Not worth it"
+    books not acting; the recommended option is marked) · D-2 review every decision that expected something · D-3
+    score against what would have happened anyway (a comparison group for a segment; *cannot tell* where the
+    metric's own band misses one way) · D-4 decision quality read off the record · D-5 unproven plays said so.
+    Falsifier written first (§5). **Six calls are the user's (study §7).**
+
 Just outside the list: the next industry package (insurance has public data to test on; payments does not) · numbers that link back to their source (idea 11) · the anti-AI-look UI work (idea 14, partly under way) · the fine-tuned text-to-SQL model (MI-4, needs far more training data than exists).
 
 ---
