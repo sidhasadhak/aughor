@@ -112,7 +112,8 @@ def test_monitor_alert_via_engine_holds_on_real_data():
     assert comparison.equivalent, (comparison.expected, comparison.observed)
     alert = comparison.detail["alerts"][0]
     assert alert["severity"] == "critical"
-    assert alert["message"] == "Revenue floor: 1200 below critical threshold 2000"
+    # plain figures with separators (2026-10-23): `:.4g` printed 13,494,400.74 as "1.349e+07"
+    assert alert["message"] == "Revenue floor: 1,200 below critical threshold 2,000"
 
 
 def test_comparison_equivalence_is_exact():

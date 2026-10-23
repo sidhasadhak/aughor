@@ -12,6 +12,7 @@ recorded "executed · no alert".
 """
 from __future__ import annotations
 
+import contextvars
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -85,12 +86,37 @@ def monitor_sql(monitor: Monitor) -> Optional[str]:
     return _resolve_sql(monitor)
 
 
+#: The values a check read, in order — so a check that raised nothing still says what it read (the Olist study,
+#: Gap 36: "No condition met", and whether the threshold read August's R$848,860 or the all-time R$13.49M was never shown).
+_READINGS: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar("monitor_readings", default=None)
+
+
 def _scalar(db, sql: str) -> Optional[float]:
     """First cell of a monitor query as float, or None. Wrapper over ``db.scalar``, declared
     DuckDB as `_query` is: the threshold, any-change and trend-reversal monitors read this
     path, and the gate-map census (2026-09-26) found it still sending DuckDB-quoted SQL to
     native engines after the anomaly path was fixed. Strict, as `_query` is."""
-    return db.scalar(sql, label="__monitor__", cast=float, sql_dialect="duckdb", strict=True)
+    value = db.scalar(sql, label="__monitor__", cast=float, sql_dialect="duckdb", strict=True)
+    seen = _READINGS.get()
+    if seen is not None and value is not None:
+        seen.append(value)
+    return value
+
+
+def plain_figure(v: float) -> str:
+    """A reading as a person reads one — "848,860.1", never "8.489e+05"."""
+    return f"{int(v):,}" if float(v) == int(v) else f"{v:,.2f}".rstrip("0").rstrip(".")
+
+
+def reading_words(monitor: Monitor, run: "MonitorRun") -> str:
+    """What a check read, beside the line it is judged against: "read 848,860.1 (warning below 900,000)"; "" when
+    the check read no single value (a drift or an anomaly reads a series, and says so in its alert)."""
+    if run.reading is None:
+        return ""
+    lines = [f"{label} {monitor.threshold_direction} {plain_figure(t)}"
+             for label, t in (("warning", monitor.warning_threshold), ("critical", monitor.critical_threshold))
+             if t is not None and monitor.alert_on == "threshold_cross"]
+    return f"read {plain_figure(run.reading)}" + (f" ({'; '.join(lines)})" if lines else "")
 
 
 #: The kinds of the two alerts about whether a monitor can run — never a reading of its metric.
@@ -245,8 +271,8 @@ def run_threshold_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
         return None
     return _make_alert(
         monitor, verdict.severity,
-        f"{monitor.name}: {current:.4g} {'below' if direction == 'below' else 'above'} "
-        f"{verdict.severity} threshold {verdict.threshold:.4g}",
+        f"{monitor.name}: {plain_figure(current)} {'below' if direction == 'below' else 'above'} "
+        f"{verdict.severity} threshold {plain_figure(verdict.threshold)}",
         current_value=current, previous_value=previous,
         threshold=verdict.threshold,
     )
@@ -585,6 +611,8 @@ class MonitorRun:
     """One check of a monitor: the alert it raised, or — when its query could not run — why."""
     alert: Optional[MonitorAlert] = None
     failed: str = ""      # the warehouse's refusal; "" when the query ran
+    #: The value the check read (its first single value), raised or not; None when it read none.
+    reading: Optional[float] = None
 
 
 def run_monitor(monitor: Monitor, db, suppress: bool = True) -> Optional[MonitorAlert]:
@@ -594,6 +622,19 @@ def run_monitor(monitor: Monitor, db, suppress: bool = True) -> Optional[Monitor
 
 
 def check_monitor(monitor: Monitor, db, suppress: bool = True) -> MonitorRun:
+    """See ``_check_monitor``; this keeps the value the check read on the run it returns (Gap 36)."""
+    token = _READINGS.set([])
+    try:
+        run = _check_monitor(monitor, db, suppress)
+        read = _READINGS.get() or []
+        if read and run.reading is None:
+            run.reading = read[0]
+        return run
+    finally:
+        _READINGS.reset(token)
+
+
+def _check_monitor(monitor: Monitor, db, suppress: bool = True) -> MonitorRun:
     """Dispatch to the correct runner based on monitor.alert_on.
 
     Always safe — exceptions are caught and surfaced as info alerts so the

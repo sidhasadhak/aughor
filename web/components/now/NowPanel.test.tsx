@@ -7,7 +7,10 @@
  * Every read goes through `fetch`, which is answered here — nothing reaches the live API from jsdom.
  */
 import { render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// jsdom has no EventSource: the live refresh is stubbed, as every panel test that subscribes does.
+vi.mock("@/lib/events", () => ({ subscribeKernelEvents: () => () => {} }));
 
 import { forgetMe } from "@/lib/useMe";
 import { keptBriefing, NowPanel, type NowDoors } from "./NowPanel";
@@ -37,6 +40,7 @@ function answer(url: string): unknown {
   if (p === "/record/set-aside") return { today: "2026-10-12", active: [], returned: [] };
   if (p === "/record/corrections") return routes.corrections;
   if (p === "/briefing/organisation") return routes.briefing;
+  if (p === "/jobs") return routes.jobs ?? [];
   if (p === "/rbac/me") return { user_id: null, actor: "amit", signed_in: false, org_id: "default", roles: [], permissions: [] };
   return {};
 }
@@ -159,6 +163,27 @@ describe("Now", () => {
     expect(rows[0]).toHaveTextContent("theLook · as of Sun 11 Oct");
     expect(screen.getByTestId("now-briefing")).toHaveTextContent("1 connection has no Briefing kept yet");
     expect(screen.queryByText(/No Briefing kept yet for any/)).toBeNull();
+  });
+});
+
+describe("what is running now (the Olist study, Gaps 9 and 34)", () => {
+  it("names this workspace's live runs from the kernel's jobs, and leaves another workspace's out", async () => {
+    const live = (id: string, conn: string, title: string) => ({ id, kind: "exploration", state: "RUNNING", conn_id: conn,
+      canvas_id: null, created_at: new Date(Date.now() - 120_000).toISOString(), started_at: null, finished_at: null,
+      error: null, agent: { agent: "Scout", blurb: "", icon: "" }, title, cost: null, duration_ms: null });
+    routes.jobs = [live("j1", "c1", "Explore theLook"), live("j2", "elsewhere", "Explore another workspace")];
+    mount();
+    const [row] = await screen.findAllByTestId("now-running-row");
+    expect(row).toHaveTextContent("Explore theLook");
+    expect(row).toHaveTextContent("Scout · theLook · started 2m ago");
+    expect(screen.getAllByTestId("now-running-row")).toHaveLength(1);
+  });
+
+  it("says nothing when nothing runs here", async () => {
+    routes.jobs = [];
+    mount();
+    await screen.findAllByTestId("now-briefing-row");
+    expect(screen.queryByTestId("now-running")).toBeNull();
   });
 });
 

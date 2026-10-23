@@ -1392,9 +1392,12 @@ def _dispatch_monitor(effect: Effect, automation: Automation) -> EffectOutcome:
         return EffectOutcome(kind=effect.kind, target=monitor_id, status="failed",
                              message=f"the monitor's query could not run: {run.failed[:200]}")
     alert = run.alert
+    from aughor.monitors.runner import reading_words
+    read = reading_words(monitor, run)
     if alert is None:
+        # What it read, said with the verdict (the Olist study, Gap 36): "no alert · read 848,860.1 (warning below 900,000)".
         return EffectOutcome(kind=effect.kind, target=monitor_id, status="executed",
-                             message="no alert")
+                             message="no alert" + (f" · {read}" if read else ""))
     append_alert(alert)
     return EffectOutcome(kind=effect.kind, target=monitor_id, status="executed",
                          message=f"{alert.severity}: {alert.message[:120]}")

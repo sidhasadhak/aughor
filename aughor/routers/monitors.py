@@ -229,11 +229,12 @@ def trigger_monitor(monitor_id: str) -> dict:
     if not get_monitor(monitor_id):
         raise HTTPException(status_code=404, detail="Monitor not found")
     try:
-        from aughor.monitors.scheduler import trigger_now
-        alert = trigger_now(monitor_id)
+        from aughor.monitors.scheduler import trigger_now_read
+        alert, read = trigger_now_read(monitor_id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
-    return alert.model_dump() if alert else {"fired": False}
+    # What the check read, said beside its verdict either way (the Olist study, Gap 36).
+    return {**alert.model_dump(), "read": read} if alert else {"fired": False, "read": read}
 
 
 # ── Alerts ─────────────────────────────────────────────────────────────────────

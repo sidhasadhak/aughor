@@ -5234,7 +5234,9 @@ export async function deleteMonitor(id: string): Promise<void> {
   if (!res.ok && res.status !== 204) throw new Error("Failed to delete monitor");
 }
 
-export async function triggerMonitor(id: string): Promise<MonitorAlert | { fired: false }> {
+/** A monitor run now: its alert, or that nothing fired — and either way what it READ, in words ("read 848,860.1
+ *  (warning below 900,000)"; "" when it read no single value). The Olist study, Gap 36. */
+export async function triggerMonitor(id: string): Promise<(MonitorAlert | { fired: false }) & { read?: string }> {
   const res = await fetch(`${getApiBase()}/monitors/${id}/trigger`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to trigger monitor");
   return res.json();

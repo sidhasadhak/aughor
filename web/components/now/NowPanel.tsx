@@ -14,11 +14,12 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { getDepartures, getNeedsHuman, type Connection, type Departure, type NeedsHuman } from "@/lib/api";
+import { getDepartures, getJobs, getNeedsHuman, type Connection, type Departure, type FleetJob, type NeedsHuman } from "@/lib/api";
+import { subscribeKernelEvents } from "@/lib/events";
 import { approverName } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { owes, sourceName, summaryLine, whenText } from "@/lib/departures";
-import { countNoun, endedDay, formatCount, normalizeNumberPrecision } from "@/lib/format";
+import { countNoun, endedDay, formatCount, normalizeNumberPrecision, relTime } from "@/lib/format";
 import { dayWords } from "@/lib/home";
 import { connectionLabel, destinationLabel, needsYouTitle } from "@/lib/names";
 import {
@@ -120,6 +121,8 @@ export interface NowDoors {
   onOpenRecord: (layer: InspectLayer, id: string) => void;
   /** Home — where a first run connects data and asks its first question. */
   onOpenHome: () => void;
+  /** Agent Ops' Overview — every run, with its trace, cost and Stop. */
+  onOpenAgentOps?: () => void;
 }
 
 /** A figure whose read is in flight or failed says that, in its own line — never a 0. */
@@ -140,6 +143,15 @@ export function NowPanel({ connections, contextReady, doors }: {
   const aside = useLoad(getSetAside, []);
   const corrections = useLoad(() => getCorrections({ limit: 60 }), []);
   const briefing = useLoad(readOrgBriefing, []);
+  // What is running now, from the kernel's jobs — the record Agent Ops lists — on this workspace's connections
+  // (the Olist study, Gaps 9 and 34: Now said "Nothing waits on you" through a live exploration of the workspace's
+  // own data, and only the header's "1 live" knew).
+  const running = useLoad(() => getJobs({ state: "active" }), []);
+  useEffect(() => subscribeKernelEvents(() => running.reload(), { kinds: ["job.state"] }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []);
+  const here = useMemo(() => new Set(connections.map(c => c.id)), [connections]);
+  const runningHere: FleetJob[] = (Array.isArray(running.data) ? running.data : []).filter(j => !!j.conn_id && here.has(j.conn_id));
   const missions = useLoad(() => listMissions({ state: "active" }), []);
 
   // "Since you were here" is this reader's own convenience: the last visit is kept in this
@@ -203,6 +215,26 @@ export function NowPanel({ connections, contextReady, doors }: {
                 onAsideChanged={() => { aside.reload(); window.dispatchEvent(new Event(WAITING_CHANGED_EVENT)); }} />}
             </Gate>
           </NeedsYou>
+
+          {runningHere.length > 0 && (
+            <Card label="Running now" testId="now-running" right={countNoun(runningHere.length, "run")}>
+              {runningHere.map((j, i) => (
+                <div key={j.id} data-testid="now-running-row" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto",
+                  gap: 12, alignItems: "center", padding: "7px 0", ...(i ? RULE : {}) }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="aug-fs-chrome" style={{ ...ONE_LINE, color: "var(--t1)" }}>{j.title || j.kind}</div>
+                    <div className="aug-fs-xs" style={{ ...ONE_LINE, color: "var(--t2)" }}>
+                      {j.agent?.agent || j.kind} · {connectionLabel(j.conn_id ?? "", connections)}
+                      {j.started_at || j.created_at ? ` · started ${relTime(j.started_at || j.created_at || "")} ago` : ""}
+                    </div>
+                  </div>
+                  {doors.onOpenAgentOps && (
+                    <Button size="xs" variant="secondary" onClick={() => doors.onOpenAgentOps?.()}>Open in Agent Ops</Button>
+                  )}
+                </div>
+              ))}
+            </Card>
+          )}
 
           {/* The picture — the week's slots, place by place — beside the Briefing in a line each. */}
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
