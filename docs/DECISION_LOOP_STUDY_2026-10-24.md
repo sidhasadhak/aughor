@@ -12,6 +12,22 @@ proposes the smallest changes that make it turn without crediting a decision wit
 Nothing below is built. No model was called; every number was read over HTTP from the live install on 2026-10-24,
 or from source.
 
+**Status, 2026-10-24 — D-1 to D-3 BUILT** at the user's word (*"go with the recommended calls, build D-1 to D-3"*:
+every call in §7 as recommended), behind the flag `record.decision_loop`, on live with it on. Two departures from §4,
+both deliberate: the recommended option is marked as `extra.recommended` on the decision rather than as a field on
+`Option`, so a record booked with the flag off is byte-identical; and the comparison group is not registered on the
+scenario ladder — `METHODS` is what packs, the kit and the ledger contract publish — but is the review's baseline,
+named on each outcome's effect. A comparison is drawn only for a metric that adds up (a SUM or a COUNT of rows at the
+top of its formula); a part of a ratio is read against its own past under the drift guard.
+
+**§5.1, the placebo, on live theLook data (2026-10-24, read-only, 18 statements through the query door, nothing
+booked):** a do-nothing decision on each of the 26 product categories' units sold on each of nine first-of-month
+dates (234 decisions), reviewed by the built functions. The comparison group credited a median **−0.25%** — 182
+inside its 80% band, 26 above, 26 below; each category's own history credited **+19.83%**; the company total's own
+history credited **+19.36%**, and the drift guard read the Record's calibration and said *cannot tell* ("units_sold's
+own history band has missed above in 7 of 8 scored windows"). §5.1 passes. §5.2 — five decisions on live data
+reaching a verdict within six weeks — is read on 2026-12-05.
+
 ## 1 · What exists
 
 | The article asks for | Aughor's record (`aughor/record/decisions.py` unless named) |
