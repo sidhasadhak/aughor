@@ -978,6 +978,8 @@ def edition_covers(conn_id: str, *, schema: Optional[str] = None, workspace_id: 
         if spec is not None:
             words = phrases(spec)
             row.update({"start": _d(spec.start), "last_day": _d(spec.last_day), "covers": words["covers"],
+                        "previous_start": _d(spec.previous_start),
+                        "previous_last_day": _d(spec.previous_end - timedelta(days=1)),
                         "compared_with": words["compared_with"], "compare_withheld": spec.compare_withheld,
                         "current_text": None, "previous_text": None, "rel": None})
         rows.append(row)

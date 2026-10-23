@@ -286,6 +286,27 @@ export function endedDay(iso: string): string {
   return `${part({ weekday: "short" })} ${part({ day: "numeric", month: "short", year: "numeric" })}`;
 }
 
+/** A span of days as a table cell says it: "Wed 17 Oct 2018", "September 2018", "2017", "1–17 Oct 2018",
+ *  "1 Jan – 17 Oct 2018". The full sentence ("the year to the data's last day, …") rides as its title. */
+export function spanWords(start?: string | null, last?: string | null): string {
+  if (!start || !last) return "";
+  const a = new Date(`${start.slice(0, 10)}T00:00:00Z`), b = new Date(`${last.slice(0, 10)}T00:00:00Z`);
+  if (isNaN(a.getTime()) || isNaN(b.getTime())) return `${start} to ${last}`;
+  const f = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString("en-GB", { ...o, timeZone: "UTC" });
+  const full: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" };
+  if (a.getTime() === b.getTime()) return endedDay(start);
+  const sameYear = a.getUTCFullYear() === b.getUTCFullYear();
+  const sameMonth = sameYear && a.getUTCMonth() === b.getUTCMonth();
+  const monthEnd = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth() + 1, 0)).getUTCDate();
+  if (sameMonth && a.getUTCDate() === 1 && b.getUTCDate() === monthEnd) return f(a, { month: "long", year: "numeric" });
+  if (sameYear && a.getUTCMonth() === 0 && a.getUTCDate() === 1 && b.getUTCMonth() === 11 && b.getUTCDate() === 31) {
+    return String(a.getUTCFullYear());
+  }
+  if (sameMonth) return `${a.getUTCDate()}–${f(b, full)}`;
+  if (sameYear) return `${f(a, { day: "numeric", month: "short" })} – ${f(b, full)}`;
+  return `${f(a, full)} – ${f(b, full)}`;
+}
+
 export function formatVariance(ratio: number | null | undefined, digits = 1): string {
   if (ratio === null || ratio === undefined || isNaN(ratio)) return "";
   const p = (ratio * 100).toFixed(digits);

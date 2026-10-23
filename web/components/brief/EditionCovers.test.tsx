@@ -22,10 +22,13 @@ const OLIST: Covers = {
   data_ended: true, data_through: "2018-10-17", data_from: "2016-09-04",
   metric: { name: "gmv", label: "Gross Merchandise Value" },
   editions: [
-    row("yesterday", "Day", { current_text: null, previous_text: null, rel: null, why: "its data has no rows in this range" }),
+    row("yesterday", "Day", { current_text: null, previous_text: null, rel: null, why: "its data has no rows in this range",
+                              start: "2018-10-17", last_day: "2018-10-17", previous_start: "2018-10-10", previous_last_day: "2018-10-10" }),
     row("last_week", "Week"),
-    row("last_month", "Month", { covers: "September 2018", rel: -0.9998 }),
-    row("last_year", "Year", { compare_withheld: "the data starts on 2016-09-04, so 2016 holds only part of its days", rel: null }),
+    row("last_month", "Month", { covers: "September 2018", rel: -0.9998, start: "2018-09-01", last_day: "2018-09-30",
+                                 previous_start: "2018-08-01", previous_last_day: "2018-08-31" }),
+    row("last_year", "Year", { compare_withheld: "the data starts on 2016-09-04, so 2016 holds only part of its days", rel: null,
+                               start: "2017-01-01", last_day: "2017-12-31", previous_start: "2016-01-01", previous_last_day: "2016-12-31" }),
     row("month_to_date", "Month to date"),
     row("year_to_date", "Year to date"),
   ] as Covers["editions"],
@@ -37,11 +40,15 @@ describe("EditionCovers", () => {
     render(<EditionCovers connectionId="workspace" schema="olist" workspaceId="w1" current="last_month" />);
     const table = await screen.findByTestId("edition-covers");
     expect(api.readEditionCovers).toHaveBeenCalledWith("workspace", "olist", "w1");
-    expect(within(table).getByText("Gross Merchandise Value")).toBeInTheDocument();       // the metric names the column
+    expect(within(table).getByText(/Each figure is Gross Merchandise Value, the lead approved metric/)).toBeInTheDocument();
     for (const label of ["Day", "Week", "Month", "Year", "Month to date", "Year to date"]) {
       expect(within(table).getByText(label)).toBeInTheDocument();
     }
-    expect(within(table).getByText("September 2018")).toBeInTheDocument();
+    expect(within(table).getByText("September 2018")).toBeInTheDocument();           // compact cells, the sentence as title
+    expect(within(table).getByText("August 2018")).toBeInTheDocument();
+    expect(within(table).getByText("Wed 17 Oct 2018")).toBeInTheDocument();
+    expect(within(table).getByText("2017")).toBeInTheDocument();
+    expect(within(table).queryByText("2016")).toBeNull();                             // withheld: no dates for it
     expect(within(table).getByText("-100.0%")).toBeInTheDocument();
     expect(within(table).getByText("not compared")).toBeInTheDocument();
     expect(within(table).getByText(/Not compared: the data starts on 2016-09-04/)).toBeInTheDocument();

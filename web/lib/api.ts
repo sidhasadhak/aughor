@@ -7749,6 +7749,8 @@ export interface EditionCover {
   why: string;
   start?: string;
   last_day?: string;
+  previous_start?: string;
+  previous_last_day?: string;
   covers?: string;
   compared_with?: string;
   compare_withheld?: string;

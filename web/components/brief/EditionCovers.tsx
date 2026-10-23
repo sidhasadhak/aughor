@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 
 import { Ledger, type LedgerColumn } from "@/components/record/kit";
 import { readEditionCovers, type EditionCover, type EditionCovers as Covers } from "@/lib/api";
-import { formatVariance } from "@/lib/format";
+import { formatVariance, spanWords } from "@/lib/format";
 
 /** The table's anchor: the notice under the dateline scrolls here. */
 export const COVERS_ANCHOR = "briefing-edition-covers";
@@ -44,14 +44,20 @@ export function EditionCovers({ connectionId, schema, workspaceId, current }: {
   }, [connectionId, schema, workspaceId, key]);
   const mine = got && got.key === key ? got : null;
   const data = mine?.data ?? null;
+  // Short cells, the full sentence as a title: the ledger sizes to its content and never wraps, so the
+  // server's phrases ("the year to the data's last day, 2018-01-01 to 2018-10-17") pushed Change and
+  // the reasons out of sight (measured 1,780px in a 1,133px column on Olist, 2026-10-23).
   const columns: LedgerColumn<EditionCover>[] = [
     { head: "Edition", cell: r => r.label, width: 120 },
-    { head: "Covers", cell: r => r.covers ?? "" },
+    { head: "Covers", cell: r => <span title={r.covers}>{spanWords(r.start, r.last_day)}</span> },
     { head: "Compared with", cell: r => r.compare_withheld
-        ? <span style={{ color: "var(--t3)" }}>not compared</span> : (r.compared_with ?? "") },
-    { head: data?.metric?.label ?? "Lead metric", cell: r => r.current_text ?? "", num: true, width: 140 },
+        ? <span style={{ color: "var(--t3)" }}>not compared</span>
+        : <span title={r.compared_with}>{spanWords(r.previous_start, r.previous_last_day)}</span> },
+    { head: "Figure", cell: r => r.current_text ?? "", num: true, width: 130 },
     { head: "Change", cell: r => formatVariance(r.rel), num: true, width: 90 },
-    { head: "Said beside it", cell: r => <span style={{ color: "var(--t2)" }}>{besideWords(r)}</span> },
+    { head: "Said beside it", cell: r => (
+        <span style={{ display: "inline-block", whiteSpace: "normal", maxWidth: 420, color: "var(--t2)" }}>{besideWords(r)}</span>
+      ) },
   ];
   return (
     <div id={COVERS_ANCHOR} data-testid="edition-covers" style={{ padding: "16px 0", borderBottom: "1px solid var(--b1)" }}>
@@ -64,6 +70,11 @@ export function EditionCovers({ connectionId, schema, workspaceId, current }: {
         <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Reading where each edition lands…</div>
       ) : (
         <>
+          {data.metric && (
+            <div className="aug-fs-sm" style={{ color: "var(--t3)", marginBottom: 6 }}>
+              Each figure is {data.metric.label}, the lead approved metric, read for that edition&apos;s days.
+            </div>
+          )}
           <Ledger name="edition-covers" columns={columns} rows={data.editions} rowKey={r => r.preset}
             selected={current} empty="No edition could be read." />
           {!data.metric && (

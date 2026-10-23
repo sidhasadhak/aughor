@@ -189,6 +189,7 @@ def test_what_each_edition_covers_lists_six_with_the_lead_figure(olist, monkeypa
     assert rows["last_month"]["current_text"] and rows["last_month"]["previous_text"]
     assert rows["last_year"]["compare_withheld"] and rows["last_year"]["rel"] is None
     assert rows["yesterday"]["start"] == rows["yesterday"]["last_day"] == "2018-10-17"
+    assert (rows["last_month"]["previous_start"], rows["last_month"]["previous_last_day"]) == ("2018-08-01", "2018-08-31")
 
 
 # ── the send and Now ────────────────────────────────────────────────────────────────────────
