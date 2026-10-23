@@ -37,7 +37,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/components/ui/icon";
 import { formatCount, relTime } from "@/lib/format";
 import {
-  alertText, alertsByWeek, channelWords, checksPerDay, dayMonth, FIRES, foldAlerts, proofState, proofWords, ruleWords,
+  alertText, alertsByWeek, channelWords, checksPerDay, dayMonth, FIRES, foldAlerts, fromRemovedMonitors, proofState, proofWords,
+  removedWords, ruleWords,
   scheduleMix, scheduleWords, short, type AlertGroup, type ProofState,
 } from "@/lib/monitorSummary";
 import {
@@ -338,7 +339,7 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
           {error && <div role="alert" className="aug-fs-sm" style={{ color: "var(--red4)" }}>{error}</div>}
           {readFailed && <ReadFailed what="the monitors" error={readFailed} onRetry={load} />}
           {!loaded && loading && <Loading what="monitors" />}
-          {loaded && !readFailed && view === "alerts" && <AlertsList alerts={alerts} onAck={ack} />}
+          {loaded && !readFailed && view === "alerts" && <AlertsList alerts={alerts} monitors={monitors} onAck={ack} />}
           {loaded && !readFailed && view === "list" && (monitors.length === 0
             ? <EmptyState onAdd={openCreate} />
             : <Overview monitors={monitors} alerts={alerts} unacked={unacked} proofs={proofs} metrics={metrics}
@@ -393,6 +394,10 @@ function Overview({ monitors, alerts, unacked, proofs, metrics, checking, runRes
 
   const weeks = alertsByWeek(alerts, new Date(), 12);
   const inWeeks = weeks.reduce((s, w) => s + w.n, 0);
+  // an alert outlives its monitor (supersede, do not delete): said apart, as Notifications says its removed triggers
+  const since = weeks[0]?.start.toISOString() ?? "";
+  const removedInWeeks = removedWords(alerts.filter(a => a.triggered_at >= since), monitors);
+  const removed = removedWords(alerts, monitors);
 
   return (
     <>
@@ -401,7 +406,7 @@ function Overview({ monitors, alerts, unacked, proofs, metrics, checking, runRes
           sub={on.length === monitors.length ? "all on" : `${on.length} on · ${monitors.length - on.length} off`} />
         <Figure label="Open alerts" value={formatCount(unacked.length)} tone={unacked.length ? "amber" : undefined} testId="fig-open"
           sub={alerts.length === 0 ? "none has fired here yet"
-            : `${formatCount(alerts.length - unacked.length)} acknowledged · last ${dayMonth(lastAlert.triggered_at)}`} />
+            : `${formatCount(alerts.length - unacked.length)} acknowledged · last ${dayMonth(lastAlert.triggered_at)}${removed ? ` · ${removed}` : ""}`} />
         <Figure label="Proven to fire" testId="fig-proven"
           value={read.length < monitors.length ? "—" : `${fires.length} of ${monitors.length}`}
           sub={read.length < monitors.length ? "reading their proofs…"
@@ -418,7 +423,7 @@ function Overview({ monitors, alerts, unacked, proofs, metrics, checking, runRes
         {[
           ...[...openByMonitor.entries()].map(([id, open]) => (
             <NeedsRow key={`open-${id}`} testId="needs-open"
-              title={`${open[0].monitor_name} · ${plural(open.length, "open alert")}`}
+              title={`${open[0].monitor_name}${monitors.some(m => m.id === id) ? "" : " · since removed"} · ${plural(open.length, "open alert")}`}
               detail={`${alertText(open[0].message)}${open.some(a => a.caveat) ? " · value may be mis-computed" : ""}`}
               actions={<>
                 <Button size="xs" variant="secondary" onClick={() => onAck(open.map(a => a.id))}>
@@ -448,7 +453,7 @@ function Overview({ monitors, alerts, unacked, proofs, metrics, checking, runRes
           already says when the last one fired, or that none has. */}
       {inWeeks > 0 && (
         <section aria-label="Alerts over twelve weeks" data-testid="monitor-alert-weeks" style={CARD}>
-          <Label right={<span>{`${plural(inWeeks, "alert")}${alerts.length >= 100 ? " · of the latest 100 read" : ""}`}</span>}>
+          <Label right={<span>{`${plural(inWeeks, "alert")}${removedInWeeks ? ` · ${removedInWeeks}` : ""}${alerts.length >= 100 ? " · of the latest 100 read" : ""}`}</span>}>
             Alerts · last 12 weeks
           </Label>
           <Columns columns={weeks.map(w => ({
@@ -640,21 +645,23 @@ export function MonitorProofRow({ monitorId, proof: given, onChanged }: {
 
 // ── Alerts, repeats folded ────────────────────────────────────────────────────
 
-function AlertsList({ alerts, onAck }: { alerts: MonitorAlert[]; onAck: (ids: string[]) => void }) {
+function AlertsList({ alerts, monitors, onAck }: { alerts: MonitorAlert[]; monitors: MonitorDef[]; onAck: (ids: string[]) => void }) {
   const groups = useMemo(() => foldAlerts(alerts), [alerts]);
   const open = alerts.filter(a => !a.acknowledged).length;
+  const gone = useMemo(() => new Set(fromRemovedMonitors(alerts, monitors).map(a => a.monitor_id)), [alerts, monitors]);
   return (
     <section aria-label="Alerts" data-testid="alert-list" style={CARD}>
       <Label right={alerts.length ? <span>{`${formatCount(alerts.length)}${alerts.length >= 100 ? " latest" : ""} · ${open} open`}</span> : null}>
         Alerts
       </Label>
       {groups.length === 0 ? <div className="aug-fs-sm" style={MUTED}>No alerts yet.</div>
-        : groups.map((g, i) => <AlertRow key={g.key} g={g} first={i === 0} onAck={() => onAck(g.open)} />)}
+        : groups.map((g, i) => <AlertRow key={g.key} g={g} first={i === 0} removed={gone.has(g.latest.monitor_id)}
+            onAck={() => onAck(g.open)} />)}
     </section>
   );
 }
 
-function AlertRow({ g, first, onAck }: { g: AlertGroup; first: boolean; onAck: () => void }) {
+function AlertRow({ g, first, removed, onAck }: { g: AlertGroup; first: boolean; removed: boolean; onAck: () => void }) {
   const a = g.latest;
   const settled = g.open.length === 0;
   const when = g.count === 1 ? `${relTime(a.triggered_at)} ago`
@@ -668,6 +675,7 @@ function AlertRow({ g, first, onAck }: { g: AlertGroup; first: boolean; onAck: (
             <span className="aug-fs-chrome" style={{ ...ONE_LINE, fontWeight: 500, color: "var(--t1)" }}>{a.monitor_name}</span>
             <span className="aug-fs-xs" style={MUTED}>{a.severity}</span>
             {a.caveat && <Chip tone="amber" title={a.caveat}>value may be mis-computed</Chip>}
+            {removed && <Chip title="This monitor no longer exists — these alerts are history">since removed</Chip>}
           </div>
           <div className="aug-fs-xs" title={a.message} style={{ ...MUTED, ...ONE_LINE }}>
             {alertText(a.message)}{a.previous_value != null ? ` · was ${short(a.previous_value)}` : ""} · {when}

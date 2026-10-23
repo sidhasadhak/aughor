@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import type { DocumentEntry, KnowledgeStatus } from "@/lib/api";
 import {
-  addedWords, chunkWords, documentFigures, documentName, driftedDocuments, formatLabel, schemaDocParts,
+  addedWords, chunkWords, documentFigures, documentName, documentsForConnection, driftedDocuments, formatLabel,
+  schemaDocParts,
 } from "@/lib/documents";
 
 const conns = [{ id: "baef6c3e", name: "DuckDB" }, { id: "8233e4fd", name: "theLook" }];
@@ -86,5 +87,36 @@ describe("when a document was added", () => {
     expect(addedWords("2026-08-04T15:58:54", now)).toBe("4 Aug");
     expect(addedWords("2025-12-01T10:00:00", now)).toBe("1 Dec 2025");
     expect(addedWords("", now)).toBe("—");
+  });
+});
+
+describe("the documents an agent can be given", () => {
+  // the live corpus on 2026-10-23: five connections' schema documentation and two uploads
+  const upload = (id: string, title: string): DocumentEntry => ({
+    doc_id: id, filename: `${title}.md`, title, chunk_count: 4, uploaded_at: "2026-10-12T14:40:38Z", generated: false,
+  });
+  const corpus = [
+    schemaDoc("baef6c3e", "ecommerce", 9), schemaDoc("baef6c3e", "main", 7), schemaDoc("dcc63d83", "luxexperience", 30),
+    schemaDoc("dcc63d83", "gold_governance", 3), schemaDoc("dcc63d83", "gold_finance", 3),
+    upload("b74f82572db1470c9b0777a2", "Luxexperience Kpi Handbook"), upload("09d3e1f443544cb6831741e6", "Superstore Metrics Handbook"),
+    schemaDoc("workspace", "olist", 12), schemaDoc("8233e4fd", "thelook", 21),
+  ];
+
+  it("lists its connection's schema documentation first and the organisation's uploads after, never another connection's", () => {
+    const { shown, hidden } = documentsForConnection(corpus, "workspace", "olist");
+    expect(shown.map(x => x.doc.doc_id)).toEqual(["doctree::workspace::olist", "b74f82572db1470c9b0777a2", "09d3e1f443544cb6831741e6"]);
+    expect(shown.map(x => x.orgWide)).toEqual([false, true, true]);
+    expect(hidden).toBe(6);
+  });
+
+  it("puts the scoped schema's documentation before the connection's other schemas", () => {
+    expect(documentsForConnection(corpus, "dcc63d83", "gold_finance").shown.slice(0, 3).map(x => x.doc.doc_id))
+      .toEqual(["doctree::dcc63d83::gold_finance", "doctree::dcc63d83::luxexperience", "doctree::dcc63d83::gold_governance"]);
+  });
+
+  it("leaves nothing out before a connection is chosen", () => {
+    const { shown, hidden } = documentsForConnection(corpus, "");
+    expect(shown).toHaveLength(corpus.length);
+    expect(hidden).toBe(0);
   });
 });

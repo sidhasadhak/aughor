@@ -115,9 +115,11 @@ describe("MonitorsPanel", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveTextContent("×3");
     expect(within(rows[0]).getByRole("button", { name: "Acknowledge 3" })).toBeInTheDocument();
-    // humanised, and settled
+    // humanised, and settled — and its monitor, gone, is said to be
     expect(rows[1]).toHaveTextContent("20,260 above warning threshold 20,000");
     expect(rows[1]).toHaveTextContent("acknowledged");
+    expect(rows[1]).toHaveTextContent("since removed");
+    expect(rows[0]).not.toHaveTextContent("since removed");
   });
 
   it("says nothing needs the reader, in one line, when nothing does", async () => {
@@ -129,5 +131,22 @@ describe("MonitorsPanel", () => {
     expect(screen.getByTestId("fig-open")).toHaveTextContent("none has fired here yet");
     // nothing to picture: the figure already says it
     expect(screen.queryByTestId("monitor-alert-weeks")).toBeNull();
+  });
+
+  it("says alerts of monitors since removed apart, never as the workspace's own (the Olist workspace, 2026-10-23)", async () => {
+    const gone = (id: string, monitor_id: string, monitor_name: string, at: string) =>
+      alert({ id, monitor_id, monitor_name, acknowledged: true, triggered_at: at, message: `${monitor_name}: 1 below warning threshold 2` });
+    api.getMonitors.mockResolvedValue([monitor({ id: "gmv", name: "Monthly GMV floor" })]);
+    api.getAllAlerts.mockResolvedValue([
+      gone("o1", "acc", "Active Customer Count", new Date(Date.now() - 9 * 86_400_000).toISOString()),
+      gone("o2", "acc", "Active Customer Count", new Date(Date.now() - 10 * 86_400_000).toISOString()),
+      gone("o3", "demo", "WP-1b caveat demo", new Date(Date.now() - 200 * 86_400_000).toISOString()),
+    ]);
+    api.getMonitorProof.mockResolvedValue(PROOFS.m1);
+    panel();
+    await waitFor(() => expect(screen.getByTestId("fig-open")).toHaveTextContent("all from 2 monitors since removed"));
+    expect(screen.getByTestId("fig-open")).toHaveTextContent("3 acknowledged");
+    // the twelve weeks hold two of them, both from the one removed monitor
+    expect(screen.getByTestId("monitor-alert-weeks")).toHaveTextContent("2 alerts · all from 1 monitor since removed");
   });
 });

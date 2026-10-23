@@ -45,6 +45,7 @@ import {
   type DocumentEntry,
   type PackSummary, type UserAgent,
 } from "@/lib/api";
+import { documentName, documentsForConnection } from "@/lib/documents";
 import { formatCount } from "@/lib/format";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -147,6 +148,14 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
   }, []);
 
   const schemas = useMemo(() => schemasFor(tree, connectionId), [tree, connectionId]);
+  // The documents this agent's connection can be given — never another connection's schema documentation; and a
+  // document ticked before the connection changed is not sent with the new one.
+  const attachable = useMemo(() => documentsForConnection(documents, connectionId, schemaScope),
+                             [documents, connectionId, schemaScope]);
+  useEffect(() => {
+    const ok = new Set(attachable.shown.map(x => x.doc.doc_id));
+    setDocIds(prev => (prev.every(id => ok.has(id)) ? prev : prev.filter(id => ok.has(id))));
+  }, [attachable]);
   const tables = useMemo(() => tablesFor(tree, connectionId, schemaScope),
                          [tree, connectionId, schemaScope]);
 
@@ -490,25 +499,31 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
 
           <Section title="Documents"
             note="Attaching none is not neutral: an agent with no documents attached sees NO documents at all — fewer than asking with no agent.">
-            {documents.length === 0 ? (
-              <Note>No documents uploaded yet. Upload them from a chat, then attach them here
-                later.</Note>
+            {attachable.shown.length === 0 ? (
+              <Note>{documents.length === 0 ? "No documents uploaded yet. Upload them from a chat, then attach them here later."
+                : "No documents for this connection yet. Upload them from a chat, then attach them here later."}</Note>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 168,
+              <div data-testid="agent-documents" style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 168,
                             overflowY: "auto" }}>
-                {documents.map(d => (
+                {attachable.shown.map(({ doc: d, orgWide }) => (
                   <label key={d.doc_id} className="aug-fs-sm"
                     style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
                     <Checkbox checked={docIds.includes(d.doc_id)}
                       onChange={e => setDocIds(prev => e.target.checked
                         ? [...prev, d.doc_id] : prev.filter(x => x !== d.doc_id))} />
-                    <span style={{ color: "var(--t1)" }}>{d.title || d.filename}</span>
+                    <span style={{ color: "var(--t1)" }}>{documentName(d, connections)}</span>
                     <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>
-                      {formatCount(d.chunk_count)} chunks
+                      {orgWide ? "the whole organisation's · " : ""}{formatCount(d.chunk_count)} chunks
                     </span>
                   </label>
                 ))}
               </div>
+            )}
+            {attachable.hidden > 0 && (
+              <p className="aug-fs-xs" data-testid="agent-documents-hidden" style={{ color: "var(--t3)", margin: "6px 0 0" }}>
+                {attachable.hidden === 1 ? "1 document of another connection is" : `${formatCount(attachable.hidden)} documents of other connections are`}
+                {" "}not listed — they describe data this agent does not read.
+              </p>
             )}
           </Section>
 

@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import type { MonitorAlert, MonitorProof } from "./api";
 import {
-  alertText, alertsByWeek, checksPerDay, foldAlerts, proofState, proofWords, ruleWords, scheduleMix, short,
+  alertText, alertsByWeek, checksPerDay, foldAlerts, fromRemovedMonitors, proofState, proofWords, removedWords, ruleWords,
+  scheduleMix, short,
 } from "./monitorSummary";
 
 const proof = (over: Partial<MonitorProof>): MonitorProof => ({ monitor_id: "m", sentence: "", last_drill: null, ...over });
@@ -102,5 +103,27 @@ describe("foldAlerts", () => {
     // Sun 23 Aug falls in the week of Mon 17 Aug, Mon 24 Aug starts the next
     expect(aug.map(w => [w.start.getDate(), w.n])).toEqual([[17, 1], [24, 1]]);
     expect(aug[0].bySeverity).toEqual({ critical: 1 });
+  });
+});
+
+describe("alerts from monitors since removed", () => {
+  // the Olist workspace, 2026-10-23: one live monitor, and the alerts of two removed long before on its connection
+  const live = [{ id: "gmv-floor" }];
+  const old = [
+    alert({ id: "1", monitor_id: "active-customers" }), alert({ id: "2", monitor_id: "active-customers" }),
+    alert({ id: "3", monitor_id: "active-customers" }), alert({ id: "4", monitor_id: "active-customers" }),
+    alert({ id: "5", monitor_id: "caveat-demo" }),
+  ];
+
+  it("says them apart in the Notifications page's words, never as the workspace's own", () => {
+    expect(fromRemovedMonitors(old, live).map(a => a.id)).toEqual(["1", "2", "3", "4", "5"]);
+    expect(removedWords(old, live)).toBe("all from 2 monitors since removed");
+    expect(removedWords([...old, alert({ id: "6", monitor_id: "gmv-floor" })], live)).toBe("5 from 2 monitors since removed");
+    expect(removedWords([old[4]], live)).toBe("all from 1 monitor since removed");
+  });
+
+  it("says nothing when every alert's monitor is still there", () => {
+    expect(removedWords([alert({ monitor_id: "gmv-floor" })], live)).toBe("");
+    expect(removedWords([], live)).toBe("");
   });
 });

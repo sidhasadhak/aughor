@@ -572,7 +572,12 @@ Record, Inbox and the closed loop; the agent wizard's draft, scope and honesty a
 1. Decide A: either uploads create a connection per workspace, or a workspace scopes by schema everywhere a
    page says "Workspace". **Done 2026-10-23 (#623):** an uploads connection per workspace; Catalog, Now's
    Briefing fold, Needs-you docs and profile metrics scoped. Still org-wide: agent-wizard documents,
-   Monitors' and Notifications' lists.
+   Monitors' and Notifications' lists. **Measured and closed 2026-10-24:** Monitors' list and alerts were already scoped by workspace — the
+   Olist workspace's five alerts were its own connection's, from two monitors removed weeks before, and are now said
+   so ("5 from 2 monitors since removed", a "since removed" chip on each). Notifications' 50 failed sends carry no
+   run at all (an empty investigation id), so no connection can claim them; the page already said they came from
+   triggers since removed, and is unchanged. The agent wizard lists only its connection's schema documentation and
+   the organisation's uploads, said as such ("6 documents of other connections are not listed").
 2. Teach the Briefing (and Now) the data's last settled day (B). **Built 2026-10-23** on the user's decision
    (mockup `design-mockups/briefing-data-ended.html`): data whose newest row is more than a month old has
    ENDED; every edition reads as if today were the day after its last row (Olist: 17 Oct 2018), is final,
