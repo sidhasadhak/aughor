@@ -15,11 +15,11 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CanvasScale } from "@/components/cockpit/cellBox";
 import { ComposedCockpit, type CockpitDoors, type CockpitHandle } from "@/components/cockpit/ComposedCockpit";
-import type { DashboardCard } from "@/lib/api";
+import type { StoredCard } from "@/lib/api";
 import { toGrid, type CockpitSpec } from "@/lib/cockpit/edit";
 import type { CockpitHostState } from "@/lib/cockpit/hostState";
 
-vi.mock("@/lib/api", async (original) => ({ ...(await original<typeof import("@/lib/api")>()), graduateCard: vi.fn(), updateDashboardCard: vi.fn() }));
+vi.mock("@/lib/api", async (original) => ({ ...(await original<typeof import("@/lib/api")>()), graduateCard: vi.fn(), updateCard: vi.fn() }));
 vi.mock("@/components/charts/vega/VegaChart", () => ({ VegaChart: () => <div data-testid="vega" /> }));
 
 beforeAll(() => {
@@ -38,10 +38,10 @@ const premise = (): CockpitSpec => JSON.parse(readFileSync(resolve(process.cwd()
 
 function card(id: string, title: string, value: number): CardState {
   const refresh = { cadence: "daily", last_run: "2026-09-28T06:00:00Z", last_value: value, prev_value: null, history: [value] };
-  const c: DashboardCard = {
+  const c: StoredCard = {
     id, connection_id: "thelook", scope: "user", scope_ref: "default", source: "authored", kind: "kpi",
     title, sql: "SELECT 1", query_ref: null, render: {}, refresh, thresholds: {},
-    provenance: { origin_finding_id: "", receipt_ref: "", metric: "", metric_version: 0 } as DashboardCard["provenance"],
+    provenance: { origin_finding_id: "", receipt_ref: "", metric: "", metric_version: 0 } as StoredCard["provenance"],
     links: [], body: "", author: "", created_at: "", updated_at: "",
   };
   return { card: c, run: { columns: ["v"], rows: [[value]], row_count: 1, caveats: [], error: null, refresh } };

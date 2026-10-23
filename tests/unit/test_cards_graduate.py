@@ -9,8 +9,8 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from aughor.api import app
-from aughor.dashboard.models import DashboardCard
-from aughor.dashboard.store import get_card, upsert_card
+from aughor.cards.models import StoredCard
+from aughor.cards.store import get_card, upsert_card
 
 client = TestClient(app)
 
@@ -24,8 +24,8 @@ def _stub_monitor(monkeypatch):
     return captured
 
 
-def _card(sql: str = "SELECT SUM(gmv) FROM orders") -> DashboardCard:
-    return upsert_card(DashboardCard(
+def _card(sql: str = "SELECT SUM(gmv) FROM orders") -> StoredCard:
+    return upsert_card(StoredCard(
         connection_id="workspace", scope="connection", scope_ref="workspace",
         kind="kpi", title="GMV total", sql=sql,
     ))

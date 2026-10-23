@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from aughor.dashboard.models import CardProvenance, DashboardCard
+from aughor.cards.models import CardProvenance, StoredCard
 from aughor.kernel.errors import tolerate
 
 
@@ -73,12 +73,12 @@ def clip_title(title: str, fallback: str) -> str:
 
 
 def card_from_finding(connection_id: str, finding: dict, *, kind: str, title: Optional[str] = None,
-                      scope: str = "canvas", scope_ref: str = "", card_id: str = "") -> DashboardCard:
+                      scope: str = "canvas", scope_ref: str = "", card_id: str = "") -> StoredCard:
     """The card a finding becomes, linked back to the finding and to its receipt. Not stored:
     the caller stores it, once the query has passed :func:`run_guarded`."""
     found = str(finding.get("id") or "")
     said = (finding.get("finding") or "").strip()
-    return DashboardCard(
+    return StoredCard(
         id=card_id,
         connection_id=connection_id,
         scope=scope,

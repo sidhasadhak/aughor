@@ -400,7 +400,7 @@ def purge_canvas_artifacts(canvas_id: str) -> dict[str, int]:
     store, like the connection cascade; returns ``{artifact: count}``."""
     counts: dict[str, int] = {}
     try:
-        from aughor.dashboard.store import purge_scope
+        from aughor.cards.store import purge_scope
         counts["cards"] = purge_scope("canvas", canvas_id)
     except Exception as e:
         tolerate(e, "purge: canvas cards", counter="canvas.purge.cards")

@@ -29,8 +29,8 @@ from aughor.actions import inbox
 from aughor.agent.cockpit_tool import draft_cockpit, drafting_tool
 from aughor.cockpit import cards, propose, validate as V, versions
 from aughor.cockpit.home import Home, approver
-from aughor.dashboard import doors, store as card_store
-from aughor.dashboard.models import DashboardCard
+from aughor.cards import doors, store as card_store
+from aughor.cards.models import StoredCard
 from aughor.kernel.flags import flag_overrides
 from aughor.semantic.metrics import MetricDefinition, save_metric
 from aughor.semantic.trusted_queries import TrustedQuery, save_trusted
@@ -100,7 +100,7 @@ class Desk:
         # desks in one test read nothing of each other's.
         self.home = Home(connection, owner or f"u{tag}", f"returns-{tag}")
         self.held = f"net{tag}"
-        cards.place(self.home, DashboardCard(id=self.held, kind="kpi", title="Net merchandise revenue",
+        cards.place(self.home, StoredCard(id=self.held, kind="kpi", title="Net merchandise revenue",
                                              sql="SELECT 1"))
 
         self.metric = f"return_rate_{tag}"
@@ -278,7 +278,7 @@ def test_options_offer_the_whole_connection_and_the_connections_pinned_cards(mon
     """A person's dashboard is not a canvas's: it may be made of anything the connection has
     approved, and it may place what was pinned for everyone. It never offers another person's."""
     desk = Desk(monkeypatch)
-    pinned = card_store.upsert_card(DashboardCard(connection_id=CONN, scope="connection", scope_ref=CONN,
+    pinned = card_store.upsert_card(StoredCard(connection_id=CONN, scope="connection", scope_ref=CONN,
                                                   kind="kpi", title="Pinned for everyone"))
     try:
         other = Desk(monkeypatch)
@@ -1017,7 +1017,7 @@ def test_a_card_id_taken_since_the_draft(desk):
     p = staged(desk)
     taken = p.params["cards"][0]["id"]
     elsewhere = Home(CONN, "someone-else", "theirs")
-    cards.place(elsewhere, DashboardCard(id=taken, kind="kpi", title="Someone else's", sql="SELECT 1"))
+    cards.place(elsewhere, StoredCard(id=taken, kind="kpi", title="Someone else's", sql="SELECT 1"))
 
     result = accept(p)
     assert f'A card with the id "{taken}" already exists. Nothing was made.' in result.message

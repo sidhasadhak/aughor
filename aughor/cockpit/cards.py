@@ -1,6 +1,6 @@
 """A dashboard's cards — kept in the card store (Arc CT, CT-3; the home moved in CT-7).
 
-**No new store.** ``aughor.dashboard`` has kept cards by scope since it was written. A
+**No new store.** ``aughor.cards`` has kept cards by scope since it was written. A
 person's dashboard reads two of its scopes:
 
 * ``connection`` — the cards pinned for everyone on the connection. These are the cards the
@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any, Iterable, Optional
 
 from aughor.cockpit.home import Home
-from aughor.dashboard.models import DashboardCard
+from aughor.cards.models import StoredCard
 
 SHARED = "connection"
 OWN = "user"
@@ -25,24 +25,24 @@ class Refused(ValueError):
     """A card that may not be kept. ``str(exc)`` is the sentence to show."""
 
 
-def shared(connection_id: str) -> list[DashboardCard]:
+def shared(connection_id: str) -> list[StoredCard]:
     """The cards pinned for everyone on the connection, newest first."""
-    from aughor.dashboard.store import list_cards
+    from aughor.cards.store import list_cards
     return list_cards(connection_id=connection_id, scope=SHARED, scope_ref=connection_id)
 
 
-def own(home: Home) -> list[DashboardCard]:
+def own(home: Home) -> list[StoredCard]:
     """The person's own cards on this connection, newest first."""
-    from aughor.dashboard.store import list_cards
+    from aughor.cards.store import list_cards
     return list_cards(connection_id=home.connection_id, scope=OWN, scope_ref=home.owner)
 
 
-def cards_of(home: Home) -> list[DashboardCard]:
+def cards_of(home: Home) -> list[StoredCard]:
     """Every card this person's dashboard may place: their own, then the connection's."""
     return [*own(home), *shared(home.connection_id)]
 
 
-def place(home: Home, card: DashboardCard, *, metric: Optional[Any] = None) -> DashboardCard:
+def place(home: Home, card: StoredCard, *, metric: Optional[Any] = None) -> StoredCard:
     """Keep ``card`` as this person's own, on this connection.
 
     ``metric`` is the approved :class:`~aughor.semantic.metrics.MetricDefinition` the card was
@@ -50,7 +50,7 @@ def place(home: Home, card: DashboardCard, *, metric: Optional[Any] = None) -> D
     version it had, so a later change to the metric can be seen against the card.
     A metric that is not approved is refused: a draft is nobody's word yet.
     """
-    from aughor.dashboard.store import get_card, upsert_card
+    from aughor.cards.store import get_card, upsert_card
 
     # A card's id is its own across the whole store, and an upsert by id MOVES the row. So a
     # card that already lives somewhere else is refused rather than quietly taken from there.
@@ -120,11 +120,11 @@ def not_offered(home: Home, held: list, placed: Iterable[str]) -> dict[str, str]
     return out
 
 
-def take_over(home: Home, card: DashboardCard) -> DashboardCard:
+def take_over(home: Home, card: StoredCard) -> StoredCard:
     """Make a card that belonged to a canvas this person's own (CT-10: a canvas dashboard moved
     to the Briefing). The card is the same card — its id, its query, its history — kept in a
     new place; the one move this module makes, and only for a card of the same connection."""
-    from aughor.dashboard.store import upsert_card
+    from aughor.cards.store import upsert_card
     if card.connection_id != home.connection_id:
         raise Refused(f'The card "{card.title or card.id}" is on another connection.')
     return upsert_card(card.model_copy(update={"scope": OWN, "scope_ref": home.owner}))

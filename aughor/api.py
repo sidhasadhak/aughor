@@ -1124,7 +1124,7 @@ from aughor.routers import (
     receipt as receipt_router,
     agui,
     cockpit as cockpit_router,
-    dashboard,
+    cards,
     evals,
     consistency,
     kinetic,
@@ -1207,7 +1207,7 @@ app.include_router(authority_router.router)  # earned authority: the L0–L5 tab
 from aughor.routers import builder_v1 as builder_v1_router  # noqa: E402 — Arc OC-8, doors for builders
 app.include_router(builder_v1_router.router)  # /ontology/v1 + /objects/v1: the contract, listing, proposing
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
-app.include_router(dashboard.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)
+app.include_router(cards.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)
 app.include_router(cockpit_router.router)  # Arc CT-4 — a Data Canvas's cockpit (self-gates on cockpit.composed)
 app.include_router(evals.router)  # Wave E3 — eval suites/runs (gated on eval.suite)
 app.include_router(charts.router)  # RC-2 — the chart door for surfaces that cannot draw (Slack)

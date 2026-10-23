@@ -27,7 +27,7 @@ def move_from_canvas(canvas_id: str, *, connection_id: str, owner: str) -> dict[
     """Move one canvas's dashboard to this person. Returns ``{"moved": True, ...}`` or
     ``{"moved": False, "sentences": [...]}`` — never a half-moved dashboard."""
     from aughor.canvas.store import get_canvas
-    from aughor.dashboard.store import get_card, upsert_card
+    from aughor.cards.store import get_card, upsert_card
 
     left = _versions.canvas_latest(canvas_id)
     if left is None:

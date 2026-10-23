@@ -1,6 +1,6 @@
 """User-authored dashboard cards — the standing (dashboard) layer of the Briefing.
 
-A DashboardCard is a user-authored, grounded, refreshable card that lives alongside the
+A StoredCard is a user-authored, grounded, refreshable card that lives alongside the
 explorer's findings: a pinned KPI, a chart, a tracked topic ("watch"), or a free-text note.
 It is the inverse of a finding — a question the user declares and asks Aughor to keep
 answering. See docs/BRIEFING_COCKPIT_2026-07-18.md.

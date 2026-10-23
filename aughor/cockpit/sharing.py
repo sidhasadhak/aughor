@@ -152,7 +152,7 @@ def copy_for(connection_id: str, owner: str, cockpit_id: str, *, reader: str, ap
     from aughor.cockpit import cards as _cards
     from aughor.cockpit import versions
     from aughor.cockpit.propose import with_card_ids
-    from aughor.dashboard.store import delete_card, upsert_card
+    from aughor.cards.store import delete_card, upsert_card
     from aughor.kernel.errors import tolerate
 
     src = read_shared(connection_id, owner, cockpit_id, reader=reader)

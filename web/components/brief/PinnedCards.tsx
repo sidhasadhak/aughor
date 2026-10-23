@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  deleteDashboardCard,
-  listDashboardCards,
-  runDashboardCard,
+  deleteCard,
+  listCards,
+  runCard,
   pinInsightToDashboard,
-  type DashboardCard,
+  type StoredCard,
   type BriefingRange,
 } from "@/lib/api";
 import { PinnedCardsCanvas, type CardState } from "@/components/brief/PinnedCardsCanvas";
@@ -55,10 +55,10 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
     let cancelled = false;
     (async () => {
       try {
-        const list = await listDashboardCards({ scope: "connection", scopeRef: connectionId });
+        const list = await listCards({ scope: "connection", scopeRef: connectionId });
         const withRuns = await Promise.all(
-          list.map(async (card: DashboardCard): Promise<CardState> => {
-            try { return { card, run: await runDashboardCard(card.id, range) }; }
+          list.map(async (card: StoredCard): Promise<CardState> => {
+            try { return { card, run: await runCard(card.id, range) }; }
             catch { return { card, failed: true }; }
           }),
         );
@@ -75,7 +75,7 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
 
   const remove = useCallback(async (id: string) => {
     try {
-      await deleteDashboardCard(id);
+      await deleteCard(id);
       setCards(cs => cs.filter(c => c.card.id !== id));
       toast.success("Card removed from your dashboard");
     } catch {
@@ -90,7 +90,7 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
 
   const refreshOne = useCallback(async (id: string) => {
     try {
-      const run = await runDashboardCard(id, range);
+      const run = await runCard(id, range);
       setCards(cs => cs.map(c => (c.card.id === id ? { ...c, run, failed: false } : c)));
       toast.success("Card refreshed");
     } catch {

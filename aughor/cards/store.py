@@ -14,7 +14,7 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 
-from aughor.dashboard.models import CardProvenance, CardRefresh, DashboardCard
+from aughor.cards.models import CardProvenance, CardRefresh, StoredCard
 from aughor.util.time import now_iso as _now
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
@@ -95,8 +95,8 @@ def _loads(raw: str, fallback):
         return fallback
 
 
-def _row_to_card(row: sqlite3.Row) -> DashboardCard:
-    return DashboardCard(
+def _row_to_card(row: sqlite3.Row) -> StoredCard:
+    return StoredCard(
         id=row["id"],
         connection_id=row["connection_id"],
         scope=row["scope"],
@@ -120,7 +120,7 @@ def _row_to_card(row: sqlite3.Row) -> DashboardCard:
 
 # ── CRUD ─────────────────────────────────────────────────────────────────────
 
-def upsert_card(card: DashboardCard) -> DashboardCard:
+def upsert_card(card: StoredCard) -> StoredCard:
     """Create or update a card. Assigns an id + created_at on first write; always bumps
     updated_at. Returns the persisted card."""
     now = _now()
@@ -163,7 +163,7 @@ def upsert_card(card: DashboardCard) -> DashboardCard:
     return card
 
 
-def _record_revision(card: Optional[DashboardCard]) -> None:
+def _record_revision(card: Optional[StoredCard]) -> None:
     """Wave V3b: keep a version history for an otherwise destructive upsert.
 
     ``ON CONFLICT ... DO UPDATE`` overwrites the only copy — before this an edited card's
@@ -189,7 +189,7 @@ def _record_revision(card: Optional[DashboardCard]) -> None:
                  counter="dashboard.revision")
 
 
-def get_card(card_id: str) -> Optional[DashboardCard]:
+def get_card(card_id: str) -> Optional[StoredCard]:
     c = _conn()
     ensure_once(c, _ensure_schema)
     row = c.execute("SELECT * FROM dashboard_cards WHERE id = ?", (card_id,)).fetchone()
@@ -261,7 +261,7 @@ def list_cards(
     connection_id: Optional[str] = None,
     scope: Optional[str] = None,
     scope_ref: Optional[str] = None,
-) -> List[DashboardCard]:
+) -> List[StoredCard]:
     """Cards matching the given filters, newest-updated first. Any filter left None is
     ignored, so `list_cards(scope='canvas', scope_ref=canvas_id)` returns one canvas's
     dashboard and `list_cards()` returns everything."""

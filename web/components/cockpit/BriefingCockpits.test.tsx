@@ -17,7 +17,7 @@ import { BriefingCockpits } from "@/components/cockpit/BriefingCockpits";
 import type { BriefingRangeBlock, CockpitList, PersonCockpit } from "@/lib/api";
 
 const api = vi.hoisted(() => ({
-  listCockpits: vi.fn(), getCockpit: vi.fn(), runDashboardCard: vi.fn(), keepCockpit: vi.fn(),
+  listCockpits: vi.fn(), getCockpit: vi.fn(), runCard: vi.fn(), keepCockpit: vi.fn(),
   startMyCockpit: vi.fn(), draftCockpit: vi.fn(), getProposalById: vi.fn(), acceptProposal: vi.fn(), uploadCockpitImage: vi.fn(),
   listSharedCockpits: vi.fn(), getSharedCockpit: vi.fn(), copySharedCockpit: vi.fn(), cockpitAudiences: vi.fn(),
   publishCockpit: vi.fn(), unpublishCockpit: vi.fn(), askCockpit: vi.fn(), listFindingsByDomain: vi.fn(), pinFinding: vi.fn(),
@@ -109,7 +109,7 @@ beforeEach(() => {
   api.listCockpits.mockResolvedValue(LIST);
   api.listSharedCockpits.mockResolvedValue([]);
   api.getCockpit.mockResolvedValue(READ);
-  api.runDashboardCard.mockResolvedValue({ columns: ["_v"], rows: [["10.03"]], row_count: 1 });
+  api.runCard.mockResolvedValue({ columns: ["_v"], rows: [["10.03"]], row_count: 1 });
   api.keepCockpit.mockResolvedValue({ status: "kept", kept: true, version: 4, artifact_id: "a4", sentences: [] });
   api.measureRange.mockResolvedValue({ period: MEASURED, from_briefing: false, measured_at: "2026-10-05T09:00:00Z", scope_key: "thelook:thelook" });
   api.readExpectedNext.mockResolvedValue({ why: "", target: { start: "2026-09-01", last_day: "2026-09-30", label: "2026-09-01 to 2026-09-30", settles_on: "2026-10-01" },
@@ -133,8 +133,8 @@ describe("a person's dashboards", () => {
     expect(stripTabs()).toEqual(["Metrics", "Returns", "Pricing"]);
     expect(api.getCockpit).toHaveBeenCalledWith("thelook", "returns-1", null);
     // Only the cards the spec places are run — the pinned card it does not place is not.
-    expect(api.runDashboardCard.mock.calls.map(c => c[0]).sort()).toEqual(["c7f3a001", "c91b2002"]);
-    expect(api.runDashboardCard.mock.calls[0][1]).toBeNull();
+    expect(api.runCard.mock.calls.map(c => c[0]).sort()).toEqual(["c7f3a001", "c91b2002"]);
+    expect(api.runCard.mock.calls[0][1]).toBeNull();
     const last = drawn.props.at(-1)!;
     expect(last.spec).toEqual(SPEC);
     expect(last.sym).toBe("$");
@@ -150,7 +150,7 @@ describe("a person's dashboards", () => {
       range: { ...READ.range, status: "final", preset: "last_month", covers: "July 2026" } });
     show();
     await waitFor(() => expect(api.getCockpit).toHaveBeenCalledWith("thelook", "returns-1", { preset: "previous_month" }));
-    await waitFor(() => expect(api.runDashboardCard).toHaveBeenCalledWith("c7f3a001", { preset: "previous_month" }, { compare: true }));
+    await waitFor(() => expect(api.runCard).toHaveBeenCalledWith("c7f3a001", { preset: "previous_month" }, { compare: true }));
     // Never first read as written: that run would roll every card's standing value.
     expect(api.getCockpit).not.toHaveBeenCalledWith("thelook", "returns-1", null);
     expect(await screen.findByTestId("cockpit-range")).toHaveTextContent("July 2026 · final");
@@ -513,7 +513,7 @@ describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => 
     await openBuilder();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
     const reads = api.getCockpit.mock.calls.length;
-    const runs = api.runDashboardCard.mock.calls.length;
+    const runs = api.runCard.mock.calls.length;
     type Doors = { onRegrid: (k: string, b: { w: number; h: number }, m: Record<string, { w: number; h: number }>) => void };
     const step = (w: number, h: number) => act(() => { (drawn.props.at(-1)!.doors as Doors).onRegrid("card-net", { w, h }, {}); });
     step(4, 4);
@@ -531,7 +531,7 @@ describe("the canvas: a note, an image and a size, by hand (2026-10-08)", () => 
     // the room changed and nothing measured did: the cockpit is not read again, nor any card run again
     await new Promise(r => setTimeout(r, 50));
     expect(api.getCockpit.mock.calls.length).toBe(reads);
-    expect(api.runDashboardCard.mock.calls.length).toBe(runs);
+    expect(api.runCard.mock.calls.length).toBe(runs);
     expect((drawn.props.at(-1)!.spec as typeof kept).elements["card-net"].props).toMatchObject({ w: 6, h: 5 });
   });
 
@@ -971,7 +971,7 @@ describe("your own query on the dashboard (Arc AP-7)", () => {
       { ...queryCard("c91b2002"), sql: "SELECT day, sales FROM thelook.orders WHERE country = {{country}}" }, READ.cards[2]] });
     show();
     await waitFor(() => expect(drawn.props.length).toBeGreaterThan(0));
-    expect(api.runDashboardCard.mock.calls.map(c => c[0])).toEqual(["c7f3a001"]);
+    expect(api.runCard.mock.calls.map(c => c[0])).toEqual(["c7f3a001"]);
     const held = (drawn.props.at(-1)!.cards as { card: { id: string }; run?: unknown }[]).find(c => c.card.id === "c91b2002")!;
     expect(held.run).toBeUndefined();
   });

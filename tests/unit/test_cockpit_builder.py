@@ -16,7 +16,7 @@ import pytest
 
 from aughor.cockpit import builder, cards, pieces, validate as V, versions
 from aughor.cockpit.home import Home
-from aughor.dashboard.models import DashboardCard
+from aughor.cards.models import StoredCard
 from tests.unit.test_cockpit_canvas import FIXTURE, ME, volumes  # noqa: F401 — the fixture, by name
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
@@ -84,7 +84,7 @@ def test_the_keep_door_refuses_a_grid_while_off_and_keeps_it_while_on(volumes, m
     home = Home(f"grid{tag}", ME, f"orders-{tag}")
     rate, net = f"rate{tag}", f"net{tag}"
     for cid, title in ((rate, "Return rate"), (net, "Net revenue")):
-        cards.place(home, DashboardCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
+        cards.place(home, StoredCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
     spec = _on_grid(json.loads(FIXTURE.read_text().replace("c7f3a001", rate).replace("c91b2002", net)))
 
     def keep(s):

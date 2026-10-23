@@ -2002,7 +2002,7 @@ export interface paths {
          * Read Layout
          * @description Where the caller arranged this automation's steps (`{}` if never touched).
          *
-         *     Server-side and account-keyed rather than `localStorage`, for the reason the cockpit
+         *     Server-side and account-keyed rather than `localStorage`, for the reason the dashboard
          *     settled once: an arrangement a person made on their laptop and cannot find on their
          *     desktop reads as the product having forgotten it. No 404 for an unknown automation —
          *     an empty layout IS the answer for one nobody has arranged.
@@ -2659,7 +2659,7 @@ export interface paths {
         /**
          * List Cards Route
          * @description Cards matching the filters (any left unset is ignored), newest-updated first.
-         *     Fetch a canvas cockpit with `?scope=canvas&scope_ref=<canvas_id>`.
+         *     Fetch a canvas dashboard with `?scope=canvas&scope_ref=<canvas_id>`.
          */
         get: operations["list_cards_route_cards_get"];
         put?: never;
@@ -2680,13 +2680,13 @@ export interface paths {
         };
         /**
          * Get Layout Route
-         * @description The caller's saved cockpit layout for a connection ({card_id: {x, y, w, h}}); {} if none.
+         * @description The caller's saved dashboard layout for a connection ({card_id: {x, y, w, h}}); {} if none.
          *     Server-side + account-keyed, so any device/login sees the same arrangement.
          */
         get: operations["get_layout_route_cards_layout_get"];
         /**
          * Put Layout Route
-         * @description Persist the caller's cockpit layout (position + size per card) for a connection.
+         * @description Persist the caller's dashboard layout (position + size per card) for a connection.
          */
         put: operations["put_layout_route_cards_layout_put"];
         post?: never;
@@ -2739,7 +2739,7 @@ export interface paths {
          *     anything that errors or is BLOCKED — so the second authoring door carries the identical
          *     trust guarantee as the first, now on user-authored SQL. `kind` is derived from the result
          *     shape (a single numeric cell → kpi, otherwise chart); the render spec is stored opaque for
-         *     the card to draw and the card lands on the connection's cockpit.
+         *     the card to draw and the card lands on the connection's dashboard.
          */
         post: operations["pin_query_route_cards_pin_query_post"];
         delete?: never;
@@ -2781,7 +2781,7 @@ export interface paths {
          * @description Graduate a KPI/watch card to a scheduled Monitor — the last step of the card lifecycle:
          *     run its already-guarded SQL as a recurring threshold check (`reanchor_window` ON so a frozen
          *     date window can't go stale), then record the thresholds + monitor id back on the card so the
-         *     cockpit shows it's now alerting. The card stops being a passive slot and becomes proactive
+         *     dashboard shows it's now alerting. The card stops being a passive slot and becomes proactive
          *     push, reusing the monitor engine rather than forking a second alerting path.
          */
         post: operations["graduate_card_route_cards__card_id__graduate_post"];
@@ -2813,7 +2813,7 @@ export interface paths {
          *     a card whose tables have no date runs standing and `scoped` says why. A range run never
          *     rolls into the card's standing value history.
          *
-         *     With `compare` (a cockpit asks it), a figure cut to a range is also read for the window the
+         *     With `compare` (a dashboard asks it), a figure cut to a range is also read for the window the
          *     range is compared with, cut the same way, so the two differ only by their dates — `previous`.
          *     It is at equal age only when the range is final: a cut does not bound a cohort's outcomes to
          *     an as-of the way a metric's own measurement does, so before then part of any difference is
@@ -3059,8 +3059,8 @@ export interface paths {
         };
         /**
          * List Cockpits
-         * @description The asker's cockpits on this connection, the cards they may place, and the canvas
-         *     cockpits waiting to be moved here. No model call, and nothing is written.
+         * @description The asker's dashboards on this connection, the cards they may place, and the canvas
+         *     dashboards waiting to be moved here. No model call, and nothing is written.
          */
         get: operations["list_cockpits_cockpits_get"];
         put?: never;
@@ -3080,7 +3080,7 @@ export interface paths {
         };
         /**
          * Audiences
-         * @description The groups the asker belongs to and the roles they hold: who they may publish a cockpit to
+         * @description The groups the asker belongs to and the roles they hold: who they may publish a dashboard to
          *     (the canvas, B5). Declared before the cockpit-by-id read, which would take the word for an id.
          */
         get: operations["audiences_cockpits_audiences_get"];
@@ -3103,9 +3103,9 @@ export interface paths {
         put?: never;
         /**
          * Draft Cockpit
-         * @description ⚑ Spends model calls. Draft a new cockpit for the area the person named: one short
+         * @description ⚑ Spends model calls. Draft a new dashboard for the area the person named: one short
          *     model run with the drafting tool alone. What comes back is a proposal to keep or not, or
-         *     the reasons none was drafted — never a cockpit changed.
+         *     the reasons none was drafted — never a dashboard changed.
          */
         post: operations["draft_cockpit_cockpits_draft_post"];
         delete?: never;
@@ -3123,10 +3123,10 @@ export interface paths {
         };
         /**
          * Propose From Object
-         * @description What a cockpit started from ``entity`` is offered (2026-10-10): its categories as filters, its numbers as
+         * @description What a dashboard started from ``entity`` is offered (2026-10-10): its categories as filters, its numbers as
          *     figures, a chart of its objects per day, a table of them and the actions declared on them — each measured through
          *     the object door, with a preview. Nothing is kept and no model is asked; the person ticks what they want and keeps
-         *     it as any new cockpit is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path.
+         *     it as any new dashboard is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path.
          */
         get: operations["propose_from_object_cockpits_from_object_get"];
         put?: never;
@@ -3148,8 +3148,8 @@ export interface paths {
         put?: never;
         /**
          * Upload Image
-         * @description Take an image into this connection's cockpit volume — PNG, JPEG, GIF, WebP or SVG, up to
-         *     5 MB, read from its bytes — to be placed on a cockpit by the object id this answers with.
+         * @description Take an image into this connection's dashboard volume — PNG, JPEG, GIF, WebP or SVG, up to
+         *     5 MB, read from its bytes — to be placed on a dashboard by the object id this answers with.
          *     By hand only: no model uploads an image.
          */
         post: operations["upload_image_cockpits_images_post"];
@@ -3168,7 +3168,7 @@ export interface paths {
         };
         /**
          * Read Image
-         * @description An image a cockpit on this connection places, as bytes, with the reader's own access.
+         * @description An image a dashboard on this connection places, as bytes, with the reader's own access.
          */
         get: operations["read_image_cockpits_images__object_id__get"];
         put?: never;
@@ -3190,8 +3190,8 @@ export interface paths {
         put?: never;
         /**
          * Move Cockpit
-         * @description Move a canvas's cockpit to the asker's Briefing. One act: the cards it places become
-         *     theirs, its spec their cockpit's first version, and the canvas's is retired with a note.
+         * @description Move a canvas's dashboard to the asker's Briefing. One act: the cards it places become
+         *     theirs, its spec their dashboard's first version, and the canvas's is retired with a note.
          */
         post: operations["move_cockpit_cockpits_move_post"];
         delete?: never;
@@ -3213,7 +3213,7 @@ export interface paths {
          * Keep Query
          * @description Arc AP-7 — keep a person's own query as a card of theirs, as it is to be shown. The query is run first and the
          *     setup checked against what it returns; a refusal says why and keeps nothing. A change to a card of theirs is a new
-         *     card, and the one it replaces is superseded, never deleted — so a cockpit's earlier versions still read their own.
+         *     card, and the one it replaces is superseded, never deleted — so a dashboard's earlier versions still read their own.
          */
         post: operations["keep_query_cockpits_queries_post"];
         delete?: never;
@@ -3253,7 +3253,7 @@ export interface paths {
         };
         /**
          * Suggested Shapes
-         * @description Arc AP-5 — what each object suggests a cockpit be: the shape that fits it best, with a short line of why, read
+         * @description Arc AP-5 — what each object suggests a dashboard be: the shape that fits it best, with a short line of why, read
          *     from the served ontology alone — no warehouse read, no model. Registered before ``/cockpits/{cockpit_id}``.
          */
         get: operations["suggested_shapes_cockpits_shapes_get"];
@@ -3274,7 +3274,7 @@ export interface paths {
         };
         /**
          * Shared Cockpits
-         * @description The cockpits others published to a group the asker is in or a role they hold.
+         * @description The dashboards others published to a group the asker is in or a role they hold.
          */
         get: operations["shared_cockpits_cockpits_shared_get"];
         put?: never;
@@ -3294,7 +3294,7 @@ export interface paths {
         };
         /**
          * Read Shared Cockpit
-         * @description A published cockpit as it stands, for a reader it reaches: read-only, for the reader's own
+         * @description A published dashboard as it stands, for a reader it reaches: read-only, for the reader's own
          *     period; a card the reader may not read stands and says so.
          */
         get: operations["read_shared_cockpit_cockpits_shared__owner___cockpit_id__get"];
@@ -3317,8 +3317,8 @@ export interface paths {
         put?: never;
         /**
          * Copy Shared Cockpit
-         * @description Start a cockpit of the asker's own from a published one: the publisher's cards copied into
-         *     theirs, the spec kept as the new cockpit's first version. The publisher's is untouched.
+         * @description Start a dashboard of the asker's own from a published one: the publisher's cards copied into
+         *     theirs, the spec kept as the new dashboard's first version. The publisher's is untouched.
          */
         post: operations["copy_shared_cockpit_cockpits_shared__owner___cockpit_id__copy_post"];
         delete?: never;
@@ -3338,7 +3338,7 @@ export interface paths {
         put?: never;
         /**
          * Start First
-         * @description Start "My cockpit" from the cards pinned in the Briefing before cockpits had names, in the
+         * @description Start "My dashboard" from the cards pinned in the Briefing before dashboards had names, in the
          *     order the person arranged them. Written by code, kept like any other spec.
          */
         post: operations["start_first_cockpits_start_post"];
@@ -3357,13 +3357,13 @@ export interface paths {
         };
         /**
          * Read Cockpit
-         * @description One of the asker's cockpits as it stands: its newest version with its spec, every card
+         * @description One of the asker's dashboards as it stands: its newest version with its spec, every card
          *     it may place (theirs and the connection's), the range it is read for, and its history.
          */
         get: operations["read_cockpit_cockpits__cockpit_id__get"];
         /**
          * Keep Cockpit
-         * @description Keep a spec the person wrote — a card moved, a section renamed — as the cockpit's next
+         * @description Keep a spec the person wrote — a card moved, a section renamed — as the dashboard's next
          *     version, or a refusal with the reasons.
          */
         put: operations["keep_cockpit_cockpits__cockpit_id__put"];
@@ -3385,7 +3385,7 @@ export interface paths {
         put?: never;
         /**
          * Ask Cockpit
-         * @description ⚑ Spends model calls. A change to one of the asker's cockpits, asked for in words — add a
+         * @description ⚑ Spends model calls. A change to one of the asker's dashboards, asked for in words — add a
          *     finding, move or resize an element, take a note off, share it with a team. One short model
          *     run with the drafting tool alone; what comes back is a proposal to keep or not.
          */
@@ -3407,7 +3407,7 @@ export interface paths {
         put?: never;
         /**
          * Publish Cockpit
-         * @description Publish the cockpit as it stands to groups the asker belongs to and roles they may publish
+         * @description Publish the dashboard as it stands to groups the asker belongs to and roles they may publish
          *     to. A version, under their name; a reader sees it under "Shared with you".
          */
         post: operations["publish_cockpit_cockpits__cockpit_id__publish_post"];
@@ -3449,7 +3449,7 @@ export interface paths {
         put?: never;
         /**
          * Retire Cockpit
-         * @description Retire a cockpit. Its history stays.
+         * @description Retire a dashboard. Its history stays.
          */
         post: operations["retire_cockpit_cockpits__cockpit_id__retire_post"];
         delete?: never;
@@ -3469,7 +3469,7 @@ export interface paths {
         put?: never;
         /**
          * Unpublish Cockpit
-         * @description Stop sharing a cockpit. A version too: its history says when it reached whom.
+         * @description Stop sharing a dashboard. A version too: its history says when it reached whom.
          */
         post: operations["unpublish_cockpit_cockpits__cockpit_id__unpublish_post"];
         delete?: never;
@@ -6004,7 +6004,7 @@ export interface paths {
         put?: never;
         /**
          * Measure Range Metrics
-         * @description The range's approved metrics, measured — the Cockpit's default view (ROADMAP §6 item 43). No
+         * @description The range's approved metrics, measured — the Dashboard's default view (ROADMAP §6 item 43). No
          *     narrative is written and no model is called. When the range's Briefing was built for the same window
          *     within its cache age, its figures are returned as they stand, so the two pages cannot disagree about
          *     one; otherwise the metrics are measured now, the result cache first.
@@ -10725,7 +10725,7 @@ export interface paths {
         put?: never;
         /**
          * Post Objects V1 List
-         * @description One page of objects — the cockpit's listing door, with the release it was read under. An entity, or a segment
+         * @description One page of objects — the dashboard's listing door, with the release it was read under. An entity, or a segment
          *     of it (late, overdue, a rule's objects), the columns asked for, at most 200 a page.
          */
         post: operations["post_objects_v1_list_objects_v1_list_post"];
@@ -12744,7 +12744,7 @@ export interface paths {
          * Get Ontology Release
          * @description Arc OC-2 — the scope's releases and its draft (ROADMAP §3.56): the release consumers read, every earlier one, and
          *     each change waiting to be published with its class (ERR · MEANING · WARN · SAFE), its reasons, what changed field
-         *     by field, and the automations, claims and cockpit cards it touches. While `ontology.release` is off the draft is
+         *     by field, and the automations, claims and dashboard cards it touches. While `ontology.release` is off the draft is
          *     empty and says so: a declaration is published when it is saved.
          */
         get: operations["get_ontology_release_ontology_release_get"];
@@ -17150,7 +17150,7 @@ export interface components {
         };
         /**
          * CardRunValues
-         * @description Arc AP-8 — the cockpit's values a card of a person's own query reads as ``{{name}}``, as the page holds them now:
+         * @description Arc AP-8 — the dashboard's values a card of a person's own query reads as ``{{name}}``, as the page holds them now:
          *     name → ``{"kind", "value"}``. Each is bound by the engine, never pasted into the statement.
          */
         CardRunValues: {
@@ -17765,83 +17765,6 @@ export interface components {
             settings_override: {
                 [key: string]: unknown;
             };
-        };
-        /** DashboardCard */
-        DashboardCard: {
-            /**
-             * Author
-             * @default
-             */
-            author: string;
-            /**
-             * Body
-             * @default
-             */
-            body: string;
-            /**
-             * Connection Id
-             * @default
-             */
-            connection_id: string;
-            /**
-             * Created At
-             * @default
-             */
-            created_at: string;
-            /**
-             * Id
-             * @default
-             */
-            id: string;
-            /**
-             * Kind
-             * @default kpi
-             */
-            kind: string;
-            /** Links */
-            links?: string[];
-            provenance?: components["schemas"]["CardProvenance"];
-            /** Query Ref */
-            query_ref?: string | null;
-            refresh?: components["schemas"]["CardRefresh"];
-            /** Render */
-            render?: {
-                [key: string]: unknown;
-            };
-            /**
-             * Scope
-             * @default canvas
-             */
-            scope: string;
-            /**
-             * Scope Ref
-             * @default
-             */
-            scope_ref: string;
-            /**
-             * Source
-             * @default authored
-             */
-            source: string;
-            /**
-             * Sql
-             * @default
-             */
-            sql: string;
-            /** Thresholds */
-            thresholds?: {
-                [key: string]: unknown;
-            };
-            /**
-             * Title
-             * @default
-             */
-            title: string;
-            /**
-             * Updated At
-             * @default
-             */
-            updated_at: string;
         };
         /** DeclareDecisionRequest */
         DeclareDecisionRequest: {
@@ -19669,7 +19592,7 @@ export interface components {
         /**
          * PinInsightRequest
          * @description Pin the finding `insight_id` (from `connection_id`'s briefing) as a card scoped to
-         *     `scope`/`scope_ref` (e.g. a canvas cockpit).
+         *     `scope`/`scope_ref` (e.g. a canvas dashboard).
          */
         PinInsightRequest: {
             /** Connection Id */
@@ -19911,7 +19834,7 @@ export interface components {
         };
         /**
          * PublishRequest
-         * @description Who the cockpit is published to: groups and roles, each by kind and id or name.
+         * @description Who the dashboard is published to: groups and roles, each by kind and id or name.
          */
         PublishRequest: {
             /** To */
@@ -20649,6 +20572,83 @@ export interface components {
              * @description draft | active | deprecated
              */
             status: string;
+        };
+        /** StoredCard */
+        StoredCard: {
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /**
+             * Body
+             * @default
+             */
+            body: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /**
+             * Kind
+             * @default kpi
+             */
+            kind: string;
+            /** Links */
+            links?: string[];
+            provenance?: components["schemas"]["CardProvenance"];
+            /** Query Ref */
+            query_ref?: string | null;
+            refresh?: components["schemas"]["CardRefresh"];
+            /** Render */
+            render?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Scope
+             * @default canvas
+             */
+            scope: string;
+            /**
+             * Scope Ref
+             * @default
+             */
+            scope_ref: string;
+            /**
+             * Source
+             * @default authored
+             */
+            source: string;
+            /**
+             * Sql
+             * @default
+             */
+            sql: string;
+            /** Thresholds */
+            thresholds?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
         };
         /** SubscriptionIn */
         SubscriptionIn: {
@@ -21397,7 +21397,7 @@ export interface components {
         /**
          * _ActionPreview
          * @description A draft action for the designer to read: its id, the declaration as the declare door takes it, the segments a
-         *     cockpit lists it beside, and the person's own example of what a press is given (``{"reason": "Missed pickup"}``).
+         *     dashboard lists it beside, and the person's own example of what a press is given (``{"reason": "Missed pickup"}``).
          */
         _ActionPreview: {
             action: components["schemas"]["_DeclaredActionBody"];
@@ -22812,6 +22812,15 @@ export interface components {
              */
             outcome: string;
         };
+        /** LayoutRequest */
+        aughor__routers__cards__LayoutRequest: {
+            /** Connection Id */
+            connection_id: string;
+            /** Layout */
+            layout?: {
+                [key: string]: unknown;
+            };
+        };
         /** AskRequest */
         aughor__routers__cockpit__AskRequest: {
             /** Schema Name */
@@ -22823,15 +22832,6 @@ export interface components {
         aughor__routers__cockpit__RestoreRequest: {
             /** Version */
             version: number;
-        };
-        /** LayoutRequest */
-        aughor__routers__dashboard__LayoutRequest: {
-            /** Connection Id */
-            connection_id: string;
-            /** Layout */
-            layout?: {
-                [key: string]: unknown;
-            };
         };
         /** AcceptRequest */
         aughor__routers__datasets__AcceptRequest: {
@@ -27738,7 +27738,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DashboardCard"];
+                "application/json": components["schemas"]["StoredCard"];
             };
         };
         responses: {
@@ -27806,7 +27806,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__dashboard__LayoutRequest"];
+                "application/json": components["schemas"]["aughor__routers__cards__LayoutRequest"];
             };
         };
         responses: {
@@ -27946,7 +27946,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DashboardCard"];
+                "application/json": components["schemas"]["StoredCard"];
             };
         };
         responses: {

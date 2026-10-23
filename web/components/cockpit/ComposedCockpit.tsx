@@ -54,7 +54,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Refusal } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { runDashboardCard, type BriefingRange, type CardRunResult, type CockpitCard } from "@/lib/api";
+import { runCard, type BriefingRange, type CardRunResult, type CockpitCard } from "@/lib/api";
 import {
   FILTER_DEFAULT_PX, FILTER_WIDTH, GRADE, GRID, LIMITS, SPAN, rowsTall, sizeOf, type ActionButtonDef, type ComponentName,
   type GridKind, type Layout, type Size, type Tone,
@@ -739,7 +739,7 @@ function useValuedRun(cs: CardState | undefined, range: BriefingRange | null | u
   useEffect(() => {
     if (!key || !cs) return;
     let alive = true;
-    runDashboardCard(cs.card.id, range, { values: JSON.parse(sent) as ValuesSent })
+    runCard(cs.card.id, range, { values: JSON.parse(sent) as ValuesSent })
       .then(run => { if (alive) setGot({ key, run }); })
       .catch(() => { if (alive) setGot({ key, failed: true }); });
     return () => { alive = false; };

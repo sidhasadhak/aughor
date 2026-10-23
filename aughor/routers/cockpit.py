@@ -139,7 +139,7 @@ def _as_read(card, connection_id: str) -> dict:
 def _layout_order(connection_id: str, owner: str) -> list[str]:
     """The card ids in the order the person arranged them in the Briefing before dashboards had
     names: top to bottom, then left to right."""
-    from aughor.dashboard.store import get_layout
+    from aughor.cards.store import get_layout
     layout = get_layout(connection_id, owner) or {}
     placed = [(float((v or {}).get("y", 0) or 0), float((v or {}).get("x", 0) or 0), k)
               for k, v in layout.items() if isinstance(v, dict)]
@@ -367,9 +367,9 @@ def keep_query(request: Request, connection_id: str, req: QueryRequest) -> dict:
     _queries_on()
     from aughor.cockpit import cards
     from aughor.cockpit.home import FIRST, Home, person_of
-    from aughor.dashboard import doors
-    from aughor.dashboard.models import DashboardCard
-    from aughor.dashboard.store import get_card, upsert_card
+    from aughor.cards import doors
+    from aughor.cards.models import StoredCard
+    from aughor.cards.store import get_card, upsert_card
     home = Home(connection_id, person_of(request), FIRST)
     old = None
     if req.replaces:
@@ -380,7 +380,7 @@ def keep_query(request: Request, connection_id: str, req: QueryRequest) -> dict:
     if read.get("refused"):
         raise HTTPException(status_code=422, detail={"refused": read["refused"]})
     setup = read["setup"]
-    card = DashboardCard(connection_id=connection_id, source="authored", kind="kpi" if setup["as"] == "figure" else "chart",
+    card = StoredCard(connection_id=connection_id, source="authored", kind="kpi" if setup["as"] == "figure" else "chart",
                          title=doors.clip_title(req.title or "", old.title if old else "Your own query"),
                          sql=req.sql.strip(), render={"shown": setup, "columns": read["columns"]})
     try:

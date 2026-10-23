@@ -13,9 +13,9 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from aughor.dashboard import doors
-from aughor.dashboard.models import DashboardCard
-from aughor.dashboard.store import (
+from aughor.cards import doors
+from aughor.cards.models import StoredCard
+from aughor.cards.store import (
     delete_card, get_card, get_layout, get_viz_configs, list_cards, set_layout,
     set_viz_config, upsert_card,
 )
@@ -23,7 +23,7 @@ from aughor.kernel.errors import tolerate
 from aughor.security.authz import connection_owner_guard
 
 #: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
-router = APIRouter(tags=["dashboard"], dependencies=[Depends(connection_owner_guard)])
+router = APIRouter(tags=["cards"], dependencies=[Depends(connection_owner_guard)])
 
 
 def _layout_user_id(request: Request) -> str:
@@ -75,7 +75,7 @@ def put_layout_route(request: Request, req: LayoutRequest) -> dict:
 
 # ── Per-chart display config for card-less surfaces (ledger rows, digest tiles, KPIs) ──
 #
-# A pinned card stores its display in `DashboardCard.render`. Charts that are NOT cards had
+# A pinned card stores its display in `StoredCard.render`. Charts that are NOT cards had
 # nowhere to put it, so every edit — chart type, axes, colour binding, legend, transform,
 # table/pivot view — was lost the moment the row collapsed. Keyed by the insight the chart is
 # about, and by the SAME scope_key the briefing stamps, so edits never cross schemas.
@@ -109,14 +109,14 @@ def get_card_route(card_id: str) -> dict:
 
 
 @router.post("/cards", status_code=201)
-def create_card_route(card: DashboardCard) -> dict:
+def create_card_route(card: StoredCard) -> dict:
     # The store owns id + timestamps; ignore any client-supplied values.
     card = card.model_copy(update={"id": "", "created_at": "", "updated_at": ""})
     return upsert_card(card).model_dump()
 
 
 @router.put("/cards/{card_id}")
-def update_card_route(card_id: str, card: DashboardCard) -> dict:
+def update_card_route(card_id: str, card: StoredCard) -> dict:
     if not get_card(card_id):
         raise HTTPException(status_code=404, detail="Card not found")
     return upsert_card(card.model_copy(update={"id": card_id})).model_dump()
@@ -131,7 +131,7 @@ def delete_card_route(card_id: str) -> None:
 # ── Guard-on-write: the shared trust gate every authoring door runs through ──
 
 #: The guard, the scalar reading and the title clip are shared with every other door that
-#: makes a card (`aughor/dashboard/doors.py`); the names below are this router's own for them.
+#: makes a card (`aughor/cards/doors.py`); the names below are this router's own for them.
 _clip_title = doors.clip_title
 _scalar = doors.scalar_of
 
@@ -253,7 +253,7 @@ def pin_query_route(req: PinQueryRequest) -> dict:
         req.connection_id, sql, query_id="pin-query", schema=req.schema_name or None
     )
 
-    saved = upsert_card(DashboardCard(
+    saved = upsert_card(StoredCard(
         connection_id=req.connection_id,
         scope=req.scope,
         scope_ref=req.scope_ref or req.connection_id,

@@ -279,14 +279,14 @@ def test_rules_that_hang_are_not_checked(premise, monkeypatch, tmp_path):
 @needs_rules
 def test_the_card_store_is_asked_for_the_persons_cards_and_the_connections(premise, monkeypatch):
     from aughor.cockpit.home import Home
-    from aughor.dashboard import store
-    from aughor.dashboard.models import DashboardCard
+    from aughor.cards import store
+    from aughor.cards.models import StoredCard
 
     asked = []
 
     def list_cards(connection_id=None, scope=None, scope_ref=None):
         asked.append((connection_id, scope, scope_ref))
-        return [DashboardCard(id="c7f3a001", scope=scope, scope_ref=scope_ref)] if scope == "user" else []
+        return [StoredCard(id="c7f3a001", scope=scope, scope_ref=scope_ref)] if scope == "user" else []
 
     monkeypatch.setattr(store, "list_cards", list_cards)
 

@@ -43,7 +43,7 @@ import { CHOOSERS, MAX_TICKED_RUNS, SWITCHED, rowsTall, type PieceName } from "@
 import { choicesOf, doorConditions, isRefused, pieceSet, readSet, readsItself, type DoorCondition, type ValueNow, type WireSpec } from "@/lib/cockpit/sets";
 import { useMarkRead } from "@/components/cockpit/readSlot";
 import { queryValue, typedValue, valueFits, valueWords, valuesFor, valuesRead } from "@/lib/cockpit/values";
-import { runDashboardCard } from "@/lib/api";
+import { runCard } from "@/lib/api";
 import { formatCount, formatDateTime, isNumericType, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { objectHref } from "@/lib/objectLinks";
@@ -393,7 +393,7 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
         setQueried(prev => ({ ...prev, [name]: { asked: at, value: null, refused } }));
         continue;
       }
-      runDashboardCard(ask.card, null, Object.keys(ask.sent ?? {}).length ? { values: ask.sent } : {})
+      runCard(ask.card, null, Object.keys(ask.sent ?? {}).length ? { values: ask.sent } : {})
         .then(run => { if (alive) setQueried(prev => ({ ...prev, [name]: { asked: at, ...withValue(queryValue(ask.kind, ask.column, run)) } })); })
         .catch(e => { if (alive) setQueried(prev => ({ ...prev, [name]: { asked: at, value: null, refused: (e as Error).message || "The query could not be run." } })); });
     }

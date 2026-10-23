@@ -149,7 +149,7 @@ def latest(home: Home) -> Optional[dict]:
 
 def _card_titles(specs) -> dict:
     """The title of every card the specs place, by card id — History names a card by what it is called, never its id."""
-    from aughor.dashboard.store import get_card
+    from aughor.cards.store import get_card
     ids = {str((el.get("props") or {}).get("card") or "") for spec in specs if isinstance(spec, dict)
            for el in (spec.get("elements") or {}).values() if isinstance(el, dict) and el.get("type") == "Card"}
     out = {}
@@ -248,7 +248,7 @@ def twin_cards(placed: Iterable[str], before: Iterable[str] = ()) -> list[str]:
     twice and the return rate three times). Only copies this keep ADDS are refused: a dashboard kept
     with copies before can still be kept, and is told nothing new."""
     from aughor.cockpit.cards import same_card_key
-    from aughor.dashboard.store import get_card
+    from aughor.cards.store import get_card
 
     def groups(ids: Iterable[str]) -> dict[str, list]:
         out: dict[str, list] = {}

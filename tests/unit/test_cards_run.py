@@ -11,8 +11,8 @@ import types
 from fastapi.testclient import TestClient
 
 from aughor.api import app
-from aughor.dashboard.models import DashboardCard
-from aughor.dashboard.store import get_card, upsert_card
+from aughor.cards.models import StoredCard
+from aughor.cards.store import get_card, upsert_card
 from aughor.control_plane.contracts.execution import QueryResult
 
 client = TestClient(app)
@@ -26,8 +26,8 @@ def _stub(monkeypatch, result):
     monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda db, sql, **kw: result)
 
 
-def _card(**kw) -> DashboardCard:
-    return upsert_card(DashboardCard(
+def _card(**kw) -> StoredCard:
+    return upsert_card(StoredCard(
         connection_id="workspace", scope="connection", scope_ref="workspace",
         sql="SELECT 0.32 AS rate", title="rate", **kw,
     ))
@@ -87,7 +87,7 @@ def test_run_missing_card_404():
 
 
 def test_run_note_card_is_noop(monkeypatch):
-    card = upsert_card(DashboardCard(connection_id="workspace", kind="note", sql="", body="n", title="n"))
+    card = upsert_card(StoredCard(connection_id="workspace", kind="note", sql="", body="n", title="n"))
     r = client.post(f"/cards/{card.id}/run")
     assert r.status_code == 200
     assert r.json()["row_count"] == 0

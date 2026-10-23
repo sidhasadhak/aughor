@@ -17,7 +17,7 @@ import pytest
 
 from aughor.cockpit import cards, pieces, propose, validate as V, versions
 from aughor.cockpit.home import Home
-from aughor.dashboard.models import DashboardCard
+from aughor.cards.models import StoredCard
 from aughor.ontology.models import ActionParameter, KineticAction, ObjectEdit, OntologyGraph
 from tests.unit.test_cockpit_canvas import FIXTURE, ME, volumes  # noqa: F401 — the fixture, by name
 from tests.unit.test_object_bindings import GRAPH
@@ -102,7 +102,7 @@ def test_the_keep_door_refuses_what_does_not_resolve_and_keeps_what_does(volumes
     home = Home(f"conn{tag}", ME, f"late-{tag}")
     rate, net = f"rate{tag}", f"net{tag}"
     for cid, title in ((rate, "Return rate"), (net, "Net revenue")):
-        cards.place(home, DashboardCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
+        cards.place(home, StoredCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
     spec = json.loads(FIXTURE.read_text().replace("c7f3a001", rate).replace("c91b2002", net))
     graph = _graph()
     monkeypatch.setattr(pieces, "served_graph", lambda conn: graph)
@@ -153,7 +153,7 @@ def test_an_edit_to_a_cockpit_holding_pieces_is_staged_and_names_each_piece_it_m
     home = Home(f"conn{tag}", ME, f"late-{tag}")
     rate, net = f"rate{tag}", f"net{tag}"
     for cid, title in ((rate, "Return rate"), (net, "Net revenue")):
-        cards.place(home, DashboardCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
+        cards.place(home, StoredCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
     spec = _with_pieces(json.loads(FIXTURE.read_text().replace("c7f3a001", rate).replace("c91b2002", net)))
     graph = _graph()
     monkeypatch.setattr(pieces, "served_graph", lambda conn: graph)
@@ -270,7 +270,7 @@ def test_a_version_holding_pieces_is_pinned_resizing_keeps_the_pin_and_repointin
     home = Home(f"pin{tag}", ME, f"late-{tag}")
     rate, net = f"rate{tag}", f"net{tag}"
     for cid, title in ((rate, "Return rate"), (net, "Net revenue")):
-        cards.place(home, DashboardCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
+        cards.place(home, StoredCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
     plain = json.loads(FIXTURE.read_text().replace("c7f3a001", rate).replace("c91b2002", net))
     graph = _graph()
     monkeypatch.setattr(pieces, "served_graph", lambda conn: graph)
@@ -327,7 +327,7 @@ def test_the_release_strip_names_the_cockpits_a_change_touches_only_while_pieces
     from aughor.ontology import release
     monkeypatch.setattr(pieces, "cockpits_reading", lambda conn, names, graph=None: [{"cockpit": "late", "title": "Late",
                                                                                      "pieces": ["board"]}])
-    monkeypatch.setattr("aughor.dashboard.store.list_cards", lambda **k: [])
+    monkeypatch.setattr("aughor.cards.store.list_cards", lambda **k: [])
     _flag(monkeypatch, True)
     assert release._touches("c", {"order_fulfilment"}, [])["cockpits"] == [{"cockpit": "late", "title": "Late",
                                                                           "pieces": ["board"]}]

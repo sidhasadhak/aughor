@@ -5,8 +5,8 @@ distinct connection_id / scope_ref so list-count assertions never see another te
 """
 from __future__ import annotations
 
-from aughor.dashboard.models import CardProvenance, CardRefresh, DashboardCard
-from aughor.dashboard.store import (
+from aughor.cards.models import CardProvenance, CardRefresh, StoredCard
+from aughor.cards.store import (
     delete_card,
     get_card,
     list_cards,
@@ -14,7 +14,7 @@ from aughor.dashboard.store import (
 )
 
 
-def _card(**kw) -> DashboardCard:
+def _card(**kw) -> StoredCard:
     base = dict(
         connection_id="workspace",
         scope="canvas",
@@ -25,7 +25,7 @@ def _card(**kw) -> DashboardCard:
         sql="SELECT AVG(refunded) FROM orders",
     )
     base.update(kw)
-    return DashboardCard(**base)
+    return StoredCard(**base)
 
 
 def test_upsert_assigns_id_and_timestamps():
@@ -102,7 +102,7 @@ def test_delete_card():
 
 
 def test_model_defaults_are_sane():
-    c = DashboardCard(connection_id="x", title="t")
+    c = StoredCard(connection_id="x", title="t")
     assert c.scope == "canvas"
     assert c.kind == "kpi"
     assert c.source == "authored"

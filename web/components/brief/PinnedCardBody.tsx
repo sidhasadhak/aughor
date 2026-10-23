@@ -16,13 +16,13 @@ import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { type ChartCustom } from "@/components/Chart";
 import { formatMetricValue, formatVariance } from "@/lib/format";
-import { graduateCard, updateDashboardCard, type CardRunResult, type DashboardCard } from "@/lib/api";
+import { graduateCard, updateCard, type CardRunResult, type StoredCard } from "@/lib/api";
 import { isEmptyVizConfig, type VizConfig } from "@/components/charts/vizConfig";
 import { toast } from "@/components/ui/toast";
 import { SelectField } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 
-export type CardState = { card: DashboardCard; run?: CardRunResult; failed?: boolean };
+export type CardState = { card: StoredCard; run?: CardRunResult; failed?: boolean };
 
 export type Kind = "kpi" | "chart" | "table" | "note";
 
@@ -50,7 +50,7 @@ function BigValue({ v }: { v: number | null | undefined }) {
  *  shipped but had no client, so every edit to a pinned chart died on unmount. Debounced: the
  *  chart emits per interaction (typing an axis title would be a PUT/keystroke). Every surface
  *  that draws a card's chart keeps its edits through this one. */
-export function usePersistViz(card: DashboardCard): (viz: VizConfig) => void {
+export function usePersistViz(card: StoredCard): (viz: VizConfig) => void {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const persistViz = useCallback((viz: VizConfig) => {
     if (!card.id) return;
@@ -59,7 +59,7 @@ export function usePersistViz(card: DashboardCard): (viz: VizConfig) => void {
       const next = { ...(card.render || {}) } as Record<string, unknown>;
       if (isEmptyVizConfig(viz)) delete next.viz; else next.viz = viz;
       // Best-effort: a display preference must never surface an error over the card.
-      void updateDashboardCard(card.id, { ...card, render: next }).catch(() => {});
+      void updateCard(card.id, { ...card, render: next }).catch(() => {});
     }, 600);
   }, [card]);
   useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
@@ -68,7 +68,7 @@ export function usePersistViz(card: DashboardCard): (viz: VizConfig) => void {
 
 /** Watch → alert: a direction and a threshold, and the card becomes a scheduled monitor. */
 export function CardAlertForm({ card, direction, onSet }: {
-  card: DashboardCard;
+  card: StoredCard;
   direction: "below" | "above";
   onSet: (direction: "below" | "above") => void;
 }) {

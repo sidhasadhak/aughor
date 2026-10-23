@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ComposedCockpit } from "@/components/cockpit/ComposedCockpit";
 import type { CardState } from "@/components/brief/PinnedCardBody";
-import type { DashboardCard } from "@/lib/api";
+import type { StoredCard } from "@/lib/api";
 
 vi.mock("@/components/cockpit/CockpitTile", async (original) => ({
   ...(await original<typeof import("@/components/cockpit/CockpitTile")>()),
@@ -25,7 +25,7 @@ vi.mock("@/components/cockpit/CockpitTile", async (original) => ({
 }));
 
 const premise = () => JSON.parse(readFileSync(resolve(process.cwd(), "lib/cockpit/premise.fixture.json"), "utf8"));
-const card = (id: string, title: string): CardState => ({ card: { id, title } as DashboardCard });
+const card = (id: string, title: string): CardState => ({ card: { id, title } as StoredCard });
 const CARDS = [card("c7f3a001", "Return rate"), card("c91b2002", "Net merchandise revenue")];
 const HOST = { range: { status: "final" as const }, cards: { c7f3a001: { status: "within" as const }, c91b2002: { status: "within" as const } } };
 

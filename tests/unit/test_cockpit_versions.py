@@ -18,8 +18,8 @@ import pytest
 
 from aughor.cockpit import cards, validate as V, versions
 from aughor.cockpit.home import Home
-from aughor.dashboard import store as card_store
-from aughor.dashboard.models import DashboardCard
+from aughor.cards import store as card_store
+from aughor.cards.models import StoredCard
 from aughor.org.context import using_org
 
 REPO = Path(__file__).resolve().parents[2]
@@ -43,7 +43,7 @@ class Desk:
         text = FIXTURE.read_text().replace("c7f3a001", self.rate).replace("c91b2002", self.net)
         self._spec = json.loads(text)
         for cid, title in ((self.rate, "Return rate"), (self.net, "Net merchandise revenue")):
-            cards.place(self.home, DashboardCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
+            cards.place(self.home, StoredCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
 
     def spec(self) -> dict:
         return json.loads(json.dumps(self._spec))
@@ -367,7 +367,7 @@ def test_a_person_has_their_cockpits_and_nobody_elses(desk):
 # ── cards: the person's own, and the connection's ─────────────────────────────
 
 def test_a_person_places_their_own_cards_and_the_connections(desk):
-    pinned = card_store.upsert_card(DashboardCard(
+    pinned = card_store.upsert_card(StoredCard(
         connection_id="thelook", scope="connection", scope_ref="thelook", kind="kpi", title="Pinned for everyone"))
     placeable = {c.id for c in cards.cards_of(desk.home)}
     assert {desk.rate, desk.net, pinned.id} <= placeable
@@ -388,34 +388,34 @@ def test_the_briefings_arrangement_is_not_touched(desk):
 def test_a_card_is_not_taken_from_where_it_already_lives(desk):
     other = Desk()
     with pytest.raises(cards.Refused, match=f'The card "{desk.rate}" already belongs to the user "{desk.home.owner}"'):
-        cards.place(other.home, DashboardCard(id=desk.rate, kind="kpi", title="Return rate"))
+        cards.place(other.home, StoredCard(id=desk.rate, kind="kpi", title="Return rate"))
     assert card_store.get_card(desk.rate).scope_ref == desk.home.owner
 
-    pinned = card_store.upsert_card(DashboardCard(
+    pinned = card_store.upsert_card(StoredCard(
         connection_id="thelook", scope="connection", scope_ref="thelook", kind="kpi", title="Pinned in the Briefing"))
     with pytest.raises(cards.Refused, match='already belongs to the connection "thelook"'):
-        cards.place(desk.home, DashboardCard(id=pinned.id, kind="kpi", title="Pinned in the Briefing"))
+        cards.place(desk.home, StoredCard(id=pinned.id, kind="kpi", title="Pinned in the Briefing"))
     assert card_store.get_card(pinned.id).scope == "connection"
 
 
 def test_placing_the_same_card_again_updates_it_where_it_is(desk):
-    cards.place(desk.home, DashboardCard(id=desk.rate, kind="kpi", title="Return rate, by item"))
+    cards.place(desk.home, StoredCard(id=desk.rate, kind="kpi", title="Return rate, by item"))
     assert card_store.get_card(desk.rate).title == "Return rate, by item"
     assert len(cards.own(desk.home)) == 2
 
 
 def test_a_card_is_kept_on_the_cockpits_own_connection(desk):
     with pytest.raises(cards.Refused, match='reads the connection "superstore"; this dashboard is on "thelook"'):
-        cards.place(desk.home, DashboardCard(kind="kpi", title="Sales", connection_id="superstore"))
+        cards.place(desk.home, StoredCard(kind="kpi", title="Sales", connection_id="superstore"))
 
 
 def test_a_canvas_card_taken_over_is_the_same_card_kept_as_the_persons(desk):
-    was = card_store.upsert_card(DashboardCard(
+    was = card_store.upsert_card(StoredCard(
         connection_id="thelook", scope="canvas", scope_ref="cv1", kind="kpi", title="From a canvas", sql="SELECT 2"))
     cards.take_over(desk.home, was)
     now = card_store.get_card(was.id)
     assert (now.scope, now.scope_ref, now.sql, now.title) == ("user", desk.home.owner, "SELECT 2", "From a canvas")
-    elsewhere = card_store.upsert_card(DashboardCard(
+    elsewhere = card_store.upsert_card(StoredCard(
         connection_id="superstore", scope="canvas", scope_ref="cv2", kind="kpi", title="Elsewhere"))
     with pytest.raises(cards.Refused, match="is on another connection"):
         cards.take_over(desk.home, elsewhere)
@@ -427,7 +427,7 @@ class _Metric:
 
 
 def test_a_card_made_from_an_approved_metric_records_which_one(desk):
-    made = cards.place(desk.home, DashboardCard(kind="kpi", title="Return rate", sql="SELECT 1"),
+    made = cards.place(desk.home, StoredCard(kind="kpi", title="Return rate", sql="SELECT 1"),
                        metric=_Metric("return_rate", "approved", 3))
     kept = card_store.get_card(made.id)
     assert (kept.provenance.metric, kept.provenance.metric_version) == ("return_rate", 3)
@@ -438,7 +438,7 @@ def test_a_card_made_from_an_approved_metric_records_which_one(desk):
 def test_a_metric_that_is_not_approved_makes_no_card(desk, status):
     before = len(cards.own(desk.home))
     with pytest.raises(cards.Refused, match="A card is made from an approved metric"):
-        cards.place(desk.home, DashboardCard(kind="kpi", title="Refund value"),
+        cards.place(desk.home, StoredCard(kind="kpi", title="Refund value"),
                     metric=_Metric("refund_value", status, 0))
     assert len(cards.own(desk.home)) == before
 
@@ -492,14 +492,14 @@ def test_a_cockpit_does_not_offer_back_a_superseded_card_a_deprecated_metrics_or
     back by Arrange — and the dashboard says which and why."""
     from types import SimpleNamespace as N
     tag = uuid.uuid4().hex[:6]
-    copy = cards.place(desk.home, DashboardCard(id=f"copy{tag}", kind="kpi", title="Return rate", sql="SELECT 1"))
-    old = cards.place(desk.home, DashboardCard(id=f"old{tag}", kind="kpi", title="Item return rate", sql="SELECT 2"))
+    copy = cards.place(desk.home, StoredCard(id=f"copy{tag}", kind="kpi", title="Return rate", sql="SELECT 1"))
+    old = cards.place(desk.home, StoredCard(id=f"old{tag}", kind="kpi", title="Item return rate", sql="SELECT 2"))
     card_store.upsert_card(old.model_copy(update={"provenance": old.provenance.model_copy(
         update={"superseded_by": desk.rate})}))
-    dep = cards.place(desk.home, DashboardCard(id=f"dep{tag}", kind="kpi", title="Gross margin rate", sql="SELECT 3"))
+    dep = cards.place(desk.home, StoredCard(id=f"dep{tag}", kind="kpi", title="Gross margin rate", sql="SELECT 3"))
     card_store.upsert_card(dep.model_copy(update={"provenance": dep.provenance.model_copy(
         update={"metric": "gross_margin_rate", "metric_version": 1})}))
-    keep = cards.place(desk.home, DashboardCard(id=f"keep{tag}", kind="kpi", title="Units", sql="SELECT 4"))
+    keep = cards.place(desk.home, StoredCard(id=f"keep{tag}", kind="kpi", title="Units", sql="SELECT 4"))
     monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None, **k: [
         N(name="gross_margin_rate", status="deprecated", connection=desk.connection)])
 

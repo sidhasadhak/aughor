@@ -16,7 +16,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/ComposedCockpit";
 import type { CardState } from "@/components/brief/PinnedCardBody";
-import type { DashboardCard } from "@/lib/api";
+import type { StoredCard } from "@/lib/api";
 import type { CardStatus, CockpitHostState, RangeStatus } from "@/lib/cockpit/hostState";
 
 /** Open a tab as a pointer does: a Radix tab opens on the press, not on the click that follows. */
@@ -25,7 +25,7 @@ const openTab = (tab: HTMLElement) => fireEvent.mouseDown(tab, { button: 0 });
 vi.mock("@/lib/api", async (original) => ({
   ...(await original<typeof import("@/lib/api")>()),
   graduateCard: vi.fn(),
-  updateDashboardCard: vi.fn(),
+  updateCard: vi.fn(),
 }));
 
 beforeAll(() => {
@@ -37,10 +37,10 @@ const premise = () => JSON.parse(readFileSync(resolve(process.cwd(), "lib/cockpi
 
 function card(id: string, title: string, value: number): CardState {
   const refresh = { cadence: "daily", last_run: "2026-09-28T06:00:00Z", last_value: value, prev_value: null, history: [value] };
-  const c: DashboardCard = {
+  const c: StoredCard = {
     id, connection_id: "thelook", scope: "canvas", scope_ref: "cv_returns", source: "authored", kind: "kpi",
     title, sql: "SELECT 1", query_ref: null, render: {}, refresh, thresholds: {},
-    provenance: {} as DashboardCard["provenance"],          // no test here reads it
+    provenance: {} as StoredCard["provenance"],          // no test here reads it
     links: [], body: "", author: "", created_at: "", updated_at: "",
   };
   return { card: c, run: { columns: ["v"], rows: [[value]], row_count: 1, caveats: [], error: null, refresh } };

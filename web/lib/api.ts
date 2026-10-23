@@ -2468,7 +2468,7 @@ export function pinFinding(connectionId: string, findingId: string, opts: { scop
 }
 
 /** The finding a card was made from, or "" for a card made from nothing recorded. */
-export function findingOfCard(card: DashboardCard): string {
+export function findingOfCard(card: StoredCard): string {
   return card.provenance?.insight_id || "";
 }
 
@@ -2550,7 +2550,7 @@ export async function promoteConnectionInsight(connectionId: string, insightId: 
 
 // ── Dashboard cards (briefing cockpit — user-authored KPI/chart/watch cards) ──
 
-export interface DashboardCardRefresh {
+export interface StoredCardRefresh {
   cadence: string;
   last_run: string;
   last_value: number | null;
@@ -2558,7 +2558,7 @@ export interface DashboardCardRefresh {
   history: number[];
 }
 
-export interface DashboardCard {
+export interface StoredCard {
   id: string;
   connection_id: string;
   scope: string;
@@ -2569,7 +2569,7 @@ export interface DashboardCard {
   sql: string;
   query_ref: string | null;
   render: Record<string, unknown>;
-  refresh: DashboardCardRefresh;
+  refresh: StoredCardRefresh;
   thresholds: Record<string, unknown>;
   /** `metric` and `metric_version` (Arc CT-3): the approved metric a card was made from, and the
    *  version it had then. Empty and 0 when the card was not made from a metric. */
@@ -2594,7 +2594,7 @@ export interface CardRunResult {
    *  value, so a card drawn for a range reads this and not that (Arc CT-4). Optional because a
    *  server from before it does not send it. */
   value?: number | null;
-  refresh: DashboardCardRefresh;
+  refresh: StoredCardRefresh;
   /** BR-9 — present when the run asked for a range: what the number covers, or `standing`
    *  with why the card's SQL could not be cut to it (no date on its tables). */
   scoped?: { covers: string; standing: boolean; why: string; grain: string | null } | null;
@@ -2706,7 +2706,7 @@ export async function pinInsightToDashboard(
   connectionId: string,
   insightId: string,
   opts: { scope?: string; scopeRef?: string; schema?: string; kind?: string; title?: string } = {},
-): Promise<{ card: DashboardCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
+): Promise<{ card: StoredCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
   const res = await fetch(`${getApiBase()}/cards/pin-insight`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2736,7 +2736,7 @@ export async function pinQueryToDashboard(
   sql: string,
   title: string,
   opts: { scope?: string; scopeRef?: string; schema?: string; render?: Record<string, unknown>; queryRef?: string } = {},
-): Promise<{ card: DashboardCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
+): Promise<{ card: StoredCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
   const res = await fetch(`${getApiBase()}/cards/pin-query`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2758,9 +2758,9 @@ export async function pinQueryToDashboard(
   return res.json();
 }
 
-export async function listDashboardCards(
+export async function listCards(
   opts: { connectionId?: string; scope?: string; scopeRef?: string } = {},
-): Promise<DashboardCard[]> {
+): Promise<StoredCard[]> {
   const q = new URLSearchParams();
   if (opts.connectionId) q.set("connection_id", opts.connectionId);
   if (opts.scope) q.set("scope", opts.scope);
@@ -2773,7 +2773,7 @@ export async function listDashboardCards(
 /** Update a pinned card in place — the seam used to persist a chart's display config into
  *  `card.render`. `PUT /cards/{id}` has existed since the cockpit shipped but had no client,
  *  so every edit to a pinned chart was lost on unmount. */
-export async function updateDashboardCard(cardId: string, card: DashboardCard): Promise<DashboardCard> {
+export async function updateCard(cardId: string, card: StoredCard): Promise<StoredCard> {
   const res = await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -2805,7 +2805,7 @@ export async function saveVizConfig(
 
 /** Recompute a card's value now (guard-on-read). Returns the current result + the rolling
  *  last/prev value for a delta. */
-export async function runDashboardCard(cardId: string, range?: BriefingRange | null,
+export async function runCard(cardId: string, range?: BriefingRange | null,
   opts: { compare?: boolean; values?: Record<string, { kind: string; value: unknown }> } = {}): Promise<CardRunResult> {
   const q = new URLSearchParams();
   if (range) {
@@ -2900,7 +2900,7 @@ export interface CockpitRange {
 /** A card a cockpit may place: the person's own, or one pinned for the connection — with the
  *  record it was made from ("metric", "trusted_query", "finding", or "" for a query of its own)
  *  and, for a card made from a metric, the metric's unit and the range that unit states. */
-export type CockpitCard = DashboardCard & {
+export type CockpitCard = StoredCard & {
   own: boolean;
   /** Why the cockpit does not offer this card back — superseded, made from a deprecated metric,
    *  or a copy of one already placed; "" when it is offered. */
@@ -3281,7 +3281,7 @@ export async function retireCockpit(connectionId: string, cockpitId: string, not
   return cockpitWrite(res, "Failed to retire the dashboard");
 }
 
-export async function deleteDashboardCard(cardId: string): Promise<void> {
+export async function deleteCard(cardId: string): Promise<void> {
   await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}`, { method: "DELETE" });
 }
 
@@ -3309,7 +3309,7 @@ export async function saveCockpitLayout(connectionId: string, layout: CockpitLay
 export async function graduateCard(
   cardId: string,
   thresholds: { warning_threshold?: number | null; critical_threshold?: number | null; threshold_direction?: string },
-): Promise<{ card: DashboardCard }> {
+): Promise<{ card: StoredCard }> {
   const res = await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}/graduate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

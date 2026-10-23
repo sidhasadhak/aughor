@@ -15,7 +15,7 @@ import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/Compose
 import type { ImageStamp } from "@/components/cockpit/StaticTile";
 import { Button } from "@/components/ui/button";
 import { Loading } from "@/components/ui/states";
-import { cockpitImageUrl, getCockpit, runDashboardCard, type BriefingRange, type PersonCockpit } from "@/lib/api";
+import { cockpitImageUrl, getCockpit, runCard, type BriefingRange, type PersonCockpit } from "@/lib/api";
 import { valuesRead } from "@/lib/cockpit/values";
 import { cardsPlaced } from "@/lib/cockpit/edit";
 import { hostStateOf } from "@/lib/cockpit/hostStatus";
@@ -44,7 +44,7 @@ export function BriefingStrip({ connectionId, schema, cockpitId, range, onOpenCo
         const runs = await Promise.all(read.cards.filter(c => placed.has(c.id)).map(async (card): Promise<CardState> => {
           // Arc AP-8 — a query reading the cockpit's values is run by its own cell, with them
           if (valuesRead(card.sql).length) return { card };
-          try { return { card, run: await runDashboardCard(card.id, range, { compare: true }) }; }
+          try { return { card, run: await runCard(card.id, range, { compare: true }) }; }
           catch { return { card, failed: true }; }
         }));
         if (cancelled) return;
@@ -60,7 +60,7 @@ export function BriefingStrip({ connectionId, schema, cockpitId, range, onOpenCo
   const doors = useMemo<CockpitDoors>(() => ({
     onRefresh: async (id: string) => {
       try {
-        const run = await runDashboardCard(id, range, { compare: true });
+        const run = await runCard(id, range, { compare: true });
         setCards(cs => cs.map(c => (c.card.id === id ? { ...c, run, failed: false } : c)));
       } catch { setCards(cs => cs.map(c => (c.card.id === id ? { ...c, failed: true } : c))); }
     },

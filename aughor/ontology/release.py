@@ -171,7 +171,7 @@ def _touches(conn: str, names: set[str], automations: list[dict], metrics: list[
         from aughor.kernel.errors import tolerate
         tolerate(exc, "the claims a change touches could not be read", counter="ontology.release")
     try:
-        from aughor.dashboard.store import list_cards
+        from aughor.cards.store import list_cards
         for card in list_cards(connection_id=conn):
             if card.provenance.metric and card.provenance.metric in names:
                 cards.append({"id": card.id, "title": card.title})

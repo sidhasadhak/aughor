@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CardState } from "@/components/brief/PinnedCardBody";
-import type { CardRunResult, DashboardCard } from "@/lib/api";
+import type { CardRunResult, StoredCard } from "@/lib/api";
 import { cardStatus, cardValue, hostStateOf } from "@/lib/cockpit/hostStatus";
 
 /** A card and its run, as the server answers: `rows` are TEXT, `value` is the run's own
@@ -20,9 +20,9 @@ function state(opts: {
     id: opts.id ?? "c1", connection_id: "thelook", scope: "canvas", scope_ref: "cv", source: "authored",
     kind: "kpi", title: "Return rate", sql: "SELECT 1", query_ref: null, render: {}, refresh,
     thresholds: opts.limits ?? {},
-    provenance: {} as DashboardCard["provenance"],          // no test here reads it
+    provenance: {} as StoredCard["provenance"],          // no test here reads it
     links: [], body: "", author: "", created_at: "", updated_at: "",
-  } satisfies DashboardCard;
+  } satisfies StoredCard;
   if (opts.noRun) return { card };
   const run: CardRunResult = {
     columns: ["v"], rows: opts.ranged ?? [[opts.standing == null ? null : String(opts.standing)]], row_count: 1, caveats: [],

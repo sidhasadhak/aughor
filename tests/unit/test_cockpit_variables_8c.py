@@ -65,14 +65,14 @@ def test_a_sum_adds_up_a_number_its_set_s_objects_have(monkeypatch):
 
 @pytest.fixture
 def cards(volumes):  # noqa: F811 — the card store, kept apart
-    from aughor.dashboard.models import DashboardCard
-    from aughor.dashboard.store import upsert_card
+    from aughor.cards.models import StoredCard
+    from aughor.cards.store import upsert_card
     made = {}
     for key, sql, render in (("mine", "SELECT country FROM orders ORDER BY 1 LIMIT 1", {"shown": {"as": "table"}}),
                              ("loose", "SELECT 1", {"shown": {"as": "figure"}}),
                              ("metric", "SELECT 2", {}),
                              ("self", "SELECT {{top}}", {"shown": {"as": "figure"}})):
-        made[key] = upsert_card(DashboardCard(connection_id="c", scope="cockpit", scope_ref="desk", title=key, sql=sql,
+        made[key] = upsert_card(StoredCard(connection_id="c", scope="cockpit", scope_ref="desk", title=key, sql=sql,
                                               render=render)).id
     return made
 

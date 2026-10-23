@@ -20,7 +20,7 @@ import type { CardRunResult, CockpitCard } from "@/lib/api";
 vi.mock("@/lib/api", async (original) => ({
   ...(await original<typeof import("@/lib/api")>()),
   graduateCard: vi.fn(),
-  updateDashboardCard: vi.fn(),
+  updateCard: vi.fn(),
 }));
 vi.mock("@/components/charts/vega/VegaChart", () => ({ VegaChart: () => <div data-testid="vega" /> }));
 

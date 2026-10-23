@@ -59,7 +59,7 @@ import {
   CockpitRefused, acceptProposal, askCockpit, cockpitAudiences, cockpitImageUrl, copySharedCockpit, draftCockpit, findingOfCard,
   getDeclaredActions,
   getCockpit, getGroups, getProposalById, getSharedCockpit, getSuggestedShapes, getSystemFlags, keepCockpit, listCockpits, listSharedCockpits, moveCanvasCockpit,
-  publishCockpit, rejectProposal, restoreCockpit, retireCockpit, runDashboardCard, startMyCockpit, unpublishCockpit,
+  publishCockpit, rejectProposal, restoreCockpit, retireCockpit, runCard, startMyCockpit, unpublishCockpit,
   uploadCockpitImage,
   type BriefingRange, type CockpitAudience, type CockpitDrafted, type CockpitKept, type CockpitList, type CockpitVersion,
   type PersonCockpit, type ShapeName, type SharedCockpit, type SharedCockpitListed, type StagedProposal,
@@ -612,7 +612,7 @@ function SharedCockpitView({ connectionId, schema, owner, cockpitId, range, chos
         const runs = await Promise.all(read.cards.filter(c => placed.has(c.id)).map(async (card): Promise<CardState> => {
           // Arc AP-8 — a query reading the cockpit's values is run by its own cell, with them
           if (valuesRead(card.sql).length) return { card };
-          try { return { card, run: await runDashboardCard(card.id, range, { compare: true }) }; }
+          try { return { card, run: await runCard(card.id, range, { compare: true }) }; }
           catch { return { card, failed: true }; }
         }));
         if (cancelled) return;
@@ -626,7 +626,7 @@ function SharedCockpitView({ connectionId, schema, owner, cockpitId, range, chos
   }, [connectionId, owner, cockpitId, rangeKey]);
   const doors = useMemo<CockpitDoors>(() => ({
     onRefresh: async (id: string) => {
-      try { const run = await runDashboardCard(id, range, { compare: true }); setCards(cs => cs.map(c => (c.card.id === id ? { ...c, run, failed: false } : c))); }
+      try { const run = await runCard(id, range, { compare: true }); setCards(cs => cs.map(c => (c.card.id === id ? { ...c, run, failed: false } : c))); }
       catch { setCards(cs => cs.map(c => (c.card.id === id ? { ...c, failed: true } : c))); }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
@@ -833,7 +833,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
         const runs = await Promise.all(read.cards.filter(c => placed.has(c.id)).map(async (card): Promise<CardState> => {
           // Arc AP-8 — a query reading the cockpit's values is run by its own cell, with them
           if (valuesRead(card.sql).length) return { card };
-          try { return { card, run: await runDashboardCard(card.id, range, { compare: true }) }; }
+          try { return { card, run: await runCard(card.id, range, { compare: true }) }; }
           catch { return { card, failed: true }; }
         }));
         if (cancelled) return;
@@ -888,7 +888,7 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
 
   const refreshOne = useCallback(async (id: string) => {
     try {
-      const run = await runDashboardCard(id, range, { compare: true });
+      const run = await runCard(id, range, { compare: true });
       setCards(cs => cs.map(c => (c.card.id === id ? { ...c, run, failed: false } : c)));
     } catch {
       setCards(cs => cs.map(c => (c.card.id === id ? { ...c, failed: true } : c)));

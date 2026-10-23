@@ -308,7 +308,7 @@ def test_a_preview_says_the_columns_the_first_rows_and_the_card_as_shown(client,
 
 
 def test_what_cannot_run_or_be_shown_is_refused_in_words_and_nothing_is_kept(client, on):
-    from aughor.dashboard.store import list_cards
+    from aughor.cards.store import list_cards
     conn = f"q{uuid.uuid4().hex[:6]}"
     r = client.post("/cockpits/queries", params={"connection_id": conn}, json={"sql": "DELETE FROM ecommerce.orders"})
     assert r.status_code == 422 and r.json()["detail"]["refused"]
@@ -320,7 +320,7 @@ def test_what_cannot_run_or_be_shown_is_refused_in_words_and_nothing_is_kept(cli
 
 
 def test_a_kept_query_is_a_card_of_the_person_s_own_and_a_change_supersedes_it(client, on):
-    from aughor.dashboard.store import get_card
+    from aughor.cards.store import get_card
     conn = f"q{uuid.uuid4().hex[:6]}"
     shown = {"as": "bar", "x": "order_date", "bucket": "month", "series": [{"column": "total_amount", "agg": "sum"}]}
     r = client.post("/cockpits/queries", params={"connection_id": conn}, json={"sql": SALES, "shown": shown,
@@ -343,10 +343,10 @@ def test_a_kept_query_is_a_card_of_the_person_s_own_and_a_change_supersedes_it(c
 
 
 def test_a_change_to_a_card_that_is_not_the_person_s_own_is_refused(client, on):
-    from aughor.dashboard.models import DashboardCard
-    from aughor.dashboard.store import upsert_card
+    from aughor.cards.models import StoredCard
+    from aughor.cards.store import upsert_card
     conn = f"q{uuid.uuid4().hex[:6]}"
-    theirs = upsert_card(DashboardCard(connection_id=conn, scope="connection", scope_ref=conn, title="Pinned", sql="SELECT 1"))
+    theirs = upsert_card(StoredCard(connection_id=conn, scope="connection", scope_ref=conn, title="Pinned", sql="SELECT 1"))
     r = client.post("/cockpits/queries", params={"connection_id": conn}, json={"sql": SALES, "replaces": theirs.id})
     assert r.status_code == 422 and "Only a card of your own" in r.text
 

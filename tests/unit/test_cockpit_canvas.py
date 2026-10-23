@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from aughor.cockpit import cards, images, propose, validate as V, versions
 from aughor.cockpit.home import Home
-from aughor.dashboard.models import DashboardCard
+from aughor.cards.models import StoredCard
 from aughor.kernel.flags import flag_overrides
 
 REPO = Path(__file__).resolve().parents[2]
@@ -50,7 +50,7 @@ class Desk:
         self.home = Home(self.connection, ME, f"returns-{tag}")
         self.rate, self.net = f"rate{tag}", f"net{tag}"
         for cid, title in ((self.rate, "Return rate"), (self.net, "Net revenue")):
-            cards.place(self.home, DashboardCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
+            cards.place(self.home, StoredCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
         text = FIXTURE.read_text().replace("c7f3a001", self.rate).replace("c91b2002", self.net)
         self.spec = json.loads(text)
         from aughor.metastore import upsert_catalog

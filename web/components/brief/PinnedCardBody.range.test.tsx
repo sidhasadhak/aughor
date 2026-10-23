@@ -13,12 +13,12 @@ import { render, screen } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { PinnedCardBody, cardKind, type CardState } from "@/components/brief/PinnedCardBody";
-import type { CardRunResult, DashboardCard } from "@/lib/api";
+import type { CardRunResult, StoredCard } from "@/lib/api";
 
 vi.mock("@/lib/api", async (original) => ({
   ...(await original<typeof import("@/lib/api")>()),
   graduateCard: vi.fn(),
-  updateDashboardCard: vi.fn(),
+  updateCard: vi.fn(),
 }));
 
 beforeAll(() => {
@@ -34,9 +34,9 @@ const STANDING = { cadence: "daily", last_run: "", last_value: 8416308.73, prev_
 const CARD = {
   id: "c1", connection_id: "fixture", scope: "canvas", scope_ref: "cv", source: "authored", kind: "kpi",
   title: "Revenue", sql: "SELECT 1", query_ref: null, render: {}, refresh: STANDING, thresholds: {},
-  provenance: {} as DashboardCard["provenance"],            // no test here reads it
+  provenance: {} as StoredCard["provenance"],            // no test here reads it
   links: [], body: "", author: "", created_at: "", updated_at: "",
-} satisfies DashboardCard;
+} satisfies StoredCard;
 
 function run(more: Partial<CardRunResult>): CardState {
   return { card: CARD, run: { columns: ["revenue"], rows: [["8416308.73"]], row_count: 1, caveats: [], error: null, value: 8416308.73, refresh: STANDING, scoped: null, ...more } };

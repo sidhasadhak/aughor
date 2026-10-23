@@ -18,14 +18,14 @@ import { CockpitArrange } from "@/components/cockpit/CockpitArrange";
 import { CockpitTile } from "@/components/cockpit/CockpitTile";
 import { ComposedCockpit, type CockpitDoors } from "@/components/cockpit/ComposedCockpit";
 import type { ImageStamp } from "@/components/cockpit/StaticTile";
-import { readMetricTrend, type CardRunResult, type CockpitCard, type DashboardCard, type MetricTrend } from "@/lib/api";
+import { readMetricTrend, type CardRunResult, type CockpitCard, type StoredCard, type MetricTrend } from "@/lib/api";
 import type { CockpitSpec } from "@/lib/cockpit/edit";
 import type { CardStatus, CockpitHostState, RangeStatus } from "@/lib/cockpit/hostState";
 
 vi.mock("@/lib/api", async (original) => ({
   ...(await original<typeof import("@/lib/api")>()),
   graduateCard: vi.fn(),
-  updateDashboardCard: vi.fn(),
+  updateCard: vi.fn(),
   readMetricTrend: vi.fn(),
 }));
 vi.mock("@/components/charts/vega/VegaChart", () => ({ VegaChart: () => <div data-testid="vega" /> }));
@@ -48,12 +48,12 @@ function canvas(): Spec {
   return s;
 }
 
-function card(id: string, title: string, value: number, extra: Partial<DashboardCard> = {}): CardState {
+function card(id: string, title: string, value: number, extra: Partial<StoredCard> = {}): CardState {
   const refresh = { cadence: "daily", last_run: "2026-09-28T06:00:00Z", last_value: value, prev_value: null, history: [value] };
-  const c: DashboardCard = {
+  const c: StoredCard = {
     id, connection_id: "thelook", scope: "user", scope_ref: "default", source: "authored", kind: "kpi",
     title, sql: "SELECT 1", query_ref: null, render: {}, refresh, thresholds: {},
-    provenance: { origin_finding_id: "", receipt_ref: "", metric: "", metric_version: 0 } as DashboardCard["provenance"],
+    provenance: { origin_finding_id: "", receipt_ref: "", metric: "", metric_version: 0 } as StoredCard["provenance"],
     links: [], body: "", author: "", created_at: "", updated_at: "", ...extra,
   };
   return { card: c, run: { columns: ["v"], rows: [[value]], row_count: 1, caveats: [], error: null, refresh } };

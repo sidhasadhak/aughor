@@ -70,7 +70,7 @@ def unheld(spec: Any, card_ids: Any) -> list[str]:
     """A sentence for each query of a person's own the spec places that reads a value the dashboard does not hold — a value
     taken away while a query still reads it, or a card placed on a dashboard that never held its value."""
     from aughor.cockpit.queries import params_of
-    from aughor.dashboard.store import get_card
+    from aughor.cards.store import get_card
     held = set(_named(spec, "values"))
     said: list[str] = []
     for cid in card_ids or ():
@@ -132,7 +132,7 @@ def _queries_unread(spec: Any, queried: dict) -> list[str]:
     """Arc AP-8c — a sentence for each value read from a query that is not a card of the person's own query the dashboard
     places, or whose query reads that value back: it would wait on itself."""
     from aughor.cockpit.queries import params_of
-    from aughor.dashboard.store import get_card
+    from aughor.cards.store import get_card
     placed = {str((el or {}).get("props", {}).get("card") or "") for el in _named(spec, "elements").values()
               if isinstance(el, dict) and el.get("type") == "Card"}
     said: list[str] = []

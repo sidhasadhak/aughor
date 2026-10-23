@@ -19,7 +19,7 @@ const objects = vi.hoisted(() => ({
   queryObjects: vi.fn(), listObjects: vi.fn(), cachedObjectCatalog: vi.fn(), getObjectPage: vi.fn(), getDeclaredActions: vi.fn(),
 }));
 vi.mock("@/lib/objects", async (original) => ({ ...(await original<typeof import("@/lib/objects")>()), ...objects }));
-const api = vi.hoisted(() => ({ runDashboardCard: vi.fn() }));
+const api = vi.hoisted(() => ({ runCard: vi.fn() }));
 vi.mock("@/lib/api", async (original) => ({ ...(await original<typeof import("@/lib/api")>()), ...api }));
 
 beforeAll(() => {
@@ -81,7 +81,7 @@ beforeEach(() => {
     properties: [{ name: "id", display_name: "Order Id", value: pk }, { name: "status", display_name: "Status", value: pk === "38330" ? "Processing" : "Shipped" }],
     links: [], actions: [],
   }));
-  api.runDashboardCard.mockImplementation(async (_id: string, _r: unknown, opts: { values?: Record<string, { value: unknown }> }) =>
+  api.runCard.mockImplementation(async (_id: string, _r: unknown, opts: { values?: Record<string, { value: unknown }> }) =>
     figureRun(opts.values?.country?.value === "Brasil" ? 92197 : 203868));
 });
 
@@ -89,7 +89,7 @@ const draw = (spec: unknown = SPEC, cards = [{ card: card() }]) => render(
   <ComposedCockpit spec={spec} cards={cards} host={HOST} doors={{ onRefresh: vi.fn() }} connectionId="thelook" cockpitId="thelook:sales" />);
 const listedFor = (path: string) => objects.listObjects.mock.calls.map(c => c[0] as { filters: { path: string; op: string; value?: unknown }[] })
   .map(b => b.filters.find(f => f.path === path)).filter(Boolean);
-const runs = () => api.runDashboardCard.mock.calls.map(c => (c[2] as { values?: unknown }).values);
+const runs = () => api.runCard.mock.calls.map(c => (c[2] as { values?: unknown }).values);
 const value = (name: string) => screen.getAllByTestId("cockpit-value").find(v => v.getAttribute("data-name") === name) as HTMLElement;
 const tables = () => screen.getAllByTestId("object-table");
 
@@ -147,7 +147,7 @@ describe("a value the reader sets", () => {
     await waitFor(() => expect(objects.listObjects).toHaveBeenCalled());
     expect(screen.queryByTestId("cockpit-values")).toBeNull();
     expect(objects.listObjects.mock.calls[0][0]).toMatchObject({ entity: "order", filters: [{ path: "created_at", op: "in_last", value: 14 }] });
-    expect(api.runDashboardCard).not.toHaveBeenCalled();
+    expect(api.runCard).not.toHaveBeenCalled();
   });
 });
 
@@ -191,7 +191,7 @@ describe("a query of the person's own that reads values", () => {
   it("waits on the choice a value it reads waits on, then runs with what the object holds", async () => {
     draw(SPEC, [{ card: card("SELECT COUNT(*) AS n FROM orders WHERE status = {{status}}") }]);
     await waitFor(() => expect(screen.getByTestId("query-tile-waiting")).toHaveTextContent("Choose an order in its table — this reads Its status from it."));
-    expect(api.runDashboardCard).not.toHaveBeenCalled();
+    expect(api.runCard).not.toHaveBeenCalled();
     await waitFor(() => expect(within(tables()[0]).getAllByTestId("object-table-row")).toHaveLength(2));
     fireEvent.click(within(tables()[0]).getAllByTestId("object-table-row")[0]);
     await waitFor(() => expect(runs().at(-1)).toEqual({ status: { kind: "text", value: "Processing" } }));
@@ -200,7 +200,7 @@ describe("a query of the person's own that reads values", () => {
   it("says in its place why it cannot run when it reads a value the dashboard does not hold, and asks nothing", async () => {
     draw(SPEC, [{ card: card("SELECT 1 WHERE x = {{nowhere}}") }]);
     expect(await screen.findByTestId("query-tile-unread")).toHaveTextContent("It reads {{nowhere}}, and this dashboard holds no value of that name.");
-    expect(api.runDashboardCard).not.toHaveBeenCalled();
+    expect(api.runCard).not.toHaveBeenCalled();
   });
 
   it("is run again with the page's values by its own Refresh, never the page's bare run", async () => {
@@ -214,7 +214,7 @@ describe("a query of the person's own that reads values", () => {
   });
 
   it("holds its room as set up while it waits, so the page does not jump when it is read", async () => {
-    api.runDashboardCard.mockImplementation(() => new Promise(() => {}));
+    api.runCard.mockImplementation(() => new Promise(() => {}));
     const chart = card();
     (chart.render as { shown: Record<string, unknown> }).shown = { as: "bar", summed: true, x: "day", bucket: "day", series: [{ column: "sales", agg: "sum" }] };
     draw(SPEC, [{ card: chart }]);
@@ -225,7 +225,7 @@ describe("a query of the person's own that reads values", () => {
   it("never draws what it read for the values before while it reads for the new ones", async () => {
     draw();
     await waitFor(() => expect(screen.getByTestId("query-tile-figure")).toHaveTextContent("203,868"));
-    api.runDashboardCard.mockImplementation(() => new Promise(() => {}));
+    api.runCard.mockImplementation(() => new Promise(() => {}));
     fireEvent.click(within(value("window")).getByRole("radio", { name: "90" }));
     expect(await screen.findByTestId("query-tile-reading")).toBeInTheDocument();
     expect(screen.queryByTestId("query-tile-figure")).toBeNull();

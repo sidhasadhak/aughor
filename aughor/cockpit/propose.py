@@ -11,7 +11,7 @@ from — an approved metric, an approved trusted query, or a finding the Briefin
 its query is read from that record. Nothing in a draft can carry a query of its own.
 
 **A card is run before it is offered.** Every new card's query goes through the same guard
-battery the Briefing's pin doors use (``aughor/dashboard/doors.py``), at the time the draft is
+battery the Briefing's pin doors use (``aughor/cards/doors.py``), at the time the draft is
 made. A draft that holds a card which cannot run is refused then, to the model, which can
 repair it; a person is never shown one.
 
@@ -221,7 +221,7 @@ def _draft_cards(home: Home, schema: Optional[str], asked: Any,
     ``said`` is what the person said on this turn. When it is given, a limit it does not name
     is refused: the third run of the receipt found a writer setting 12% on two cards nobody had
     asked a limit of, and a person approving reads a limit on the card as one they set."""
-    from aughor.dashboard import doors
+    from aughor.cards import doors
 
     if asked in (None, []):
         return [], [], set()
@@ -898,8 +898,8 @@ def _as_drafted(conn_id: str, schema: Optional[str], card: dict) -> tuple[Option
 
 
 def _card_of(home: Home, card: dict, source: _Source):
-    from aughor.dashboard import doors
-    from aughor.dashboard.models import CardProvenance, DashboardCard
+    from aughor.cards import doors
+    from aughor.cards.models import CardProvenance, StoredCard
 
     thresholds = dict(card.get("limit") or {})
     if source.kind == FROM_FINDING:
@@ -909,7 +909,7 @@ def _card_of(home: Home, card: dict, source: _Source):
         ).model_copy(update={"thresholds": thresholds})
     # Where the card's query came from, kept on the card. A metric is stamped by `place`.
     proof = f"trusted_query:{source.name}:v{source.version}" if source.kind == FROM_TRUSTED else ""
-    return DashboardCard(
+    return StoredCard(
         id=str(card["id"]), connection_id=home.connection_id, scope=_cards.OWN, scope_ref=home.owner,
         source="authored", kind=str(card["kind"]), title=str(card["title"]), sql=source.sql,
         thresholds=thresholds, provenance=CardProvenance(receipt_ref=proof))
@@ -919,7 +919,7 @@ def accept(params: dict, *, connection_id: str, approved_by: str, proposal_id: s
            note: str = "") -> tuple[bool, Any]:
     """Make what an approved proposal holds: every card, then the spec — or nothing.
     Returns ``(True, outcome)`` or ``(False, the sentence why not)``."""
-    from aughor.dashboard.store import delete_card, get_card
+    from aughor.cards.store import delete_card, get_card
 
     home = Home.of((params or {}).get("home"))
     if home is None:

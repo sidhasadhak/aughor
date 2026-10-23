@@ -15,8 +15,8 @@ from fastapi.testclient import TestClient
 from aughor.api import app
 from aughor.briefing.ranges import RangeSpec
 from aughor.control_plane.contracts.execution import QueryResult
-from aughor.dashboard.models import DashboardCard
-from aughor.dashboard.store import get_card, upsert_card
+from aughor.cards.models import StoredCard
+from aughor.cards.store import get_card, upsert_card
 
 client = TestClient(app)
 SPEC = RangeSpec(preset="last_week", start=date(2026, 8, 17), end=date(2026, 8, 24),
@@ -41,7 +41,7 @@ def test_a_range_cuts_the_card_on_its_tables_date_and_never_rolls_into_the_histo
     monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     seen: dict = {}
     _stub(monkeypatch, seen)
-    card = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+    card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                      sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
     r = client.post(f"/cards/{card.id}/run", params={"preset": "last_week"})
     assert r.status_code == 200, r.text
@@ -63,7 +63,7 @@ def test_a_run_says_its_own_figure_and_the_standing_one_stays_the_cards(monkeypa
     monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     seen: dict = {}
     _stub(monkeypatch, seen)
-    card = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+    card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                      sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
 
     def answering(figure):
@@ -89,7 +89,7 @@ def test_a_table_has_no_figure(monkeypatch):
     _stub(monkeypatch, {})
     monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda db, sql, **kw: QueryResult(
         hypothesis_id="c", sql=sql, columns=["region", "n"], rows=[["NA", 3], ["EU", 2]], row_count=2))
-    card = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+    card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                      sql="SELECT region, COUNT(*) AS n FROM orders GROUP BY 1", title="by region"))
     assert client.post(f"/cards/{card.id}/run").json()["value"] is None
     assert client.post(f"/cards/{card.id}/run", params={"preset": "last_week"}).json()["value"] is None
@@ -99,7 +99,7 @@ def test_a_card_without_a_date_runs_standing_and_says_why(monkeypatch):
     monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     seen: dict = {}
     _stub(monkeypatch, seen)
-    card = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+    card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                      sql="SELECT COUNT(*) AS n FROM products", title="products"))
     body = client.post(f"/cards/{card.id}/run", params={"preset": "last_week"}).json()
     assert body["scoped"] == {"covers": body["scoped"]["covers"], "standing": True, "why": "no date on products", "grain": None}
@@ -122,7 +122,7 @@ def test_asked_to_compare_a_cut_figure_is_read_for_its_comparison_the_same_way(m
     _stub(monkeypatch, {})
     seen: list = []
     _answers(monkeypatch, seen, {"2026-08-24": 7, "2026-08-10": 5})
-    card = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+    card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                      sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
     body = client.post(f"/cards/{card.id}/run", params={"preset": "last_week", "compare": True}).json()
     assert body["value"] == 7
@@ -139,7 +139,7 @@ def test_a_comparison_before_the_range_settles_says_it_is_not_at_equal_age(monke
     young = RangeSpec(**{**SPEC.__dict__, "as_of": date(2026, 8, 26)})
     monkeypatch.setattr("aughor.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (young, ""))
     _answers(monkeypatch, [], {"2026-08-24": 7, "2026-08-10": 5})
-    card = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+    card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                      sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
     body = client.post(f"/cards/{card.id}/run", params={"preset": "last_week", "compare": True}).json()
     assert body["previous"]["value"] == 5 and body["previous"]["equal_age"] is False
@@ -149,7 +149,7 @@ def test_a_comparison_with_no_figure_says_so_and_is_never_zero(monkeypatch):
     monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "1")
     _stub(monkeypatch, {})
     _answers(monkeypatch, [], {"2026-08-24": 7})
-    card = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+    card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                      sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
     prev = client.post(f"/cards/{card.id}/run", params={"preset": "last_week", "compare": True}).json()["previous"]
     assert prev["value"] is None and prev["why"] == "it has no figure there"
@@ -162,11 +162,11 @@ def test_nothing_is_compared_unasked_or_where_nothing_was_cut(monkeypatch):
     _stub(monkeypatch, {})
     seen: list = []
     _answers(monkeypatch, seen, {"2026-08-24": 7, "2026-08-10": 5})
-    orders = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+    orders = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                        sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
     assert "previous" not in client.post(f"/cards/{orders.id}/run", params={"preset": "last_week"}).json()
     assert len(seen) == 1
-    products = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+    products = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                          sql="SELECT COUNT(*) AS n FROM products", title="products"))
     body = client.post(f"/cards/{products.id}/run", params={"preset": "last_week", "compare": True}).json()
     assert body["scoped"]["standing"] is True and body["previous"] is None and len(seen) == 2
@@ -176,7 +176,7 @@ def test_a_range_is_refused_with_the_flag_off(monkeypatch):
     monkeypatch.setenv("AUGHOR_BRIEFING_RANGES", "0")
     seen: dict = {}
     _stub(monkeypatch, seen)
-    card = upsert_card(DashboardCard(connection_id="c-range", scope="connection", scope_ref="c-range",
+    card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                      sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
     r = client.post(f"/cards/{card.id}/run", params={"preset": "last_week"})
     assert r.status_code == 404 and "briefing.ranges" in r.json()["detail"]

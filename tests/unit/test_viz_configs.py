@@ -1,6 +1,6 @@
 """Per-chart display config for card-less surfaces (`viz_configs`).
 
-A pinned card persists its display in `DashboardCard.render`. Charts that are NOT cards — a
+A pinned card persists its display in `StoredCard.render`. Charts that are NOT cards — a
 findings-ledger row, a digest tile's detail, a KPI trend — had nowhere to put one, so every
 edit (chart type, axes, colour binding, legend, transform, table/pivot view) died with the
 component. Because the ledger is single-open, expanding a second row destroyed the first row's
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.dashboard.store import get_viz_configs, set_viz_config
+from aughor.cards.store import get_viz_configs, set_viz_config
 
 BAR = {"type": "bar", "dim": "platform", "metric": "gmv"}
 LINE = {"type": "line", "xTitle": "Month"}
@@ -24,7 +24,7 @@ LINE = {"type": "line", "xTitle": "Month"}
 @pytest.fixture(autouse=True)
 def _isolated_db(tmp_path, monkeypatch):
     """Never touch the real dashboard DB — the suite has emptied a live store before."""
-    monkeypatch.setattr("aughor.dashboard.store._DB_PATH", str(tmp_path / "cards.db"))
+    monkeypatch.setattr("aughor.cards.store._DB_PATH", str(tmp_path / "cards.db"))
 
 
 def test_roundtrip_one_config():

@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from aughor.cockpit import cards, propose, sharing, validate as V, versions
 from aughor.cockpit.home import Home
-from aughor.dashboard.models import DashboardCard
+from aughor.cards.models import StoredCard
 from aughor.kernel.flags import flag_overrides
 from aughor.metastore.models import user_principal
 from aughor.org.context import using_org
@@ -51,7 +51,7 @@ class Office:
             self.home = Home(self.connection, AMIT, f"returns-{tag}")
             self.rate, self.net = f"rate{tag}", f"net{tag}"
             for cid, title in ((self.rate, "Return rate"), (self.net, "Net revenue")):
-                cards.place(self.home, DashboardCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
+                cards.place(self.home, StoredCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
             text = FIXTURE.read_text().replace("c7f3a001", self.rate).replace("c91b2002", self.net)
             self.spec = json.loads(text)
             self.spec["elements"]["note-1"] = {"type": "Note", "props": {"text": "Pipeline review Tuesdays."}, "children": []}

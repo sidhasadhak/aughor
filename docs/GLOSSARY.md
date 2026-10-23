@@ -283,6 +283,9 @@ the boundary. If you are tempted to rename one, you are about to orphan history.
   `cockpit.draft` / `cockpit.publish`; the `cockpit-images` file volume; the Briefing-switches section id `cockpit`;
   the browser keys `aughor:cockpit:*`; the metering sites `cockpit.draft` / `cockpit.edit`; and the old links
   `?tab=cockpit` / `?layer=cockpit`, which still open
+- The card store's table `dashboard_cards`, its file `data/dashboard_cards.db` and its `AUGHOR_DASHBOARD_DB` override —
+  the store itself moved to `aughor/cards/` (2026-10-23) so that *dashboard* names dashboards; a stored card is a
+  `StoredCard` in code
 
 **Flag names are renameable, but only through the alias layer** — `RENAMED` and
 `RETIRED_ENV` in `aughor/kernel/flags.py`. Editing a `FLAG_ENV` key on its own strands the

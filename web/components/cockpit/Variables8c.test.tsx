@@ -19,7 +19,7 @@ const objects = vi.hoisted(() => ({
   queryObjects: vi.fn(), listObjects: vi.fn(), cachedObjectCatalog: vi.fn(), getObjectPage: vi.fn(), getDeclaredActions: vi.fn(),
 }));
 vi.mock("@/lib/objects", async (original) => ({ ...(await original<typeof import("@/lib/objects")>()), ...objects }));
-const api = vi.hoisted(() => ({ runDashboardCard: vi.fn() }));
+const api = vi.hoisted(() => ({ runCard: vi.fn() }));
 vi.mock("@/lib/api", async (original) => ({ ...(await original<typeof import("@/lib/api")>()), ...api }));
 
 beforeAll(() => {
@@ -79,7 +79,7 @@ beforeEach(() => {
   objects.cachedObjectCatalog.mockResolvedValue({ object_types: [{ object_type: "order", id: "Order", display_name: "Order" }] });
   objects.getDeclaredActions.mockResolvedValue({});
   objects.getObjectPage.mockResolvedValue({ path: "refused", refused: "not here" });
-  api.runDashboardCard.mockImplementation(async (_id: string, _r: unknown, opts: { values?: Record<string, { value: unknown }> }) => {
+  api.runCard.mockImplementation(async (_id: string, _r: unknown, opts: { values?: Record<string, { value: unknown }> }) => {
     const asked = (opts.values?.countries?.value as string[] | undefined) ?? [];
     return tableRun(asked.includes("Brasil") ? [["Brasil", 235], ["China", 480]].sort((a, b) => (b[1] as number) - (a[1] as number)) : [["China", 480]]);
   });
@@ -141,12 +141,12 @@ describe("a value read from a query", () => {
     render(<ComposedCockpit spec={SPEC} cards={[{ card: card() }]} host={HOST} doors={{ onRefresh: vi.fn() }} connectionId="thelook"
       cockpitId="thelook:sales" range={{ preset: "last_month" }} />);
     await waitFor(() => expect(listed("user.country").some(f => f?.op === "=" && f.value === "China")).toBe(true));
-    const valued = api.runDashboardCard.mock.calls.filter(c => (c[2] as { values?: unknown }).values);
+    const valued = api.runCard.mock.calls.filter(c => (c[2] as { values?: unknown }).values);
     expect(valued.map(c => c[1])).toContainEqual({ preset: "last_month" });      // the tile, for the page's range
     expect(valued.map(c => c[1])).toContain(null);                                   // the value, never cut to it
     expect((valued[0][2] as { values: unknown }).values).toEqual({ countries: { kind: "list", value: ["China"] } });
     fireEvent.click(within(value("countries")).getByRole("button", { name: "Brasil" }));
-    await waitFor(() => expect(api.runDashboardCard.mock.calls.some(c =>
+    await waitFor(() => expect(api.runCard.mock.calls.some(c =>
       JSON.stringify((c[2] as { values?: unknown }).values) === JSON.stringify({ countries: { kind: "list", value: ["China", "Brasil"] } }))).toBe(true));
   });
 

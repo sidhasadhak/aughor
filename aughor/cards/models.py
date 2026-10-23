@@ -1,6 +1,6 @@
 """Dashboard-card data model.
 
-A DashboardCard is a user-authored card on the Briefing dashboard. It carries its own grounded
+A StoredCard is a user-authored card on the Briefing dashboard. It carries its own grounded
 SQL (so it is self-contained and can be re-run + trust-guarded without a join), an opaque
 render spec the frontend owns (a subset of the Chart component's props), a refresh record for
 delta/trend, optional thresholds (for graduating to a Monitor), and provenance (the finding it
@@ -49,7 +49,7 @@ class CardProvenance(BaseModel):
     superseded_by: str = ""
 
 
-class DashboardCard(BaseModel):
+class StoredCard(BaseModel):
     id: str = ""
     connection_id: str = ""
     scope: str = "canvas"                 # canvas | workspace | user

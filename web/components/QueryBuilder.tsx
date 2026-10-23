@@ -1619,7 +1619,7 @@ export function QueryBuilder({
   };
 
   // ── Pin to briefing cockpit (Door 2) ────────────────────────────────────────
-  // Persist the current query + chosen render as a DashboardCard on this connection's
+  // Persist the current query + chosen render as a StoredCard on this connection's
   // cockpit. The backend re-runs the SQL through the guard battery and refuses a bad one,
   // so a fabricated or mis-grained KPI can never be pinned.
   const onPinClick = () => {

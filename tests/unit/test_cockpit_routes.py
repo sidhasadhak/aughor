@@ -21,8 +21,8 @@ from fastapi.testclient import TestClient
 
 from aughor.cockpit import cards, compose, host, validate as V, versions
 from aughor.cockpit.home import FIRST, Home, approver
-from aughor.dashboard import store as card_store
-from aughor.dashboard.models import DashboardCard
+from aughor.cards import store as card_store
+from aughor.cards.models import StoredCard
 from aughor.kernel.flags import flag_overrides
 
 REPO = Path(__file__).resolve().parents[2]
@@ -59,7 +59,7 @@ class Desk:
         if with_cards:
             for cid, kind, title in ((self.rate, "kpi", "Return rate"), (self.net, "kpi", "Net merchandise revenue"),
                                      (self.chart, "chart", "Items returned by category")):
-                cards.place(self.home, DashboardCard(id=cid, kind=kind, title=title, sql="SELECT 1"))
+                cards.place(self.home, StoredCard(id=cid, kind=kind, title=title, sql="SELECT 1"))
         text = FIXTURE.read_text().replace("c7f3a001", self.rate).replace("c91b2002", self.net)
         self.spec = json.loads(text)
 
@@ -100,7 +100,7 @@ def test_off_every_route_answers_404_and_nothing_is_kept(client, desk, method, p
 
 def test_off_the_briefings_cards_answer_exactly_as_they_do_on(client, desk):
     """Byte-identical when off: the flag adds routes of its own and touches no other answer."""
-    card_store.upsert_card(DashboardCard(connection_id=desk.connection, scope="connection",
+    card_store.upsert_card(StoredCard(connection_id=desk.connection, scope="connection",
                                          scope_ref=desk.connection, kind="kpi", title="Pinned"))
     params = {"connection_id": desk.connection, "scope": "connection", "scope_ref": desk.connection}
     off = client.get("/cards", params=params)
@@ -120,7 +120,7 @@ def test_the_flag_is_registered_off_and_queued_to_graduate():
 
 @needs_rules
 def test_the_list_is_the_persons_cockpits_and_what_they_may_start_from(client, desk, on):
-    card_store.upsert_card(DashboardCard(connection_id=desk.connection, scope="connection",
+    card_store.upsert_card(StoredCard(connection_id=desk.connection, scope="connection",
                                          scope_ref=desk.connection, kind="kpi", title="Pinned"))
     empty = client.get("/cockpits", params=desk.q).json()
     assert empty == {"person": ME, "cockpits": [], "shared_cards": 1, "own_cards": 3, "from_canvases": []}
@@ -324,7 +324,7 @@ def test_the_first_cockpit_keeps_the_order_the_person_arranged():
 @needs_rules
 def test_my_cockpit_is_started_from_the_pinned_cards_in_the_persons_order(client, on):
     desk = Desk(with_cards=False)
-    pins = [card_store.upsert_card(DashboardCard(connection_id=desk.connection, scope="connection",
+    pins = [card_store.upsert_card(StoredCard(connection_id=desk.connection, scope="connection",
                                                  scope_ref=desk.connection, kind="kpi", title=t, sql="SELECT 1"))
             for t in ("Alpha", "Beta", "Gamma")]
     card_store.set_layout(desk.connection, ME, {pins[2].id: {"x": 0, "y": 0}, pins[0].id: {"x": 4, "y": 0},
@@ -406,7 +406,7 @@ class Canvas:
         tag = uuid.uuid4().hex[:6]
         self.rate, self.net = f"crate{tag}", f"cnet{tag}"
         for cid, title in ((self.rate, "Return rate"), (self.net, "Net merchandise revenue")):
-            card_store.upsert_card(DashboardCard(id=cid, connection_id=desk.connection, scope="canvas",
+            card_store.upsert_card(StoredCard(id=cid, connection_id=desk.connection, scope="canvas",
                                                  scope_ref=self.id, kind="kpi", title=title, sql="SELECT 1"))
         self.spec = json.loads(FIXTURE.read_text().replace("c7f3a001", self.rate).replace("c91b2002", self.net))
         for n in (1, 2, 3):
@@ -481,7 +481,7 @@ def test_no_route_but_the_draft_calls_a_model(client, on, monkeypatch):
         monkeypatch.setattr(LLMProvider, method, spent)
 
     desk = Desk(with_cards=False)
-    card_store.upsert_card(DashboardCard(connection_id=desk.connection, scope="connection",
+    card_store.upsert_card(StoredCard(connection_id=desk.connection, scope="connection",
                                          scope_ref=desk.connection, kind="kpi", title="Pinned", sql="SELECT 1"))
     assert client.get("/cockpits", params=desk.q).status_code == 200
     assert client.post("/cockpits/start", params=desk.q).status_code == 200

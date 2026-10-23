@@ -13,7 +13,7 @@ import types
 from fastapi.testclient import TestClient
 
 from aughor.api import app
-from aughor.dashboard.store import get_card, list_cards
+from aughor.cards.store import get_card, list_cards
 from aughor.control_plane.contracts.execution import QueryResult
 
 client = TestClient(app)

@@ -183,7 +183,7 @@ def test_a_preview_binds_the_values_it_is_sent_and_says_which_it_reads(client, o
 
 
 def test_a_kept_query_keeps_its_values_by_name_and_each_run_binds_the_page_s_own(client, on, rows):
-    from aughor.dashboard.store import get_card
+    from aughor.cards.store import get_card
     conn = f"v{uuid.uuid4().hex[:6]}"
     fig = {"as": "figure", "series": [{"column": "total_amount", "agg": "sum"}]}
     r = client.post("/cockpits/queries", params={"connection_id": conn}, json={"sql": ASKED, "shown": fig, "values": VALUES})
@@ -213,7 +213,7 @@ def test_a_query_reading_values_is_read_as_it_says_for_a_range_and_says_why(clie
     d = dt.date(2024, 6, 1)
     spec = RangeSpec(preset="last_7_days", start=d, end=d + dt.timedelta(days=7), previous_start=d - dt.timedelta(days=7),
                      previous_end=d, last_year_start=None, last_year_end=None, as_of=d, lag_days=0, lag_source="test")
-    monkeypatch.setattr("aughor.routers.dashboard._card_range", lambda *a, **k: spec)
+    monkeypatch.setattr("aughor.routers.cards._card_range", lambda *a, **k: spec)
     run = client.post(f"/cards/{card['id']}/run", params={"preset": "last_7_days"}, json={"values": VALUES}).json()
     assert run["error"] is None and run["scoped"]["standing"] is True
     assert run["scoped"]["why"] == "It reads the dashboard's own values, so it is read as its query says, not cut to the range."
@@ -286,7 +286,7 @@ def test_the_server_reads_each_value_as_the_web_does_and_a_set_reading_a_count_c
 def test_the_keep_door_refuses_variables_while_off_a_property_the_entity_lacks_and_a_query_whose_value_is_gone(
         volumes, monkeypatch):  # noqa: F811
     from aughor.cockpit import cards
-    from aughor.dashboard.models import DashboardCard
+    from aughor.cards.models import StoredCard
     monkeypatch.setattr(pieces, "accepted_edits", lambda conn: [])
     tag = uuid.uuid4().hex[:6]
     home = Home(f"vars{tag}", ME, f"desk-{tag}")
@@ -307,7 +307,7 @@ def test_the_keep_door_refuses_variables_while_off_a_property_the_entity_lacks_a
     kept = keep(spec)
     assert kept.kept, kept.sentences
     # a query of the person's own placed on the cockpit reads {{country}}; the cockpit must hold a value of that name
-    card = cards.place(home, DashboardCard(connection_id=home.connection_id, source="authored", title="By country",
+    card = cards.place(home, StoredCard(connection_id=home.connection_id, source="authored", title="By country",
                                            sql="SELECT 1 WHERE 'a' = {{country}}", render={"shown": {"as": "table"}}))
     placed = _desk(**{"values.status": status})
     placed["elements"]["desk"]["children"].append("q")
