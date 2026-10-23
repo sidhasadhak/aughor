@@ -99,7 +99,7 @@ def _map_layout(v: Any) -> dict:
 #: ``measured`` and ``moves`` are the two parts of the verdict — the day's measured figures and the
 #: row of what the findings found — each hidden on its own, moved with the verdict.
 BRIEFING_SECTIONS = ("verdict", "measured", "moves", "key_metrics", "findings", "synthesis", "cockpit", "patterns")
-_COCKPIT_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
+_DASHBOARD_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 
 
 def _briefing_sections(v: Any) -> dict:
@@ -126,7 +126,7 @@ def _briefing_sections(v: Any) -> dict:
         if sid not in seen:
             out.append({"id": sid, "on": True})
     strip = v.get("strip") or ""
-    if not isinstance(strip, str) or (strip and not _COCKPIT_ID.match(strip)):
+    if not isinstance(strip, str) or (strip and not _DASHBOARD_ID.match(strip)):
         raise ValueError("'strip' is the id of one of your dashboards, or empty for none")
     return {"sections": out, "strip": strip}
 

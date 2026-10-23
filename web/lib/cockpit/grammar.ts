@@ -89,7 +89,7 @@ function component(name: WrittenName, grid: boolean, structure: boolean): string
 }
 
 /** The grammar. `grid` tells the writer of a cockpit about a section's grid, only while cockpits are built in place
- *  (`cockpit.builder`), and `structure` about sections split into sections, only while that is on (`cockpit.app_pieces`);
+ *  (`dashboard.builder`), and `structure` about sections split into sections, only while that is on (`dashboard.app_pieces`);
  *  without them the text is as it was before Arc AP. */
 export function grammar({ grid = false, structure = false }: { grid?: boolean; structure?: boolean } = {}): string {
   return [

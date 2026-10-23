@@ -904,7 +904,7 @@ export interface ProcessPromise {
   segment: string;
   metric: string;
   /** Arc OC-4 — the segment of the objects still waiting and already past the promise, while cockpits may be built
-   *  from the ontology (`ontology.cockpit_pieces`). */
+   *  from the ontology (`ontology.dashboard_pieces`). */
   overdue_segment?: string;
 }
 

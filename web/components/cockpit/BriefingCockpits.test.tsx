@@ -86,7 +86,7 @@ const MEASURED = {
 const show = () => render(<BriefingCockpits connectionId="thelook" schema="thelook" />);
 /** Arc AP-1 — building in place on, and the cockpit opened in the builder. */
 const openBuilder = async () => {
-  api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true } });
+  api.getSystemFlags.mockResolvedValue({ "dashboard.builder": { value: true } });
   show();
   fireEvent.click(await screen.findByTestId("cockpit-edit"));
   await screen.findByTestId("cockpit-builder");
@@ -668,7 +668,7 @@ describe("building a dashboard in place (Arc AP-1)", () => {
   });
 
   it("on, a dashboard opens to be read: one bar — its history and Edit — and the reader's own doors only", async () => {
-    api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true } });
+    api.getSystemFlags.mockResolvedValue({ "dashboard.builder": { value: true } });
     show();
     expect(await screen.findByTestId("cockpit-edit")).toBeInTheDocument();
     for (const id of ["cockpit-card-new", "cockpit-note-new", "cockpit-arrange-open", "cockpit-publish-open", "cockpit-retire-open", "cockpit-ask"]) {
@@ -766,7 +766,7 @@ describe("action buttons, placed by hand (Arc AP-3)", () => {
   const OPEN_CASE = { id: "open_case", display_name: "Open a case", description: "", entity: "order", object_type: "order", kind: "annotate",
     risk: "low", edits: [], params: [] };
   const builderWith = async (flags: Record<string, { value: boolean }>) => {
-    api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true }, ...flags });
+    api.getSystemFlags.mockResolvedValue({ "dashboard.builder": { value: true }, ...flags });
     show();
     fireEvent.click(await screen.findByTestId("cockpit-edit"));
     await screen.findByTestId("cockpit-builder");
@@ -780,7 +780,7 @@ describe("action buttons, placed by hand (Arc AP-3)", () => {
 
   it("are placed with the first action declared here, and kept as a version said in words", async () => {
     api.getDeclaredActions.mockResolvedValue({ open_case: OPEN_CASE, flag_for_review: { ...OPEN_CASE, id: "flag_for_review" } });
-    await builderWith({ "cockpit.wiring": { value: true } });
+    await builderWith({ "dashboard.wiring": { value: true } });
     fireEvent.click(await screen.findByTestId("cockpit-buttons-new"));
     await waitFor(() => expect(api.keepCockpit).toHaveBeenCalledTimes(1));
     const kept = api.keepCockpit.mock.calls[0][2] as { elements: Record<string, { type: string; props: Record<string, unknown> }> };
@@ -792,7 +792,7 @@ describe("action buttons, placed by hand (Arc AP-3)", () => {
 
   it("say that no action is declared, and place nothing", async () => {
     api.getDeclaredActions.mockResolvedValue({});
-    await builderWith({ "cockpit.wiring": { value: true } });
+    await builderWith({ "dashboard.wiring": { value: true } });
     fireEvent.click(await screen.findByTestId("cockpit-buttons-new"));
     await waitFor(() => expect(toasts.error).toHaveBeenCalledWith("No action is declared here", expect.objectContaining({
       description: expect.stringContaining("Ontology ▸ Actions") })));
@@ -803,7 +803,7 @@ describe("action buttons, placed by hand (Arc AP-3)", () => {
 
 describe("what each object suggests (Arc AP-5)", () => {
   it("lists each object with the shape it fits, and a click opens the starter on it", async () => {
-    api.getSystemFlags.mockResolvedValue({ "ontology.cockpit_pieces": { value: true }, "ontology.object_cockpits": { value: true } });
+    api.getSystemFlags.mockResolvedValue({ "ontology.dashboard_pieces": { value: true }, "ontology.object_dashboards": { value: true } });
     // answered after the object catalog, as the live API answers: the catalog's arrival must not drop them
     api.getSuggestedShapes.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve([
       { entity: "order", type_id: "Order", name: "Customer Order", shape: "queue", short: "a dispatch promise · 2 actions" },
@@ -841,7 +841,7 @@ describe("History, in words (Arc AP-6)", () => {
 
 describe("previewing as a group (Arc AP-6)", () => {
   it("reads the dashboard as the person and a member of the group, with no door that changes it, and says what is withheld", async () => {
-    api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true }, "ontology.security": { value: true } });
+    api.getSystemFlags.mockResolvedValue({ "dashboard.builder": { value: true }, "ontology.security": { value: true } });
     api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [{ id: "support", name: "Support" }, { id: "fulfilment", name: "Fulfilment" }] });
     show();
     fireEvent.click(await screen.findByTestId("cockpit-edit"));
@@ -914,7 +914,7 @@ describe("the checks chip, as the dashboard's cells say what they read (Arc AP-6
 });
 
 describe("your own query on the dashboard (Arc AP-7)", () => {
-  const QUERIES = { "cockpit.builder": { value: true }, "cockpit.app_pieces": { value: true }, "cockpit.queries": { value: true } };
+  const QUERIES = { "dashboard.builder": { value: true }, "dashboard.app_pieces": { value: true }, "dashboard.queries": { value: true } };
   const SHOWN = { as: "bar", summed: true, x: "day", bucket: "day", series: [{ column: "sales", agg: "sum" }], split: "", top: 5,
     segments: "stacked", running: false, labels: false, columns: [], sort: "", descending: true, label: "" };
   const queryCard = (id: string) => ({ ...card(id, "Sales by day"), sql: "SELECT day, sales FROM thelook.orders",
@@ -980,7 +980,7 @@ describe("your own query on the dashboard (Arc AP-7)", () => {
     const valued = { ...SPEC, values: { country: { label: "Country", kind: "text", value: "China", from: { by: "reader" } } } };
     api.getCockpit.mockResolvedValue({ ...READ, cockpit: { ...READ.cockpit, spec: valued }, cards: [READ.cards[0], queryCard("c91b2002"), READ.cards[2]] });
     for (const variables of [true, false]) {
-      api.getSystemFlags.mockResolvedValue({ ...QUERIES, "cockpit.wiring": { value: true }, ...(variables ? { "cockpit.variables": { value: true } } : {}) });
+      api.getSystemFlags.mockResolvedValue({ ...QUERIES, "dashboard.wiring": { value: true }, ...(variables ? { "dashboard.variables": { value: true } } : {}) });
       const { unmount } = show();
       fireEvent.click(await screen.findByTestId("cockpit-edit"));
       await screen.findByTestId("cockpit-builder");
@@ -993,7 +993,7 @@ describe("your own query on the dashboard (Arc AP-7)", () => {
   });
 
   it("offers no query of your own, and sets up a card as before, while queries are off", async () => {
-    api.getSystemFlags.mockResolvedValue({ "cockpit.builder": { value: true }, "cockpit.app_pieces": { value: true } });
+    api.getSystemFlags.mockResolvedValue({ "dashboard.builder": { value: true }, "dashboard.app_pieces": { value: true } });
     api.getCockpit.mockResolvedValue({ ...READ, cards: [READ.cards[0], queryCard("c91b2002"), READ.cards[2]] });
     show();
     fireEvent.click(await screen.findByTestId("cockpit-edit"));

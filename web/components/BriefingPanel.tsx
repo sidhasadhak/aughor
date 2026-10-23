@@ -2576,7 +2576,7 @@ export function BriefingPanel({
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
   const [pinnedRefresh, setPinnedRefresh]   = useState(0);
-  // Arc CT-7 — with `cockpit.composed` on, the person's cockpits are a tab beside the Briefing
+  // Arc CT-7 — with `dashboard.composed` on, the person's cockpits are a tab beside the Briefing
   // (IntelligenceWorkspace), so the standing layer below is not drawn. A canvas's Briefing has
   // no such tab and keeps the layer. Until the flags answer, and when they cannot, it is off.
   const [cockpitFlag, setCockpitFlag]       = useState(false);
@@ -2652,7 +2652,7 @@ export function BriefingPanel({
       if (!alive) return;
       setPeriodsOn(!!f["briefing.by_period"]?.value);
       setRangesOn(!!f["briefing.ranges"]?.value);
-      setCockpitFlag(!!f["cockpit.composed"]?.value);
+      setCockpitFlag(!!f["dashboard.composed"]?.value);
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -3644,7 +3644,7 @@ export function BriefingPanel({
             is ALWAYS present now — even with no pins — so the cockpit teaches itself (empty
             state) instead of vanishing. The cycle's findings read above in the ledger; the
             cockpit is the surface the user curates, not a dump of the brief. */}
-      {/* Arc CT-7 — with `cockpit.composed` on, a person's cockpits have a tab of their own
+      {/* Arc CT-7 — with `dashboard.composed` on, a person's cockpits have a tab of their own
           beside the Briefing, and this layer is not drawn here. Off, it is drawn as it always was.
           The canvas (B1): on, the cockpit of theirs they chose under Sections rides here, read for
           the Briefing's range and arranged in its own tab. */}

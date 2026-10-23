@@ -10,7 +10,7 @@
  * cockpit should be a tab inside the Briefing.. as simple as that" — so it is a tab of the
  * Intelligence workspace, next to the Briefing, and the Briefing's page no longer draws one.
  *
- * Behind `cockpit.composed`; off, the tab is not there. Opening it loads no Briefing and asks
+ * Behind `dashboard.composed`; off, the tab is not there. Opening it loads no Briefing and asks
  * no model, and it needs no exploration: a cockpit is made of cards, not of findings.
  *
  * What it does, and what each costs:
@@ -22,7 +22,7 @@
  *   - drafts a new cockpit for an area the person names: ONE short model run, said so on the
  *     button. The draft is shown as its outline, can be adjusted, and is kept or discarded.
  *
- * While `cockpit.builder` is on (Arc AP-1), a cockpit opens to be read — the strip, then one bar: its period, its
+ * While `dashboard.builder` is on (Arc AP-1), a cockpit opens to be read — the strip, then one bar: its period, its
  * history and Edit — and Edit opens the builder (`CockpitBuilder`): the cockpit between its layout and the setup of
  * what is chosen, the rail folded to its icons until Done. Every change there is drawn at once and kept as one version
  * a moment after a burst of them, with undo and redo. No model; a change asked in words is the one exception, as here.
@@ -286,7 +286,7 @@ function DraftReview({ connectionId, cockpitId, result, proposal, held, onKept, 
  *  or drafted by a model for an area, the one way here that asks one. The walk-through found only the last. */
 function NewCockpit({ connectionId, schema, fromObject, sym, onKept, onClose }: {
   connectionId: string; schema?: string; onKept: (cockpitId: string) => void; onClose: () => void;
-  /** Whether a cockpit may start from an object here (`ontology.object_cockpits`). */
+  /** Whether a cockpit may start from an object here (`ontology.object_dashboards`). */
   fromObject: boolean;
   sym: string;
 }) {
@@ -733,21 +733,21 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
   const [imaging, setImaging] = useState(false);
   // Any recorded finding of the connection, as a card (B3); who the cockpit is published to (B5).
   const [picking, setPicking] = useState(false);
-  // Arc OC-4 — a piece bound to the ontology, placed by hand, while `ontology.cockpit_pieces` is on.
+  // Arc OC-4 — a piece bound to the ontology, placed by hand, while `ontology.dashboard_pieces` is on.
   const [piecesOn, setPiecesOn] = useState(false);
-  // A cockpit started from an object (2026-10-10), while `ontology.object_cockpits` is on.
+  // A cockpit started from an object (2026-10-10), while `ontology.object_dashboards` is on.
   const [objectsOn, setObjectsOn] = useState(false);
-  // Arc AP-1 — a cockpit built in place, while `cockpit.builder` is on: read first, and Edit opens the builder.
+  // Arc AP-1 — a cockpit built in place, while `dashboard.builder` is on: read first, and Edit opens the builder.
   const [builderOn, setBuilderOn] = useState(false);
-  // Arc AP-2 and AP-3 — sets, choices and action buttons, while `cockpit.wiring` is on
+  // Arc AP-2 and AP-3 — sets, choices and action buttons, while `dashboard.wiring` is on
   const [wiringOn, setWiringOn] = useState(false);
-  // Arc AP-4 — a structure of pieces and the piece picker, while `cockpit.app_pieces` is on
+  // Arc AP-4 — a structure of pieces and the piece picker, while `dashboard.app_pieces` is on
   const [structureOn, setStructureOn] = useState(false);
   // Arc AP-6 — whether row policies and masks hold here (`ontology.security`): off, a previewed group reads all the person reads
   const [limitsOn, setLimitsOn] = useState(false);
-  // Arc AP-7 — a query of the person's own, while `cockpit.queries` is on; a new one is written for a section
+  // Arc AP-7 — a query of the person's own, while `dashboard.queries` is on; a new one is written for a section
   const [queriesOn, setQueriesOn] = useState(false);
-  // Arc AP-8 — variables, while `cockpit.variables` is on: the Variables pane, and a query reading the cockpit's values
+  // Arc AP-8 — variables, while `dashboard.variables` is on: the Variables pane, and a query reading the cockpit's values
   const [variablesOn, setVariablesOn] = useState(false);
   const [writing, setWriting] = useState<{ section: string | null } | null>(null);
   // the picker open, for a section (none: the first that holds pieces); and where a card, a note, an image or a finding
@@ -789,11 +789,11 @@ export function BriefingCockpits({ connectionId, schema, onOpenSource, onEvidenc
     let alive = true;
     getSystemFlags().then(f => {
       if (alive) {
-        setRangesOn(!!f["briefing.ranges"]?.value); setPiecesOn(!!f["ontology.cockpit_pieces"]?.value);
-        setObjectsOn(!!f["ontology.object_cockpits"]?.value); setBuilderOn(!!f["cockpit.builder"]?.value);
-        setWiringOn(!!f["cockpit.wiring"]?.value); setStructureOn(!!f["cockpit.app_pieces"]?.value);
-        setLimitsOn(!!f["ontology.security"]?.value); setQueriesOn(!!f["cockpit.queries"]?.value);
-        setVariablesOn(!!f["cockpit.variables"]?.value);
+        setRangesOn(!!f["briefing.ranges"]?.value); setPiecesOn(!!f["ontology.dashboard_pieces"]?.value);
+        setObjectsOn(!!f["ontology.object_dashboards"]?.value); setBuilderOn(!!f["dashboard.builder"]?.value);
+        setWiringOn(!!f["dashboard.wiring"]?.value); setStructureOn(!!f["dashboard.app_pieces"]?.value);
+        setLimitsOn(!!f["ontology.security"]?.value); setQueriesOn(!!f["dashboard.queries"]?.value);
+        setVariablesOn(!!f["dashboard.variables"]?.value);
       }
     }).catch(() => { if (alive) { setRangesOn(false); setPiecesOn(false); } });
     return () => { alive = false; };

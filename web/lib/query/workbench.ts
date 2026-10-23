@@ -210,7 +210,7 @@ export function resultTools(s: {
 
 /** The statement a person ran, without the wrappers the platform put around it: the row cap
  *  (`SELECT * FROM (…) __q LIMIT n`), and inside it a cockpit piece's own — its sort, sum or buckets around the person's
- *  statement, which `aughor/cockpit/queries.py` (`_embed`) puts in word for word as `FROM (\n<statement>\n) AS q`.
+ *  statement, which `aughor/dashboards/queries.py` (`_embed`) puts in word for word as `FROM (\n<statement>\n) AS q`.
  *  Each is unwrapped only on that exact shape; anything else is left as written. */
 export function unwrapRunSql(sql: string): string {
   const capped = /^\s*SELECT \* FROM \(([\s\S]*)\) __q LIMIT \d+\s*$/i.exec(sql ?? "");

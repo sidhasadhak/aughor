@@ -61,7 +61,7 @@ function card(id: string, title: string, value: number, extra: Partial<StoredCar
 
 const CARDS = [card("c7f3a001", "Return rate", 0.1003), card("c91b2002", "Net merchandise revenue", 341000)];
 const READER: CockpitDoors = { onRemove: vi.fn(), onRefresh: vi.fn() };
-const PROMO: ImageStamp = { file_name: "promo.png", uploaded_by: "user:amit", uploaded_at: "2026-10-08T09:00:00Z", readable: true, why: "", url: "http://api/cockpits/images/ab12cd34ef56?connection_id=thelook" };
+const PROMO: ImageStamp = { file_name: "promo.png", uploaded_by: "user:amit", uploaded_at: "2026-10-08T09:00:00Z", readable: true, why: "", url: "http://api/dashboards/images/ab12cd34ef56?connection_id=thelook" };
 
 function host(range: RangeStatus, rate: CardStatus, net: CardStatus = "within"): CockpitHostState {
   return { range: { status: range }, cards: { c7f3a001: { status: rate }, c91b2002: { status: net } } };

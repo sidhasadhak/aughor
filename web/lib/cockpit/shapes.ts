@@ -1,7 +1,7 @@
 /**
  * Shapes in the starter (Arc AP-5; docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §4.6; design-mockups/cockpit-builder.html
  * screens 1 and 7). The server says which shapes an object fits and reads what each is laid out from
- * (`aughor/cockpit/shapes.py`); here each shape becomes the cockpit a person keeps as their own first version — a spec
+ * (`aughor/dashboards/shapes.py`); here each shape becomes the cockpit a person keeps as their own first version — a spec
  * the rules accept, every piece changeable after:
  *
  *   - a queue: the objects waiting past the promise in a window the author sets, figures that switch the list, a filter

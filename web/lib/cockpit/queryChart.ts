@@ -1,6 +1,6 @@
 /**
  * A card of a person's own query, drawn as they set it up (Arc AP-7; ROADMAP §3.57, the study's §9) — as Vega-Lite,
- * from the points the server shaped (`aughor/cockpit/queries.py`): one point per bucket and series, the top values of a
+ * from the points the server shaped (`aughor/dashboards/queries.py`): one point per bucket and series, the top values of a
  * split and the rest as Other. Bars stack, stand side by side or show shares; a line never stacks; an area stacks or
  * shows shares; a scatter places each point by two numbers. Dates along the bottom are said by the bucket they are in.
  *

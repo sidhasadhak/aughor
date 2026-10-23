@@ -61,7 +61,7 @@ def test_the_queue_is_named_and_migrations_are_empty():
     receipt record lives on the GRADUATION_QUEUE tombstone in kernel/flags.py)."""
     from aughor.kernel.flags import GRADUATION_QUEUE, MIGRATION
 
-    # Arc CT-4 (ROADMAP §3.50), 2026-09-28: `cockpit.composed` — a Cockpit tab in the Data Canvas.
+    # Arc CT-4 (ROADMAP §3.50), 2026-09-28: `dashboard.composed` — a Cockpit tab in the Data Canvas.
     # It adds no model call, so it has no grid to pass: it is queued on a receipt of USE, and
     # its entry in kernel/flags.py says which, and what would delete it instead.
     # Arc AO-2b (ROADMAP §3.52), 2026-10-03: `slack.managed_supervisor` — the API runs the
@@ -74,7 +74,7 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # Arc OC-1, the same day: `ontology.history` — every declaration's versions, and a withdrawal refused where
     # something depends on it. Its entry names the receipt and the falsifier.
     # …and `ontology.release` (Arc OC-2): a change waits in a draft until a person publishes it.
-    # Arc OC-4, the same day: `ontology.cockpit_pieces` — cockpit pieces bound to the ontology. No model call; it
+    # Arc OC-4, the same day: `ontology.dashboard_pieces` — cockpit pieces bound to the ontology. No model call; it
     # graduates on its live receipt, and its entry names the falsifier that deletes it instead.
     # Arc OC-6, 2026-10-10: `actions.outbox` — a declared action's calls through an outbox, retried by cause and an
     # unknown one checked before it is sent again. No model call; it graduates on its live receipt (a forced timeout
@@ -84,7 +84,7 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # Neither calls a model; each entry names its receipt and the falsifier.
     # …and on 2026-10-10 history, release, cockpit_pieces, outbox and builder_doors graduated on their receipts
     # (FLAG_DEFAULT, each a kill switch): security waits for sign-in, the census for seven daily readings.
-    assert set(GRADUATION_QUEUE) == {"cockpit.composed", "slack.managed_supervisor", "ontology.census",
+    assert set(GRADUATION_QUEUE) == {"dashboard.composed", "slack.managed_supervisor", "ontology.census",
                                      "ontology.security"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

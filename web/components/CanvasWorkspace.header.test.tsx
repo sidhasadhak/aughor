@@ -17,7 +17,7 @@ import { CanvasWorkspace } from "@/components/CanvasWorkspace";
 import type { Canvas, Connection } from "@/lib/api";
 
 const api = vi.hoisted(() => ({
-  getSystemFlags: vi.fn().mockResolvedValue({ "cockpit.composed": { value: true } }),
+  getSystemFlags: vi.fn().mockResolvedValue({ "dashboard.composed": { value: true } }),
   getCanvasHistory: vi.fn(),
   getCanvasArtifacts: vi.fn(),
   getCanvasDocuments: vi.fn(),

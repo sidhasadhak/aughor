@@ -7,7 +7,7 @@
  *
  * Or, since 2026-10-10, from an object (design-mockups/cockpit-from-object.html): the server proposes what the object
  * holds — its categories as filters, its numbers as figures, a chart of it per day, a table with a detail and its
- * declared actions (`aughor/cockpit/from_object.py`) — the person ticks what they want, and it is laid out here.
+ * declared actions (`aughor/dashboards/from_object.py`) — the person ticks what they want, and it is laid out here.
  */
 import { keepCockpit, type CockpitFromObject } from "@/lib/api";
 import { CHART_DAYS, MAX_LABEL, MAX_TITLE } from "@/lib/cockpit/catalog";

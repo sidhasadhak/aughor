@@ -116,7 +116,7 @@ FLAG_ENV = {
     # arranged by a kept spec — tabs, sections, cards shown by a condition. No model call: the
     # tab draws what was approved. OFF → the Data Canvas has its three tabs and the cockpit's
     # routes answer 404, exactly as before.
-    "cockpit.composed": "AUGHOR_COCKPIT_COMPOSED",
+    "dashboard.composed": "AUGHOR_DASHBOARD_COMPOSED",
     # Arc OC-0 (ROADMAP §3.56). ON: once a day the ontology census — what every built scope declares, what the
     # data verified of it, and what leans on it — is journaled as `ontology.census`, so a later wave reads its
     # before and after from the journal. OFF: nothing is read or written; GET /ontology/census still reads live.
@@ -141,32 +141,32 @@ FLAG_ENV = {
     # over an entity or a segment, an object detail that follows the table, and a button that runs a declared action —
     # and the object door resolves each promise's overdue segment (`overdue_<noun>`). OFF: the cockpit vocabulary
     # refuses those pieces and the compiler resolves exactly the names it did; POST /objects/list still lists.
-    "ontology.cockpit_pieces": "AUGHOR_ONTOLOGY_COCKPIT_PIECES",
+    "ontology.dashboard_pieces": "AUGHOR_ONTOLOGY_DASHBOARD_PIECES",
     # The cockpit started from an object (2026-10-10, design-mockups/cockpit-from-object.html). ON: a cockpit may hold
     # a filter column over an entity's categories, figures and a chart of its objects, every piece narrowed by the
     # reader's own filters; and a person may start a cockpit from an object, its pieces proposed from what the object
     # holds. OFF: the cockpit vocabulary refuses those three pieces and nothing is proposed.
-    "ontology.object_cockpits": "AUGHOR_ONTOLOGY_OBJECT_COCKPITS",
+    "ontology.object_dashboards": "AUGHOR_ONTOLOGY_OBJECT_DASHBOARDS",
     # Arc AP-1 (ROADMAP §3.57, docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md). ON: a cockpit opens to be read, and Edit
     # shows it between its layout and the setup of the piece chosen — sizes one grade at a time on a section's grid, and
     # every piece set up there, never typed as a spec. OFF: a cockpit is arranged by its six sizes and Arrange, the
     # server refuses a section on the grid, and the writer of a cockpit is told nothing about the grid.
-    "cockpit.builder": "AUGHOR_COCKPIT_BUILDER",
+    "dashboard.builder": "AUGHOR_DASHBOARD_BUILDER",
     # Arc AP-2 and AP-3 (ROADMAP §3.57). ON: a cockpit may name sets and values its pieces read, a table may name what a
     # click chooses and ticks collect, a figure may switch a list, and action buttons run declared actions on what a
     # reader chose or ticked, on a set, or with what they fill in. OFF: the server refuses a spec that says any of it,
     # and the builder offers none of it.
-    "cockpit.wiring": "AUGHOR_COCKPIT_WIRING",
-    "cockpit.app_pieces": "AUGHOR_COCKPIT_APP_PIECES",
-    "cockpit.shapes": "AUGHOR_COCKPIT_SHAPES",
+    "dashboard.wiring": "AUGHOR_DASHBOARD_WIRING",
+    "dashboard.app_pieces": "AUGHOR_DASHBOARD_APP_PIECES",
+    "dashboard.shapes": "AUGHOR_DASHBOARD_SHAPES",
     # Arc AP-7 (ROADMAP §3.57). ON: a card on a cockpit may read a person's own SQL — one table, several, another schema —
     # shown as a table, a figure or a chart set up as they choose, each run stopped after the connection's time limit.
     # OFF: the builder offers no query of your own, the doors answer 404, and every card runs as it always did.
-    "cockpit.queries": "AUGHOR_COCKPIT_QUERIES",
+    "dashboard.queries": "AUGHOR_DASHBOARD_QUERIES",
     # Arc AP-8 (ROADMAP §3.57). ON: a cockpit's value may come from the reader on the page, a set's count or the object a
     # reader chose; a set compares any value; a query of your own reads one as a bound parameter. OFF: a value is the
     # author's and only days reach a set, as before; the server refuses a spec that says more.
-    "cockpit.variables": "AUGHOR_COCKPIT_VARIABLES",
+    "dashboard.variables": "AUGHOR_DASHBOARD_VARIABLES",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -296,6 +296,17 @@ RENAMED: dict[str, str] = {
     # left 2026-08-06 with their targets — flag endgame Wave 5 hardwired all three.
     # The map stays declared (empty) because `_canonical` is still the resolution
     # seam any future rename must pass through.
+    # 2026-10-23 — cockpits were renamed Dashboards (PENDING 54; the user: "rename cockpits entirely as Dashboards -
+    # externally and internally"). Every old name keeps resolving: an operator's override row, a script, a call site.
+    "cockpit.composed": "dashboard.composed",
+    "cockpit.builder": "dashboard.builder",
+    "cockpit.wiring": "dashboard.wiring",
+    "cockpit.app_pieces": "dashboard.app_pieces",
+    "cockpit.shapes": "dashboard.shapes",
+    "cockpit.queries": "dashboard.queries",
+    "cockpit.variables": "dashboard.variables",
+    "ontology.cockpit_pieces": "ontology.dashboard_pieces",
+    "ontology.object_cockpits": "ontology.object_dashboards",
 }
 
 #: Retired env var → the flag it now feeds. Consulted only when the current flag's own
@@ -307,6 +318,16 @@ RETIRED_ENV: dict[str, str] = {
     # The three AUGHOR_ADA_PARALLEL_* entries left 2026-08-06 with their targets
     # (flag endgame Wave 6), and the last two (WHY_DEEPEN, WHY_WHERE_INTERACTION)
     # left the same day with Wave 5 — their flags are permanent behaviour now.
+    # 2026-10-23 — `AUGHOR_COCKPIT_*` → `AUGHOR_DASHBOARD_*`: an operator's .env (and the restart script's) keeps working.
+    "AUGHOR_COCKPIT_COMPOSED": "dashboard.composed",
+    "AUGHOR_COCKPIT_BUILDER": "dashboard.builder",
+    "AUGHOR_COCKPIT_WIRING": "dashboard.wiring",
+    "AUGHOR_COCKPIT_APP_PIECES": "dashboard.app_pieces",
+    "AUGHOR_COCKPIT_SHAPES": "dashboard.shapes",
+    "AUGHOR_COCKPIT_QUERIES": "dashboard.queries",
+    "AUGHOR_COCKPIT_VARIABLES": "dashboard.variables",
+    "AUGHOR_ONTOLOGY_COCKPIT_PIECES": "ontology.dashboard_pieces",
+    "AUGHOR_ONTOLOGY_OBJECT_COCKPITS": "ontology.object_dashboards",
 }
 
 
@@ -356,7 +377,7 @@ FLAG_DEFAULT: dict = {
                         "promise moved 2 → 3 days classed MEANING with the published one unchanged, discard; replayed "
                         "over the live history, no change that moved a consumer classed SAFE. Falsifier: one past "
                         "change that broke a consumer classed SAFE or MEANING",
-    "ontology.cockpit_pieces": "OC-4, live on theLook 2026-10-09: the Late dispatch board's open-and-overdue count "
+    "ontology.dashboard_pieces": "OC-4, live on theLook 2026-10-09: the Late dispatch board's open-and-overdue count "
                                "(25,051) opened a table of exactly that many; an object flagged from the dashboard showed "
                                "in the table, the detail and its page. Falsifier: the census does not move in the "
                                "weeks after (armed: read on 2026-11-07)",
@@ -507,7 +528,7 @@ FLAG_META = {
                        "arrived late, or a restatement. A Slack reply passes the same checks as any "
                        "other message. Off: nothing is run again or sent.",
     },
-    "ontology.cockpit_pieces": {
+    "ontology.dashboard_pieces": {
         "label": "Build dashboards from the ontology",
         "summary": "Adds dashboard pieces that read the ontology: a process board, an objects table, "
                    "an object detail and an action button.",
@@ -517,7 +538,7 @@ FLAG_META = {
                        "proposed, not run. A piece whose source is gone says so. Off: these pieces "
                        "cannot be added.",
     },
-    "ontology.object_cockpits": {
+    "ontology.object_dashboards": {
         "label": "Start a dashboard from an object",
         "summary": "Pick an object and get a dashboard of its filters, figures, a daily chart and its "
                    "objects. A click on a filter narrows every piece.",
@@ -527,7 +548,7 @@ FLAG_META = {
                        "want. Filters are each reader's own and never change the dashboard. Saved cards "
                        "beside them say they are not filtered. Off: these pieces cannot be added.",
     },
-    "cockpit.wiring": {
+    "dashboard.wiring": {
         "label": "Wire a dashboard's pieces and actions",
         "summary": "Pieces read named sets, and a row chosen in one is read by the others. Buttons run actions on "
                    "the chosen or ticked rows.",
@@ -537,7 +558,7 @@ FLAG_META = {
                        "declared action, with its own checks and approvals, once per chosen or ticked row. Off: a "
                        "dashboard's pieces read only their own entity.",
     },
-    "cockpit.app_pieces": {
+    "dashboard.app_pieces": {
         "label": "Split dashboards into sections and add more pieces",
         "summary": "A section splits into columns, rows or tabs, and an empty one offers a piece. The picker "
                    "places every piece by hand.",
@@ -547,7 +568,7 @@ FLAG_META = {
                        "side by side take widths one column at a time. An empty section offers a piece or a split, and a "
                        "reader is drawn nothing there. Off: a dashboard's sections hold pieces only.",
     },
-    "cockpit.shapes": {
+    "dashboard.shapes": {
         "label": "Start a dashboard from a shape",
         "summary": "Starting from an object offers the shapes its ontology fits, and says why. A queue, a map, one "
                    "object, a timeline or an overview.",
@@ -558,7 +579,7 @@ FLAG_META = {
                        "of objects linking to it. One to three are offered, the best first, each with a sentence of why "
                        "from the data. Off: every object starts one way.",
     },
-    "cockpit.queries": {
+    "dashboard.queries": {
         "label": "Your own query on a dashboard",
         "summary": "Write SQL over one table, several or another schema. Show it as a table, a figure or a chart "
                    "set up as you choose.",
@@ -568,7 +589,7 @@ FLAG_META = {
                        "stacked, side by side or as shares. Your query runs read-only and stops after the connection's "
                        "time limit. Off: a card is drawn by the shape of its result.",
     },
-    "cockpit.variables": {
+    "dashboard.variables": {
         "label": "Variables on a dashboard",
         "summary": "A value may come from the reader, a set's count or the object chosen. Sets and your own queries read it.",
         "facts": [{"kind": "free", "text": "No model calls"},
@@ -577,7 +598,7 @@ FLAG_META = {
                        "compares any value, and a query of your own reads one as a bound parameter, never pasted in. "
                        "Off: a value is set once by its author.",
     },
-    "cockpit.builder": {
+    "dashboard.builder": {
         "label": "Build dashboards in place",
         "summary": "A dashboard opens to be read, and Edit shows it between its outline and the setup of what you "
                    "pick. Every size moves one step at a time.",
@@ -661,7 +682,7 @@ FLAG_META = {
                        "may. It applies to dashboards, object pages and outside programs. Off: every reader "
                        "sees every object and property.",
     },
-    "cockpit.composed": {
+    "dashboard.composed": {
         "label": "A dashboard in each Data Canvas",
         "summary": "Adds a Dashboards tab to the Data Canvas. Arrange its cards in tabs and sections, "
                    "and show a card only when a condition holds.",
@@ -837,27 +858,27 @@ EXPERIMENT: dict = {
     # Arc AP-1, 2026-10-10. It changes where a cockpit is changed, so it is watched before it graduates.
     # Arc AP-2 and AP-3, 2026-10-11. It changes what a cockpit can do — an action a reader runs from it — so it is watched
     # before it graduates.
-    "cockpit.wiring": "does a wired dashboard become a place work is done — of the wired dashboards, is an action run from "
+    "dashboard.wiring": "does a wired dashboard become a place work is done — of the wired dashboards, is an action run from "
                       "one at least weekly? Falsifiers (§3.57): a dashboard drawn before the wiring renders differently "
                       "with it on, or a run reaches the executor without its declared criteria — either stops it",
-    "cockpit.app_pieces": "does a dashboard built from sections stay read — of the dashboards split into sections, is each "
+    "dashboard.app_pieces": "does a dashboard built from sections stay read — of the dashboards split into sections, is each "
                           "read as often as one that is not? Falsifiers (§3.57): a dashboard drawn before sections renders "
                           "differently with it on, or one split into sections is read less often in two weeks",
-    "cockpit.shapes": "does a dashboard started from a shape get read again — of the dashboards started from an object, is "
+    "dashboard.shapes": "does a dashboard started from a shape get read again — of the dashboards started from an object, is "
                       "each shape's opened on three or more days in its first two weeks more often than one started "
                       "before shapes? Falsifier (§3.57, AP-5): a shape's dashboards are read no more often than today's",
-    "cockpit.queries": "do people show their own queries — of the cards made on dashboards in two weeks, is one in five or "
+    "dashboard.queries": "do people show their own queries — of the cards made on dashboards in two weeks, is one in five or "
                        "more a query of their own? Falsifier (§3.57, AP-7): fewer than one in five, and the setup is not "
                        "what they needed",
-    "cockpit.variables": "do readers change what a dashboard shows — of the dashboards with a value a reader sets, is one in "
+    "dashboard.variables": "do readers change what a dashboard shows — of the dashboards with a value a reader sets, is one in "
                          "five or more changed by a reader within two weeks? Falsifier (§3.57, AP-8): a variable reaches SQL "
                          "other than as a bound parameter — stop",
-    "cockpit.builder": "is the setup where people change a dashboard — of the dashboards started from an object, is one in "
+    "dashboard.builder": "is the setup where people change a dashboard — of the dashboards started from an object, is one in "
                        "five or more edited within two weeks of starting? Falsifier (§3.57): fewer than one in five, "
                        "and the setup is not where people look",
     # The cockpit started from an object, 2026-10-10. It is a new way to read objects, so it is watched before it
     # graduates.
-    "ontology.object_cockpits": "does a dashboard started from an object get read again — opened on three or more "
+    "ontology.object_dashboards": "does a dashboard started from an object get read again — opened on three or more "
                                 "days in its first two weeks — more often than one started empty or for a "
                                 "process? Falsifier: started dashboards are opened no more than the others, and "
                                 "the starter and its three pieces go",
@@ -1063,7 +1084,7 @@ GRADUATION_QUEUE: dict = {
                                 "the in-process Socket Mode spike is reopened.",
     # Arc CT-4 (ROADMAP §3.50), queued 2026-09-28. It adds no model call and changes no prompt,
     # so there is no grid to buy: it graduates on being USED.
-    "cockpit.composed": "receipt: on theLook, a person opens a Data Canvas's Dashboards tab and sees "
+    "dashboard.composed": "receipt: on theLook, a person opens a Data Canvas's Dashboards tab and sees "
                         "its cards cut to the range they chose, and a card that appears when its "
                         "watch crosses its limit. Falsifier (§3.50, the third): an approved dashboard "
                         "that nobody reopens within a week was not wanted — then the tab goes, "

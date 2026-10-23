@@ -14,7 +14,7 @@ export type Filters = Record<string, Record<string, string[]>>;
 /** The key an entity's filters are held under: a piece may name it by id or by api name. */
 export const entityKey = (entity: string): string => entity.toLowerCase();
 
-/** "Order" → "Orders", "Category" → "Categories" — `plural` in `aughor/cockpit/from_object.py`. */
+/** "Order" → "Orders", "Category" → "Categories" — `plural` in `aughor/dashboards/from_object.py`. */
 export function plural(word: string): string {
   const w = word.trim();
   if (!w) return w;

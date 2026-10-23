@@ -53,7 +53,7 @@ const MAX_SERIES = 4;
 const MAX_TOP = 12;
 const PREVIEW_SHOWN = 5;
 
-/** A column's kind as a chart reads it — `aughor/cockpit/queries.py` `kind_of`. */
+/** A column's kind as a chart reads it — `aughor/dashboards/queries.py` `kind_of`. */
 export function kindOf(type: string): "number" | "date" | "time" | "text" {
   const t = (type || "").toUpperCase();
   if (t.startsWith("DATE") && !t.includes("TIME")) return "date";

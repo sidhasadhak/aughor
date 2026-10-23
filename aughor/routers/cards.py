@@ -488,7 +488,7 @@ def _recorded(card, scalar):
 def _shown_of(card):
     """Arc AP-7 — how a card of a person's own query is shown, while queries are on: ``(shown, "")``; ``(None, why)``
     when what it says cannot be read; ``(None, "")`` for every other card, which runs as it always did."""
-    from aughor.cockpit import queries
+    from aughor.dashboards import queries
     from aughor.kernel.flags import flag_enabled
     if not flag_enabled(queries.FLAG):
         return None, ""
@@ -500,7 +500,7 @@ def _shown_of(card):
 
 def _reads_values(card) -> bool:
     """Arc AP-8 — whether a card's query reads any of the dashboard's values (``{{name}}``)."""
-    from aughor.cockpit import queries
+    from aughor.dashboards import queries
     return bool(queries.params_of(card.sql or ""))
 
 
@@ -508,7 +508,7 @@ def _run_shown(db, card, shown, unread: str, sql: str, scoped, *, values: Option
     """Arc AP-7 — run a query card as it is shown: refused while a row policy narrows a table it reads (it reads the
     table straight), summed around the person's statement, stopped after the connection's time limit. Arc AP-8 — the
     dashboard's values it reads are bound by the engine, as the page holds them now; one it holds nothing for is said."""
-    from aughor.cockpit import pieces, queries
+    from aughor.dashboards import pieces, queries
 
     def said(why: str) -> dict:
         return {"columns": [], "rows": [], "row_count": 0, "caveats": [], "error": why, "value": None,
@@ -517,7 +517,7 @@ def _run_shown(db, card, shown, unread: str, sql: str, scoped, *, values: Option
         return said(unread)
     params = None
     if queries.params_of(sql):
-        from aughor.cockpit import variables
+        from aughor.dashboards import variables
         if not variables.on():
             return said(variables.refused_query(sql))
         try:
@@ -579,7 +579,7 @@ def _metric_card_for_range(card, metric, spec, compare: bool) -> Optional[dict]:
     its comparison at equal age — never cut on whatever date the profiler calls its table's main
     one. None when the metric's dates are not set, so the card falls back to the cut."""
     from aughor.briefing.ranges import compared_word, phrases, read_value
-    from aughor.cockpit.host import FINAL, status_of
+    from aughor.dashboards.host import FINAL, status_of
     from aughor.knowledge import period_brief
     from aughor.semantic import metric_time as mt
 
@@ -613,7 +613,7 @@ def _previous_figure(db, card, spec, table: str, col: str, dialect: str, execute
     """The card's figure for the window its range is compared with, cut as the range was.
     ``value`` is None when that window has none, with ``why``; never a zero."""
     from aughor.briefing.ranges import compared_word, phrases
-    from aughor.cockpit.host import FINAL, status_of
+    from aughor.dashboards.host import FINAL, status_of
     from aughor.semantic.metric_statement import scoped_statement
     from aughor.semantic.metric_time import window_predicate
 

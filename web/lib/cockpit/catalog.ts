@@ -27,7 +27,7 @@
  * a number where a card id belongs and a prop nobody declared all pass. `rules.ts` checks
  * those; this file only declares them.
  *
- * The server reads this vocabulary through the validator bundle (`aughor/cockpit/validate.py`)
+ * The server reads this vocabulary through the validator bundle (`aughor/dashboards/validate.py`)
  * rather than holding a second copy.
  */
 import { defineCatalog } from "@json-render/core";

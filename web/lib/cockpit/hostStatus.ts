@@ -2,7 +2,7 @@
  * What the host says about each card, read off the card's own run (Arc CT, CT-4).
  *
  * A card is run in the browser, as the Briefing's cockpit runs its cards, so this is where
- * its status is said. The range's status is the server's (`aughor/cockpit/host.py`).
+ * its status is said. The range's status is the server's (`aughor/dashboards/host.py`).
  *
  *   within      the card has a limit and its value is inside it
  *   over        the card has a limit and its value is past it

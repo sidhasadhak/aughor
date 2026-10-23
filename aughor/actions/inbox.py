@@ -764,9 +764,9 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
     if p.kind == "agent_limit":
         return _accept_agent_limit(p, actor=actor), ""
     if p.kind == "cockpit_draft":
-        return _accept_cockpit_draft(p, actor=actor), ""
+        return _accept_dashboard_draft(p, actor=actor), ""
     if p.kind == "cockpit_publish":
-        return _accept_cockpit_publish(p, actor=actor), ""
+        return _accept_dashboard_publish(p, actor=actor), ""
     if p.kind == "skill_draft":
         return _accept_skill_draft(p, actor=actor), ""
 
@@ -1198,14 +1198,14 @@ def _accept_brief_draft(p: StagedProposal, *, actor: str):
                    outcome=out, detail=out)
 
 
-def _accept_cockpit_draft(p: StagedProposal, *, actor: str):
+def _accept_dashboard_draft(p: StagedProposal, *, actor: str):
     """Make the dashboard a person approved (Arc CT-5; a person's own since CT-7): every card it
     creates, then the spec as the dashboard's next version — ALL OR NOTHING, the bundles' own law. The making lives
-    with the dashboard (``aughor/cockpit/propose.py``), which checks everything before it
+    with the dashboard (``aughor/dashboards/propose.py``), which checks everything before it
     writes anything and removes what it made if the rest fails; this executor records what
     happened. ``actor`` is the person who approved, and the version is kept in their name."""
     _Result = _executor_result()
-    from aughor.cockpit import propose
+    from aughor.dashboards import propose
     from aughor.org.context import current_user_id
 
     # Who approved it, as the cockpit's own routes name them: the signed-in user where there
@@ -1225,11 +1225,11 @@ def _accept_cockpit_draft(p: StagedProposal, *, actor: str):
     return _Result("executed", True, p.action_id, message=said, outcome=out, detail=out)
 
 
-def _accept_cockpit_publish(p: StagedProposal, *, actor: str):
+def _accept_dashboard_publish(p: StagedProposal, *, actor: str):
     """Publish the dashboard a person approved sharing (the canvas, B5): a version under their
     name, to the groups and roles the proposal names — or nothing, when it has moved on."""
     _Result = _executor_result()
-    from aughor.cockpit import propose
+    from aughor.dashboards import propose
     from aughor.org.context import current_user_id
 
     uid = current_user_id()

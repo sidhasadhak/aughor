@@ -12,7 +12,7 @@
 
 /** `standing` is a cockpit read with no range chosen: every card runs as it was written. The
  *  other three are the glossary's own words for a figure's status. The server says the same
- *  four (`aughor/cockpit/host.py`), and a test on its side holds the two lists together. */
+ *  four (`aughor/dashboards/host.py`), and a test on its side holds the two lists together. */
 export const RANGE_STATUSES = ["standing", "final", "provisional", "to_date"] as const;
 export type RangeStatus = (typeof RANGE_STATUSES)[number];
 

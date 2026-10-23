@@ -82,7 +82,7 @@ const LAYERS: WorkspaceLayer<IntelLayer>[] = [
 const GRAPH_LAYER: WorkspaceLayer<IntelLayer> = { id: "graph", icon: "kgraph", label: "Graph", blurb: "Connection knowledge graph" };
 
 // Arc CT-7 — the person's cockpits, beside the Briefing: the Briefing is the connection's, a
-// cockpit is the person's own. Present only with `cockpit.composed` on, and never for a canvas,
+// cockpit is the person's own. Present only with `dashboard.composed` on, and never for a canvas,
 // which is for questions and deep analysis. Off, the layers are exactly what they were.
 const COCKPIT_LAYER: WorkspaceLayer<IntelLayer> = { id: "cockpit", icon: "gauge", label: "Dashboards", blurb: "Your own dashboards — the cards you keep watching" };
 
@@ -182,7 +182,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
   const [cockpitsOn, setCockpitsOn] = useState<boolean | null>(null);
   useEffect(() => {
     let alive = true;
-    getSystemFlags().then(f => { if (alive) setCockpitsOn(!!f["cockpit.composed"]?.value); })
+    getSystemFlags().then(f => { if (alive) setCockpitsOn(!!f["dashboard.composed"]?.value); })
       .catch(() => { if (alive) setCockpitsOn(false); });
     return () => { alive = false; };
   }, []);

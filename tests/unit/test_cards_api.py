@@ -72,7 +72,7 @@ def test_missing_card_is_404():
     assert client.delete("/cards/nope").status_code == 404
 
 
-def test_cockpit_layout_roundtrips_server_side():
+def test_dashboard_layout_roundtrips_server_side():
     # No arrangement saved yet → empty (a fresh cockpit packs by default).
     assert client.get("/cards/layout", params={"connection_id": "cx_layout"}).json() == {}
 

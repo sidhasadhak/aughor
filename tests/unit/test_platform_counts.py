@@ -10,7 +10,7 @@ real resolver on the seeded samples.
 from __future__ import annotations
 
 from aughor.actions import overlay as OVL
-from aughor.cockpit import pieces
+from aughor.dashboards import pieces
 from aughor.ontology.platform_objects import listing, query
 from aughor.semantic.object_query import ObjectQuery
 from tests.unit.test_object_actions import CONN, ORDER, db, graph  # noqa: F401 — fixtures by name
@@ -98,7 +98,7 @@ def _case_desk(**list_props) -> dict:
 
 def test_a_case_queue_is_checked_where_its_cases_live_and_kept_like_any_cockpit(queue, monkeypatch):
     monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
-                        lambda name: name in {pieces.FLAG, "ontology.object_cockpits", "cockpit.app_pieces"})
+                        lambda name: name in {pieces.FLAG, "ontology.object_dashboards", "dashboard.app_pieces"})
     monkeypatch.setattr(pieces, "accepted_edits", lambda conn: [])
     assert pieces.not_resolved(CONN, _case_desk(), graph=queue) == []
     said = pieces.not_resolved(CONN, _case_desk(title="priority"), graph=queue)

@@ -1,6 +1,6 @@
 /**
  * The cockpit's values a query of the person's own reads (Arc AP-8): written `{{name}}` in the statement, sent as the
- * page holds them now, and bound by the engine — never pasted into the statement (`aughor/cockpit/queries.py` `bind`).
+ * page holds them now, and bound by the engine — never pasted into the statement (`aughor/dashboards/queries.py` `bind`).
  */
 import { ISO_DAY, MAX_LIST } from "@/lib/cockpit/catalog";
 import type { ValueNow } from "@/lib/cockpit/sets";

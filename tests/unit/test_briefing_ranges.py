@@ -500,7 +500,7 @@ def test_a_period_so_far_is_compared_with_the_same_days_of_the_one_before():
                                                (date(2026, 9, 1), date(2026, 9, 8)),
                                                (date(2026, 10, 1), date(2026, 10, 8))]
     assert ranges.later_spec(month) is None
-    from aughor.cockpit.host import TO_DATE, status_of
+    from aughor.dashboards.host import TO_DATE, status_of
     assert status_of(month) == TO_DATE
 
 

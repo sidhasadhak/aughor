@@ -4,7 +4,7 @@
  * `card` prop, so the ontology's pieces drew as blank lines, and the strip named three of them by their element keys
  * (the study's defects 1 and 5, docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md §1.6).
  *
- * The words are the server's own (`_WORDS` and `title_of` in `aughor/cockpit/pieces.py`): a piece is named by what it
+ * The words are the server's own (`_WORDS` and `title_of` in `aughor/dashboards/pieces.py`): a piece is named by what it
  * names — "Objects table · Order, overdue dispatch" — never by a key a person did not choose.
  */
 import type { ComponentName } from "@/lib/cockpit/catalog";

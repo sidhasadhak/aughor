@@ -128,7 +128,7 @@ describe("IntelligenceWorkspace — the Dashboards tab, beside the Briefing (Arc
   // By the name a person hears: a Radix tab holds its label twice (one hidden, for its width).
   const tabs = () => screen.getAllByRole("tab").map(t => t.querySelector(".rt-TabsTriggerInner")?.textContent?.trim());
   const flags = (on: boolean) => vi.mocked(getSystemFlags).mockResolvedValue(
-    { "cockpit.composed": { value: on } as unknown as SystemFlag });
+    { "dashboard.composed": { value: on } as unknown as SystemFlag });
 
   it("is there with the flag on, right after the Briefing, and opening it asks for no brief", async () => {
     flags(true);

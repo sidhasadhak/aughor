@@ -8,7 +8,7 @@
  * ("Window · 14 days"). Wiring is by name, never by expression: each is a literal string the rules check resolves.
  *
  * ONE home for what a set reads. The browser asks the object door with it; the server runs the same function through
- * the validator bundle and compiles each set before a cockpit is kept (`aughor/cockpit/pieces.py`), so the two cannot
+ * the validator bundle and compiles each set before a cockpit is kept (`aughor/dashboards/pieces.py`), so the two cannot
  * come to read a set differently.
  */
 import {
