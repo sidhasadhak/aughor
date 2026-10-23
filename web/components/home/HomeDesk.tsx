@@ -18,12 +18,15 @@ import { ActorField, useActor } from "@/components/record/kit";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { SelectField } from "@/components/ui/select";
+import { getMetrics, getSystemFlags, type Metric } from "@/lib/api";
+import { withUniqueKeys } from "@/lib/listKeys";
 import {
   ANSWERS, ASKED, bookSaid, byDay, dayMonth, dayWords, daysBehind, dismissFinding, domainFindings, leadDetail, metricWords,
   pickLead, pickQuestion, pickWorthALook, rangeText, readYou, recheckFinding, standingQuestions, weekAhead,
   type Analysis, type Due, type Finding, type LeadDetail, type YourRecord,
 } from "@/lib/home";
-import { declareDecision, listClaims, listDecisions, type Claim, type Decision } from "@/lib/record";
+import { declareDecision, listClaims, listDecisions, type Claim, type Decision, type ExpectationIn } from "@/lib/record";
 
 const LAST_SEEN_KEY = "aughor_home_last_seen";
 
@@ -75,6 +78,13 @@ export function HomeDesk({ connectionId, analyses, onOpenAnalysis, onDraft }: {
   onDraft: (question: string) => void;
 }) {
   const actor = useActor();
+  // PENDING 57, D-1: with the decision loop on, a decision taken here cites its finding and may say what is expected.
+  const [loop, setLoop] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getSystemFlags().then(f => { if (alive) setLoop(!!f["record.decision_loop"]?.value); }).catch(() => { if (alive) setLoop(false); });
+    return () => { alive = false; };
+  }, []);
   // The previous visit, read before this one is written: "since your last visit" means that one.
   const [since] = useState<string | null>(() => {
     try { return window.localStorage.getItem(LAST_SEEN_KEY); } catch { return null; }
@@ -133,7 +143,7 @@ export function HomeDesk({ connectionId, analyses, onOpenAnalysis, onDraft }: {
         <div style={{ flex: "1 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
           <QuestionCard key={question?.about.id ?? "none"} question={question} connectionId={connectionId}
             actor={actor} onBooked={id => { setAnsweredNow(prev => new Set([...prev, id])); reloadRecord(); }} />
-          <LookCard findings={findings} acted={new Set([...answered, ...decided])} connectionId={connectionId}
+          <LookCard findings={findings} acted={new Set([...answered, ...decided])} connectionId={connectionId} loop={loop}
             onDecided={reloadRecord} />
         </div>
       </div>
@@ -267,16 +277,70 @@ function QuestionCard({ question, connectionId, actor, onBooked }: {
   );
 }
 
-function LookCard({ findings, acted, connectionId, onDecided }: {
+/** What a decision expects, as Home asks it: an approved metric that knows its dates, the way it should move, and —
+ *  for a metric with dimensions — one part of it, read against the rest of its group at review (PENDING 57, D-1/D-3). */
+const NOT_ACT = "not act";
+const DIRECTIONS = [{ value: "up", label: "go up" }, { value: "down", label: "go down" }, { value: "hold", label: "hold" }];
+
+function ExpectRow({ metrics, value, onChange }: {
+  metrics: Metric[];
+  value: { metric: string; direction: string; dimension: string; part: string };
+  onChange: (v: { metric: string; direction: string; dimension: string; part: string }) => void;
+}) {
+  const m = metrics.find(x => x.name === value.metric);
+  return (
+    <div style={{ ...row, marginTop: 6 }} data-testid="home-expect">
+      <span className="aug-fs-xs" style={muted}>Expect</span>
+      <SelectField aria-label="The metric it should move" value={value.metric} style={{ maxWidth: 220 }}
+        onChange={e => onChange({ ...value, metric: e.target.value, dimension: "", part: "" })}>
+        <option value="">nothing named — it cannot be scored</option>
+        {withUniqueKeys(metrics, x => x.name).map(([k, x]) => <option key={k} value={x.name}>{x.label || x.name}</option>)}
+      </SelectField>
+      {value.metric && (
+        <SelectField aria-label="The way it should move" value={value.direction} style={{ maxWidth: 120 }}
+          onChange={e => onChange({ ...value, direction: e.target.value })}>
+          {DIRECTIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+        </SelectField>
+      )}
+      {m && (m.dimensions ?? []).length > 0 && (
+        <>
+          <SelectField aria-label="One part of it" value={value.dimension} style={{ maxWidth: 160 }}
+            onChange={e => onChange({ ...value, dimension: e.target.value, part: "" })}>
+            <option value="">all of it</option>
+            {(m.dimensions ?? []).map(d => <option key={d} value={d}>{`for one ${d.replace(/_/g, " ")}`}</option>)}
+          </SelectField>
+          {value.dimension && (
+            <Input aria-label="Which one" value={value.part} placeholder="e.g. Jeans" style={{ maxWidth: 140 }}
+              onChange={e => onChange({ ...value, part: e.target.value })} />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function LookCard({ findings, acted, connectionId, onDecided, loop = false }: {
   findings: Finding[] | null;
   acted: ReadonlySet<string>;
   connectionId: string;
   onDecided: () => void;
+  /** The decision loop (PENDING 57): the decision cites its finding, offers not acting, and may expect something. */
+  loop?: boolean;
 }) {
   const [skip, setSkip] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<"" | "decide" | "dismiss">("");
   const [text, setText] = useState("");
   const [said, setSaidLine] = useState("");
+  const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [expect, setExpect] = useState({ metric: "", direction: "up", dimension: "", part: "" });
+  useEffect(() => {
+    if (!loop || mode !== "decide") return;
+    let alive = true;
+    // approved, and knowing its dates — the only metrics a review can measure for the weeks after the decision
+    getMetrics(connectionId).then(ms => { if (alive) setMetrics(ms.filter(x => x.status === "approved" && x.time_kind && x.time_column)); })
+      .catch(() => { if (alive) setMetrics([]); });
+    return () => { alive = false; };
+  }, [loop, mode, connectionId]);
   const finding = findings ? pickWorthALook(findings, acted, skip) : null;
   if (findings === null) return <section aria-label="Worth another look" style={card}><Label>Needs you · a finding to act on</Label></section>;
   if (!finding) {
@@ -287,17 +351,33 @@ function LookCard({ findings, acted, connectionId, onDecided }: {
       </section>
     );
   }
-  const next = (line: string) => { setSaidLine(line); setMode(""); setText(""); setSkip(s => new Set([...s, finding.id])); };
+  const next = (line: string) => {
+    setSaidLine(line); setMode(""); setText(""); setSkip(s => new Set([...s, finding.id]));
+    setExpect({ metric: "", direction: "up", dimension: "", part: "" });
+  };
   const decide = async () => {
     try {
-      const d = await declareDecision({ question: finding.text, chosen: text.trim(), connection_id: connectionId,
-        note: `Decided from Home on finding ${finding.id}` });
+      const expectation: ExpectationIn | null = loop && expect.metric ? {
+        metric: expect.metric, direction: expect.direction,
+        ...(expect.dimension && expect.part.trim() ? { segment_dimension: expect.dimension, segment_value: expect.part.trim() } : {}),
+      } : null;
+      const d = await declareDecision(loop ? {
+        question: finding.text, chosen: text.trim(), options: [text.trim(), NOT_ACT], connection_id: connectionId,
+        note: `Decided from Home on finding ${finding.id}`, finding_id: finding.id, ...(expectation ? { expectation } : {}),
+      } : {
+        question: finding.text, chosen: text.trim(), connection_id: connectionId,
+        note: `Decided from Home on finding ${finding.id}`,
+      });
       onDecided();
-      next(`Booked as a decision · review ${dayWords(d.review_on)}`);
+      next(`Booked as a decision · review ${dayWords(d.review_on)}`
+        + (loop && !expectation ? " · nothing expected, so it cannot be scored" : ""));
     } catch (e) { setSaidLine(e instanceof Error ? e.message : String(e)); }
   };
   const dismiss = async () => {
-    try { await dismissFinding(connectionId, finding.id, text.trim()); next("Set aside · it can be restored"); }
+    try {
+      await dismissFinding(connectionId, finding.id, text.trim());
+      next(loop ? "Set aside · booked as a decision not to act · it can be restored" : "Set aside · it can be restored");
+    }
     catch (e) { setSaidLine(e instanceof Error ? e.message : String(e)); }
   };
   const recheck = async () => {
@@ -329,6 +409,7 @@ function LookCard({ findings, acted, connectionId, onDecided }: {
           <Button size="sm" variant="ghost" onClick={() => { setMode(""); setText(""); }}>Cancel</Button>
         </div>
       )}
+      {loop && mode === "decide" && <ExpectRow metrics={metrics} value={expect} onChange={setExpect} />}
       {said && <div className="aug-fs-xs" style={{ ...muted, marginTop: 8 }}>{said}</div>}
     </section>
   );

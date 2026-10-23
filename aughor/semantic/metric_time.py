@@ -226,6 +226,33 @@ def _ratio(node):
     return None
 
 
+def adds_up(m: Any, *, dialect: str = "duckdb") -> bool:
+    """Whether a group's figure is the sum of its parts' — a SUM, or a COUNT of rows, at the top of the formula — so
+    one part can be compared with the rest of its group (PENDING 57, D-3). A ratio, an average, a COUNT(DISTINCT …)
+    (a key can sit in two parts) or any other shape does not add up."""
+    import sqlglot
+    from sqlglot import exp
+    formula = str(_get(m, "sql") or "").strip()
+    if not formula:
+        return False
+    try:
+        node = sqlglot.parse_one(formula, read=dialect)
+    except Exception:  # noqa: BLE001 — a formula that does not parse is not known to add up
+        return False
+    if isinstance(node, exp.Select):
+        node = node.expressions[0] if len(node.expressions) == 1 else None
+    while isinstance(node, (exp.Alias, exp.Paren)):
+        node = node.this
+    if isinstance(node, exp.Mul):            # 100 * SUM(x) still adds up
+        consts = [x for x in (node.this, node.expression) if isinstance(x, exp.Literal)]
+        node = next((x for x in (node.this, node.expression) if not isinstance(x, exp.Literal)), None) if consts else None
+        while isinstance(node, exp.Paren):
+            node = node.this
+    if isinstance(node, exp.Count):
+        return not isinstance(node.this, exp.Distinct)
+    return isinstance(node, exp.Sum)
+
+
 def _set(kind: str, column: str, source: str, *, outcome: str = None, until: str = None) -> Inference:
     return Inference({"time_kind": kind, "time_column": column, "outcome_column": outcome,
                       "until_column": until, "time_source": source})

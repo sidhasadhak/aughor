@@ -328,6 +328,27 @@ def explorer_finding_key(connection_id: str, schema_name: str, finding_id: str) 
     return _claims.claim_key("finding", "explorer", connection_id, schema_name or "-", finding_id)
 
 
+def explorer_finding_claim(connection_id: str, finding_id: str, schema_name: str = "") -> tuple[Optional[_claims.Claim], str]:
+    """The Record's claim for an Explorer finding a page holds by its id, as it stands now — or ``(None, why)``.
+
+    A page that lists findings does not always know their schema (Home reads the connection's), so a finding is
+    looked up by its key first and, when no schema was given, by its id among the connection's Explorer findings.
+    Two schemas holding the same id is said, never picked between (PENDING 57, D-1)."""
+    if not (connection_id and finding_id):
+        return None, "no finding was named"
+    exact = _claims.latest(explorer_finding_key(connection_id, schema_name, finding_id))
+    if exact is not None or schema_name:
+        return exact, "" if exact is not None else f"the finding {finding_id!r} has no claim in the Record"
+    prefix = f"claim:finding:explorer:{connection_id}:"
+    matches = [c for c in _claims.list_claims(kind="finding", conn_id=connection_id, limit=5000)
+               if c.key.startswith(prefix) and c.key.endswith(f":{finding_id}")]
+    if len(matches) == 1:
+        return matches[0], ""
+    if not matches:
+        return None, f"the finding {finding_id!r} has no claim in the Record"
+    return None, f"the finding id {finding_id!r} names {len(matches)} findings in different schemas; none was cited"
+
+
 def book_explorer_finding(*, finding: dict, sql: str, connection_id: str, receipt_id: str,
                           schema_name: str = "", canvas_id: str = "") -> Optional[str]:
     """The explorer writer — the Explorer's finding, the first of the study's five shapes (§E),

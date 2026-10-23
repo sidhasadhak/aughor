@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.db.paths import state_dir
+from aughor.security.authz import get_principal
 
 from aughor.db.connection import open_connection_for
 from aughor.util.format import round_long_decimals
@@ -1843,24 +1844,42 @@ class DismissRequest(BaseModel):
 
 
 @router.post("/exploration/{connection_id}/findings/{finding_id}/dismiss")
-def dismiss_connection_finding(connection_id: str, finding_id: str, req: DismissRequest):
+def dismiss_connection_finding(connection_id: str, finding_id: str, req: DismissRequest,
+                               principal=Depends(get_principal)):
     """Dismiss a connection-scoped finding with a reason. Flags it invalid (hidden
     from intel, kept in the store, reversible) and logs the reason for the guard
-    backlog — wrong/stale findings shouldn't need a hand-edited JSON file."""
+    backlog — wrong/stale findings shouldn't need a hand-edited JSON file. With the
+    decision loop on, setting it aside is booked as the decision not to act on it."""
     from aughor.explorer.store import dismiss_insight_conn
     found = dismiss_insight_conn(connection_id, finding_id, req.reason)
     if found is None:
         raise HTTPException(status_code=404, detail="Finding not found")
-    return {"insight_id": finding_id, "dismissed": True}
+    out: dict = {"insight_id": finding_id, "dismissed": True}
+    from aughor.record import decisions as _decisions
+    if _decisions.loop_on():
+        try:
+            from aughor.record.byproducts import decision_not_to_act
+            from aughor.security.authz import acting_person
+            text = str((found or {}).get("finding") or (found or {}).get("question") or "")
+            did = decision_not_to_act(connection_id=connection_id, finding_id=finding_id, finding_text=text,
+                                      reason=req.reason, decided_by=acting_person(principal))
+            if did:
+                out["decision_id"] = did
+        except Exception as exc:  # noqa: BLE001 — the set-aside stands; the decision's booking is best-effort
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the finding is set aside; the decision not to act could not be booked",
+                     counter="record.decision_not_to_act", conn_id=connection_id)
+    return out
 
 
 @router.post("/exploration/{connection_id}/insights/{insight_id}/dismiss", deprecated=True)
-def dismiss_connection_insight(connection_id: str, insight_id: str, req: DismissRequest):
+def dismiss_connection_insight(connection_id: str, insight_id: str, req: DismissRequest,
+                               principal=Depends(get_principal)):
     """DEPRECATED alias of ``POST /exploration/{connection_id}/findings/{finding_id}/dismiss``.
 
     Same body, same payload — it delegates to the handler above. Kept for one release.
     """
-    return dismiss_connection_finding(connection_id, insight_id, req)
+    return dismiss_connection_finding(connection_id, insight_id, req, principal=principal)
 
 
 @router.get("/exploration/{connection_id}/findings/{finding_id}/receipt")

@@ -63,7 +63,9 @@ def expectation_from(fields: Optional[dict], *, default_metric: str = "") -> Opt
     return _dec.Expectation(metric=metric, direction=str(f.get("direction") or ""),
                             low=f.get("low"), mid=f.get("mid"), high=f.get("high"),
                             unit=str(f.get("unit") or ""), coverage=float(f.get("coverage") or 0.8),
-                            settles_on=str(f.get("settles_on") or ""), text=str(f.get("text") or ""))
+                            settles_on=str(f.get("settles_on") or ""), text=str(f.get("text") or ""),
+                            segment_dimension=str(f.get("segment_dimension") or "").strip(),
+                            segment_value=str(f.get("segment_value") or "").strip())
 
 
 def _person(uid: str, fallback: str) -> str:
@@ -103,9 +105,15 @@ def decision_from_recommendation(outcome, *, chosen: str, decided_by: str, conne
     metric = (expectation.metric if expectation is not None else "") or (getattr(outcome, "spec", None) or {}).get("metric_label") \
         or getattr(outcome, "metric_name", "") or ""
     objective = prior.objective if prior is not None and prior.objective else _mission_for(connection_id, metric)
+    options = list(_ACCEPT_OPTIONS)
+    if _dec.loop_on():
+        # PENDING 57, D-1: the same report's other recommended actions were on the table too — kept as the
+        # alternatives weighed; and the platform recommended accepting, so a decline is an override, counted.
+        options += _alternatives(outcome)
+        extra["recommended"] = "accept"
     decision = _dec.Decision(
         question=(outcome.rec_text or "").strip()[:500] or f"recommendation {outcome.rec_index}",
-        owner=decided_by, options=list(_ACCEPT_OPTIONS), chosen=chosen,
+        owner=decided_by, options=options, chosen=chosen,
         relied_on=prior.relied_on if prior is not None else relied_on_claims(connection_id, outcome.inv_id),
         objective=objective,
         decided_by=decided_by, review_on=review_on or (outcome.review_at or "")[:10],
@@ -116,10 +124,33 @@ def decision_from_recommendation(outcome, *, chosen: str, decided_by: str, conne
                               author=decided_by)
 
 
+def _alternatives(outcome) -> list[_dec.Option]:
+    """The other actions the same deep analysis recommended, as options — ``alt_<index>``. Best-effort: a report
+    that cannot be read leaves the accept/decline pair as it was."""
+    try:
+        from aughor.db.history import get_investigation
+        inv = get_investigation(str(getattr(outcome, "inv_id", "") or "")) or {}
+        report = inv.get("report") if isinstance(inv.get("report"), dict) else {}
+        actions = [str(a).strip() for a in (report.get("recommended_actions") or []) if str(a).strip()]
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the decision stands; its report's other recommendations could not be read", counter="record.alternatives")
+        return []
+    own = int(getattr(outcome, "rec_index", -1))
+    return [_dec.Option(id=f"alt_{i}", description=text[:300], actor="")
+            for i, text in enumerate(actions) if i != own]
+
+
+def overridden(decision: _dec.Decision) -> Optional[bool]:
+    """Whether the chosen option was not the one recommended — None when nothing was recommended."""
+    rec = str(decision.extra.get("recommended") or "")
+    return None if not rec else decision.chosen != rec
+
+
 _ANSWER_VERDICT = {"verified": "as_expected", "rejected": "worse", "implemented": "cannot_tell"}
 
 
-def _against_expectation(decision, actual: Optional[float], before: Optional[float]) -> tuple[str, Optional[_claims.Claim]]:
+def against_expectation(decision, actual: Optional[float], before: Optional[float]) -> tuple[str, Optional[_claims.Claim]]:
     """Where the actual fell against the decision's expectation: inside · above · below · cannot
     tell (a relative band with no before value) · no expectation."""
     if not decision.expectation_claim:
@@ -132,8 +163,30 @@ def _against_expectation(decision, actual: Optional[float], before: Optional[flo
                         unit=pred.statement.unit, before=before), pred
 
 
-def _verdict_against_history(*, actual: Optional[float], baseline: Optional[float], low: Optional[float],
-                             high: Optional[float], direction: str, against: str, history_note: str) -> tuple[str, str, _dec.Effect]:
+def verdict_against_baseline(*, actual: Optional[float], baseline: Optional[float], low: Optional[float],
+                             high: Optional[float], direction: str, against: str, history_note: str,
+                             drift: str = "", method: str = "history") -> tuple[str, str, _dec.Effect]:
+    """``drift`` (PENDING 57, D-3): why this baseline cannot be trusted to stand for "what would have happened
+    anyway" — the metric's own history band has missed one way; the effect is still measured and said, the verdict
+    is cannot tell. ``method`` names the baseline the effect was measured against."""
+    verdict, why, e = _verdict_core(actual=actual, baseline=baseline, low=low, high=high, direction=direction,
+                                    against=against, history_note=history_note)
+    if method != "history":
+        e.method = method
+        why = why.replace("against its own history", f"against its {_BASELINE_WORDS.get(method, method)}") \
+                 .replace("history predicted", f"its {_BASELINE_WORDS.get(method, method)} predicted") \
+                 .replace("no history baseline could be measured", "no comparison could be drawn")
+    if drift and verdict != "cannot_tell":
+        return "cannot_tell", f"{drift}; measured against it anyway, {why[0].lower() + why[1:]}", e
+    return verdict, why, e
+
+
+#: The words for a baseline an effect was measured against.
+_BASELINE_WORDS = {"comparison": "comparison group (the rest of its group, at its usual share)"}
+
+
+def _verdict_core(*, actual: Optional[float], baseline: Optional[float], low: Optional[float],
+                  high: Optional[float], direction: str, against: str, history_note: str) -> tuple[str, str, _dec.Effect]:
     """Both verdicts' meeting point (the study §K rule 2; `IDEAS.md` 13 and 22): the effect is the
     actual against what the metric's own history predicted, with history's band; the verdict is
     code over that effect and the expected direction, and ``cannot tell`` says why."""
@@ -175,11 +228,16 @@ def outcome_from_review(outcome) -> Optional[str]:
         return decision.outcome
     actual = outcome.review_value
     before = outcome.baseline_value if outcome.baseline_value is not None else outcome.metric_before
-    against, pred = _against_expectation(decision, actual, before)
+    against, pred = against_expectation(decision, actual, before)
     direction = str(pred.extra.get("direction") or "") if pred is not None else ""
-    verdict, why, effect = _verdict_against_history(
+    drift = ""
+    if _dec.loop_on():
+        from aughor.record.scenario import drift_words
+        drift = drift_words(decision.connection_id, (pred.statement.metric if pred is not None else "")
+                            or str(getattr(outcome, "metric_name", "") or ""))
+    verdict, why, effect = verdict_against_baseline(
         actual=actual, baseline=outcome.history_value, low=outcome.history_low, high=outcome.history_high,
-        direction=direction, against=against, history_note=outcome.history_note)
+        direction=direction, against=against, history_note=outcome.history_note, drift=drift)
     # Phase 5: the measured verdict writes back to the confirmed-cause graph BEFORE the outcome is booked,
     # so the one outcome version the review books says what it wrote back.
     writes_back = (["prediction scored"] if pred is not None else []) + \
@@ -251,7 +309,7 @@ def outcome_from_review_answer(outcome, *, status: str, answered_by: str) -> Opt
                                                             "answered_at": _dt.datetime.now(_dt.timezone.utc).isoformat()})
     actual = outcome.metric_after if outcome.metric_after is not None else outcome.review_value
     before = outcome.metric_before if outcome.metric_before is not None else outcome.baseline_value
-    against, _pred = _against_expectation(decision, actual, before)
+    against, _pred = against_expectation(decision, actual, before)
     why = (f"the person's answer at review was '{status}'; measured against what was expected"
            f"{'' if against != 'no expectation' else ' (none was given)'}, not yet against the metric's "
            "own history — the review that measures it has not run")
@@ -285,7 +343,9 @@ def decision_from_proposal(p, *, chosen: str, actor: str) -> str:
         source=src, connection_id=p.connection_id or "",
         extra={"proposal_kind": p.kind, "proposer": p.proposer, "proposal_source": source,
                **({"trace_id": p.trace_id} if p.trace_id else {}),
-               "expectation_note": "none: a staged proposal carries no expectation line"},
+               "expectation_note": "none: a staged proposal carries no expectation line",
+               # PENDING 57, D-1: the proposer recommended approving; a rejection is an override, counted
+               **({"recommended": "approve"} if _dec.loop_on() else {})},
     )
     return _dec.book_decision(decision, author=decided_by)
 
@@ -297,7 +357,7 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
                      dissent: Optional[list[dict]] = None, relied_on: Optional[list[str]] = None,
                      objective: str = "", connection_id: str = "", decided_at: str = "",
                      decided_by: str = "", review_on: str = "", expectation: Optional[dict] = None,
-                     note: str = "") -> str:
+                     note: str = "", finding_id: str = "", schema_name: str = "") -> str:
     """A decision taken elsewhere, declared in its own words. Refuses a relied-on id that is not a
     claim (a decision cites what the Record holds, never a loose string)."""
     if not (question or "").strip():
@@ -309,6 +369,14 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
         if _claims.get(cid) is None:
             raise ValueError(f"{cid!r} is not a claim in the Record; a decision relies on claims it can cite")
         cited.append(cid)
+    finding_note = ""
+    if finding_id and _dec.loop_on():
+        # PENDING 57, D-1: a decision taken on a finding cites the finding's claim as it stands now; one the Record
+        # does not hold is said on the decision, never guessed at.
+        from aughor.record.writers import explorer_finding_claim
+        claim, finding_note = explorer_finding_claim(connection_id, finding_id, schema_name)
+        if claim is not None and claim.id not in cited:
+            cited.append(claim.id)
     opts = [_dec.Option(id=o, description=o) for o in (options or [])]
     if chosen not in {o.id for o in opts}:
         opts.append(_dec.Option(id=chosen, description=chosen))
@@ -321,6 +389,28 @@ def declare_decision(*, question: str, chosen: str, options: Optional[list[str]]
         source=_dec.Source(kind="declared", ref=uuid.uuid4().hex[:12], detail=(note or "")[:400]),
         connection_id=connection_id or "",
         extra={**({"note": note} if note else {}),
-               **({} if expectation else {"expectation_note": "none declared — nothing to score"})},
+               **({} if expectation else {"expectation_note": "none declared — nothing to score"}),
+               **({"finding_id": finding_id} if finding_id and _dec.loop_on() else {}),
+               **({"relied_on_note": finding_note} if finding_note else {})},
     )
     return _dec.book_decision(decision, expectation=expectation_from(expectation), author=decided_by)
+
+
+# ── the decision not to act (PENDING 57, D-1) ───────────────────────────────────────────────
+
+#: The two options a finding put on the table, as Home offers them.
+ACT, NOT_ACT = "act on it", "not act"
+
+
+def decision_not_to_act(*, connection_id: str, finding_id: str, finding_text: str, reason: str,
+                        decided_by: str, schema_name: str = "") -> Optional[str]:
+    """Setting a finding aside as not worth acting on IS a decision — booked citing the finding, with the reason
+    as said. Before, "Not worth it" flagged the finding and the choice was lost. None when the loop is off."""
+    if not _dec.loop_on():
+        return None
+    return declare_decision(
+        question=(finding_text or f"finding {finding_id}").strip()[:500], chosen=NOT_ACT, options=[ACT, NOT_ACT],
+        connection_id=connection_id, decided_by=decided_by,
+        note=(reason or "").strip()[:400] or "set aside as not worth acting on",
+        finding_id=finding_id, schema_name=schema_name)
+

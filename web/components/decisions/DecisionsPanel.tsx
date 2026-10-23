@@ -426,6 +426,7 @@ function DecisionBody({ d, connections, reload, onMoved, onOpenClaim }: {
                   <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
                     <span className="aug-fs-ui" style={{ color: "var(--t1)", fontWeight: chosen ? 600 : 400 }}>{o.description}</span>
                     {chosen && <StatusChip hue="info">chosen</StatusChip>}
+                    {d.extra?.recommended === o.id && <StatusChip hue="muted">recommended</StatusChip>}
                   </div>
                   <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>
                     {[o.cost && `cost: ${o.cost}`, o.reversibility && `reversibility: ${o.reversibility}`, o.actor && `acts: ${whoLabel(o.actor)}`]

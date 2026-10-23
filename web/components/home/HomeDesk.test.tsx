@@ -2,6 +2,7 @@
 /**
  * Home's desk renders its sections from records, and a person's answer is booked as theirs.
  */
+import { Theme } from "@radix-ui/themes";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,6 +32,8 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   getAnalysisSummary: vi.fn(async () => ({ headline: "", summary: "More orders, smaller ones." })),
   getMyAccess: vi.fn(async () => ({ user_id: null, actor: "amit", signed_in: false, org_id: "default", roles: [], permissions: [] })),
+  getSystemFlags: vi.fn(async () => ({})),
+  getMetrics: vi.fn(async () => []),
 }));
 
 import { SCHEDULED_HEADER, type Analysis } from "@/lib/home";
@@ -97,5 +100,91 @@ describe("HomeDesk", () => {
     render(<HomeDesk connectionId="c1" analyses={ANALYSES} onOpenAnalysis={() => {}} onDraft={onDraft} />);
     fireEvent.click(screen.getByRole("button", { name: "Ask a follow-up" }));
     expect(onDraft).toHaveBeenCalledWith(expect.stringContaining("Revenue decreased 15.0%"));
+  });
+
+  // PENDING 57, D-1 — the decision loop: a decision taken on a finding cites it, offers not acting, says what is expected
+  const REVENUE = { name: "revenue", label: "Revenue", sql: "SUM(sale_price)", tables: ["order_items"], dimensions: ["traffic_source"],
+                    filters: [], status: "approved", time_kind: "flow", time_column: "order_items.created_at" };
+
+  /** The values a select offers, read by opening it and closing it again. */
+  function offered(label: string): (string | null)[] {
+    const trigger = screen.getByLabelText(label);
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const values = screen.getAllByRole("option").map(o => o.getAttribute("data-value"));
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    return values;
+  }
+  /** Choose a select's option the way a keyboard does. */
+  function choose(label: string, value: string) {
+    fireEvent.keyDown(screen.getByLabelText(label), { key: "ArrowDown" });
+    const option = screen.getAllByRole("option").find(o => o.getAttribute("data-value") === value);
+    if (!option) throw new Error(`${label} offers no ${value}`);
+    fireEvent.keyDown(option, { key: "Enter" });
+  }
+
+  async function openDecide() {
+    render(<Theme><HomeDesk connectionId="c1" analyses={ANALYSES} onOpenAnalysis={() => {}} onDraft={() => {}} /></Theme>);
+    await screen.findByText("Email drives the most unique user activity.");
+    fireEvent.click(screen.getByRole("button", { name: "Decide" }));
+    fireEvent.change(screen.getByPlaceholderText("What was decided?"), { target: { value: "Move spend to email" } });
+  }
+
+  it("with the decision loop on, cites the finding, offers not acting and sends what is expected of one part", async () => {
+    const api = await import("@/lib/api");
+    vi.mocked(api.getSystemFlags).mockResolvedValue({ "record.decision_loop": { value: true } } as never);
+    vi.mocked(api.getMetrics).mockResolvedValue([REVENUE, { ...REVENUE, name: "draft_one", status: "proposed" },
+                                                 { ...REVENUE, name: "undated", time_kind: null }] as never);
+    const { declareDecision } = await import("@/lib/record");
+    await openDecide();
+    const metric = await screen.findByLabelText("The metric it should move");
+    // only an approved metric that knows its dates can be reviewed for the weeks after the decision
+    await waitFor(() => expect(offered("The metric it should move")).toEqual(["", "revenue"]));
+    choose("The metric it should move", "revenue");
+    await waitFor(() => expect(metric).toHaveTextContent("Revenue"));
+    choose("One part of it", "traffic_source");
+    fireEvent.change(await screen.findByLabelText("Which one"), { target: { value: "Email" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Book it" })); });
+    expect(vi.mocked(declareDecision)).toHaveBeenLastCalledWith({
+      question: "Email drives the most unique user activity.", chosen: "Move spend to email",
+      options: ["Move spend to email", "not act"], connection_id: "c1", note: "Decided from Home on finding f1",
+      finding_id: "f1",
+      expectation: { metric: "revenue", direction: "up", segment_dimension: "traffic_source", segment_value: "Email" },
+    });
+    vi.mocked(api.getSystemFlags).mockResolvedValue({} as never);
+    vi.mocked(api.getMetrics).mockResolvedValue([] as never);
+  });
+
+  it("with the loop on and nothing expected, says the decision cannot be scored", async () => {
+    const api = await import("@/lib/api");
+    vi.mocked(api.getSystemFlags).mockResolvedValue({ "record.decision_loop": { value: true } } as never);
+    await openDecide();
+    await screen.findByTestId("home-expect");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Book it" })); });
+    expect(await screen.findByText(/nothing expected, so it cannot be scored/)).toBeInTheDocument();
+    vi.mocked(api.getSystemFlags).mockResolvedValue({} as never);
+  });
+
+  it("with the loop off, books exactly what it did — no finding, no options, no expectation row", async () => {
+    const { declareDecision } = await import("@/lib/record");
+    await openDecide();
+    expect(screen.queryByTestId("home-expect")).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Book it" })); });
+    expect(vi.mocked(declareDecision)).toHaveBeenLastCalledWith({
+      question: "Email drives the most unique user activity.", chosen: "Move spend to email", connection_id: "c1",
+      note: "Decided from Home on finding f1",
+    });
+  });
+
+  it("with the loop on, setting a finding aside says it was booked as a decision not to act", async () => {
+    const api = await import("@/lib/api");
+    vi.mocked(api.getSystemFlags).mockResolvedValue({ "record.decision_loop": { value: true } } as never);
+    render(<Theme><HomeDesk connectionId="c1" analyses={ANALYSES} onOpenAnalysis={() => {}} onDraft={() => {}} /></Theme>);
+    await screen.findByText("Email drives the most unique user activity.");
+    await waitFor(() => expect(api.getSystemFlags).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Not worth it" }));
+    fireEvent.change(screen.getByPlaceholderText("Why is it not worth it?"), { target: { value: "it is seasonal" } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Set aside" })); });
+    expect(await screen.findByText("Set aside · booked as a decision not to act · it can be restored")).toBeInTheDocument();
+    vi.mocked(api.getSystemFlags).mockResolvedValue({} as never);
   });
 });

@@ -6551,7 +6551,8 @@ export interface paths {
          * Dismiss Connection Finding
          * @description Dismiss a connection-scoped finding with a reason. Flags it invalid (hidden
          *     from intel, kept in the store, reversible) and logs the reason for the guard
-         *     backlog — wrong/stale findings shouldn't need a hand-edited JSON file.
+         *     backlog — wrong/stale findings shouldn't need a hand-edited JSON file. With the
+         *     decision loop on, setting it aside is booked as the decision not to act on it.
          */
         post: operations["dismiss_connection_finding_exploration__connection_id__findings__finding_id__dismiss_post"];
         delete?: never;
@@ -17890,6 +17891,11 @@ export interface components {
             dissent?: components["schemas"]["DissentIn"][];
             expectation?: components["schemas"]["ExpectationIn"] | null;
             /**
+             * Finding Id
+             * @default
+             */
+            finding_id: string;
+            /**
              * Note
              * @default
              */
@@ -17915,6 +17921,11 @@ export interface components {
              * @default
              */
             review_on: string;
+            /**
+             * Schema Name
+             * @default
+             */
+            schema_name: string;
         };
         /** DeltaStatusIn */
         DeltaStatusIn: {
@@ -18241,6 +18252,16 @@ export interface components {
             metric: string;
             /** Mid */
             mid?: number | null;
+            /**
+             * Segment Dimension
+             * @default
+             */
+            segment_dimension: string;
+            /**
+             * Segment Value
+             * @default
+             */
+            segment_value: string;
             /**
              * Settles On
              * @default
