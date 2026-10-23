@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard Questions</title>
+<!-- Mockup for approval (2026-10-23, PENDING 54): Question pieces on a dashboard, and Cockpit renamed Dashboards.
+     Every answer shown is a real run on theLook (BigQuery 8233e4fd): 1008d310 (23 Oct 09:00), the daily automation's
+     earlier runs, and d4039693 (14 Oct). Study: docs/DASHBOARDS_STUDY_2026-10-23.md. Not app code. -->
+<style>
+:root { --bg-0:#111; --bg-1:#191919; --bg-2:#222; --line:#2e2e2e; --line-2:#3a3a3a; --t1:#eee; --t2:#b4b4b4;
+  --t3:#8a8a8a; --accent:#3e63dd; --accent-11:#9eb1ff; --accent-soft:rgba(62,99,221,.16); --violet:#baa7ff;
+  --violet-soft:rgba(110,86,207,.22); --green:#3dd68c; --green-soft:rgba(61,214,140,.12); --amber:#ffc53d;
+  --amber-soft:rgba(255,197,61,.12); --red:#ff9592; --red-soft:rgba(255,149,146,.12); --deemph:#4E5A6A; --r2:6px; --r3:12px;
+  --serif:"Newsreader","Iowan Old Style","Source Serif Pro",Georgia,serif; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg-0); color:var(--t1); font:13px/1.45 Inter, system-ui, -apple-system, sans-serif; }
+.note { padding:8px 16px; font-size:12px; color:var(--t2); background:var(--accent-soft); border-bottom:1px solid var(--line); }
+.note b { color:var(--accent-11); }
+.screen-h { padding:22px 24px 8px; font-size:12px; letter-spacing:.09em; text-transform:uppercase; color:var(--t3); border-top:1px solid var(--line); }
+.app { display:grid; grid-template-columns:196px 1fr; }
+.rail { border-right:1px solid var(--line); padding:12px 8px; color:var(--t2); font-size:12.5px; min-height:100%; }
+.rail .grp { margin:14px 8px 4px; font-size:12px; color:var(--t3); }
+.rail .it { padding:4px 8px; border-radius:var(--r2); } .rail .it.on { background:var(--bg-2); color:var(--t1); }
+.connbar { display:flex; align-items:center; gap:10px; padding:9px 24px; border-bottom:1px solid var(--line); color:var(--t2); font-size:12.5px; }
+.sel { background:var(--bg-2); border:1px solid var(--line-2); border-radius:var(--r2); padding:3px 10px; color:var(--t1); }
+.tabs { display:flex; gap:22px; padding:10px 24px 0; border-bottom:1px solid var(--line); color:var(--t2); }
+.tabs span { padding-bottom:8px; } .tabs .on { color:var(--t1); border-bottom:2px solid var(--accent); }
+.tabs .new { color:var(--accent-11); }
+.chip { font-size:12px; padding:2px 8px; border-radius:999px; background:var(--bg-2); color:var(--t2); border:1px solid var(--line);
+  white-space:nowrap; display:inline-flex; align-items:center; gap:5px; }
+.chip.amber { background:var(--amber-soft); color:var(--amber); border-color:transparent; }
+.chip.up { background:var(--green-soft); color:var(--green); border-color:transparent; }
+.chip.down { background:var(--red-soft); color:var(--red); border-color:transparent; }
+.chip.violet { background:var(--violet-soft); color:var(--violet); border-color:transparent; }
+.btn { background:var(--bg-2); color:var(--t1); border:1px solid var(--line-2); border-radius:var(--r2); padding:4px 10px; font:inherit; font-size:12px; white-space:nowrap; }
+.btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; } .btn.ghost { background:none; }
+.seg { display:inline-flex; background:var(--bg-1); border-radius:var(--r2); padding:2px; gap:2px; border:1px solid var(--line); }
+.seg span { padding:3px 11px; border-radius:5px; color:var(--t2); font-size:12px; } .seg .on { background:var(--bg-2); color:var(--t1); }
+.muted { color:var(--t3); } .t2 { color:var(--t2); }
+.body { padding:16px 24px 32px; }
+.strip { display:flex; align-items:center; gap:18px; border-bottom:1px solid var(--line); padding-bottom:8px; margin-bottom:16px; color:var(--t2); }
+.strip .on { color:var(--t1); border-bottom:2px solid var(--violet); padding-bottom:6px; margin-bottom:-9px; }
+.strip .r { margin-left:auto; display:flex; gap:8px; }
+.dhead { display:flex; align-items:baseline; gap:12px; margin-bottom:14px; }
+.dhead h1 { font-family:var(--serif); font-size:28px; font-weight:600; margin:0; }
+.dhead .r { margin-left:auto; display:flex; gap:8px; }
+.grid { display:grid; grid-template-columns:minmax(0,2.2fr) minmax(260px,1fr); gap:16px; align-items:start; }
+.card { background:var(--bg-1); border:1px solid var(--line); border-radius:var(--r3); padding:16px 18px; }
+.q { display:flex; align-items:flex-start; gap:10px; }
+.q .mark { font-size:12px; font-weight:600; color:var(--violet); background:var(--violet-soft); border-radius:5px; padding:1px 6px; margin-top:2px; }
+.q .text { font-size:13.5px; color:var(--t2); flex:1; }
+.q .when { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+.ans { margin-top:10px; }
+.ans h2 { font-family:var(--serif); font-size:23px; line-height:1.2; font-weight:600; margin:0 0 4px; max-width:46ch; }
+.ans .dated { font-size:12px; color:var(--t3); margin-bottom:12px; }
+.figs { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; margin:0 0 14px; }
+.fig { border:1px solid var(--line); border-radius:var(--r2); padding:9px 11px; }
+.fig .l { font-size:12px; color:var(--t3); } .fig .v { font-size:19px; font-weight:600; font-variant-numeric:tabular-nums; margin:2px 0; }
+.fig .n { font-size:12px; color:var(--t2); }
+.summary { font-size:14px; line-height:1.6; color:var(--t2); max-width:78ch; margin:0 0 14px; }
+.summary em { font-style:normal; color:var(--t1); }
+.sec { font-size:12px; letter-spacing:.09em; text-transform:uppercase; color:var(--t3); margin:12px 0 6px; }
+.why { display:grid; grid-template-columns:minmax(150px,auto) minmax(0,1fr) 128px; gap:6px 12px; align-items:center; font-size:12.5px; max-width:640px; }
+.why .b { height:10px; border-radius:5px; background:var(--bg-2); position:relative; overflow:hidden; }
+.why .b i { position:absolute; top:0; bottom:0; border-radius:5px; }
+.why .v { text-align:right; font-variant-numeric:tabular-nums; }
+.gaps { font-size:12.5px; color:var(--t2); border-left:2px solid var(--amber); padding:4px 0 4px 10px; max-width:78ch; }
+.foot { display:flex; gap:8px; align-items:center; margin-top:14px; padding-top:12px; border-top:1px solid var(--line); flex-wrap:wrap; }
+.foot .cost { margin-left:auto; font-size:12px; color:var(--t3); }
+.hist h3, .side h3 { font-family:var(--serif); font-size:16px; font-weight:600; margin:0 0 8px; }
+.hist .row { padding:7px 0; border-top:1px solid var(--line); font-size:12.5px; }
+.hist .row:first-of-type { border-top:0; }
+.hist .row .d { font-size:12px; color:var(--t3); display:flex; gap:6px; align-items:center; }
+.hist .row .h { color:var(--t2); margin-top:2px; }
+.hist .row.cur .h { color:var(--t1); }
+.hist .skip { font-size:12px; color:var(--t3); padding:6px 0; border-top:1px dashed var(--line); }
+.side { margin-top:16px; }
+.side p { font-size:12.5px; color:var(--t2); margin:0 0 6px; }
+.compact h2 { font-size:19px; }
+.waiting { border-style:dashed; }
+.waiting .empty { font-size:13.5px; color:var(--t2); margin:10px 0 4px; }
+.sheet { width:620px; margin:12px 24px 24px; }
+.sheet h2 { font-family:var(--serif); font-size:21px; margin:0 0 4px; font-weight:600; }
+.field { margin:14px 0 0; } .field .l { font-size:12px; color:var(--t2); margin-bottom:5px; }
+.field .sel { display:inline-block; }
+.period { font-size:12.5px; color:var(--t2); margin-top:6px; }
+.costbox { margin-top:14px; padding:10px 12px; border-radius:var(--r2); background:var(--bg-2); font-size:12.5px; color:var(--t2); }
+.costbox b { color:var(--t1); font-weight:500; }
+.rename { margin:8px 24px 32px; border-collapse:collapse; font-size:12.5px; }
+.rename td, .rename th { padding:6px 14px 6px 0; border-top:1px solid var(--line); text-align:left; vertical-align:top; }
+.rename th { color:var(--t3); font-weight:500; border-top:0; }
+.rename .was { color:var(--t3); text-decoration:line-through; text-decoration-color:var(--line-2); }
+.q { flex-wrap:wrap; } .q .text { min-width:260px; }
+@media (max-width: 1100px) {
+  .app { grid-template-columns:1fr; } .rail { display:none; }
+  .grid { grid-template-columns:1fr; }
+  .figs { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  .sheet { width:auto; margin:12px 16px 24px; }
+  .tabs { overflow-x:auto; } .body { padding:16px; }
+}
+</style></head><body>
+
+<div class="note"><b>Mockup for approval (PENDING 54).</b> A dashboard can hold <b>questions</b>, each answered on its rhythm the
+way the Data Canvas answers — figures, summary, why, what it couldn't see — and Cockpit is renamed <b>Dashboards</b>.
+Every answer here is a real run on theLook: the daily one is today's 09:00 run (6 min 11 s) and its earlier answers; the
+monthly one was asked on 14 Oct as <i>"Why did Revenue change by +13% for August 2026, against July 2026?"</i>. The weekly
+question has no answer yet — making one is a model run nobody asked for.</div>
+
+<div class="screen-h">1 · A dashboard with three questions — theLook</div>
+<div class="app">
+  <div class="rail">
+    <div class="it">Home</div><div class="it">Inbox</div><div class="it">Now</div><div class="it">Data Canvas</div>
+    <div class="grp">Intelligence</div><div class="it on">Briefing</div><div class="it">Ontology</div><div class="it">Agent runs</div>
+    <div class="it">Health</div><div class="it">Documents</div><div class="it">Record</div>
+    <div class="grp">Data</div><div class="it">Catalog</div><div class="it">SQL Editor</div><div class="it">Semantic Layer</div>
+  </div>
+  <div>
+    <div class="connbar"><span class="sel">TheLook ▾</span><span>Schema</span><span class="sel">thelook_ecommerce ▾</span></div>
+    <div class="tabs"><span>Briefing</span><span class="on">Dashboards</span><span>Profile</span><span>Ontology</span><span>Graph</span><span>Evidence</span><span>Memory</span><span>Actions</span><span>Org</span><span>Brain map</span></div>
+    <div class="body">
+      <div class="strip"><span>Metrics</span><span class="on">Revenue watch</span><span>Returns</span><span class="muted">Apps shared with you</span>
+        <span class="r"><button class="btn ghost">+ New dashboard</button></span></div>
+      <div class="dhead"><h1>Revenue watch</h1><span class="muted">your dashboard · 3 questions</span>
+        <span class="r"><button class="btn">+ Question</button><button class="btn ghost">Edit</button></span></div>
+
+      <div class="grid">
+        <div>
+          <!-- Question 1: daily, answered -->
+          <div class="card">
+            <div class="q"><span class="mark">Q</span>
+              <span class="text">What changed in theLook in the last day? Give me the top three findings with the numbers.</span>
+              <span class="when"><span class="chip violet">Daily · 09:00 UTC</span><span class="chip amber">provisional</span><span class="chip">confidence medium</span></span></div>
+            <div class="ans">
+              <h2>Revenue rose $774.33 on 15 Oct to $16,907.77; Outerwear &amp; Coats led the gain</h2>
+              <div class="dated">Answered Thu 23 Oct at 09:07 UTC, for Wed 15 Oct against Tue 14 Oct — theLook settles 8 days late, so the newest day it answers for is 15 Oct.</div>
+              <div class="figs">
+                <div class="fig"><div class="l">Revenue, 15 Oct</div><div class="v">$16,907.77</div><div class="n">279 orders · <span style="color:var(--green)">+4.80%</span> on 14 Oct</div></div>
+                <div class="fig"><div class="l">Against the 7 days before</div><div class="v">$16,632.68</div><div class="n">+$275.09 (+1.65%) · a 3.2σ day</div></div>
+                <div class="fig"><div class="l">Outerwear &amp; Coats</div><div class="v">+$1,314.50</div><div class="n">$1,199.63 to $2,514.13</div></div>
+                <div class="fig"><div class="l">Suits &amp; Sport Coats</div><div class="v">−$917.08</div><div class="n">$1,828.80 to $911.72</div></div>
+              </div>
+              <p class="summary">Revenue on 15 Oct was <em>$16,907.77 on 279 orders</em>, up $774.33 on the day before. Outerwear &amp; Coats
+                was the largest single contributor, partly offset by Suits &amp; Sport Coats, and average order value fell $2.17 to $60.60
+                as orders rose 8.56%. The rise is small but statistically unusual, and it sits almost entirely in one category.</p>
+              <div class="sec">Why</div>
+              <div class="why">
+                <span>Outerwear &amp; Coats</span><span class="b"><i style="left:50%; width:38%; background:var(--green)"></i></span><span class="v" style="color:var(--green)">+$1,314.50</span>
+                <span>Suits &amp; Sport Coats</span><span class="b"><i style="left:23%; width:27%; background:var(--red)"></i></span><span class="v" style="color:var(--red)">−$917.08</span>
+                <span>Orders</span><span class="b"><i style="left:50%; width:20%; background:var(--green)"></i></span><span class="v">257 → 279</span>
+                <span>Average order value</span><span class="b"><i style="left:46%; width:4%; background:var(--red)"></i></span><span class="v">$62.78 → $60.60</span>
+              </div>
+              <div class="sec">What it couldn't see</div>
+              <div class="gaps">Why Outerwear rose or Suits fell — no channel or region cut was tested. And this answer's read of 14 Oct
+                ($16,133.44 on 257 orders) does not match the previous answer's ($97,274.71 on 1,531 orders) under the same definition;
+                the cause was not investigated.</div>
+              <div class="foot"><button class="btn">Open in Data Canvas</button><button class="btn ghost">Ask again now</button>
+                <span class="cost">Each answer is a full agent run · today's took 6 min 11 s · 8–20 model calls · daily ≈ 30 runs a month</span></div>
+            </div>
+          </div>
+
+          <!-- Question 2: monthly, answered -->
+          <div class="card compact" style="margin-top:16px">
+            <div class="q"><span class="mark">Q</span><span class="text">Why did revenue change last month, against the month before?</span>
+              <span class="when"><span class="chip violet">Monthly</span><span class="chip">confidence medium</span></span></div>
+            <div class="ans">
+              <h2>Revenue rose 13.1–14.6% in August, mainly from 496 extra orders (86% of the change)</h2>
+              <div class="dated">Answered Tue 14 Oct, for August 2026 against July 2026 · next answer when September has settled (about 30 Oct)</div>
+              <div class="figs">
+                <div class="fig"><div class="l">Revenue, August (excl. Cancelled)</div><div class="v">$385,389</div><div class="n">vs $336,383 in July, <span style="color:var(--green)">+14.6%</span></div></div>
+                <div class="fig"><div class="l">Orders</div><div class="v">4,446</div><div class="n">vs 3,950, +12.6% · 86% of the change</div></div>
+                <div class="fig"><div class="l">Men's department</div><div class="v">+$36,698</div><div class="n">about 75% of the +$49,006</div></div>
+                <div class="fig"><div class="l">Excl. Cancelled and Returned</div><div class="v">+13.1%</div><div class="n">$296,916 to $335,733</div></div>
+              </div>
+              <div class="sec">Why</div>
+              <div class="why">
+                <span>More orders</span><span class="b"><i style="left:0; width:86%; background:var(--green)"></i></span><span class="v" style="color:var(--green)">+$42,239</span>
+                <span>Higher price per unit</span><span class="b"><i style="left:0; width:16%; background:var(--green)"></i></span><span class="v" style="color:var(--green)">+$7,842</span>
+                <span>Fewer units per order</span><span class="b"><i style="left:0; width:3%; background:var(--red)"></i></span><span class="v" style="color:var(--red)">−$1,075</span>
+              </div>
+              <div class="sec">What it couldn't see</div>
+              <div class="gaps">Why orders rose — promotion, marketing or season are not in the data.</div>
+              <div class="foot"><button class="btn">Open in Data Canvas</button><button class="btn ghost">Ask again now</button>
+                <span class="cost">This answer took 6 min 26 s · monthly ≈ 1 run a month</span></div>
+            </div>
+          </div>
+
+          <!-- Question 3: weekly, waiting for its first answer -->
+          <div class="card waiting" style="margin-top:16px">
+            <div class="q"><span class="mark">Q</span><span class="text">How did sales change week over week, and why?</span>
+              <span class="when"><span class="chip violet">Weekly · Mondays 09:00 UTC</span></span></div>
+            <div class="empty">No answer yet. The first comes <b>Mon 27 Oct at 09:00 UTC</b>, for the week 13–19 Oct against 6–12 Oct —
+              the newest complete week, since theLook settles 8 days late.</div>
+            <div class="foot"><button class="btn">Ask now</button>
+              <span class="cost">A full agent run — about 6 minutes and 8–20 model calls · weekly ≈ 4 runs a month</span></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card hist">
+            <h3>Earlier answers</h3>
+            <div class="row cur"><div class="d">Thu 23 Oct · for 15 Oct <span class="chip up">answered</span></div>
+              <div class="h">Revenue rose $774.33 on 15 Oct to $16,907.77; Outerwear &amp; Coats led the gain</div></div>
+            <div class="row"><div class="d">Wed 22 Oct · for 14 Oct <span class="chip down">contradicted</span></div>
+              <div class="h">Revenue on 14 Oct rose 62.73% day over day to $97,274.71 — the next answer read the same day as $16,133.44</div></div>
+            <div class="skip">Not asked 18–21 Oct, nor 16 Oct</div>
+            <div class="row"><div class="d">Fri 17 Oct · for 9 Oct <span class="chip up">answered</span></div>
+              <div class="h">Revenue flat day over day at $20,198.87; orders rose to 333 from 293</div></div>
+            <div class="row"><div class="d">Wed 15 Oct · for 7 Oct <span class="chip up">answered</span></div>
+              <div class="h">Revenue fell 16.64% to $16,583.16; Outerwear &amp; Coats led the drop</div></div>
+            <div class="row"><div class="d">Tue 14 Oct · for 6 Oct <span class="chip up">answered</span></div>
+              <div class="h">Revenue up 22.97%: volume-led, Outerwear &amp; Coats the largest contributor</div></div>
+            <div class="row"><div class="d">Mon 13 Oct · for 5 Oct <span class="chip up">answered</span></div>
+              <div class="h">Revenue up 3.03% on price, not volume; Outerwear gains, Jeans falls</div></div>
+            <div class="row"><div class="d">Sun 12 Oct · for 4 Oct <span class="chip up">answered</span></div>
+              <div class="h">Revenue $20,563.66, up 17.22% on a restated 3 Oct; the gain broad across categories</div></div>
+            <div class="skip">11 more since 3 Oct · Open the inquiry</div>
+          </div>
+          <div class="card side">
+            <h3>What these questions cost</h3>
+            <p>Each answer re-asks the agent the Data Canvas uses. Opening this dashboard never does — it shows the answers already kept.</p>
+            <p><b style="color:var(--t1)">≈ 35 runs a month</b> across the three · about 6 minutes each.</p>
+            <p class="muted">The money line reads this install's own priced runs; an unpriced model is said as unpriced, never as $0.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="screen-h">2 · Keeping a Data Canvas answer as a question on a dashboard</div>
+<div class="card sheet">
+  <div class="muted" style="font-size:12px">From the Data Canvas · the answer of 14 Oct</div>
+  <h2>Keep this question on a dashboard</h2>
+  <div class="t2" style="font-size:13px">"Why did Revenue change by +13% for August 2026, against July 2026?"</div>
+  <div class="field"><div class="l">Ask it as</div>
+    <div class="sel" style="width:100%">Why did revenue change last month, against the month before?</div>
+    <div class="period">The month is written in each time by code: the last month theLook has settled, against the one before.</div></div>
+  <div class="field"><div class="l">Dashboard</div><span class="sel">Revenue watch ▾</span></div>
+  <div class="field"><div class="l">Answer it</div>
+    <span class="seg"><span>Daily</span><span>Weekly</span><span class="on">Monthly</span><span>Only when I ask</span></span>
+    <div class="period">Next: about 30 Oct, for September 2026 against August — when September has settled.</div></div>
+  <div class="costbox">Each answer is <b>a full agent run</b> — this one took 6 min 26 s, and runs on theLook take 8–20 model calls.
+    Monthly is about 1 run a month. Every answer is kept with its receipts; you can open any of them in the Data Canvas.</div>
+  <div class="foot" style="border-top:0; padding-top:4px"><button class="btn primary">Keep the question</button><button class="btn ghost">Cancel</button>
+    <span class="cost">"Pin to dashboard" still pins just this answer's query</span></div>
+</div>
+
+<div class="screen-h">3 · The rename — what people read</div>
+<table class="rename">
+  <tr><th>Where</th><th>Today</th><th>Proposed</th></tr>
+  <tr><td>Intelligence tab</td><td class="was">Cockpit</td><td>Dashboards</td></tr>
+  <tr><td>The tab's strip</td><td class="was">Your cockpits · + New cockpit</td><td>Your dashboards · + New dashboard</td></tr>
+  <tr><td>The Briefing's section</td><td class="was">Your cockpit · No cockpit rides with your Briefing</td><td>Your dashboard · No dashboard rides with your Briefing</td></tr>
+  <tr><td>Ontology and process doors</td><td class="was">New cockpit from Order · Start a cockpit for this process</td><td>New dashboard from Order · Start a dashboard for this process</td></tr>
+  <tr><td>Pins</td><td class="was">Pin query to cockpit · Pinned to your cockpit</td><td>Pin query to a dashboard · Pinned to your dashboard</td></tr>
+  <tr><td>A published one</td><td>App</td><td>App — a published dashboard (unchanged)</td></tr>
+  <tr><td>Settings ▸ Flags</td><td class="was">Cockpit builder · Cockpit wiring · …</td><td>Dashboard builder · Dashboard wiring · … (old flag names keep working)</td></tr>
+  <tr><td>Links</td><td class="was">?layer=cockpit</td><td>?layer=dashboards — old links still open</td></tr>
+</table>
+</body></html>
