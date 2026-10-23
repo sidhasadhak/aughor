@@ -21,8 +21,7 @@ import { resolveVegaSpec } from "../components/charts/vega/resolveSpec";
 import { resolveTier3Spec, TIER3_TYPES } from "../components/charts/vega/tier3";
 import { inferChartType } from "../components/charts/chartTypeInference";
 import { buildVegaConfig, buildVegaRuntimeConfig, printVegaTokens } from "../components/charts/vega/config";
-import { setOrgSettingsCache } from "../lib/orgSettings";
-import type { OrgSettings } from "../lib/api";
+import { setCurrentDataset, setDataCurrency } from "../lib/orgSettings";
 
 interface ChartRequest {
   columns?: string[];
@@ -114,9 +113,11 @@ async function renderOne(req: ChartRequest): Promise<string | null> {
   return svg;
 }
 
-// The resolver reads the org currency from the client cache; headless, the export passes
-// the resolved SYMBOL and this shim maps it back to a code so the print axis shows
-// "CHF 34.7M" exactly as the app did.
+// The resolver reads the currency of the dataset in view (its CONFIRMED one, never the org's
+// preference); headless, the export passes the resolved SYMBOL — sent only for a currency a
+// person confirmed (`resolve_currency_symbol`) — and this shim maps it back to a code and keeps
+// it as the export's dataset's confirmed currency, so the print axis shows "CHF 34.7M" exactly
+// as the app did, and an export with no symbol prints plain amounts as the app does.
 const SYMBOL_TO_CODE: Record<string, string> = {
   "$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "₹": "INR",
   "A$": "AUD", "C$": "CAD", "CHF": "CHF", "S$": "SGD", "R$": "BRL", "R": "ZAR",
@@ -125,7 +126,10 @@ function applyMoneySymbol(sym: string | undefined): void {
   const s = (sym ?? "").trim();
   if (!s) return;
   const code = SYMBOL_TO_CODE[s] ?? (/^[A-Za-z]{3}$/.test(s) ? s.toUpperCase() : null);
-  if (code) setOrgSettingsCache({ currency_code: code } as OrgSettings);
+  if (!code) return;
+  setCurrentDataset("export");
+  setDataCurrency({ connection_id: "export", schema_name: null, code, status: "confirmed", inferred: code,
+    confirmed_by: "export", confirmed_at: "" });
 }
 
 async function main(): Promise<void> {
