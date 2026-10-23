@@ -3,7 +3,7 @@ import { CONNECTORS } from "@/lib/connectors.gen";
 import { ErrorState } from "@/components/ui/states";
 import { toast } from "@/components/ui/toast";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
 // Always-eager: on the critical path at first render
@@ -1432,7 +1432,11 @@ export default function Home() {
       .finally(() => setWsLoaded(true));
   }, []);
 
-  useEffect(() => {
+  // A LAYOUT effect: React runs every layout effect before any passive one, and a child's effects
+  // before its parent's. Set in a passive effect, the workspace reached the transport AFTER the panels
+  // that load on mount had already asked — Now's Briefing list in the Olist workspace listed five
+  // connections' Briefings (seen 2026-10-23).
+  useLayoutEffect(() => {
     if (selectedWorkspace && typeof window !== "undefined") {
       localStorage.setItem(LAST_WS_KEY, selectedWorkspace);
     }
@@ -1869,6 +1873,8 @@ export default function Home() {
             {tab === "now" && (
               <ErrorBoundary label="The Now page hit an error.">
                 <NowPanel
+                  // Its reads load once, on mount: a new workspace is a new page of them.
+                  key={selectedWorkspace || "none"}
                   connections={wsConnections}
                   contextReady={contextReady}
                   doors={{
