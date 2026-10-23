@@ -46,8 +46,9 @@ import { z } from "zod";
  *  value of a day, a value that comes from the reader, a set's count or the object a reader chose (`from`), and a set's
  *  condition comparing any value as its kind allows. 9: a set's linked objects (`traverse`) and a set combined with
  *  another — either, both, but not (`combine`; Arc AP-8b, 2026-10-11). 10: a value of yes or no and a list, and a value
- *  summed from a set or read from a query of the dashboard's own (`sum`, `query`; Arc AP-8c, 2026-10-12). */
-export const DASHBOARD_VOCABULARY_VERSION = 10;
+ *  summed from a set or read from a query of the dashboard's own (`sum`, `query`; Arc AP-8c, 2026-10-12). 11: a Question —
+ *  asked by the agent on a rhythm and shown as the Data Canvas shows an answer (PENDING 54, 2026-10-23). */
+export const DASHBOARD_VOCABULARY_VERSION = 11;
 
 /** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
 export const TONES = ["good", "warn", "bad", "info", "neutral"] as const;
@@ -107,6 +108,7 @@ export const LIMITS = {
   ObjectTimeline: { w: [4, 12], h: [4, 20] },
   ChooseOne: { w: [2, 12], h: [4, 14] },
   ObjectSearch: { w: [2, 12], h: [3, 4] },
+  Question: { w: [4, 12], h: [6, 30] },
 } as const satisfies Record<string, { w: readonly [number, number]; h: readonly [number, number] }>;
 export type GridKind = keyof typeof LIMITS;
 
@@ -464,6 +466,17 @@ export const dashboardCatalog = defineCatalog(schema, {
       slots: ["default"],
       description: "Pieces opened beside the page when a reader chooses an object, and closed by letting go of it. The dashboard's own.",
     },
+    // PENDING 54 — a question a person keeps: the agent answers it on its rhythm, and the dashboard shows the answers kept.
+    Question: {
+      props: z.object({
+        /** The automation that asks it — its words, its rhythm and its session live there (`aughor/dashboards/questions.py`). */
+        automation: z.string().regex(/^[A-Za-z0-9-]{8,64}$/),
+        /** The Data Canvas answer it was kept from, when it was: its first answer. */
+        first: z.string().regex(/^[A-Za-z0-9]{6,64}$/).optional(),
+        size, w, h,
+      }),
+      description: "A question the agent answers on its rhythm, and every answer it gave. A person keeps one; reading it asks nothing.",
+    },
   },
   actions: {},
 });
@@ -471,10 +484,11 @@ export const dashboardCatalog = defineCatalog(schema, {
 /** Arc OC-4 — the pieces bound to the ontology. A person places them by hand; a model may arrange one and is never
  *  told how to write one (`grammar.ts` teaches `WRITTEN`). */
 export type PieceName = "ProcessBoard" | "ObjectTable" | "ObjectDetail" | "ActionButton" | "ObjectFilters" | "ObjectFigure"
-  | "ObjectChart" | "ActionButtons" | "ObjectList" | "ObjectMap" | "ObjectTimeline" | "ChooseOne" | "ObjectSearch" | "Drawer";
+  | "ObjectChart" | "ActionButtons" | "ObjectList" | "ObjectMap" | "ObjectTimeline" | "ChooseOne" | "ObjectSearch" | "Drawer"
+  | "Question";
 export const PIECE_NAMES: readonly PieceName[] = [
   "ProcessBoard", "ObjectTable", "ObjectDetail", "ActionButton", "ObjectFilters", "ObjectFigure", "ObjectChart", "ActionButtons",
-  "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Drawer",
+  "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Drawer", "Question",
 ];
 /** Arc AP-4 — what the picker adds — its pieces and the drawer — each placed by hand and held to the structure's flag on
  *  the server. */
@@ -497,7 +511,7 @@ export const COMPONENT_NAMES: readonly ComponentName[] = [...WRITTEN, ...PIECE_N
 /** The components a section holds — each sized, each in its place. */
 export const PLACED: readonly ComponentName[] = [
   "Card", "Note", "Image", "ProcessBoard", "ObjectTable", "ObjectDetail", "ObjectFigure", "ObjectChart", "ActionButtons",
-  "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch",
+  "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Question",
 ];
 /** The two that are a person's own: a model arranges them and never makes one. */
 export const STATIC: readonly ComponentName[] = ["Note", "Image"];
@@ -525,6 +539,7 @@ export const MAY_HOLD: Record<ComponentName, readonly ComponentName[]> = {
   ObjectTimeline: [],
   ChooseOne: [],
   ObjectSearch: [],
+  Question: [],
   // the pieces a section holds, stacked one under another beside the page
   Drawer: PLACED,
 };

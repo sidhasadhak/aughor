@@ -8,7 +8,7 @@
  * with, a chart counted objects per day and nothing else. Here each is chosen — a table's columns, its sort and its
  * segment; a figure's calculation, its property and how it is written; a chart's days, its measure and what it is
  * split by; the filter column's properties — from what the ontology declares for the entity, never typed as a spec.
- * Each choice is handed back as the next spec (`lib/cockpit/edit.ts`), checked by the rules before it is kept, and the
+ * Each choice is handed back as the next spec (`lib/dashboards/edit.ts`), checked by the rules before it is kept, and the
  * piece reads again with what it now says. These are a person's choices, by hand; a model never sets a piece up.
  */
 import { useEffect, useState, type ReactNode } from "react";

@@ -8,7 +8,7 @@
  * things go and how much room they take, and a card's figure is the card's own business, drawn
  * on the dashboard itself.
  *
- * Every change goes through the pure edits in `lib/cockpit/edit.ts`, so what this screen holds
+ * Every change goes through the pure edits in `lib/dashboards/edit.ts`, so what this screen holds
  * is always a spec, and the caller keeps it — as the next version of a dashboard, or, for a draft
  * not yet kept, as the person's changes to it.
  */
@@ -85,7 +85,7 @@ export function DashboardArrange({ spec, lines, onChange, disabled }: {
   const root = spec.elements[spec.root];
 
   /** What a line says of what it places: a card by its title, a note by its first words, an image by its caption, a
-   *  piece bound to the ontology by what it reads (`lib/cockpit/names.ts` — pieces once drew here as blank lines). */
+   *  piece bound to the ontology by what it reads (`lib/dashboards/names.ts` — pieces once drew here as blank lines). */
   const named = (key: string): { title: string; kind: "card" | "note" | "image" | "piece"; id: string } => {
     const el = spec.elements[key];
     if (el.type === "Note" || el.type === "Image") return { kind: el.type === "Note" ? "note" : "image", id: "", title: lineOf(spec.elements, key) };

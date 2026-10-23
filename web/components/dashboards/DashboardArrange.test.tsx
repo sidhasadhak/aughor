@@ -2,7 +2,7 @@
 
 /**
  * DashboardArrange (Arc CT, CT-8): the outline a person arranges by hand. What is asserted is
- * the spec it hands back — the edits themselves are `lib/cockpit/edit.test.ts`'s.
+ * the spec it hands back — the edits themselves are `lib/dashboards/edit.test.ts`'s.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";

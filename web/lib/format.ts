@@ -279,6 +279,17 @@ export function formatPoints(from: number | null | undefined, to: number | null 
 
 /** Signed variance percent for scorecards: +12.5% / -3.0%. Input is a ratio. */
 /** A day with its year, for data that ended long ago: "Wed 17 Oct 2018". */
+/** "Fri 23 Oct", or "Fri 23 Oct at 09:07 UTC" — an instant as the day (and UTC time) a reader says; "" without one.
+ *  A dashboard's Question dates its answers by it (PENDING 54). */
+export function utcDayWords(iso: string | null | undefined, withTime = false): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const day = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  if (!withTime) return day;
+  return `${day} at ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" })} UTC`;
+}
+
 export function endedDay(iso: string): string {
   const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
   if (isNaN(d.getTime())) return iso;

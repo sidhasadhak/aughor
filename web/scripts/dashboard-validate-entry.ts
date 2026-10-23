@@ -1,8 +1,8 @@
 /**
  * dashboard-validate-entry.ts — the dashboard's rules, run on the server (Arc CT, CT-2).
  *
- * Bundled by `npm run build:dashboard-validate` into `aughor/cockpit/validate.bundle.mjs` and
- * run by `aughor/cockpit/validate.py` as a node subprocess — the arrangement the chart
+ * Bundled by `npm run build:dashboard-validate` into `aughor/dashboards/validate.bundle.mjs` and
+ * run by `aughor/dashboards/validate.py` as a node subprocess — the arrangement the chart
  * renderer already uses, for the same reason: the server checks a spec with the SAME
  * function the browser draws it with, so the two cannot come to disagree.
  *

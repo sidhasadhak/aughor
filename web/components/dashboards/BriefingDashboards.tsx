@@ -42,6 +42,7 @@ import { PiecePicker } from "@/components/dashboards/PiecePicker";
 import { QuerySetup } from "@/components/dashboards/QuerySetup";
 import { PinStrip } from "@/components/dashboards/PinStrip";
 import { METRICS_DASHBOARD, MetricsDashboard } from "@/components/dashboards/MetricsDashboard";
+import { QuestionComposer } from "@/components/dashboards/QuestionComposer";
 import { PeriodPicker, choiceName } from "@/components/dashboards/PeriodPicker";
 import { person as personName, type ImageStamp } from "@/components/dashboards/StaticTile";
 import { Button } from "@/components/ui/button";
@@ -66,7 +67,7 @@ import {
 } from "@/lib/api";
 import { MAX_CAPTION, MAX_NOTE, type Layout, type Size } from "@/lib/dashboards/catalog";
 import {
-  cardsPlaced, editNote, layOut, placeCard, placeImage, placeNote, placePiece, recaption, regrid, resize, sectionsOf, setFilterWidth, swapCard, takeOff, takeOffCard,
+  cardsPlaced, editNote, layOut, placeCard, placeImage, placeNote, placePiece, placeQuestion, recaption, regrid, resize, sectionsOf, setFilterWidth, swapCard, takeOff, takeOffCard,
   type DashboardSpec,
   type Box,
 } from "@/lib/dashboards/edit";
@@ -747,6 +748,9 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
   const [limitsOn, setLimitsOn] = useState(false);
   // Arc AP-7 — a query of the person's own, while `dashboard.queries` is on; a new one is written for a section
   const [queriesOn, setQueriesOn] = useState(false);
+  // PENDING 54 — a question the agent answers on a rhythm
+  const [questionsOn, setQuestionsOn] = useState(false);
+  const [questioning, setQuestioning] = useState(false);
   // Arc AP-8 — variables, while `dashboard.variables` is on: the Variables pane, and a query reading the dashboard's values
   const [variablesOn, setVariablesOn] = useState(false);
   const [writing, setWriting] = useState<{ section: string | null } | null>(null);
@@ -793,7 +797,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
         setObjectsOn(!!f["ontology.object_dashboards"]?.value); setBuilderOn(!!f["dashboard.builder"]?.value);
         setWiringOn(!!f["dashboard.wiring"]?.value); setStructureOn(!!f["dashboard.app_pieces"]?.value);
         setLimitsOn(!!f["ontology.security"]?.value); setQueriesOn(!!f["dashboard.queries"]?.value);
-        setVariablesOn(!!f["dashboard.variables"]?.value);
+        setVariablesOn(!!f["dashboard.variables"]?.value); setQuestionsOn(!!f["dashboard.questions"]?.value);
       }
     }).catch(() => { if (alive) { setRangesOn(false); setPiecesOn(false); } });
     return () => { alive = false; };
@@ -882,7 +886,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
     if (burst.current.timer) sendBurst();
     setDraft(null);
     setChosen(id); remember(connectionId, id); setArranging(null); setShowHistory(false); setRefusal(null); setProblem("");
-    setPicking(false); setPublishing(false); setNoting(false); setImaging(false); setComposing(false);
+    setPicking(false); setPublishing(false); setNoting(false); setImaging(false); setComposing(false); setQuestioning(false);
     setEditing(keepEditing); setStacks(NO_STEPS); previewAsGroup("");
   };
 
@@ -1122,6 +1126,13 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
           onPlace={text => { const at = target.current ?? undefined; target.current = null;
             edit(s => placeNote(s, text, at), "a note written by hand", "Placed. Its author and date are stamped as it is kept."); setNoting(false); }} />
       )}
+      {questioning && (
+        <QuestionComposer connectionId={connectionId} schema={schema} busy={busy} onClose={() => setQuestioning(false)}
+          onKept={(automation, first, rhythm) => { const at = target.current ?? undefined; target.current = null;
+            edit(s => placeQuestion(s, automation, first || undefined, at), "a question kept by hand",
+              rhythm === "ask" ? "Placed. It is asked only when you ask." : "Placed. Its first answer comes on its rhythm.");
+            setQuestioning(false); }} />
+      )}
       {imaging && (
         <ImageComposer connectionId={connectionId} busy={busy} onClose={() => setImaging(false)}
           onPlace={(objectId, caption) => { const at = target.current ?? undefined; target.current = null;
@@ -1150,7 +1161,7 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
     const at = savedAt ?? (kept.kept_at ? Date.parse(kept.kept_at) : NaN);
     const saved = pending ? "Saving…"
       : `saved ${Number.isNaN(at) ? "" : new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} · version ${kept.version}`;
-    const shut = () => { setComposing(false); setNoting(false); setImaging(false); setPicking(false); setPlacing(false); };
+    const shut = () => { setComposing(false); setNoting(false); setImaging(false); setPicking(false); setPlacing(false); setQuestioning(false); };
     return (
       <div data-testid="briefing-dashboards" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <DashboardBuilder spec={current} onChange={change} cardTitle={id => lines.get(id)?.title} connectionId={connectionId} schema={schema}
@@ -1198,6 +1209,12 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
                 title="Your own words on this dashboard. By hand only: a model never writes a note." onClick={() => { shut(); setNoting(true); }}>
                 <Icon name="plus" /> Note
               </Button>
+              {questionsOn && (
+                <Button size="xs" variant="ghost" disabled={busy || questioning} data-testid="dashboard-question-new"
+                  title="A question the agent answers on a rhythm, as the Data Canvas does. By hand only." onClick={() => { shut(); setQuestioning(true); }}>
+                  <Icon name="plus" /> Question
+                </Button>
+              )}
               <Button size="xs" variant="ghost" disabled={busy || imaging} data-testid="dashboard-image-new"
                 title="An image of your own on this dashboard. By hand only: a model never chooses one." onClick={() => { shut(); setImaging(true); }}>
                 <Icon name="plus" /> Image
@@ -1401,6 +1418,13 @@ export function BriefingDashboards({ connectionId, schema, onOpenSource, onEvide
                   title="Your own words on this dashboard. By hand only: a model never writes a note."
                   onClick={() => { setNoting(true); setComposing(false); setImaging(false); }}>
                   <Icon name="plus" /> Note
+                </Button>
+              )}
+              {!arranging && !builderOn && questionsOn && (
+                <Button size="xs" variant="ghost" disabled={busy || questioning} data-testid="dashboard-question-new"
+                  title="A question the agent answers on a rhythm, as the Data Canvas does. By hand only."
+                  onClick={() => { setQuestioning(true); setNoting(false); setComposing(false); setImaging(false); }}>
+                  <Icon name="plus" /> Question
                 </Button>
               )}
               {!arranging && !builderOn && (

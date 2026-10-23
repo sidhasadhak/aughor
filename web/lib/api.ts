@@ -2691,6 +2691,105 @@ export async function keepDashboardQuery(connectionId: string, asked: QueryAsked
   return res.json();
 }
 
+// ── PENDING 54 — a question on a dashboard: asked by the agent on a rhythm, shown as the Data Canvas shows an answer ──
+
+export type QuestionRhythm = "daily" | "weekly" | "monthly" | "ask";
+
+/** One answer in a line, newest first. */
+export interface QuestionAnswerLine {
+  id: string;
+  asked_at: string | null;
+  answered_at: string | null;
+  status: string;
+  headline: string;
+  /** As the Record booked it: "answered", "contradicted" (a later reading refuted it), or "" while it runs. */
+  verdict: string;
+}
+
+/** The latest finished answer, in the run's own words and figures. */
+export interface QuestionAnswer {
+  id: string;
+  headline: string;
+  summary: string;
+  figures: { label: string; value: string; note: string }[];
+  /** What moved it: the run's attribution when it measured one, else what its breakdown found, sentence by sentence. */
+  why: { drivers: { cause: string; amount: string; share: number | null }[]; lines: string[] };
+  gaps: string;
+  confidence: string;
+  period: string;
+  against: string;
+  asked_at: string | null;
+  answered_at: string | null;
+  minutes: number | null;
+}
+
+/** What a run costs on this install, from its own metered runs (`record/inquiry.py::run_cost_estimate`). */
+export interface RunCostEstimate {
+  kind: string;
+  from: string;
+  tokens: number | null;
+  minutes: number | null;
+  n: number;
+  usd_floor: number | null;
+  usd_n: number;
+  unpriced_calls: number;
+  ceiling: { tokens?: number; seconds?: number; charter?: string };
+}
+
+export interface DashboardQuestion {
+  automation_id: string;
+  question: string;
+  rhythm: QuestionRhythm | "custom";
+  rhythm_words: string;
+  next_at: string | null;
+  enabled: boolean;
+  latest: QuestionAnswer | null;
+  answers: QuestionAnswerLine[];
+  running: boolean;
+  cost: RunCostEstimate;
+}
+
+/** Keep a question for a dashboard. Nothing is asked now: its first answer comes on its rhythm, or is the Data Canvas
+ *  answer it is kept from (`first_run`). */
+export async function keepQuestion(connectionId: string, body: { question: string; rhythm: QuestionRhythm;
+  schema_name?: string; first_run?: string }): Promise<{ automation_id: string; session: string; first: string; rhythm: QuestionRhythm }> {
+  const res = await fetch(`${getApiBase()}/dashboards/questions?connection_id=${encodeURIComponent(connectionId)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The question could not be kept"));
+  return res.json();
+}
+
+/** What one answer costs on this connection, before a question is kept. */
+export async function readQuestionCost(connectionId: string): Promise<RunCostEstimate> {
+  const res = await fetch(`${getApiBase()}/dashboards/questions/cost?connection_id=${encodeURIComponent(connectionId)}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Its cost could not be read"));
+  return res.json();
+}
+
+/** A question as a dashboard shows it. No model call: the answers already kept. */
+export async function readQuestion(automationId: string, first?: string): Promise<DashboardQuestion> {
+  const q = first ? `?first=${encodeURIComponent(first)}` : "";
+  const res = await fetch(`${getApiBase()}/dashboards/questions/${encodeURIComponent(automationId)}${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The question could not be read"));
+  return res.json();
+}
+
+/** Ask it now — a full agent run, a person's click. */
+export async function askQuestionNow(automationId: string): Promise<{ outcome: string; reason: string; asked: boolean; message: string }> {
+  const res = await fetch(`${getApiBase()}/dashboards/questions/${encodeURIComponent(automationId)}/ask`, { method: "POST" });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The question could not be asked"));
+  return res.json();
+}
+
+export async function setQuestionRhythm(automationId: string, rhythm: QuestionRhythm): Promise<{ automation_id: string; rhythm: string; next_at: string | null }> {
+  const res = await fetch(`${getApiBase()}/dashboards/questions/${encodeURIComponent(automationId)}/rhythm`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rhythm }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Its rhythm could not be changed"));
+  return res.json();
+}
+
 export interface CardRunPrevious {
   covers: string;
   word: string;

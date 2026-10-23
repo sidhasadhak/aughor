@@ -67,12 +67,12 @@ const AUTO_COLUMNS = 4;
 const DEFAULT_SIZE: Record<GridKind, Size> = {
   Card: "small", Note: "small", Image: "small", ProcessBoard: "full", ObjectTable: "wide", ObjectDetail: "small",
   ObjectFigure: "small", ObjectChart: "full", ActionButtons: "small",
-  ObjectList: "wide", ObjectMap: "wide", ObjectTimeline: "full", ChooseOne: "wide", ObjectSearch: "wide",
+  ObjectList: "wide", ObjectMap: "wide", ObjectTimeline: "full", ChooseOne: "wide", ObjectSearch: "wide", Question: "wide",
 };
 /** The rows a kind takes on the grid when nothing measured it: about the room one row of its size gave it. */
 const ROWS: Record<GridKind, number> = {
   Card: 4, Note: 3, Image: 5, ProcessBoard: 7, ObjectTable: 8, ObjectDetail: 7, ObjectFigure: 3, ObjectChart: 6,
-  ActionButtons: 2, ObjectList: 8, ObjectMap: 9, ObjectTimeline: 7, ChooseOne: 7, ObjectSearch: 3,
+  ActionButtons: 2, ObjectList: 8, ObjectMap: 9, ObjectTimeline: 7, ChooseOne: 7, ObjectSearch: 3, Question: 14,
 };
 
 const clamp = (lo: number, hi: number, v: number) => Math.max(lo, Math.min(hi, v));
@@ -306,6 +306,19 @@ export function placeNote(spec: unknown, text: string, sectionKey?: string): Das
   if (!words || !target || s.elements[target]?.type !== "Section") return s;
   const key = freshKey(s, "note");
   s.elements[key] = { type: "Note", props: { text: words }, children: [] };
+  s.elements[target].children.push(key);
+  fitTo(s, target, key);
+  return s;
+}
+
+/** Place a question the person kept (PENDING 54), by the automation that asks it — and, when it was kept from a Data
+ *  Canvas answer, that answer as its first. */
+export function placeQuestion(spec: unknown, automation: string, first?: string, sectionKey?: string): DashboardSpec {
+  const s = copy(spec);
+  const target = sectionKey ?? sectionsOf(s)[0]?.key;
+  if (!automation || !target || s.elements[target]?.type !== "Section") return s;
+  const key = freshKey(s, "question");
+  s.elements[key] = { type: "Question", props: { automation, ...(first ? { first } : {}) }, children: [] };
   s.elements[target].children.push(key);
   fitTo(s, target, key);
   return s;

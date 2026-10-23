@@ -44,9 +44,9 @@ describe("the grid's measure", () => {
     for (const h of [1, 2, 6, 14]) expect(rowsTall(h)).toBe(h * GRADE - GRID.gap);
   });
 
-  it("is said by the vocabulary, at version 10 — the grid came in at 5, the wiring at 6, the structure at 7, variables at 8, sets read whole at 9, yes-no, lists, sums and queries at 10", () => {
-    expect(DASHBOARD_VOCABULARY_VERSION).toBe(10);
-    expect(vocabulary()).toMatchObject({ version: 10, grid: { columns: 12, grade: 40 } });
+  it("is said by the vocabulary, at version 11 — the grid came in at 5, the wiring at 6, the structure at 7, variables at 8, sets read whole at 9, yes-no, lists, sums and queries at 10, a Question at 11", () => {
+    expect(DASHBOARD_VOCABULARY_VERSION).toBe(11);
+    expect(vocabulary()).toMatchObject({ version: 11, grid: { columns: 12, grade: 40 } });
   });
 });
 

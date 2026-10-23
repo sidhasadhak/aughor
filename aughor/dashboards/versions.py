@@ -333,15 +333,17 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
     not_held = images.not_held(home.connection_id, spec)
     if not_held:
         return Kept(REFUSED, sentences=tuple(not_held))
-    from aughor.dashboards import app_pieces, builder, pieces, variables, wiring
-    off = builder.refused(spec) + wiring.refused_off(spec) + app_pieces.refused_off(spec) + variables.refused_off(spec)
+    from aughor.dashboards import app_pieces, builder, pieces, questions, variables, wiring
+    off = builder.refused(spec) + wiring.refused_off(spec) + app_pieces.refused_off(spec) + variables.refused_off(spec) \
+        + questions.refused_off(spec)
     if off:
         return Kept(REFUSED, sentences=tuple(off))
     # Arc AP-2 — what each set reads, as the web reads it, once: the pieces that read a set are probed over it
     wired = wiring.read(spec)
     unresolved = pieces.not_resolved(home.connection_id, spec, wiring=wired) \
         + wiring.not_resolved(home.connection_id, spec, wiring=wired) \
-        + variables.not_resolved(home.connection_id, spec, wiring=wired) + variables.unheld(spec, verdict.cards)
+        + variables.not_resolved(home.connection_id, spec, wiring=wired) + variables.unheld(spec, verdict.cards) \
+        + questions.not_resolved(home.connection_id, spec)
     if unresolved:
         return Kept(REFUSED, sentences=tuple(unresolved))
     copies = twin_cards(verdict.cards, before.get("cards") or [])
@@ -365,7 +367,12 @@ def keep(home: Home, spec: Any, *, approved_by: str, source: str, note: str = ""
         "published_by": (before.get("published_by") or "") if not before.get("retired") else "",
         **({"ontology_release": pin} if pin else {}),
     }
-    return _write(home.key, home.connection_id, payload, prior, "the spec changed", also=came_from)
+    kept = _write(home.key, home.connection_id, payload, prior, "the spec changed", also=came_from)
+    if kept.status == KEPT:
+        # PENDING 54 — a question taken off stops being asked; one put back (or kept again after a retire) is asked again
+        from aughor.dashboards import questions
+        questions.follow(None if before.get("retired") else before.get("spec"), spec)
+    return kept
 
 
 def publish(home: Home, to: list[dict], *, approved_by: str) -> Kept:
@@ -438,8 +445,12 @@ def retire(home: Home, *, approved_by: str, note: str = "") -> Kept:
     before = prior["payload"]
     if before.get("retired"):
         return Kept(UNCHANGED, version=prior.get("version"), artifact_id=prior.get("id") or "")
-    return _write(home.key, home.connection_id, _retired_payload(before, approved_by, note), prior,
+    kept = _write(home.key, home.connection_id, _retired_payload(before, approved_by, note), prior,
                   "the dashboard was retired")
+    if kept.status == KEPT:
+        from aughor.dashboards import questions
+        questions.follow(before.get("spec"), None)       # a retired dashboard's questions stop being asked
+    return kept
 
 
 # ── a dashboard that lived in a canvas ────────────────────────────────────────────────────────

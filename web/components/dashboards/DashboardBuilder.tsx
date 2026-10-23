@@ -7,7 +7,7 @@
  * The user, 2026-10-10: "In the current nothing is editable." A dashboard opens to be read; Edit opens this — the
  * dashboard between its layout and the setup of what is chosen, as Workshop lays out its editor:
  *
- *   - left, the layout: the dashboard as a tree of lines, each named by what it reads (`lib/cockpit/names.ts`), and at
+ *   - left, the layout: the dashboard as a tree of lines, each named by what it reads (`lib/dashboards/names.ts`), and at
  *     its foot the change asked in words, which a model may only arrange;
  *   - middle, the canvas: the dashboard as its reader sees it, live — a table still lists, a filter still narrows — with
  *     the chosen element outlined, and above it a bar to move it, take it off, and step its width and height one grade

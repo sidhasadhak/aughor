@@ -1480,7 +1480,9 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
     run = run_investigation(
         InvestigationRequest(question=grounded_question, connection_id=automation.conn_id,
                              schema_name=effect.config.get("schema_name"),
-                             agent_id=agent_id or None, wait=await_result),
+                             agent_id=agent_id or None, wait=await_result,
+                             # a dashboard's question files its answers under its own session (dashboards/questions.py)
+                             session_id=str(effect.config.get("session_id") or "") or None),
         idempotency_key=idem, caller=f"automation:{automation.id}",
     )
     if run.status == "refused":

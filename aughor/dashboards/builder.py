@@ -22,7 +22,7 @@ _BUILT: dict[str, tuple[str, ...]] = {
 #: Every element a section places may say its room on the grid.
 _ROOM = ("w", "h")
 _PLACED = frozenset({"Card", "Note", "Image", "ProcessBoard", "ObjectTable", "ObjectDetail", "ObjectFigure",
-                     "ObjectChart"})
+                     "ObjectChart", "Question"})
 
 
 def on() -> bool:

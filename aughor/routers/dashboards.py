@@ -83,6 +83,26 @@ def _on() -> None:
         raise HTTPException(status_code=404, detail="dashboards need the 'dashboard.composed' flag")
 
 
+class QuestionKeepRequest(BaseModel):
+    """A question kept on a dashboard (PENDING 54): its words, how often it is asked, and the Data Canvas answer it
+    starts from, when it is kept from one."""
+    question: str
+    rhythm: str = "weekly"
+    schema_name: Optional[str] = None
+    first_run: str = ""
+
+
+class QuestionRhythmRequest(BaseModel):
+    rhythm: str
+
+
+def _questions_on() -> None:
+    _on()
+    from aughor.dashboards import questions
+    if not questions.on():
+        raise HTTPException(status_code=404, detail="questions on a dashboard need the 'dashboard.questions' flag")
+
+
 def _home(request: Request, connection_id: str, cockpit_id: str):
     from aughor.dashboards.home import Home, person_of, valid_id
     if not connection_id:
@@ -390,6 +410,60 @@ def keep_query(request: Request, connection_id: str, req: QueryRequest) -> dict:
     if old is not None:
         upsert_card(old.model_copy(update={"provenance": old.provenance.model_copy(update={"superseded_by": saved.id})}))
     return {"card": _as_read(saved, connection_id), "preview": read}
+
+
+@router.post("/dashboards/questions", status_code=201)
+def keep_question(body: QuestionKeepRequest, connection_id: str) -> dict:
+    """Keep a question for a dashboard: its automation, asked on its rhythm (weekly by default) or only when asked.
+    Nothing is asked now — the first answer comes on its schedule, or is the Data Canvas answer it starts from."""
+    _questions_on()
+    from aughor.dashboards import questions
+    try:
+        return questions.keep(connection_id=connection_id, question=body.question, rhythm=body.rhythm,
+                              schema=body.schema_name, first_run=body.first_run)
+    except questions.QuestionRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/dashboards/questions/cost")
+def question_cost(connection_id: str) -> dict:
+    """What one answer costs on this connection, from this install's own metered runs — said before a question is kept.
+    Registered before the read below, which would otherwise take "cost" for a question's id."""
+    _questions_on()
+    from aughor.record.inquiry import run_cost_estimate
+    return run_cost_estimate(connection_id)
+
+
+@router.get("/dashboards/questions/{automation_id}")
+def read_question(automation_id: str, first: str = "") -> dict:
+    """A question as a dashboard shows it — its latest answer in full and every answer in a line. No model call."""
+    _questions_on()
+    from aughor.dashboards import questions
+    try:
+        return questions.read(automation_id, first=first)
+    except questions.QuestionRefused as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/dashboards/questions/{automation_id}/ask")
+def ask_question_now(automation_id: str) -> dict:
+    """Ask it now: a full agent run, through the gates its schedule uses. A person's click, never a page's load."""
+    _questions_on()
+    from aughor.dashboards import questions
+    try:
+        return questions.ask_now(automation_id)
+    except questions.QuestionRefused as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.put("/dashboards/questions/{automation_id}/rhythm")
+def set_question_rhythm(automation_id: str, body: QuestionRhythmRequest) -> dict:
+    _questions_on()
+    from aughor.dashboards import questions
+    try:
+        return questions.set_rhythm(automation_id, body.rhythm)
+    except questions.QuestionRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/dashboards/{cockpit_id}")

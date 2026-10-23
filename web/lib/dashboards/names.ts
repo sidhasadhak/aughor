@@ -31,6 +31,7 @@ export const KIND_WORDS: Record<ComponentName, string> = {
   ObjectTimeline: "timeline",
   ChooseOne: "choose one",
   ObjectSearch: "search",
+  Question: "question",
   Drawer: "drawer",
 };
 

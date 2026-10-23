@@ -101,7 +101,7 @@ function days(n: number | null | undefined): string {
 }
 
 /** A fresh dashboard holding the process's board, its open-and-overdue objects and one object beside them — the same
- *  dashboard a process's own panel and *+ New dashboard* start (`lib/cockpit/start`). */
+ *  dashboard a process's own panel and *+ New dashboard* start (`lib/dashboards/start`). */
 export const dashboardSpecFor = processDashboardSpec;
 
 type Phase = { at: "draft" } | { at: "declared"; id: string } | { at: "published"; id: string; release: number };

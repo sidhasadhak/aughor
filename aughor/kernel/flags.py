@@ -167,6 +167,11 @@ FLAG_ENV = {
     # reader chose; a set compares any value; a query of your own reads one as a bound parameter. OFF: a value is the
     # author's and only days reach a set, as before; the server refuses a spec that says more.
     "dashboard.variables": "AUGHOR_DASHBOARD_VARIABLES",
+    # PENDING 54 (2026-10-23, design-mockups/dashboard-questions.html). ON: a dashboard may hold a Question — asked by
+    # the agent the Data Canvas uses, on a rhythm (daily, weekly, monthly) or only when a person asks, its answers kept
+    # and shown as the Data Canvas shows one; opening the dashboard never asks. OFF: the vocabulary refuses a Question
+    # and the question routes answer 404.
+    "dashboard.questions": "AUGHOR_DASHBOARD_QUESTIONS",
     "grounding.data_profiles": "AUGHOR_GROUNDING_DATA_PROFILES",
     "answers.recheck": "AUGHOR_ANSWERS_RECHECK",
     # Phase 7 of the 2027 study (§Q, §W). ON: the install's aggregate priors — pack records, play base
@@ -598,6 +603,16 @@ FLAG_META = {
                        "compares any value, and a query of your own reads one as a bound parameter, never pasted in. "
                        "Off: a value is set once by its author.",
     },
+    "dashboard.questions": {
+        "label": "Questions on a dashboard",
+        "summary": "A question the agent answers on a rhythm, weekly by default. Each answer shows its figures, "
+                   "summary and why.",
+        "facts": [{"kind": "model", "text": "A full run per answer"},
+                  {"kind": "schedule", "text": "Weekly by default; never on open"},
+                  {"kind": "private", "text": "Changes only your own dashboards"}],
+        "description": "Each answer re-asks the agent for the last complete period against the one before; opening "
+                       "the dashboard shows the answers already kept and never asks. Off: a dashboard holds no question.",
+    },
     "dashboard.builder": {
         "label": "Build dashboards in place",
         "summary": "A dashboard opens to be read, and Edit shows it between its outline and the setup of what you "
@@ -873,6 +888,9 @@ EXPERIMENT: dict = {
     "dashboard.variables": "do readers change what a dashboard shows — of the dashboards with a value a reader sets, is one in "
                          "five or more changed by a reader within two weeks? Falsifier (§3.57, AP-8): a variable reaches SQL "
                          "other than as a bound parameter — stop",
+    "dashboard.questions": "do people keep a question on a dashboard and read its answers — of the questions kept in two "
+                           "weeks, is one in three or more opened after its second answer? Falsifier (PENDING 54): the "
+                           "answers go unread while their runs are paid for — stop",
     "dashboard.builder": "is the setup where people change a dashboard — of the dashboards started from an object, is one in "
                        "five or more edited within two weeks of starting? Falsifier (§3.57): fewer than one in five, "
                        "and the setup is not where people look",

@@ -687,6 +687,8 @@ def draft(home: Home, *, mode: str, spec: Any = None, patches: Any = None, cards
         from aughor.dashboards.pieces import pieces_written
         from aughor.dashboards.wiring import wiring_written
         refusals.extend(pieces_written(live["spec"] if live else None, final, new=mode == MODE_NEW))
+        from aughor.dashboards import questions as _questions
+        refusals.extend(_questions.written(live["spec"] if live else None, final, new=mode == MODE_NEW))
         # Arc AP-2 — a model arranges a wired dashboard and never wires one: its sets and values are a person's
         refusals.extend(wiring_written(live["spec"] if live else None, final, new=mode == MODE_NEW))
         # A card that was refused is still a name the spec places. It is counted as known

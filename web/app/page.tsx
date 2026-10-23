@@ -1179,6 +1179,12 @@ export default function Home() {
       if (r.recordLayer) setRecordLayer(r.recordLayer);
       if (r.secLens) setSecLens(r.secLens);
       setOpenId(detail.params?.id ?? null);
+      // a run named by the event opens in the Data Canvas, as `openRun` opens one (a dashboard's Question, PENDING 54)
+      if (detail.params?.run) {
+        setShowHistory(false);
+        setSelectedChatSessionId(null);
+        setSelectedHistoryInvId(detail.params.run);
+      }
       setTab(r.tab);
     };
     window.addEventListener(NAVIGATE_EVENT, onNavigate);

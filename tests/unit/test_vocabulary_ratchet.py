@@ -569,7 +569,9 @@ BASELINE: dict[str, int] = {
     # what remains is the wire field `charter_id` and one type literal.
     "charter": 3,
     # 2026-10-23: measured after R1–R3 and the comment pass (6,268 occurrences across the repo before the rename).
-    "cockpit": 973,
+    # 973 → 971 the same day: the Question piece (PENDING 54) added the API's field names it must read, and paid for
+    # them by correcting the old paths comments still named (lib/cockpit/, aughor/cockpit/) to where the code lives.
+    "cockpit": 971,
     "control_room": 26,
     "copilotkit": 4,
     # 54 → 49: mostly already true on main (the study references moved to docs/, which is
@@ -616,7 +618,8 @@ BASELINE: dict[str, int] = {
     # 2026-10-12: 581 → 576, measured; Security & Audit's redo took one, the rest is slack other waves left.
     # 2026-10-13: 576 → 548, measured; Agent runs left page.tsx for its own file and says "deep analysis", and
     # Health asks "why" instead of investigating (−16); the rest is slack other waves left.
-    "investigation_in_web": 548,
+    # 548 → 547 (2026-10-23): a finished answer's two doors share one wrapper, so its run id is named once.
+    "investigation_in_web": 547,
     # Lowered twice over, by two waves that landed together. DS-11's completion reworded
     # four prose hits in `actions/inbox.py` and exempted the inbox suite; DS-13 exempted
     # `aughor/actions/executor.py` and its own suite, where every hit is a type name, an

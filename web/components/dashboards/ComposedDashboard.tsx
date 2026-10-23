@@ -40,6 +40,7 @@ import {
 
 import type { CardState } from "@/components/brief/PinnedCardBody";
 import { CanvasScale, CellBoxContext, OFF_GRID, useMeasured, type CellBox } from "@/components/dashboards/cellBox";
+import { QuestionPiece } from "@/components/dashboards/QuestionPiece";
 import { DashboardTile, SaidTile, WIDE, WithheldTile, tileShape, type QueryWaiting, type TileDoors } from "@/components/dashboards/DashboardTile";
 import { ActionButtonsPiece } from "@/components/dashboards/ActionButtonsPiece";
 import { ReadSlotContext, type ReadSlot, type ReadStatus } from "@/components/dashboards/readSlot";
@@ -104,6 +105,8 @@ interface DashboardContextValue {
   images: Record<string, ImageStamp>;
   range: BriefingRange | null;
   schema?: string;
+  /** The connection the dashboard reads — what a Question asks of. */
+  connectionId?: string;
   /** The element chosen in the builder, outlined where it is drawn. */
   selected: string | null;
   /** Arc AP-2 — the elements that read the set, value or choice chosen in the builder, dashed where they are drawn. */
@@ -802,6 +805,16 @@ function DashboardNote({ element }: ComponentRenderProps<{ text: string; size?: 
   );
 }
 
+/** PENDING 54 — a question the agent answers on its rhythm. The dashboard reads the answers kept and never asks. */
+function DashboardQuestion({ element }: ComponentRenderProps<{ automation: string; first?: string; size?: Size | null }>) {
+  return (
+    <Cell type="Question" props={element.props as Record<string, unknown>} size={element.props.size ?? "wide"} testid="dashboard-question-cell"
+      extra={{ attrs: { "data-automation": element.props.automation } }}>
+      {() => <QuestionPiece automation={element.props.automation} first={element.props.first} />}
+    </Cell>
+  );
+}
+
 function DashboardImage({ element }: ComponentRenderProps<{ object: string; caption: string; size?: Size | null }>) {
   const { tileDoors: doors, images } = useDashboard();
   const own = !!(doors.onTakeOff || doors.onRecaption || doors.onResize);
@@ -1055,6 +1068,7 @@ const REGISTRY = {
   ChooseOne: DashboardChooseOne,
   ObjectSearch: DashboardObjectSearch,
   Drawer: DashboardDrawer,
+  Question: DashboardQuestion,
 } satisfies Record<ComponentName, unknown>;
 
 const NO_IMAGES: Record<string, ImageStamp> = {};
@@ -1129,11 +1143,12 @@ export function ComposedDashboard({ spec, cards, host, doors, sym = "$", images 
     images,
     range,
     schema,
+    connectionId,
     selected,
     steppers,
     reads: new Set(readsKey ? readsKey.split("\n") : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on what the spec and the range say
-  }), [check.valid, written, cards, host, doors, sym, images, rangeKey, schema, selected, steppers, readsKey]);
+  }), [check.valid, written, cards, host, doors, sym, images, rangeKey, schema, connectionId, selected, steppers, readsKey]);
 
   if (!check.valid) {
     return (

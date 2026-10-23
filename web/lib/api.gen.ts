@@ -4313,6 +4313,105 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboards/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep Question
+         * @description Keep a question for a dashboard: its automation, asked on its rhythm (weekly by default) or only when asked.
+         *     Nothing is asked now — the first answer comes on its schedule, or is the Data Canvas answer it starts from.
+         */
+        post: operations["keep_question_dashboards_questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/questions/cost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Question Cost
+         * @description What one answer costs on this connection, from this install's own metered runs — said before a question is kept.
+         *     Registered before the read below, which would otherwise take "cost" for a question's id.
+         */
+        get: operations["question_cost_dashboards_questions_cost_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/questions/{automation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Question
+         * @description A question as a dashboard shows it — its latest answer in full and every answer in a line. No model call.
+         */
+        get: operations["read_question_dashboards_questions__automation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/questions/{automation_id}/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask Question Now
+         * @description Ask it now: a full agent run, through the gates its schedule uses. A person's click, never a page's load.
+         */
+        post: operations["ask_question_now_dashboards_questions__automation_id__ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboards/questions/{automation_id}/rhythm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Question Rhythm */
+        put: operations["set_question_rhythm_dashboards_questions__automation_id__rhythm_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dashboards/shapes": {
         parameters: {
             query?: never;
@@ -19926,6 +20025,32 @@ export interface components {
             usage_count: number;
         };
         /**
+         * QuestionKeepRequest
+         * @description A question kept on a dashboard (PENDING 54): its words, how often it is asked, and the Data Canvas answer it
+         *     starts from, when it is kept from one.
+         */
+        QuestionKeepRequest: {
+            /**
+             * First Run
+             * @default
+             */
+            first_run: string;
+            /** Question */
+            question: string;
+            /**
+             * Rhythm
+             * @default weekly
+             */
+            rhythm: string;
+            /** Schema Name */
+            schema_name?: string | null;
+        };
+        /** QuestionRhythmRequest */
+        QuestionRhythmRequest: {
+            /** Rhythm */
+            rhythm: string;
+        };
+        /**
          * ReasoningMessage
          * @description A reasoning message containing the agent's internal reasoning process.
          */
@@ -30509,6 +30634,181 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["QueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    keep_question_dashboards_questions_post: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionKeepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    question_cost_dashboards_questions_cost_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_question_dashboards_questions__automation_id__get: {
+        parameters: {
+            query?: {
+                first?: string;
+            };
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ask_question_now_dashboards_questions__automation_id__ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_question_rhythm_dashboards_questions__automation_id__rhythm_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionRhythmRequest"];
             };
         };
         responses: {
