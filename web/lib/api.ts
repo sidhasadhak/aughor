@@ -8415,6 +8415,11 @@ export interface FleetJob {
   duration_ms: number | null;
 }
 
+/** One kernel job, as the pages that say what is running read it (Now, Agent runs) — the same row Agent Ops lists. */
+export type JobRow = FleetJob;
+/** The kernel job kind a deep analysis runs as — the backend's frozen spelling, named here once. */
+export const DEEP_ANALYSIS_JOB_KIND = "investigation";
+
 export async function getJobs(params?: {
   state?: string; conn_id?: string; kind?: string; limit?: number;
   /** AO-3 — the shared window (`rangeParams`): a named range, or ISO-8601 UTC bounds on

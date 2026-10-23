@@ -1896,7 +1896,7 @@ export default function Home() {
                     onOpenInquiry: id => openRecord("inquiries", id),
                     onOpenDepartures: openDepartures,
                     onOpenAttention: () => { setAgentsLayer("attention"); setTab("agentic-ops"); },
-                    onOpenAgentOps: () => { setAgentsLayer("fleet"); setTab("agentic-ops"); },
+                    onOpenAgentOps: () => setTab("agentic-ops"),
                     onOpenBriefing: connId => {
                       if (connId) setSelectedConn(connId);
                       handleNavigate("intelligence");

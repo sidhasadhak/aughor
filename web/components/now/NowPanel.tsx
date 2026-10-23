@@ -14,7 +14,7 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { getDepartures, getJobs, getNeedsHuman, type Connection, type Departure, type FleetJob, type NeedsHuman } from "@/lib/api";
+import { getDepartures, getJobs, getNeedsHuman, type Connection, type Departure, type JobRow, type NeedsHuman } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
 import { approverName } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
@@ -151,7 +151,7 @@ export function NowPanel({ connections, contextReady, doors }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []);
   const here = useMemo(() => new Set(connections.map(c => c.id)), [connections]);
-  const runningHere: FleetJob[] = (Array.isArray(running.data) ? running.data : []).filter(j => !!j.conn_id && here.has(j.conn_id));
+  const runningHere: JobRow[] = (Array.isArray(running.data) ? running.data : []).filter(j => !!j.conn_id && here.has(j.conn_id));
   const missions = useLoad(() => listMissions({ state: "active" }), []);
 
   // "Since you were here" is this reader's own convenience: the last visit is kept in this

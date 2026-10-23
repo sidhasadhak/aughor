@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Segmented } from "@/components/ui/segmented";
 import { Loading, ReadFailed } from "@/components/ui/states";
-import { getConnections, getJobs, getWorkspace, type Connection, type FleetJob } from "@/lib/api";
+import { getConnections, getJobs, getWorkspace, DEEP_ANALYSIS_JOB_KIND, type Connection, type JobRow } from "@/lib/api";
 import { getApiBase } from "@/lib/config";
 import { subscribeKernelEvents } from "@/lib/events";
 import { countNoun, formatCount, formatTimestamp, relTime } from "@/lib/format";
@@ -150,7 +150,7 @@ export function AgentRuns({ onGoToChat, onOpenRun, onOpenMachineView, workspaceI
   // What else is running in this workspace — the explorer, an automation — from the kernel's jobs, the record Agent Ops
   // lists (the Olist study, Gaps 10 and 34: this page said "No runs yet" through a live exploration). A deep analysis
   // is already a run here, so its job is not counted twice.
-  const [live, setLive] = useState<FleetJob[]>([]);
+  const [live, setLive] = useState<JobRow[]>([]);
   useEffect(() => {
     let alive = true;
     const read = () => {
@@ -158,7 +158,7 @@ export function AgentRuns({ onGoToChat, onOpenRun, onOpenMachineView, workspaceI
         .then(([jobs, ws]) => {
           if (!alive) return;
           const ids = ws ? new Set(ws.connection_ids ?? []) : null;
-          setLive((Array.isArray(jobs) ? jobs : []).filter(j => j.kind !== "investigation"
+          setLive((Array.isArray(jobs) ? jobs : []).filter(j => j.kind !== DEEP_ANALYSIS_JOB_KIND
             && (!ids || (!!j.conn_id && ids.has(j.conn_id)))));
         })
         .catch(() => { /* unread: the runs list stands on its own */ });

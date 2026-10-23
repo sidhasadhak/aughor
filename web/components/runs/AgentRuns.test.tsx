@@ -18,6 +18,7 @@ vi.mock("@/lib/events", () => ({
 }));
 
 import { AgentRuns, foldRuns, type Run } from "./AgentRuns";
+import { DEEP_ANALYSIS_JOB_KIND } from "@/lib/api";
 import { setCurrentDataset, setDataCurrency } from "@/lib/orgSettings";
 
 const SCHEDULED = (day: string) =>
@@ -183,7 +184,7 @@ describe("Agent runs", () => {
     jobs = [{ id: "j1", kind: "exploration", state: "RUNNING", conn_id: "8233e4fd", canvas_id: null,
               created_at: new Date(Date.now() - 300_000).toISOString(), started_at: null, finished_at: null, error: null,
               agent: { agent: "Scout", blurb: "", icon: "" }, title: "Exploring theLook", cost: null, duration_ms: null },
-            { id: "j2", kind: "investigation", state: "RUNNING", conn_id: "8233e4fd", canvas_id: null, created_at: null,
+            { id: "j2", kind: DEEP_ANALYSIS_JOB_KIND, state: "RUNNING", conn_id: "8233e4fd", canvas_id: null, created_at: null,
               started_at: null, finished_at: null, error: null, agent: { agent: "Analyst", blurb: "", icon: "" },
               title: "a deep run, already a run here", cost: null, duration_ms: null },
             { id: "j3", kind: "exploration", state: "RUNNING", conn_id: "elsewhere", canvas_id: null, created_at: null,
