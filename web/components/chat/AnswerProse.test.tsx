@@ -7,9 +7,22 @@
  */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AnswerProse, readsAsProse } from "@/components/chat/AnswerProse";
+import { setCurrentDataset, setDataCurrency } from "@/lib/orgSettings";
+
+
+/** The dataset in view, with USD confirmed by a person: only a confirmed currency keeps a "$" in front of a
+ *  figure (2026-10-23) — the "$" here is incidental to what this file tests. */
+function confirmUsd(): void {
+  setCurrentDataset("c1", "");
+  setDataCurrency({ connection_id: "c1", schema_name: null, code: "USD", status: "confirmed", inferred: "USD",
+                    confirmed_by: "test", confirmed_at: "" });
+}
+
+beforeEach(confirmUsd);
+afterEach(() => setCurrentDataset(""));
 
 describe("AnswerProse", () => {
   it("reads a column of months' first days as months, and leaves a column of days alone", () => {

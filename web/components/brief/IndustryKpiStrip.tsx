@@ -22,7 +22,7 @@
  */
 import { useEffect, useState } from "react";
 import NumberFlow from "@number-flow/react";
-import { getBusinessProfile, getMetricCatalogue, runDirectQuery, currencySymbol, type BriefingRangeBlock, type StatedRange } from "@/lib/api";
+import { getBusinessProfile, getDataCurrency, getMetricCatalogue, runDirectQuery, currencySymbol, type BriefingRangeBlock, type StatedRange } from "@/lib/api";
 import { STANDING_WORDS, metricStanding, type MetricStanding } from "@/lib/metricStanding";
 import { RangeMeasureTile, rangeTop } from "@/components/brief/BriefRange";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,6 @@ import { seriesTrend } from "@/components/brief/Sparkline";
 import { StatTile } from "@/components/brief/StatTile";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { useVizConfigs } from "@/lib/useVizConfigs";
-import { effectiveCurrencySymbol } from "@/lib/orgSettings";
 import { useOrgSettings } from "@/lib/useOrgSettings";
 import { betterIsHigher } from "@/lib/favorability";
 import { deltaInfo, formatMetric, periodWord, type KpiFlow } from "@/components/brief/metricFormat";
@@ -256,9 +255,11 @@ export function IndustryKpiStrip({ connectionId, schema, scopeKey, rangeBlock, n
       if (!alive) return;
       if (!p.available || !p.profile) { setIndustry(""); setKpis([]); setNoMetrics(true); return; }
       setIndustry(p.profile.industry || "");
-      // Override-wins: a set org/workspace currency beats the inferred profile currency,
-      // and matches what the expanded charts render from the same orgSettings cache.
-      const sym = effectiveCurrencySymbol() || currencySymbol(p.profile.currency_code);
+      // The dataset's currency as a PERSON confirmed it, else none — a plain amount. Never the profile's
+      // inferred code, never the org's preference (2026-10-23, the Olist study's Gap 14).
+      const held = await getDataCurrency(connectionId, schema).catch(() => null);
+      if (!alive) return;
+      const sym = held?.code ? currencySymbol(held.code) : "";
       const metrics = (p.profile.north_star_metrics || []).filter(m => m.value_sql?.trim());
       setNoMetrics(metrics.length === 0);
 

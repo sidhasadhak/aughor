@@ -21,7 +21,8 @@ import { installWorkspaceHeader, setActiveWorkspace } from "@/lib/workspace";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { OwnersPanel } from "@/components/OwnersPanel";
-import { setOrgSettingsCache } from "@/lib/orgSettings";
+import { registerCurrencyLoader, setCurrentDataset, setDataCurrency, setOrgSettingsCache } from "@/lib/orgSettings";
+import { rememberedSchema } from "@/lib/schemaChoice";
 import { formatCount } from "@/lib/format";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
@@ -111,7 +112,7 @@ import {
   addConnection as apiAddConnection,
   deleteConnection as apiDeleteConnection,
   getConnectionFreshness,
-  getEffectiveSettings,
+  getDataCurrency, getEffectiveSettings,
   getJobs,
   cancelJob,
   getAgents,
@@ -1481,6 +1482,19 @@ export default function Home() {
   // a deep link (?chat=…, a canvas, a shared view) names its destination, and a
   // redirect that overrode it would break every link this app has ever handed out.
   // The hop happens once per load, and /chat carries "Open in workbench" back.
+  // The currency a money figure carries is its DATASET's, as a person confirmed it (2026-10-23): the
+  // connection in view and the schema last chosen for it. Read once per dataset; a confirmation on the
+  // Profile page writes the cache directly.
+  useEffect(() => {
+    registerCurrencyLoader((conn, schema) => {
+      getDataCurrency(conn, schema || undefined).then(setDataCurrency).catch(() => { /* unread: plain amounts */ });
+    });
+    return () => registerCurrencyLoader(null);
+  }, []);
+  useEffect(() => {
+    setCurrentDataset(selectedConn, selectedConn ? rememberedSchema(selectedConn) : null);
+  }, [selectedConn]);
+
   const redirectedHome = useRef(false);
   useEffect(() => {
     getEffectiveSettings(selectedWorkspace || undefined)

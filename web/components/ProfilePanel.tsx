@@ -33,8 +33,11 @@ import { TableActions } from "@/components/TableActions";
 import { SkeletonRows } from "@/components/ui/motion";
 import { ReadFailed } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { setDataCurrency, type DataCurrency } from "@/lib/orgSettings";
 import {
-  getBusinessProfile, getEffectiveSettings, getExplorationFindings, getMetrics, getSchemaProfile,
+  confirmDataCurrency, getBusinessProfile, getDataCurrency, getEffectiveSettings, getExplorationFindings, getMetrics, getSchemaProfile,
   type BusinessProfileResponse, type ExplorationFindings, type LifecycleMap, type Metric, type OrgSettings,
   type SchemaProfile,
 } from "@/lib/api";
@@ -223,8 +226,9 @@ export function ProfilePanel({ connectionId, canvasId, schema, workspaceId }: {
                     </dd>
                   </>
                 )}
-                <SettingFact term="Currency" inferred={p.currency_code ?? ""} human={org?.currency_code ?? ""}
-                  inferredTitle={p.currency_code === "USD" ? "Inferred — USD is also what the profile says when nothing indicates otherwise" : "Inferred"} />
+                {/* The data's currency is the profile's PROPOSAL until a person confirms it, per dataset
+                    (2026-10-23, the Olist study's Gap 14: "USD · org setting · inferred BRL" printed reais in dollars). */}
+                <CurrencyFact connectionId={connectionId} schema={schema} />
                 {/* A January start is also what an unset setting reads as, so only another month is a human decision. */}
                 {org && org.fiscal_year_start_month > 1 && (
                   <>
@@ -430,22 +434,75 @@ function IndustryLine({ inferred, confidence, human }: { inferred: string; confi
   );
 }
 
-/** A fact an org setting can decide: its value, and whether a person set it — and what Aughor had inferred, when the
- *  two differ. */
-function SettingFact({ term, inferred, human, inferredTitle }: { term: string; inferred: string; human: string; inferredTitle: string }) {
-  const value = human || inferred;
-  if (!value) return null;
-  const corrected = !!human && !!inferred && human !== inferred;
+/** The data's currency (2026-10-23): the profile PROPOSES it, a person confirms it — per dataset — and only a
+ *  confirmed one labels a figure; until then amounts print plain. The org's reporting currency describes the
+ *  organisation and labels nothing here. */
+export function CurrencyFact({ connectionId, schema }: { connectionId: string; schema?: string }) {
+  const [c, setC] = useState<DataCurrency | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let alive = true;
+    getDataCurrency(connectionId, schema)
+      .then(d => { if (alive) { setC(d); setDataCurrency(d); } })
+      .catch(() => { /* unread: the line is left out rather than guessed */ });
+    return () => { alive = false; };
+  }, [connectionId, schema]);
+  async function save(code: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const d = await confirmDataCurrency(connectionId, schema, code);
+      setC(d);
+      setDataCurrency(d);
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (!c) return null;
+  const who = `Confirmed by ${c.confirmed_by || "a person"}${c.confirmed_at ? ` on ${dateWords(c.confirmed_at, Date.now())}` : ""}`;
   return (
     <>
-      <dt style={TERM}>{term}</dt>
-      <dd style={{ margin: 0, ...ROW }}>
-        <span style={{ color: "var(--t1)" }}>{value}</span>
-        {human ? (
-          <Chip title={corrected ? `Aughor inferred ${inferred}; the org setting wins` : inferred ? "Set in org settings, and the inference agrees" : "Set in org settings"}>
-            {corrected ? `org setting · inferred ${inferred}` : "org setting"}
-          </Chip>
-        ) : <span className="aug-fs-xs" title={inferredTitle} style={MUTED}>inferred</span>}
+      <dt style={TERM}>Currency</dt>
+      <dd data-testid="profile-currency" style={{ margin: 0, ...ROW, flexWrap: "wrap" }}>
+        {c.code ? (
+          <>
+            <span style={{ color: "var(--t1)" }}>{c.code}</span>
+            <Chip tone="up" title={`${who}; every figure from this data carries it`}>✓ confirmed</Chip>
+          </>
+        ) : c.inferred ? (
+          <>
+            <span style={{ color: "var(--t1)" }}>{c.inferred}</span>
+            <span className="aug-fs-xs" style={MUTED} title="The profile's inference. Figures print as plain amounts until a person confirms it.">
+              suggested by the profile · unconfirmed
+            </span>
+            {!editing && (
+              <Button size="xs" variant="secondary" disabled={busy} onClick={() => void save(c.inferred)}>Confirm {c.inferred}</Button>
+            )}
+          </>
+        ) : (
+          <span className="aug-fs-xs" style={MUTED}>not known · amounts print plain</span>
+        )}
+        {!editing ? (
+          <Button size="xs" variant="ghost" disabled={busy}
+            onClick={() => { setDraft(c.code || c.inferred || ""); setEditing(true); }}>
+            {c.code ? "Change" : "Another currency"}
+          </Button>
+        ) : (
+          <>
+            <Input aria-label="Currency code" value={draft} maxLength={3} style={{ width: 70 }}
+              onChange={e => setDraft(e.target.value.toUpperCase())} />
+            <Button size="xs" variant="secondary" disabled={busy || !/^[A-Z]{3}$/.test(draft)} onClick={() => void save(draft)}>Save</Button>
+            {c.code && <Button size="xs" variant="ghost" disabled={busy} onClick={() => void save("")}>Clear</Button>}
+            <Button size="xs" variant="ghost" disabled={busy} onClick={() => setEditing(false)}>Cancel</Button>
+          </>
+        )}
+        {error && <span className="aug-fs-xs" style={{ color: "var(--red4)" }}>{error}</span>}
       </dd>
     </>
   );

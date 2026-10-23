@@ -7770,6 +7770,29 @@ export interface EditionCovers {
 
 /** What each of the six editions covers and the lead metric's figure for each — shown when the data
  *  has ENDED. Measured now (warehouse queries, no model call), so it is a POST, as the measures door is. */
+/** One dataset's currency: the profile's proposal and a person's confirmation (2026-10-23). */
+export async function getDataCurrency(connectionId: string, schema?: string): Promise<import("./orgSettings").DataCurrency> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/business-profile/currency?${q}`);
+  if (!res.ok) throw new Error(`The data's currency could not be read (${res.status})`);
+  return res.json();
+}
+
+/** A person confirms a dataset's currency (a three-letter ISO code), or clears it with "". */
+export async function confirmDataCurrency(connectionId: string, schema: string | undefined, code: string): Promise<import("./orgSettings").DataCurrency> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/business-profile/currency?${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The currency could not be confirmed"));
+  }
+  return res.json();
+}
+
 export async function readEditionCovers(connectionId: string, schema?: string, workspaceId?: string): Promise<EditionCovers> {
   const q = new URLSearchParams();
   if (schema) q.set("schema", schema);

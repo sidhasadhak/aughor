@@ -2367,6 +2367,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/business-profile/currency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dataset Currency
+         * @description The currency one dataset's figures carry, and whose word it is: ``code`` only when a person
+         *     confirmed it (then it labels every figure), ``inferred`` as the profile proposes it, and
+         *     ``status`` confirmed · inferred · unknown. Unconfirmed figures print as plain amounts (2026-10-23).
+         */
+        get: operations["get_dataset_currency_business_profile_currency_get"];
+        /**
+         * Put Dataset Currency
+         * @description A person confirms the dataset's currency — the profile's proposal or another code — or clears it
+         *     with "". Kept with who and when; it then labels every figure read from this dataset.
+         */
+        put: operations["put_dataset_currency_business_profile_currency_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/business-profile/rebuild": {
         parameters: {
             query?: never;
@@ -19402,7 +19429,7 @@ export interface components {
             company_name: string;
             /**
              * Currency Code
-             * @description ISO 4217 reporting currency, e.g. 'GBP'. Describes the ORGANISATION and is stated as such (org_context: 'reports in GBP'). It does NOT relabel figures read from a warehouse — nothing converts, so the data's own currency wins there; see resolve_currency. Empty = unset.
+             * @description ISO 4217 reporting currency, e.g. 'GBP'. Describes the ORGANISATION and is stated as such (org_context: 'reports in GBP'). It does NOT relabel figures read from a warehouse — nothing converts; a figure carries the currency a person confirmed for its dataset (store.data_currency). Empty = unset.
              * @default
              */
             currency_code: string;
@@ -21613,6 +21640,14 @@ export interface components {
             right_key: string;
             /** Right Table */
             right_table: string;
+        };
+        /** _CurrencyBody */
+        _CurrencyBody: {
+            /**
+             * Code
+             * @default
+             */
+            code: string;
         };
         /** _CustomModelIn */
         _CustomModelIn: {
@@ -26922,6 +26957,74 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dataset_currency_business_profile_currency_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_dataset_currency_business_profile_currency_put: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_CurrencyBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

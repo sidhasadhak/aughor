@@ -16,6 +16,7 @@ vi.mock("@/lib/events", () => ({
 }));
 
 import { AgentRuns, foldRuns, type Run } from "./AgentRuns";
+import { setCurrentDataset, setDataCurrency } from "@/lib/orgSettings";
 
 const SCHEDULED = (day: string) =>
   `[Scheduled-run context — written by code, not inferred]\nThis is a scheduled daily run at ${day}T09:00Z.\n\nWhat changed in theLook in the last day? Give me the top three findings with the numbers.`;
@@ -40,6 +41,17 @@ const opened: unknown[][] = [];
 const asked: (string | undefined)[] = [];
 const mount = () => render(<Theme><AgentRuns onGoToChat={q => asked.push(q)} onOpenRun={(...a) => opened.push(a)}
   onOpenMachineView={() => {}} workspaceId="default" /></Theme>);
+
+
+/** The dataset in view, with USD confirmed by a person: only a confirmed currency keeps a "$" in front of a
+ *  figure (2026-10-23) — the "$" here is incidental to what this file tests. */
+function confirmUsd(): void {
+  setCurrentDataset("c1", "");
+  setDataCurrency({ connection_id: "c1", schema_name: null, code: "USD", status: "confirmed", inferred: "USD",
+                    confirmed_by: "test", confirmed_at: "" });
+}
+
+beforeEach(confirmUsd);
 
 beforeEach(() => {
   urls.length = 0; opened.length = 0; asked.length = 0;

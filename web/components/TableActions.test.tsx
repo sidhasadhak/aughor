@@ -20,6 +20,7 @@ import { AnswerProse } from "@/components/chat/AnswerProse";
 import { renderProseBlocks } from "@/components/brief/BriefProse";
 import { SqlResultTable } from "@/components/AugTable";
 import { copyTable, tableHtml } from "@/components/TableActions";
+import { setCurrentDataset, setDataCurrency } from "@/lib/orgSettings";
 
 // Q3's answer table, as the model wrote it.
 const ANSWER = ["| Month | Monthly Revenue | Change |", "| :--- | :--- | :--- |",
@@ -39,6 +40,17 @@ const blobText = (blob: Blob) => new Promise<string>((resolve) => {
   reader.onload = () => resolve(String(reader.result));
   reader.readAsText(blob);
 });
+
+
+/** The dataset in view, with USD confirmed by a person: only a confirmed currency keeps a "$" in front of a
+ *  figure (2026-10-23) — the "$" here is incidental to what this file tests. */
+function confirmUsd(): void {
+  setCurrentDataset("c1", "");
+  setDataCurrency({ connection_id: "c1", schema_name: null, code: "USD", status: "confirmed", inferred: "USD",
+                    confirmed_by: "test", confirmed_at: "" });
+}
+
+beforeEach(confirmUsd);
 
 beforeEach(() => {
   written = [];
@@ -141,10 +153,20 @@ describe("the clipboard", () => {
 });
 
 describe("a result table's money", () => {
-  it("reads to the cent", () => {
+  it("reads to the cent, in the currency a person confirmed", () => {
     render(<SqlResultTable columns={["total_revenue"]} rows={[["359224.30043935776"], ["-5421.8"]]} />);
-    expect(screen.getByText("359,224.30")).toBeTruthy();
-    expect(screen.getByText("-5,421.80")).toBeTruthy();
+    expect(screen.getByText("$359,224.30")).toBeTruthy();
+    expect(screen.getByText("-$5,421.80")).toBeTruthy();
+    expect(screen.queryByTestId("table-currency-note")).toBeNull();
+  });
+
+  it("reads plain, and says why once, when no one has confirmed the data's currency (2026-10-23)", () => {
+    setDataCurrency({ connection_id: "c1", schema_name: null, code: "", status: "inferred", inferred: "BRL",
+                      confirmed_by: "", confirmed_at: "" });
+    render(<SqlResultTable columns={["total_revenue"]} rows={[["359224.30043935776"]]} />);
+    expect(screen.getByText("359,224.30")).toBeTruthy();                     // no "$" over reais
+    expect(screen.getByTestId("table-currency-note")).toHaveTextContent(
+      "Amounts are plain: no one has confirmed this data's currency (the profile suggests BRL).");
   });
 });
 
