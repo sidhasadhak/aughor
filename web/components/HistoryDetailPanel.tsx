@@ -14,6 +14,7 @@ import { getApiBase } from "@/lib/config";
 import { localizeCurrency } from "@/lib/orgSettings";
 import { getEvidenceClaims, submitClaimFeedback, type EvidenceClaim } from "@/lib/api";
 import { ExportButton } from "@/components/ExportButton";
+import { KeepOnDashboard } from "@/components/dashboards/KeepOnDashboard";
 import { Icon } from "@/components/ui/icon";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -253,7 +254,9 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
                 <span style={{ fontSize: 11, color: "var(--blue5)", border: "1px solid var(--blue2)", background: "var(--blue1)", borderRadius: "var(--r1)", padding: "1px 8px", fontWeight: 500 }}>Quick</span>
               )}
               {invId && reportRaw && (
-                <div style={{ marginLeft: "auto" }}>
+                <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  {/* PENDING 54 — the question kept on a dashboard, this answer its first */}
+                  {inv?.connection_id && <KeepOnDashboard connectionId={inv.connection_id} question={inv.question} runId={invId} />}
                   <ExportButton invId={invId} />
                 </div>
               )}
