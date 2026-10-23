@@ -123,7 +123,7 @@ Their rank against 1–37 is the user's; the survey is in §3.48 (BR-0), and the
     never the hosted service. Measured: 181 traced runs, 54 distinct person questions (five asked 74 times), 7 verdicts,
     0 learned skills; the clearest pattern (four BigQuery `::`-cast refusals) stopped on 2026-09-27 with no lesson.
     Home recommended: a draft pack scoped to one connection (version, scope, status, source and a person-only
-    activation gate already exist). **Six calls are the user's (study §6).**
+    activation gate already exist). **Six calls are the user's (study §6).** *🅿️ PARKED by the user 2026-10-24: "Lets park this learnings study for now".*
 
 Just outside the list: the next industry package (insurance has public data to test on; payments does not) · numbers that link back to their source (idea 11) · the anti-AI-look UI work (idea 14, partly under way) · the fine-tuned text-to-SQL model (MI-4, needs far more training data than exists).
 
