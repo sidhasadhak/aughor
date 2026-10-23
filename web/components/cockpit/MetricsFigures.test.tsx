@@ -24,23 +24,32 @@ const older = (covers: string, compared: string, ends: string) =>
   ({ start: "", end: "", data_ends: ends, covers, compared_with: compared, why: `its data ends ${ends}, before this range` });
 const REASON = "its dates cannot be set by rule: its table has no date the profiler recognised";
 
+// As the server sends it (2026-10-23): a range's figures are its own, so a metric whose data ended rides on its
+// not-measured row with the figure for the month it last covers (`latest`) — the Cockpit puts it back on a card.
+const ended = (name: string, ends: string, latest: BriefingRangeMeasure) =>
+  ({ name, metric: latest.metric, reason: `its data ends ${ends}, before this range`, data_ends: ends, latest });
+
 const LUX: BriefingRangeBlock = {
   period: "month", key: "k", preset: "previous_month", label: "Last month", start: "2026-09-01", end: "2026-10-01",
   last_day: "2026-09-30", previous_start: "2026-08-01", previous_end: "2026-08-31", last_year_start: null, last_year_end: null,
   as_of: "2026-10-13", lag_days: 12, lag_source: "default", still_moving: [], covers: "September 2026",
   compared_with: "August 2026", last_year_label: null,
   measured: [
-    fig({ name: "Clienteling-Influenced GMV per Interaction", metric: "gmv_int", current: 15098, previous: 13156, rel: 0.1476,
-      current_text: "€15,098", previous_text: "€13,156", anchored: older("May 2025", "April 2025", "2025-06-29") }),
-    fig({ name: "Markdown Penetration", metric: "markdown", unit: "ratio 0..1", current: 1, previous: 1, rel: 0,
-      current_text: "100%", previous_text: "100%", anchored: older("March 2024", "February 2024", "2024-04-05") }),
     fig({ name: "Average Order Value (AOV)", metric: "aov", current: 581, previous: 598, rel: -0.0284,
       current_text: "€581", previous_text: "€598" }),
-    fig({ name: "Average Inventory Weeks of Cover", metric: "cover", time_kind: "stock", current: 11.73, previous: null, rel: null,
-      current_text: "11.73", previous_text: "no value", current_partial: "2025-06-30 to 2025-06-30",
-      anchored: older("June 2025", "May 2025", "2025-06-30") }),
   ],
-  unmeasured: ["Item Return Rate", "Gross Margin %", "Marketing ROAS", "Session Conversion Rate"].map(name => ({ name, reason: REASON })),
+  unmeasured: [
+    ended("Clienteling-Influenced GMV per Interaction", "2025-06-29", fig({ name: "Clienteling-Influenced GMV per Interaction",
+      metric: "gmv_int", current: 15098, previous: 13156, rel: 0.1476,
+      current_text: "€15,098", previous_text: "€13,156", anchored: older("May 2025", "April 2025", "2025-06-29") })),
+    ended("Markdown Penetration", "2024-04-05", fig({ name: "Markdown Penetration", metric: "markdown", unit: "ratio 0..1",
+      current: 1, previous: 1, rel: 0, current_text: "100%", previous_text: "100%",
+      anchored: older("March 2024", "February 2024", "2024-04-05") })),
+    ended("Average Inventory Weeks of Cover", "2025-06-30", fig({ name: "Average Inventory Weeks of Cover", metric: "cover",
+      time_kind: "stock", current: 11.73, previous: null, rel: null, current_text: "11.73", previous_text: "no value",
+      current_partial: "2025-06-30 to 2025-06-30", anchored: older("June 2025", "May 2025", "2025-06-30") })),
+    ...["Item Return Rate", "Gross Margin %", "Marketing ROAS", "Session Conversion Rate"].map(name => ({ name, reason: REASON })),
+  ],
 };
 
 describe("the Metrics cockpit, figures first", () => {

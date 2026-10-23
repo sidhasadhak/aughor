@@ -7556,10 +7556,20 @@ export interface BriefingRangeMeasure {
   equal_age?: { equal: boolean; why: string };
   /** The income-statement line it reads on, when the connection's industry declares a statement. */
   line?: { line: string; label: string } | null;
-  /** Its data ends before the range: it was measured over the latest month (week, day) it covers
-   *  instead — those are its own `covers` / `compared_with`, not the range's. Absent when it covers
-   *  the range itself. */
+  /** Set only on an ended metric's `latest` figure (`BriefingRangeUnmeasured`): the month (week, day)
+   *  it last covers — its own `covers` / `compared_with`, not the range's. A range's own figures carry none. */
   anchored?: { start: string; end: string; data_ends: string; covers: string; compared_with: string; why: string } | null;
+}
+
+/** A metric the range has no figure for, and why. When its data ENDED before the range, the day it ends
+ *  (`data_ends`) and the figure for the range it last covers (`latest`) — the Cockpit's card for it; never
+ *  one of the range's figures (the user, 2026-10-23: the edition's period is the one compared). */
+export interface BriefingRangeUnmeasured {
+  name: string;
+  reason: string;
+  metric?: string;
+  data_ends?: string;
+  latest?: BriefingRangeMeasure;
 }
 
 /** Arc BR-4 — a segment's move inside a metric (what moved). */
@@ -7612,7 +7622,7 @@ export interface BriefingRangeBlock {
    *  before the data does. */
   compare_withheld?: string;
   measured: BriefingRangeMeasure[];
-  unmeasured: { name: string; reason: string }[];
+  unmeasured: BriefingRangeUnmeasured[];
   /** Arc BR-4 — the recipe that wrote it, and its own sections. */
   recipe?: "day" | "week" | "month" | "year" | "custom";
   sections?: string[];

@@ -3243,7 +3243,7 @@ export function BriefingPanel({
   const numbersNote = rangeBlock?.compare_withheld
     ? `Not compared: ${rangeBlock.compare_withheld}.`
     : rangeBlock
-    ? `Each against ${rangeBlock.compared_with}${rangeBlock.measured.some(m => m.anchored) ? ", unless its own months are named" : ""}.`
+    ? `Each against ${rangeBlock.compared_with}.`
     : rangeSelected ? (narrativeLoading ? "Measuring this edition…" : undefined)
     : "Pick Day, Week or Month for the business's own figures.";
   const citationNs = hasNarrative && narrative ? narrative.citations.map(c => Number(c.ref)).filter(Number.isFinite) : [];

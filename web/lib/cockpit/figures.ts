@@ -73,6 +73,15 @@ export function unmeasuredByReason(block: BriefingRangeBlock): { reason: string;
   return [...out].map(([reason, names]) => ({ reason, names }));
 }
 
+/** The block as the Cockpit reads it. A range's figures are its own (the user, 2026-10-23): an ended metric's figure
+ *  for the period it last covers rides on its not-measured row (`latest`). The Cockpit's cards each name their
+ *  period, so it is put back among the figures here — and said under "from before this period" below. */
+export function withLatest(block: BriefingRangeBlock): BriefingRangeBlock {
+  if (!block.unmeasured.some(u => u.latest)) return block;
+  return { ...block, measured: [...block.measured, ...block.unmeasured.flatMap(u => (u.latest ? [u.latest] : []))],
+           unmeasured: block.unmeasured.filter(u => !u.latest) };
+}
+
 /** The figures read for an earlier period than the cockpit's, because their data stops before it. */
 export function olderFigures(block: BriefingRangeBlock): { name: string; covers: string; dataEnds: string }[] {
   return block.measured.filter(m => m.anchored)

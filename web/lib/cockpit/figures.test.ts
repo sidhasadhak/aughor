@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type { BriefingRangeBlock, BriefingRangeMeasure } from "@/lib/api";
-import { endsWords, heroOf, olderFigures, periodShort, spanWords, unmeasuredByReason } from "@/lib/cockpit/figures";
+import type { BriefingRangeBlock, BriefingRangeMeasure, BriefingRangeUnmeasured } from "@/lib/api";
+import { endsWords, heroOf, olderFigures, periodShort, spanWords, unmeasuredByReason, withLatest } from "@/lib/cockpit/figures";
 
 const m = (over: Partial<BriefingRangeMeasure>): BriefingRangeMeasure => ({
   name: "Revenue", metric: "revenue", unit: "$", time_kind: "flow", confirmed: true, current: 110, previous: 100,
   last_year: null, rel: 0.1, rel_last_year: null, status: "final", current_text: "$110", previous_text: "$100", ...over,
 });
 
-const block = (measured: BriefingRangeMeasure[], unmeasured: { name: string; reason: string }[] = []): BriefingRangeBlock => ({
+const block = (measured: BriefingRangeMeasure[], unmeasured: BriefingRangeUnmeasured[] = []): BriefingRangeBlock => ({
   period: "month", key: "k", preset: "previous_month", label: "Last month", start: "2026-09-01", end: "2026-10-01",
   last_day: "2026-09-30", previous_start: "2026-08-01", previous_end: "2026-08-31", last_year_start: null, last_year_end: null,
   as_of: "2026-10-13", lag_days: 12, lag_source: "default", still_moving: [], covers: "September 2026",
@@ -60,5 +60,28 @@ describe("what needs a person, said once", () => {
     [{ name: "Gross Margin %", reason }, { name: "ROAS", reason }, { name: "Cart → order", reason: "it has no formula" }]);
     expect(unmeasuredByReason(b)).toEqual([{ reason, names: ["Gross Margin %", "ROAS"] }, { reason: "it has no formula", names: ["Cart → order"] }]);
     expect(olderFigures(b)).toEqual([{ name: "GMV", covers: "May 2025", dataEnds: "2025-06-29" }]);
+  });
+});
+
+describe("the Cockpit's figures from before its period (2026-10-23)", () => {
+  // The range's figures are its own: an ended metric's last figure rides on its not-measured row. The Cockpit's
+  // cards name their period, so it is put back among them — and said under "from before this period".
+  const gmv = m({ metric: "gmv", name: "GMV", anchored: { start: "2025-06-01", end: "2025-07-01", data_ends: "2025-06-29",
+    covers: "June 2025", compared_with: "May 2025", why: "" } });
+  const b = block([m({})], [
+    { name: "GMV", metric: "gmv", reason: "its data ends 2025-06-29, before this range", data_ends: "2025-06-29", latest: gmv },
+    { name: "ROAS", reason: "its data has no rows in this range" }]);
+
+  it("puts an ended metric's last figure back among the figures, and leaves the rest not measured", () => {
+    const seen = withLatest(b);
+    expect(seen.measured.map(x => x.metric)).toEqual(["revenue", "gmv"]);
+    expect(seen.unmeasured.map(u => u.name)).toEqual(["ROAS"]);
+    expect(olderFigures(seen)).toEqual([{ name: "GMV", covers: "June 2025", dataEnds: "2025-06-29" }]);
+    expect(heroOf(seen)?.metric).toBe("revenue");                      // an older figure never leads
+  });
+
+  it("hands back the same block when nothing ended", () => {
+    const plain = block([m({})], [{ name: "ROAS", reason: "its data has no rows in this range" }]);
+    expect(withLatest(plain)).toBe(plain);
   });
 });

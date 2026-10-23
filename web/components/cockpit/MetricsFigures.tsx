@@ -20,7 +20,7 @@ import { CARD, Chip, Figure, Figures, Label, MUTED, NUM, NeedsRow, NeedsYou, ONE
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import type { BriefingRangeBlock, BriefingRangeMeasure } from "@/lib/api";
-import { dayWords, endsWords, figurePeriods, heroOf, moveOf, olderFigures, sentence, spanWords, unmeasuredByReason } from "@/lib/cockpit/figures";
+import { dayWords, endsWords, figurePeriods, heroOf, moveOf, olderFigures, sentence, spanWords, unmeasuredByReason, withLatest } from "@/lib/cockpit/figures";
 import { countNoun } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
 import { requestTab } from "@/lib/navigate";
@@ -134,9 +134,10 @@ function SmallFigure({ m, block, onOpen }: { m: BriefingRangeMeasure; block: Bri
   );
 }
 
-export function MetricsFigures({ connectionId, schema, block }: {
+export function MetricsFigures({ connectionId, schema, block: measuredBlock }: {
   connectionId: string; schema?: string; block: BriefingRangeBlock;
 }) {
+  const block = withLatest(measuredBlock);
   const open = useOpenMetric();
   const [details, setDetails] = useState(false);
   const hero = heroOf(block);

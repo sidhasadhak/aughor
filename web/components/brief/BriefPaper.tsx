@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { changeOf } from "@/components/brief/MetricDetail";
+import { endsWords, sentence } from "@/lib/cockpit/figures";
 import { endedDay } from "@/lib/format";
 import { requestTab } from "@/lib/navigate";
 import type { BriefingDesk, BriefingRangeBlock, DeskColumn, DeskItem } from "@/lib/api";
@@ -122,26 +123,33 @@ export function PaperLead({ kicker, headline, children }: { kicker: string; head
 
 export interface PaperNumber {
   key: string; label: string; value: string; change?: { text: string; sign: number }; unknown?: string;
-  /** Said under the label when the figure is not the edition's own: other months, or part of one. */
+  /** Said under the label when the figure holds only part of the edition's range. */
   note?: string;
+  /** Why there is no figure, in full: the chip's title. */
+  why?: string;
 }
 
-/** An edition's measured metrics as the numbers box prints them. A metric whose data ends before
- *  the range was measured over the latest months it covers (`anchored`): its row names those months,
- *  so "€14,306 −5%" is never read as this edition's move (LuxExperience's September 2026 edition,
- *  2026-10-12: three of its four figures were June 2025 and April 2024). A part-period figure says
- *  which days it holds. A metric not measured is said, never a zero. */
+/** An edition's measured metrics as the numbers box prints them: every figure is the edition's own
+ *  range, against the one comparison the note under the box names (the user, 2026-10-23 — four of
+ *  LuxExperience's ten weekly figures were other weeks, each dated in amber under its name). A metric
+ *  whose data ended before the range has no figure: its chip says when its data ended. A part-period
+ *  figure says which days it holds. A metric not measured is said, never a zero. */
 export function rangeNumbers(block: BriefingRangeBlock): PaperNumber[] {
+  // An edition built before 2026-10-23 kept an ended metric's other-week figure among its own (`anchored`):
+  // it prints as ended too, so a stored edition reads by the same rule.
+  const kept = block.measured.filter(m => m.anchored);
+  const ended = [...kept.map(m => ({ name: m.name, reason: m.anchored!.why, data_ends: m.anchored!.data_ends })),
+                 ...block.unmeasured];
   return [
-    ...block.measured.map(m => {
+    ...block.measured.filter(m => !m.anchored).map(m => {
       const t = changeOf(m, "previous");
-      const days = m.current_partial ? `only ${m.current_partial}` : "";
-      const own = m.anchored ? `${m.anchored.covers}, against ${m.anchored.compared_with} — its data ends ${m.anchored.data_ends}` : "";
       return { key: m.metric, label: m.name, value: m.current_text ?? "—",
                change: t && m.rel !== null ? { text: t, sign: Math.sign(m.rel) } : undefined,
-               note: [own, days].filter(Boolean).join(" · ") || undefined };
+               note: m.current_partial ? `only ${m.current_partial}` : undefined };
     }),
-    ...block.unmeasured.map(u => ({ key: `unmeasured:${u.name}`, label: u.name, value: "", unknown: "not measured" })),
+    ...ended.map(u => ({ key: `unmeasured:${u.name}`, label: u.name, value: "",
+                                    unknown: u.data_ends ? `data ended ${endsWords([u.data_ends])}` : "not measured",
+                                    why: sentence(u.reason) })),
   ];
 }
 
@@ -160,7 +168,7 @@ export function PaperNumbers({ title, rows, note }: { title: string; rows: Paper
               {r.note && <span className="aug-fs-xs" data-testid="paper-number-note" style={{ display: "block", color: "var(--amb4)" }}>{r.note}</span>}
             </span>
             {r.unknown
-              ? <span className="aug-fs-xs" style={{ color: "var(--t3)", padding: "0 6px", borderRadius: 3,
+              ? <span className="aug-fs-xs" title={r.why} style={{ color: "var(--t3)", padding: "0 6px", borderRadius: 3, whiteSpace: "nowrap",
                   background: "repeating-linear-gradient(135deg, var(--b1) 0 4px, transparent 4px 8px)" }}>{r.unknown}</span>
               : <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                   {r.value}
