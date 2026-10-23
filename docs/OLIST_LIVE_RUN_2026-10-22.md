@@ -580,6 +580,11 @@ Record, Inbox and the closed loop; the agent wizard's draft, scope and honesty a
    the data does is withheld and says why; nothing is predicted after the end; a scheduled send pauses
    while the edge does not move; Now names the days and the end.
 3. A workspace currency that adopts the Profile's inference; one number formatter for money and ratios (C).
+   **Built 2026-10-23**, per DATASET on the user's choice (one connection held Olist in BRL and `main` in EUR):
+   the profile's currency is a suggestion; a person confirms it on the Profile page; only a confirmed currency
+   labels a figure, server and web, and an unconfirmed one prints plain amounts and says so. Percentages carry
+   one decimal; findings are asked to write ratios as percentages; the definition check reads 13,494,400.74,
+   not 1.34944e+07. Olist confirmed BRL live.
 4. "Adopt the explorer's eight" as one door with the right dates (D); composite keys (Gap 13).
 5. One answer to "what ran" across Now, Agent runs, History, Agent Ops; a monitor shows what it read (E).
 6. The user's own item: rename "Phase 8"-style names (PENDING 53). **Done 2026-10-23 (#623).**
