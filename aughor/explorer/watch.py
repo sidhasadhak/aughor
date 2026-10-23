@@ -43,6 +43,23 @@ def _quarter_spec(conn_id: str, resolve: Callable, today: date):
     return spec
 
 
+def settled_period(conn_id: str, grain: str, *, today: date, resolve: Optional[Callable] = None,
+                   schema: Optional[str] = None):
+    """The newest settled ``grain`` — day, week, month, quarter or year — as a Briefing range, or None: the data's
+    edge, its settling lag and an ended dataset taken as every edition takes them. One home for "the period just
+    closed": the watch reads it, and so does a monitor over a metric (`monitors/runner.py`)."""
+    from aughor.briefing import ranges as R
+    base = resolve or R.resolve_for
+
+    def scoped(*args, **kwargs):
+        return base(*args, **kwargs, **({"schema": schema} if schema else {}))
+
+    if grain == "quarter":
+        return _quarter_spec(conn_id, scoped, today)
+    preset = PRESET_FOR.get(grain)
+    return scoped(conn_id, preset, today=today)[0] if preset else None
+
+
 def due(conn_id: str, schema: Optional[str], prog: dict, *, today: Optional[date] = None,
         metrics: Optional[list] = None, resolve: Optional[Callable] = None) -> list[tuple[str, Any]]:
     """``[(grain, range)]`` whose newest settled period this dataset has not read yet."""
@@ -55,8 +72,7 @@ def due(conn_id: str, schema: Optional[str], prog: dict, *, today: Optional[date
     grains = sorted({grain_of(m) for m in metrics if mt.declared(m)})
     out = []
     for g in grains:
-        spec = (_quarter_spec(conn_id, resolve, today) if g == "quarter"
-                else resolve(conn_id, PRESET_FOR[g], today=today)[0])
+        spec = settled_period(conn_id, g, today=today, resolve=resolve)
         if spec is None:
             continue
         seen = (prog.get("watch") or {}).get(g) or {}

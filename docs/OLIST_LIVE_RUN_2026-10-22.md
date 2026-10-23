@@ -596,7 +596,14 @@ Record, Inbox and the closed loop; the agent wizard's draft, scope and honesty a
    jobs on the workspace's connections (Agent runs stays the person's history); a budget stop reads "stopped at
    its budget" in Agent Ops; a monitor says what it read — live, Olist's GMV floor reads the ALL-TIME total
    (13,494,400.74), which is why it never fires against a monthly 900,000 line (a monitor over a metric reading its
-   all-time value is the next defect to name). Gap 30 did not reproduce.
+   all-time value is the next defect to name). Gap 30 did not reproduce. **Fixed 2026-10-24:** a threshold,
+   any-change or trend check over a metric whose dates are set reads the newest settled period of the metric's
+   grain (month unless a person set another, as the metric editor says), measured by the metric's own compiler
+   with the Briefing's range and data edge, and says it. Live (Test now, 2026-10-23 19:05 UTC): "read 145 for
+   September 2018 (warning below 900,000; critical below 800,000)" — critical. That is the Briefing's own last month
+   for data that ends on 17 Oct 2018 (the "Sep 2018 BRL 145 ▼100%" row the user kept, 2026-10-23); August 2018
+   (848,860.10) is the month before it. A metric with no date says it reads all history; a period that cannot be
+   read is a failed run, never an all-history read (`tests/unit/test_monitor_reads_its_period.py`).
 6. The user's own item: rename "Phase 8"-style names (PENDING 53). **Done 2026-10-23 (#623).**
 Not done in this run: the other seven Olist metrics, Health targets, a document upload, Slack reach, the
 Default workspace's `data/metrics.json` drift from this run.

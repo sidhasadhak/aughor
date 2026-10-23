@@ -35,6 +35,9 @@ from typing import Any, Callable, Optional
 KINDS = ("flow", "stock", "cohort")
 #: The periods a metric is reported by (`time_grain`).
 GRAINS = ("day", "week", "month", "quarter", "year")
+#: The period a metric is reported by when no one set one — the metric editor's own word for an unset grain,
+#: "month (the default)".
+DEFAULT_GRAIN = "month"
 #: The fields an edit may send; ``time_source`` is written by the platform, never sent, and
 #: ``time_confirmed_by`` is stamped by the server with the person signed in, never typed.
 TIME_FIELDS = ("time_column", "time_kind", "outcome_column", "until_column",
@@ -62,6 +65,13 @@ def declared(m: Any) -> bool:
     if kind == "cohort":
         return bool(_get(m, "outcome_column"))
     return True
+
+
+def reported_grain(m: Any) -> str:
+    """The period ``m`` is reported by: its ``time_grain``, else ``DEFAULT_GRAIN`` — the period the metric editor
+    shows a person for it, so what reads "by month" there is read by the month everywhere that follows it."""
+    g = str(_get(m, "time_grain") or "").lower()
+    return g if g in GRAINS else DEFAULT_GRAIN
 
 
 def unreachable_date(m: Any) -> str:
