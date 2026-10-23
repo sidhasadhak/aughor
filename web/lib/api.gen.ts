@@ -11720,6 +11720,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/entities/{entity_id}/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Ontology Entity Key
+         * @description Name what makes one object of this type: one column, or SEVERAL together (the Olist study, Gap 13, 2026-10-22:
+         *     order lines are keyed by (order_id, order_item_id), payments by (order_id, payment_sequential), reviews by
+         *     (review_id, order_id), and the key door offered one column — so all three carried "not unique per row" for
+         *     good). The key is measured over the rows like any backing, and said unique or not.
+         */
+        put: operations["set_ontology_entity_key_ontology_entities__entity_id__key_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/entities/{entity_id}/lifecycle-counts": {
         parameters: {
             query?: never;
@@ -21987,6 +22010,11 @@ export interface components {
             moves: string[][];
             /** States */
             states: string[];
+        };
+        /** _EntityKey */
+        _EntityKey: {
+            /** Columns */
+            columns: string[];
         };
         /** _EntityOverride */
         _EntityOverride: {
@@ -42921,6 +42949,44 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_ontology_entity_key_ontology_entities__entity_id__key_put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_EntityKey"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

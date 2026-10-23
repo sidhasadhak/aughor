@@ -30,6 +30,7 @@ const setQueryBacking = vi.fn(async (..._args: unknown[]) => undefined);
 const withdrawBacking = vi.fn(async (..._args: unknown[]) => undefined);
 const declareEditStates = vi.fn(async (..._args: unknown[]) => undefined);
 const measureOntology = vi.fn(async (..._args: unknown[]) => undefined);
+const setEntityKey = vi.fn(async (..._args: unknown[]) => undefined);
 /** The processes and rules the Overview reads for its funnel and its sets' counts — none, unless a test serves some. */
 const served = vi.hoisted(() => ({ scope: { processes: [] as unknown[], rules: [] as unknown[] } }));
 const getProcesses = vi.fn(async (..._args: unknown[]) => served.scope);
@@ -61,6 +62,7 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   declareExpression: (...a: unknown[]) => declareExpression(...a),
   declareEditStates: (...a: unknown[]) => declareEditStates(...a),
   measureOntology: (...a: unknown[]) => measureOntology(...a),
+  setEntityKey: (...a: unknown[]) => setEntityKey(...a),
   getProcesses: (...a: unknown[]) => getProcesses(...a),
 }));
 
@@ -127,6 +129,24 @@ async function editIn(name: string) {
   const edit = await screen.findByTestId("entity-edit");
   if (edit.getAttribute("aria-pressed") !== "true") fireEvent.click(edit);
 }
+
+describe("EntityTypePanel — a key of several columns (the Olist study, Gap 13)", () => {
+  it("names the key from two columns together, behind Edit, and the panel reads it again", async () => {
+    setEntityKey.mockClear();
+    const onChanged = vi.fn();
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={onChanged} />);
+    await openTab("Properties");
+    expect(screen.queryByTestId("entity-key-door")).toBeNull();             // a door that writes waits for Edit
+    await editIn("Properties");
+    const door = await screen.findByTestId("entity-key-door");
+    fireEvent.click(within(door).getByText("product_id"));
+    fireEvent.click(within(door).getByText("product_name"));
+    fireEvent.click(within(door).getByText("Use these 2 as the key"));
+    await waitFor(() => expect(setEntityKey).toHaveBeenCalledWith("c1", "products", ["product_id", "product_name"], "s"));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+});
 
 describe("EntityTypePanel — declaring what the builder cannot propose", () => {
   beforeEach(() => {

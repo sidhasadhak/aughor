@@ -1420,6 +1420,59 @@ def _display_property_or_error(connection_id: str, schema: str, entity_id: str, 
     return match
 
 
+class _EntityKey(BaseModel):
+    #: The column(s) that together name one object — one column, or a pair such as (order_id, order_item_id).
+    columns: list[str]
+
+
+def composite_key_backing(entity_id: str, table: str, columns: list[str]) -> dict:
+    """The backing a key of ``columns`` reads from: the table itself for one column; for several, the table with
+    ONE key column built from them (``order_id|order_item_id``), so every reader of an object's key — its
+    instances, its links, the compiler — keeps reading one column. Written in DuckDB SQL, which the backing
+    probe transpiles to the warehouse's own."""
+    from aughor.ontology.cardinality import quote_ident, quote_table
+    if len(columns) == 1:
+        return {"kind": "table", "table": table, "primary_key": columns[0]}
+    name = re.sub(r"[^a-z0-9_]+", "_", f"{entity_id}_key".lower()).strip("_") or "object_key"
+    parts = ", ".join(f"CAST({quote_ident(c)} AS VARCHAR)" for c in columns)
+    return {"kind": "query", "primary_key": name,
+            "sql": f"SELECT *, CONCAT_WS('|', {parts}) AS {quote_ident(name)} FROM {quote_table(table)}"}
+
+
+@router.put("/ontology/entities/{entity_id}/key", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def set_ontology_entity_key(entity_id: str, body: _EntityKey, connection_id: str = BUILTIN_ID,
+                            schema_name: Optional[str] = Query(default=None)):
+    """Name what makes one object of this type: one column, or SEVERAL together (the Olist study, Gap 13, 2026-10-22:
+    order lines are keyed by (order_id, order_item_id), payments by (order_id, payment_sequential), reviews by
+    (review_id, order_id), and the key door offered one column — so all three carried "not unique per row" for
+    good). The key is measured over the rows like any backing, and said unique or not."""
+    from aughor.ontology.bindings import COLUMN_PATTERN
+    columns = list(dict.fromkeys(str(c).strip() for c in body.columns if str(c).strip()))
+    if not columns:
+        raise HTTPException(status_code=422, detail="name the column, or the columns together, that make one object")
+    bad = [c for c in columns if not COLUMN_PATTERN.match(c)]
+    if bad:
+        raise HTTPException(status_code=422, detail=f"not a column name: {', '.join(bad)}")
+    served = _get_ontology_graph(connection_id, _served_scope(connection_id, schema_name))
+    entity = served.entities.get(entity_id) if served is not None else None
+    if entity is None:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    b = entity.backing
+    if b is not None and b.kind == "query" and b.table is None and len(columns) > 1 and not str(b.sql or "").startswith("SELECT *, CONCAT_WS"):
+        raise HTTPException(status_code=409, detail=(
+            f"{entity_id} is read from a SELECT a person wrote; add the key column to that SELECT instead"))
+    table = (b.table if b is not None and b.table else None) or (entity.source_tables[0] if entity.source_tables else "")
+    if not table:
+        raise HTTPException(status_code=409, detail=f"{entity_id} names no table to read its key from")
+    held = {str(name).lower() for name in (entity.properties or {})}
+    missing = [c for c in columns if c.lower() not in held]
+    if missing:
+        raise HTTPException(status_code=422, detail=(
+            f"{entity_id} has no {', '.join(missing)} — its columns are {', '.join(sorted(entity.properties or {}))}"))
+    return override_ontology_entity(entity_id, _EntityOverride(backing=_BackingSpec(**composite_key_backing(
+        entity_id, table, columns))), connection_id, schema_name)
+
+
 @router.put("/ontology/entities/{entity_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def override_ontology_entity(
     entity_id: str,

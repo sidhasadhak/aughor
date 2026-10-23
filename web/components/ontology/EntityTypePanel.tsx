@@ -33,7 +33,7 @@ import { declaredActionsHref } from "@/lib/objectLinks";
 import {
   addBinding,
   confirmProposals,
-  declareDisplayProperty,
+  declareDisplayProperty, setEntityKey,
   declareLink,
   declareProcess,
   declareRule,
@@ -250,7 +250,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
   } else if (tab === "properties") {
     body = (
       <>
-        <KeySection detail={detail} />
+        <KeySection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} readOnly={inDomain || !!detail.platform} />
         {!detail.platform && (
           <DisplaySection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} readOnly={inDomain} />
         )}
@@ -751,10 +751,40 @@ function DeclareRule({ detail, connectionId, schema, onChanged }: {
   );
 }
 
-function KeySection({ detail }: { detail: ObjectTypeDetail }) {
+/** The key: what makes one object, measured over the rows. In edit mode a person names it — one column, or SEVERAL
+ *  together (the Olist study, Gap 13: order lines, payments and reviews are keyed by a pair, and the door offered one
+ *  column, so all three said "not unique per row" for good). */
+function KeySection({ detail, connectionId, schema, onChanged, readOnly }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
+  onChanged: () => void;
+  readOnly?: boolean;
+}) {
   const { key } = detail;
+  const editing = useEditing();
+  const [picked, setPicked] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
   const verdict = key.verified === true ? ["aug-tag-green", "unique per object"]
     : key.verified === false ? ["aug-tag-red", "not unique per row"] : ["aug-tag-gray", "not yet measured"];
+  // The backing's own columns: an expression or an overlay is not a column a key can be read from.
+  const columns = detail.properties.filter((p) => p.source.binding !== "overlay" && !p.source.kind && !p.source.expression)
+    .map((p) => p.name);
+  const toggle = (name: string) => setPicked((x) => (x.includes(name) ? x.filter((n) => n !== name) : [...x, name]));
+  const use = async () => {
+    setBusy(true);
+    setProblem("");
+    try {
+      await setEntityKey(connectionId, detail.id, picked, schema);
+      setPicked([]);
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <Section title="Key" aside={key.rows == null ? undefined : `measured over ${formatCount(key.rows)} rows`}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -763,6 +793,26 @@ function KeySection({ detail }: { detail: ObjectTypeDetail }) {
         <span className={`aug-tag ${verdict[0]}`} data-testid="entity-key-verdict">{verdict[1]}</span>
       </div>
       {key.note && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--t3)", lineHeight: 1.45 }}>{key.note}</p>}
+      {!readOnly && editing && columns.length > 0 && (
+        <div data-testid="entity-key-door" style={{ marginTop: 8 }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 4 }}>
+            Key from {picked.length > 1 ? "these columns together" : "a column, or several together"}:
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            {columns.map((name) => (
+              <Button key={name} size="xs" variant={picked.includes(name) ? "secondary" : "ghost"} disabled={busy}
+                aria-pressed={picked.includes(name)} onClick={() => toggle(name)}>
+                <span style={MONO}>{name}</span>
+              </Button>
+            ))}
+            <Button size="xs" variant="secondary" disabled={busy || picked.length === 0} onClick={() => void use()}
+              title="Use as the key and measure it over the rows — no model call">
+              {busy ? "Measuring…" : picked.length > 1 ? `Use these ${picked.length} as the key` : "Use as the key"}
+            </Button>
+          </div>
+        </div>
+      )}
+      {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
     </Section>
   );
 }
