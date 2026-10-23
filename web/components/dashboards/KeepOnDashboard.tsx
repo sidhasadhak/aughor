@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { QuestionComposer } from "@/components/dashboards/QuestionComposer";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select";
-import { getDashboard, getSystemFlags, keepDashboard, listDashboards, setAutomationEnabled, type DashboardListed } from "@/lib/api";
+import { getDashboard, getSystemFlags, keepDashboard, listDashboards, setAutomationEnabled, type DashboardListed, type QuestionRhythm } from "@/lib/api";
 import { placeQuestion } from "@/lib/dashboards/edit";
 import { requestTab } from "@/lib/navigate";
 
@@ -50,13 +50,17 @@ export function KeepOnDashboard({ connectionId, schema, question, runId }: {
   }, [open, connectionId]);
   if (!on) return null;
 
-  const place = async (automation: string, first: string) => {
+  const place = async (automation: string, first: string, rhythm: QuestionRhythm) => {
     const title = mine?.find(d => d.id === chosen)?.title ?? "your dashboard";
     try {
       const now = await getDashboard(connectionId, chosen);
       const out = await keepDashboard(connectionId, chosen, placeQuestion(now.cockpit.spec, automation, first || undefined),
         "a question kept from the Data Canvas");
-      if (out.kept) { setSaid(`Kept on “${title}”. It is answered there on its rhythm.`); setOpen(false); return; }
+      if (out.kept) {
+        setSaid(`Kept on “${title}”. ${rhythm === "ask" ? "It is asked there only when you ask." : "It is answered there on its rhythm."}`);
+        setOpen(false);
+        return;
+      }
       await setAutomationEnabled(automation, false).catch(() => undefined);
       setSaid(`Not kept on “${title}”: ${out.sentences.join(" ")}`);
     } catch (e) {
@@ -96,7 +100,7 @@ export function KeepOnDashboard({ connectionId, schema, question, runId }: {
               </div>
               <QuestionComposer connectionId={connectionId} schema={schema} question={question} firstRun={runId}
                 from="From the Data Canvas · this answer" onClose={() => setOpen(false)}
-                onKept={(automation, first) => void place(automation, first)} />
+                onKept={(automation, first, rhythm) => void place(automation, first, rhythm)} />
             </>
           )}
         </div>

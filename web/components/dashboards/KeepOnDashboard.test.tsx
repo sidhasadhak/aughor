@@ -46,7 +46,7 @@ describe("keeping a Data Canvas answer's question on a dashboard", () => {
     const placed = Object.values((spec as typeof SPEC).elements).find(e => e.type === "Question");
     expect(placed).toMatchObject({ props: { automation: "aut-1a2b3c4d", first: "d4039693" } });
     expect(api.keepQuestion.mock.calls[0][1]).toMatchObject({ question: "Why did revenue change last month?", rhythm: "weekly", first_run: "d4039693" });
-    expect(await screen.findByTestId("keep-on-dashboard-said")).toHaveTextContent("Kept on “Revenue watch”.");
+    expect(await screen.findByTestId("keep-on-dashboard-said")).toHaveTextContent("Kept on “Revenue watch”. It is answered there on its rhythm.");
     expect(api.setAutomationEnabled).not.toHaveBeenCalled();
   });
 
