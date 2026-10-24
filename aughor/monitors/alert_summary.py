@@ -31,7 +31,8 @@ class AlertSummarySection(BaseModel):
     items: list[str] = Field(default_factory=list)
     #: HB-2 — what kind of claim this section's lines make, so the departure gate judges each
     #: line by it: ``monitor_alerts`` (dated records a person declared) · ``findings`` ·
-    #: ``causal_links`` · ``recommendations`` · ``review_queue`` · ``held``.
+    #: ``causal_links`` · ``impacts`` (ED-5: declared impacts, worded by their mechanism) · ``recommendations`` ·
+    #: ``review_queue`` · ``held``.
     kind: str = ""
 
 
@@ -68,6 +69,42 @@ class AlertSummary(BaseModel):
 
 
 # ── Builder ────────────────────────────────────────────────────────────────────
+
+#: Arc ED, ED-5 — the most impacts a summary words; the rest that hold are counted.
+MAX_IMPACTS = 5
+
+
+def impacts_section(conn_id: str) -> AlertSummarySection | None:
+    """The connection's declared impacts as an alert summary names them (ED-5): each that holds — measured to, or
+    exact by definition — in the words of its mechanism (`ontology.impacts.impact_words`), validated first; and how
+    many are declared and do not hold, said rather than left out. None when none is declared. Read from the stored
+    ontology, never built."""
+    try:
+        from aughor.ontology.impacts import impact_words
+        from aughor.ontology.store import load_latest_ontology
+        graph = load_latest_ontology(conn_id)
+        declared = list((graph.impacts or {}).values()) if graph is not None else []
+        if not declared:
+            return None
+        order = {"validated": 0, "influence": 1, "formula": 2}
+        holds = sorted((i for i in declared if i.mechanism == "formula" or i.verified is True),
+                       key=lambda i: (order.get(i.mechanism, 3),
+                                      -((i.rate_when_broke or 0.0) - (i.rate_when_kept or 0.0)), i.id))
+        items = [impact_words(graph, i) for i in holds[:MAX_IMPACTS]]
+        if len(holds) > MAX_IMPACTS:
+            more = len(holds) - MAX_IMPACTS
+            items.append(f"{more} more declared impact{'s' if more != 1 else ''} hold{'' if more != 1 else 's'}; "
+                         "the ontology's processes list every one")
+        rest = [i for i in declared if i not in holds]
+        if rest:
+            names = ", ".join(i.display_name or i.id for i in rest[:3]) + (" …" if len(rest) > 3 else "")
+            items.append(f"{len(rest)} declared impact{'s' if len(rest) != 1 else ''} not measured to hold: {names}")
+    except Exception as exc:  # noqa: BLE001 — the summary stands without its impacts
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the declared impacts could not be read for an alert summary", counter="alert_summary.impacts")
+        return None
+    return AlertSummarySection(title="Impacts", items=items, kind="impacts")
+
 
 def build_alert_summary(conn_id: str, period: str = "week") -> AlertSummary:
     """Aggregate recent activity into a AlertSummary.
@@ -143,23 +180,31 @@ def build_alert_summary(conn_id: str, period: str = "week") -> AlertSummary:
         logger.debug("Digest: exploration section failed: %s", exc)
 
     # ── 3. Causal edges ─────────────────────────────────────────────────────
-    try:
-        from aughor.lifecycle.causal import load_causal_graph
-        graph = load_causal_graph(conn_id)
-        if graph:
-            edges = graph.get("edges") or []
-            # Surface the top-weight edges
-            top = sorted(edges, key=lambda e: abs(e.get("weight", 0)), reverse=True)[:5]
-            if top:
-                items = [
-                    f"{e.get('source', '?')} → {e.get('target', '?')} "
-                    f"(strength: {e.get('weight', 0):.2f})"
-                    for e in top
-                ]
-                sections.append(AlertSummarySection(title="Top Causal Relationships", items=items,
-                                                     kind="causal_links"))
-    except Exception as exc:
-        logger.debug("Digest: causal graph section failed: %s", exc)
+    # Arc ED, ED-5: with impacts the one store, what bears on what is the connection's declared impacts, each in the
+    # words of its mechanism — never a cause the impacts store does not hold.
+    from aughor.lifecycle.causal import impacts_only
+    if impacts_only():
+        section = impacts_section(conn_id)
+        if section is not None:
+            sections.append(section)
+    else:
+        try:
+            from aughor.lifecycle.causal import load_causal_graph
+            graph = load_causal_graph(conn_id)
+            if graph:
+                edges = graph.get("edges") or []
+                # Surface the top-weight edges
+                top = sorted(edges, key=lambda e: abs(e.get("weight", 0)), reverse=True)[:5]
+                if top:
+                    items = [
+                        f"{e.get('source', '?')} → {e.get('target', '?')} "
+                        f"(strength: {e.get('weight', 0):.2f})"
+                        for e in top
+                    ]
+                    sections.append(AlertSummarySection(title="Top Causal Relationships", items=items,
+                                                         kind="causal_links"))
+        except Exception as exc:
+            logger.debug("Digest: causal graph section failed: %s", exc)
 
     # ── 4. Open recommendations ─────────────────────────────────────────────
     try:

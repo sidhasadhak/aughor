@@ -8,6 +8,13 @@ confirmed graph when a recommendation from that investigation is marked
 
 Edge weight accumulates (+1 per confirmation, -1 per contradiction) so the
 graph degrades gracefully when an edge is later disproved.
+
+**Retired behind ``ontology.impacts_only``** (Arc ED, ED-5; the user, 2026-10-24: *"Impacts are the one store"*).
+What one promise does to another is the ontology's declared impact (``ontology/impacts.py``): declared by a person,
+measured through the object door, worded by its mechanism. This file held a second answer, written by the model, that
+never once confirmed an edge on the live install (measured 2026-10-24: 222 proposals from 101 investigations, 175 of
+them filed under the connection id "workspace", and no confirmed graph). With the flag on, nothing here reads or writes
+either file; the files stay on disk as they are. Off: as before.
 """
 from __future__ import annotations
 
@@ -33,6 +40,17 @@ def _proposals_path() -> Path:
 def _confirmed_path() -> Path:
     from aughor.db.sqlite_util import resolve_db_path
     return resolve_db_path("AUGHOR_CAUSAL_GRAPH_FILE", _CONFIRMED_DEFAULT)
+
+
+#: Arc ED, ED-5 — on: the declared impacts are the one store of what bears on what, and these files are not read.
+IMPACTS_ONLY = "ontology.impacts_only"
+#: Why a write here records nothing, with the flag on.
+RETIRED = "what one promise does to another is a declared impact now, so the model's proposed causes are not kept"
+
+
+def impacts_only() -> bool:
+    from aughor.kernel.flags import flag_enabled
+    return flag_enabled(IMPACTS_ONLY)
 
 
 def _edge_id(from_signal: str, to_signal: str) -> str:
@@ -106,13 +124,17 @@ def _save_confirmed(edges: list[dict]) -> None:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def save_proposals(inv_id: str, proposals: list[CausalProposal]) -> None:
-    """Store ADA's proposed causal links for an investigation."""
+    """Store ADA's proposed causal links for an investigation. With impacts the one store, nothing is kept."""
+    if impacts_only():
+        return
     data = _load_proposals()
     data[inv_id] = [p.model_dump() for p in proposals]
     _save_proposals(data)
 
 
 def load_proposals(inv_id: str) -> list[CausalProposal]:
+    if impacts_only():
+        return []
     return [CausalProposal(**p) for p in _load_proposals().get(inv_id, [])]
 
 
@@ -123,7 +145,7 @@ def promote_on_outcome(inv_id: str, contradicted: bool = False) -> int:
     contradicted=False (verified/implemented) → weight +1 or create edge
     contradicted=True  (rejected)             → weight -1, remove at 0
 
-    Returns number of edges affected.
+    Returns number of edges affected — none with impacts the one store, where ``load_proposals`` reads nothing.
     """
     proposals = load_proposals(inv_id)
     if not proposals:
@@ -175,6 +197,8 @@ def promote_on_record_outcome(inv_id: str, verdict: str) -> dict:
     investigation's proposed causes when the decision went as expected or better, weakens them when
     it went worse, and leaves them alone when the review could not tell. Until this, promotion ran
     only on a person's answer, and the file had never been written on the live deployment."""
+    if impacts_only():
+        return {"affected": 0, "did": f"nothing: {RETIRED}", "verdict": verdict}
     if verdict in ("as_expected", "better"):
         n = promote_on_outcome(inv_id, contradicted=False)
         return {"affected": n, "did": "confirmed" if n else "nothing: no proposed causes on this investigation", "verdict": verdict}
@@ -185,7 +209,10 @@ def promote_on_record_outcome(inv_id: str, verdict: str) -> dict:
 
 
 def load_causal_graph(conn_id: Optional[str] = None) -> list[ConfirmedCausalEdge]:
-    """Load all confirmed causal edges, optionally filtered by connection."""
+    """Load all confirmed causal edges, optionally filtered by connection — none with impacts the one store: the
+    file is not read."""
+    if impacts_only():
+        return []
     edges = _load_confirmed()
     if conn_id:
         edges = [e for e in edges if e.get("conn_id") == conn_id]
@@ -225,7 +252,9 @@ def backward_traverse(
 def build_causal_context_section(question: str, conn_id: Optional[str] = None) -> str:
     """
     Build a prompt section with upstream causal context for a question.
-    Used by the playbook retriever to enrich investigation context.
+    Used by the playbook retriever to enrich investigation context. With impacts the one store it is empty, as
+    ``load_causal_graph`` reads nothing: a question about a promise is framed with the measured impacts into it
+    (``ontology/framing._frame_impacts``).
     """
     edges = backward_traverse(question, conn_id=conn_id, depth=2)
     if not edges:

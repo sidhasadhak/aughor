@@ -1273,5 +1273,10 @@ def get_process_map(conn_id: str, entity_id: str, schema_name: str | None = None
 
 @router.get("/connections/{conn_id}/causal-graph")
 def get_causal_graph(conn_id: str):
-    from aughor.lifecycle.causal import load_causal_graph
+    from aughor.lifecycle.causal import impacts_only, load_causal_graph
+    if impacts_only():
+        # Arc ED, ED-5 — an empty list would read as "nothing bears on anything"; the answer moved, and is said
+        raise HTTPException(status_code=410, detail=(
+            "What one promise does to another is a declared impact now, measured through the object door: read them "
+            "with GET /ontology/processes?connection_id=" + conn_id + " (its `impacts`)."))
     return [e.model_dump() for e in load_causal_graph(conn_id)]

@@ -92,8 +92,10 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # calls a model; each entry names its receipt and the falsifier.
     # …and `quality.expectations` (ED-3): an automation step measures a table's expectations into the quality plane.
     # …and `dashboard.app_versions` (ED-4): an App's readers read the version last published, a later keep a draft.
+    # …and `ontology.impacts_only` (ED-5): the declared impacts are the one record of what bears on what.
     assert set(GRADUATION_QUEUE) == {"dashboard.composed", "slack.managed_supervisor", "ontology.census",
                                      "ontology.security", "ontology.security_sql", "mcp.caller_principals",
-                                     "security.principal_scopes", "quality.expectations", "dashboard.app_versions"}
+                                     "security.principal_scopes", "quality.expectations", "dashboard.app_versions",
+                                     "ontology.impacts_only"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

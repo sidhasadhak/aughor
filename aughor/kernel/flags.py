@@ -143,6 +143,10 @@ FLAG_ENV = {
     # dashboard is a draft, and an App's readers read the version last published until its owner publishes again.
     # OFF: readers read every version the moment it is kept, as before.
     "dashboard.app_versions": "AUGHOR_DASHBOARD_APP_VERSIONS",
+    # Arc ED, ED-5 (ROADMAP §3.58; the user, 2026-10-24: "Impacts are the one store"). ON: what one promise does to
+    # another is read from the declared impacts only — the alert summary words them, and the model's proposed causes
+    # are neither asked for nor kept. OFF: the causal-graph files are read and written, as before.
+    "ontology.impacts_only": "AUGHOR_ONTOLOGY_IMPACTS_ONLY",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -758,6 +762,17 @@ FLAG_META = {
                        "One that cannot be measured is said, not counted as failing. Off: the step is skipped, "
                        "and table health reads not checked.",
     },
+    "ontology.impacts_only": {
+        "label": "Read what bears on what from impacts only",
+        "summary": "The impacts a person declared are the one record of what one promise does to another. "
+                   "Summaries word them as measured.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Nothing is deleted"}],
+        "description": "An alert summary names each impact that holds, in the words of how it was shown. It also "
+                       "says how many are declared and do not hold. An analysis no longer proposes causes of its own, and "
+                       "none are kept. The old files stay on disk, unread. Off: the proposed causes are kept and read "
+                       "as before.",
+    },
     "dashboard.app_versions": {
         "label": "Readers see an App's published version",
         "summary": "A change to a published dashboard is a draft until you publish it. Until then its readers keep "
@@ -1177,6 +1192,10 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc ED, ED-5 (ROADMAP §3.58), queued 2026-10-24. No model call; it trims one field from an analysis's answer.
+    "ontology.impacts_only": "receipt: on theLook, a week's alert summary names the measured impacts in their own words "
+                             "and says the ones that do not hold; an analysis keeps no proposed cause. Falsifier: an "
+                             "alert summary names a cause the impacts store does not hold stops it",
     # Arc ED, ED-4 (ROADMAP §3.58), queued 2026-10-24. No model call.
     "dashboard.app_versions": "receipt: on the live install, an App published to a group is changed twice; a member of "
                               "the group reads the published version until its owner publishes, then the new one. "

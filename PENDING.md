@@ -171,7 +171,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [x] ED-2 · every outside caller is someone — ✅ BUILT 2026-10-24 behind both flags (§3.58 "ED-2, built"; a user bearer over MCP waits for OIDC) — per-caller MCP identity; principal allowlists and area scopes; the contract generated from the grant (`mcp.caller_principals`, `security.principal_scopes`)
 - [x] ED-3 · table health that is measured — ✅ BUILT 2026-10-24 behind `quality.expectations` (§3.58 "ED-3, built"; the word is *expectation*, the user's call) — a producer for `quality/results.py`; latest reports per check; the naming call first (`quality.checks`)
 - [x] ED-4 · an App publishes one version — ✅ BUILT 2026-10-24 behind `dashboard.app_versions` (§3.58 "ED-4, built"; the live receipt waits) — ✅ decided 2026-10-24, §6 item 52(a): readers see the last published version; a keep is a draft on `kernel/lifecycle.py`'s axis, publishing to the same audience publishes it, the owner is told which version readers read
-- [ ] ED-5 · cause and effect in one store — `data/causal_graph.json` folded into impacts as *validated*
+- [x] ED-5 · cause and effect in one store — ✅ BUILT 2026-10-24 behind `ontology.impacts_only` (§3.58 "ED-5, built"; re-scoped on its premise, the user's call §6 item 52(d): *"Impacts are the one store"* — no edge was ever confirmed live, and the proposals name no promise) — the files neither read nor written, the model not asked for causes, the alert summary words the declared impacts
 - [ ] ED-6 · every object read says how complete it is (`objects.completeness`)
 
 ### Every change says what made it — Arc TC (§3.59; drafted and adopted 2026-10-24, §6 item 52; second of three)
