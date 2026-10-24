@@ -11814,6 +11814,87 @@ from records — no model fills the page.
 | **AP-5** | Shapes in the starter, offered with why | theLook's 7 entities get ≥ 4 different shapes | A cockpit read on ≥ 3 days in 2 weeks no more often than today's, per shape |
 | **AP-6** | Preview as a group, a changelog in words, read times per set | The desk previewed as a group with a row policy | — |
 
+### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · nothing built)
+
+**The premise, measured at `f7af0167` (study §2).** Aughor has already built most of Foundry's shape (study §1.2). What does
+not yet hold is that shape's own rules, at every door:
+
+- OC-7's row policies and sensitive properties apply at the object door only (`semantic/object_query.py:693`). Quick answers
+  and deep analyses go through `rbac/row_policy.py`, a second store that ships empty (`ROW_POLICIES = {}`). Inert while
+  `ontology.security` is off; a hole the day it graduates.
+- `GET /actions/edits/history` scopes by organisation only (`routers/actions.py:74-81`): no row policy, no sensitive property.
+- The quality plane has readers (`mcp/knowledge_tools.py:213`, `knowledge/briefing_content.py:173`) and no producer, so table
+  health can only say "not checked".
+- Document search returns `[]` on any exception (`knowledge/indexer.py:457`) — a failure reads as "no match".
+- §3.26's eight monitor defects are still open; `grace_period_hours` is never saved (`monitors/store.py:164-165`).
+- Every HTTP MCP client is one principal (`mcp/client.py:93-95`, one `AUGHOR_MCP_TOKEN`), so the agent policy and the audit
+  cannot tell two programs apart.
+- A shared App's readers see every keep: an edit carries `published_to` forward (`dashboards/versions.py:366`).
+- Cause and effect lives in two stores: `ontology/impacts.py` and `data/causal_graph.json` (`lifecycle/causal.py`, read by
+  `monitors/alert_summary.py:147`).
+
+| # | Builds | Flag (off) · size | Falsifier |
+|---|---|---|---|
+| **ED-0** | The small defects: document search says *unavailable* instead of `[]`; §3.26's eight monitor defects; stale words (`mcp/policy.py` "eighteen" over 23 tools, `routers/builder_v1.py:7` "(off)" of a graduated flag) | bugs, no flag · S | A saved monitor reads back a grace period other than its own → stop |
+| **ED-1** | **One row policy at every door**: the SQL gate applies the served release's row policies and sensitive properties to every table that backs an entity; a query projecting a sensitive column is refused with the object door's caveat; edit history filtered by the reader; `ROW_POLICIES` retired once the receipt holds | `ontology.security_sql` (needs `ontology.security`) · M | On theLook, a group with a row policy gets a different count from a quick answer than from the object door → stop |
+| **ED-2** | **Every outside caller is someone**: MCP over HTTP accepts a service principal or a user bearer and each call runs as that caller; a principal carries entity and action allowlists and area scopes (`objects:read`, `actions:propose`, `analysis:run` …), intersected with the agent policy and the acting person, never widening; the contract a program reads is generated from the same grant | `mcp.caller_principals`, `security.principal_scopes` · M + M | Two principals with different scopes see the same `tools/list` → stop |
+| **ED-3** | **Table health that is measured**: an automation effect runs a quality rule read-only and records the result in `quality/results.py`; the latest reports per check. A naming call first — the glossary gives *Rule* to business rules and *check* to claims | `quality.checks` · M | — |
+| **ED-4** | **An App publishes one version**: readers see the published version; later keeps are drafts until published, on `kernel/lifecycle.py` as cards and canvases already are | `dashboard.app_versions` · S–M | ⚑ §6 item 52(a) |
+| **ED-5** | **Cause and effect in one store**: confirmed causal edges fold into impacts as *validated*; the file stops being read | — · M | An alert summary names a cause the impacts store does not hold → stop |
+| **ED-6** | **Every read says how complete it is**: one typed `completeness` on every object door and in the contract — complete · truncated · withheld by policy · refused over a cap — and its time taken | `objects.completeness` · S | — |
+
+**The laws it keeps.** Withheld is said, never implied · one store per concept (two policy stores and two causal stores become
+one each) · programs propose and people approve · no new door, only the existing ones made to agree.
+
+### 3.59 · Arc TC — every change says what made it (DRAFTED 2026-10-24 as arc 2 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; second of the three · nothing built)
+
+**The premise, measured.** Provenance is Aughor's first law, and these places do not yet keep it:
+
+- An answer does not say which revision of the agent gave it: `config_rev` is read by the agents router (`routers/agents.py:442`)
+  and the evals, not stamped on turns or receipts.
+- The edit layer records who, not which run (`actions/overlay.py` holds no trace or run id).
+- An automation save replaces the definition in place (`automations/store.py:381`); a run names the conditions that fired, not
+  the version it ran under nor its trigger payload.
+- An alert opens and never closes: no *recovered* state was found in `monitors/` or `automations/`.
+- The audit feed stops at 1,000 rows with no time window, cursor or export (`routers/governance.py`); payload reads carry no
+  reason, though §6.4 decided "a reason recorded"; logs are read per trace only.
+
+| # | Builds | Flag (off) · size | Falsifier |
+|---|---|---|---|
+| **TC-1** | The agent's `config_rev` stamped on every turn and receipt; an `expected_rev` precondition on the doors | `agents.revision_on_answers` · S | — |
+| **TC-2** | The run and trace id on edit history and on the action audit, read as an object's timeline: who or what changed it, through which run, at what cost | `actions.run_attribution` · S–M | An edit made by an automation shows no run → stop |
+| **TC-3** | Versions for automations and monitors, superseded never deleted; every run names the version it ran under and keeps its trigger payload, so a past run can be replayed as a dry run | `automations.versions` · M | — |
+| **TC-4** | **Alerts that close**: the first in-limit check after a breach writes one *recovered* alert; a run says "in limit" apart from "suppressed by grace" | `monitors.recovery` · S (after ED-0) | — |
+| **TC-5** | Operations read across runs: failure rate over a window on the hub map, saying "no runs" and "not permitted"; log search across runs (30 days); the audit feed with since, until, a cursor and export; a required reason on payload reads and ledger export, as one catalogued event kind | `hub.failure_rate`, `obs.log_search`, `govern.justifications` · S + S + S–M | — |
+
+**The laws it keeps.** Provenance on everything that changes · supersede, don't delete · no fourth lineage walker
+(`govern/lineage.py`, `ontology/dependents.py` and `automations/graph.py` already exist) · no sixth audit sink.
+
+### 3.60 · Arc FA — the ontology people can find and act on (DRAFTED 2026-10-24 as arc 3 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; third of the three · nothing built)
+
+**The premise, measured.** Nothing searches the declarations by meaning (the context graph's node kinds hold none); an object
+cannot be found without knowing its entity; a selection cannot leave the piece it was made in; an ontology element cannot be
+put back to an earlier version, retired with a successor, or seen in use; a dashboard set lives only inside its dashboard; a
+rule defines a population but nothing acts on each object as it enters; a pack binding stores whatever version the caller sends
+(`routers/packs.py:296-297`) and has no upgrade; programs built with any agent SDK reach Aughor only through MCP.
+
+| # | Builds | Flag (off) · size | Falsifier |
+|---|---|---|---|
+| **FA-1** | **The ontology can be searched**: declarations become nodes in the existing graph search, trimmed by `retrieval_trim`; ⌘K finds an object by name across entities and says how many it searched; document search gets a lexical fallback | `graph.declarations`, `objects.find`, `knowledge.hybrid_documents` · M + S + S | — |
+| **FA-2** | **A choice can leave its piece**: typed references to objects and sets (`<type>:<key>`, the builder doors' form; a set by name, never SQL), dragged or sent *Open in* to the Data Canvas ("ask about these"), a choose-one piece or an object page, compiled through the object door under the reader's row policy. Mockup first | `canvas.ask_about_chosen` · M | — |
+| **FA-3** | **Safe removal**: put an earlier version back into the draft; a *retiring* status with a successor and a date, released as a MEANING change; reads per entity over 30 days | `ontology.put_back`, `ontology.retiring`, `ontology.usage` · S + M + S–M | — |
+| **FA-4** | **A set becomes a segment**: "Keep as a segment" declares a dashboard set through the draft; the builder shows each set as its chain with a count at each step | `ontology.set_segments` · M + S | — |
+| **FA-5** | **Act on each object a rule admits**: a condition that fires for objects a rule or segment newly admits, keys only and capped, the count said when the list is withheld | `automations.objects_admitted` · M | — |
+| **FA-6** | **Packs as products**: the installed version and the inputs a person declined, "upgrade to vN" showing the input diff; a pack may carry a dashboard template a person keeps | `packs.installed_versions`, `packs.dashboard_templates` · M + M | — |
+| **FA-7** | **Any SDK can call an agent**: a grounding read returning what an agent would read without calling the model; a chat-compatible endpoint where the model is an Aughor agent and the receipt rides in metadata | `agents.grounding_read`, `doors.chat_completions` · S + M | ⚑ §6 item 52(b) |
+
+**Next, not yet waves:** an App takes values from its address or an embedding host (the July study's module interfaces, M–L,
+mockup first) · MCP tool search, and `platform_help` on MCP (S) · a neighbourhood view on the object page (M) · interfaces
+declared by a person (M) · reading objects under a past release (M) · proposed agent revisions, ⚑ §6 item 52(c).
+
+**The laws it keeps.** A model never adds or wires a piece, and never authors a declaration · the organisation ontology is
+edited by people only · no embedding of customer object text · no hosted code · commands never fire on a value change.
+
 ---
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
@@ -14069,6 +14150,21 @@ the browser** · **measure the premise before building.**
       - **(8)** Drawn for 1920 × 1080, fitting a laptop and saying the zoom.
     - This supersedes the six-size *Size* of 2026-10-08 (*"make each component size adjustable… without losing the
       elegance"*).
+52. ✅ **DECIDED 2026-10-24 — Arcs ED, TC and FA adopted, from the Palantir incorporation study** (§3.58–§3.60;
+    `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md`, with `docs/PALANTIR_DOCS_CATALOGUE_2026-10-24.md` and its CSV).
+    - The path: *"lets learn everything about https://github.com/morluto/rea"* → REA set up for Claude Code →
+      *"palantir actual website and its docs.. check that.."* → the catalogue (4,132 docs pages, 329 API operations; the
+      July study had named 39 of 148 sections and no REST page) → *"The whole point of this Study is to understand how we
+      can incorporate the features of Palantir into our platform.."* → *"rebase and adopt the arcs into the roadmap"*.
+    - Adopted: the three arcs, in the order the study proposed (ED → TC → FA). The order was proposed, not separately
+      confirmed.
+    - Open, the user's:
+      - **(a)** ED-4 — an App's readers see one published version rather than every keep. Recommended: yes.
+      - **(b)** FA-7 — the chat-compatible endpoint now, or when a customer asks (the rule (d) of item 50 applies to a
+        client library).
+      - **(c)** Proposed agent revisions — try variants against certified goldens and stage the best in Approvals: once
+        goldens exist, or never.
+    - Kept, from item 50(d) and §4.4: nothing hosted runs code; no agent runtime; programs propose and people approve.
 ---
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
