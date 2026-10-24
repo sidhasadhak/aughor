@@ -14452,7 +14452,7 @@ the browser** · **measure the premise before building.**
     - Kept, from item 50(d) and §4.4: nothing hosted runs code; no agent runtime; programs propose and people approve.
 ---
 
-52. ✅ **DECIDED 2026-10-25 — the look of the product, measured against Palantir's; a preset, not a new
+53. ✅ **DECIDED 2026-10-25 — the look of the product, measured against Palantir's; a preset, not a new
     default** (`docs/PALANTIR_DESIGN_STUDY_2026-10-25.md`; the user: *"Let's research how we can make Aughor look
     more like Palantir"*, then *"Product look, preset with all six, build the chrome screenshot"*).
     - Measured from primary sources (Blueprint's token files, Palantir's own Workshop design rules, nine Foundry
@@ -14478,6 +14478,15 @@ the browser** · **measure the premise before building.**
       third family), `aughor-v2/theme/tokens-v2.css` (`[data-edges]`, `[data-typeface]`), `components/LookPanel.tsx`
       (a Preset row, two knobs), `aughor/db/user_prefs.py` (two keys); tests in each. Off by default: a person who
       chose nothing sees nothing move.*
+    - *Built 2026-10-25, second step, at the user's "continue building here": **what uses an entity**, behind
+      `ontology.entity_usage` (off by default; the type's detail is byte-for-byte what it was) — one door,
+      `GET /object-types/{type}/uses` (`aughor/ontology/entity_uses.py`), composing the dependents index (Arc OC-1),
+      the release strip's dashboards-reading door, and `AuditLogger.reads_by_month` (statements naming the entity's
+      tables as whole words, twelve calendar months, every month present); the entity Overview's new "Depends on it"
+      and "Reads · 12 months" (`TypeOverview.UsesSection`), what could not be read said in place. **Workshop's numbers
+      into CLARITY §3** as a "Count it" table. **Bordered state tags measured as no gap**: no chip carries a state word
+      or a state field, and the Radix `surface` badge is already tint, border and text of one hue. Not proven live:
+      the scratch connection has no ontology; the unit tests and the panel test hold it.*
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
 

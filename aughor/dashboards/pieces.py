@@ -460,5 +460,6 @@ def dashboards_reading(connection_id: str, names: set[str], *, graph: Optional[A
                         if k in SEGMENTED and _effective(spec, p).get("segment") in names})
         if hit:
             key = str(row.get("natural_key") or "")
-            out.append({"cockpit": key.rsplit(":", 1)[-1], "title": title_of(spec), "pieces": hit})
+            out.append({"cockpit": key.rsplit(":", 1)[-1], "id": key.rsplit(":", 1)[-1], "title": title_of(spec),
+                        "pieces": hit})
     return out

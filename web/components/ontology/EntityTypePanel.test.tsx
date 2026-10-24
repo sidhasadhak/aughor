@@ -12,9 +12,10 @@
  */
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within, change, choose, valueOf, fireEvent } from "@/lib/testing";
+import { cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import type { BackingPreview, ObjectTypeDetail, ProcessDetail } from "@/lib/objectTypes";
+import type { BackingPreview, ObjectTypeDetail, ObjectTypeUses, ProcessDetail } from "@/lib/objectTypes";
 
 const addBinding = vi.fn(async (..._args: unknown[]) => undefined);
 const deleteLink = vi.fn(async (..._args: unknown[]) => undefined);
@@ -35,7 +36,7 @@ const setEntityKey = vi.fn(async (..._args: unknown[]) => undefined);
 const served = vi.hoisted(() => ({ scope: { processes: [] as unknown[], rules: [] as unknown[] } }));
 const getProcesses = vi.fn(async (..._args: unknown[]) => served.scope);
 /** The type the panel reads — the fixture below, unless a test shows another. */
-const shown: { detail?: ObjectTypeDetail } = {};
+const shown: { detail?: ObjectTypeDetail; uses?: ObjectTypeUses } = {};
 // The words section reads the scope's keys on every panel — mocked, so no test here reaches a running API.
 const words = vi.hoisted(() => ({ vocabulary: [] as unknown[] }));
 const keyVocabularyEntry = vi.fn(async (..._args: unknown[]) => undefined);
@@ -48,6 +49,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/objectTypes")>()),
   getObjectType: async () => shown.detail ?? detail,
+  getObjectTypeUses: async () => shown.uses ?? { path: "off" as const, said: "off" },
   addBinding: (...a: unknown[]) => addBinding(...a),
   nameLink: (...a: unknown[]) => nameLink(...a),
   declareLink: (...a: unknown[]) => declareLink(...a),
@@ -867,6 +869,38 @@ describe("EntityTypePanel — the Overview: what needs a person, the flow, the s
     expect(used).toHaveTextContent("Metric · Average delivery time");
     await user.click(within(used).getByRole("button", { name: /Flag for review/ }));
     expect(await screen.findByTestId("entity-tab-actions")).toBeInTheDocument();
+  });
+
+  it("says what depends on it and how often its tables were read, only when the door answers", async () => {
+    shown.uses = {
+      path: "uses", connection_id: "c1", schema_name: "s", entity: "Product",
+      dependents: [
+        { consumer: "rule", id: "active", name: "Active products", how: "the rule is defined over it" },
+        { consumer: "metric", id: "adt", name: "Average delivery time", how: "a keyed metric on it" },   // said above, in Used by
+        { consumer: "automation", id: "a1", name: "Restock", how: "its trigger watches Product objects" },
+      ],
+      dashboards: [{ id: "late", title: "Late orders", pieces: ["t", "g"] }],
+      reads: { tables: ["products"], source: "the platform's log of statements run",
+               months: [{ month: "2026-09", reads: 0 }, { month: "2026-10", reads: 14 }] },
+    };
+    try {
+      panel();
+      const uses = await screen.findByTestId("entity-uses");
+      expect(uses).toHaveTextContent("1 dashboardLate orders");
+      expect(uses).toHaveTextContent("1 automationRestock");
+      expect(uses).toHaveTextContent("1 ruleActive products");
+      expect(uses).not.toHaveTextContent("Average delivery time");           // once, in Used by, not twice
+      expect(within(uses).getByTitle("reads it in 2 pieces")).toHaveTextContent("Late orders");
+      expect(within(uses).getByTitle("its trigger watches Product objects")).toHaveTextContent("Restock");
+      expect(uses).toHaveTextContent("Reads · 12 monthsproducts");
+      expect(screen.getByTestId("entity-reads")).toHaveTextContent("Sep 20260Oct 202614");
+    } finally {
+      delete shown.uses;
+    }
+    cleanup();
+    panel();                                                                  // the door says off: nothing of it is shown
+    await screen.findByTestId("entity-overview");
+    expect(screen.queryByTestId("entity-uses")).toBeNull();
   });
 
   it("reads no processes door for an entity no process or rule touches", async () => {

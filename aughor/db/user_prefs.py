@@ -153,7 +153,7 @@ def preferred_timezone() -> str:
 
 
 #: The look — the four knobs of Radix Themes' panel and two of our own, kept per person (ROADMAP
-#: §6 items 44 and 52). The values are spelled once more in `web/lib/lookValues.ts`, which is what
+#: §6 items 44 and 53). The values are spelled once more in `web/lib/lookValues.ts`, which is what
 #: hands them to the Theme; `tests/unit/test_user_prefs_look.py` fails if the two lists part.
 LOOK_ACCENTS = ("gray", "gold", "bronze", "brown", "yellow", "amber", "orange", "tomato", "red", "ruby",
                 "crimson", "pink", "plum", "purple", "violet", "iris", "indigo", "blue", "cyan", "teal",

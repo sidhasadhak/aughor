@@ -68,6 +68,22 @@ the first row still leaves with the answer.
 | **Graph connectors straight**, bending only at 90° or 45° (step edges, zero radius) | Curves (bezier edges) |
 | **A process as a funnel** — stage · bar · count — with each promise on one line and its overdue count as a button | A process described in prose |
 
+**Count it.** The design study of 2026-10-25 (in `docs/`, §2.3) measured the numbers a published guide to
+operational screens holds a screen to; they agree with the test in §1 and make it countable. Hold a screen to them before
+it ships:
+
+| Count | At most |
+|---|---|
+| Primary actions in a screen's top row (buttons a reader is meant to press first) | **5** |
+| Components visible at once — buttons, panels, cards, charts, tables | **10** |
+| Air — the share of the screen that is not ink | **30–40 %**, as a floor |
+| Regions with a shaded or raised style (a tinted panel, a shadow) | **1** per screen |
+| Header and tab rows that scroll away | **0** — the header and its tabs stay; only content scrolls |
+| A control's hit target where a section scrolls | **≥ 30 px** |
+
+Filters stand in the left column, the figures above the list, the detail to the right of it (§3's order and
+`cockpit-from-object.html`); a sideways scroll is a column to fit, never a scrollbar.
+
 ## 4. Colour and type — what each one means
 
 Values are the app's tokens (`theme/tokens-v2.css`); the mockups use their computed dark values.

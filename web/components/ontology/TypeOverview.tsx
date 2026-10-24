@@ -14,9 +14,10 @@ import React from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { countNoun, formatCount, pct } from "@/lib/format";
+import { Badge } from "@/components/ui/badge";
+import { countNoun, formatCount, formatMonth, pct } from "@/lib/format";
 import { withUniqueKeys } from "@/lib/listKeys";
-import type { ObjectTypeDetail, ProcessDetail, ProcessPromise, ProcessesAndRules } from "@/lib/objectTypes";
+import type { ObjectTypeDetail, ObjectTypeUses, ProcessDetail, ProcessPromise, ProcessesAndRules } from "@/lib/objectTypes";
 
 const muted: React.CSSProperties = { color: "var(--t3)" };
 const tabular: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
@@ -263,6 +264,90 @@ export function UsedBy({ detail, onMetric, onAction }: {
           </Button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** The dependents the section groups, in the order they are shown, with the noun each takes. Metrics and declared
+ *  actions are not here: `UsedBy` above already lists them, and a thing is said once. */
+const CONSUMERS: [string, string, string][] = [
+  ["automation", "automation", "automations"], ["process", "process", "processes"], ["rule", "rule", "rules"],
+  ["link", "link", "links"], ["part", "part", "parts"],
+];
+
+function UsesRow({ word, children }: { word: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)", minWidth: 96 }}>{word}</span>
+      {children}
+    </div>
+  );
+}
+
+/** ROADMAP §6 item 53 — what else depends on an entity, from one door behind `ontology.entity_usage`: the dashboards
+ *  whose pieces read it, its dependents by kind, each saying how on hover, and how many audited statements named its
+ *  tables in each of the last twelve months — a row per month, the count beside its bar. What could not be read says
+ *  so in the same place. */
+export function UsesSection({ uses }: { uses: ObjectTypeUses }) {
+  const groups = CONSUMERS
+    .map(([kind, one, many]) => ({ kind, one, many, rows: uses.dependents.filter((d) => d.consumer === kind) }))
+    .filter((g) => g.rows.length > 0);
+  const nothing = !uses.dashboards.length && !groups.length;
+  const months = uses.reads.months;
+  const most = months.reduce((n, m) => Math.max(n, m.reads), 0);
+  const total = months.reduce((n, m) => n + m.reads, 0);
+  return (
+    <div data-testid="entity-uses" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <Label>Depends on it</Label>
+      {uses.dashboards.length > 0 && (
+        <UsesRow word={countNoun(uses.dashboards.length, "dashboard")}>
+          {withUniqueKeys(uses.dashboards, (d) => d.id).map(([key, d]) => (
+            <Badge key={key} variant="secondary" title={`reads it in ${countNoun(d.pieces.length, "piece")}`}>{d.title || d.id}</Badge>
+          ))}
+        </UsesRow>
+      )}
+      {uses.dashboards_said && (
+        <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)" }}>{uses.dashboards_said}</p>
+      )}
+      {withUniqueKeys(groups, (g) => g.kind).map(([groupKey, g]) => (
+        <UsesRow key={groupKey} word={countNoun(g.rows.length, g.one, g.many)}>
+          {withUniqueKeys(g.rows, (d) => d.id).map(([key, d]) => (
+            <Badge key={key} variant="secondary" title={d.how}>{d.name}</Badge>
+          ))}
+        </UsesRow>
+      ))}
+      {nothing && (
+        <p className="aug-fs-sm" style={{ margin: 0, color: "var(--t3)" }}>
+          No dashboard, automation, process or rule depends on it yet.
+        </p>
+      )}
+      <Label right={uses.reads.tables.length > 0 && (
+        <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)" }}>
+          {uses.reads.tables.join(" · ")}
+        </span>
+      )}>
+        Reads · 12 months
+      </Label>
+      {uses.reads.said ? (
+        <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)" }}>{uses.reads.said}</p>
+      ) : total === 0 ? (
+        <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)" }}>
+          No statement named its tables in the last 12 months.
+        </p>
+      ) : (
+        <div data-testid="entity-reads" style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto",
+                                                 gap: "4px 10px", alignItems: "center" }}>
+          {months.map((m) => (
+            <React.Fragment key={m.month}>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{formatMonth(m.month)}</span>
+              <div style={{ height: 6, background: "var(--bg-3)", borderRadius: 3, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${most ? (m.reads / most) * 100 : 0}%`, background: "var(--blue3)" }} />
+              </div>
+              <span className="aug-fs-xs" style={{ ...tabular, color: "var(--t2)" }}>{formatCount(m.reads)}</span>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -444,6 +444,28 @@ def get_object_type(object_type: str, connection_id: str = BUILTIN_ID,
             "withdrawn": _withdrawn_of(connection_id, graph.schema_name or "", str(body.get("id") or ""))}
 
 
+@router.get("/object-types/{object_type}/uses")
+def get_object_type_uses(object_type: str, connection_id: str = BUILTIN_ID,
+                         schema_name: Optional[str] = Query(default=None)):
+    """ROADMAP §6 item 53 — what one entity is used by: its dependents (automations, processes, rules, actions,
+    links, parts, metrics — each with how), every dashboard whose pieces read it, and how many audited statements
+    named its tables in each of the last twelve months. Behind `ontology.entity_usage`: off, the door says so and
+    the type's own page is exactly what it was. An unknown type is `path: refused`."""
+    from aughor.ontology import entity_uses
+    if not entity_uses.enabled():
+        return {"path": "off", "said": "What uses an entity is not shown: the setting is off."}
+    from aughor.semantic.object_query import ObjectQueryRefused
+    from aughor.semantic.object_types import describe_object_type
+    graph = _served_graph(connection_id, schema_name)
+    try:
+        body = describe_object_type(graph, object_type, overlay=_accepted_edits(connection_id))
+    except ObjectQueryRefused as exc:
+        return {"path": "refused", "refused": exc.reason, "available": exc.available,
+                "connection_id": connection_id, "schema_name": graph.schema_name}
+    return {"path": "uses", "connection_id": connection_id, "schema_name": graph.schema_name,
+            "entity": str(body.get("id") or object_type), **entity_uses.uses_of(graph, connection_id, body)}
+
+
 def _withdrawn_of(connection_id: str, schema: str, entity_id: str) -> dict:
     """2026-09-22 — what a person withdrew on this type, read from the overrides: the builder-found bindings
     (`withdrawn_bindings`) and the found links (`withdrawn`) on either side of it — so the panel can restore them.

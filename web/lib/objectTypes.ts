@@ -504,6 +504,30 @@ export async function getTypeMap(connectionId: string, schemaName?: string): Pro
   return res.json();
 }
 
+/** ROADMAP §6 item 53 — what a type is used by, from its own door: its dependents, each with how it depends; the
+ *  dashboards whose pieces read it; and how many audited statements named its tables in each of the last twelve
+ *  months. `path: "off"` while the setting is off; `refused` as the detail refuses. */
+export interface ObjectTypeUses {
+  path: "uses";
+  connection_id: string;
+  schema_name: string;
+  entity: string;
+  dependents: { consumer: string; id: string; name: string; how: string }[];
+  dashboards: { id: string; title: string; pieces: string[] }[];
+  /** Said when the dashboards could not be listed; the rest still stands. */
+  dashboards_said?: string;
+  reads: { tables: string[]; months: { month: string; reads: number }[]; source: string; said?: string };
+}
+
+export async function getObjectTypeUses(
+  objectType: string, connectionId: string, schemaName?: string,
+): Promise<ObjectTypeUses | { path: "off"; said: string } | TypeRefusal> {
+  const res = await fetch(
+    `${getApiBase()}/object-types/${encodeURIComponent(objectType)}/uses?${scope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
 export async function getObjectType(
   objectType: string, connectionId: string, schemaName?: string,
 ): Promise<ObjectTypeDetail | TypeRefusal> {

@@ -21,7 +21,7 @@ import Link from "next/link";
 
 import { MakeDashboard } from "@/components/dashboards/MakeDashboard";
 import { DerivedList } from "@/components/ontology/ProcessPanel";
-import { Label, NeedsRow, ProcessFlow, SetChips, TypeFigures, UsedBy } from "@/components/ontology/TypeOverview";
+import { Label, NeedsRow, ProcessFlow, SetChips, TypeFigures, UsedBy, UsesSection } from "@/components/ontology/TypeOverview";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
@@ -40,6 +40,7 @@ import {
   deleteEntity,
   deleteLink,
   getObjectType,
+  getObjectTypeUses,
   getProcesses,
   getTypePaths,
   measureOntology,
@@ -58,6 +59,7 @@ import {
   type DeclaredRuleSpec,
   type FrameSpec,
   type ObjectTypeDetail,
+  type ObjectTypeUses,
   type ProcessesAndRules,
   type PropertySource,
   type ProposedBinding,
@@ -146,6 +148,18 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
     return () => { live = false; };
   }, [objectType, connectionId, schema, version]);
 
+  // ROADMAP §6 item 53 — what else depends on the type, from its own door. Nothing while the setting is off, or when
+  // the door cannot be read: the Overview then shows exactly what it showed before the door existed.
+  const [uses, setUses] = useState<ObjectTypeUses | null>(null);
+  useEffect(() => {
+    let live = true;
+    setUses(null);
+    getObjectTypeUses(objectType, connectionId, schema)
+      .then((next) => { if (live) setUses(next.path === "uses" ? next : null); })
+      .catch(() => { if (live) setUses(null); });
+    return () => { live = false; };
+  }, [objectType, connectionId, schema, version]);
+
   let body: React.ReactNode;
   if (error) body = <EmptyState icon="alert" title="This type could not be read">{error}</EmptyState>;
   else if (!detail || (detail.path === "object_type" && detail.object_type !== objectType)) {
@@ -153,7 +167,7 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   } else if (detail.path === "refused") {
     body = <EmptyState icon="info" title={`No entity “${objectType}”`}>{detail.refused}</EmptyState>;
   } else {
-    body = <TypeDetail detail={detail} connectionId={connectionId} schema={schema} types={types}
+    body = <TypeDetail detail={detail} uses={uses} connectionId={connectionId} schema={schema} types={types}
       onOpen={onOpen} onOpenProcess={onOpenProcess} onChanged={onChanged} onDesignProcess={onDesignProcess} onDesignAction={onDesignAction} sources={sources} />;
   }
   return (
@@ -179,7 +193,7 @@ const TAB_NAME: Record<PanelTab, string> = {
   overview: "Overview", properties: "Properties", links: "Links", actions: "Actions", sources: "Sources", history: "History",
 };
 
-function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess, onChanged, onDesignProcess, onDesignAction,
+function TypeDetail({ detail, uses, connectionId, schema, types, onOpen, onOpenProcess, onChanged, onDesignProcess, onDesignAction,
   sources }: {
   detail: ObjectTypeDetail;
   connectionId: string;
@@ -191,6 +205,8 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
   onDesignProcess?: (entity: string) => void;
   onDesignAction?: (entity: string) => void;
   sources?: Record<string, string>;
+  /** ROADMAP §6 item 53 — what else depends on the type; null while the setting is off or the door is unread. */
+  uses?: ObjectTypeUses | null;
 }) {
   const declared = detail.origin === "human" || detail.origin === "model";
   // ON-8 — in an organisation's ontology the doors that read one connection's graph (a display property, a part mark, a
@@ -240,6 +256,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
         {flows.map((p) => <ProcessFlow key={p.id} process={p} onOpenProcess={onOpenProcess} />)}
         {sets}
         {used}
+        {uses && <UsesSection uses={uses} />}
         {quiet && (
           <p className="aug-fs-sm" style={{ margin: 0, color: "var(--t3)" }}>
             Nothing waits on a person here, and no process, set, metric or action reads {detail.display_name} yet.

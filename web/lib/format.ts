@@ -265,6 +265,15 @@ export function normalizeNumberPrecision(text: string | null | undefined): strin
 /** "1 entity" / "3 entities" — a count with its correctly-inflected noun (PX-1:
  *  "1 entities" is machine text; a screen never shows it). One home, like the rest
  *  of this file. */
+const MONTH_WORDS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** A calendar month key, `YYYY-MM`, as a reader says it: "Oct 2026". Anything else comes back as given. */
+export function formatMonth(key: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(key);
+  const i = m ? Number(m[2]) - 1 : -1;
+  return m && i >= 0 && i < 12 ? `${MONTH_WORDS[i]} ${m[1]}` : key;
+}
+
 export function countNoun(n: number, singular: string, plural?: string): string {
   return `${formatCount(n)} ${n === 1 ? singular : (plural ?? `${singular}s`)}`;
 }

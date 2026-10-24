@@ -174,6 +174,11 @@ FLAG_ENV = {
     # reader's own filters; and a person may start a dashboard from an object, its pieces proposed from what the object
     # holds. OFF: the dashboard vocabulary refuses those three pieces and nothing is proposed.
     "ontology.object_dashboards": "AUGHOR_ONTOLOGY_OBJECT_DASHBOARDS",
+    # ROADMAP §6 item 53 (2026-10-25, the look study): what an entity is used by, on its own page. ON: the entity
+    # panel's Overview reads one door that composes the dependents index (Arc OC-1), every dashboard whose pieces read
+    # the entity, and how many audited statements named its tables in each of the last twelve months. OFF: the door
+    # says it is off and the panel shows what it showed — metrics and actions.
+    "ontology.entity_usage": "AUGHOR_ONTOLOGY_ENTITY_USAGE",
     # Arc AP-1 (ROADMAP §3.57, docs/COCKPIT_APP_BUILDER_STUDY_2026-10-10.md). ON: a dashboard opens to be read, and Edit
     # shows it between its layout and the setup of the piece chosen — sizes one grade at a time on a section's grid, and
     # every piece set up there, never typed as a spec. OFF: a dashboard is arranged by its six sizes and Arrange, the
@@ -586,6 +591,16 @@ FLAG_META = {
         "description": "The pieces are proposed from what the object holds, and you tick the ones you "
                        "want. Filters are each reader's own and never change the dashboard. Saved cards "
                        "beside them say they are not filtered. Off: these pieces cannot be added.",
+    },
+    "ontology.entity_usage": {
+        "label": "What uses an entity",
+        "summary": "An entity's page lists the dashboards, automations, processes and rules that use it. "
+                   "It also counts the queries that read its tables, by month.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Reads the query log only"}],
+        "description": "Each use says how it depends, so you know what a change would touch. The monthly count "
+                       "comes from the platform's own log of statements run, never from your warehouse. "
+                       "Off: the page lists its metrics and actions, as before.",
     },
     "dashboard.wiring": {
         "label": "Wire a dashboard's pieces and actions",
@@ -1026,6 +1041,11 @@ EXPERIMENT: dict = {
                                 "days in its first two weeks — more often than one started empty or for a "
                                 "process? Falsifier: started dashboards are opened no more than the others, and "
                                 "the starter and its three pieces go",
+    # ROADMAP §6 item 53 (2026-10-25). It is a new section of the entity's page, so it is watched before it graduates.
+    "ontology.entity_usage": "does what-uses-it change what a person does — a dependent opened from the entity's page, "
+                             "or a withdrawal or a change of a used entity preceded by a read of the section — in its "
+                             "first two weeks? Falsifier: the section is never opened before a change and no dependent "
+                             "is reached from it, and the door and the section go",
     # Arc OC-3 (ROADMAP §3.56), 2026-10-09. It changes what the question frame hands an analysis, so it is measured
     # before it graduates.
     "ontology.keyed_metrics": "does reading an approved metric by the entity it measures — over a declared segment, "

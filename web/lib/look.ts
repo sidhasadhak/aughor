@@ -1,6 +1,6 @@
 /**
  * The look: the four knobs of Radix Themes' panel — accent, grey, radius, scaling — and two of
- * our own — edges, typeface — as one person keeps them (ROADMAP §6 items 44 and 52).
+ * our own — edges, typeface — as one person keeps them (ROADMAP §6 items 44 and 53).
  *
  * The skin (dark or light) is not here: it has been `<html data-theme>` since before this and
  * stays where it is (`lib/themeSwitch.ts`). These four are the Theme's own props; the root

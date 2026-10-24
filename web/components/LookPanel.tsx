@@ -2,7 +2,7 @@
 
 /**
  * The look, chosen by one person: accent, grey, corners, scaling, edges and typeface (ROADMAP §6
- * items 44 and 52).
+ * items 44 and 53).
  *
  * The first four are the knobs of Radix Themes' own panel; edges and typeface are ours. A choice
  * here moves the whole product at once — every button, table, chip and line — because each design

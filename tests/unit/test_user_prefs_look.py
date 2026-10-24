@@ -1,5 +1,5 @@
 """The look — accent, grey, radius, scaling, edges, typeface — is a per-person preference (ROADMAP §6
-items 44 and 52).
+items 44 and 53).
 
 The web hands four of them to Radix Themes and keeps two on <html> itself; the store keeps all six so a person's look follows them to
 another browser. Two things are held here: each key admits Radix's own values and nothing else, and

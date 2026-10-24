@@ -10723,6 +10723,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/object-types/{object_type}/uses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Object Type Uses
+         * @description ROADMAP §6 item 53 — what one entity is used by: its dependents (automations, processes, rules, actions,
+         *     links, parts, metrics — each with how), every dashboard whose pieces read it, and how many audited statements
+         *     named its tables in each of the last twelve months. Behind `ontology.entity_usage`: off, the door says so and
+         *     the type's own page is exactly what it was. An unknown type is `path: refused`.
+         */
+        get: operations["get_object_type_uses_object_types__object_type__uses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/objects/catalog": {
         parameters: {
             query?: never;
@@ -41356,6 +41379,40 @@ export interface operations {
                 connection_id?: string;
                 schema_name?: string | null;
                 domain?: string | null;
+            };
+            header?: never;
+            path: {
+                object_type: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_object_type_uses_object_types__object_type__uses_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
             };
             header?: never;
             path: {
