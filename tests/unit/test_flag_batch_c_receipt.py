@@ -90,8 +90,9 @@ def test_the_queue_is_named_and_migrations_are_empty():
     # Arc ED, ED-2, the same day: `mcp.caller_principals` (an outside program connects to the MCP server as its own
     # service principal) and `security.principal_scopes` (that principal's grant narrows the agent policy). Neither
     # calls a model; each entry names its receipt and the falsifier.
+    # …and `quality.expectations` (ED-3): an automation step measures a table's expectations into the quality plane.
     assert set(GRADUATION_QUEUE) == {"dashboard.composed", "slack.managed_supervisor", "ontology.census",
                                      "ontology.security", "ontology.security_sql", "mcp.caller_principals",
-                                     "security.principal_scopes"}
+                                     "security.principal_scopes", "quality.expectations"}
     assert all("receipt" in why and "Falsifier" in why for why in GRADUATION_QUEUE.values())
     assert MIGRATION == {}

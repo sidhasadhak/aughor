@@ -5482,7 +5482,9 @@ export type EffectKind =
   // VA-9d — a read-only tool on an allowlisted foreign MCP server.
   | "mcp_call"
   // DS-18 — write up what the step before produced, under the context authored on it.
-  | "synthesize";
+  | "synthesize"
+  // Arc ED, ED-3 — measure a table's expectations and record each verdict as its health.
+  | "expectations";
 
 /**
  * The `config` keys each kind REQUIRES, mirroring `_CONDITION_REQUIRED` and
@@ -5517,6 +5519,8 @@ export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
   // honest default ("summarise this"), and demanding a sentence before the node can be
   // saved would make the common case the annoying one.
   synthesize: ["data"],
+  // Arc ED, ED-3 — what the table must meet: a list the server validates expectation by expectation.
+  expectations: ["expectations"],
 };
 
 /** A Slack bot record, tokens masked by the server (`to_safe_dict`). Never carries a

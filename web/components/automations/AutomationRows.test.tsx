@@ -489,3 +489,30 @@ describe("the MCP call editor", () => {
     expect(screen.getByLabelText("jql")).toHaveAttribute("placeholder", "jql — a JQL query");
   });
 });
+
+/** Arc ED, ED-3 — the Measure expectations step: one table, then what its data must meet. */
+describe("the Measure expectations editor", () => {
+  const ex = (config: Record<string, unknown> = { expectations: [] }): AutoEffect =>
+    ({ kind: "expectations", config });
+
+  it("writes the table and one expectation as the server validates them", () => {
+    const onChange = vi.fn();
+    render(<EffectRow e={ex()} agents={[]} bots={[]} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText("Table"), { target: { value: "orders" } });
+    const written = onChange.mock.calls.at(-1)![0] as AutoEffect;
+    expect(written.config.expectations).toEqual([
+      { name: "orders not null", table: "orders", kind: "not_null", criticality: "warn" }]);
+  });
+
+  it("asks a kind only for the values that kind takes", () => {
+    const onChange = vi.fn();
+    render(<EffectRow e={ex({ expectations: [{ name: "s", table: "orders", kind: "in_list", column: "status",
+                                               args: { values: ["shipped"] } }] })}
+      agents={[]} bots={[]} onChange={onChange} />);
+    expect(valueOf(screen.getByLabelText("values, separated by commas"))).toBe("shipped");
+    expect(screen.queryByLabelText("at most")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add an expectation" }));
+    const written = onChange.mock.calls.at(-1)![0] as AutoEffect;
+    expect((written.config.expectations as unknown[]).length).toBe(2);
+  });
+});

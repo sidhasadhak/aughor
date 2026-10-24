@@ -716,6 +716,9 @@ PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
     # able to tell a whole one from half of one) and WHAT it read, so a message's receipt
     # reaches back to the query a person approved.
     "synthesize":     ("answer", "truncated", "source"),
+    # Arc ED, ED-3 — the run, how many expectations were met and not, the ones that could not be
+    # measured (said, never counted as failing), and each recorded verdict.
+    "expectations":   ("run_id", "met", "not_met", "unmeasured", "results"),
 }
 
 #: DS-12 — the published keys that are LISTS, and may therefore be fanned over.
@@ -738,6 +741,7 @@ PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
 #: keys are lists is two places that will disagree.
 LIST_PUBLISHED: dict[str, tuple[str, ...]] = {
     "trusted_query": ("rows",),
+    "expectations":  ("results", "unmeasured"),
 }
 
 
@@ -793,6 +797,9 @@ BINDABLE_FIELDS: dict[str, tuple[str, ...]] = {
     # named destination back into an arbitrary one. Refused on the model, where a save
     # actually fails.
     "mcp_call":       ("arguments",),
+    # Arc ED, ED-3 — nothing. The step names tables and columns a person wrote; a value bound in from upstream would
+    # let a chain choose what is measured, and `quality.expectations.parse` refuses anything that is not a plain name.
+    "expectations":   (),
 }
 
 

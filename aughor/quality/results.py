@@ -248,6 +248,19 @@ def latest_for_tables(connection_id: str, tables: list[str], *,
     return out
 
 
+def previous_observation(connection_id: str, rule_fingerprint: str, *,
+                         org_id: Optional[str] = None) -> Optional[float]:
+    """What the last result of this expectation observed — the baseline a drift is read against. None when it has
+    never been measured, or measured nothing."""
+    org = org_id or current_org_id()
+    with _conn() as c:
+        row = c.execute(
+            "SELECT observed FROM quality_results WHERE org_id = ? AND connection_id = ? AND rule_fingerprint = ? "
+            "AND observed IS NOT NULL ORDER BY checked_at DESC LIMIT 1",
+            (org, connection_id, rule_fingerprint)).fetchone()
+    return float(row["observed"]) if row is not None else None
+
+
 def results_for_run(run_id: str, *, org_id: Optional[str] = None) -> list[Result]:
     """Everything one run produced — the run_id spine tying artifact ↔ metrics ↔ ruleset."""
     org = org_id or current_org_id()

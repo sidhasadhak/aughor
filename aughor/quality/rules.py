@@ -225,10 +225,12 @@ def compile_rule(rule: Rule, dialect: str = "duckdb") -> str:
         where.append("(" + " OR ".join(bounds) + ")")
     elif rule.kind == "freshness":
         hours = int(rule.args["max_age_hours"])
-        # Emitted as a generic interval comparison and transpiled; the pre-check confirmed
-        # `.sql(dialect=…)` is this codebase's emit path.
-        sql = (f"SELECT COUNT(*) AS violations FROM {table} "
-               f"WHERE {col} < CURRENT_TIMESTAMP - INTERVAL '{hours}' HOUR")
+        # Whether the NEWEST row is older than the limit: one violation or none. It counted every row older than the
+        # limit until Arc ED, ED-3 first ran it, which a table with any history failed forever. Emitted as a generic
+        # interval comparison and transpiled; `.sql(dialect=…)` is this codebase's emit path.
+        filt = f"WHERE {' AND '.join(where)} " if where else ""
+        sql = (f"SELECT CASE WHEN MAX({col}) IS NULL OR MAX({col}) < CURRENT_TIMESTAMP - INTERVAL '{hours}' HOUR "
+               f"THEN 1 ELSE 0 END AS violations FROM {table} {filt}".strip())
         return _transpile(sql, dialect)
     elif rule.kind == "unique":
         keys = rule.args.get("columns") or ([col] if col else [])

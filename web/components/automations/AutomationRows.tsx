@@ -29,6 +29,7 @@ import {
 } from "@/lib/api";
 import { CASTS, seedConfig, upstreamKeys } from "@/lib/automationFlow";
 import { withUniqueKeys } from "@/lib/listKeys";
+import { blankRow, EXPECTATION_KINDS, fromConfig, toConfig, type ExpectationRow } from "@/lib/expectations";
 import { slackStepBotNote } from "@/lib/slackBots";
 import { ScheduleEditor } from "@/components/automations/ScheduleEditor";
 import { SelectField } from "@/components/ui/select";
@@ -67,6 +68,8 @@ export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] 
         + "with every number grounded in that data" },
   { value: "trusted_query", label: "Trusted query",
     desc: "Run a vetted query and publish its rows — the one output in this plane a step can run once per item of" },
+  { value: "expectations", label: "Measure expectations",
+    desc: "Measure what a table's data must meet — never empty, never repeated, fresh — and record each verdict as the table's health" },
 ];
 
 export const inputStyle: React.CSSProperties = {
@@ -273,6 +276,68 @@ function refOf(value: unknown): string {
  * the grounds that the step which has a model write SQL already exists and is already
  * governed as one.
  */
+/** Arc ED, ED-3 — one table, then what its data must meet: a kind, a column and the values the kind needs. Names and
+ *  values only; the server refuses anything else, and says why on save. */
+function ExpectationRows({ e, set }: {
+  e: AutoEffect; set: (patch: Record<string, unknown>) => void;
+}) {
+  const { table, rows } = fromConfig(e.config.expectations);
+  const write = (t: string, rs: ExpectationRow[]) => set({ expectations: toConfig(t, rs) });
+  const shown = rows.length ? rows : [blankRow()];
+  const patch = (i: number, p: Partial<ExpectationRow>) =>
+    write(table, shown.map((r, j) => (j === i ? { ...r, ...p } : r)));
+  return (
+    <div data-testid="expectation-rows" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <Input style={inputStyle} value={table} aria-label="Table"
+        onChange={ev => write(ev.target.value, shown)} placeholder="the table — e.g. ecommerce.orders" />
+      {shown.map((r, i) => {
+        const kind = EXPECTATION_KINDS.find(k => k.kind === r.kind) ?? EXPECTATION_KINDS[0];
+        // Keyed by position: a row is edited in place, and a key read from its column would remount the input
+        // under the person's cursor on every keystroke.
+        return (
+          <div key={`expectation-${i}`} style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+            {kind.column && (
+              <Input style={{ ...inputStyle, width: 140 }} value={r.column} aria-label="Column"
+                onChange={ev => patch(i, { column: ev.target.value })} placeholder="column" />
+            )}
+            <SelectField style={{ ...inputStyle, width: "auto" }} value={r.kind} aria-label="What it must meet"
+              onChange={ev => patch(i, { kind: ev.target.value as ExpectationRow["kind"], first: "", second: "" })}>
+              {withUniqueKeys(EXPECTATION_KINDS, k => k.kind).map(([key, k]) => (
+                <option key={key} value={k.kind}>{k.words}</option>))}
+            </SelectField>
+            {kind.first && (
+              <Input style={{ ...inputStyle, width: 150 }} value={r.first} aria-label={kind.first}
+                onChange={ev => patch(i, { first: ev.target.value })} placeholder={kind.first} />
+            )}
+            {kind.second && (
+              <Input style={{ ...inputStyle, width: 130 }} value={r.second} aria-label={kind.second}
+                onChange={ev => patch(i, { second: ev.target.value })} placeholder={kind.second} />
+            )}
+            <SelectField style={{ ...inputStyle, width: "auto" }} value={r.criticality} aria-label="If not met"
+              onChange={ev => patch(i, { criticality: ev.target.value as ExpectationRow["criticality"] })}>
+              <option value="warn">if not met: say so</option>
+              <option value="error">if not met: block publishing</option>
+            </SelectField>
+            {shown.length > 1 && (
+              <Button variant="ghost" size="sm" className="h-auto font-normal" aria-label="Remove expectation"
+                style={{ ...ghostBtn, color: "var(--red3)", padding: "3px 6px" }}
+                onClick={() => write(table, shown.filter((_x, j) => j !== i))}>✕</Button>
+            )}
+          </div>
+        );
+      })}
+      <Button variant="ghost" size="sm" className="h-auto font-normal" style={{ ...ghostBtn, alignSelf: "flex-start" }}
+        onClick={() => write(table, [...shown, blankRow()])}>
+        Add an expectation
+      </Button>
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.45 }}>
+        Each is measured read-only and counts the rows that break it, never the rows themselves. The verdicts become the
+        table&apos;s health, which answers about it then carry.
+      </div>
+    </div>
+  );
+}
+
 function TrustedQueryRows({ e, set }: {
   e: AutoEffect; set: (patch: Record<string, unknown>) => void;
 }) {
@@ -955,6 +1020,9 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
             not a code node: what gets stored is still a query id. */}
         {e.kind === "trusted_query" && (
           <TrustedQueryRows e={e} set={set} />
+        )}
+        {e.kind === "expectations" && (
+          <ExpectationRows e={e} set={set} />
         )}
         {/* DS-18 — the data comes from the step BEFORE (a binding, dragged from its
             gives-port or typed), and the context is authored right here. Two fields,

@@ -175,6 +175,11 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
     # cannot describe a destination, which is what keeps "no node is code" true across a
     # boundary that leaves the platform.
     "mcp_call":       ("server_id", "tool"),
+    # Arc ED, ED-3 — WHAT the table's data must meet. Values a person types, so the kind is
+    # always ready; each expectation is validated at construction (`quality.expectations.parse`),
+    # because one that names nothing measurable would sit looking schedulable and measure
+    # nothing at 03:00 — K1's lesson, again.
+    "expectations":   ("expectations",),
 }
 
 
@@ -316,7 +321,7 @@ class Effect(BaseModel):
     """
     kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor", "agent_alert",
                   "slack_post", "subchain", "integration_call",
-                  "metric_value", "trusted_query", "mcp_call", "synthesize"]
+                  "metric_value", "trusted_query", "mcp_call", "synthesize", "expectations"]
     #: VA-4a — this step's name, for `{"$from": "<alias>.<key>"}` references. Defaults to
     #: its 1-based position (`step1`, `step2`, …) so an existing automation gains
     #: referable steps without being rewritten.
@@ -387,7 +392,20 @@ class Effect(BaseModel):
             raise ValueError(
                 f"effect kind '{self.kind}' requires config key(s): {', '.join(missing)}"
             )
+        if self.kind == "expectations":
+            from aughor.quality.expectations import parse
+            from aughor.quality.rules import RuleError
+            try:
+                parse(self.config.get("expectations"))
+            except RuleError as exc:
+                raise ValueError(f"effect kind 'expectations': {exc}") from exc
         return self
+
+    @property
+    def expectations(self) -> list:
+        """Arc ED, ED-3 — what an ``expectations`` step measures, as written."""
+        raw = self.config.get("expectations")
+        return list(raw) if isinstance(raw, list) else []
 
     @property
     def action_id(self) -> str:

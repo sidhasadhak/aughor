@@ -11814,7 +11814,7 @@ from records — no model fills the page.
 | **AP-5** | Shapes in the starter, offered with why | theLook's 7 entities get ≥ 4 different shapes | A cockpit read on ≥ 3 days in 2 weeks no more often than today's, per shape |
 | **AP-6** | Preview as a group, a changelog in words, read times per set | The desk previewed as a group with a row policy | — |
 
-### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · **ED-0, ED-1 and ED-2 BUILT 2026-10-24** on the session branch, the rest not started)
+### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · **ED-0 to ED-3 BUILT 2026-10-24** on the session branch, the rest not started)
 
 **The premise, measured at `f7af0167` (study §2).** Aughor has already built most of Foundry's shape (study §1.2). What does
 not yet hold is that shape's own rules, at every door:
@@ -11838,7 +11838,7 @@ not yet hold is that shape's own rules, at every door:
 | **ED-0** | The small defects: document search says *unavailable* instead of `[]`; §3.26's eight monitor defects; stale words (`mcp/policy.py` "eighteen" over 23 tools, `routers/builder_v1.py:7` "(off)" of a graduated flag) | bugs, no flag · S | A saved monitor reads back a grace period other than its own → stop |
 | **ED-1** ✅ | **One row policy at every door**: the SQL gate applies the served release's row policies and sensitive properties to every table that backs an entity; a query projecting a sensitive column is refused with the object door's caveat; edit history filtered by the reader; `ROW_POLICIES` retired once the receipt holds | `ontology.security_sql` (needs `ontology.security`) · M | On theLook, a group with a row policy gets a different count from a quick answer than from the object door → stop |
 | **ED-2** ✅ | **Every outside caller is someone**: MCP over HTTP accepts a service principal or a user bearer and each call runs as that caller; a principal carries entity and action allowlists and area scopes (`objects:read`, `actions:propose`, `analysis:run` …), intersected with the agent policy and the acting person, never widening; the contract a program reads is generated from the same grant | `mcp.caller_principals`, `security.principal_scopes` · M + M | Two principals with different scopes see the same `tools/list` → stop |
-| **ED-3** | **Table health that is measured**: an automation effect runs a quality rule read-only and records the result in `quality/results.py`; the latest reports per check. A naming call first — the glossary gives *Rule* to business rules and *check* to claims | `quality.checks` · M | — |
+| **ED-3** ✅ | **Table health that is measured**: an automation effect runs a quality rule read-only and records the result in `quality/results.py`; the latest reports per check. A naming call first — the glossary gives *Rule* to business rules and *check* to claims | `quality.checks` · M | — |
 | **ED-4** | **An App publishes one version**: readers see the published version; later keeps are drafts until published, on `kernel/lifecycle.py` as cards and canvases already are | `dashboard.app_versions` · S–M | ✅ §6 item 52(a): yes |
 | **ED-5** | **Cause and effect in one store**: confirmed causal edges fold into impacts as *validated*; the file stops being read | — · M | An alert summary names a cause the impacts store does not hold → stop |
 | **ED-6** | **Every read says how complete it is**: one typed `completeness` on every object door and in the contract — complete · truncated · withheld by policy · refused over a cap — and its time taken | `objects.completeness` · S | — |
@@ -11962,6 +11962,41 @@ admitting any principal. 3 component tests on the mint form.
 - The object catalogue and type listings are not yet cut to a grant's entities. The contract and every named-entity
   door are.
 - A grant per acting person, for an agent that acts for someone.
+
+**ED-3, built 2026-10-24** (same branch; flag `quality.expectations`, off, in the graduation queue). The naming call
+came first, and it was the user's: one table-health item is an **expectation** (glossary). *Rule* stays the business's
+and *check* stays claims'. The flag is named for the word, not the roadmap's provisional `quality.checks`.
+
+The quality plane had three readers and no producer. An answer's caveats, the MCP `get_table_health` tool and the
+Briefing's failing count all read `quality/results.py`, and nothing wrote to it. Now an automation step, **Measure
+expectations**, does (`quality/expectations.py`, the engine's `_dispatch_expectations`):
+- it measures a table's expectations read-only through the connection's door, audited as a stored definition's read;
+- it records each verdict in the one store, as a count of the rows that break it, never the rows;
+- a drift is judged against the last reading, and the first reading is the baseline, which it says;
+- an expectation that cannot be measured is said on the step and recorded as nothing, because an unreadable query is not
+  a failing table — a step where nothing could be measured fails rather than reading healthy;
+- the step carries names and values, never SQL (DS-12's law): table and columns must be plain names, and a `filter` is
+  refused;
+- a malformed step is refused when it is saved;
+- the designer edits it as one table and a row per expectation.
+
+A latent defect fixed on the way: `freshness` counted every row older than the limit, so a table with any history
+failed it forever. It now asks whether the newest row is older. Nothing had ever run it.
+
+On the samples warehouse, through the real DuckDB door:
+- `order_id` is never empty and never repeats, and every `customer_id` matches a customer;
+- "status is shipped" is not met, by the exact count of other orders;
+- the verdicts reach `latest_for_tables`, the failing count and an answer's caveats;
+- a column that does not exist is said, and the failing count stays 0.
+
+9 tests, 9 mutants killed (the freshness one only after its test was made to tell the two compilers apart), and 4 web
+tests on the editor and its config.
+
+**Named, not done:**
+- The theLook receipt.
+- Proposing expectations from a table's profile (`quality.caveats.candidates_from_profile` exists, unwired).
+- The two drift kinds' limits beyond one number each.
+- A filter for a step, which would need a declared form rather than SQL.
 
 ### 3.59 · Arc TC — every change says what made it (DRAFTED 2026-10-24 as arc 2 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; second of the three · nothing built)
 

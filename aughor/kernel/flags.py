@@ -135,6 +135,10 @@ FLAG_ENV = {
     # Arc ED, ED-2. ON: a service principal's grant — areas, entities, declared actions, connections — narrows what the
     # agent policy allows it on every request, and its contract is cut to it. OFF: the policy alone holds it.
     "security.principal_scopes": "AUGHOR_SECURITY_PRINCIPAL_SCOPES",
+    # Arc ED, ED-3 (ROADMAP §3.58). ON: an automation's expectations step measures a table read-only and records each
+    # verdict in the quality plane, which answers, the MCP table-health tool and the Briefing already read. OFF: the step
+    # is skipped and says so; the plane reads "not checked" as before.
+    "quality.expectations": "AUGHOR_QUALITY_EXPECTATIONS",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -738,6 +742,18 @@ FLAG_META = {
                        "use, and makes every call as it. Off: every HTTP client shares the server's token and "
                        "acts as the server.",
     },
+    "quality.expectations": {
+        "label": "Measure what tables must meet",
+        "summary": "An automation can measure a table's expectations and record each result as its health. "
+                   "Answers about the table then say when one is not met.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "warehouse", "text": "Queries the warehouse when run"},
+                  {"kind": "schedule", "text": "Runs on its automation's schedule"}],
+        "description": "An expectation says what a table's data must meet: a column never empty, a key never "
+                       "repeated, the newest row recent enough. Each is counted read-only, never copying rows. "
+                       "One that cannot be measured is said, not counted as failing. Off: the step is skipped, "
+                       "and table health reads not checked.",
+    },
     "security.principal_scopes": {
         "label": "Limit what each outside program may do",
         "summary": "A principal can be limited to some areas, entities and actions. It never gets more than the "
@@ -1147,6 +1163,10 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc ED, ED-3 (ROADMAP §3.58), queued 2026-10-24. No model call.
+    "quality.expectations": "receipt: on theLook, a scheduled step measures one table's expectations, the verdicts reach "
+                            "an answer's caveats and the table-health tool, and one it cannot measure is said, not "
+                            "counted. Falsifier: a table read as failing because a query could not run stops it",
     # Arc ED, ED-2 (ROADMAP §3.58), queued 2026-10-24. No model call.
     "mcp.caller_principals": "receipt: on the live install, two outside programs connect over HTTP as two principals with "
                              "different grants; each lists its own tools and every call is audited under its own name. "
