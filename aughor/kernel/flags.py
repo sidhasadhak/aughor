@@ -139,6 +139,10 @@ FLAG_ENV = {
     # verdict in the quality plane, which answers, the MCP table-health tool and the Briefing already read. OFF: the step
     # is skipped and says so; the plane reads "not checked" as before.
     "quality.expectations": "AUGHOR_QUALITY_EXPECTATIONS",
+    # Arc ED, ED-4 (ROADMAP §3.58; the user, 2026-10-24: readers see the last published version). ON: a keep on a
+    # dashboard is a draft, and an App's readers read the version last published until its owner publishes again.
+    # OFF: readers read every version the moment it is kept, as before.
+    "dashboard.app_versions": "AUGHOR_DASHBOARD_APP_VERSIONS",
     # Arc OC-1 (ROADMAP §3.56). ON: every save and withdrawal of an ontology declaration is also kept as a version
     # (lifecycle kind `ontology_declaration`), and a withdrawal something depends on is refused with a 409 naming it.
     # OFF: the declaration store reads and writes exactly as before; the history and dependents doors still answer.
@@ -754,6 +758,16 @@ FLAG_META = {
                        "One that cannot be measured is said, not counted as failing. Off: the step is skipped, "
                        "and table health reads not checked.",
     },
+    "dashboard.app_versions": {
+        "label": "Readers see an App's published version",
+        "summary": "A change to a published dashboard is a draft until you publish it. Until then its readers keep "
+                   "reading the version you last published.",
+        "facts": [{"kind": "free", "text": "No model calls"},
+                  {"kind": "private", "text": "Readers never see a draft"}],
+        "description": "Publishing makes the dashboard as it stands the App its readers read. Each later change is a "
+                       "draft, and the dashboard says which version they read. Unpublishing still reaches nobody at "
+                       "once. Off: readers read every change the moment it is kept.",
+    },
     "security.principal_scopes": {
         "label": "Limit what each outside program may do",
         "summary": "A principal can be limited to some areas, entities and actions. It never gets more than the "
@@ -1163,6 +1177,10 @@ MIGRATION: dict = {
 }
 
 GRADUATION_QUEUE: dict = {
+    # Arc ED, ED-4 (ROADMAP §3.58), queued 2026-10-24. No model call.
+    "dashboard.app_versions": "receipt: on the live install, an App published to a group is changed twice; a member of "
+                              "the group reads the published version until its owner publishes, then the new one. "
+                              "Falsifier: a reader reads a version its owner never published stops it",
     # Arc ED, ED-3 (ROADMAP §3.58), queued 2026-10-24. No model call.
     "quality.expectations": "receipt: on theLook, a scheduled step measures one table's expectations, the verdicts reach "
                             "an answer's caveats and the table-health tool, and one it cannot measure is said, not "

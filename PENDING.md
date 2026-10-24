@@ -150,6 +150,15 @@ Their rank against 1–37 is the user's; the survey is in §3.48 (BR-0), and the
     item 52 (a)–(c): one published App version · the chat endpoint when a customer asks · proposed agent revisions once
     goldens exist). **ED-0 started 2026-10-24.**
 
+59. [ ] **A side assistant beside every screen** (the user, 2026-10-24, with CopilotKit's FinanceOS showcase: *"when a
+    user wants to ask a question about a number already given in the briefing section and user clicks on "pull the
+    thread" then aside and with chat feature opens up"*) — ROADMAP §3.61. Measured: the Briefing's *Ask this briefing*
+    panel already exists (one conversation, grounded server-side in the Briefing on screen), but *Pull the thread*
+    streams a separate investigation inline instead of opening it, no other screen has one, and no chat can act on the
+    screen beside it. Sketch: the pull opens the panel with the figure as its subject · one panel for every screen, each
+    grounded server-side · screen actions (navigation only), shown and undoable · steps and suggestion chips. Mockup
+    first. *🅿️ PARKED by the user 2026-10-24: "let's park this in the Road map for a later time".*
+
 Just outside the list: the next industry package (insurance has public data to test on; payments does not) · numbers that link back to their source (idea 11) · the anti-AI-look UI work (idea 14, partly under way) · the fine-tuned text-to-SQL model (MI-4, needs far more training data than exists).
 
 ---
@@ -161,7 +170,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [x] ED-1 · one row policy at every door — ✅ BUILT 2026-10-24 behind `ontology.security_sql` (§3.58 "ED-1, built"; the theLook receipt and retiring `ROW_POLICIES` wait for sign-in) — the SQL gate applies OC-7's row policies and sensitive properties; edit history filtered by reader; `ROW_POLICIES` retired after the receipt (`ontology.security_sql`)
 - [x] ED-2 · every outside caller is someone — ✅ BUILT 2026-10-24 behind both flags (§3.58 "ED-2, built"; a user bearer over MCP waits for OIDC) — per-caller MCP identity; principal allowlists and area scopes; the contract generated from the grant (`mcp.caller_principals`, `security.principal_scopes`)
 - [x] ED-3 · table health that is measured — ✅ BUILT 2026-10-24 behind `quality.expectations` (§3.58 "ED-3, built"; the word is *expectation*, the user's call) — a producer for `quality/results.py`; latest reports per check; the naming call first (`quality.checks`)
-- [ ] ED-4 · an App publishes one version (`dashboard.app_versions`) — ✅ decided 2026-10-24, §6 item 52(a): readers see the last published version
+- [x] ED-4 · an App publishes one version — ✅ BUILT 2026-10-24 behind `dashboard.app_versions` (§3.58 "ED-4, built"; the live receipt waits) — ✅ decided 2026-10-24, §6 item 52(a): readers see the last published version; a keep is a draft on `kernel/lifecycle.py`'s axis, publishing to the same audience publishes it, the owner is told which version readers read
 - [ ] ED-5 · cause and effect in one store — `data/causal_graph.json` folded into impacts as *validated*
 - [ ] ED-6 · every object read says how complete it is (`objects.completeness`)
 

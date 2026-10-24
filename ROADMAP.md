@@ -11814,7 +11814,7 @@ from records — no model fills the page.
 | **AP-5** | Shapes in the starter, offered with why | theLook's 7 entities get ≥ 4 different shapes | A cockpit read on ≥ 3 days in 2 weeks no more often than today's, per shape |
 | **AP-6** | Preview as a group, a changelog in words, read times per set | The desk previewed as a group with a row policy | — |
 
-### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · **ED-0 to ED-3 BUILT 2026-10-24** on the session branch, the rest not started)
+### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1, at the user's *"The whole point of this Study is to understand how we can incorporate the features of Palantir into our platform"* · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · **ED-0 to ED-4 BUILT 2026-10-24** on the session branch, the rest not started)
 
 **The premise, measured at `f7af0167` (study §2).** Aughor has already built most of Foundry's shape (study §1.2). What does
 not yet hold is that shape's own rules, at every door:
@@ -11839,7 +11839,7 @@ not yet hold is that shape's own rules, at every door:
 | **ED-1** ✅ | **One row policy at every door**: the SQL gate applies the served release's row policies and sensitive properties to every table that backs an entity; a query projecting a sensitive column is refused with the object door's caveat; edit history filtered by the reader; `ROW_POLICIES` retired once the receipt holds | `ontology.security_sql` (needs `ontology.security`) · M | On theLook, a group with a row policy gets a different count from a quick answer than from the object door → stop |
 | **ED-2** ✅ | **Every outside caller is someone**: MCP over HTTP accepts a service principal or a user bearer and each call runs as that caller; a principal carries entity and action allowlists and area scopes (`objects:read`, `actions:propose`, `analysis:run` …), intersected with the agent policy and the acting person, never widening; the contract a program reads is generated from the same grant | `mcp.caller_principals`, `security.principal_scopes` · M + M | Two principals with different scopes see the same `tools/list` → stop |
 | **ED-3** ✅ | **Table health that is measured**: an automation effect runs a quality rule read-only and records the result in `quality/results.py`; the latest reports per check. A naming call first — the glossary gives *Rule* to business rules and *check* to claims | `quality.checks` · M | — |
-| **ED-4** | **An App publishes one version**: readers see the published version; later keeps are drafts until published, on `kernel/lifecycle.py` as cards and canvases already are | `dashboard.app_versions` · S–M | ✅ §6 item 52(a): yes |
+| **ED-4** ✅ | **An App publishes one version**: readers see the published version; later keeps are drafts until published, on `kernel/lifecycle.py` as cards and canvases already are | `dashboard.app_versions` · S–M | ✅ §6 item 52(a): yes |
 | **ED-5** | **Cause and effect in one store**: confirmed causal edges fold into impacts as *validated*; the file stops being read | — · M | An alert summary names a cause the impacts store does not hold → stop |
 | **ED-6** | **Every read says how complete it is**: one typed `completeness` on every object door and in the contract — complete · truncated · withheld by policy · refused over a cap — and its time taken | `objects.completeness` · S | — |
 
@@ -11998,6 +11998,35 @@ tests on the editor and its config.
 - The two drift kinds' limits beyond one number each.
 - A filter for a step, which would need a declared form rather than SQL.
 
+**ED-4, built 2026-10-24** (same branch; flag `dashboard.app_versions`, off, in the graduation queue). The call was the
+user's (§6 item 52(a)): an App's readers read the version last published. Before this, a keep carried the audience to
+the next version, so readers read every change the moment it was kept.
+
+Each dashboard version now says where it stands on the platform's one publication axis (`kernel/lifecycle.py`, its
+`_lifecycle` stamp): a keep or a restore is a *draft*, a publish *published*, an unpublish or a retire *archived*.
+- Who an App reaches is still its newest version's audience: a keep carries it, and an unpublish reaches nobody at once.
+- What its readers read is the newest published version (`versions.published`): the reader's page, "Apps shared with
+  you", and a dashboard a reader starts from it, which copies the published spec, never the draft.
+- Publishing to the same audience publishes the draft. It is refused as *unchanged* only when nothing was kept since,
+  and the same holds for a publish asked for in words.
+- A version kept before the flag records no state. It projects as published when it reached anyone, which is what its
+  readers read then, so turning the flag on changes nothing a reader sees. A version written with the flag off drops a
+  stamp copied from one written on.
+- The owner is told which version its readers read: the publish door says *readers see version N*, the panel offers
+  *Publish your changes*, and History marks *what its readers read*.
+- The generic lifecycle doors now read an App's states (`published_version` against `editor_version`) and refuse to
+  publish or revert one with a 409. A version written there would hold no spec, so its readers would read an empty
+  App. That hole predated ED-4.
+
+9 tests, 14 mutants killed; 6 web tests (the door, the panel, History and the words), 2 web mutants killed.
+
+**Named, not done:**
+- The live receipt (the graduation queue's entry): an App changed twice on the live install, read by a member of its
+  group.
+- A card's own edits still reach readers at once. A card is its own store with its own revisions, and the App pins
+  where cards are placed, not what each card holds.
+- Publishing to a new audience publishes the draft too; there is no door that changes who an App reaches without it.
+
 ### 3.59 · Arc TC — every change says what made it (DRAFTED 2026-10-24 as arc 2 of `docs/PALANTIR_INCORPORATION_STUDY_2026-10-24.md` §3.1 · ✅ ADOPTED the same day — §6 item 52; second of the three · nothing built)
 
 **The premise, measured.** Provenance is Aughor's first law, and these places do not yet keep it:
@@ -12046,6 +12075,40 @@ declared by a person (M) · reading objects under a past release (M) · proposed
 
 **The laws it keeps.** A model never adds or wires a piece, and never authors a declaration · the organisation ontology is
 edited by people only · no embedding of customer object text · no hosted code · commands never fire on a value change.
+
+### 3.61 · A side assistant beside every screen (🅿️ PARKED 2026-10-24 by the user — *"let's park this in the Road map for a later time"* · not adopted, nothing built, no flag; PENDING item 59)
+
+**What the user pictured** (2026-10-24, with github.com/copilotkit/copilotkit and two screenshots of its FinanceOS
+showcase): *"we do not have a side chat assistant which will help the user and understanding what is on the main
+screen.. when a user wants to ask a question about a number already given in the briefing section and user clicks on
+"pull the thread" then aside and with chat feature opens up which is an interaction section between the user and the
+platform"*. The screenshots show a panel on the right of a dashboard, a conversation with the steps it ran shown as they
+run (*Researching…*, `load_dashboard` complete), an answer that draws a figure card inside the chat, the assistant
+switching the dashboard beside it, and suggestion chips.
+
+**The premise, measured at `add2d52f`.** The Briefing already has half of it:
+- *Ask this briefing →* opens `web/components/brief/BriefAskPanel.tsx`: a side panel 420 px wide that pushes the brief
+  left, one conversation, quick answers only (a deep question goes to Ask), grounded server-side in the Briefing on
+  screen (`knowledge/brief_context.py`, surface `briefing` — nothing about the brief is sent from the browser).
+- *Pull the thread →* on a citation (`BriefingPanel.tsx:529`) does not open that panel. It streams a separate deep
+  investigation inline below the prose (`brief/InlineInvestigationThread.tsx`, a session of its own), so the pull and
+  the side chat are two conversations that cannot see each other.
+- No other screen has a side chat: Dashboards has *change in words* (it proposes an edit), and the Data Canvas's
+  `ChatPanel` is the main surface, not one beside it.
+- No chat can act on the screen beside it: open a dashboard, set the period, point at a card.
+
+**What it would build — a sketch, not waves:**
+1. *Pull the thread* opens the side panel with the figure as its subject (its value, period and query), one
+   conversation; a deep run is a step inside it, not a second thread below the prose.
+2. One side panel for every screen. Each screen declares what is on it, assembled server-side as the Briefing's
+   grounding already is, so the panel cannot drift from what the reader sees.
+3. Screen actions the assistant may take, declared by each screen, shown and undoable: open a dashboard, set the
+   period, point at a card. Navigation only; anything that writes still goes through Approvals.
+4. The steps it ran and suggestion chips in the panel. The chat's parts (`PartsMessage`) already draw both kinds.
+
+**The laws it would keep.** Adapt the pattern, never the hosted service (as with CopilotKit's learning, PENDING 56) ·
+grounded in the server's copy of the screen · the left rail stays, so the panel is on the right · a mockup on live data
+first (`aughor-v2/CLARITY.md`) · a model proposes, a person approves anything that writes.
 
 ---
 

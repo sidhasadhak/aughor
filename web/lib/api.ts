@@ -2950,6 +2950,10 @@ export interface DashboardVersion {
   published_by?: string;
   /** Arc OC-4 — the ontology release a version holding pieces was composed against. */
   ontology_release?: string;
+  /** Arc ED-4 (flag `dashboard.app_versions`) — where this version stands: a keep is a draft until it is published. */
+  state?: "draft" | "published" | "archived";
+  /** Arc ED-4 — on the newest version only: the version the App's readers read, null while it reaches nobody. */
+  published_version?: number | null;
 }
 
 /** Arc OC-4 — for a dashboard holding pieces bound to the ontology: the release it was composed against, the one in

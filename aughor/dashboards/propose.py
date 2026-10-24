@@ -774,7 +774,7 @@ def propose_publish(home: Home, to: Any) -> Drafted:
             targets.append(hit)
     if refusals:
         return Drafted(refusals=tuple(refusals))
-    if targets == list(live.get("published_to") or []):
+    if _versions.nothing_to_publish(live.get("published_to"), str(live.get("state") or ""), targets):
         return Drafted(refusals=(f"The dashboard is already published to {', '.join(t['name'] for t in targets)}.",))
     title = str(live["spec"]["elements"][live["spec"]["root"]]["props"]["title"])
     p = stage_proposal(StagedProposal(

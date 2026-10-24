@@ -164,7 +164,7 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
     setPicked({});
     setTicked({});
     if (!dashboardId) return;
-    try { localStorage.setItem(filtersKey(dashboardId), JSON.stringify(next)); } catch { /* it lasts while the cockpit is open */ }
+    try { localStorage.setItem(filtersKey(dashboardId), JSON.stringify(next)); } catch { /* it lasts while the dashboard is open */ }
   }, [dashboardId]);
   const toggle = useCallback((entity: string, path: string, value: string) => keep(toggled(filters, entity, path, value)),
     [filters, keep]);
@@ -253,7 +253,7 @@ export function PiecesProvider({ connectionId, schema, elements, sets, values, o
       void _gone;
       const next = v === undefined ? rest : { ...prev, [name]: v };
       if (dashboardId) {
-        try { localStorage.setItem(valuesKey(dashboardId), JSON.stringify(next)); } catch { /* it lasts while the cockpit is open */ }
+        try { localStorage.setItem(valuesKey(dashboardId), JSON.stringify(next)); } catch { /* it lasts while the dashboard is open */ }
       }
       return next;
     });

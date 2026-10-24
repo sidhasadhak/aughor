@@ -571,7 +571,9 @@ BASELINE: dict[str, int] = {
     # 2026-10-23: measured after R1–R3 and the comment pass (6,268 occurrences across the repo before the rename).
     # 973 → 971 the same day: the Question piece (PENDING 54) added the API's field names it must read, and paid for
     # them by correcting the old paths comments still named (lib/cockpit/, aughor/cockpit/) to where the code lives.
-    "cockpit": 971,
+    # 971 → 966 (ED-4, 2026-10-24): an App's versions read the stored field names they must, and paid for them with
+    # nine comments that still said cockpit for a dashboard.
+    "cockpit": 966,
     "control_room": 26,
     "copilotkit": 4,
     # 54 → 49: mostly already true on main (the study references moved to docs/, which is

@@ -55,7 +55,7 @@ export function ActionButtonsPiece({ buttons }: { buttons: ActionButtonDef[] }) 
               <Button key={k} size="sm" variant={b.primary ? "default" : "outline"} disabled>{b.label || declared[b.action]?.display_name || b.action}</Button>
             ))}
           </div>
-          {/* the banner above the cockpit names the group; the group's id is never a reader's word */}
+          {/* the banner above the dashboard names the group; the group's id is never a reader's word */}
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>Nothing is run from a preview.</span>
         </div>
       ) : (
